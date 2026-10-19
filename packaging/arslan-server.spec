@@ -79,9 +79,9 @@ if sys.platform == "darwin":
             print(f"WARNING: could not collect {pkg} for the OCR path: {exc}")
 
 # collect_submodules finds MODULES. It does not find package DATA, and the
-# arslan package is mostly data at runtime: pyproject.toml:112-118 lists five
-# kinds loaded via Path(__file__).parent — seed skill-packs, scaffold
-# templates, LLM capability profiles, the requirement tree, official
+# arslan package is mostly data at runtime: pyproject.toml's wheel-content
+# comment lists four kinds loaded via Path(__file__).parent — seed
+# skill-packs, scaffold templates, LLM capability profiles, official
 # templates. Without these the app boots, serves /api/v1/health 200, and then
 # seeds ZERO of its six factory spawns, because every skill reports
 # "catalog-only (no method body yet) — not equippable": the SKILL.md files it

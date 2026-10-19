@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-from arslan.core.dialogue import DialogueEngine
 from arslan.core.evolution import EvolutionEngine
 from arslan.models import (
+    DomainInfo,
     FeedbackEntry,
+    PersonaSpec,
     SpawnBlueprint,
+    SpawnRequirements,
     ToolSpec,
 )
 from arslan.spawn.manager import SpawnManager
@@ -18,25 +20,22 @@ from arslan.templates.library import TemplateLibrary
 
 
 class TestFullPipeline:
-    """End-to-end tests covering dialogue → template match → spawn generation → quality gate → evolution."""
+    """End-to-end tests covering requirements → template match → spawn generation → quality gate → evolution.
+
+    The requirements are the ones the legacy command line's dialogue engine produced for the same
+    answers; that engine was deleted with the command line (C2d)."""
 
     def test_xiaohongshu_spawn_creation(self, tmp_path: Path) -> None:
         # ------------------------------------------------------------------ #
-        # 1. Dialogue phase: collect requirements
+        # 1. Requirements
         # ------------------------------------------------------------------ #
-        engine = DialogueEngine()
-
-        engine.process_user_input("我想做小红书美妆内容")   # domain
-        engine.process_user_input("生成文案和追踪热点")      # capabilities
-        engine.process_user_input("数据实测型美妆博主")      # persona
-        engine.process_user_input("网页")                    # runtime
-        engine.process_user_input("美美")                    # spawn_name
-
-        assert engine.state.is_finished, "Dialogue should be finished after all inputs"
-        requirements = engine.state.requirements
-        assert requirements.spawn_name == "美美"
-        assert requirements.domain is not None
-        assert requirements.domain.category == "content-creator"
+        requirements = SpawnRequirements(
+            spawn_name="美美",
+            domain=DomainInfo(category="content-creator", subcategory="xiaohongshu"),
+            capabilities=["content-generation"],
+            persona=PersonaSpec(role="数据实测型美妆博主", tone="数据实测型"),
+        )
+        assert requirements.is_complete
 
         # ------------------------------------------------------------------ #
         # 2. Template library: search by domain
@@ -139,19 +138,15 @@ class TestFullPipeline:
 
     def test_translator_spawn_creation(self, tmp_path: Path) -> None:
         # ------------------------------------------------------------------ #
-        # 1. Dialogue phase
+        # 1. Requirements
         # ------------------------------------------------------------------ #
-        engine = DialogueEngine()
-
-        engine.process_user_input("翻译助手")   # domain
-        engine.process_user_input("问答交互")    # capabilities
-        engine.process_user_input("专业翻译")    # persona
-        engine.process_user_input("web")         # runtime
-        engine.process_user_input("译译")        # spawn_name
-
-        assert engine.state.is_finished, "Dialogue should be finished after all inputs"
-        requirements = engine.state.requirements
-        assert requirements.spawn_name == "译译"
+        requirements = SpawnRequirements(
+            spawn_name="译译",
+            domain=DomainInfo(category="personal-assistant", subcategory="translator"),
+            capabilities=["qa-interaction"],
+            persona=PersonaSpec(role="专业翻译", tone="专业严谨型"),
+        )
+        assert requirements.is_complete
 
         # ------------------------------------------------------------------ #
         # 2. Build blueprint

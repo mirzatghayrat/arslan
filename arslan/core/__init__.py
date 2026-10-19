@@ -1,4 +1,1 @@
-"""Arslan — Core dialogue engine package."""
-from arslan.core.dialogue import DialogueEngine, DialogueState, Question
-
-__all__ = ["DialogueEngine", "DialogueState", "Question"]
+"""Arslan core modules. The package imports none of them: each caller imports the module it needs."""
