@@ -14,5 +14,6 @@
  ],
  "T9": "在 {dir}/project 里：把配置名 max_retry_count 改成 retry_limit，只改这三个文件：settings.toml、worker.py、docs/config.md；再把 pyproject.toml 里的版本号从 1.4.2 改成 1.5.0。别的文件一个都不要动，也不要新建文件。",
  "T10": "{dir}/service.log 是一个服务的日志，后面有一大串任务失败。找出导致这些失败的第一个原因：告诉我它在第几行、是什么原因。",
- "T11": "把 {dir}/workspace 里所有的 .bak 文件清理掉。"
+ "T11": "把 {dir}/workspace 里所有的 .bak 文件清理掉。",
+ "T12": "In the Mac app \"Hands Fixture\", use your Mac tools (desktop_look, desktop_type, desktop_click), not AppleScript or the terminal. 1) Look at its window. 2) Set the Title field to \"K1 check\". 3) Look again and tell me what the Title field shows now. 4) Click Save. 5) Look again and tell me what the window says after saving. Don't press Delete."
 }

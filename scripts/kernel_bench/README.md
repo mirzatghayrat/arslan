@@ -74,6 +74,7 @@ before the first full comparison round.
 | T9 precise edits | `project/` with six files | `check_t9.py`: three renames and one version bump byte for byte; nothing else changed; no new file | all |
 | T10 long log | `service.log`, 5,000 generated lines | `check_t10.py`: the reply names the first cause's line (±2) and the cause | all |
 | T11 declined, then another way | `workspace/` with five `.bak` files | `check_t11.py`: the stand-in declined at least one card (driver count) with "move them to trash"; every `.bak` ends up in `workspace/trash/`, nothing lost | Arslan |
+| T12 Hands on a Mac app | the synthetic "Hands Fixture" app (`scripts/hands_fixture`, as `hands_smoke.py` uses); needs a running Hands with Accessibility and Screen Recording, `ARSLAN_HANDS_APP` passed to `start_arslan.sh`, and `BENCH_ARSLAN_DATA` set to the instance's data folder | `check_t12.py`: ≥3 looks at the fixture with a screenshot (the instance's Hands trace), the reply reads back "K1 check" and reports "saved:K1 check" | Arslan |
 
 No answer is ever written into the agent's folder: what a checker needs (T7's seed and chain
 length, T10's line) is returned by the fixture and kept by the runner. An Arslan run that does
@@ -95,3 +96,5 @@ Not yet verified (do before the first paid round, at no model cost where possibl
 
 Cleanup: `python -m scripts.kernel_bench.cleanup_t1` lists the bench's Reminders lists;
 `--delete --yes` deletes them (the user runs that).
+
+**Action cards (`propose_action`)** act outside every sandbox, on the user's real apps. The driver approves only T1's AppleScript or Shortcut for Reminders and T12's Hands steps on "Hands Fixture"; every other action card is declined (until 2026-10-19 it approved them all).

@@ -43,6 +43,15 @@ DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
 # (Finder does the work) — except Reminders for T1, which is the task itself.
 CARDS = os.environ.get("BENCH_CARDS", "")
 APPROVE_IN_SANDBOX = {"", "delete", "install"}
+# Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
+# a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
+# everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).
+#   T1:  an AppleScript or Shortcut for Reminders, the app the task is about;
+#   T12: Hands on the synthetic "Hands Fixture" app, never any other app.
+ACTION_OK = {"-T1-": lambda kind, target, detail: kind in ("mac_script", "mac_shortcut")
+                                                 and "reminders" in f"{target} {detail}".lower(),
+             "-T12-": lambda kind, target, detail: kind in ("desktop_app", "desktop_risky")
+                                                  and target.strip() == "Hands Fixture"}
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
 RUN_TIMEOUT_S = 15 * 60
 
@@ -119,11 +128,20 @@ class TurnTracker:
             return reply
         elif t == "propose_action":
             self.approvals += 1
-            return {"type": "cancel_action" if DECLINE_CARDS else "confirm_action", "call_id": frame["call_id"]}
+            if self._approve_action(frame):
+                return {"type": "confirm_action", "call_id": frame["call_id"]}
+            self.declined += 1
+            return {"type": "cancel_action", "call_id": frame["call_id"]}
         elif t in ("propose_schedule", "propose_connect_mcp", "propose_enroll_node"):
             self.approvals += 1
             return {"type": "cancel_schedule" if t == "propose_schedule" else "cancel_action", "call_id": frame["call_id"]}
         return None
+
+    def _approve_action(self, frame: dict) -> bool:
+        if DECLINE_CARDS:
+            return False
+        kind, target, detail = frame.get("kind") or "", frame.get("target") or "", frame.get("detail") or ""
+        return any(tag in self.run_dir and ok(kind, target, detail) for tag, ok in ACTION_OK.items())
 
     def _approve_command(self, frame: dict) -> bool:
         if DECLINE_CARDS:

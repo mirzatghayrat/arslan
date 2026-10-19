@@ -220,6 +220,31 @@ def test_outside_the_sandbox_the_driver_declines_every_card(monkeypatch):
     assert t.on_frame({"type": "propose_run_command", "call_id": "c3"}, 3.0)["type"] == "confirm_run_command"
 
 
+def test_action_cards_are_approved_only_where_that_app_is_the_task(monkeypatch):
+    """③Hands, 2026-10-19: approving every propose_action let an AppleScript or Hands reach the
+    user's real apps. Only T1's Reminders script and T12's synthetic fixture app are approved."""
+    from scripts.kernel_bench import arslan_driver
+    monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", False)
+
+    def ans(run_dir, kind, target, detail=""):
+        t = TurnTracker(run_dir)
+        return t.on_frame({"type": "propose_action", "call_id": "c", "kind": kind, "target": target,
+                           "detail": detail}, 1.0)["type"]
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders",
+               'tell application "Reminders" to make new list') == "confirm_action"
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Finder", 'tell application "Finder" to delete') == "cancel_action"
+    assert ans("/b/runs/arslan-T5-r1", "mac_script", "Reminders", "Reminders") == "cancel_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_app", "Hands Fixture") == "confirm_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_risky", "Hands Fixture") == "confirm_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_app", "Notes") == "cancel_action"
+    assert ans("/b/runs/arslan-T12-r1", "mac_script", "Hands Fixture") == "cancel_action"
+    assert ans("/b/runs/arslan-T2-r1", "browser_site", "example.com") == "cancel_action"
+    assert ans("/b/runs/arslan-T2-r1", "desktop_takeover", "screen") == "cancel_action"
+    t = TurnTracker("/b/runs/arslan-T2-r1")
+    t.on_frame({"type": "propose_action", "call_id": "c", "kind": "mac_shortcut", "target": "x"}, 1.0)
+    assert (t.approvals, t.declined) == (1, 1)
+
+
 def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(monkeypatch):
     """0.1.51 P3: inside Arslan's sandbox, deleting/installing are approved; leaving the
     sandbox, outward actions and other apps are declined — Reminders only for T1."""
