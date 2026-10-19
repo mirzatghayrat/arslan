@@ -75,3 +75,40 @@ async def test_the_next_turn_in_that_conversation_is_not_blocked(execution_db):
         started_row = await repo.start(spec.id, created["version"])
     await task_service._launch(started_row, lambda event: None, answer)
     assert await _phase(spec_id) == "succeeded"
+
+
+async def test_the_runtime_is_cleaned_up_and_the_stop_checkpointed_too(execution_db):
+    # ③Hands' review: _run's finally awaited the final checkpoint under `except Exception`; a re-delivered
+    # cancel skipped the rest, leaving the runtime open and registered and the lease active.
+    from sqlalchemy import select
+
+    from server.db.task_models import TaskEvent
+    from server.services import personal_context, task_service
+    started, seen = asyncio.Event(), {}
+
+    async def body(emit):
+        seen["runtime"] = task_service.current()
+        seen["lease"] = personal_context.current().lease
+        started.set()
+        await asyncio.Event().wait()
+
+    async with anyio.create_task_group() as group:
+        group.start_soon(run_contract, [_answer_check()], body)
+        await started.wait()
+        group.cancel_scope.cancel()
+
+    runtime = seen["runtime"]
+
+    async def closed():
+        return runtime.closed
+    assert await _eventually(closed)
+    assert runtime.task_id not in task_service._runtimes
+    assert not any(owner == runtime.task_id for owner in task_service._run_owners.values())
+    assert seen["lease"].active is False
+    assert task_service.current() is None
+
+    async def stopped():
+        async with execution_db() as db:
+            kinds = (await db.scalars(select(TaskEvent.kind).where(TaskEvent.task_id == runtime.task_id))).all()
+        return "attempt_stopped" in kinds
+    assert await _eventually(stopped)
