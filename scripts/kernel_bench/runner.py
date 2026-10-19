@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
 import json
 import os
 import shutil
@@ -51,7 +52,8 @@ HERMES = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))
 BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
 TIMEOUT = 15 * 60
 CHECKS = {
-    "T1": lambda run, reply, ctx: check_t1.check(ctx["list"], reply),
+    "T1": lambda run, reply, ctx: check_t1.check(ctx["list"], reply,
+                                                 started=datetime.datetime.fromtimestamp(ctx["started"])),
     "T2": lambda run, reply, ctx: check_t2.check(run, reply),
     "T3": lambda run, reply, ctx: check_t3.check(run),
     "T4": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="change",
