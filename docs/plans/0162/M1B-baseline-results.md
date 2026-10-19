@@ -53,7 +53,7 @@
 | T10 | deepseek-v4-pro | hermes | 是 | 3/3 | 3/3 | 0.071 | 27s | 7.3 |  |
 | T11 | claude-sonnet-5 | arslan | 是 | 3/3 | 3/3 | 0.048 | 29s | 12.0 |  |
 | T11 | claude-sonnet-5 | claude-code | — | — | — | — | — | — | 不支持：claude-code: no way to decline a card with a note |
-| T11 | deepseek-v4-pro | arslan | 否 | 1/3 | 1/3 | 0.024 | 48s | 9.7 |  |
+| T11 | deepseek-v4-pro | arslan | 否 | 1/3 | 1/3 | 0.024 | 48s | 9.7 | 另外 2 次以 `done` 结束，但答案不对（没停在「等你」） |
 | T11 | deepseek-v4-pro | hermes | — | — | — | — | — | — | 不支持：hermes: no way to decline a card with a note |
 
 **没有跑的题：**
