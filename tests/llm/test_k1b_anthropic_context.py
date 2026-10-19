@@ -253,3 +253,40 @@ async def test_a_stripped_status_echo_is_not_replayed(monkeypatch):
     replayed = json.dumps(_assistant_after(sent[1]))
     assert "I'll search for that now." in replayed
     assert "agent_status" not in replayed and '"thinking"' not in replayed
+
+
+# ── a metering proxy that forwards verbatim to api.anthropic.com (bench, M1) ─────────
+
+from arslan.llm.providers import anthropic_provider  # noqa: E402
+
+PROXY = "http://127.0.0.1:8901/c/arslan-T1-r1"
+
+
+def test_the_first_party_hosts_come_from_the_environment_only():
+    assert anthropic_provider._first_party_hosts({}) == frozenset()
+    assert anthropic_provider._first_party_hosts(
+        {"ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS": " 127.0.0.1:8901, Proxy.Local:9000 ,"}) == {
+        "127.0.0.1:8901", "proxy.local:9000"}
+
+
+async def test_a_listed_metering_proxy_is_treated_as_anthropics_host(monkeypatch, tight_history):
+    monkeypatch.setattr(anthropic_provider, "_FIRST_PARTY_HOSTS", frozenset({"127.0.0.1:8901"}))
+    _, sent, headers = await claude_turn(monkeypatch, THREE_STEPS, base_url=PROXY)
+    assert all(body["context_management"] == {"edits": [CLEAR]} for body in sent)
+    assert CONTEXT_BETA in headers[0]["anthropic-beta"]
+    assert sent[3]["messages"][:3] == sent[1]["messages"][:3]            # nothing trimmed here
+
+
+@pytest.mark.parametrize("listed", [frozenset(), frozenset({"127.0.0.1:8902"}), frozenset({"127.0.0.1"})])
+async def test_an_unlisted_proxy_still_trims_locally(monkeypatch, tight_history, listed):
+    monkeypatch.setattr(anthropic_provider, "_FIRST_PARTY_HOSTS", listed)
+    _, sent, _ = await claude_turn(monkeypatch, THREE_STEPS, base_url=PROXY)
+    assert all("context_management" not in body for body in sent)
+    assert "result-one" not in results_text(sent[3])
+
+
+async def test_a_listed_proxy_still_needs_a_claude_model(monkeypatch):
+    monkeypatch.setattr(anthropic_provider, "_FIRST_PARTY_HOSTS", frozenset({"127.0.0.1:8901"}))
+    _, sent, _ = await claude_turn(monkeypatch, [tool_reply("toolu_01", "one", "s1"), END],
+                                   model="other-model", base_url=PROXY)
+    assert all("context_management" not in body for body in sent)

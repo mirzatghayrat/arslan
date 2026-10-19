@@ -27,8 +27,9 @@ v0.1.63 has run 7 days with no protocol-class 400 from Claude in M2 and M1 holds
 from __future__ import annotations
 
 import json
+import os
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 from urllib.parse import urlparse
 
@@ -91,6 +92,20 @@ _CLEAR = {"type": "clear_tool_uses_20250919",
 # Context editing goes only to Claude on Anthropic's own host: an Anthropic-protocol endpoint elsewhere
 # may ignore the field silently, which would leave the turn with no trimming at all.
 _OFFICIAL_HOST = "api.anthropic.com"
+
+
+def _first_party_hosts(env: Mapping[str, str] | None = None) -> frozenset[str]:
+    """host:port entries of ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS (comma-separated, lower-cased)."""
+    raw = (os.environ if env is None else env).get("ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS", "")
+    return frozenset(item.strip().lower() for item in raw.split(",") if item.strip())
+
+
+# A metering proxy that forwards byte for byte to api.anthropic.com (the bench's, at
+# http://127.0.0.1:8901/c/<label>, which keeps the key out of Arslan) counts as Anthropic's host, so
+# acceptance runs see the production path. Env only, never a setting; read once at startup; an exact
+# host:port match. Removed when the bench no longer meters Claude through a local proxy (decided at
+# R63, with the M1 / M2 runs).
+_FIRST_PARTY_HOSTS = _first_party_hosts()
 _KEEP_RESULTS = ("update_plan", "task_progress", "read_skill")
 
 
@@ -219,8 +234,12 @@ class AnthropicProvider(BaseLLMProvider):
         return True
 
     def _clears_server_side(self) -> bool:
-        """Claude on Anthropic's own host: the only endpoint asked to clear old tool results."""
-        return self._is_claude() and urlparse(self.base_url).hostname == _OFFICIAL_HOST
+        """Claude on Anthropic's own host (or a listed verbatim proxy to it): the only endpoint asked
+        to clear old tool results."""
+        url = urlparse(self.base_url)
+        host = (url.hostname or "").lower()
+        return self._is_claude() and (host == _OFFICIAL_HOST
+                                      or (f"{host}:{url.port}" if url.port else host) in _FIRST_PARTY_HOSTS)
 
     def trims_context_server_side(self) -> bool:
         """The API clears old tool results itself: Claude on Anthropic's host, unless it refused."""
