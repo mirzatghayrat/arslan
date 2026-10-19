@@ -6,6 +6,7 @@ unreadable .xlsx, and heartbeats resetting the driver's idle timer. Each has a t
 import json
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -591,3 +592,74 @@ def test_the_anthropic_upstream_gets_only_its_key_header_and_no_openai_stream_op
     assert meter.cost("claude-unlisted-9", 0, 1_000_000, 0) == meter.PRICE["claude-fable-5-1"][1]
     assert meter.wants_usage_option(True, {"messages": []}, "/v1/messages", anthropic=True) is False
     assert meter.wants_usage_option(True, {"messages": []}, "/v1/chat/completions", anthropic=False) is True
+
+
+def test_a_fresh_instance_answers_during_the_run_and_is_gone_after(tmp_path, monkeypatch):
+    """U10: each run gets an Arslan on an empty data folder; nothing it learns reaches the next run."""
+    import socket
+    from scripts.kernel_bench import runner
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    site = tmp_path / "site"
+    (site / "api/v1").mkdir(parents=True)
+    (site / "api/v1/health").write_text("ok")
+    script = tmp_path / "start.sh"                 # stands in for start_arslan.sh <name> <port>
+    script.write_text(f'#!/bin/bash\necho "$1" > {tmp_path}/name\n'
+                      f'exec {sys.executable} -m http.server "$2" --bind 127.0.0.1 --directory {site}\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "START_ARSLAN", script)
+    monkeypatch.setattr(runner, "ARSLAN_API", f"http://127.0.0.1:{port}/api/v1")
+    left = tmp_path / "data" / "fresh-arslan-T9-r1"
+    left.mkdir(parents=True)
+    (left / "arslan.db").write_text("an earlier attempt")
+    with runner.fresh_instance("arslan-T9-r1", "arslan") as data:
+        assert runner._healthy(runner.ARSLAN_API)
+        assert data == left and not (left / "arslan.db").exists()       # wiped before the start
+        leaving = time.monotonic()
+    assert time.monotonic() - leaving < 10                                # SIGTERM, not the 30 s fallback
+    assert (tmp_path / "name").read_text().strip() == "fresh-arslan-T9-r1"
+    assert not runner._healthy(runner.ARSLAN_API)                         # stopped with its group
+
+
+def test_a_fresh_instance_refuses_a_port_that_already_answers(tmp_path, monkeypatch):
+    """A leftover instance on the port would silently be the one under test."""
+    import pytest
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "_healthy", lambda api: True)
+    started = []
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *a, **k: started.append(a))
+    with pytest.raises(SystemExit):
+        with runner.fresh_instance("arslan-T9-r1", "arslan"):
+            pass
+    assert started == []
+
+
+def test_with_fresh_instances_each_arslan_run_has_its_own_until_it_settles(tmp_path, monkeypatch):
+    import contextlib
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    events = []
+
+    @contextlib.contextmanager
+    def fake(label, who):
+        events.append(("up", label))
+        yield tmp_path / "data" / f"fresh-{label}"
+        events.append(("down", label))
+    monkeypatch.setattr(runner, "fresh_instance", fake)
+    monkeypatch.setattr(runner, "settle", lambda label, *a, **k: events.append(("settle", label)) or 0.0)
+    seen = []
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: seen.append(ctx.get("arslan_data")) or {"score": 3})
+    script = "import json; print(json.dumps({'end': 'done', 'final': 'ok'}))"
+    monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+    monkeypatch.setattr(runner, "FRESH", True)
+    for n in (1, 2):
+        runner.run_one("T9", "arslan", n, {"T9": "edit {dir}"}, "sb")
+    assert events == [("up", "arslan-T9-r1"), ("settle", "arslan-T9-r1"), ("down", "arslan-T9-r1"),
+                      ("up", "arslan-T9-r2"), ("settle", "arslan-T9-r2"), ("down", "arslan-T9-r2")]
+    assert seen == [str(tmp_path / "data" / "fresh-arslan-T9-r1"), str(tmp_path / "data" / "fresh-arslan-T9-r2")]
+    monkeypatch.setattr(runner, "FRESH", False)
+    runner.run_one("T9", "arslan", 3, {"T9": "edit {dir}"}, "sb")
+    assert events[6:] == [("settle", "arslan-T9-r3")] and seen[-1] is None     # off: the shared instance

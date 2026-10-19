@@ -22,6 +22,10 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
   mixes them with new ones.
 - **Usage per run** counts only the run's own label from when it started, so a label reused in a
   later round or on another model does not add the earlier spend.
+- **`BENCH_FRESH_INSTANCE=1`** starts a brand-new Arslan for every run (`start_arslan.sh fresh-<label>`,
+  on the port in `ARSLAN_API`) and stops it once the run's after-turn calls have settled. Use it for
+  baselines and before/after comparisons (U10): one instance carries what it learned into the next
+  run (K1's after-runs, T11) and makes idle-time calls (E18). Nothing may already answer on the port.
 - **Set `BENCH_ROUND` for every round** (and a separate one per model, or for a rerun). It goes
   into the run label (`arslan-T2-r1-k1after`). The meter's per-run cap counts a label over the
   proxy's whole life, so a reused label can be refused with 402 before it starts, and its run
