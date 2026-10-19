@@ -124,26 +124,57 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
 
 
 # 0.1.62 F2 ①: a single simple command whose program the command policy grades LOW is a read.
-# Anything with shell syntax is not judged. The LOW list also lets through a few forms that write
+# Other shell syntax is not judged (0.1.63 D3 adds chains of such reads). The LOW list also lets through a few forms that write
 # or run something else; those are not reads. Everything else stays external_write (not
 # local_write: a local_write that failed may be repeated, and a command killed by a signal or
 # stopped outside the sandbox has an unknown outcome).
-_SHELL_SYNTAX = re.compile(r"[|&;<>`$()\n\\]")
 _FIND_WRITES = ("-delete", "-exec", "-ok", "-fprint", "-fls")
+# 0.1.63 D3: a chain of reads joined by && || ; | is a read (K1's after-runs, T1: `pwd && find / … 2>/dev/null`
+# stopped by its time limit outside the sandbox was "outcome unknown"). Never judged: command or
+# process substitution, backticks, here-docs and other input redirection, subshells, line continuation,
+# background `&`, and any redirection except these output-discarding ones, matched as whole tokens.
+_NEVER_JUDGED = re.compile(r"[`$()\n\\]")
+_DISCARDED = re.compile(r"(?:(?<=^)|(?<=[\s;&|]))(?:(?:2|&)?>\s*/dev/null|2>&1)(?=$|[\s;&|])")
+_CHAIN = {"&&", "||", ";", "|"}
+# Graded HIGH by command_policy (it lists programs, not shell builtins) yet they only print or do nothing.
+_HARMLESS = {"pwd", "echo", "true"}
 
 
 def _reads_only(arguments: dict) -> bool:
-    from server.services import command_policy, terminal_policy
+    from server.services import terminal_policy
     text = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
-    if not text or _SHELL_SYNTAX.search(text):
+    if not text or _NEVER_JUDGED.search(text):
         return False
     try:
-        words = shlex.split(text)
+        lexer = shlex.shlex(_DISCARDED.sub(" ", text), posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
     except ValueError:
         return False
-    if not words:
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token in _CHAIN:
+            if not segments[-1]:
+                return False                 # `; ;`, a leading `|`: not a chain of commands
+            segments.append([])
+        elif token and set(token) <= set("&|;<>"):
+            return False                     # any other operator: `>` `>>` `<` to a file, `&`, `|&`, `;;`
+        else:
+            segments[-1].append(token)
+    if not segments[-1]:
+        segments.pop()                       # one trailing `;`
+    if not segments or not all(_one_read(words) for words in segments):
         return False
+    return not _outbound(text)               # a read never reaches beyond this Mac
+
+
+def _one_read(words: list[str]) -> bool:
+    """One simple command that only reads (0.1.62 F2 ①): the command policy grades it LOW, with the
+    few LOW spellings that write or run something else excluded."""
+    from server.services import command_policy
     name, args = words[0], words[1:]
+    if name in _HARMLESS:
+        return True
     if command_policy.classify(name, args) != "LOW":
         return False
     if name == "find" and any(a.startswith(_FIND_WRITES) for a in args):
