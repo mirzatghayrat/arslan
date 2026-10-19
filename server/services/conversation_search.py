@@ -50,11 +50,11 @@ async def search(query: str, *, since: datetime | None = None, until: datetime |
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='arslan_messages_fts'"))).first() is not None
         if has_fts and len(q) >= 3:
             params["match"] = _fts_query(q)
-            sql = (f"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp FROM arslan_messages_fts f "
+            sql = (f"SELECT m.id, m.conversation_id, m.role, m.content, m.display_content, m.timestamp FROM arslan_messages_fts f "
                    f"JOIN arslan_messages m ON m.id = f.rowid WHERE arslan_messages_fts MATCH :match AND {where} "
                    f"ORDER BY m.timestamp DESC LIMIT :limit")
         else:
-            sql = (f"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp FROM arslan_messages m "
+            sql = (f"SELECT m.id, m.conversation_id, m.role, m.content, m.display_content, m.timestamp FROM arslan_messages m "
                    f"WHERE m.content LIKE :like AND {where} ORDER BY m.timestamp DESC LIMIT :limit")
         rows = (await db.execute(text(sql), params)).all()
         firsts: dict[str, str] = {}
@@ -71,6 +71,7 @@ async def search(query: str, *, since: datetime | None = None, until: datetime |
                     "conversation_id": r.conversation_id, "message_id": r.id,
                     "who": "you" if r.role == "user" else "Arslan",
                     "when": ts.strftime("%Y-%m-%d %H:%M") if ts else None,
-                    "snippet": _snippet(r.content, q),
+                    # K2: the reply as shown, without the turn-tool summary in content.
+                    "snippet": _snippet(r.display_content or r.content, q),
                     "link": f"#conversation={r.conversation_id}"})
     return out

@@ -11,6 +11,20 @@
 | 分支 | `claude/0162-k2-context-window` |
 | 迁移号 | 无（不加角色、不加列；工具摘要写进现有的 `content` 列） |
 
+## 更正与实施记录
+
+- **更正 E26（⓪Plan 2026-10-20 定）：** 窗口取自静态的模型家族表，不取自 model_catalog。
+  - 理由是铁规矩：对话路径从不读 `ModelCatalogCache`（见 `server/db/models.py` 里它的说明）。
+  - 实现在 `server/orchestrator/context_window.py`。认不出的模型用保守默认值。
+  - 每次运行都记下窗口从哪来（`execution_budget.history.source`：`table` / `default` / `fixed` / `unresolved`），M2 可以统计退回默认值的比例。
+- **拆成两个 PR：**
+  - **K2a**：按窗口给历史、工具摘要、约 75% 时压缩、搜索片段。推动「三轮追问 3/3」。
+  - **K2b**：抽事实和压缩挪到回合锁外（U5 ①②、M3 第 11 条）。K2a 合后单独出计划，因为它要碰回合锁、任务租约和 `stream_end` 之后的帧。
+- **回退开关用环境变量，不加界面设置：**
+  - 旧固定预算：`ARSLAN_WORKING_TOKEN_BUDGET`，本来就有。
+  - 关掉工具摘要：`ARSLAN_TURN_TOOL_SUMMARY=off`。
+  - 删除条件不变，见「风险与回退」。
+
 ## 目标
 
 下一轮知道上一轮做了什么、动了哪些文件；历史长度按模型窗口算，不再固定 3,000；回合后的抽事实和压缩不再挡住下一条消息（v0.1.63 计划 K-2）。
@@ -25,7 +39,7 @@
 ## 改哪些文件
 
 - `server/orchestrator/memory.py`
-  - `:19`：历史预算改为模型窗口的一定比例，并加封顶。窗口从 `server/services/model_catalog.py` 取（`_info` 的 `context_window`，`:62-69`）。这个值来自供应商的模型列表，可能为空，取不到时用保守默认值。
+  - `:19`：历史预算改为模型窗口的一定比例，并加封顶。~~窗口从 `server/services/model_catalog.py` 取~~，改为从静态的家族表取（更正 E26）。取不到时用保守默认值。
   - `:100-125`：按新预算组装；最近 N 轮保留原文。
   - `maybe_compact`（`:128-186`）：只在约 75% 时压缩一次。先把旧的工具摘要换成占位（免费），不够再摘要。摘要用固定结构（目标、进度、决定、动过的文件、下一步），原地更新。
 - `server/orchestrator/arslan.py`

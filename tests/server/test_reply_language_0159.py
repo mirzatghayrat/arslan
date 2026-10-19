@@ -101,7 +101,7 @@ async def test_a_background_job_answers_in_the_language_the_user_asked_in(memdb,
     # The goal can come out in the wrong language (that is the bug); the user's own message wins.
     seen = _capture_system(monkeypatch)
 
-    async def fake_context(conversation_id):
+    async def fake_context(conversation_id, **kwargs):   # K2 passes the turn's budget
         return {"summary": "", "history": [
             {"role": "user", "content": "In the background: copy this year's invoice PDFs, then tell me "
                                         "which months are missing."},

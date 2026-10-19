@@ -17,6 +17,7 @@ from server.orchestrator import (
     promise_guard,
     run_trace,
     tool_loop,
+    turn_tools,
 )
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.tool_caller import ToolCaller
@@ -449,7 +450,7 @@ async def handle_user_message(
                                       or active_context.no_learning):
         from server.services import turn_facts
         await turn_facts.capture(conversation_id, user_message, emit)
-    await memory.maybe_compact(conversation_id)
+    await memory.maybe_compact(conversation_id, budget=await memory.turn_budget(conversation_id, has_images=bool(images)))
 
 
 
@@ -621,7 +622,7 @@ async def _with_project_card(facts: str) -> str:
 
 async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations) -> str:
     """One background job's execution: the answer machinery without the chat stream."""
-    ctx = await memory.assemble_working_context(conversation_id)
+    ctx = await memory.assemble_working_context(conversation_id, budget=await memory.turn_budget(conversation_id))
     from server.services import personal_context
     if personal_context.current() is not None:
         personal = await personal_context.assemble(goal)
@@ -663,7 +664,9 @@ async def _handle_answer_body(
     turn_delegated: bool = False,
     source: str | None = None,
 ) -> str | None:
-    ctx = await memory.assemble_working_context(conversation_id)
+    # K2: history by the turn model's context window (context_window), not a fixed 3000.
+    ctx = await memory.assemble_working_context(
+        conversation_id, budget=await memory.turn_budget(conversation_id, has_images=bool(images)))
     from server.services import personal_context
     if personal_context.current() is not None:
         personal = await personal_context.assemble(user_message)
@@ -818,7 +821,15 @@ async def _handle_answer_body(
     if full and footer:
         full += footer
         emit({"type": "stream_chunk", "content": footer})
-    msg_id = await memory.add_message(conversation_id, "arslan", full)
+    # K2: the turn's tool summary rides after the reply in `content` (the model's history);
+    # display_content keeps the reply alone. No block for an empty reply: readers fall back to
+    # `content` when display_content is empty, and would show it.
+    tools_block = turn_tools.block(result.get("tool_trace")) if full else ""
+    if tools_block:
+        msg_id = await memory.add_message(conversation_id, "arslan", f"{full}\n\n{tools_block}",
+                                          display_content=full)
+    else:
+        msg_id = await memory.add_message(conversation_id, "arslan", full)
     # S3-M3 Task 5 seam choice: the answer turn's usage rides the stream_end the body
     # ALREADY emits (one frame shape for dispatch + answer, no extra answer_usage frame).
     # _handle_answer_body runs inside the host Run's usage_sink.collecting()

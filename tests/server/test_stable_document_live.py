@@ -110,7 +110,8 @@ async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path
     async with execution_db() as db:
         answers = (await db.scalars(select(ArslanMessage).where(
             ArslanMessage.conversation_id == case_id, ArslanMessage.role == "arslan"))).all()
-    persisted = any(message.content == result for message in answers)
+    # K2: content carries the turn's tool summary after the reply; display_content is the reply.
+    persisted = any((message.display_content or message.content) == result for message in answers)
     persist(record_path, {"case": case_id, "answer": result, "events": events,
         "persisted_in_isolated_db": persisted, "preflight_sha256": digest,
         "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=budget.ROOT, text=True).strip(),

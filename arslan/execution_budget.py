@@ -116,6 +116,7 @@ class Budget:
         # 0.1.63 K1: what a provider changed in the conversation before the model read it
         # (thinking blocks dropped, old tool results cleared), counts only, for the run record.
         self.context_events: list[dict] = []
+        self.history: dict | None = None
 
     @classmethod
     def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None) -> Budget:
@@ -216,6 +217,11 @@ class Budget:
         self.context_events.append({"kind": kind, "reason": reason, "count": count,
                                     "request": self.model_requests})
 
+    def note_history(self, *, window: int, source: str, budget: int) -> None:
+        """How much conversation history this run's requests may carry, and where the model's
+        window came from ("table", "default", "fixed", "unresolved"), so M2 can count fallbacks (K2)."""
+        self.history = {"window": window, "source": source, "budget": budget}
+
     def snapshot(self) -> dict:
         return {"id": self.id, "limits": asdict(self.limits),
                 "used": {"model_requests": self.model_requests, "tool_calls": self.tool_calls,
@@ -224,7 +230,8 @@ class Budget:
                 "stop_reason": self.stop_reason,
                 "token_limit_mode": "post_response_admission", "monetary_limit": False,
                 **({"soft_limits": asdict(self.soft)} if self.soft is not None else {}),
-                **({"context_events": list(self.context_events)} if self.context_events else {})}
+                **({"context_events": list(self.context_events)} if self.context_events else {}),
+                **({"history": dict(self.history)} if self.history else {})}
 
 
 _current: ContextVar[Budget | None] = ContextVar("execution_budget", default=None)
