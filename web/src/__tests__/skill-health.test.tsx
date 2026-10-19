@@ -72,7 +72,7 @@ beforeEach(() => {
 
 describe("CapabilityCatalog — PC-5 skill health", () => {
   it("dot starts muted (unchecked) with the honest 'not checked' tooltip", async () => {
-    render(<CapabilityCatalog kind="skills" />);
+    render(<CapabilityCatalog />);
     await screen.findByText("Runner");
     const dot = screen.getByTestId("skill-health-dot-runner");
     expect(dot.className).toContain("bg-subtle-foreground");
@@ -81,7 +81,7 @@ describe("CapabilityCatalog — PC-5 skill health", () => {
 
   it("probe → ok: success dot + panel shows a runnable script", async () => {
     m.checkSkillHealth.mockResolvedValueOnce(OK_HEALTH);
-    render(<CapabilityCatalog kind="skills" />);
+    render(<CapabilityCatalog />);
     await screen.findByText("Runner");
     fireEvent.click(screen.getByTestId("skill-health-check-runner"));
     await waitFor(() => {
@@ -97,7 +97,7 @@ describe("CapabilityCatalog — PC-5 skill health", () => {
 
   it("probe → sandbox unavailable: warning dot + honest reason, never a false 'runnable'", async () => {
     m.checkSkillHealth.mockResolvedValueOnce(SANDBOX_UNAVAIL_HEALTH);
-    render(<CapabilityCatalog kind="skills" />);
+    render(<CapabilityCatalog />);
     await screen.findByText("Runner");
     fireEvent.click(screen.getByTestId("skill-health-check-runner"));
     await waitFor(() => {
@@ -113,7 +113,7 @@ describe("CapabilityCatalog — PC-5 skill health", () => {
 
   it("probe → degraded storage: danger dot + missing file surfaced", async () => {
     m.checkSkillHealth.mockResolvedValueOnce(DEGRADED_HEALTH);
-    render(<CapabilityCatalog kind="skills" />);
+    render(<CapabilityCatalog />);
     await screen.findByText("Runner");
     fireEvent.click(screen.getByTestId("skill-health-check-runner"));
     await waitFor(() => {
@@ -126,7 +126,7 @@ describe("CapabilityCatalog — PC-5 skill health", () => {
 
   it("second click toggles the panel closed without re-probing", async () => {
     m.checkSkillHealth.mockResolvedValueOnce(OK_HEALTH);
-    render(<CapabilityCatalog kind="skills" />);
+    render(<CapabilityCatalog />);
     await screen.findByText("Runner");
     fireEvent.click(screen.getByTestId("skill-health-check-runner"));
     await screen.findByTestId("skill-health-panel-runner");

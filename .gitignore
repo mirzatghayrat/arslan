@@ -8,6 +8,10 @@ __pycache__/
 # web/node_modules was committed exactly that way once.
 .venv
 venv/
+# Root-level tool output committed by mistake once (C2f): vitest's cache under ./node_modules and
+# the Playwright MCP's page snapshots. No trailing slash, for the reason above.
+/node_modules
+.playwright-mcp
 env/
 dist/
 build/

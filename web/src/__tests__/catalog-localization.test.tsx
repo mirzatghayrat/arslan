@@ -1,33 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 import { catalogMessages } from "../locales/catalog";
-import { uiMessages } from "../locales/ui";
 import { catalogText } from "../lib/catalogDisplay";
-import CapabilityCatalog from "../components/CapabilityCatalog";
 
-vi.mock("../api/client", () => ({ api: {
-  getRegistry: vi.fn(async () => ({ skills: [], toolsets: [{
-    key: "file_operations", name: "File Operations", description: "Built-in source description",
-    name_key: "catalogUI.file_operations.name", description_key: "catalogUI.file_operations.description",
-    tier: "safe", status: "wired", assignable: true, tools: [],
-    degraded: true, warning_code: "unsandboxed_python", warning: "Legacy source warning",
-  }] })),
-  listSpawns: vi.fn(async () => []),
-} }));
-afterEach(() => { cleanup(); void i18n.changeLanguage("en"); });
+// C2f: the tools tab that rendered these names is gone (ToolsView); the helper and the six-language
+// parity of the catalog copy stay tested here.
+afterEach(() => { void i18n.changeLanguage("en"); });
 
 describe("catalog display localization", () => {
-  it.each(SUPPORTED_LANGUAGES)("renders and searches translated built-ins in %s", async language => {
-    await i18n.changeLanguage(language);
-    render(<CapabilityCatalog kind="tools" />);
-    const copy = catalogMessages[language].file_operations;
-    expect(await screen.findByText(copy.name)).toBeInTheDocument();
-    expect(screen.getByText(copy.description)).toBeInTheDocument();
-    expect(screen.getByText(uiMessages[language].unsandboxedPython)).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: copy.name } });
-    expect(screen.getByText(copy.name)).toBeInTheDocument();
-    expect(screen.queryByText("Legacy source warning")).not.toBeInTheDocument();
+  it("falls back to the source text for custom or unknown keys", () => {
     expect(catalogText(i18n.t.bind(i18n), undefined, "My custom name")).toBe("My custom name");
     expect(catalogText(i18n.t.bind(i18n), "catalogUI.future.name", "Future name")).toBe("Future name");
     expect(catalogText(i18n.t.bind(i18n), "settings.title", "External text")).toBe("External text");
