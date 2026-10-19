@@ -18,7 +18,7 @@ def _context(caller):
     if caller.actor == "spawn":
         if caller.spawn_id is None:
             return None
-        return replace(ctx, expert_id=str(caller.spawn_id), explicit_save_ref=None, allow_global_save=False)
+        return pc.worker_context(ctx, str(caller.spawn_id))
     return ctx
 
 

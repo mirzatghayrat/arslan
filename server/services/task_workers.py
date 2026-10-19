@@ -115,8 +115,7 @@ async def _execute(row, method, job, root, parent_tools):
         await _save(row.id, "running")
         await root.checkpoint("worker_started")
         token = _worker.set(scope)
-        context = replace(root_context, expert_id=f"worker:{row.id}", no_memory=True,
-            explicit_save_ref=None, explicit_save_digest=None, allow_global_save=False, allow_sensitive=False)
+        context = replace(pc.worker_context(root_context, f"worker:{row.id}"), no_memory=True)
         run_id = None
         def sink(event):
             nonlocal run_id
