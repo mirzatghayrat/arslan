@@ -65,9 +65,12 @@ _TEST_CRYPTO_SALT = bytes(range(16))
 
 def boot_schema(connection) -> None:
     """The schema as every launch leaves it (storage_boot.initialize, without the crypto steps):
-    the tables, the migrations, then memory v2 activation. Activating without the migrations leaves
-    views over tables that do not exist yet, and the next real boot fails on them (C2a)."""
+    the upgrade-backup check on the empty file, the tables, the migrations, then memory v2
+    activation. Activating without the migrations leaves views over tables that do not exist yet,
+    and the next real boot fails on them (C2a). Checking for an upgrade backup only after create_all
+    (inside apply_pending) sees a "pending upgrade" and zips every fresh test database."""
     from server.db.migrations import runner
+    runner.prepare_upgrade_backup(connection)
     Base.metadata.create_all(connection)
     runner.apply_pending(connection)
     activate_sync(connection)
@@ -77,6 +80,7 @@ def _legacy_schema(connection) -> None:
     """Memory v1, which no launch has left since v0.1.40: only for files marked `memory_v1` (registered
     in pyproject.toml with its removal condition; tests/server/test_memory_v1_marker_scope.py pins the list)."""
     from server.db.migrations import runner
+    runner.prepare_upgrade_backup(connection)
     Base.metadata.create_all(connection)
     runner.apply_pending(connection)
 
