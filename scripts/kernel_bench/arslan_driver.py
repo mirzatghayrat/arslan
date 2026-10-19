@@ -42,6 +42,12 @@ DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
 # anything outward or that drives other apps — Apple Events bypass the file sandbox
 # (Finder does the work) — except Reminders for T1, which is the task itself.
 CARDS = os.environ.get("BENCH_CARDS", "")
+# Without the bench's outer sandbox (BENCH_SANDBOX=none, U10 choice A), Arslan's own sandbox is the only
+# thing between a command and the user's real disk: a card that would let a command out of it (run outside
+# the sandbox, or re-run after a stop) must be declined, whatever BENCH_CARDS says (③Hands' review of #234:
+# 8 such cards were approved in the first option-A rounds and ran as the user on the real disk).
+if os.environ.get("BENCH_SANDBOX") == "none":
+    CARDS = "sandboxed"
 APPROVE_IN_SANDBOX = {"", "delete", "install"}
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
