@@ -140,7 +140,10 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
 # - Outside the tell, side-effect-free `set`s are allowed too, by grammar (_safe_statement): literals,
 #   `current date`, date arithmetic on variables set before, date properties of those, `as integer`.
 # - A compile-time "syntax error:" is known: osascript compiles the whole script first, so nothing in
-#   it ran. Compiling may launch the app to load its dictionary; no script statement runs.
+#   it ran. But the script controls its stderr (③Hands' review: a `log` of that line and a killed
+#   parent, or an error whose message ends with it), so it counts only for a script that passes the
+#   same allowlist, to one app named plainly, AND that osacompile confirms does not compile
+#   (_fails_to_compile, which never runs it; compiling may load the app's dictionary).
 # - The mac_applescript tool gets the same rules.
 # - A command the shell could expand before osascript runs ($( ), backticks, $VAR outside single
 #   quotes) is never judged: whatever the shell ran is not in the script.
@@ -296,6 +299,20 @@ def _inline_osascript(command: str) -> str | None:
     return "\n".join(script for flag, script in pairs) if all(flag == "-e" for flag, _ in pairs) else None
 
 
+def _fails_to_compile(script: str) -> bool:
+    """osacompile compiles without running (③Hands checked: a real syntax error exits 1; a script that
+    only prints one compiles, and does not run). Unavailable, timed out or failing to start: False, so the
+    failure stays unknown. Synchronous and bounded: it runs only for an allowlisted script to one app
+    whose last stderr line is a syntax error."""
+    import subprocess
+    try:
+        done = subprocess.run(["/usr/bin/osacompile", "-o", "/dev/null"], input=script, text=True,
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode != 0
+
+
 def _shell_expands(command: str) -> bool:
     """A $ or backtick outside single quotes: the shell may substitute or run something before osascript."""
     quote, escaped = None, False
@@ -327,13 +344,14 @@ def _osascript_refused(script: str, stderr: str) -> bool:
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not script.strip() or not lines:
         return False
-    if _OSA_SYNTAX.search(lines[-1]):
-        return True                          # compiled first: nothing in the script ran
     if _OSA_ELSEWHERE.search(script) or not _only_tells(script):
         return False
     apps = {name.lower() for name in _OSA_TELLS.findall(script)}
     if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):
         return False
+    if _OSA_SYNTAX.search(lines[-1]):
+        # Compiled first, so nothing ran, if it really did not compile: the script controls its stderr.
+        return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])

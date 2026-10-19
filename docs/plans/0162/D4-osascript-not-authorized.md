@@ -84,7 +84,13 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
   - `+ - * / div mod`，日、时、分、周单位，`as integer` 这类转换；
   - 单行的 `if … then set …`。
   - 不许调用、handler、`of` 一个 App 或别的对象。
-- **编译期 `syntax error:` 算已知失败**：osascript 先编译整段，所以脚本里什么都没跑。编译时可能会启动那个 App 去读它的字典，但脚本里的语句一句都不跑。只认编译期的格式（`N:M: syntax error: …`），脚本自己 `error "syntax error: …"` 打出来的是 execution error，不算。
+- **编译期 `syntax error:` 算已知失败**：osascript 先编译整段，所以脚本里什么都没跑。
+  - 只认编译期的格式（`N:M: syntax error: …`）。
+  - stderr 是脚本自己能控制的（③Hands 审：先 `log` 一行假的，再杀掉父进程；或者 error 的消息结尾带这一行）。所以三条都满足才算：
+    - 脚本过得了和「被拒绝」同一份白名单；
+    - 只对一个 App，按名字点名，不是路径；
+    - `osacompile -o /dev/null` 确认它编译不过（`_fails_to_compile`）。osacompile 只编译不运行，可能会读 App 的字典；它不可用、超时或出错时，结果仍算不明。
+  - 确认步骤有一个 macOS 专用测试（`macos` 标记总数 55 → 56，测试和 ci.yml 两处一起改）。
 - **`mac_applescript` 工具套同一套规则**：脚本取自参数，stderr 取自结果的 `error`。超时和其他错误码照旧算不明。实例：T1 r1 的 -1708 发生在 `make new list` 之后，不算已知。
 - **顺带补上第一版的口子**：命令里有在单引号之外的 `$` 或反引号时，一律不判。理由：shell 会先替换、先跑，osascript 看到的已经不是写出来的脚本。第一版里，`-e "…$(curl …)…"` 碰上 -1743，会被当成「什么都没发生」。
 

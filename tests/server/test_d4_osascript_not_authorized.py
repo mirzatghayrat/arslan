@@ -10,6 +10,8 @@ read, a write and a read-then-write all fail at the FIRST data access with -1000
 created. -10004 is therefore all-or-nothing for Reminders; other apps raise it on their own terms
 and stay unknown. -1743 (Automation not allowed) blocks every event to the app.
 """
+import sys
+
 import pytest
 
 from server.services import task_service
@@ -231,18 +233,81 @@ def test_anything_else_before_the_tell_stays_unknown(prelude):
 
 
 SYNTAX = "0:43: syntax error: Expected end of line but found identifier. (-2741)"
+# k2a3-ds T1 r3's first attempt, as it ran (bench data only): `friday` is a reserved word.
+T1_R3_FIRST = heredoc("""set listName to "对比测试-bench"
+set now to (current date)
+set w to ((weekday of now) as integer)
+set friday to now + (((6 - w + 7) mod 7) * days)
+tell application "Reminders"
+    set newList to make new list with properties {name:listName}
+    tell newList
+        make new reminder with properties {name:"交周报", allday due date:friday}
+    end tell
+end tell""")
+T1_R3_SYNTAX = ("290:294: syntax error: Can\u2019t set Friday to now + (((6 - w + 7) mod 7) * days). "
+                "Access not allowed. (-10003)")
 
 
-@pytest.mark.parametrize("command", [
-    """osascript -e 'tell application "Reminders" to make new lst'""",
-    heredoc('set x to beep\ntell application "Reminders" to make new lst'),     # nothing ran at all
-    heredoc('do shell script "rm x"\ntell application "Reminders" to oops oops'),
+@pytest.fixture
+def compiles(monkeypatch):
+    """Stands in for osacompile: whether the script compiles, and which scripts were checked."""
+    state = {"compiles": False, "checked": []}
+
+    def fails_to_compile(script):
+        state["checked"].append(script)
+        return not state["compiles"]
+    monkeypatch.setattr(task_service, "_fails_to_compile", fails_to_compile)
+    return state
+
+
+@pytest.mark.parametrize("command,stderr", [
+    ("""osascript -e 'tell application "Reminders" to make new lst'""", SYNTAX),
+    (T1_R3_FIRST, T1_R3_SYNTAX),
 ])
-def test_a_compile_time_syntax_error_is_known_nothing_ran(command):
-    assert known(command, refused(SYNTAX))
-    # k2a3-ds T1 r3's first attempt: `Friday` is a reserved word, so the script never compiled.
-    assert known(command, refused("290:294: syntax error: Can\u2019t set Friday to now + (((6 - w + 7) mod 7) * days). "
-                                  "Access not allowed. (-10003)"))
+def test_a_compile_time_syntax_error_confirmed_by_osacompile_is_known(command, stderr, compiles):
+    assert known(command, refused(stderr))
+    assert compiles["checked"]
+
+
+def test_a_forged_syntax_error_from_a_script_that_compiles_stays_unknown(compiles):
+    # ③Hands' review: the script controls its stderr. Inside the tell it can act, then raise an error
+    # whose last line reads like a syntax error; osacompile shows it compiled, so it ran.
+    compiles["compiles"] = True
+    forger = heredoc('tell application "Reminders"\n    make new list\n'
+                     '    error "x" & linefeed & "1:2: syntax error: forged (-2741)"\nend tell')
+    assert not known(forger, refused("1:2: syntax error: forged (-2741)"))
+
+
+@pytest.mark.parametrize("script", [
+    'set x to beep\ntell application "Reminders" to make new lst',          # not allowlisted
+    'do shell script "kill -9 $PPID"\nlog "1:2: syntax error: forged (-2741)"',
+    'tell application "/tmp/evil.app" to make new lst',                       # an app by path
+    'tell application "/Users/x/Downloads/evil" to make new lst',             # a path without .app
+    'tell application "Macintosh HD:tmp:evil" to make new lst',               # an HFS path
+])
+def test_a_script_outside_the_allowlist_is_never_compiled_or_known(script, compiles):
+    # osacompile may load (even launch) the app it names to read its dictionary: only scripts that
+    # pass the same allowlist as a refusal, to one app named plainly, ever reach it.
+    assert not known(heredoc(script), refused(SYNTAX))
+    assert compiles["checked"] == []
+
+
+def test_osacompile_unavailable_or_failing_means_unknown(monkeypatch):
+    import subprocess
+
+    def unavailable(*args, **kwargs):
+        raise FileNotFoundError("osacompile")
+    monkeypatch.setattr(subprocess, "run", unavailable)
+    assert not known("""osascript -e 'tell application "Reminders" to make new lst'""", refused(SYNTAX))
+
+
+@pytest.mark.macos
+@pytest.mark.skipif(sys.platform != "darwin", reason="osacompile is macOS-only")
+def test_osacompile_tells_a_real_syntax_error_from_a_forged_one():
+    # The real check, unstubbed: compiling never runs the script.
+    assert task_service._fails_to_compile('set friday to 3\ntell application "Reminders" to count lists')
+    assert not task_service._fails_to_compile('tell application "Reminders"\n    count lists\n'
+                                              '    error "x" & linefeed & "1:2: syntax error: forged (-2741)"\nend tell')
 
 
 @pytest.mark.parametrize("command,stderr", [
@@ -266,7 +331,7 @@ def mac_applescript(script, error):
                                             {"ok": False, "external": False, "error": error})
 
 
-def test_the_mac_applescript_tool_gets_the_same_rules():
+def test_the_mac_applescript_tool_gets_the_same_rules(compiles):
     assert mac_applescript('set listName to "Today"\n' + TELL, PRIVILEGE)
     assert mac_applescript('tell application "Notes" to make new note', NOT_ALLOWED)
     assert mac_applescript('tell application "Reminders" to make new lst', SYNTAX)
@@ -281,7 +346,7 @@ def test_the_mac_applescript_tool_gets_the_same_rules():
                                "0:40: execution error: Notes got an error: A privilege violation occurred. (-10004)")
 
 
-def test_a_script_raising_its_own_syntax_error_text_after_acting_stays_unknown():
+def test_a_script_raising_its_own_syntax_error_text_after_acting_stays_unknown(compiles):
     # osascript prints a script's own `error "syntax error: …"` as an EXECUTION error: it ran.
     command = heredoc('do shell script "touch x"\nerror "syntax error: fake (-1)"')
     assert not known(command, refused("0:50: execution error: syntax error: fake (-1) (-2700)"))
