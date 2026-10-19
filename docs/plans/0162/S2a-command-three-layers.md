@@ -88,6 +88,22 @@
 - 沙箱关着或起不来时，第③层也出卡（种类 `command`）：「这一次」或「本对话」，目标 `unsandboxed:*`。
 - 谨慎模式（`ask_all`）照旧：每条都出卡，目标 `text:<原文>`。S5 再收成一个模式设置。
 
+## 开放问题（S2a 设计时定）
+
+**沙箱里不出卡、却能在沙箱外起作用的命令**（③Hands 审 #242 时发现，⓪Plan 2026-10-21 转来；详情见 #242 评论 6277226869）：
+
+| 命令 | 为什么 seatbelt 挡不住 |
+|---|---|
+| `open -a Terminal`、`open https://…` | 经 LaunchServices 启动，起来的 App 不在沙箱里 |
+| `networksetup -setdnsservers …`、`tccutil reset All` | 经系统守护进程执行，不是沙箱里的进程自己写文件 |
+| `killall Finder` | 直接作用于沙箱外的进程 |
+| `screencapture`、`pbpaste` | 今天判定为「直接跑」，读的是屏幕和剪贴板 |
+
+- 它们和 `launchctl`、`crontab`、`defaults write` 是同一类。后三个归在 `login-items`，已经会问。
+- 工作区配置是 `(allow default)`，`mach-lookup` 全开，所以经守护进程的这一类都挡不住。
+- 要定的：这几类进第②层（出卡、只给「这一次」），还是在配置里关掉相应的 `mach-lookup`。实测之前不写结论。
+- 第③层「沙箱里直接跑」的前提，就是沙箱挡得住，这个口子正好在那条前提上。
+
 ## 改哪些文件
 
 - **S2a-1：**
