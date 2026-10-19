@@ -57,6 +57,24 @@ def test_t1_scoring(items, reply, score):
     assert check_t1.check("对比测试-x", reply, today=FRIDAY, reader=lambda name: items)["score"] == score
 
 
+def test_t1_counts_from_the_runs_start_and_reads_small_hours_both_ways():
+    """「明早 9 点」 said at 00:30 may mean that same morning (U10 reruns after midnight scored 2);
+    and a run checked after midnight still counts from the day it started."""
+    thursday = dt.date(2026, 10, 1)
+    same_morning = [{"name": "交周报", "due": _iso(dt.datetime(2026, 10, 2, 9, 0)), "allday": None},
+                    {"name": "买牛奶", "due": None, "allday": _iso(dt.datetime(2026, 10, 2))},
+                    {"name": "给房东打电话", "due": _iso(dt.datetime(2026, 10, 5, 10, 0)), "allday": None}]
+    at_half_past_midnight = dt.datetime(2026, 10, 2, 0, 30)
+    assert check_t1.check("x", started=at_half_past_midnight, reader=lambda n: same_morning)["score"] == 3
+    assert check_t1.check("x", started=at_half_past_midnight, reader=lambda n: _reminders())["score"] == 3
+    assert check_t1.check("x", started=dt.datetime(2026, 10, 2, 8, 0), reader=lambda n: same_morning)["score"] == 2
+    late_thursday = dt.datetime.combine(thursday, dt.time(23, 50))     # checked after midnight
+    thursday_run = [{"name": "交周报", "due": _iso(dt.datetime(2026, 10, 2, 9, 0)), "allday": None},
+                    {"name": "买牛奶", "due": None, "allday": _iso(dt.datetime(2026, 10, 2))},
+                    {"name": "给房东打电话", "due": _iso(dt.datetime(2026, 10, 5, 10, 0)), "allday": None}]
+    assert check_t1.check("x", started=late_thursday, today=FRIDAY, reader=lambda n: thursday_run)["score"] == 3
+
+
 def _table(tmp_path, rows=10, header="公司,职位,链接,发布时间", name="jobs.csv"):
     lines = [header] + [f"公司{i},产品经理{i},https://jobs.example/{i},2026-09-{i + 1:02d}" for i in range(rows)]
     (tmp_path / name).write_text("\n".join(lines), encoding="utf-8")
