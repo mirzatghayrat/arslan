@@ -54,6 +54,11 @@ if os.environ.get("BENCH_SANDBOX") == "none":
 # heredoc" inside the sandbox was declined (K2a's T5, 2026-10-20), so a run failed on the bench's own policy.
 OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell",
                      "git-push", "publish"})
+# Kinds the seatbelt does not contain because a system daemon does the work (③Hands' review of #242):
+# launchctl/crontab hand a job to launchd/cron, which run it unsandboxed and after the turn; `defaults write`
+# goes through cfprefsd; sudo, the macOS roots, keychain secrets and Arslan's keys are never the bench's to
+# approve. Declined like outward kinds; a test pins each name to a terminal_policy rule (rename guard).
+ESCAPES_SANDBOX = frozenset({"login-items", "macos-roots", "keychain-secrets", "arslan-keys", "sudo"})
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
 # everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).
@@ -178,7 +183,7 @@ class TurnTracker:
         rule = frame.get("rule") or ""
         if rule == "apple-events":
             return "-T1-" in self.run_dir          # Reminders is T1's task; other apps are not
-        return rule not in OUTWARD
+        return rule not in OUTWARD | ESCAPES_SANDBOX
 
     def finished(self, now: float, started: float) -> bool:
         if now - started >= RUN_TIMEOUT_S:
