@@ -101,7 +101,9 @@ class LLMAdapter:
 
     def native_trajectory(self) -> bool:
         """Whether run_native should send the neutral trajectory natively
-        (0.1.49). ARSLAN_TOOL_PROTOCOL=legacy is the rollback switch."""
+        (0.1.49). ARSLAN_TOOL_PROTOCOL=legacy is the rollback switch; for Claude and
+        Gemini it goes in v0.1.64 (0.1.63 K1: 7 days of v0.1.63 with no protocol-class
+        400 from them in M2, and M1 holds)."""
         if os.environ.get("ARSLAN_TOOL_PROTOCOL", "native").strip().lower() == "legacy":
             return False
         provider = getattr(self, "_provider", None)

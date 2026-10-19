@@ -113,6 +113,9 @@ class Budget:
         self.tokens = 0
         self.artifact_bytes = 0
         self.stop_reason: str | None = None
+        # 0.1.63 K1: what a provider changed in the conversation before the model read it
+        # (thinking blocks dropped, old tool results cleared), counts only, for the run record.
+        self.context_events: list[dict] = []
 
     @classmethod
     def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None) -> Budget:
@@ -208,6 +211,11 @@ class Budget:
             self.stop("artifact_bytes")
         self.artifact_bytes += count
 
+    def note_context(self, kind: str, *, reason: str, count: int) -> None:
+        """One provider-side change to the conversation, at this model request (counts only)."""
+        self.context_events.append({"kind": kind, "reason": reason, "count": count,
+                                    "request": self.model_requests})
+
     def snapshot(self) -> dict:
         return {"id": self.id, "limits": asdict(self.limits),
                 "used": {"model_requests": self.model_requests, "tool_calls": self.tool_calls,
@@ -215,7 +223,8 @@ class Budget:
                          "wall_seconds": round(time.monotonic() - self.started, 3)},
                 "stop_reason": self.stop_reason,
                 "token_limit_mode": "post_response_admission", "monetary_limit": False,
-                **({"soft_limits": asdict(self.soft)} if self.soft is not None else {})}
+                **({"soft_limits": asdict(self.soft)} if self.soft is not None else {}),
+                **({"context_events": list(self.context_events)} if self.context_events else {})}
 
 
 _current: ContextVar[Budget | None] = ContextVar("execution_budget", default=None)

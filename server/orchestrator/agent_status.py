@@ -9,7 +9,9 @@ work the same way). So, per request:
   plan, work done so far, and the step notes that used to be appended to the
   system prompt (forced step, wrap-up, research scope, compaction);
 - rendered for this request and never stored: history does not pile up stale
-  copies, the next step gets a fresh one;
+  copies, the next step gets a fresh one. 0.1.63 K1: except on Claude's and
+  Gemini's native path, where nothing already sent may change: there each
+  step's block is stored once, after its results (trajectory.status);
 - the system prompt stays byte-identical for the whole turn, so the provider's
   prefix cache holds (before 0.1.50 a note appended mid-turn changed the system
   prompt and invalidated the whole cached prefix from then on);

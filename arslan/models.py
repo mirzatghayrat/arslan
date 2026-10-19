@@ -100,6 +100,9 @@ class LLMResponse(BaseModel):
     # tools are present). {"protocol", "endpoint", "fields"}; only ever sent
     # back to the endpoint+model whose fingerprint it carries.
     continuation: dict[str, Any] | None = None
+    # 0.1.63 K1: what the API changed in the request before the model read it
+    # (Anthropic `input_transformations`, e.g. a thinking block it dropped).
+    input_transformations: list[dict[str, Any]] | None = None
 
 
 class EvolutionRule(BaseModel):

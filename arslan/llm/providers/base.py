@@ -31,9 +31,11 @@ class BaseLLMProvider(ABC):
         return False
 
     def endpoint_fingerprint(self) -> str:
-        """Identity of endpoint+model for opaque continuation state: state from
-        one endpoint/model is never replayed to another."""
-        raw = f"{(self.base_url or '').rstrip('/')}\n{self.model}"
+        """Identity of endpoint+model+key for opaque continuation state: state from
+        one endpoint/model is never replayed to another. 0.1.63 K1: the key counts too
+        (only its hash), so thinking blocks never follow a change of key or account."""
+        key = hashlib.sha256((self.api_key or "").encode()).hexdigest()
+        raw = f"{(self.base_url or '').rstrip('/')}\n{self.model}\n{key}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:

@@ -2,10 +2,13 @@
 docs/specs/2026-10-01-0149-p1-execution-layer.md section 3).
 
 run_native keeps one representation and renders it per request:
-- native OpenAI-compatible: the provider translates these dicts directly
-  (assistant tool_calls + role "tool" + verbatim continuation fields);
-- legacy (test doubles, Anthropic, ARSLAN_TOOL_PROTOCOL=legacy): `to_legacy`,
-  byte-identical to the pre-0.1.49 text format, Gemini provider pairs included.
+- native (OpenAI-compatible, Gemini; Claude from 0.1.63 K1b): the provider translates
+  these dicts into its own tool protocol (`build_trajectory_messages`);
+- legacy (test doubles, Claude until K1b, ARSLAN_TOOL_PROTOCOL=legacy, and the rest of
+  a turn whose endpoint rejected the native history): `to_legacy`, byte-identical to
+  the pre-0.1.49 text format, Gemini provider pairs included. For Claude and Gemini it
+  goes in v0.1.64, once v0.1.63 has run 7 days with no protocol-class 400 from them in
+  M2 and M1 holds (sessions §9).
 
 Messages:
   {"role": "user", "content": ...}
@@ -90,6 +93,14 @@ def tool_result(call_id: str, name: str, content: str, *, synthetic: bool = Fals
         msg["_images"] = [{"type": "image", "mime_type": i["mime_type"], "data": i["data"]} for i in images]
         msg["_image_label"] = image_label or name
     return msg
+
+
+def status(text: str) -> dict:
+    """0.1.63 K1: a step's <agent_status>, kept in the trajectory for providers that must never see
+    their history edited (Anthropic preserved thinking). Rendered after that step's results as its own
+    text block, never inside a tool result; later steps leave it where it is. The legacy rendering
+    skips it (it attaches the current status itself)."""
+    return {"role": "user", "content": text, "_status": True}
 
 
 def keep_latest_images(messages: list[dict], keep: int = IMAGES_KEPT) -> int:
@@ -218,6 +229,8 @@ def to_legacy(messages: list[dict], *, images: bool = True) -> list[dict]:
     out: list[dict] = []
     for group in groups(messages):
         head = group[0]
+        if head.get("_status"):
+            continue
         if not is_call_group_start(head):
             if head.get("role") == "tool":  # synthetic, host-run
                 out.append({"role": "assistant", "content": head.get("_legacy_call") or json.dumps(

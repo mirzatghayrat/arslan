@@ -37,8 +37,13 @@ _BALANCE = re.compile(r"insufficient[_ ](balance|quota|credits|funds)|payment re
 _CONTEXT = re.compile(r"context[_ ]length|maximum context|context window|too many tokens|"
                       r"prompt is too long|reduce the length", re.I)
 # A compatible endpoint that rejects the native history (or tool_choice on a
-# forced step) is answered with the legacy rendering, not a failed turn.
-_PROTOCOL = re.compile(r"reasoning_content|tool_call_id|tool_calls|tool_choice|role.{0,12}tool", re.I)
+# forced step) is answered with the legacy rendering, not a failed turn. 0.1.63 K1: Anthropic's and
+# Gemini's words too (tool_use/tool_result pairing, a thinking block it will not take back, a
+# function response out of place); the legacy rendering carries no thinking, which is also the
+# documented recovery for a thinking block bound to a different conversation. "thinking" only as
+# "thinking block" / redacted_thinking: an MCP tool named *thinking* is an input refusal (F3).
+_PROTOCOL = re.compile(r"reasoning_content|tool_call_id|tool_calls|tool_choice|role.{0,12}tool|"
+                       r"tool_use|tool_result|thinking\W{0,3}block|redacted_thinking|function.?response", re.I)
 
 
 @dataclass

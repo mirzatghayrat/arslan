@@ -35,17 +35,22 @@ logger = logging.getLogger(__name__)
 
 # Sampling knobs a request can do without. Never a parameter that changes what
 # is asked (messages, tools, thinking switches): dropping those changes meaning.
-_DROPPABLE = ("temperature", "top_p", "top_k")
+_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding")
+# 0.1.63 K1: an opt-in beta field and the `anthropic-beta` value that enables it go together. An
+# endpoint that refuses either (a proxy, an older API version) gets both dropped and remembered;
+# the request means the same without them. Betas travel in the payload's private "_betas" list
+# until the provider turns it into the header.
+_BETA_OF = {"block_binding": "thinking-binding-controls-2026-08-01"}
 # OpenAI's reasoning models: "Use 'max_completion_tokens' instead." Renamed only
 # when the error itself names the new key, so the budget is kept, never lost.
 _RENAMES = {"max_tokens": "max_completion_tokens"}
 # Containers a parameter may sit in (Gemini: generationConfig.temperature).
-_NESTED = ("generationConfig",)
+_NESTED = ("generationConfig", "thinking")
 
 _REFUSED = re.compile(
     r"unsupported|not supported|deprecated|does not support|no longer (?:accepted|supported)|"
     r"not allowed|not permitted|only the default|unknown (?:parameter|field|argument|name)|"
-    r"unrecognized|extra (?:inputs|fields) are not permitted|cannot find field", re.I)
+    r"unrecognized|extra (?:inputs|fields) are not permitted|cannot find field|unexpected value", re.I)
 
 _learned: dict[str, dict[str, str | None]] = {}
 
@@ -69,6 +74,10 @@ def _change(payload: dict[str, Any], key: str, new: str | None) -> bool:
             value = box.pop(key)
             if new is not None:
                 box[new] = value
+            beta = _BETA_OF.get(key)
+            betas = payload.get("_betas")
+            if beta and isinstance(betas, list) and beta in betas:
+                betas.remove(beta)
             return True
     return False
 
@@ -131,6 +140,8 @@ def recover(exc: httpx.HTTPStatusError, payload: dict[str, Any], heals: Heals) -
     candidates: dict[str, int] = {}
     for key in (*_DROPPABLE, *_RENAMES):
         at = _position(key, message)
+        if at is None and key in _BETA_OF:
+            at = _position(_BETA_OF[key], message)       # the beta value named instead of the field
         if key not in sent or (at is None and key != param):
             continue
         new = _RENAMES.get(key)
