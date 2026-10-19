@@ -371,7 +371,9 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     if task in FIXTURES:
         ctx["fixture"] = FIXTURES[task](str(run))
     if task == "T1":
-        ctx["list"] = f"对比测试-{label}" + (f"-{ROUND}" if ROUND else "")
+        # The model is in the name: the same label runs on several models in one round, and a second
+        # model's reminders landed in the first model's list (M1B, 2026-10-19: 6 items, scored 0).
+        ctx["list"] = f"对比测试-{label}-{model}" + (f"-{ROUND}" if ROUND else "")
     if task in ("T4", "T4x"):
         _t4_setup(task, who, ctx, manual_login)
     fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
