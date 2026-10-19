@@ -111,6 +111,8 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
         return True
     if tool_key != "run_command":
         return False
+    if _apple_events_refused(arguments, result):
+        return True       # 0.1.63 D4: before the outbound rule (apple-events) below: nothing reached the app
     from server.services import terminal_policy
     command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
     if result.get("code") == "time_limit" and result.get("sandbox") == "workspace":
@@ -121,6 +123,87 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     if str(result.get("error") or "").startswith("stopped") or (code is not None and (type(code) is not int or code < 0)):
         return False
     return not _outbound(command)
+
+
+# 0.1.63 D4: one osascript, its script in the command (-e or a here-doc), talking to ONE app that refused
+# it as not authorized, so nothing happened there (K1's before/after runs, T1). -1743: Automation is not
+# allowed for this sender and app, so no event reaches it. -10004 is the app's own "privilege violation";
+# for Reminders it was checked all-or-nothing (2026-10-20: from a refused sender a read, a write and a
+# read-then-write each failed at the FIRST data access, nothing was created); other apps decide it on
+# their own terms and stay unknown. The script is an allowlist (③Hands' review): only tell-application
+# lines and blocks to that one app, and comments; anything else may act on this Mac first (a raw
+# «event sysoexec», Standard Additions file writes, AppleScriptObjC) and stays unknown. Not covered: a
+# script that does `error number -1743` itself after changing something inside the app.
+_PRIVILEGE_ALL_OR_NOTHING = {"reminders"}
+_OSA_HEREDOC = re.compile(r"\A\s*(?:/usr/bin/)?osascript\s*<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*)\n\2\s*\Z", re.S)
+_OSA_NOT_ALLOWED = re.compile(r"execution error: Not authorized to send Apple events to (.+)\. \(-1743\)\Z")
+_OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege violation occurred\. \(-10004\)\Z")
+_OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
+                            r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
+                            r"write\s|set\s+eof)", re.I)
+_OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
+_OSA_TELL_BLOCK = re.compile(r'tell\s+application\s+"[^"]+"\Z', re.I)
+
+
+def _only_tells(script: str) -> bool:
+    """Every line outside a tell-application block is that kind of tell (one line or a block) or a comment."""
+    depth = 0
+    for raw in script.splitlines():
+        line = raw.split("--", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        if depth == 0:
+            if _OSA_TELL_TO.match(line):
+                continue
+            if not _OSA_TELL_BLOCK.match(line):
+                return False                 # a statement outside the tell may act before it
+            depth = 1
+        elif re.match(r"end\s+tell\Z", line, re.I):
+            depth -= 1
+        elif re.match(r"tell\b", line, re.I) and not re.search(r"\sto\s", line, re.I):
+            depth += 1                       # a nested tell block (to an object of the app)
+    return depth == 0
+_OSA_TELLS = re.compile(r"\bapplication\s+\"([^\"]+)\"", re.I)
+
+
+def _inline_osascript(command: str) -> str | None:
+    """The AppleScript of a command that is exactly one osascript with its script inline, else None."""
+    heredoc = _OSA_HEREDOC.match(command)
+    if heredoc:
+        quoted, delimiter, body = heredoc.groups()
+        if any(line.strip() == delimiter for line in body.splitlines()):
+            return None                      # it ended at that line; what follows ran as shell
+        return None if not quoted and any(c in body for c in "$`\\") else body
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        words = list(lexer)
+    except ValueError:
+        return None
+    if len(words) < 3 or words[0] not in ("osascript", "/usr/bin/osascript") or len(words) % 2 == 0:
+        return None
+    pairs = list(zip(words[1::2], words[2::2]))
+    return "\n".join(script for flag, script in pairs) if all(flag == "-e" for flag, _ in pairs) else None
+
+
+def _apple_events_refused(arguments: dict, result: dict) -> bool:
+    from server.services import terminal_policy
+    code = result.get("exit_code")
+    if type(code) is not int or code <= 0 or result.get("code") == "time_limit":
+        return False
+    script = _inline_osascript(terminal_policy.as_shell(arguments.get("command"), arguments.get("argv")))
+    if script is None or _OSA_ELSEWHERE.search(script) or not _only_tells(script):
+        return False
+    apps = {name.lower() for name in _OSA_TELLS.findall(script)}
+    if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):
+        return False
+    lines = [line.strip() for line in str(result.get("stderr") or "").splitlines() if line.strip()]
+    if not lines:
+        return False
+    if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
+        return match.group(1).lower() in apps
+    match = _OSA_PRIVILEGE.search(lines[-1])
+    return match is not None and match.group(1).lower() in apps & _PRIVILEGE_ALL_OR_NOTHING
 
 
 # 0.1.62 F2 ①: a single simple command whose program the command policy grades LOW is a read.
