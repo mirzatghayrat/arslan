@@ -11,6 +11,13 @@
 | 分支 | `claude/0162-c2b1-evolution-api`、`claude/0162-c2b2-evolution-auto` |
 | 迁移号 | 无（进化相关的表和设置值都留在库里） |
 
+## 决定（⓪Plan 2026-10-20）
+
+- **Tier-1 进化规则不进 v2 的提示词。**
+  - v2 从 v0.1.40 起就是在用的路径，一直没拼过这些规则（`dispatcher.py:371` 只在没有 v2 时拼）。这是保持今天的行为，不算用户的设计决定。
+  - C2b 删进化第一批；`dispatcher.py` 里只有 v1 才走的拼接，随 C2a-2 删 v1 分支时一起删。
+  - C2a 实施记录里提出的问题，到此定了。
+
 ## 目标
 
 「进化」在网页上没有入口。删掉它对外的接口、开机自启的自动路径和诊断工具。`replay_gate`、`replay_run`、`compare_judge` 和 `skill_forge`、`evaluator` 共用，本批不动。
@@ -67,14 +74,14 @@
 1. **删接口前**，确认谁在调这些地址：
 
    ```bash
-   rg -n "/evolution|evolve/estimate|/evolve\b" web/src desktop scripts evals docs-site
+   git grep -nE "/evolution|evolve/estimate|/evolve([^A-Za-z0-9_]|$)" -- web/src desktop scripts evals docs-site
    ```
 
    今天只有 `scripts/diagnose_evolution.py`，它在 C2b-2 删。
 2. **删设置项**会让 `GET /settings` 少两个字段。确认网页不读它们：
 
    ```bash
-   rg -n "evolution_auto|evolutionAuto|evolution_max" web/src
+   git grep -nE "evolution_auto|evolutionAuto|evolution_max" -- web/src
    ```
 
    今天只有一个测试。
@@ -87,7 +94,7 @@
   - 下面这条命令无结果：
 
     ```bash
-    rg -n "evolution_watcher\.start|trigger_spawn|notify_spawn|evolution_diagnostics|api import evolution" server scripts
+    git grep -nE "evolution_watcher\.start|trigger_spawn|notify_spawn|evolution_diagnostics|api import evolution" -- server scripts
     ```
 
   - 启动日志里没有 evolution watcher 的启动行。

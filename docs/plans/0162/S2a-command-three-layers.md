@@ -104,6 +104,10 @@
 - 要定的：这几类进第②层（出卡、只给「这一次」），还是在配置里关掉相应的 `mach-lookup`。实测之前不写结论。
 - 第③层「沙箱里直接跑」的前提，就是沙箱挡得住，这个口子正好在那条前提上。
 
+- **历史里有一套没接线的 git 外联允许清单**（③Hands 审 #247 时提醒）。
+  - `command_policy` 的 `is_network_command`、`resolve_target_host`、`is_host_allowed`、`push_targets_current_branch`：只许 GitHub 和本仓库的远端，`git push` 只许推当前分支。
+  - 0.1.48 起就没有调用者，C2e-1（#247）删了。S2a 设计联网卡时如果用得上，可以从 git 历史拿回。
+
 ## 改哪些文件
 
 - **S2a-1：**
