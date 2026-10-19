@@ -55,8 +55,13 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
   saved file's check came back `not_run`, so tasks stopped at "needs you" for the bench's sake
   (`.swift` and `.md` alike, checked on v0.1.62 + D2). Still in place without the outer sandbox: `env -i`,
   the bench HOME, a fresh instance per run (`BENCH_FRESH_INSTANCE=1`), the dummy key, and Arslan's own
-  command sandbox. Not in place: Arslan's file-reading tools can reach the user's files by absolute
-  path; the bench prompts never ask for them.
+  command sandbox — kept closed by the driver: with `BENCH_SANDBOX=none` it always answers cards the
+  sandboxed way, so a card that would run a command outside the sandbox, or re-run one after a stop,
+  is declined (#235; before it, 8 such cards were approved in the first option-A rounds and ran as the
+  user, on bench paths only). Not in place: Arslan's file-reading tools can reach the user's files by
+  absolute path, and action cards (an AppleScript, a Shortcut, Hands) act outside every sandbox — the
+  driver approves only T1's Reminders script and T12's synthetic Hands Fixture app. The bench prompts
+  never ask for anything else.
 
 ## Run
 
