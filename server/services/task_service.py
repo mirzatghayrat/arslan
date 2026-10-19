@@ -516,8 +516,13 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             emit(_state_frame(final))
             return result
         except asyncio.CancelledError:
-            async with repository() as repo:
-                final = await repo.cancel(runtime.task_id)
+            # Recorded even if the cancellation keeps coming: a level-triggered cancel scope (anyio,
+            # which Starlette's websocket handling uses) cancels every await here too, and the task was
+            # left "running", refusing every later turn in its conversation (one active task each).
+            recording = asyncio.ensure_future(_record_cancel(runtime.task_id))
+            _RECORDING.add(recording)
+            recording.add_done_callback(_record_cancel_done)
+            final = await asyncio.shield(recording)   # if cancelled again, the record still completes
             emit(_state_frame(final))
             raise
         except (Exception,) as exc:
@@ -547,6 +552,20 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             if _runtimes.get(runtime.task_id) is runtime:
                 _runtimes.pop(runtime.task_id, None)
             _current.reset(token)
+
+
+_RECORDING: set[asyncio.Task] = set()
+
+
+async def _record_cancel(task_id: str) -> dict:
+    async with repository() as repo:
+        return await repo.cancel(task_id)
+
+
+def _record_cancel_done(recording: asyncio.Task) -> None:
+    _RECORDING.discard(recording)
+    if not recording.cancelled() and recording.exception() is not None:
+        logger.warning("cancelled task not recorded: %s", type(recording.exception()).__name__)
 
 
 async def _launch(value, emit, body, *, progress=None, context=None):
