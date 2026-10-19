@@ -9,6 +9,7 @@ import os
 import re
 import uuid
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from arslan.execution_budget import BudgetExceeded, governed
@@ -314,6 +315,18 @@ def _web_read_feedback(tool_key, args, result):
     return envelope(low)
 
 
+# 0.1.63 K1b: set for each step of a turn whose provider clears old context itself (Claude's native
+# path): what was sent is never edited again, so screenshots are not turned into stubs here.
+_SENT_IS_FINAL: ContextVar[bool] = ContextVar("sent_is_final", default=False)
+
+
+def _server_trims(a, state) -> bool:
+    """Whether this step goes natively to a provider that clears old tool results server-side."""
+    use_native = getattr(a, "native_trajectory", None)
+    trims = getattr(getattr(a, "_provider", None), "trims_context_server_side", None)
+    return bool(not state.legacy and callable(use_native) and use_native() and callable(trims) and trims())
+
+
 def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo,
                         mcp_fail_counts: dict | None = None) -> dict:
     # Hands v2 screenshots (spec 2026-10-08-0157 §4.2-4.5): `images` go to the model as image
@@ -377,7 +390,7 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     convo.append(trajectory.tool_result(None, tool_key, f"{framed}{hint}",
                                         synthetic=True, legacy_call=assistant_content,
                                         images=images, image_label=image_label))
-    if images:
+    if images and not _SENT_IS_FINAL.get():
         trajectory.keep_latest_images(convo)
     return result
 
@@ -717,6 +730,11 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
                                           size_of=_rendered_size)
             messages = build_messages()
             state.note("compacted context")
+            if _SENT_IS_FINAL.get():
+                # K1b: the one edit of sent history this path allows; thinking blocks after it drop.
+                from arslan.execution_budget import current
+                if (budget := current()) is not None:
+                    budget.note_context("compacted", reason="context_overflow", count=1)
         else:
             raise
         try:
@@ -2182,6 +2200,7 @@ async def run_native(**kwargs) -> dict:
     facts: dict = {}
     from server.orchestrator import untrusted as _untrusted
     seen = _untrusted.track_turn()
+    sent_is_final = _SENT_IS_FINAL.set(False)
     try:
         result = await _run_native(**kwargs, _facts=facts)
         if isinstance(result, dict):
@@ -2208,6 +2227,7 @@ async def run_native(**kwargs) -> dict:
                 "external_seen": _untrusted.external_seen()}
     finally:
         _untrusted.end_turn(seen)
+        _SENT_IS_FINAL.reset(sent_is_final)
 
 
 def _learn_after(kwargs: dict, facts: dict, result: dict) -> None:
@@ -2482,7 +2502,14 @@ async def _run_native(
         # Other turns retain the 64k target. Apply extra protection only
         # to batches <=96k, never permanently pin sources or widen task budgets.
         # Existing opaque-provider pair retention is otherwise unchanged.
-        oversized_feedback = pending_feedback and _rendered_size(convo[-pending_feedback:]) > 96_000
+        # 0.1.63 K1b: Claude's native path never edits what it sent; the API clears old tool results
+        # (context editing). After a refusal of that, local trimming resumes (screenshots too).
+        server_trims = _server_trims(a, turn_state)
+        _SENT_IS_FINAL.set(server_trims)
+        if not server_trims:
+            trajectory.keep_latest_images(convo)
+        oversized_feedback = (not server_trims and pending_feedback
+                              and _rendered_size(convo[-pending_feedback:]) > 96_000)
         has_web_evidence = any(item.get("tool") == "web_extract" and
                                (item.get("result") or {}).get("ok") for item in tool_trace)
         if has_web_evidence:
@@ -2496,9 +2523,9 @@ async def _run_native(
                 "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
                 "A shared commit URL does not date a translation's baseline or prove why texts differ. "
                 "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
-        convo, compacted = bounded_history(convo, max_chars=96_000 if has_web_evidence else 64_000,
-                                           preserve_tail=0 if oversized_feedback else pending_feedback,
-                                           size_of=_rendered_size)
+        convo, compacted = (convo, False) if server_trims else bounded_history(
+            convo, max_chars=96_000 if has_web_evidence else 64_000,
+            preserve_tail=0 if oversized_feedback else pending_feedback, size_of=_rendered_size)
         pending_feedback = 0
         if oversized_feedback:
             notes.append("The newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
@@ -2515,6 +2542,8 @@ async def _run_native(
         # Rolling evidence eviction must not erase this turn's task or its
         # restrictions. Restore the exact request at user priority, not as a
         # system instruction or an invented summary, only in this payload.
+        # K1b: on Claude's native path a wrap-up tool list is a prefix change, so the API drops the
+        # thinking blocks after it (counted in the run record); K3 keeps the tool list fixed.
         step_tools = (None if forced else [t for t in schemas if t["function"]["name"] in FINISH_TOOLS]
                       or None if wrap_up and wrap_refused else schemas)
         offered = {t["function"]["name"] for t in step_tools or []}
@@ -2736,6 +2765,9 @@ async def _run_native(
         # Even a provider ignoring tools=None still marks narration with tool_calls.
         # Never turn that narration into a final answer on a forced synthesis step.
         final_text = "" if tool_calls else agent_status.strip_echo((resp.content or "").strip())
+        # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
+        # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
+        own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
         protocol_text = _embeds_protocol(final_text)
@@ -2747,7 +2779,7 @@ async def _run_native(
         if denied:
             turn_state.capability_bounced = True
             policy.observe("answer_validation", {}, {"ok": False, "code": "denied_capability"})
-            convo.extend([trajectory.assistant(final_text, continuation=getattr(resp, "continuation", None)),
+            convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
                           {"role": "user", "content": capability_truth.correction(denied, wired_keys)}])
             continue
         if not forced and (claimed or ((deferred or protocol_text) and wired_keys)):
@@ -2757,7 +2789,7 @@ async def _run_native(
             # the normal tool resolver, permission gate and existing budgets.
             convo.extend([trajectory.assistant(
                 "Non-executable tool-call text omitted." if protocol_text else final_text,
-                continuation=getattr(resp, "continuation", None)), {"role": "user", "content":
+                continuation=None if protocol_text else own_continuation), {"role": "user", "content":
                 ("The proposed answer was tool-call text, not a native tool request; it executed no action. " if protocol_text else
                  f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
                  "The proposed answer only promises future action. ") +

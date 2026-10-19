@@ -35,12 +35,13 @@ logger = logging.getLogger(__name__)
 
 # Sampling knobs a request can do without. Never a parameter that changes what
 # is asked (messages, tools, thinking switches): dropping those changes meaning.
-_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding")
+_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding", "context_management")
 # 0.1.63 K1: an opt-in beta field and the `anthropic-beta` value that enables it go together. An
 # endpoint that refuses either (a proxy, an older API version) gets both dropped and remembered;
-# the request means the same without them. Betas travel in the payload's private "_betas" list
-# until the provider turns it into the header.
-_BETA_OF = {"block_binding": "thinking-binding-controls-2026-08-01"}
+# the request means the same without them (the caller trims context itself instead, K1b). Betas
+# travel in the payload's private "_betas" list until the provider turns it into the header.
+_BETA_OF = {"block_binding": "thinking-binding-controls-2026-08-01",
+            "context_management": "context-management-2025-06-27"}
 # OpenAI's reasoning models: "Use 'max_completion_tokens' instead." Renamed only
 # when the error itself names the new key, so the budget is kept, never lost.
 _RENAMES = {"max_tokens": "max_completion_tokens"}
@@ -58,6 +59,12 @@ _learned: dict[str, dict[str, str | None]] = {}
 def forget() -> None:
     """Tests only: drop everything learned in this process."""
     _learned.clear()
+
+
+def refused(fingerprint: str, key: str) -> bool:
+    """Whether this endpoint+model is known to refuse `key` (it is left out of every request)."""
+    learned = _learned.get(fingerprint, {})
+    return key in learned and learned[key] is None
 
 
 def _containers(payload: dict[str, Any]):
