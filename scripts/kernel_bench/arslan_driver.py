@@ -46,12 +46,22 @@ APPROVE_IN_SANDBOX = {"", "delete", "install"}
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
 # everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).
-#   T1:  an AppleScript or Shortcut for Reminders, the app the task is about;
-#   T12: Hands on the synthetic "Hands Fixture" app, never any other app.
-ACTION_OK = {"-T1-": lambda kind, target, detail: kind in ("mac_script", "mac_shortcut")
-                                                 and "reminders" in f"{target} {detail}".lower(),
-             "-T12-": lambda kind, target, detail: kind in ("desktop_app", "desktop_risky")
-                                                  and target.strip() == "Hands Fixture"}
+#   T1:  an AppleScript that only drives Reminders, the app the task is about (Arslan's own
+#        classifier: a shell step, Finder, keystrokes or delete/send words make it app_risky);
+#   T12: a Hands app card for the synthetic "Hands Fixture" app. Risky steps (their target names
+#        the control, e.g. "Hands Fixture · “Delete”") and every other app are declined.
+# Declined action cards have their own count: T11 scores the run_command declines only.
+
+
+def _t1_reminders_script(kind: str, target: str, detail: str) -> bool:
+    if kind != "mac_script":
+        return False
+    from server.services.hands_service import script_kind
+    return script_kind(detail) == ("app", ["Reminders"])
+
+
+ACTION_OK = {"-T1-": _t1_reminders_script,
+             "-T12-": lambda kind, target, detail: kind == "desktop_app" and target.strip() == "Hands Fixture"}
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
 RUN_TIMEOUT_S = 15 * 60
 
@@ -68,6 +78,7 @@ class TurnTracker:
     approvals: int = 0
     sandbox_cards: int = 0
     declined: int = 0
+    actions_declined: int = 0
     last_activity: float = 0.0
     end_reason: str = ""
     # A stand-in person who says no to command cards whose rule matches one of these patterns
@@ -130,7 +141,7 @@ class TurnTracker:
             self.approvals += 1
             if self._approve_action(frame):
                 return {"type": "confirm_action", "call_id": frame["call_id"]}
-            self.declined += 1
+            self.actions_declined += 1
             return {"type": "cancel_action", "call_id": frame["call_id"]}
         elif t in ("propose_schedule", "propose_connect_mcp", "propose_enroll_node"):
             self.approvals += 1
@@ -230,6 +241,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                     snapshot(run_dir, n)
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
             "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
+            "actions_declined": tracker.actions_declined,
             "end": tracker.end_reason, "turns": len(replies),
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
 

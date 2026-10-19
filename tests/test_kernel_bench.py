@@ -230,19 +230,23 @@ def test_action_cards_are_approved_only_where_that_app_is_the_task(monkeypatch):
         t = TurnTracker(run_dir)
         return t.on_frame({"type": "propose_action", "call_id": "c", "kind": kind, "target": target,
                            "detail": detail}, 1.0)["type"]
+    reminders = 'tell application "Reminders"\n  make new list with properties {name:"x"}\nend tell'
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders", reminders) == "confirm_action"
     assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders",
-               'tell application "Reminders" to make new list') == "confirm_action"
-    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Finder", 'tell application "Finder" to delete') == "cancel_action"
-    assert ans("/b/runs/arslan-T5-r1", "mac_script", "Reminders", "Reminders") == "cancel_action"
+               reminders + '\ndo shell script "ls ~"') == "cancel_action"          # a step past Reminders
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders",
+               reminders + '\ntell application "Finder" to get name of home') == "cancel_action"
+    assert ans("/b/runs/arslan-T1-r1", "mac_shortcut", "Reminders", "Add to Reminders") == "cancel_action"
+    assert ans("/b/runs/arslan-T5-r1", "mac_script", "Reminders", reminders) == "cancel_action"
     assert ans("/b/runs/arslan-T12-r1", "desktop_app", "Hands Fixture") == "confirm_action"
-    assert ans("/b/runs/arslan-T12-r1", "desktop_risky", "Hands Fixture") == "confirm_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_risky", "Hands Fixture · “Delete”") == "cancel_action"
     assert ans("/b/runs/arslan-T12-r1", "desktop_app", "Notes") == "cancel_action"
     assert ans("/b/runs/arslan-T12-r1", "mac_script", "Hands Fixture") == "cancel_action"
     assert ans("/b/runs/arslan-T2-r1", "browser_site", "example.com") == "cancel_action"
     assert ans("/b/runs/arslan-T2-r1", "desktop_takeover", "screen") == "cancel_action"
-    t = TurnTracker("/b/runs/arslan-T2-r1")
+    t = TurnTracker("/b/runs/arslan-T11-r1")
     t.on_frame({"type": "propose_action", "call_id": "c", "kind": "mac_shortcut", "target": "x"}, 1.0)
-    assert (t.approvals, t.declined) == (1, 1)
+    assert (t.approvals, t.actions_declined, t.declined) == (1, 1, 0)     # T11 scores `declined` only
 
 
 def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(monkeypatch):

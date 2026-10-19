@@ -97,4 +97,4 @@ Not yet verified (do before the first paid round, at no model cost where possibl
 Cleanup: `python -m scripts.kernel_bench.cleanup_t1` lists the bench's Reminders lists;
 `--delete --yes` deletes them (the user runs that).
 
-**Action cards (`propose_action`)** act outside every sandbox, on the user's real apps. The driver approves only T1's AppleScript or Shortcut for Reminders and T12's Hands steps on "Hands Fixture"; every other action card is declined (until 2026-10-19 it approved them all).
+**Action cards (`propose_action`)** act outside every sandbox, on the user's real apps. The driver approves only a T1 AppleScript that drives Reminders and nothing else (Arslan's own `script_kind` says `("app", ["Reminders"])`) and T12's Hands app card for "Hands Fixture"; risky steps (e.g. Delete), every other app, Shortcuts and websites are declined and counted as `actions_declined`, apart from T11's `declined` (until 2026-10-19 it approved them all).
