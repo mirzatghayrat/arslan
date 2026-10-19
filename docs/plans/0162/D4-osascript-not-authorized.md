@@ -73,3 +73,24 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
 - **风险：here-doc 里的脚本再去跑别的脚本。** `run script`、`load script` 会执行另一个脚本，`do shell script` 会跑命令，它们做的事第 2 条看不到，所以这三种一律不算（条件 2）。
 - **风险：`-10004` 不是一律拒。** 开工先核实，核实不了只认 `-1743`。
 - **回退：** revert 这一个 PR。
+
+## 后续 PR（D4 第二个，2026-10-21）
+
+起因：⓪Plan 的 k2a3-ds 跑分里 T1 从 2/3 掉到 0/3，三种写法都被记成「结果不明」（不是 K2a 的问题）。
+
+- **tell 之外的无副作用 `set` 也算安全**，按语法白名单判（`_safe_statement`）：
+  - 字面量、`current date`、`date "…"`；
+  - 先前 set 过的变量，和它们的日期属性（weekday、hours、minutes、seconds、time、year、month、day），也可以 `set <日期属性> of <变量> to …`；
+  - `+ - * / div mod`，日、时、分、周单位，`as integer` 这类转换；
+  - 单行的 `if … then set …`。
+  - 不许调用、handler、`of` 一个 App 或别的对象。
+- **编译期 `syntax error:` 算已知失败**：osascript 先编译整段，所以脚本里什么都没跑。
+  - 只认编译期的格式（`N:M: syntax error: …`）。
+  - stderr 是脚本自己能控制的（③Hands 审：先 `log` 一行假的，再杀掉父进程；或者 error 的消息结尾带这一行）。所以三条都满足才算：
+    - 脚本过得了和「被拒绝」同一份白名单；
+    - 只对一个 App，按名字点名，不是路径；
+    - `osacompile -o /dev/null` 确认它编译不过（`_fails_to_compile`）。osacompile 只编译不运行，可能会读 App 的字典；它不可用、超时或出错时，结果仍算不明。
+  - 确认步骤有一个 macOS 专用测试（`macos` 标记总数 55 → 56，测试和 ci.yml 两处一起改）。
+- **`mac_applescript` 工具套同一套规则**：脚本取自参数，stderr 取自结果的 `error`。超时和其他错误码照旧算不明。实例：T1 r1 的 -1708 发生在 `make new list` 之后，不算已知。
+- **顺带补上第一版的口子**：命令里有在单引号之外的 `$` 或反引号时，一律不判。理由：shell 会先替换、先跑，osascript 看到的已经不是写出来的脚本。第一版里，`-e "…$(curl …)…"` 碰上 -1743，会被当成「什么都没发生」。
+

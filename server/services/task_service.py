@@ -109,6 +109,8 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
         return True
     if tool_key in {"write_file", "edit_file"}:
         return True
+    if tool_key == "mac_applescript":     # 0.1.63 D4 follow-up: the same rules as an osascript command
+        return _osascript_refused(str((arguments or {}).get("script") or ""), str(result.get("error") or ""))
     if tool_key != "run_command":
         return False
     if _apple_events_refused(arguments, result):
@@ -134,6 +136,17 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
 # lines and blocks to that one app, and comments; anything else may act on this Mac first (a raw
 # «event sysoexec», Standard Additions file writes, AppleScriptObjC) and stays unknown. Not covered: a
 # script that does `error number -1743` itself after changing something inside the app.
+# D4 follow-up (⓪Plan, k2a3-ds T1 0/3):
+# - Outside the tell, side-effect-free `set`s are allowed too, by grammar (_safe_statement): literals,
+#   `current date`, date arithmetic on variables set before, date properties of those, `as integer`.
+# - A compile-time "syntax error:" is known: osascript compiles the whole script first, so nothing in
+#   it ran. But the script controls its stderr (③Hands' review: a `log` of that line and a killed
+#   parent, or an error whose message ends with it), so it counts only for a script that passes the
+#   same allowlist, to one app named plainly, AND that osacompile confirms does not compile
+#   (_fails_to_compile, which never runs it; compiling may load the app's dictionary).
+# - The mac_applescript tool gets the same rules.
+# - A command the shell could expand before osascript runs ($( ), backticks, $VAR outside single
+#   quotes) is never judged: whatever the shell ran is not in the script.
 _PRIVILEGE_ALL_OR_NOTHING = {"reminders"}
 _OSA_HEREDOC = re.compile(r"\A\s*(?:/usr/bin/)?osascript\s*<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*)\n\2\s*\Z", re.S)
 _OSA_NOT_ALLOWED = re.compile(r"execution error: Not authorized to send Apple events to (.+)\. \(-1743\)\Z")
@@ -143,17 +156,115 @@ _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|
                             r"write\s|set\s+eof)", re.I)
 _OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
 _OSA_TELL_BLOCK = re.compile(r'tell\s+application\s+"[^"]+"\Z', re.I)
+_OSA_SYNTAX = re.compile(r"\A(?:\d+:\d+: )?syntax error: .+\(-?\d+\)\Z")   # compile phase, not "execution error: …"
+_OSA_TOKEN = re.compile(r'\s*("(?:[^"\\]|\\.)*"|\d+(?:\.\d+)?|[A-Za-z_]\w*|<=|>=|[-+*/=<>≠≤≥(){},])')
+_OSA_DATE_PROPS = {"weekday", "hours", "minutes", "seconds", "time", "year", "month", "day"}
+_OSA_UNITS = {"days", "hours", "minutes", "weeks"}
+_OSA_COERCIONS = {"integer", "real", "number", "text", "string"}
+_OSA_COMPARE = {"=", "≠", "<", ">", "≤", "≥", "<=", ">="}
+
+
+def _osa_tokens(text: str) -> list[str] | None:
+    tokens, at = [], 0
+    while at < len(text):
+        if not text[at:].strip():
+            break
+        match = _OSA_TOKEN.match(text, at)
+        if match is None:
+            return None
+        tokens.append(match.group(1))
+        at = match.end()
+    return tokens
+
+
+def _osa_expression(tokens: list[str], at: int, variables: set[str]) -> int | None:
+    """End of a side-effect-free expression starting at `at`, else None. Terms: literals, `current date`,
+    `date "…"`, a variable set before, `<date property> of <variable>`, a unit, ( … ), { literals };
+    each optionally `as <number or text>`. Operators: + - * / div mod. No call, no handler, no app."""
+    def term(i):
+        if i >= len(tokens):
+            return None
+        word = tokens[i].lower()
+        if tokens[i] == "-":
+            return term(i + 1)
+        if tokens[i] == "(":
+            end = _osa_expression(tokens, i + 1, variables)
+            i = end + 1 if end is not None and end < len(tokens) and tokens[end] == ")" else None
+        elif tokens[i] == "{":
+            i += 1
+            while i < len(tokens) and (tokens[i].startswith('"') or tokens[i][0].isdigit()):
+                i += 1
+                if i < len(tokens) and tokens[i] == ",":
+                    i += 1
+            i = i + 1 if i < len(tokens) and tokens[i] == "}" else None
+        elif (word in _OSA_DATE_PROPS and i + 2 < len(tokens) and tokens[i + 1].lower() == "of"
+              and tokens[i + 2].lower() in variables):
+            i += 3                           # before units: "hours of now" is not the unit hours
+        elif tokens[i].startswith('"') or tokens[i][0].isdigit() or word in {"true", "false"} | _OSA_UNITS:
+            i += 1
+        elif word == "missing" and i + 1 < len(tokens) and tokens[i + 1].lower() == "value":
+            i += 2
+        elif word == "current" and i + 1 < len(tokens) and tokens[i + 1].lower() == "date":
+            i += 2
+        elif word == "date" and i + 1 < len(tokens) and tokens[i + 1].startswith('"'):
+            i += 2
+        elif word in variables:
+            i += 1
+        else:
+            return None
+        if i is not None and i + 1 < len(tokens) and tokens[i].lower() == "as":
+            i = i + 2 if tokens[i + 1].lower() in _OSA_COERCIONS else None
+        return i
+    i = term(at)
+    while i is not None and i < len(tokens) and tokens[i].lower() in {"+", "-", "*", "/", "div", "mod"}:
+        i = term(i + 1)
+    return i
+
+
+def _safe_statement(line: str, variables: set[str]) -> bool:
+    """A top-level line that cannot act: `set <var> to <expression>`, `set <date property> of <var> to …`,
+    or a one-line `if <expression> <comparison> <expression> then <such a set>`. Records new variables."""
+    tokens = _osa_tokens(line)
+    if not tokens:
+        return False
+    if tokens[0].lower() == "if":
+        left = _osa_expression(tokens, 1, variables)
+        if left is None or left >= len(tokens) or tokens[left] not in _OSA_COMPARE:
+            return False
+        right = _osa_expression(tokens, left + 1, variables)
+        if right is None or right >= len(tokens) or tokens[right].lower() != "then":
+            return False
+        return _set_statement(tokens[right + 1:], variables)
+    return _set_statement(tokens, variables)
+
+
+def _set_statement(tokens: list[str], variables: set[str]) -> bool:
+    if len(tokens) < 4 or tokens[0].lower() != "set":
+        return False
+    if tokens[2].lower() == "to" and re.fullmatch(r"[A-Za-z_]\w*", tokens[1]):
+        target, start = tokens[1].lower(), 3
+    elif (len(tokens) > 5 and tokens[1].lower() in _OSA_DATE_PROPS and tokens[2].lower() == "of"
+          and tokens[3].lower() in variables and tokens[4].lower() == "to"):
+        target, start = None, 5
+    else:
+        return False
+    if _osa_expression(tokens, start, variables) != len(tokens):
+        return False
+    if target is not None:
+        variables.add(target)
+    return True
 
 
 def _only_tells(script: str) -> bool:
-    """Every line outside a tell-application block is that kind of tell (one line or a block) or a comment."""
-    depth = 0
+    """Every line outside a tell-application block is that kind of tell (one line or a block), a
+    side-effect-free statement (_safe_statement), or a comment."""
+    depth, variables = 0, set()
     for raw in script.splitlines():
         line = raw.split("--", 1)[0].strip()
         if not line or line.startswith("#"):
             continue
         if depth == 0:
-            if _OSA_TELL_TO.match(line):
+            if _OSA_TELL_TO.match(line) or _safe_statement(line, variables):
                 continue
             if not _OSA_TELL_BLOCK.match(line):
                 return False                 # a statement outside the tell may act before it
@@ -174,6 +285,8 @@ def _inline_osascript(command: str) -> str | None:
         if any(line.strip() == delimiter for line in body.splitlines()):
             return None                      # it ended at that line; what follows ran as shell
         return None if not quoted and any(c in body for c in "$`\\") else body
+    if _shell_expands(command):
+        return None                          # what the shell ran first is not in the script
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
@@ -186,20 +299,59 @@ def _inline_osascript(command: str) -> str | None:
     return "\n".join(script for flag, script in pairs) if all(flag == "-e" for flag, _ in pairs) else None
 
 
+def _fails_to_compile(script: str) -> bool:
+    """osacompile compiles without running (③Hands checked: a real syntax error exits 1; a script that
+    only prints one compiles, and does not run). Unavailable, timed out or failing to start: False, so the
+    failure stays unknown. Synchronous and bounded: it runs only for an allowlisted script to one app
+    whose last stderr line is a syntax error."""
+    import subprocess
+    try:
+        done = subprocess.run(["/usr/bin/osacompile", "-o", "/dev/null"], input=script, text=True,
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode != 0
+
+
+def _shell_expands(command: str) -> bool:
+    """A $ or backtick outside single quotes: the shell may substitute or run something before osascript."""
+    quote, escaped = None, False
+    for char in command:
+        if escaped:
+            escaped = False
+        elif char == "\\" and quote != "'":
+            escaped = True                   # \" inside double quotes is a quote, not the end of them
+        elif char == "'" and quote != '"':
+            quote = None if quote == "'" else "'"
+        elif char == '"' and quote != "'":
+            quote = None if quote == '"' else '"'
+        elif char in "$`" and quote != "'":
+            return True
+    return False
+
+
 def _apple_events_refused(arguments: dict, result: dict) -> bool:
     from server.services import terminal_policy
     code = result.get("exit_code")
     if type(code) is not int or code <= 0 or result.get("code") == "time_limit":
         return False
     script = _inline_osascript(terminal_policy.as_shell(arguments.get("command"), arguments.get("argv")))
-    if script is None or _OSA_ELSEWHERE.search(script) or not _only_tells(script):
+    return script is not None and _osascript_refused(script, str(result.get("stderr") or ""))
+
+
+def _osascript_refused(script: str, stderr: str) -> bool:
+    """An AppleScript that failed without acting: it never compiled, or its one app refused it."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if not script.strip() or not lines:
+        return False
+    if _OSA_ELSEWHERE.search(script) or not _only_tells(script):
         return False
     apps = {name.lower() for name in _OSA_TELLS.findall(script)}
     if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):
         return False
-    lines = [line.strip() for line in str(result.get("stderr") or "").splitlines() if line.strip()]
-    if not lines:
-        return False
+    if _OSA_SYNTAX.search(lines[-1]):
+        # Compiled first, so nothing ran, if it really did not compile: the script controls its stderr.
+        return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])
