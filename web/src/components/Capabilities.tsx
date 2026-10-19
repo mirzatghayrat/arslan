@@ -132,7 +132,7 @@ export default function Capabilities({ provider, experts, initialTab }: {
               </div>
               <SkillImportPanel />
             </section>
-            <CapabilityCatalog kind="skills" assign={!!experts} />
+            <CapabilityCatalog assign={!!experts} />
           </div>
         )}
 

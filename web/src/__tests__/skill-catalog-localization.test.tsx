@@ -20,7 +20,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); void i18n.changeLanguage("en");
 
 it.each(SUPPORTED_LANGUAGES)("renders and searches every builtin in %s without changing IDs", async language => {
   await i18n.changeLanguage(language);
-  render(<CapabilityCatalog kind="skills" />);
+  render(<CapabilityCatalog />);
   const copy = skillCatalogMessages[language];
   expect(await screen.findByText(copy["skill-creator"].name)).toBeInTheDocument();
   for (const value of Object.values(copy)) {

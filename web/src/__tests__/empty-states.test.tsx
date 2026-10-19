@@ -50,14 +50,6 @@ const SITES: Site[] = [
     why: "the feed field IS the left panel the copy points at",
   },
   // 0.1.44: the sidebar expert picker (empty-sidebar-spawns) is gone with the experts.
-  // Tier B, listed because the FILTER case must never inherit the empty-catalog
-  // advice: telling someone to import their first skill when they merely picked
-  // a chip is wrong, and it was wrong — both cases shared one key before this.
-  {
-    testId: "empty-capabilities-filtered", file: "components/CapabilityCatalog.tsx", panel: "Tools, filtered",
-    needsBody: false, needsAction: true,
-    why: "the only useful action is undoing the filter that caused it",
-  },
   {
     testId: "empty-skills-filtered", file: "components/CapabilityCatalog.tsx", panel: "Skills, filtered",
     needsBody: false, needsAction: true,
@@ -126,7 +118,7 @@ describe("gate item ② — Tier A empty states", () => {
     // "you have nothing" and "your filter matched nothing", so a filter chip
     // told the user to go import their first skill.
     const src = readFileSync(resolve(SRC, "components/CapabilityCatalog.tsx"), "utf8");
-    for (const id of ["empty-capabilities-filtered", "empty-skills-filtered"]) {
+    for (const id of ["empty-skills-filtered"]) {     // the tools tab's filtered state went with ToolsView (C2f)
       const b = block("components/CapabilityCatalog.tsx", id);
       expect(b).toContain("capabilities.catalog.filtered_empty");
       expect(b).not.toContain("capabilities.catalog.empty");

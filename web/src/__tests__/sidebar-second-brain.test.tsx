@@ -21,12 +21,6 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-// motion/react → passthrough (no animation in jsdom).
-vi.mock("motion/react", () => ({
-  motion: new Proxy({}, { get: () => (p: Record<string, unknown>) => <div {...p} /> }),
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
 function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}) {
   return {
     threads: [],
