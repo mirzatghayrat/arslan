@@ -22,6 +22,10 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
   mixes them with new ones.
 - **Usage per run** counts only the run's own label from when it started, so a label reused in a
   later round or on another model does not add the earlier spend.
+- **Set `BENCH_ROUND` for every round** (and a separate one per model, or for a rerun). It goes
+  into the run label (`arslan-T2-r1-k1after`). The meter's per-run cap counts a label over the
+  proxy's whole life, so a reused label can be refused with 402 before it starts, and its run
+  folder would overwrite the earlier round's.
 - **Several turns.** A prompt in `prompts.json` may be a list: Arslan gets each turn in the same
   conversation once the previous one is over; Claude Code resumes its session. The run folder is
   copied to `<run>.turn<N>` between turns for the checker. Other entrants are recorded as

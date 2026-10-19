@@ -82,8 +82,12 @@ ARSLAN = ("arslan", "arslan-legacy")
 MULTI_TURN = {"arslan", "arslan-legacy", "claude-code"}
 CLAUDE_ON = {"arslan", "arslan-legacy", "claude-code"}       # entrants that can run on a Claude model
 T4_CHANGE_AFTER_S = 60
-# T1's Reminders list is named after the run label; labels repeat across rounds, and a
-# list left over from an earlier round would be read as this run's (BENCH_ROUND keeps them apart).
+# BENCH_ROUND goes into the run label. The meter's per-run cap counts a label over the proxy's
+# whole life and run folders are named by label, so a label reused in a later round starts near
+# the cap and overwrites the earlier folder (K1's after-runs, 2026-10-19: arslan-T2-r1 was
+# refused with 402 at its first call, the baseline and K1's before-run had spent $1.03 on it).
+# It also keeps T1's Reminders lists apart: a list left from an earlier round would be read as
+# this run's. One round per model when two models share a round's tasks.
 ROUND = os.environ.get("BENCH_ROUND", "")
 
 
@@ -346,7 +350,7 @@ def _run(cmd: list, e: dict, run: Path, mode: str = "w"):
 
 def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: bool = False,
             models: dict | None = None) -> dict:
-    label = f"{who}-{task}-r{n}"
+    label = f"{who}-{task}-r{n}" + (f"-{ROUND}" if ROUND else "")
     run = ROOT / "runs" / label
     model = model_for(who, models or {})
     shutil.rmtree(run, ignore_errors=True)
@@ -373,7 +377,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     if task == "T1":
         # The model is in the name: the same label runs on several models in one round, and a second
         # model's reminders landed in the first model's list (M1B, 2026-10-19: 6 items, scored 0).
-        ctx["list"] = f"对比测试-{label}-{model}" + (f"-{ROUND}" if ROUND else "")
+        ctx["list"] = f"对比测试-{label}-{model}"
     if task in ("T4", "T4x"):
         _t4_setup(task, who, ctx, manual_login)
     fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
