@@ -268,6 +268,15 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
     assert ans({"rule": "send-mail"}) == "cancel_run_command"
     assert ans({"rule": "apple-events"}) == "cancel_run_command"
     assert (t.sandbox_cards, t.declined, t.approvals) == (2, 4, 6)
+    # Every other kind inside the sandbox is approved, new ones included (K2a's T5 got a heredoc-script card);
+    # every outward kind is declined.
+    assert ans({"rule": "hermes:script execution via heredoc"}) == "confirm_run_command"
+    assert ans({"rule": "hermes:find -delete"}) == "confirm_run_command"
+    assert ans({"rule": "some-rule-added-later"}) == "confirm_run_command"
+    for rule in ("upload", "shortcuts", "send-message", "remote-shell", "git-push", "publish"):
+        assert ans({"rule": rule}) == "cancel_run_command", rule
+    from server.services import task_service
+    assert arslan_driver.OUTWARD == task_service._OUTBOUND_RULES      # the bench weighs what the product calls outward
     t1 = TurnTracker("/b/runs/arslan-T1-r2")
     assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1.0)["type"] == \
         "confirm_run_command"

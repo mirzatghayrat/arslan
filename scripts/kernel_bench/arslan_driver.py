@@ -48,7 +48,12 @@ CARDS = os.environ.get("BENCH_CARDS", "")
 # 8 such cards were approved in the first option-A rounds and ran as the user on the real disk).
 if os.environ.get("BENCH_SANDBOX") == "none":
     CARDS = "sandboxed"
-APPROVE_IN_SANDBOX = {"", "delete", "install"}
+# Outward kinds a user should weigh on every card, mirroring task_service._OUTBOUND_RULES (a test keeps them
+# equal). Inside the sandbox everything else is approved: the sandbox contains it. The first version approved
+# only "", delete and install, and that list went stale as rules were added: "hermes:script execution via
+# heredoc" inside the sandbox was declined (K2a's T5, 2026-10-20), so a run failed on the bench's own policy.
+OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell",
+                     "git-push", "publish"})
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
 # everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).
@@ -171,7 +176,9 @@ class TurnTracker:
             self.sandbox_cards += 1
             return False
         rule = frame.get("rule") or ""
-        return rule in APPROVE_IN_SANDBOX or (rule == "apple-events" and "-T1-" in self.run_dir)
+        if rule == "apple-events":
+            return "-T1-" in self.run_dir          # Reminders is T1's task; other apps are not
+        return rule not in OUTWARD
 
     def finished(self, now: float, started: float) -> bool:
         if now - started >= RUN_TIMEOUT_S:
