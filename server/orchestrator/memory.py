@@ -75,8 +75,9 @@ async def turn_budget(conversation_id: str | None, *, has_images: bool = False) 
         try:
             from server.orchestrator import tool_loop
             adapter = await tool_loop._adapter_for_turn(has_images=has_images, conversation_id=conversation_id)
-            window, source = context_window.window_for(getattr(adapter, "model", None),
-                                                       provider=getattr(adapter, "provider_name", None))
+            # report_provider, not provider_name: presets map ollama onto the "openai" wire protocol.
+            provider = getattr(adapter, "report_provider", None) or getattr(adapter, "provider_name", None)
+            window, source = context_window.window_for(getattr(adapter, "model", None), provider=provider)
             budget = context_window.history_budget(window)
         except Exception:  # noqa: BLE001 — the budget is never a reason for a turn to fail
             window, source, budget = None, "unresolved", context_window.FLOOR

@@ -181,7 +181,7 @@ def test_a_credential_in_a_persisted_argument_is_omitted():
     assert "SECRET123" not in block and "SECRET456" not in block
     assert "command=<credential omitted>" in block and "url=<credential omitted>" in block
     assert "command=ls notes" in block
-    failed = turn_tools.block([{"tool": "run_command", "args": {"command": "make"},
+    failed = turn_tools.block([{"tool": "edit_file", "args": {"path": "notes.md"},   # commands keep exit only
                                 "result": {"ok": False, "error": "401 for header Authorization: " + "Bearer " + token + "789"}}])
     assert "SECRET789" not in failed and "failed: <credential omitted>" in failed
 
@@ -213,3 +213,12 @@ def test_the_block_is_bounded_by_tokens_too():
     block = turn_tools.block(calls)
     assert estimate_tokens(block) <= turn_tools.BLOCK_TOKENS + 60      # the last line may finish it
     assert block.splitlines()[-2].startswith("- … ")
+
+
+def test_a_failed_command_or_script_keeps_its_exit_status_not_its_stderr():
+    # ③Hands' review: run_python's error is "exit N: {stderr tail}" (code_sandbox), which can hold output.
+    block = turn_tools.block([
+        {"tool": "run_python", "args": {"code": "x"}, "result": {"ok": False, "error": "exit 1: KeyError: 'ssn 123-45-6789'"}},
+        {"tool": "run_command", "args": {"command": "make"}, "result": {"ok": False, "exit_code": 2, "error": "boom: token=abc"}}])
+    assert "123-45-6789" not in block and "token=abc" not in block
+    assert "run_python: failed: exit 1" in block and "run_command command=make: failed: exit 2" in block

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 OPEN, CLOSE = "<turn_tools>", "</turn_tools>"
 _RESULT_CHARS = 500
@@ -74,6 +75,12 @@ def _key_arg(tool: str, args: dict) -> str:
 def _outcome(tool: str, result: dict) -> str:
     if not result.get("ok", True):
         from arslan.companion.content_policy import contains_credential
+        if tool in ("run_python", "run_command"):   # their error carries the stderr tail (③Hands' review)
+            exit_text = re.match(r"exit (-?\d+)", str(result.get("error") or ""))
+            code = result.get("exit_code") if isinstance(result.get("exit_code"), int) else (
+                int(exit_text.group(1)) if exit_text else None)
+            return "failed: " + (str(result.get("code")) if result.get("code") else
+                                 f"exit {code}" if code is not None else "error")
         reason = str(result.get("code") or result.get("error") or "error")
         return "failed: " + ("<credential omitted>" if contains_credential(reason) else _clip(reason, 80))
     exit_code = f" (exit {result['exit_code']})" if isinstance(result.get("exit_code"), int) else ""

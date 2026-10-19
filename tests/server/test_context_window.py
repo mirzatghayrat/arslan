@@ -151,8 +151,13 @@ def test_a_model_served_by_ollama_gets_a_small_window_whatever_its_name():
 async def test_a_turn_on_ollama_gets_the_small_budget(execution_db, monkeypatch):
     from server.orchestrator import memory, tool_loop
     monkeypatch.delenv("ARSLAN_WORKING_TOKEN_BUDGET", raising=False)
-    adapter = _Adapter("deepseek-r1:8b")
-    adapter.provider_name = "ollama"
+    # Built as llm_factory builds it: the ollama preset becomes the "openai" wire protocol, and only
+    # report_provider still says "ollama" (③Hands' review: a stubbed provider_name hid that).
+    from arslan.llm.adapter import LLMAdapter
+    from arslan.llm.presets import expand_preset
+    provider, model, base_url = expand_preset("ollama", "deepseek-r1:8b", "")
+    adapter = LLMAdapter(provider, model, api_key="", base_url=base_url, report_provider="ollama")
+    assert adapter.provider_name != "ollama"
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     assert await memory.turn_budget("c") == cw.history_budget(cw.LOCAL_WINDOW)
 
