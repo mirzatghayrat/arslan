@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base
-from server.orchestrator import memory
 from server.services import fact_classify, fact_dedup
 
 
@@ -36,40 +35,12 @@ def test_similar_catches_near_duplicates():
 
 
 @pytest.mark.asyncio
-async def test_save_facts_near_dup_coexists_not_merged(maker):
-    # P0-b: this paraphrase pair has difflib ratio == 0.800 (verified via
-    # difflib.SequenceMatcher; norm() is a no-op here — no whitespace/case to
-    # collapse) and containment doesn't apply (neither string is a substring of
-    # the other). Under the OLD threshold (0.6) it silently merged; under the
-    # NEW threshold (0.85) it's not classified as similar at all, so it inserts
-    # as an independent fact — no merge, no bump, both rows kept (coexist).
-    # This guards against the tightened threshold's core risk: two distinct
-    # paraphrases must never be silently conflated (see the 喜欢猫/喜欢狗
-    # regression this round fixes). Only exact-normalized duplicates merge —
-    # see test_dedup_tightened.py::test_exact_dup_merges_and_bumps.
-    a = await memory.save_facts([{"content": "用户偏好使用中文沟通"}], provenance={"source_kind": "test"})
-    assert len(a) == 1
-    fid = a[0].id
-    b = await memory.save_facts(
-        [{"content": "用户偏好使用中文进行沟通和输出"}], provenance={"source_kind": "test"})
-    assert len(b) == 1  # NOT merged → a new row is created (coexist)
-    async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.execute(sa_text(
-            "SELECT id, content, confidence FROM user_facts ORDER BY id"))).all()
-    assert len(rows) == 2
-    conf = next(r[2] for r in rows if r[0] == fid)
-    assert conf == 0.6  # original row NOT bumped — it wasn't touched
-
-
-@pytest.mark.asyncio
 async def test_dedup_merge_backfill_collapses(maker):
-    await memory.save_facts(
-        [{"content": "用户母语是甲语,来自甲城"}], provenance={"source_kind": "test"})
-    # inject an exact near-dup directly (bypass save's own merge) to backfill
+    # two near-dups written directly (memory.save_facts no longer writes v1 rows, C2a)
     async with db_session.AsyncSessionLocal() as db:
         await db.execute(sa_text(
             "INSERT INTO user_facts (content, source, confidence) VALUES "
-            "('用户母语是甲语,来自甲城地区', 'auto', 0.6)"))
+            "('用户母语是甲语,来自甲城', 'auto', 0.6), ('用户母语是甲语,来自甲城地区', 'auto', 0.6)"))
         await db.commit()
     deleted = await fact_dedup.dedup_merge_facts()
     assert deleted == 1

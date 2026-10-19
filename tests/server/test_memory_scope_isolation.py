@@ -107,8 +107,8 @@ async def test_contextvar_has_zero_residue_across_two_dispatches(maker):
     assert out1["ok"] is True
     assert tool_caller.current_caller() is None            # reset after first dispatch
 
-    out2 = await _remember(
-        {"kind": "fact", "action": "append", "content": "第二次事实"},
+    out2 = await _remember(           # a learning: a v1 fact append now reaches memory v2 (C2a)
+        {"kind": "learning", "action": "append", "content": "第二次心得"},
         ToolCaller(actor="host", spawn_id=None, conversation_id="c2"))
     assert out2["ok"] is True
     assert tool_caller.current_caller() is None            # reset after second — no bleed-through
@@ -502,28 +502,3 @@ async def test_host_delete_learning_is_unrestricted(maker):
     assert len(proposals) == 1
     assert proposals[0].table_name == "learnings"
     assert proposals[0].old_id == row_id
-
-
-# ---------------------------------------------------------------------------
-# dual-track provenance: fact rides the JSON `provenance` column, learning
-# rides `source_ref` — both distinguishable from the existing distill mechanism.
-# ---------------------------------------------------------------------------
-
-async def test_dual_track_provenance_distinguishable_from_distill(maker):
-    await _seed_spawn(maker, 30, "分身30")
-    fact_out = await _remember(
-        {"kind": "fact", "action": "append", "content": "轨道一:JSON provenance"},
-        ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
-    learning_out = await _remember(
-        {"kind": "learning", "action": "append", "content": "轨道二:source_ref"},
-        ToolCaller(actor="spawn", spawn_id=30, conversation_id="c2"))
-
-    async with maker() as db:
-        fact_row = await db.get(UserFact, fact_out["id"])
-        learning_row = await db.get(Learning, learning_out["id"])
-
-    assert fact_row.provenance["source_kind"] == "agentic"
-    assert fact_row.provenance["actor"] == "host"
-
-    assert learning_row.source_kind == "agentic"            # never "distill"/"feedback"/"upflow"
-    assert learning_row.source_ref["actor"] == "spawn:30"    # distill's source_ref never has "actor"

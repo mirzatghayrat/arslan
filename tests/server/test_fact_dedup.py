@@ -1,4 +1,7 @@
-"""Exact-normalized fact dedup: backfill keeps earliest; write-time skips dups."""
+"""Exact-normalized fact dedup: the backfill keeps the earliest of each group.
+
+The write-time tests (memory.py's v1 dedup and its fail-open) went with that path in C2a: memory v2
+skips near-duplicates in memory_compat.save_facts. The backfill is v1 code that C2a-2 deletes."""
 import pytest_asyncio
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -35,58 +38,3 @@ async def test_dedup_keeps_earliest_of_each_group(maker):
         left = (await s.execute(sa_text("SELECT id, content FROM user_facts ORDER BY id"))).all()
     assert [r[0] for r in left] == [1, 4]
 
-
-async def test_write_time_skip_existing(maker):
-    from server.orchestrator import memory
-    await memory.add_manual_fact("建 GitHub 分身")
-    await memory.add_manual_fact("  建 GitHub 分身  ")  # normalized dup → skipped
-    async with maker() as s:
-        count = (await s.execute(sa_text("SELECT COUNT(*) FROM user_facts"))).scalar_one()
-    assert count == 1
-
-
-async def _count_facts(maker):
-    async with maker() as s:
-        return (await s.execute(sa_text("SELECT COUNT(*) FROM user_facts"))).scalar_one()
-
-
-async def test_fail_open_when_norm_raises(maker, monkeypatch):
-    """Safety rule: if the dedup check itself throws, the write must still succeed.
-    Patch norm to blow up; a would-be duplicate must still get inserted (dedup
-    silently skipped, never the write)."""
-    from server.orchestrator import memory
-
-    def boom(_content):
-        raise RuntimeError("norm exploded")
-
-    monkeypatch.setattr("server.services.fact_dedup.norm", boom)
-    # add_manual_fact: two identical facts — dedup broken → BOTH written (fail-open)
-    r1 = await memory.add_manual_fact("建 GitHub 分身")
-    r2 = await memory.add_manual_fact("建 GitHub 分身")
-    assert r1 is not None and r2 is not None  # always returns a row, never None
-    # save_facts: two identical auto facts — dedup broken → BOTH written
-    await memory.save_facts([
-        {"content": "别的偏好"}, {"content": "别的偏好"},
-    ], provenance={"source_kind": "test"})
-    assert await _count_facts(maker) == 4  # 2 manual + 2 auto, nothing dropped
-
-
-async def test_fail_open_when_existing_norms_raises(maker, monkeypatch):
-    """Safety rule: if the store-lookup for existing norms throws, writes proceed.
-    existing_norms_safe swallows it → empty set → dedup skipped, write survives."""
-    from server.orchestrator import memory
-
-    async def boom():
-        raise RuntimeError("db lookup exploded")
-
-    monkeypatch.setattr("server.services.fact_dedup.existing_norms", boom)
-    # Two identical manual facts: cross-store dedup lookup is broken, so the second
-    # (normally deduped against the stored first) must still be written — fail-open.
-    r1 = await memory.add_manual_fact("建 GitHub 分身")
-    r2 = await memory.add_manual_fact("建 GitHub 分身")
-    assert r1 is not None and r2 is not None
-    assert await _count_facts(maker) == 2  # both written; store-lookup failure never blocked a write
-    # (save_facts' intra-batch dedup via the local `seen` set is unaffected here —
-    # only the store lookup fails — so we assert only the cross-store fail-open above.)
-    await memory.save_facts([{"content": "别的偏好"}], provenance={"source_kind": "test"})
-    assert await _count_facts(maker) == 3

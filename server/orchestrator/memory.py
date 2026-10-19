@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
 from arslan.context_budget import clip as clip_context, estimate_tokens
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, ArslanSummary, UserFact
+from server.db.models import ArslanMessage, ArslanSummary
 from server.services.llm_factory import build_adapter
 from server.services.memory_history import eligible_messages
 
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TOKEN_BUDGET = 3000  # ~working context tokens for Arslan; env-tunable
 
 
-_FACTS_MAX_COUNT = 40      # 注入事实条数硬上限
 _FACTS_TOKEN_BUDGET = 600  # facts 块 token 预算(estimate_tokens 计)
 
 
@@ -214,309 +213,69 @@ async def _summarize(adapter, text: str) -> str:  # noqa: ANN001
 
 
 # ---- Scope 3: long-term facts ----
+# Memory v2 only (C2a): every launch activates it (storage_boot.initialize), so the v1 paths over
+# the user_facts table could not run and are gone. The facts are memory entries; the functions below
+# keep the old fact-shaped interface through memory_compat.
 
-async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
-    """Persist auto-extracted facts; return the created rows.
+async def save_facts(facts: list[dict], *, provenance: dict) -> list[SimpleNamespace]:
+    """Save auto-extracted facts as memory entries in the bound task context's scope; return their
+    fact views. Near-duplicates of something already remembered are skipped (memory_compat).
 
-    `provenance` is MANDATORY (programmer guard, not the dedup's fail-open
-    discipline — see below): every write must declare where it came from
-    ({"source_kind": ..., ...}). Callers: arslan.py's router-extraction path
-    ({"source_kind": "router", "conversation_id": <cid>}) and
-    distill_service.distill_meta_upflow ({"source_kind": "upflow", "spawn_id": <id>}).
-
-    Write-time dedup is two-phase: exact-normalized duplicates merge (bump the
-    existing fact's confidence, don't append); fuzzy near-dups route through
-    `fact_dedup.fuzzy_kind` (P1 rule-initiated supersede, direction lock):
-    "extension" (new extends old) auto-supersedes via the memory_temporal
-    executor (in-transaction, full guards — never a bare pointer write);
-    "shrink"/"other" coexist and get a MemoryProposal soft-mark for human
-    adjudication; below-threshold pairs (fuzzy_kind returns None) never reach
-    this branch at all — pure coexist, zero proposal (P0 semantics preserved).
-    All scanners are active-only (superseded_by IS NULL) — a new write must
-    never collide with a dead row. Fail-open: any failure in the dedup checks
-    is swallowed and treated as no-dup — a user's fact must always get saved.
-    This fail-open discipline is SEPARATE from the provenance guard above: a
-    missing/empty provenance is a programmer error and always raises, dedup
-    failures never do.
-
-    NOTE (#13, multi-sibling): find_near_dup returns the FIRST active similar
-    row in scan order — P1 semantics is "at most one near-dup pair handled per
-    write". A write that fuzzy-matches a non-extension sibling is safe-biased
-    toward coexist+proposal (deterministic), not a full-table optimal match.
+    `provenance` is mandatory (a programmer guard: every caller declares where its facts come from),
+    though v2 records the source from the bound task context. Callers: arslan.py's router extraction
+    ({"source_kind": "router", "conversation_id": <cid>}) and distill_service.distill_meta_upflow
+    ({"source_kind": "upflow", "spawn_id": <id>}).
     """
     if not provenance:
         raise ValueError("save_facts: provenance is mandatory (programmer guard)")
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from server.services import memory_compat
-        return await memory_compat.save_facts(facts)
-    created: list[UserFact] = []
-    if not facts:
-        return created
-
-    from server.db.models import MemoryProposal
-    from server.services import fact_dedup, memory_temporal
-    from server.services.fact_dedup import exact_norm_dup, find_near_dup
-
-    async with db_session.AsyncSessionLocal() as db:
-        for f in facts:
-            content = (f.get("content") or "").strip()
-            if not content:
-                continue
-            # P0-b 两阶段:精确归一相等 → merge-bump(真重复);模糊命中 → 三路
-            # (P1: extension 自动取代/shrink+other 提案)。两阶段皆 fail-open+活跃-only。
-            exact = await exact_norm_dup(db, content)
-            if exact is not None:
-                exact.confidence = min(1.0, (exact.confidence or 0.6) + 0.1)
-                continue
-            fuzzy = await find_near_dup(db, content)
-            row = UserFact(
-                content=content,
-                source=f.get("source", "auto"),
-                sensitive=bool(f.get("sensitive", False)),
-                confidence=0.9 if f.get("source") == "manual" else 0.6,
-                provenance=dict(provenance),
-                valid_from=datetime.utcnow(),
-            )
-            db.add(row)
-            created.append(row)
-            if fuzzy is not None:
-                # Fail-open envelope (pre-merge hardening): the row insert above
-                # stays OUTSIDE this try — the fact itself is never hostage. A
-                # raise anywhere in the supersede/proposal step below would
-                # otherwise propagate and roll back the WHOLE batch (all facts
-                # in the call lost), violating "a user's fact must always get
-                # saved". Why-safe note: under v1 this sub-block cannot raise —
-                # the fuzzy hit comes from an active-only scan (so the executor's
-                # already_superseded guard can't fire), the flush precedes the
-                # pointer write, and provenance is non-empty (guarded at entry);
-                # the except is defense-in-depth for future batch/concurrency
-                # changes, not a live path.
-                try:
-                    # HARD requirement: row.id is None until flushed — without
-                    # this, the auto-supersede below silently no-ops (new_id=None).
-                    await db.flush()
-                    kind = fact_dedup.fuzzy_kind(content, fuzzy.content)
-                    if kind == "extension":
-                        # new extends old -> auto-supersede (direction lock),
-                        # through the EXECUTOR's full guards -- never a bare
-                        # pointer write.
-                        await memory_temporal.execute_supersede(
-                            "user_facts", row.id, fuzzy.id, provenance=provenance, db=db)
-                    elif kind in ("shrink", "other"):
-                        db.add(MemoryProposal(
-                            table_name="user_facts", new_id=row.id, old_id=fuzzy.id,
-                            reason=f"{kind}: near-dup coexist", provenance=provenance))
-                        logger.info(
-                            "save_facts: near-dup coexist -> proposal (%s): %d ~ %d",
-                            kind, row.id, fuzzy.id)
-                    # kind is None here only if fuzzy_kind's exact-norm-equal
-                    # guard fires, which exact_norm_dup (active-only) should
-                    # already have caught above -- defensive, not expected.
-                except Exception:  # noqa: BLE001 — fail-open: fact > pointer/proposal
-                    logger.warning(
-                        "save_facts: supersede/proposal step failed; falling back "
-                        "to pure coexist (fact already staged): %r",
-                        content, exc_info=True)
-        await db.commit()
-        for row in created:
-            await db.refresh(row)
-    try:
-        from server.services import fact_classify
-        ids = [r.id for r in created]
-        if ids:
-            fact_classify.schedule(fact_classify.classify_ids(ids))
-    except Exception:  # noqa: BLE001 — scheduling never blocks the write
-        pass
-    return created
-
-
-async def existing_norms_safe() -> set[str]:
-    """Fail-open wrapper: returns existing_norms(), or empty set on any failure."""
-    try:
-        from server.services.fact_dedup import existing_norms
-
-        return await existing_norms()
-    except Exception:  # noqa: BLE001 - dedup must never block writes
-        logger.warning("existing_norms failed; treating as empty (fail-open)", exc_info=True)
-        return set()
+    from server.services import memory_compat
+    return await memory_compat.save_facts(facts)
 
 
 async def list_facts(*, include_superseded: bool = False,
-                     include_stale: bool = False) -> list[UserFact]:
-    """Active-only by default (superseded_by IS NULL, and not marked stale) — the P0
-    single throat: every injection site renders facts via facts_text() -> list_facts(),
-    so this default makes all of them active-only for free. include_superseded=True /
-    include_stale=True are for the Settings/Memory admin view (audit trail).
-
-    `provenance["stale"]` is set by the remember tool's `mark_stale` action
-    (registry/memory_executors._mark_stale_tier1), which is advertised to the model in
-    the tool schema. It is filtered HERE rather than at each caller for the same reason
-    superseded_by is: this function is the only door, so a new injection site cannot
-    forget. Marking is a toggle — marking again clears the flag and the fact comes
-    back — so the row is left alone; nothing about the mark is destructive.
-    """
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from server.services import memory_compat
-        return await memory_compat.list_facts(include_superseded=include_superseded, include_stale=include_stale)
-    async with db_session.AsyncSessionLocal() as db:
-        stmt = select(UserFact).order_by(UserFact.id)
-        if not include_superseded:
-            stmt = stmt.where(UserFact.superseded_by.is_(None))
-        rows = await db.execute(stmt)
-        facts = list(rows.scalars().all())
-    if not include_stale:
-        # Filtered in Python, not SQL: `provenance` is a JSON column, and a
-        # json_extract() predicate would tie the single throat to SQLite's JSON1
-        # extension for a set small enough that the scan is free.
-        facts = [f for f in facts if not (f.provenance or {}).get("stale")]
-    return facts
+                     include_stale: bool = False) -> list[SimpleNamespace]:
+    """Fact views of the entries behind the facts API: active only by default; include_stale adds
+    paused entries, include_superseded every entry not deleted (the Settings/Memory admin view)."""
+    from server.services import memory_compat
+    return await memory_compat.list_facts(include_superseded=include_superseded, include_stale=include_stale)
 
 
-async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
-    """Add a user-authored fact (source='manual').
-
-    Write-time dedup (exact-normalized, active-only — superseded rows never
-    collide with a new write): if an ACTIVE fact with the same normalized
-    content already exists, return that existing row instead of inserting a
-    duplicate. Fail-open: any exception in the dedup check is swallowed and
-    falls through to a normal insert — a user's fact must always get saved.
-    """
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from server.services import memory_compat
-        return await memory_compat.add_manual_fact(content, sensitive)
-    text = content.strip()
-    if not text:
-        raise ValueError("Fact content cannot be empty")
-
-    try:
-        from server.services.fact_dedup import norm
-
-        target = norm(text)
-        if target in await existing_norms_safe():
-            async with db_session.AsyncSessionLocal() as db:
-                rows = await db.execute(
-                    select(UserFact).where(UserFact.superseded_by.is_(None)).order_by(UserFact.id)
-                )
-                for row in rows.scalars().all():
-                    if norm(row.content) == target:
-                        return row
-    except Exception:  # noqa: BLE001 - fail-open: dedup must never block the write
-        logger.warning("add_manual_fact: dedup check failed; proceeding with insert", exc_info=True)
-
-    async with db_session.AsyncSessionLocal() as db:
-        row = UserFact(
-            content=text,
-            source="manual",
-            sensitive=bool(sensitive),
-            confidence=0.9,  # debt#5 fix: manual facts were previously unset (NULL)
-            provenance={"source_kind": "manual", "via": "api"},
-            valid_from=datetime.utcnow(),
-        )
-        db.add(row)
-        await db.commit()
-        await db.refresh(row)
-        try:
-            from server.services import fact_classify
-            fact_classify.schedule(fact_classify.classify_ids([row.id]))
-        except Exception:  # noqa: BLE001 — scheduling never blocks the write
-            pass
-        return row
+async def add_manual_fact(content: str, sensitive: bool = False) -> SimpleNamespace:
+    """Add a user-authored fact as a global memory entry; return its fact view."""
+    from server.services import memory_compat
+    return await memory_compat.add_manual_fact(content, sensitive)
 
 
 async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None,
-                      *, expected_version: int | None = None) -> UserFact | None:
-    """Edit a fact's content/sensitivity. Returns None if not found.
-
-    An edit merges `edited_by_user_at` into the row's provenance dict (rather than
-    replacing it) — an auto-extracted fact a human later hand-edits becomes
-    distinguishable from a still-pristine auto fact, without losing its original
-    source_kind/spawn_id/conversation_id.
-    """
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from server.services import memory_compat
-        return await memory_compat.update_fact(fact_id, content, sensitive, expected_version=expected_version)
-    async with db_session.AsyncSessionLocal() as db:
-        row = await db.get(UserFact, fact_id)
-        if row is None:
-            return None
-        if content is not None:
-            row.content = content.strip()
-        if sensitive is not None:
-            row.sensitive = bool(sensitive)
-        if content is not None or sensitive is not None:
-            prov = dict(row.provenance or {})
-            prov["edited_by_user_at"] = datetime.utcnow().isoformat()
-            row.provenance = prov
-        await db.commit()
-        await db.refresh(row)
-        return row
+                      *, expected_version: int | None = None) -> SimpleNamespace | None:
+    """Edit a fact's content/sensitivity as a new revision. None if not found."""
+    from server.services import memory_compat
+    return await memory_compat.update_fact(fact_id, content, sensitive, expected_version=expected_version)
 
 
 async def delete_fact(fact_id: int, *, expected_version: int | None = None) -> bool:
-    """Delete a fact. Returns True if a row was removed."""
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from server.services import memory_compat
-        return await memory_compat.delete_fact(fact_id, expected_version=expected_version)
-    async with db_session.AsyncSessionLocal() as db:
-        row = await db.get(UserFact, fact_id)
-        if row is None:
-            return False
-        await db.delete(row)
-        await db.commit()
-        return True
+    """Delete a fact. Returns True if one was removed."""
+    from server.services import memory_compat
+    return await memory_compat.delete_fact(fact_id, expected_version=expected_version)
 
 
 async def facts_text(*, include_sensitive: bool = False,
                      limit_tokens: int = _FACTS_TOKEN_BUDGET) -> str:
-    """Render facts as a bullet block for injection into prompts ('' if none).
+    """The memory the bound task context may see, rendered for a prompt ('' if none, or no context).
 
-    P0-a:确定性上限——confidence 优先、recency 破平、id 终平,再按
-    _FACTS_MAX_COUNT 与 token 预算截断(estimate_tokens,CJK-aware)。
-    默认 include_sensitive=False 是 FAIL-CLOSED:敏感事实只在 host 调用点
-    显式声明特权(router / host answer / spawn_drafter)时进入 prompt;
-    spawn dispatch / sandbox 草稿 / replay ambient 走安全默认,零改动即正确。
-    忘传 flag 的泄漏方向永远是"少给",不是"私密进 spawn prompt"。
+    include_sensitive=False is FAIL-CLOSED: sensitive entries reach a prompt only where the host
+    call site declares the privilege (router / host answer / spawn_drafter) AND the context allows
+    them. Spawn dispatch, sandbox drafts and replay ambient keep the safe default, so a forgotten
+    flag gives less, never a private fact in a spawn prompt.
     """
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from dataclasses import replace
-        from server.services.personal_context import assemble, current
-        context = current()
-        if context is None:
-            return ""
-        result = await assemble(context=replace(context, allow_sensitive=context.allow_sensitive and include_sensitive),
-                                limit_tokens=limit_tokens)
-        return result.text if result else ""
-    facts = await list_facts()
-    if not include_sensitive:
-        # NULL⇒sensitive:隐私过滤 fail-closed——只有显式 False 放行
-        # (raw insert 可产生 NULL sensitive;truthiness 会把 NULL 当非敏感放漏)。
-        facts = [f for f in facts if f.sensitive is False]
-    if not facts:
+    from dataclasses import replace
+    from server.services.personal_context import assemble, current
+    context = current()
+    if context is None:
         return ""
-    total = len(facts)
-
-    def _ordinal(f) -> float:  # noqa: ANN001 — NULL-safe recency(raw insert 可为 NULL)
-        return f.created_at.timestamp() if f.created_at is not None else 0.0
-
-    ranked = sorted(facts, key=lambda f: (-(f.confidence or 0.6), -_ordinal(f), -f.id))
-    chosen = []
-    header = "Known facts about the user:\n"
-    for f in ranked[:_FACTS_MAX_COUNT]:
-        candidate = header + "\n".join(f"- {item.content}" for item in [*chosen, f])
-        if estimate_tokens(candidate) > limit_tokens:
-            continue  # Never inject a partial fact or exempt an oversized first fact.
-        chosen.append(f)
-    if len(chosen) < total:
-        # 诚实:截断留痕,不静默
-        logger.debug("facts_text: capped %d/%d facts (count/token budget)", len(chosen), total)
-    chosen.sort(key=lambda f: f.id)  # 渲染回 id 升序:注入文本稳定,利缓存
-    return header + "\n".join(f"- {f.content}" for f in chosen) if chosen else ""
+    result = await assemble(context=replace(context, allow_sensitive=context.allow_sensitive and include_sensitive),
+                            limit_tokens=limit_tokens)
+    return result.text if result else ""
 
 
 async def user_turn_count(conversation_id: str) -> int:

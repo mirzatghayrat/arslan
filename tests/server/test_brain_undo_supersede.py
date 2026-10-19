@@ -20,6 +20,10 @@ import pytest
 
 from server.db.models import Learning, Note, UserFact
 
+# The shared test databases stay on memory v1 in this file: the code it tests still has a v1 path,
+# which C2a-2 deletes (then this marker goes too; marker memory_v1 in pyproject.toml).
+pytestmark = pytest.mark.memory_v1
+
 AUTH: dict[str, str] = {}
 
 

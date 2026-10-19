@@ -17,6 +17,11 @@ the 🔴 dangling-superseded_by reconcile on delete_suspect (the silent-data-
 loss guard: a row that was itself SOMEONE's supersede target must resurrect
 its predecessor when deleted, else that predecessor's pointer dangles).
 
+C2a removed the user_facts accept tests (append_suspect, edit_high_conf_suspect, and
+delete_suspect on user_facts): their accept branches reach memory.save_facts /
+delete_fact, which write memory v2 since C2a. The rest test v1 brain code that C2a-2
+deletes.
+
 Fixture pattern mirrors tests/server/test_facts_api.py (NOT the plain
 tests/server/conftest.py `client` fixture): accept_proposal's new branches
 call server.orchestrator.memory.save_facts / delete_fact and
@@ -121,22 +126,6 @@ async def _seed_spawn(client, spawn_id, name, memory_facts=None) -> None:
 
 # --------------------------------------------------------------------- append_suspect
 
-async def test_append_suspect_accept_materializes_global_fact(client):
-    pid = await _seed_proposal(
-        client, kind="append_suspect", table_name="user_facts",
-        provenance={"content": "分身提议的新事实", "source_kind": "agentic", "actor": "spawn:1"})
-
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-    assert r.json()["status"] == "accepted"
-
-    async with client.db_maker() as db:
-        from sqlalchemy import select
-        facts = (await db.execute(select(UserFact))).scalars().all()
-    assert len(facts) == 1
-    assert facts[0].content == "分身提议的新事实"
-
-
 async def test_append_suspect_dismiss_does_not_materialize(client):
     pid = await _seed_proposal(
         client, kind="append_suspect", table_name="user_facts",
@@ -184,26 +173,6 @@ async def test_append_suspect_bad_table_422(client):
 
 # --------------------------------------------------------------------- edit_high_conf_suspect
 
-async def test_edit_high_conf_accept_creates_new_and_supersedes_old(client):
-    old_id = await _seed_fact(client, content="用户很在意隐私")
-    pid = await _seed_proposal(
-        client, kind="edit_high_conf_suspect", table_name="user_facts", old_id=old_id,
-        provenance={"content": "用户实际上完全不介意公开信息",
-                   "source_kind": "agentic", "actor": "spawn:8"})
-
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-
-    async with client.db_maker() as db:
-        from sqlalchemy import select
-        old = await db.get(UserFact, old_id)
-        facts = (await db.execute(select(UserFact))).scalars().all()
-    assert len(facts) == 2
-    new_row = next(f for f in facts if f.id != old_id)
-    assert new_row.content == "用户实际上完全不介意公开信息"
-    assert old.superseded_by == new_row.id
-
-
 async def test_edit_high_conf_dismiss_leaves_old_unchanged(client):
     old_id = await _seed_fact(client, content="待编辑的事实")
     pid = await _seed_proposal(
@@ -248,30 +217,6 @@ async def test_edit_high_conf_unsupported_table_returns_422_no_stray_write(clien
         from sqlalchemy import select
         facts = (await db.execute(select(UserFact))).scalars().all()
     assert facts == []                            # no stray user_facts row
-
-
-async def test_edit_high_conf_accept_idempotent_when_save_facts_own_dedup_fires(client):
-    """save_facts() runs its own exact/fuzzy dedup on every write, active-only.
-    If the edit content is an EXTENSION of old_id's content, save_facts'
-    internal rule-supersede may already point old_id at the freshly-created
-    row before we get to our own execute_supersede call below — that must be
-    treated as success (idempotent), not a spurious 409."""
-    old_id = await _seed_fact(client, content="user prefers dark mode")
-    pid = await _seed_proposal(
-        client, kind="edit_high_conf_suspect", table_name="user_facts", old_id=old_id,
-        provenance={"content": "user prefers dark mode and large fonts"})
-
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-
-    async with client.db_maker() as db:
-        from sqlalchemy import select
-        old = await db.get(UserFact, old_id)
-        facts = (await db.execute(select(UserFact))).scalars().all()
-    assert old.superseded_by is not None
-    new_row = next(f for f in facts if f.id != old_id)
-    assert old.superseded_by == new_row.id
-    assert new_row.content == "user prefers dark mode and large fonts"
 
 
 async def test_edit_high_conf_old_hard_deleted_returns_410_no_orphan(client):
@@ -329,29 +274,6 @@ async def test_edit_high_conf_old_superseded_out_of_band_returns_409_no_orphan(c
 
 # --------------------------------------------------------------------- delete_suspect
 
-async def test_delete_suspect_accept_user_facts_reconciles_predecessor(client):
-    """🔴 The dangling-superseded_by guard: A is superseded by B; accepting a
-    delete_suspect proposal for B must both delete B AND resurrect A
-    (A.superseded_by -> NULL) — else A's pointer dangles at a dead id, a
-    silent-loss bug (A would look permanently "superseded" by nothing)."""
-    a_id = await _seed_fact(client, content="A")
-    b_id = await _seed_fact(client, content="B")
-    async with client.db_maker() as db:
-        a = await db.get(UserFact, a_id)
-        a.superseded_by = b_id
-        await db.commit()
-
-    pid = await _seed_proposal(client, kind="delete_suspect", table_name="user_facts", old_id=b_id)
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-
-    async with client.db_maker() as db:
-        a = await db.get(UserFact, a_id)
-        b = await db.get(UserFact, b_id)
-    assert b is None                    # B is gone
-    assert a.superseded_by is None      # A is active again
-
-
 async def test_delete_suspect_accept_learnings_reconciles_and_removes_fts(client):
     a_id = await _seed_learning(client, content="A心得")
     b_id = await _seed_learning(client, content="B心得")
@@ -401,16 +323,6 @@ async def test_delete_suspect_accept_spawns_clears_preferences(client):
     async with client.db_maker() as db:
         spawn = await db.get(Spawn, 42)
     assert spawn.memory_facts == []
-
-
-async def test_delete_suspect_dangling_returns_410_and_stays_pending(client):
-    pid = await _seed_proposal(client, kind="delete_suspect", table_name="user_facts", old_id=999999)
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 410
-
-    async with client.db_maker() as db:
-        p = await db.get(MemoryProposal, pid)
-    assert p.status == "pending"
 
 
 async def test_delete_suspect_dangling_learnings_returns_410_but_reconcile_still_lands(client):

@@ -1,4 +1,4 @@
-"""REST API tests for user_facts CRUD (Settings -> Memory)."""
+"""REST API tests for fact CRUD (Settings -> Memory), on memory v2: edits and deletes name the version."""
 from __future__ import annotations
 
 import importlib
@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base
+from tests.server.conftest import boot_schema
 
 AUTH = {"Authorization": "Bearer test-token"}
 
@@ -25,7 +25,7 @@ async def client(tmp_path, monkeypatch):
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'facts.db'}")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(boot_schema)  # as a launch leaves it: memory v2 (C2a)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
@@ -53,14 +53,22 @@ async def test_facts_crud_roundtrip(client):
     r = await client.get("/api/v1/facts", headers=AUTH)
     assert len(r.json()) == 1
 
+    r = await client.put(f"/api/v1/facts/{fid}", headers=AUTH, json={"content": "I prefer imperial units"})
+    assert r.status_code == 428                         # no version named
+
     r = await client.put(
-        f"/api/v1/facts/{fid}", headers=AUTH, json={"content": "I prefer imperial units", "sensitive": True}
+        f"/api/v1/facts/{fid}", headers=AUTH,
+        json={"content": "I prefer imperial units", "sensitive": True, "expected_version": fact["version"]}
     )
     assert r.status_code == 200
-    assert r.json()["content"] == "I prefer imperial units"
-    assert r.json()["sensitive"] is True
+    edited = r.json()
+    assert edited["content"] == "I prefer imperial units"
+    assert edited["sensitive"] is True
 
-    r = await client.delete(f"/api/v1/facts/{fid}", headers=AUTH)
+    r = await client.delete(f"/api/v1/facts/{fid}?expected_version={fact['version']}", headers=AUTH)
+    assert r.status_code == 409                         # an older version
+
+    r = await client.delete(f"/api/v1/facts/{fid}?expected_version={edited['version']}", headers=AUTH)
     assert r.status_code == 204
 
     r = await client.get("/api/v1/facts", headers=AUTH)
@@ -73,12 +81,12 @@ async def test_facts_requires_auth(client):
 
 
 async def test_update_missing_fact_404(client):
-    r = await client.put("/api/v1/facts/999", headers=AUTH, json={"content": "x"})
+    r = await client.put("/api/v1/facts/999", headers=AUTH, json={"content": "x", "expected_version": 1})
     assert r.status_code == 404
 
 
 async def test_delete_missing_fact_404(client):
-    r = await client.delete("/api/v1/facts/999", headers=AUTH)
+    r = await client.delete("/api/v1/facts/999?expected_version=1", headers=AUTH)
     assert r.status_code == 404
 
 

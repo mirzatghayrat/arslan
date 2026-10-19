@@ -13,7 +13,13 @@ Error mapping under test (accept only — dismiss never calls the executor):
 """
 from __future__ import annotations
 
+import pytest
+
 from server.db.models import Learning, MemoryProposal, UserFact
+
+# The shared test databases stay on memory v1 in this file: the code it tests still has a v1 path,
+# which C2a-2 deletes (then this marker goes too; marker memory_v1 in pyproject.toml).
+pytestmark = pytest.mark.memory_v1
 
 
 async def _seed_facts(client, new_content="新内容比旧的长很多", old_content="旧内容"):

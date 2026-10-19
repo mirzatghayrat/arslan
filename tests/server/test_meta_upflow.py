@@ -1,5 +1,6 @@
 """Metaknowledge upflow: after per-spawn distillation, ONE cross-spawn meta-fact
-bubbles up to Arslan's user profile (UserFact, source='upflow')."""
+bubbles up to Arslan's user profile. The test of the v1 UserFact it wrote went with
+memory.save_facts' v1 path (C2a); the rest test v1 distill code that C2a-2 deletes."""
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -39,26 +40,6 @@ def _stub_adapter(monkeypatch, reply: str):
         return _Adapter()
 
     monkeypatch.setattr(distill_service, "build_adapter", fake_build_adapter)
-
-
-async def test_upflow_writes_userfact(maker, monkeypatch):
-    from server.services import distill_service
-    _stub_adapter(monkeypatch, "用户偏口语、忌硬广")
-
-    async with maker() as db:
-        spawn = await db.get(Spawn, 3)
-    written = await distill_service.distill_meta_upflow(spawn, ["输出更简短", "标注信息来源"])
-    async with maker() as s:
-        rows = (await s.execute(select(UserFact))).scalars().all()
-
-    assert written == "用户偏口语、忌硬广"
-    assert len(rows) == 1
-    assert rows[0].content == "用户偏口语、忌硬广"
-    assert rows[0].source == "upflow"
-    # brain-P1 Task 3 (BLOCKER #1): now routed through save_facts, so it carries
-    # mandatory provenance + valid_from like every other fact write.
-    assert rows[0].provenance == {"source_kind": "upflow", "spawn_id": 3}
-    assert rows[0].valid_from is not None
 
 
 async def test_upflow_empty_reply_writes_nothing(maker, monkeypatch):

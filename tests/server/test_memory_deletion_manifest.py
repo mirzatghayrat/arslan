@@ -74,7 +74,10 @@ def test_size_and_entry_limits(monkeypatch):
         manifest.validate(valid())
 
 
-@pytest.mark.parametrize("mode", ["entry_id", "fingerprint", "legacy", "foreign_store", "malformed"])
+# "legacy" seeds a v1 row and migrates and activates it itself, so its database starts on memory v1.
+# Permanent: kept while migration from v1 exists (marker memory_v1 in pyproject.toml).
+@pytest.mark.parametrize("mode", ["entry_id", "fingerprint", pytest.param("legacy", marks=pytest.mark.memory_v1),
+                                  "foreign_store", "malformed"])
 async def test_old_backup_reconciles_later_deletion_before_install(execution_db, tmp_path, mode):
     from server.services import backup
     from sqlalchemy import create_engine

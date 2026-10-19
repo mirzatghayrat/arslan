@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import ArslanMessage, Base, ChatMessage, Spawn, UserFact
+from server.db.models import ArslanMessage, Base, ChatMessage, Spawn
+from tests.server.conftest import boot_schema
 
 
 @pytest_asyncio.fixture
@@ -25,15 +26,37 @@ async def maker(tmp_path, monkeypatch):
                 system_prompt="You are a beauty expert.",
             )
         )
-        s.add(UserFact(content="prefers data-driven tone"))
         await s.commit()
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 
 
+@pytest_asyncio.fixture
+async def maker_v2(tmp_path, monkeypatch):
+    """The same spawn on memory v2, as a launch leaves it, with one "about you" entry (in view
+    whatever the task brief is). C2a: `maker` stays on v1 for the evolution-rules test, whose
+    suffix dispatcher appends only without memory v2 (C2a-2 deletes that branch)."""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'d2.db'}")
+    m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(boot_schema)
+    async with m() as s:
+        s.add(Spawn(id=7, name="beauty-guru", domain_category="content-creator",
+                    capabilities=["content-generation"], system_prompt="You are a beauty expert."))
+        await s.commit()
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
+    from server.services.memory_repository import repository
+    async with repository() as repo:
+        await repo.create(MemoryWrite(content="prefers data-driven tone", kind="preference",
+                                      scope=MemoryScope(kind="global"), core="about_you"),
+                          MemoryActor(origin="user"))
+    return m
+
+
 @pytest.mark.asyncio
-async def test_dispatch_isolation_and_persistence(maker, monkeypatch):
+async def test_dispatch_isolation_and_persistence(maker_v2, monkeypatch):
     from server.orchestrator import dispatcher
 
     captured = {}
@@ -48,10 +71,12 @@ async def test_dispatch_isolation_and_persistence(maker, monkeypatch):
 
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
 
+    from server.services import personal_context as pc
     chunks = []
-    result = await dispatcher.dispatch(
-        "main", spawn_id=7, task_brief="draft 2 posts", on_chunk=lambda c: chunks.append(c)
-    )
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", model_is_local=True)):  # a turn's memory scope
+        result = await dispatcher.dispatch(
+            "main", spawn_id=7, task_brief="draft 2 posts", on_chunk=lambda c: chunks.append(c)
+        )
 
     # streamed the full output
     assert "".join(chunks) == "Post 1. Post 2."

@@ -18,6 +18,7 @@ from server.db import session as db_session
 from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
+from server.services.memory_activation import activate_sync
 from server.services import evolution_estimate, evolution_watcher
 from tests import real_data_dir_guard
 from tests.server.portal_teardown import shared_portal
@@ -62,6 +63,28 @@ def _heal_config_drift() -> bool:
 _TEST_CRYPTO_SALT = bytes(range(16))
 
 
+def boot_schema(connection) -> None:
+    """The schema as every launch leaves it (storage_boot.initialize, without the crypto steps):
+    the tables, the migrations, then memory v2 activation. Activating without the migrations leaves
+    views over tables that do not exist yet, and the next real boot fails on them (C2a)."""
+    from server.db.migrations import runner
+    Base.metadata.create_all(connection)
+    runner.apply_pending(connection)
+    activate_sync(connection)
+
+
+def _legacy_schema(connection) -> None:
+    """Memory v1, which no launch has left since v0.1.40: only for files marked `memory_v1` (registered
+    in pyproject.toml with its removal condition; tests/server/test_memory_v1_marker_scope.py pins the list)."""
+    from server.db.migrations import runner
+    Base.metadata.create_all(connection)
+    runner.apply_pending(connection)
+
+
+def _schema_for(request) -> Callable:
+    return _legacy_schema if request.node.get_closest_marker("memory_v1") else boot_schema
+
+
 @pytest.fixture(autouse=True)
 def _testclient_models_loopback(monkeypatch):
     """In-process clients model a local dev connection unless a test specifies a peer.
@@ -81,13 +104,13 @@ def _testclient_models_loopback(monkeypatch):
 
 
 @pytest.fixture
-async def execution_db(monkeypatch, tmp_path):
+async def execution_db(monkeypatch, tmp_path, request):
     """Isolated database for execution-lifecycle tests; never touch local app data."""
     # Real file + pooled connections: cancelling an active query can invalidate
     # one connection. A :memory: database would disappear with it, unlike production.
     engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'execution.db'}")
     async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_schema_for(request))
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     yield maker
@@ -231,7 +254,7 @@ def _patch_session_global(monkeypatch, maker):
 
 
 @pytest_asyncio.fixture
-async def client(tmp_path, monkeypatch):
+async def client(tmp_path, monkeypatch, request):
     """Async HTTP client with an isolated temp-file SQLite DB."""
     import os
 
@@ -250,7 +273,7 @@ async def client(tmp_path, monkeypatch):
     engine = db_session.install_cancel_rollback(
         create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}"))
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_schema_for(request))
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with maker() as s:
@@ -364,14 +387,15 @@ def build_ws_client(
     *,
     db_name: str = "app.db",
     env: dict[str, str] | None = None,
+    memory_v1: bool = False,
 ) -> "TestClient":
     """Build a TestClient whose app, DB seed, and every websocket_connect run on
     ONE loop (``portal``). NullPool engine + seed-on-portal-loop is the root fix.
 
     ``seed(maker)`` is an async callback receiving the sessionmaker; each WS test
     file supplies its own (different Spawn configs). It runs via ``portal.call``
-    so it executes on the same loop the TestClient will serve on. Schema creation
-    (``Base.metadata.create_all``) is done here, before ``seed`` is invoked.
+    so it executes on the same loop the TestClient will serve on. The schema (as a launch
+    leaves it, or memory v1 with ``memory_v1=True``) is built here, before ``seed`` is invoked.
 
     Env order mirrors the hand-rolled fixtures: set env -> reload config ->
     monkeypatch AsyncSessionLocal -> create_app, so config-dependent app wiring
@@ -397,7 +421,7 @@ def build_ws_client(
 
     async def _seed() -> None:
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(_legacy_schema if memory_v1 else boot_schema)
         if seed is not None:
             await seed(maker)
 
@@ -450,7 +474,7 @@ async def wdb(tmp_path, monkeypatch):
     test so nothing bleeds."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'w.db'}")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(boot_schema)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
 
