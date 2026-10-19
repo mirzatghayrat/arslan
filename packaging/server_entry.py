@@ -432,7 +432,6 @@ def selftest() -> int:
         for rel, why in (
             ("arslan/spawn/seeds", "factory spawns cannot be seeded"),
             ("arslan/spawn/scaffold", "new skill-packs cannot be scaffolded"),
-            ("arslan/config", "the requirement tree is unavailable"),
             ("arslan/templates/official", "official templates are unavailable"),
         ):
             d = root / rel

@@ -34,6 +34,9 @@
   - 自动路径：`_in_budget_refusal_cooldown`（`:429-443`）、`trigger_spawn`（`:446-464`），以及 `_is_eligible`（`:209`；C1 合并后已零调用，只在 `trigger_spawn` 的文档字符串里提到，更正 E20）；
   - 循环：`tick`、`watch_loop`、`start`、`stop`（`:484-537`）；
   - `notify_spawn`（`:540-552`）。
+- `arslan/spawn/evolve.py`：`consolidate_evolution`、`reset_evolution`。
+  - C2d 删了旧命令行之后，它们没有产品调用了，只有 `tests/spawn/test_consolidate.py` 测前者。
+  - 一起删，删前 `git grep -nE` 加正对照。`apply_tier1_evolution` 还有 `evolution_service` 在用，保留。
 - 调用点：
   - `server/services/run_recorder.py:460-469`：调用 `notify_spawn` 的那段；
   - `server/main.py`：开机启动（`:330-339`）和关机停止（`:395-401`）。
