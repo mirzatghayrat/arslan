@@ -195,7 +195,7 @@ def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MO
         # Its Bash tool makes a working folder under /tmp/claude-<uid>, outside what the bench's
         # sandbox lets it write, so every command failed and it reported "no network" (M1B,
         # T2/T3/T5/T7 invalid). CLAUDE_CODE_TMPDIR moves that folder under the bench root.
-        tmp = ROOT / "tmp" / "claude-code"
+        tmp = ROOT / "tmp" / "claude-code" / label      # one per run (③Hands' review of #227)
         tmp.mkdir(parents=True, exist_ok=True)
         return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": base, "CLAUDE_CODE_TMPDIR": str(tmp),
                          "ANTHROPIC_API_KEY": "bench-dummy", "DISABLE_AUTOUPDATER": "1",
@@ -372,6 +372,31 @@ def _healthy(api: str) -> bool:
         return False
 
 
+def _descendants(pid: int) -> list[int]:
+    """Every process under `pid` now, whatever session it started (ps, so no extra dependency)."""
+    out = subprocess.run(["ps", "-Ao", "pid=,ppid="], capture_output=True, text=True).stdout
+    children: dict[int, list[int]] = {}
+    for line in out.splitlines():
+        child, parent = (int(x) for x in line.split())
+        children.setdefault(parent, []).append(child)
+    found, todo = [], [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            found.append(child)
+            todo.append(child)
+    return found
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
 @contextlib.contextmanager
 def fresh_instance(label: str, who: str, ready_s: float = 90.0):
     """Start Arslan on an empty data folder for this run; stop it (whole process group) after."""
@@ -395,6 +420,11 @@ def fresh_instance(label: str, who: str, ready_s: float = 90.0):
             time.sleep(0.5)
         yield ROOT / "data" / name
     finally:
+        # Arslan starts commands, sandboxes, parsers and browsers in sessions of their own
+        # (start_new_session), out of reach of the group signal: a command still running at the
+        # stop would keep going into the next run (③Hands' review). Take the tree first, while
+        # their parent is alive to name them; whatever outlives the stop gets SIGKILL.
+        tree = _descendants(proc.pid)
         with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGTERM)
         try:
@@ -403,6 +433,12 @@ def fresh_instance(label: str, who: str, ready_s: float = 90.0):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
+        left = [pid for pid in tree if _alive(pid)]
+        for pid in left:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+        if left:
+            log.write(f"\n[bench] killed {len(left)} process(es) left after the stop: {left}\n")
         log.close()
 
 

@@ -4,6 +4,7 @@ The sample bake-off found three bugs in its own tooling — a date glued to a nu
 unreadable .xlsx, and heartbeats resetting the driver's idle timer. Each has a test here.
 """
 import json
+import os
 import subprocess
 import sys
 import time
@@ -663,3 +664,55 @@ def test_with_fresh_instances_each_arslan_run_has_its_own_until_it_settles(tmp_p
     monkeypatch.setattr(runner, "FRESH", False)
     runner.run_one("T9", "arslan", 3, {"T9": "edit {dir}"}, "sb")
     assert events[6:] == [("settle", "arslan-T9-r3")] and seen[-1] is None     # off: the shared instance
+
+
+def test_rerun_passes_the_model_through(monkeypatch, capsys):
+    """U10 reruns single cells on Claude too; without --models they ran on the default model."""
+    from scripts.kernel_bench import rerun, runner
+    calls = []
+    monkeypatch.setattr(runner, "sandbox_profile", lambda: "sb")
+    monkeypatch.setattr(runner, "run_one", lambda task, who, n, prompts, sb, models=None: calls.append(
+        (task, who, n, models)) or {"run": f"{who}-{task}-r{n}", "model": (models or {}).get(who, "default"),
+                                    "passed": True, "rc": 0, "check": {"score": 3}, "usage": {"usd_peak": 0, "span_s": 0}})
+    rerun.main(["--models", "arslan=claude-sonnet-5", "T5:arslan:2", "T9:arslan:3"])
+    rerun.main(["T1:arslan:1"])
+    assert calls == [("T5", "arslan", 2, {"arslan": "claude-sonnet-5"}), ("T9", "arslan", 3, {"arslan": "claude-sonnet-5"}),
+                     ("T1", "arslan", 1, {})]
+    assert '"model": "claude-sonnet-5"' in capsys.readouterr().out
+
+
+def test_a_command_in_its_own_session_does_not_outlive_its_fresh_instance(tmp_path, monkeypatch):
+    """Arslan starts commands with start_new_session: the group signal misses them, and a slow one
+    would keep running into the next run (③Hands' review of #228)."""
+    import socket
+    from scripts.kernel_bench import runner
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    site = tmp_path / "site"
+    (site / "api/v1").mkdir(parents=True)
+    (site / "api/v1/health").write_text("ok")
+    server = tmp_path / "server.py"                # stands in for uvicorn with a command in flight
+    server.write_text(
+        "import http.server, functools, subprocess, sys\n"
+        "child = subprocess.Popen(['sleep', '300'], start_new_session=True)\n"
+        f"open({str(tmp_path / 'child')!r}, 'w').write(str(child.pid))\n"
+        f"handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory={str(site)!r})\n"
+        "http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), handler).serve_forever()\n")
+    script = tmp_path / "start.sh"
+    script.write_text(f'#!/bin/bash\nexec {sys.executable} {server} "$2"\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "START_ARSLAN", script)
+    monkeypatch.setattr(runner, "ARSLAN_API", f"http://127.0.0.1:{port}/api/v1")
+    with runner.fresh_instance("arslan-T7-r1", "arslan"):
+        child = int((tmp_path / "child").read_text())
+        assert runner._alive(child) and os.getpgid(child) == child           # its own session
+    time.sleep(0.2)
+    assert not runner._alive(child) or _zombie(child)
+    assert "killed 1 process" in (tmp_path / "runs" / "arslan-T7-r1.instance.log").read_text()
+
+
+def _zombie(pid: int) -> bool:
+    out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return out.strip().startswith("Z")
