@@ -396,11 +396,15 @@ class MacAppleScriptExecutor:
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=denied[0])
         kind, named = hands_service.script_kind(script)
         # 0.1.61 release gate: a script runs outside the command sandbox, and script_kind reads what it
-        # does past the app it names from its words only. A raw Apple event («event sysoexec» is
-        # `do shell script`), AppleScriptObjC (NSTask) and Standard Additions' `write` are not among
-        # them. So no grant or rule stands for a script — not an app's "for this task", "in this
-        # conversation" or "Always", Hands' included: every script is asked, in full, in Arslan, as
-        # in 0.1.60. One that names apps is `app_risky` (once, never remembered).
+        # does past the app it names from its words only (raw «events», AppleScriptObjC and Standard
+        # Additions' file writes among them since 0.1.63, #232, but still words). So no grant or rule
+        # stands for a script — not an app's "for this task", "in this conversation" or "Always",
+        # Hands' included: every script is asked, in full, in Arslan, as in 0.1.60. One that names apps
+        # is `app_risky` (once, never remembered).
+        # The rewrite is policy, so it stays here and script_kind keeps telling `app` from `app_risky`
+        # (C2c, ⓪Plan 2026-10-21): that split is what lifting the gate needs. Removed when the 0.1.61
+        # every-script-asks gate lifts, by its own card, together with the island's `scriptAlsoHands`
+        # text coming back (C2c deletes it from the web while no `app` script card can exist).
         if kind == "app":
             kind = "app_risky"
         decision = await _decide(kind, ", ".join(named) or "AppleScript", "Run this AppleScript?", script,
