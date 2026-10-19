@@ -212,16 +212,3 @@ async def selected_locale():
 
 def render(key, locale, **values):
     return MESSAGES[normalize(locale)][key].format(**values)
-
-
-def has_findings(text):
-    for copy in MESSAGES.values():
-        header = copy["findings_header"]
-        end = "】" if header.startswith("【") else "]"
-        if header[:header.index(end) + 1] in (text or ""):
-            return True
-    return False
-
-
-def is_round_incomplete(text):
-    return any(copy["round_incomplete"] in text for copy in MESSAGES.values())

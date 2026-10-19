@@ -136,17 +136,6 @@ def net_profile(proxy_port: int) -> str:
             f'(allow network-outbound (remote tcp "localhost:{proxy_port}"))\n')
 
 
-def readonly_profile(ro_subpath: str) -> str:
-    """Deny-all-network PLUS a kernel-enforced deny on WRITES to the staged references dir
-    (PC-3 ②). `file-write*` covers write-data, unlink, AND chmod (file-write-mode), so a
-    same-uid script CANNOT chmod-then-write its way past the advisory 0o444/0o555 mode bits —
-    the kernel refuses regardless of POSIX owner perms. Seatbelt matches on REALPATH, so
-    `ro_subpath` MUST already be the resolved (symlink-free) absolute path of the run's
-    references/ subdir. macOS-only enforcement; on Linux run_python is fail-closed (no run)."""
-    return (f"(version 1)\n(allow default)\n(deny network*)\n"
-            f'(deny file-write* (subpath "{ro_subpath}"))\n')
-
-
 def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:
     """Default-deny compute policy: runtime reads, workspace writes, no network/host IPC.
 
