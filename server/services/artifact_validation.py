@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from functools import cache
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -11,8 +13,32 @@ import tempfile
 from server.services import artifact_store, code_sandbox
 
 
+_INSPECTOR = Path(__file__).resolve().parent.parent / "resources" / "artifact_inspector.py"
+
+
+@cache
+def checked_suffixes() -> frozenset[str]:
+    """The suffixes the isolated inspector has a parser for: its own CHECKED_SUFFIXES, read from
+    its file (it ships as a resource file, not an importable module, packaging/arslan-server.spec)."""
+    spec = importlib.util.spec_from_file_location("arslan_artifact_inspector", _INSPECTOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return frozenset(module.CHECKED_SUFFIXES)
+
+
 async def inspect_bytes(data: bytes, suffix: str) -> dict:
-    """Fixed parser in the default-deny compute sandbox, with no fallback/install."""
+    """Fixed parser in the default-deny compute sandbox, with no fallback/install.
+
+    0.1.63 D2: a type nothing parses is not_applicable, decided here before any sandbox starts
+    (the isolated result is only ever passed / failed / not_run). "No parser" is not "the check did
+    not run": a helper .swift a turn saved held finished work as task_checks_not_run (M1B, T1).
+    Real failures stay not_run or failed: no host Python, no isolation, a timeout, a crash."""
+    if suffix not in checked_suffixes():
+        return {"status": "not_applicable", "code": "artifact_type_not_checked"}
+    return await _inspect_isolated(data, suffix)
+
+
+async def _inspect_isolated(data: bytes, suffix: str) -> dict:
     try:
         python = code_sandbox._host_python()
     except (RuntimeError, OSError):
@@ -23,8 +49,7 @@ async def inspect_bytes(data: bytes, suffix: str) -> dict:
         if wrapper is None:
             return {"status": "not_run", "code": "artifact_parser_isolation_unavailable"}
         (workspace / "input.bin").write_bytes(data)
-        source = Path(__file__).resolve().parent.parent / "resources" / "artifact_inspector.py"
-        (workspace / "inspect_file.py").write_bytes(source.read_bytes())
+        (workspace / "inspect_file.py").write_bytes(_INSPECTOR.read_bytes())
         try:
             process = await asyncio.create_subprocess_exec(*wrapper, python, "-I", str(workspace / "inspect_file.py"), suffix,
                 cwd=workspace, env={"PATH": "/usr/bin:/bin", "HOME": str(workspace), "TMPDIR": str(workspace),
