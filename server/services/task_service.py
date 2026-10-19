@@ -552,6 +552,7 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                       no_memory=context.no_memory or value["spec"]["memory_mode"] == "disabled")
     token = _current.set(runtime)
     _runtimes[runtime.task_id] = runtime
+    recording = None                                  # the cancel record, when cancelled (below)
     with scope(budget), personal_context.bind(context), execution_checkpoint.bind(runtime.checkpoint):
         emit(_state_frame(value))
         try:
@@ -599,8 +600,11 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             emit(_state_frame(final))
             return result
         except asyncio.CancelledError:
-            async with repository() as repo:
-                final = await repo.cancel(runtime.task_id)
+            # Recorded even if the cancellation keeps coming: a level-triggered cancel scope (anyio,
+            # which Starlette's websocket handling uses) cancels every await here too, and the task was
+            # left "running", refusing every later turn in its conversation (one active task each).
+            recording = _kept(_record_cancel(runtime.task_id), "cancelled task not recorded")
+            final = await asyncio.shield(recording)   # if cancelled again, the record still completes
             emit(_state_frame(final))
             raise
         except (Exception,) as exc:
@@ -619,17 +623,61 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             emit(_state_frame(final))
             raise
         finally:
+            # The same re-delivered cancel (③Hands' review): the stop checkpoint is kept and shielded, and
+            # the bookkeeping below runs whatever the await raised. The runtime closes when that
+            # checkpoint is done, since a closed runtime refuses it.
+            stopping = _kept(_after(recording, runtime.checkpoint("attempt_stopped", retain_stopped=True)),
+                             "Task final checkpoint failed")
             try:
-                await runtime.checkpoint("attempt_stopped", retain_stopped=True)
-            except Exception as exc:
-                logger.warning("Task final checkpoint failed: %s", type(exc).__name__)
-            for run_id in runtime.run_ids:
-                _run_owners.pop(run_id, None)
-            lease.active = False
-            runtime.closed = True
-            if _runtimes.get(runtime.task_id) is runtime:
-                _runtimes.pop(runtime.task_id, None)
-            _current.reset(token)
+                await asyncio.shield(stopping)
+            except Exception:
+                pass                                  # logged by _kept
+            finally:
+                for run_id in runtime.run_ids:
+                    _run_owners.pop(run_id, None)
+                lease.active = False
+                if stopping.done():
+                    runtime.closed = True
+                else:
+                    stopping.add_done_callback(lambda _: setattr(runtime, "closed", True))
+                if _runtimes.get(runtime.task_id) is runtime:
+                    _runtimes.pop(runtime.task_id, None)
+                _current.reset(token)
+
+
+_KEPT: set[asyncio.Task] = set()
+
+
+def _kept(coroutine, failure: str) -> asyncio.Task:
+    """A cleanup step of _run that finishes even if the cancellation keeps coming: its own task,
+    referenced until done, its failure logged."""
+    step = asyncio.ensure_future(coroutine)
+    _KEPT.add(step)
+
+    def done(finished: asyncio.Task) -> None:
+        _KEPT.discard(finished)
+        if not finished.cancelled() and finished.exception() is not None:
+            logger.warning("%s: %s", failure, type(finished.exception()).__name__)
+    step.add_done_callback(done)
+    return step
+
+
+async def _after(first: asyncio.Task | None, then):
+    """`then` once `first` (the cancel record) is done: both advance the task's version, so they run in turn."""
+    if first is not None:
+        try:
+            await first
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise                  # this step itself is cancelled (loop shutdown), not the record
+        except Exception:  # noqa: BLE001 — its failure is logged by _kept; the checkpoint still runs
+            pass
+    return await then
+
+
+async def _record_cancel(task_id: str) -> dict:
+    async with repository() as repo:
+        return await repo.cancel(task_id)
 
 
 async def _launch(value, emit, body, *, progress=None, context=None):
