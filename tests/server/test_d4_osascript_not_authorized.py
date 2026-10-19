@@ -88,6 +88,68 @@ def test_everything_else_stays_unknown(command, stderr):
     assert not known(command, refused(stderr))
 
 
+# ③Hands' review: AppleScript can act on this Mac without the words "do shell script", then reach the
+# one app and be refused. Only tell-application lines and blocks are allowed; everything else is unknown.
+ACTED_FIRST = [
+    # the raw event behind do shell script (0.1.61 release gate B1)
+    """osascript <<'EOF'
+\u00abevent sysoexec\u00bb "touch /tmp/x"
+tell application "Notes" to make new note
+EOF""",
+    # Standard Additions file writes
+    """osascript <<'EOF'
+set f to open for access POSIX file "/tmp/x" with write permission
+write "data" to f
+close access f
+tell application "Notes" to make new note
+EOF""",
+    # AppleScriptObjC
+    """osascript <<'EOF'
+use framework "Foundation"
+current application's NSFileManager's defaultManager()
+tell application "Notes" to make new note
+EOF""",
+    # inside the tell, the raw event and a file write are still refused
+    """osascript <<'EOF'
+tell application "Notes"
+    \u00abevent sysoexec\u00bb "touch /tmp/x"
+    make new note
+end tell
+EOF""",
+    """osascript <<'EOF'
+tell application "Notes"
+    set eof of (open for access POSIX file "/tmp/x" with write permission) to 0
+end tell
+EOF""",
+    # any statement outside the tell
+    """osascript <<'EOF'
+set n to 3
+tell application "Notes" to make new note
+EOF""",
+    """osascript <<'EOF'
+tell application "Notes" to make new note
+display dialog "done"
+EOF""",
+]
+
+
+@pytest.mark.parametrize("command", ACTED_FIRST)
+def test_a_script_that_can_act_before_the_tell_stays_unknown(command):
+    assert not known(command, refused(NOT_ALLOWED))
+
+
+def test_tell_blocks_comments_and_nested_object_tells_are_fine():
+    command = """osascript <<'EOF'
+-- add the note
+tell application "Notes"
+    tell folder "Notes"
+        make new note with properties {name:"x"}
+    end tell
+end tell
+EOF"""
+    assert known(command, refused(NOT_ALLOWED))
+
+
 def test_a_refusal_stopped_by_a_time_limit_or_a_signal_stays_unknown():
     command = """osascript -e 'tell application "Notes" to make new note'"""
     assert not known(command, {**stopped_in("unavailable"), "stderr": NOT_ALLOWED})
