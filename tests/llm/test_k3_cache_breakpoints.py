@@ -40,7 +40,7 @@ async def _resolve():
 
 
 async def turn(monkeypatch, replies, *, long=False, base_url="", system="S", history=HISTORY,
-               model="claude-opus-5-5"):
+               model="claude-opus-5-5", request="Find two sources"):
     sent = []
 
     def handler(request):
@@ -53,7 +53,7 @@ async def turn(monkeypatch, replies, *, long=False, base_url="", system="S", his
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     monkeypatch.setitem(executors.EXECUTORS, "web_search", Search())
     with request_policy.prompt_cache(long=long):
-        result = await tool_loop.run_native(system=system, user_content="Find two sources",
+        result = await tool_loop.run_native(system=system, user_content=request,
                                             history=list(history), emit=lambda e: None,
                                             on_chunk=lambda c: None, resolve_tools=_resolve)
     return result, sent
@@ -123,6 +123,16 @@ async def test_markers_never_pile_up_and_what_was_sent_is_only_appended_to(monke
     assert all("cache_control" not in block for block in replayed)
 
 
+async def test_a_block_list_request_is_marked_in_a_copy(monkeypatch):
+    """An image turn's request is a block list whose text blocks the trajectory keeps; the tail marker
+    of one step must not stay behind on them in the next (five markers is a 400)."""
+    request = [{"type": "text", "text": "<turn_context>ref</turn_context>"}, {"type": "text", "text": "Find two"}]
+    _, sent = await turn(monkeypatch, TWO_STEPS, request=request)
+    assert [len(markers(body)) for body in sent] == [3, 3, 3]
+    assert all("cache_control" not in block for body in sent[1:] for block in body["messages"][2]["content"])
+    assert all("cache_control" not in block for block in request)
+
+
 # ── how long they live ─────────────────────────────────────────────────────────────────
 
 async def test_a_person_chatting_gets_an_hour_on_system_and_history(monkeypatch):
@@ -180,3 +190,27 @@ def test_param_heal_drops_ttl_from_every_marker_and_keeps_the_markers():
                               payload, heals)
     assert "ttl" not in json.dumps(payload)
     assert markers(payload) == [(("system", 0), SHORT), ((0, 0), SHORT), ((2, 0), SHORT)]
+
+
+# ── the prefix holds through wrapping up ──────────────────────────────────────────────
+
+@pytest.mark.parametrize("limits", ["soft", "forced"])
+async def test_wrapping_up_keeps_tools_and_system_and_only_appends(monkeypatch, limits):
+    """Card acceptance: within a turn each request is a prefix of the next, the wrap-up steps too.
+    soft: past the soft limit a research call is refused and the table stays; forced: the last step
+    keeps the same table with tool_choice none."""
+    from arslan.execution_budget import Budget, Limits, scope
+    replies = [tool_reply("toolu_01", "one", "s1"), tool_reply("toolu_02", "two", "s2"), END]
+    if limits == "soft":
+        budget = Budget(Limits(tool_calls=10), soft=Limits(tool_calls=1))
+    else:                                       # the hard limit after one call: a forced last step
+        budget, replies = Budget(Limits(tool_calls=1)), replies[:1] + [END]
+    with scope(budget):
+        result, sent = await turn(monkeypatch, replies)
+    assert result["final"] == "Done."
+    assert len({json.dumps(body["tools"]) for body in sent}) == 1
+    assert len({json.dumps(body["system"]) for body in sent}) == 1
+    for before, after in zip(sent, sent[1:]):
+        assert unmarked(after["messages"])[:len(before["messages"])] == unmarked(before["messages"])
+    if limits == "forced":
+        assert sent[-1]["tool_choice"] == {"type": "none"}
