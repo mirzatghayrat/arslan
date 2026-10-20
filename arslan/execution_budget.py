@@ -13,6 +13,7 @@ import os
 import time
 import uuid
 from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar, copy_context
 from dataclasses import asdict, dataclass, replace
 from functools import wraps
@@ -24,10 +25,11 @@ class BudgetExceeded(RuntimeError):
 
 @dataclass(frozen=True)
 class Limits:
-    model_requests: int = 32
-    tool_calls: int = 24
-    tokens: int = 128_000
-    wall_seconds: float = 600
+    # K4a (v0.1.63): the "standard" tier's soft limits, for a chat turn and a background job alike.
+    model_requests: int = 120
+    tool_calls: int = 80
+    tokens: int = 600_000
+    wall_seconds: float = 1800
     # Runaway guard only (0.1.49 S5): the per-endpoint opening budget lives in
     # arslan/llm/output_budget.py; a flat 8192 here silently truncated thinking
     # models' work (kernel sample T5).
@@ -39,37 +41,38 @@ class Limits:
             raise ValueError("execution budget limits must be positive")
 
 
-def configured_limits() -> Limits:
-    defaults = Limits()
-    names = {"model_requests": "MODEL_REQUESTS", "tool_calls": "TOOL_CALLS",
-             "tokens": "TOKENS", "wall_seconds": "WALL_SECONDS",
-             "output_tokens_per_request": "OUTPUT_TOKENS", "artifact_bytes": "ARTIFACT_BYTES"}
-    values = {}
-    for field, suffix in names.items():
-        raw = os.environ.get(f"ARSLAN_RUN_MAX_{suffix}")
-        values[field] = float(raw) if field == "wall_seconds" and raw else (
-            int(raw) if raw else getattr(defaults, field))
-    return Limits(**values)
-
-
-# 0.1.43: background jobs get their own, larger budget. A job is work the user
-# handed off (research, drafting, organizing); the per-turn Limits above are sized
-# for one chat answer and cut such work off halfway (seen in 0.1.42 field use).
-JOB_TIERS = {
+# K4a (v0.1.63): one stop policy. A chat turn and a background job get the same limits: the tier the
+# user picked in Settings (standard by default). Before, a chat turn had its own, smaller limits
+# (32 requests / 24 tools / 128k / 600 s) and cut longer work off halfway; background jobs got these
+# tiers from 0.1.43.
+TIERS = {
     "lean": dict(model_requests=60, tool_calls=40, tokens=300_000, wall_seconds=900),
     "standard": dict(model_requests=120, tool_calls=80, tokens=600_000, wall_seconds=1800),
     "ample": dict(model_requests=240, tool_calls=160, tokens=1_200_000, wall_seconds=3600),
 }
-DEFAULT_JOB_TIER = "standard"
-# Completion first: the tier is a SOFT limit. Reaching it switches the job to
-# wrap-up (write the deliverable from what it has); the hard limit, 1.5x, only
-# stops a job that cannot stop itself.
+DEFAULT_TIER = "standard"
+# Completion first: the tier is a SOFT limit. Reaching it switches the run to wrap-up (deliver from
+# what it has); the hard limit, 1.5x, only stops a run that cannot stop itself.
 HARD_OVER_SOFT = 1.5
+# K4a: near the token limit a request still gets this many output tokens (never more than it asked
+# for). M1's T2: a turn late in its budget was granted a few hundred, a thinking model spent them on
+# reasoning, and the answer came back empty. Token accounting is post-response anyway, so this can
+# overshoot the token limit by one answer.
+MIN_OUTPUT_TOKENS = 16_384
+_ENV = {"model_requests": "MODEL_REQUESTS", "tool_calls": "TOOL_CALLS", "tokens": "TOKENS",
+        "wall_seconds": "WALL_SECONDS", "output_tokens_per_request": "OUTPUT_TOKENS",
+        "artifact_bytes": "ARTIFACT_BYTES"}
 
 
-def job_limits(tier: str) -> Limits:
-    """Soft limits for one background job. Unknown tiers fall back to the default."""
-    return Limits(**JOB_TIERS.get(tier, JOB_TIERS[DEFAULT_JOB_TIER]))
+def tier_limits(tier: str = DEFAULT_TIER) -> Limits:
+    """Soft limits for one run, a chat turn or a background job. An unknown tier is the default one;
+    an `ARSLAN_RUN_MAX_*` environment variable overrides its value (benches and tests)."""
+    base = Limits(**TIERS.get(tier, TIERS[DEFAULT_TIER]))
+    values = {}
+    for field, suffix in _ENV.items():
+        raw = os.environ.get(f"ARSLAN_RUN_MAX_{suffix}")
+        values[field] = (float(raw) if field == "wall_seconds" else int(raw)) if raw else getattr(base, field)
+    return Limits(**values)
 
 
 def _hard_over(soft: Limits) -> Limits:
@@ -80,21 +83,11 @@ def _hard_over(soft: Limits) -> Limits:
                    wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
 
 
-def job_budget(tier: str) -> "Budget":
-    soft = job_limits(tier)
-    hard = Limits(model_requests=math.ceil(soft.model_requests * HARD_OVER_SOFT),
-                  tool_calls=math.ceil(soft.tool_calls * HARD_OVER_SOFT),
-                  tokens=math.ceil(soft.tokens * HARD_OVER_SOFT),
-                  wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
-    return Budget(hard, soft=soft)
-
-
-def turn_budget() -> "Budget":
-    """A conversational turn, completion first (0.1.49): the configured limits are
-    the point where the turn stops researching and delivers from what it has;
-    1.5x stops only a turn that cannot stop itself. A turn with only a hard limit
-    aborted with an empty reply once it ran out (kernel bench T2, twice)."""
-    soft = configured_limits()
+def run_budget(tier: str = DEFAULT_TIER) -> "Budget":
+    """The budget of one run, a chat turn or a background job (K4a): the tier is where it wraps up,
+    1.5x stops it. A turn with only a hard limit aborted with an empty reply once it ran out (kernel
+    bench T2, 0.1.49)."""
+    soft = tier_limits(tier)
     return Budget(_hard_over(soft), soft=soft)
 
 
@@ -104,7 +97,7 @@ class Budget:
     last_output_clamped = False
 
     def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None):
-        self.limits = limits or configured_limits()
+        self.limits = limits or tier_limits()
         self.soft = soft
         self.id = uuid.uuid4().hex
         self.started = time.monotonic()
@@ -196,7 +189,7 @@ class Budget:
             self.stop("tokens")
         self.model_requests += 1
         granted = min(requested_output, self.limits.output_tokens_per_request,
-                      max(1, self.limits.tokens - self.tokens))
+                      max(MIN_OUTPUT_TOKENS, self.limits.tokens - self.tokens))
         self.last_output_clamped = granted < requested_output
         return granted
 
@@ -290,7 +283,8 @@ def running_clock(budget: Budget, timeout: asyncio.Timeout):
 @contextmanager
 def paused():
     """Every wall clock this code runs under stands still meanwhile: the user's time is not the
-    work's (0.1.61 §A4: a card waits 30 minutes, a chat turn's clock is about 15). Nothing
+    work's (0.1.61 §A4: a card waits 30 minutes; a run's clock is 30 minutes at the standard tier, 45
+    at most). Nothing
     happens when no clock is running."""
     clocks = _clocks.get()
     for clock in clocks:
@@ -305,7 +299,7 @@ def paused():
 @contextmanager
 def scope(budget: Budget | None = None):
     """Explicit scope. Nested execution should reuse current() rather than reset it."""
-    token = _current.set(budget or turn_budget())
+    token = _current.set(budget or run_budget())
     try:
         yield _current.get()
     finally:
@@ -322,14 +316,27 @@ def detached_context():
     return context
 
 
+#: How an entry point makes its run's budget (K4a): the server registers one that reads the tier the
+#: user picked (settings_service.run_budget_from_settings); without one, the default tier.
+_budget_factory: Callable[[], Awaitable[Budget]] | None = None
+
+
+def use_budget_factory(factory: Callable[[], Awaitable[Budget]] | None) -> None:
+    global _budget_factory
+    _budget_factory = factory
+
+
 def governed(function):
-    """Bound an entry point; recursion and child tasks share the SAME mutable budget."""
+    """Bound an entry point; recursion and child tasks share the SAME mutable budget. A chat turn
+    starts here, before anything has read the settings, so the budget comes from the registered
+    factory (K4a: the user's tier for a chat turn as for a job)."""
     @wraps(function)
     async def wrapper(*args, **kwargs):
         if current() is not None:
             current().check()
             return await function(*args, **kwargs)
-        with scope() as budget:
+        made = await _budget_factory() if _budget_factory is not None else None
+        with scope(made) as budget:
             timeout = asyncio.timeout(budget.remaining_seconds())
             try:
                 async with timeout:

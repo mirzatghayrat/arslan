@@ -293,7 +293,7 @@ async def _goal_not_reached(job: Job, text: str) -> bool:
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan
-    from arslan.execution_budget import job_budget
+    from arslan.execution_budget import run_budget
     from server.db import session as db_session
     from server.services import (approvals, host_run, permissions, personal_context, settings_service,
                                  task_context, task_service)
@@ -318,7 +318,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},
-                                                 _acceptance=job.acceptance, _budget=job_budget(tier))
+                                                 _acceptance=job.acceptance, _budget=run_budget(tier))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the task row records the failure; read it below

@@ -416,11 +416,25 @@ async def shell_confirm_policy(session: AsyncSession) -> str:
 
 
 async def background_job_budget(session: AsyncSession) -> str:
-    """Budget tier for one background job (0.1.43): lean | standard | ample.
-    Anything else is the default tier."""
-    from arslan.execution_budget import DEFAULT_JOB_TIER, JOB_TIERS
+    """The work budget tier (0.1.43 for background jobs; K4a, v0.1.63: for chat turns too):
+    lean | standard | ample. Anything else is the default tier. The key keeps its 0.1.43 name."""
+    from arslan.execution_budget import DEFAULT_TIER, TIERS
     raw = str(await _get_raw(session, "background_job_budget") or "").strip().lower()
-    return raw if raw in JOB_TIERS else DEFAULT_JOB_TIER
+    return raw if raw in TIERS else DEFAULT_TIER
+
+
+async def run_budget_from_settings():
+    """The budget of a run that starts at an entry point (`execution_budget.governed`, a chat turn): the
+    tier the user picked. Registered at startup (server/main.py); the default tier if settings can't be
+    read."""
+    from arslan.execution_budget import run_budget
+    from server.db import session as db_session
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return run_budget(await background_job_budget(db))
+    except Exception:  # noqa: BLE001 — a run must not fail to start over its budget tier
+        logger.warning("work budget tier not read; using the default", exc_info=True)
+        return run_budget()
 
 
 async def evolution_auto(session: AsyncSession) -> bool:

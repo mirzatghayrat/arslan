@@ -16,16 +16,23 @@ runtime is available, computation refuses with setup guidance.
 
 ## Budgets
 
-One live task and its nested/parallel dispatches share these defaults:
+One run — a chat turn or a background job, with its nested and parallel dispatches —
+shares one budget (K4a, v0.1.63). Its soft limits are the work budget tier picked in
+Settings → Advanced (lean / standard / ample; standard by default): reaching one switches
+the run to wrap-up, and 1.5× the tier stops a run that cannot stop itself. The standard
+tier and its environment overrides, which apply to every tier:
 
-| Environment override | Default | Meaning |
+| Environment override | Standard | Meaning |
 | --- | --- | --- |
-| `ARSLAN_RUN_MAX_MODEL_REQUESTS` | 32 | Actual provider HTTP attempts, retries included |
-| `ARSLAN_RUN_MAX_TOOL_CALLS` | 24 | Tool admission attempts across all child work |
-| `ARSLAN_RUN_MAX_WALL_SECONDS` | 600 | Whole-task deadline |
-| `ARSLAN_RUN_MAX_TOKENS` | 128000 | Reported/estimated usage gates the **next** request |
-| `ARSLAN_RUN_MAX_OUTPUT_TOKENS` | 8192 | Output ceiling sent to the provider per request |
+| `ARSLAN_RUN_MAX_MODEL_REQUESTS` | 120 | Actual provider HTTP attempts, retries included |
+| `ARSLAN_RUN_MAX_TOOL_CALLS` | 80 | Tool admission attempts across all child work |
+| `ARSLAN_RUN_MAX_WALL_SECONDS` | 1800 | Whole-run deadline (a card waiting for you pauses it) |
+| `ARSLAN_RUN_MAX_TOKENS` | 600000 | Charged usage (cache reads at 0.1) gates the **next** request |
+| `ARSLAN_RUN_MAX_OUTPUT_TOKENS` | 131072 | Runaway guard on the output ceiling per request |
 | `ARSLAN_RUN_MAX_ARTIFACT_BYTES` | 104857600 | Cumulative exported artifact bytes |
+
+Near the token limit a request still gets up to 16,384 output tokens (never more than
+it asked for), so a thinking model can still answer.
 
 These are not an exact dollar ceiling. A response already in flight can cross the
 token threshold; providers differ in billing/thinking-token semantics. Keep a

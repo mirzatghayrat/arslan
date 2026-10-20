@@ -327,6 +327,13 @@ async def lifespan(app: FastAPI):
 
     # S3-M4 scheduler: a second supervised loop (60s tick, own task set — independent
     # of the evolution watcher's) that fires due scheduled tasks headless
+    # K4a (v0.1.63): a run that starts at an entry point (a chat turn, a scheduled turn) takes the work
+    # budget tier the user picked, as a background job does.
+    from arslan import execution_budget
+    from server.services import settings_service as _settings_for_budget
+
+    execution_budget.use_budget_factory(_settings_for_budget.run_budget_from_settings)
+
     # (one Arslan turn per fire, scheduler.run_arslan_turn). It sweeps orphaned
     # in-flight rows before its first tick. Best-effort start — never blocks boot.
     try:
