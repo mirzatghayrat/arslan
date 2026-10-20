@@ -76,11 +76,14 @@ def _outcome(tool: str, result: dict) -> str:
     if not result.get("ok", True):
         from arslan.companion.content_policy import contains_credential
         if tool in ("run_python", "run_command"):   # their error carries the stderr tail (③Hands' review)
-            exit_text = re.match(r"exit (-?\d+)", str(result.get("error") or ""))
+            error = str(result.get("error") or "")
+            exit_text = re.match(r"exit (-?\d+)", error)
             code = result.get("exit_code") if isinstance(result.get("exit_code"), int) else (
                 int(exit_text.group(1)) if exit_text else None)
+            # The executors' own timeout wording (code_sandbox, ssh_exec), at the start: stderr comes after "exit N".
+            timed_out = re.match(r"(execution )?timed out after \d+s", error) is not None
             return "failed: " + (str(result.get("code")) if result.get("code") else
-                                 f"exit {code}" if code is not None else "error")
+                                 f"exit {code}" if code is not None else "timed out" if timed_out else "error")
         reason = str(result.get("code") or result.get("error") or "error")
         return "failed: " + ("<credential omitted>" if contains_credential(reason) else _clip(reason, 80))
     exit_code = f" (exit {result['exit_code']})" if isinstance(result.get("exit_code"), int) else ""

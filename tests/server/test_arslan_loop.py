@@ -36,6 +36,17 @@ def _events(collector):
     return lambda ev: collector.append(ev)
 
 
+async def settle_after_turn() -> list:
+    """K2b: wait for every post-turn job (facts, compaction) started so far; their outcomes."""
+    import asyncio
+
+    from server.orchestrator import arslan
+    outcomes = []
+    while arslan._AFTER_TURN:
+        outcomes += await asyncio.gather(*list(arslan._AFTER_TURN), return_exceptions=True)
+    return outcomes
+
+
 async def _fake_noop(): pass
 async def _fake_list(): return []
 
@@ -96,6 +107,7 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
 
     events = []
     await arslan.handle_user_message("main", "hello", _events(events))
+    await settle_after_turn()                      # facts are looked for after the turn (K2b)
 
     types = [e["type"] for e in events]
     assert "stream_start" in types and "stream_end" in types

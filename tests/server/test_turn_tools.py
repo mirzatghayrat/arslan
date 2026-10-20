@@ -222,3 +222,19 @@ def test_a_failed_command_or_script_keeps_its_exit_status_not_its_stderr():
         {"tool": "run_command", "args": {"command": "make"}, "result": {"ok": False, "exit_code": 2, "error": "boom: token=abc"}}])
     assert "123-45-6789" not in block and "token=abc" not in block
     assert "run_python: failed: exit 1" in block and "run_command command=make: failed: exit 2" in block
+
+
+def test_a_command_or_script_that_ran_out_of_time_says_so():
+    """③Hands' K2a review: a timeout was kept as a bare "failed: error", so the next turn could not
+    tell it had timed out. Only the executor's own wording counts: stderr that says "timed out" does not."""
+    block = turn_tools.block([
+        {"tool": "run_python", "args": {"code": "x"},
+         "result": {"ok": False, "error": "execution timed out after 30s", "sandboxed": True}},
+        {"tool": "run_command", "args": {"command": "make"},
+         "result": {"ok": False, "exit_code": None, "error": "timed out after 60s"}},
+        {"tool": "run_python", "args": {"code": "y"},
+         "result": {"ok": False, "error": "exit 1: requests timed out after 5s"}}])
+    lines = block.splitlines()
+    assert any(line.startswith("- run_python: failed: timed out") for line in lines)
+    assert "- run_command command=make: failed: timed out" in lines
+    assert "- run_python: failed: exit 1" in lines

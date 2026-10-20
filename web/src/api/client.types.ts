@@ -620,6 +620,9 @@ export interface ArslanThreadItem {
   sensitive?: boolean; // kind === "fact"
   /** kind === "fact" (D1, 0.1.55): everything remembered in this turn, shown as one quiet line. */
   facts?: RememberedFact[];
+  /** The turn (task) a reply or a fact line belongs to, from its frame's `task_id`. K2b: a fact
+   *  that arrives after the next message is sent still goes under its own turn's reply. */
+  taskId?: string | null;
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
@@ -719,6 +722,7 @@ export type ArslanServerMessage =
       message_id: number | null;
       temporary?: boolean;
       run_id?: number;
+      task_id?: string;
       usage?: StreamUsage;
       artifact?: { kind: string; filename?: string; title?: string; bytes?: number;
                    complete?: boolean; content?: string };
@@ -750,12 +754,12 @@ export type ArslanServerMessage =
   | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
       restricted_count: number; assignable: boolean; call_id?: string }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
-  | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
-  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
+  | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; task_id?: string }
+  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; task_id?: string }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
-  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
+  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null; task_id?: string;
       source?: string | null }
   // A card shown in more than one place (a background job's, or a turn the iPhone started)
   // was decided — by this window, another, or the phone — or expired: close this copy.

@@ -542,7 +542,8 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["message", "error", "fact_saved", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
+      // K2b: fact_saved is not here: facts are looked for after the turn and may arrive during the next one.
+      const RESPONDING_TYPES = new Set(["message", "error", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -618,6 +619,7 @@ function makeActions(set: SetState, get: GetState) {
         case "message": {
           const item = rowToItem(frame);
           if (frame.job_id) { item.jobId = frame.job_id; item.jobOutcome = frame.outcome ?? null; }
+          if (frame.task_id) item.taskId = frame.task_id;
           set({
             items: [...state.items, item],
             lastMessageId: Math.max(state.lastMessageId, frame.message_id),
@@ -763,6 +765,7 @@ function makeActions(set: SetState, get: GetState) {
             // on the created item so the bubble can render its usage chip.
             // (run_cancelled finalization deliberately never sets this.)
             ...(frame.usage ? { usage: frame.usage } : {}),
+            ...(frame.task_id ? { taskId: frame.task_id } : {}),
             // 🔒 SECURITY: artifactHtml comes ONLY from the backend stream_end frame's
             // artifact (HX-2 HTML deliverable channel — sniffed/stored server-side),
             // NEVER from LLM message text. Same invariant as artifactSvg/Chart/Pptx.
@@ -943,20 +946,29 @@ function makeActions(set: SetState, get: GetState) {
         case "memory_proposed": {
           // D1 (0.1.55): everything remembered after one turn becomes ONE quiet line.
           // Facts arrive after the answer, back to back; a new item starts the next turn.
+          // K2b: they are looked for after the turn, so the next message may be in by then. The
+          // line goes under the reply of its own turn (the frame's task_id); without one, last.
           const fact = {
             content: frame.content, sensitive: frame.sensitive,
             entryId: frame.entry_id ?? null, version: frame.version ?? null,
             status: frame.type === "memory_proposed" ? "proposed" as const : "active" as const,
           };
-          const last = state.items[state.items.length - 1];
-          if (last && last.kind === "fact") {
-            const facts = [...(last.facts ?? []), fact];
-            set({ items: [...state.items.slice(0, -1),
-              { ...last, facts, content: facts.map((f) => f.content).join(" · ") }] });
-          } else {
-            set({ items: [...state.items, { id: nextClientId(), kind: "fact", role: "arslan",
-              content: frame.content, sensitive: frame.sensitive, facts: [fact] }] });
+          const taskId = frame.task_id ?? null;
+          let at = state.items.length;              // where the line goes, or where it already is + 1
+          if (taskId) {
+            const reply = state.items.map((it) => it.taskId).lastIndexOf(taskId);
+            if (reply >= 0) at = reply + 1;
           }
+          const before = state.items[at - 1];
+          const items = [...state.items];
+          if (before && before.kind === "fact" && (before.taskId ?? null) === taskId) {
+            const facts = [...(before.facts ?? []), fact];
+            items[at - 1] = { ...before, facts, content: facts.map((f) => f.content).join(" · ") };
+          } else {
+            items.splice(at, 0, { id: nextClientId(), kind: "fact", role: "arslan", content: frame.content,
+              sensitive: frame.sensitive, facts: [fact], taskId });
+          }
+          set({ items });
           break;
         }
         case "spawn_updated":

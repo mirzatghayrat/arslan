@@ -1,6 +1,8 @@
 """The orchestration loop for one user turn (transport-agnostic; emits event dicts)."""
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 from collections.abc import Callable
@@ -444,13 +446,98 @@ async def handle_user_message(
                          images=images, confirm_command=confirm_command,
                          confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
                          source=source)
-    # Durable facts, noticed after the answer (the router used to do this before it).
-    # Not in a temporary conversation or one where memory or learning is switched off.
-    if active_context is None or not (active_context.temporary or active_context.no_memory
-                                      or active_context.no_learning):
-        from server.services import turn_facts
-        await turn_facts.capture(conversation_id, user_message, emit)
-    await memory.maybe_compact(conversation_id, budget=await memory.turn_budget(conversation_id, has_images=bool(images)))
+    # Durable facts, noticed after the answer (the router used to do this before it), and
+    # compaction: both after the turn, outside its lock (K2b). The budget is the turn's, noted on
+    # the turn's run as before.
+    budget = await memory.turn_budget(conversation_id, has_images=bool(images))
+    _after_turn_later(conversation_id, user_message, emit, active_context, budget=budget)
+
+
+# K2b (U5 ①②): the post-turn jobs still running, and each conversation's latest one.
+_AFTER_TURN: set[asyncio.Task] = set()
+_after_turn_tail: dict[str, asyncio.Task] = {}
+AFTER_TURN_SECONDS = 300
+
+
+def _after_turn_later(conversation_id: str, user_message: str, emit: EventSink, turn_context,
+                      *, budget: int) -> None:
+    """Look for facts and compact after the turn has returned, so its lock is free and the next
+    message starts at once (K2b; U5 ①, M3 #11).
+
+    Its own task, detached from the finished turn (`task_service.detached_context`: no turn
+    checkpoint, its own budget; the model calls keep their ledger scopes `memory_facts` and
+    `memory`), referenced until done. One conversation's jobs run in turn, so a job sees what the
+    one before it saved. A job still pending when the process exits is lost: only that turn's
+    facts, and the next compaction covers its history (K2 card, accepted risk)."""
+    from server.services import task_service
+    previous = _after_turn_tail.get(conversation_id)
+    job = asyncio.get_running_loop().create_task(
+        _after_turn(conversation_id, user_message, emit, turn_context, budget=budget, after=previous),
+        context=task_service.detached_context())
+    _AFTER_TURN.add(job)
+    _after_turn_tail[conversation_id] = job
+
+    def done(finished: asyncio.Task) -> None:
+        _AFTER_TURN.discard(finished)
+        if _after_turn_tail.get(conversation_id) is finished:
+            del _after_turn_tail[conversation_id]
+    job.add_done_callback(done)
+
+
+async def _after_turn(conversation_id: str, user_message: str, emit: EventSink, turn_context,
+                      *, budget: int, after: asyncio.Task | None) -> None:
+    if after is not None:
+        await asyncio.wait([after])
+    try:
+        async with asyncio.timeout(AFTER_TURN_SECONDS):
+            try:
+                context = await _job_context(conversation_id, user_message, turn_context)
+            except Exception as exc:  # noqa: BLE001 — no context, no facts; compaction needs none
+                logger.info("post-turn facts skipped: %s", type(exc).__name__)
+                context, look = None, False
+            else:
+                # Not in a temporary conversation or one where memory or learning is switched off.
+                look = context is None or not (context.temporary or context.no_memory or context.no_learning)
+            from server.services import personal_context, turn_facts
+            if look:
+                with personal_context.bind(context) if context is not None else contextlib.nullcontext():
+                    await turn_facts.capture(conversation_id, user_message, _quiet(emit))
+            await memory.maybe_compact(conversation_id, budget=budget)
+    except Exception as exc:  # noqa: BLE001 — a post-turn job never surfaces anywhere
+        logger.warning("post-turn job failed for %s: %s", conversation_id, type(exc).__name__)
+
+
+async def _job_context(conversation_id: str, user_message: str, turn):
+    """The job's memory context. It keeps the turn's identity: task, run and message, which a saved
+    fact cites and which deleting that message suppresses (memory_repository._not_suppressed). It
+    takes the stricter of the turn's switches and the conversation's, read again now: one turned off
+    while the answer ran is respected. None when the turn had none (memory not active)."""
+    if turn is None:
+        return None
+    from dataclasses import replace
+
+    from server.services import task_context
+    now = await task_context.load(conversation_id, user_message=user_message)
+    return replace(
+        turn, lease=None,
+        no_memory=turn.no_memory or now.no_memory, no_learning=turn.no_learning or now.no_learning,
+        temporary=turn.temporary or now.temporary,
+        model_is_local=turn.model_is_local and now.model_is_local,
+        cloud_memory_allowed=turn.cloud_memory_allowed and now.cloud_memory_allowed,
+        cloud_memory_default=turn.cloud_memory_default and now.cloud_memory_default,
+        allow_sensitive=turn.allow_sensitive and now.allow_sensitive,
+        auto_activate_noticed=turn.auto_activate_noticed and now.auto_activate_noticed,
+    )
+
+
+def _quiet(emit: EventSink) -> EventSink:
+    """The job's frames arrive after stream_end; the window may be gone by then. Nothing is retried."""
+    def send(event: dict) -> None:
+        try:
+            emit(event)
+        except Exception:  # noqa: BLE001
+            pass
+    return send
 
 
 
