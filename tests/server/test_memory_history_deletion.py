@@ -51,9 +51,7 @@ async def test_real_host_filters_and_revokes_history(selected, execution_db, mon
             base_url="http://127.0.0.1:11434/v1", api_key="", is_primary=True))
         await db.commit()
     async def empty(*args, **kwargs): return []
-    async def no_roster(*args, **kwargs): return ""
     monkeypatch.setattr(knowledge, "retrieve_scoped", empty)
-    monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(arslan, "_arslan_tools", empty)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: LLMAdapter("openai", "fixture", base_url="https://model-fixture.invalid"))
     @task_context.scoped_turn

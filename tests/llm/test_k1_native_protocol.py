@@ -16,6 +16,7 @@ from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
 from server.orchestrator import model_call as mc
 from server.orchestrator import tool_loop
+from tests.llm.test_k3_cache_breakpoints import unmarked
 from server.registry import executors
 
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
@@ -130,7 +131,8 @@ async def test_the_status_is_its_own_block_and_stays_where_it_was(monkeypatch):
     assert step1[0]["type"] == "tool_result" and "<agent_status" not in json.dumps(step1[0])
     assert step1[-1]["type"] == "text" and step1[-1]["text"].startswith("<agent_status")
     later = sent[2]["messages"]
-    assert later[:3] == sent[1]["messages"][:3]                         # nothing sent is edited
+    # Nothing sent is edited (K3's tail cache breakpoint moves on; it is not content).
+    assert unmarked(later[:3]) == unmarked(sent[1]["messages"][:3])
     assert json.dumps(later[3]["content"]) == json.dumps(replies[1]["content"])
     step2 = later[4]["content"]
     assert results_of(later[4])[0]["tool_use_id"] == "toolu_b"

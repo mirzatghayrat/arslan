@@ -265,7 +265,9 @@ async def test_anthropic_stream_captures_usage():
     out = [c async for c in p.chat_stream([{"role": "user", "content": "hi"}])]
 
     assert "".join(out) == "Hello"
-    assert p._last_stream_usage == {"tokens_in": 25, "tokens_out": 12}
+    # K3: the cache fields ride along (none read or written here; the whole input is 25).
+    assert p._last_stream_usage == {"tokens_in": 25, "tokens_out": 12,
+                                    "cache_read": 0, "cache_write": 0, "input_total": 25}
 
 
 @pytest.mark.asyncio

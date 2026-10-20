@@ -76,11 +76,14 @@ async def memdb(monkeypatch):
     await engine.dispose()
 
 
-def _capture_system(monkeypatch) -> list[str]:
+def _capture_request(monkeypatch) -> list[str]:
+    """The turn's request as the model gets it: since K3 the reply language rides in its reference
+    block, not in the system prompt (which stays the same bytes every turn)."""
     seen: list[str] = []
 
-    async def fake_run_native(*, system, on_chunk, **kw):
-        seen.append(str(system))
+    async def fake_run_native(*, system, user_content, on_chunk, **kw):
+        assert "Reply language for this turn" not in str(system)
+        seen.append(str(user_content))
         on_chunk("ok")
         return {"final": "ok", "tool_trace": []}
     monkeypatch.setattr(tool_loop, "run_native", fake_run_native)
@@ -92,14 +95,14 @@ def _capture_system(monkeypatch) -> list[str]:
     ("把今年的发票复制过去,告诉我缺哪几个月", "Chinese"),
 ])
 async def test_a_chat_turn_names_its_reply_language(memdb, monkeypatch, message, expected):
-    seen = _capture_system(monkeypatch)
+    seen = _capture_request(monkeypatch)
     await arslan._handle_answer("c-lang", message, lambda e: None)
     assert f"Reply language for this turn: {expected}." in seen[0]
 
 
 async def test_a_background_job_answers_in_the_language_the_user_asked_in(memdb, monkeypatch):
     # The goal can come out in the wrong language (that is the bug); the user's own message wins.
-    seen = _capture_system(monkeypatch)
+    seen = _capture_request(monkeypatch)
 
     async def fake_context(conversation_id, **kwargs):   # K2 passes the turn's budget
         return {"summary": "", "history": [

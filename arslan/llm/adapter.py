@@ -151,13 +151,14 @@ class LLMAdapter:
             total = tin + tout
         if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
-        from arslan.llm.usage_weight import charged_tokens
+        from arslan.llm.usage_weight import cache_split, charged_tokens
         usage_sink.report(total, charged=charged_tokens(u))
         usage_sink.report_detail(
             tokens_in=tin,
             tokens_out=tout,
             model=self.model,
             provider=self.report_provider,
+            **(cache_split(u) or {}),
         )
         from arslan.execution_checkpoint import save
         await save("after_model")
@@ -201,6 +202,8 @@ class LLMAdapter:
                     tokens_out=tokens_out,
                     model=self.model,
                     provider=self.report_provider,
+                    # K3: a provider that saw the cache in the stream says so (Anthropic's message_start).
+                    **{k: real[k] for k in ("cache_read", "cache_write", "input_total") if k in real},
                 )
             else:
                 usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))

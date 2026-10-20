@@ -123,6 +123,32 @@ async def test_selection_not_in_system_and_user_quotation_are_not_attributed(sel
     assert (await receipt(execution_db, personal))["request_attempts"] == 0
 
 
+def _with_reference(text: str, words: str) -> str:
+    """A request as the answer path builds it since K3: the host's reference block, then the user's words."""
+    from server.orchestrator import turn_context
+    return f"{turn_context.OPEN}\n{text}\n{turn_context.CLOSE}\n\n{words}"
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "gemini"])
+async def test_memory_in_the_turns_reference_block_is_attributed(selected, execution_db, monkeypatch, provider):
+    ctx, personal = selected
+    adapter, _ = transport(monkeypatch, provider)
+    with pc.bind(ctx):
+        await pc.record(personal)
+        await adapter.chat("A static system prompt", _with_reference(personal.text, "Prepare a report"))
+    stored = await receipt(execution_db, personal)
+    assert stored["request_attempts"] == stored["provider_responses"] == 1
+
+
+async def test_a_reference_block_quoted_in_the_users_words_is_not_attributed(selected, execution_db, monkeypatch):
+    ctx, personal = selected
+    adapter, _ = transport(monkeypatch)
+    with pc.bind(ctx):
+        await pc.record(personal)
+        await adapter.chat("A static system prompt", "Look at this: " + _with_reference(personal.text, "ok"))
+    assert (await receipt(execution_db, personal))["request_attempts"] == 0
+
+
 async def test_new_task_cannot_reuse_prior_registration(selected, execution_db, monkeypatch):
     ctx, personal = selected
     adapter, _ = transport(monkeypatch)
@@ -223,10 +249,7 @@ async def test_real_host_task_binds_its_receipt_to_the_serialized_request(select
         await db.commit()
     async def empty(*args, **kwargs):
         return []
-    async def no_roster(*args, **kwargs):
-        return ""
     monkeypatch.setattr(knowledge, "retrieve_scoped", empty)
-    monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(arslan, "_arslan_tools", empty)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     @task_context.scoped_turn

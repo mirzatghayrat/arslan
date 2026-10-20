@@ -40,6 +40,9 @@ IMAGES_KEPT = 2
 # rendered text): about 1.5k tokens for a 1280-px screenshot, not its base64 length.
 IMAGE_SIZE_CHARS = 6_000
 LEGACY_COMPLETED = "Native tool invocation completed: "
+# 0.1.63 K3: marks this turn's request among the messages, so a provider can tell the history before
+# it (Claude puts a cache breakpoint on the history's last block).
+TURN_REQUEST = "_turn_request"
 
 
 class TrajectoryError(ValueError):
@@ -93,6 +96,11 @@ def tool_result(call_id: str, name: str, content: str, *, synthetic: bool = Fals
         msg["_images"] = [{"type": "image", "mime_type": i["mime_type"], "data": i["data"]} for i in images]
         msg["_image_label"] = image_label or name
     return msg
+
+
+def request(content: Any) -> dict:
+    """0.1.63 K3: this turn's user request, marked so a provider can find where the history ends."""
+    return {"role": "user", "content": content, TURN_REQUEST: True}
 
 
 def status(text: str) -> dict:

@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from arslan.models import LLMResponse
 from server.db.models import ContextReceiptRecord, Run
-from server.orchestrator import arslan, tool_loop
+from server.orchestrator import arslan, tool_loop, turn_context
 from server.services import task_context
 from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
@@ -21,7 +21,10 @@ async def test_precise_output_uses_one_actual_model_call_and_no_memory(execution
     events = []
     await arslan.handle_user_message("exact-output-conversation", "Reply only YES", events.append)
     assert len(calls) == 1
-    assert calls[0][1] == "Reply only YES"
+    # K3: the request is the turn's reference block (time, reply language) and then the words as sent.
+    request = calls[0][1]
+    assert request.startswith(turn_context.OPEN) and request.endswith(
+        turn_context.CLOSE + "\n\nReply only YES")
     assert "".join(event.get("content", "") for event in events if event["type"] == "stream_chunk") == "YES"
     async with execution_db() as db:
         run = (await db.execute(select(Run))).scalar_one()

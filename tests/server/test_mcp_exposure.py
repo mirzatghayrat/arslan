@@ -205,13 +205,13 @@ async def test_a_call_that_reached_the_server_refreshes_last_ok_at_and_a_failed_
         assert stamped is (fake is answered)
 
 
-# ── both answer paths carry the line, in the volatile part ─────────────────────────────────────
+# ── both answer paths carry the line, in the turn's reference block (K3), never the system ──────
 
 def _capture_system(monkeypatch) -> list:
     seen: list = []
 
-    async def fake_run_native(*, system, on_chunk, **kw):
-        seen.append(system)
+    async def fake_run_native(*, system, user_content, on_chunk, **kw):
+        seen.append((str(system), user_content))
         on_chunk("ok")
         return {"final": "ok", "tool_trace": []}
     monkeypatch.setattr(tool_loop, "run_native", fake_run_native)
@@ -227,10 +227,10 @@ async def test_a_chat_turn_and_a_background_job_both_tell_the_model_which_server
         command = workspace_write = schedule = None
     await arslan.background_body("c-mcp-bg", "use my tools", lambda e: None, Confirm())
     assert len(seen) == 2
-    for system in seen:
-        assert "MCP servers not available right now: " in system.volatile
-        assert "rea: failing to start" in system.volatile
-        assert "MCP servers not available" not in system.stable
+    for system, request in seen:
+        assert "MCP servers not available right now: " in request
+        assert "rea: failing to start" in request
+        assert "MCP servers not available" not in system
 
 
 # ── carry: exposure — ready AND a live session in this process (amended after the review) ──────

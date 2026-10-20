@@ -590,9 +590,12 @@ async def test_reaching_the_tier_wraps_up_and_delivers_instead_of_stopping(execu
 
 async def test_a_job_that_will_not_wrap_up_is_stopped_by_the_hard_limit_and_says_so(execution_db, active,
                                                                                      frames, monkeypatch):
+    # K3: a second refused call while wrapping up makes the next step text only. In this tier the
+    # wrap-up starts at 4 model requests, the refusals come at 5 and 6, and the hard limit
+    # (1.5 x 4 = 6) stops the job before that text-only step.
     from arslan import execution_budget
     monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
-                        dict(model_requests=4, tool_calls=2, tokens=600_000, wall_seconds=60))
+                        dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
     job = await background_jobs.start(CID, "Research everything", _criteria())
@@ -609,6 +612,30 @@ async def test_a_job_that_will_not_wrap_up_is_stopped_by_the_hard_limit_and_says
     async with execution_db() as db:
         row = (await db.scalars(select(ArslanMessage))).one()
     assert row.job_outcome == "out_of_budget"
+
+
+async def test_a_job_that_keeps_researching_after_wrap_up_is_made_to_answer(execution_db, active, frames,
+                                                                             monkeypatch):
+    """K3: the tool table no longer narrows while wrapping up, so a model that ignores the wrap-up
+    note gets two refusals and then a text-only step, instead of spending model requests on
+    refusals until the hard limit."""
+    from arslan import execution_budget
+    monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
+                        dict(model_requests=50, tool_calls=3, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    adapter = ResearchAdapter(obedient=False)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    job = await background_jobs.start(CID, "Research everything", _criteria())
+    await _wait(lambda: job.phase == "finished", seconds=10)
+    assert job.budget_stop is None                     # the hard limit was never reached
+    assert adapter.n == 3 + 2 + 1                      # 3 calls, 2 refused in wrap-up, 1 text-only step
+    # Its checks decide the outcome as usual: nothing was delivered, so they fail, and the message says
+    # so; it is not a budget stop, so it does not point at the budget settings.
+    assert job.outcome == "blocked" and {c["status"] for c in job.frame()["criteria"]} == {"failed"}
+    await _wait(lambda: any(f.get("type") == "message" for f in frames))
+    message = next(f for f in frames if f.get("type") == "message")
+    assert message["outcome"] == "blocked" and "Some checks did not pass" in message["content"]
+    assert "Settings → Advanced" not in message["content"]
 
 
 def test_outcome_names_a_budget_stop_apart_from_being_stuck():

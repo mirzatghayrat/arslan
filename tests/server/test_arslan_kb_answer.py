@@ -6,13 +6,10 @@ def _patch_common(monkeypatch, arslan_mod):
         return {"summary": "", "history": [{"role": "user", "content": "hi"}]}
     async def fake_facts(**kwargs):
         return ""
-    async def fake_roster():
-        return "(none)"
     async def fake_add(cid, role, content):
         return 1
     monkeypatch.setattr(arslan_mod.memory, "assemble_working_context", fake_assemble)
     monkeypatch.setattr(arslan_mod.memory, "facts_text", fake_facts)
-    monkeypatch.setattr(arslan_mod, "_team_roster", fake_roster)
     monkeypatch.setattr(arslan_mod.memory, "add_message", fake_add)
 
 
@@ -26,7 +23,7 @@ async def test_handle_answer_injects_collection_kb(monkeypatch, execution_db):
         return [("公司手册.pdf", "报销上限 500 元")]
 
     async def fake_run_native(**kwargs):
-        captured["system"] = kwargs["system"]
+        captured["system"], captured["request"] = str(kwargs["system"]), kwargs["user_content"]
         return {"final": "好的"}
 
     monkeypatch.setattr(knowledge, "retrieve_scoped", fake_retrieve_scoped)
@@ -34,7 +31,9 @@ async def test_handle_answer_injects_collection_kb(monkeypatch, execution_db):
     _patch_common(monkeypatch, arslan_mod)
 
     await arslan_mod._handle_answer("c1", "报销上限多少", lambda e: None)
-    assert "[公司手册.pdf] 报销上限 500 元" in captured["system"]
+    # K3: the knowledge found for this request is in its reference block, never the system prompt.
+    assert "[公司手册.pdf] 报销上限 500 元" in captured["request"]
+    assert "报销上限" not in captured["system"]
 
 
 async def test_handle_answer_survives_retrieve_failure(monkeypatch, execution_db):

@@ -60,8 +60,6 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
     async def tools():
         return [tool for tool in await production_tools() if tool["key"] in {"web_extract", "write_file", "read_file"}]
 
-    async def no_roster():
-        return ""
 
     async def no_knowledge(*args, **kwargs):
         return []
@@ -77,7 +75,6 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
             return result
 
     monkeypatch.setattr(arslan, "_arslan_tools", tools)
-    monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(knowledge, "retrieve_scoped", no_knowledge)
     for delegate in (WebExtractExecutor(), ReadFileExecutor(), WriteFileExecutor()):
         monkeypatch.setitem(tool_loop.EXECUTORS, delegate.key, RestrictedTool(delegate))

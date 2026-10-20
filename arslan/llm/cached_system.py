@@ -24,6 +24,11 @@ plain-answer salvage) keep the split intact WITHOUT polluting the byte-stable pr
 trailing guards are static, but they already sat AFTER the dynamic tail in the pre-reorder
 prompt, so keeping them in the volatile block is behavior-preserving (the model sees the
 same text in the same order) — they just aren't cached, which is a negligible loss.
+
+0.1.63 K3: the answer path's volatile part is now only a route's fixed text plus tool_loop's static
+guards (per-turn content rides in the request), so on native requests Claude's breakpoint goes on
+the system's LAST block and caches both parts. The two parts stay until v0.1.64, when they are
+merged into one (K3 card §5).
 """
 from __future__ import annotations
 

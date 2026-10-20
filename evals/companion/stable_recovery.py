@@ -76,9 +76,6 @@ async def run_phase(phase, profile, evidence, adapter):
     async def tools():
         return [t for t in await production_tools() if t["key"] in {"write_file", "read_file", "task_progress"}]
 
-    async def no_roster():
-        return ""
-
     async def no_knowledge(*args, **kwargs):
         return []
 
@@ -93,7 +90,7 @@ async def run_phase(phase, profile, evidence, adapter):
             return result
 
     tool_loop._get_adapter = memory._get_adapter = lambda: adapter
-    arslan._arslan_tools, arslan._team_roster, knowledge.retrieve_scoped = tools, no_roster, no_knowledge
+    arslan._arslan_tools, knowledge.retrieve_scoped = tools, no_knowledge
     for delegate in (ReadFileExecutor(), WriteFileExecutor()):
         tool_loop.EXECUTORS[delegate.key] = Restricted(delegate)
 

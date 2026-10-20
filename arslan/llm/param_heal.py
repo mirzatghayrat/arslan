@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 
 # Sampling knobs a request can do without. Never a parameter that changes what
 # is asked (messages, tools, thinking switches): dropping those changes meaning.
-_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding", "context_management")
+_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding", "context_management", "ttl")
+# 0.1.63 K3: `ttl` sits inside every cache_control marker (system, tool and message blocks). Refused, it
+# goes from every marker; the markers stay (the default five-minute cache).
+_IN_MARKERS = ("ttl",)
 # 0.1.63 K1: an opt-in beta field and the `anthropic-beta` value that enables it go together. An
 # endpoint that refuses either (a proxy, an older API version) gets both dropped and remembered;
 # the request means the same without them (the caller trims context itself instead, K1b). Betas
@@ -75,7 +78,29 @@ def _containers(payload: dict[str, Any]):
             yield inner
 
 
+def _markers(payload: dict[str, Any]):
+    """Every cache_control object of an Anthropic payload."""
+    blocks = [*(payload.get("system") if isinstance(payload.get("system"), list) else []),
+              *(payload.get("tools") if isinstance(payload.get("tools"), list) else [])]
+    for message in payload.get("messages") if isinstance(payload.get("messages"), list) else []:
+        content = message.get("content") if isinstance(message, dict) else None
+        blocks += content if isinstance(content, list) else []
+    for block in blocks:
+        if isinstance(block, dict) and isinstance(block.get("cache_control"), dict):
+            yield block["cache_control"]
+
+
+def _sent(payload: dict[str, Any]) -> set[str]:
+    keys = {key for box in _containers(payload) for key in box}
+    return keys | {key for marker in _markers(payload) for key in marker if key in _IN_MARKERS}
+
+
 def _change(payload: dict[str, Any], key: str, new: str | None) -> bool:
+    if key in _IN_MARKERS:
+        found = [marker for marker in _markers(payload) if key in marker]
+        for marker in found:
+            del marker[key]
+        return bool(found)
     for box in _containers(payload):
         if key in box:
             value = box.pop(key)
@@ -143,7 +168,7 @@ def recover(exc: httpx.HTTPStatusError, payload: dict[str, Any], heals: Heals) -
     heals.judge(message)
     if not _REFUSED.search(message):
         return False
-    sent = {key for box in _containers(payload) for key in box}
+    sent = _sent(payload)
     candidates: dict[str, int] = {}
     for key in (*_DROPPABLE, *_RENAMES):
         at = _position(key, message)

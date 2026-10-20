@@ -52,14 +52,11 @@ async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path
     async def no_tools():
         return []
 
-    async def no_roster():
-        return ""
 
     async def no_knowledge(*args, **kwargs):
         return []
 
     monkeypatch.setattr(arslan, "_arslan_tools", no_tools)
-    monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(knowledge, "retrieve_scoped", no_knowledge)
 
     tool_trace = []

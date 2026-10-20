@@ -1,9 +1,8 @@
-"""Answer-path prompt-cache reorder (spec 2026-07-13, Task 1).
+"""Answer-path prompt layout (spec 2026-07-13 reorder; 0.1.63 K3).
 
-Nails the regression this whole change exists to prevent: the timestamp (and every other
-per-turn/per-conversation input) must NEVER live in the cacheable stable prefix. The prefix
-is rendered twice with different clocks + different roster/facts/summary/KB and asserted
-byte-identical, with all differences confined to the volatile suffix.
+Nails the regression this exists to prevent: the timestamp, and every other per-turn input, must
+never live in the cached system prompt. Since K3 the system carries none of them at all; they ride
+in the turn's reference block (`_turn_context`) at the start of the request.
 """
 import re
 from datetime import datetime, timedelta
@@ -23,68 +22,53 @@ def _freeze_utcnow(monkeypatch, when: datetime):
     monkeypatch.setattr(arslan, "datetime", _DT)
 
 
-def _sys(**kw):
-    base = dict(extra_system="", roster="(none)", facts="", summary="", kb_block="")
+def _ctx(**kw):
+    base = dict(facts="", summary="", kb_block="")
     base.update(kw)
-    return arslan._build_answer_system(**base)
+    return arslan._turn_context(**base)
 
 
-def test_answer_stable_prefix_is_byte_stable_across_clock_and_dynamic(monkeypatch):
-    # Render 1: clock A, roster/facts/summary/KB set 1, no addendum.
+def test_per_turn_inputs_go_to_the_turn_context_never_the_system(monkeypatch):
     monkeypatch.setattr(arslan, "_now_line", lambda: "\n\nDATE=2026-07-13 (Monday). guidance")
-    a = _sys(roster="- Alpha (x)", facts="Known facts: likes tea",
-             summary="talked about A", kb_block="\n\nKB: doc1")
-    # Render 2: DIFFERENT clock, DIFFERENT dynamic content, and a per-turn addendum.
+    a = _ctx(facts="Known facts: likes tea", summary="talked about A", kb_block="\n\nKB: doc1")
     monkeypatch.setattr(arslan, "_now_line", lambda: "\n\nDATE=2026-12-31 (Wednesday). guidance")
-    b = _sys(extra_system="\n\nCLARIFY: ask what they mean",
-             roster="- Beta (y)\n- Gamma (z)", facts="Known facts: likes coffee",
+    b = _ctx(addendum="CLARIFY: ask what they mean", facts="Known facts: likes coffee",
              summary="talked about B", kb_block="\n\nKB: doc2")
-
-    assert isinstance(a, CachedSystem) and isinstance(b, CachedSystem)
-    # The cacheable prefix is byte-for-byte identical; only the volatile suffix moved.
-    assert a.stable == b.stable
-    assert a.volatile != b.volatile
-    # And the prefix leaks NONE of the dynamic inputs.
-    for poison in ("DATE=", "Alpha", "Beta", "likes tea", "likes coffee",
-                   "talked about", "KB:", "CLARIFY"):
-        assert poison not in a.stable
+    system = arslan._build_answer_system()
+    assert isinstance(system, CachedSystem) and str(system) == arslan._ANSWER_STABLE_PREFIX
+    for poison in ("DATE=", "likes tea", "likes coffee", "talked about", "KB:", "CLARIFY"):
+        assert poison not in system
+    assert all(piece in a for piece in ("DATE=2026-07-13", "likes tea", "talked about A", "KB: doc1"))
+    assert all(piece in b for piece in ("DATE=2026-12-31", "likes coffee", "talked about B", "KB: doc2", "CLARIFY"))
 
 
 def test_static_guards_are_all_in_the_stable_prefix():
-    s = _sys()
+    s = arslan._build_answer_system()
     for guard in (arslan._ARSLAN_SYSTEM, arslan._ANTI_FABRICATION, arslan._NO_BACKGROUND_EXEC,
                   arslan._CLARIFY_CHOICE_NUDGE, arslan._NO_REPASTE, arslan._WEB_TOOL_GUIDANCE,
                   arslan._CAPABILITY_SELF):
         assert guard in s.stable
 
 
-def test_extra_system_lands_in_volatile_not_stable():
-    # extra_system carries per-turn clarify/gather addenda (present some turns, "" others)
-    # → it MUST be volatile, never in the cached prefix.
-    s = _sys(extra_system="\n\nADDENDUM-XYZ")
-    assert "ADDENDUM-XYZ" in s.volatile
-    assert "ADDENDUM-XYZ" not in s.stable
+def test_a_resumed_tasks_notes_go_in_the_turn_context():
+    # A resumed task's notes (task_service.resume_turn) hold this task's saved progress: per turn.
+    assert "ADDENDUM-XYZ" in _ctx(addendum="ADDENDUM-XYZ")
+    assert "ADDENDUM-XYZ" not in arslan._build_answer_system()
 
 
-def test_the_mcp_status_line_is_volatile():
-    s = _sys(mcp_line="\n\nMCP servers not available right now: rea: still starting.")
-    assert "MCP servers not available" in s.volatile
-    assert "MCP servers not available" not in s.stable
+def test_the_mcp_status_line_is_per_turn():
+    assert "MCP servers not available" in _ctx(mcp_line="\n\nMCP servers not available right now: rea: still starting.")
 
 
 def test_all_dynamic_content_present_and_date_line_last():
-    s = _sys(roster="- Deck Master (content)", facts="Known facts: uses xhs",
-             summary="prior chat", kb_block="\n\nKB block here")
-    full = str(s)
-    # Everything the pre-reorder prompt carried is still present, just relocated.
-    # 0.1.48: no expert roster in the prompt any more (one Arslan).
-    assert "Deck Master" not in full and "Your team" not in full
+    full = _ctx(facts="Known facts: uses xhs", summary="prior chat", kb_block="\n\nKB block here")
+    # 0.1.48: no expert roster in the prompt any more (one Arslan); K3 removed the roster lookup too.
+    assert "Your team" not in full
     assert "uses xhs" in full
     assert "prior chat" in full
     assert "KB block here" in full
-    # The date line is LAST (after the KB block) — the least-cache-poisoning position.
-    date_idx = full.index("Current date")
-    assert date_idx > full.index("KB block here")
+    # The date line is LAST (after the KB block).
+    assert full.index("Current date") > full.index("KB block here")
 
 
 def test_now_line_is_hour_level_not_minute_and_not_date_only(monkeypatch):

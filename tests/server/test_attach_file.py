@@ -151,7 +151,7 @@ async def test_only_a_phone_turn_tells_the_model_a_mac_path_is_no_use(maker, mon
     monkeypatch.setattr(turn_facts, "extract", _no_facts)
     await arslan.handle_user_message("c-d1", "send me a screenshot of my Mac", _events([]), source=source)
     first = model.seen[0]
-    assert first["tools"][-1] == "attach_file"                # appended after every other built-in
+    assert "attach_file" in first["tools"] and first["tools"] == sorted(first["tools"])   # K3: sorted by name
     told = "on their iPhone" in str(first["user"])
     assert told is (source == "phone")
     assert "on their iPhone" not in first["system"]          # never the cached system prompt

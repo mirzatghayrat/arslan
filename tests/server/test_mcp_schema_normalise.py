@@ -447,7 +447,9 @@ class Scripted(Refuser):
 async def test_an_unrelated_refusal_after_a_schema_one_is_not_read_as_one(events):
     # Our own recovery note ("…refused its parameter schema") is in str(exc); only the provider's
     # words decide.
-    adapter = Scripted([f"400:{ANTHROPIC_REFUSAL.format(n=5)}", "400:invalid x-api-key", "done"])
+    # The refusal names the tool by its position in the request's table (sorted by name since K3).
+    sent = [t["function"]["name"] for t in tool_loop._native_tool_schemas(await _tools(), allow_escalation=True)]
+    adapter = Scripted([f"400:{ANTHROPIC_REFUSAL.format(n=sent.index('mcp_1__bad'))}", "400:invalid x-api-key", "done"])
     with pytest.raises(mc.ModelCallError):
         await _turn(adapter)
     assert len(adapter.calls) == 2
