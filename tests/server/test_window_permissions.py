@@ -2,8 +2,9 @@
 an expired card is not a refusal; grants are kept per conversation.
 
 Also the carries from Tasks 1–3 that live in the window: a window ask identical to a job's card
-joins it and shows THAT card; a card shared with a job outlives the window's copy; the shadow judge
-sees only the cards that were shown; a card's wait does not spend the turn's wall clock."""
+joins it and shows THAT card; a card shared with a job outlives the window's copy; a card's wait
+does not spend the turn's wall clock. (The shadow judge these cards had was removed in C4: the tests
+that followed it now check that nothing is judged.)"""
 from __future__ import annotations
 
 import asyncio
@@ -339,7 +340,7 @@ def test_a_window_ask_that_joins_a_jobs_card_waits_only_what_is_left_of_it(app_c
     assert executor.calls == [] and approvals.known_ids() == set()
 
 
-# ── carry 4: the window's shadow judge sees only the cards that were shown ────
+# ── carry 4: the window shows only the cards that need asking (C4: and judges none) ────
 
 @pytest.fixture
 def judge(monkeypatch):
@@ -379,7 +380,7 @@ def _judgments(app_client, count: int) -> list:
     return app_client.portal.call(read)
 
 
-def test_the_windows_shadow_judge_sees_only_cards_that_were_shown(app_client, monkeypatch, judge):
+def test_the_window_shows_only_the_cards_that_need_asking_and_judges_none(app_client, monkeypatch, judge):
     _enable_shell(app_client, policy="ask_risky")
     executor = _stub_run_command_executor(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/conv-j") as ws:
@@ -397,10 +398,9 @@ def test_the_windows_shadow_judge_sees_only_cards_that_were_shown(app_client, mo
         ws.send_json({"type": "user_message", "content": "clean the build"})
         frames = _collect_until(ws, "stream_end")
         unanswered = [f for f in frames if f.get("type") == "propose_run_command"][-1]
-    rows = _judgments(app_client, 2)
-    assert sorted((r.ref, r.outcome) for r in rows) == sorted(
-        [(shown["call_id"], "approved"), (unanswered["call_id"], "expired")])
-    assert len(judge) == 2 and len(executor.calls) == 2
+    assert shown["call_id"] != unanswered["call_id"]
+    assert _judgments(app_client, 0) == [] and judge == []           # C4: no shadow judgment
+    assert len(executor.calls) == 2
 
 
 # ── carry 2: a card's wait is not the turn's time ─────────────────────────────
@@ -477,8 +477,7 @@ def test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait
         later = _collect_until(ws, "stream_end")
         assert [f["ok"] for f in later if f.get("type") == "tool_result"] == [True]
     assert len(executor.calls) == 1
-    rows = _judgments(app_client, 2)
-    assert len(rows) == 2 and len(judge) == 2, "a card that did not open is not judged"
+    assert _judgments(app_client, 0) == [] and judge == []           # C4: no shadow judgment
 
 
 class _FakeSsh:
@@ -585,8 +584,8 @@ def test_a_turns_task_grants_end_with_the_turn_and_its_conversation_grants_stay(
         assert app_client.portal.call(grants) == [(False, "com.apple.reminders")]
 
 
-def test_a_window_ask_that_joins_a_card_on_screen_is_not_judged_again(app_client, monkeypatch, judge):
-    """J1: one card, one judgment — the job's, which opened it."""
+def test_a_window_ask_that_joins_a_card_on_screen_shares_it_and_nothing_is_judged(app_client, monkeypatch, judge):
+    """J1: one card — the job's, which opened it; the window's ask joins it. C4: nothing judged."""
     monkeypatch.setattr(approvals, "TIMEOUT_S", 8)
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
@@ -601,8 +600,7 @@ def test_a_window_ask_that_joins_a_card_on_screen_is_not_judged_again(app_client
         ws.send_json({"type": "confirm_run_command", "call_id": job_card["call_id"], "scope": "once"})
         _collect_until(ws, "stream_end")
         assert asked.result(timeout=5) is True
-    rows = _judgments(app_client, 1)
-    assert [(r.ref, r.outcome) for r in rows] == [(job_card["call_id"], "approved")] and len(judge) == 1
+    assert _judgments(app_client, 0) == [] and judge == []
 
 
 # ── final-review fix wave: F3 ────────────────────────────────────────────────

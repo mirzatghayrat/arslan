@@ -732,9 +732,9 @@ def judge(monkeypatch):
     return calls
 
 
-async def test_the_shadow_judge_sees_only_cards_that_were_shown(job_db, judge, monkeypatch):
-    """Review M1: a command a grant allows shows no card, so it gets no judgment and no model
-    call; a card nobody answered is joined as "expired", never "declined"."""
+async def test_a_jobs_cards_show_only_what_needs_asking_and_none_is_judged(job_db, judge, monkeypatch):
+    """Review M1: a command a grant allows shows no card; a card nobody answered stops the job's
+    later cards. C4: no card is shadow-judged any more: no model call, no judgments row."""
     windows = Windows(("yes", "conversation"), None)
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
     assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm old.txt", []) is True
@@ -744,13 +744,11 @@ async def test_the_shadow_judge_sees_only_cards_that_were_shown(job_db, judge, m
     away = approvals.JobConfirmations("conv", job_id="job-3")
     assert await away.command("rm -rf build", []) is False
     assert await away.command("rm -rf dist", []) is False       # the job stopped waiting: no card
-    rows = await _judgments(job_db, 2)
-    assert len(windows.cards) == 2 and len(judge) == 2
-    assert sorted((r.ref, r.outcome) for r in rows) == sorted(
-        [(windows.cards[0]["call_id"], "approved"), (windows.cards[1]["call_id"], "expired")])
+    assert len(windows.cards) == 2
+    assert await _judgments(job_db, 0) == [] and judge == []
 
 
-async def test_a_merged_ask_is_judged_once_under_the_card_shown(job_db, judge, monkeypatch):
+async def test_a_merged_ask_shows_one_card_and_is_not_judged(job_db, judge, monkeypatch):
     sent = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
     first = asyncio.ensure_future(approvals.JobConfirmations("conv", job_id="job-a").command("rm a.txt", []))
@@ -760,8 +758,7 @@ async def test_a_merged_ask_is_judged_once_under_the_card_shown(job_db, judge, m
     [card] = _shown(sent)
     approvals.answer({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "once"})
     assert (await first, await second) == (True, True)
-    rows = await _judgments(job_db, 1)
-    assert [(r.ref, r.outcome) for r in rows] == [(card["call_id"], "approved")] and len(judge) == 1
+    assert await _judgments(job_db, 0) == [] and judge == []          # C4: no shadow judgment
 
 
 async def test_a_merged_ask_records_the_card_the_user_answered(job_db, monkeypatch):
