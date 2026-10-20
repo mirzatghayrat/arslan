@@ -1003,7 +1003,8 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         locale = await db.scalar(select(Setting.value).where(Setting.key == "language")) or "en"
         if (budget := current_budget() or _budget) is None:
             from server.services import settings_service
-            budget = run_budget(await settings_service.background_job_budget(db))     # K4a: the user's tier
+            budget = run_budget(await settings_service.background_job_budget(db),     # K4a: the user's tier
+                                usd_cap=await settings_service.task_usd_cap(db))
     if ctx.project_id:
         await _note_project_activity(ctx.project_id)
     from server.services.runtime_messages import normalize

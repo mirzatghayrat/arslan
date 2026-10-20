@@ -300,6 +300,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
         tier = await settings_service.background_job_budget(db)
+        usd_cap = await settings_service.task_usd_cap(db)
     ctx = await task_context.load(job.conversation_id, user_message=job.goal)
     ctx = replace(ctx, task_id=job.job_id, run_id=f"job-{job.job_id}", explicit_save_digest=None,
                   explicit_save_ref=None, allow_global_save=False)
@@ -318,7 +319,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},
-                                                 _acceptance=job.acceptance, _budget=run_budget(tier))
+                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the task row records the failure; read it below
@@ -329,22 +330,33 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         row = await repo.get(job.job_id)
         for result in row.results or ():
             job.results[result.get("check_id")] = result.get("status")
-        budget = row.budget or {}
-        reason = budget.get("stop_reason")
-        if not reason and row.pause_reason == "task_budget_exhausted":
-            reason = "wall_seconds"   # asyncio.timeout ends the turn without recording a stop reason
-        if reason:
-            # A stop reason means that limit was reached; the last saved checkpoint
-            # can lag the final count, so never show less than the limit.
-            limit = (budget.get("limits") or {}).get(reason)
-            used = (budget.get("used") or {}).get(reason) or 0
-            if isinstance(limit, (int, float)):
-                used = max(used, limit)
-                if reason == "wall_seconds":
-                    used, limit = round(used), round(limit)
-            job.budget_stop = {"reason": reason, "used": used, "limit": limit, "tier": tier}
+        job.budget_stop = budget_stop_of(row.budget or {}, pause_reason=row.pause_reason, tier=tier) or job.budget_stop
         text = output if isinstance(output, str) else (output or {}).get("final") if isinstance(output, dict) else ""
         return text or "", row.phase, row.pause_reason
+
+
+def budget_stop_of(budget: dict, *, pause_reason: str | None, tier: str) -> dict | None:
+    """What a job card says about the limit that stopped it, or None. K4a: a dollar stop shows dollars."""
+    reason = budget.get("stop_reason")
+    if not reason and pause_reason == "task_budget_exhausted":
+        reason = "wall_seconds"   # asyncio.timeout ends the turn without recording a stop reason
+    if not reason:
+        return None
+    if reason == "usd":
+        spend = budget.get("spend") or {}
+        used, limit = spend.get("usd") or 0.0, spend.get("usd_cap")
+        if isinstance(limit, (int, float)):
+            return {"reason": reason, "used": f"${max(used, limit):.2f}", "limit": f"${limit:.2f}", "tier": tier}
+        return {"reason": reason, "used": f"${used:.2f}", "limit": None, "tier": tier}
+    # A stop reason means that limit was reached; the last saved checkpoint
+    # can lag the final count, so never show less than the limit.
+    limit = (budget.get("limits") or {}).get(reason)
+    used = (budget.get("used") or {}).get(reason) or 0
+    if isinstance(limit, (int, float)):
+        used = max(used, limit)
+        if reason == "wall_seconds":
+            used, limit = round(used), round(limit)
+    return {"reason": reason, "used": used, "limit": limit, "tier": tier}
 
 
 async def _report(job: Job, text: str) -> None:
@@ -374,6 +386,10 @@ async def _budget_note(job: Job) -> str:
     from server.services import runtime_messages
     locale = await runtime_messages.selected_locale()
     stop = job.budget_stop or {}
+    if stop.get("reason") == "usd":           # K4a: the dollar cap, set in Settings → Advanced
+        return runtime_messages.render("job_out_of_budget_usd", locale, goal=job.goal[:200],
+                                       used=stop.get("used", "?"), limit=stop.get("limit", "?"),
+                                       steps=job.tool_calls_seen)
     what = runtime_messages.render(f"budget_{stop.get('reason', 'tokens')}", locale)
     return runtime_messages.render("job_out_of_budget", locale, goal=job.goal[:200], what=what,
                                    used=stop.get("used", "?"), limit=stop.get("limit", "?"),

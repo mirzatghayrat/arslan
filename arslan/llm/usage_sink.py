@@ -23,14 +23,21 @@ def last_input() -> int | None:
     return holder["value"] if holder else None
 
 
-def report(tokens: int, *, charged: int | None = None) -> None:
+_NO_PRICE_INFO = object()
+
+
+def report(tokens: int, *, charged: int | None = None, usd=_NO_PRICE_INFO) -> None:
     """Add a token count to the active bucket (no-op when none is active).
 
     `charged` is what the execution budget is debited (0.1.49 S5: cached input
-    weighted, arslan/llm/usage_weight.py); the bucket keeps the raw count."""
+    weighted, arslan/llm/usage_weight.py); the bucket keeps the raw count.
+    K4a: `usd` is the response's price (prices.usd_for_usage; None = not known), charged to the run's dollar
+    cap; a caller that says nothing about price charges nothing there."""
     bucket = _sink.get()
-    from arslan.execution_budget import charge_tokens
+    from arslan.execution_budget import charge_tokens, charge_usd
     charge_tokens(tokens if charged is None else charged)
+    if usd is not _NO_PRICE_INFO:
+        charge_usd(usd)
     if bucket is not None:
         bucket.append(int(tokens))
 

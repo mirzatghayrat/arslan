@@ -59,6 +59,11 @@ HARD_OVER_SOFT = 1.5
 # reasoning, and the answer came back empty. Token accounting is post-response anyway, so this can
 # overshoot the token limit by one answer.
 MIN_OUTPUT_TOKENS = 16_384
+# K4a: a per-task dollar cap, on by default (Settings → Advanced; at most MAX_USD_CAP). A run wraps up at
+# cap / HARD_OVER_SOFT and stops at the cap. Only responses with a known price count (prices.usd_for_usage):
+# a local model or one missing from the price table spends nothing here, and the token cap still holds.
+DEFAULT_USD_CAP = 2.0
+MAX_USD_CAP = 100.0
 _ENV = {"model_requests": "MODEL_REQUESTS", "tool_calls": "TOOL_CALLS", "tokens": "TOKENS",
         "wall_seconds": "WALL_SECONDS", "output_tokens_per_request": "OUTPUT_TOKENS",
         "artifact_bytes": "ARTIFACT_BYTES"}
@@ -83,12 +88,12 @@ def _hard_over(soft: Limits) -> Limits:
                    wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
 
 
-def run_budget(tier: str = DEFAULT_TIER) -> "Budget":
+def run_budget(tier: str = DEFAULT_TIER, *, usd_cap: float | None = DEFAULT_USD_CAP) -> "Budget":
     """The budget of one run, a chat turn or a background job (K4a): the tier is where it wraps up,
-    1.5x stops it. A turn with only a hard limit aborted with an empty reply once it ran out (kernel
-    bench T2, 0.1.49)."""
+    1.5x stops it; the dollar cap likewise. A turn with only a hard limit aborted with an empty reply once
+    it ran out (kernel bench T2, 0.1.49)."""
     soft = tier_limits(tier)
-    return Budget(_hard_over(soft), soft=soft)
+    return Budget(_hard_over(soft), soft=soft, usd_cap=usd_cap)
 
 
 class Budget:
@@ -96,9 +101,13 @@ class Budget:
     # asked for: a "length" cut then means "budget", not "raise the limit".
     last_output_clamped = False
 
-    def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None):
+    def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None,
+                 usd_cap: float | None = None):
         self.limits = limits or tier_limits()
         self.soft = soft
+        self.usd_cap = usd_cap
+        self.usd = 0.0
+        self.unpriced_requests = 0
         self.id = uuid.uuid4().hex
         self.started = time.monotonic()
         self.model_requests = 0
@@ -112,12 +121,16 @@ class Budget:
         self.history: dict | None = None
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None) -> Budget:
+    def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None,
+                      usd_cap: float | None = DEFAULT_USD_CAP) -> Budget:
         """Restore charged work, never reset it or silently widen its ceiling.
 
         Downtime is not execution time. The elapsed execution recorded before a
         crash remains charged; every new live interval starts at that offset.
         Token overrun is legal here because accounting is post-response.
+
+        K4a: the dollar spend restores with the snapshot. A snapshot from before K4a has none: it gets
+        `usd_cap` (the default cap) and spend 0 (⓪Plan's Q13).
         """
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get("used"), dict):
             raise ValueError("invalid execution budget snapshot")
@@ -154,18 +167,33 @@ class Budget:
                 setattr(budget, key, value)
         budget.started = time.monotonic() - used["wall_seconds"]
         reason = snapshot.get("stop_reason")
-        if reason is not None and reason not in {"model_requests", "tool_calls", "tokens", "artifact_bytes", "wall_seconds"}:
+        if reason is not None and reason not in {"model_requests", "tool_calls", "tokens", "artifact_bytes",
+                                                 "wall_seconds", "usd"}:
             raise ValueError("invalid execution budget stop reason")
         budget.stop_reason = reason
+        spend = snapshot.get("spend")
+        if spend is None:
+            budget.usd_cap = usd_cap
+            return budget
+        if not isinstance(spend, dict):
+            raise ValueError("invalid execution budget spend")
+        usd, cap, unpriced = spend.get("usd"), spend.get("usd_cap"), spend.get("unpriced_requests")
+        if (isinstance(usd, bool) or not isinstance(usd, (int, float)) or not math.isfinite(usd) or usd < 0
+                or (cap is not None and (isinstance(cap, bool) or not isinstance(cap, (int, float))
+                                         or not math.isfinite(cap) or cap <= 0))
+                or type(unpriced) is not int or unpriced < 0):
+            raise ValueError("invalid execution budget spend")
+        budget.usd, budget.usd_cap, budget.unpriced_requests = float(usd), cap, unpriced
         return budget
 
     def soft_reached(self) -> bool:
         """True once a soft limit (background jobs and conversational turns) is met:
         time to wrap up."""
         soft = self.soft
-        return soft is not None and (
+        return (soft is not None and (
             self.model_requests >= soft.model_requests or self.tool_calls >= soft.tool_calls
             or self.tokens >= soft.tokens or time.monotonic() - self.started >= soft.wall_seconds)
+        ) or (self.usd_cap is not None and self.usd >= self.usd_cap / HARD_OVER_SOFT)
 
     def remaining_seconds(self) -> float:
         return max(0.0, self.limits.wall_seconds - (time.monotonic() - self.started))
@@ -187,6 +215,8 @@ class Budget:
             self.stop("model_requests")
         if self.tokens >= self.limits.tokens:
             self.stop("tokens")
+        if self.usd_cap is not None and self.usd >= self.usd_cap:
+            self.stop("usd")
         self.model_requests += 1
         granted = min(requested_output, self.limits.output_tokens_per_request,
                       max(MIN_OUTPUT_TOKENS, self.limits.tokens - self.tokens))
@@ -205,6 +235,13 @@ class Budget:
             self.stop("artifact_bytes")
         self.artifact_bytes += count
 
+    def charge_usd(self, usd: float | None) -> None:
+        """One response's price (K4a); None: a response whose price isn't known, counted, adding nothing."""
+        if usd is None:
+            self.unpriced_requests += 1
+        else:
+            self.usd += max(0.0, float(usd))
+
     def note_context(self, kind: str, *, reason: str, count: int) -> None:
         """One provider-side change to the conversation, at this model request (counts only)."""
         self.context_events.append({"kind": kind, "reason": reason, "count": count,
@@ -221,8 +258,11 @@ class Budget:
                          "tokens": self.tokens, "artifact_bytes": self.artifact_bytes,
                          "wall_seconds": round(time.monotonic() - self.started, 3)},
                 "stop_reason": self.stop_reason,
-                "token_limit_mode": "post_response_admission", "monetary_limit": False,
+                "token_limit_mode": "post_response_admission", "monetary_limit": self.usd_cap is not None,
                 **({"soft_limits": asdict(self.soft)} if self.soft is not None else {}),
+                **({"spend": {"usd": round(self.usd, 6), "usd_cap": self.usd_cap,
+                              "unpriced_requests": self.unpriced_requests}}
+                   if self.usd_cap is not None or self.usd or self.unpriced_requests else {}),
                 **({"context_events": list(self.context_events)} if self.context_events else {}),
                 **({"history": dict(self.history)} if self.history else {})}
 
@@ -358,3 +398,9 @@ def charge_tokens(tokens: int):
     budget = current()
     if budget:
         budget.tokens += max(0, int(tokens))
+
+
+def charge_usd(usd: float | None):
+    budget = current()
+    if budget:
+        budget.charge_usd(usd)

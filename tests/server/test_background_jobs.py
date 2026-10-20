@@ -802,7 +802,7 @@ async def test_a_card_answered_after_the_jobs_wall_clock_does_not_stop_the_job(e
     from server.orchestrator import arslan as arslan_mod
     from server.services import permissions
     monkeypatch.setattr(execution_budget, "run_budget",
-                        lambda tier: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
     seen = {}
 
     async def body(conversation_id, goal, emit, confirmations):

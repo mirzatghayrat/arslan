@@ -52,6 +52,7 @@ class SettingsIn(BaseModel):
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     background_job_budget: str | None = None
+    task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
     run_debug_retention_days: int | None = None
     evolution_auto: str | None = None
     # 🔴 These two were in _PLAIN_KEYS (so update_settings would store them) but on
@@ -130,6 +131,7 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     background_job_budget: str = "standard"
+    task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
     run_debug_retention_days: int = 30
     evolution_auto: str = "off"
     synthesis_config_id: str = ""

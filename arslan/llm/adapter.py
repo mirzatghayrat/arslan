@@ -159,13 +159,14 @@ class LLMAdapter:
         if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
         from arslan.llm.usage_weight import cache_split, charged_tokens
-        usage_sink.report(total, charged=charged_tokens(u))
+        usd = self._usd(u)
+        usage_sink.report(total, charged=charged_tokens(u), usd=usd)
         usage_sink.report_detail(
             tokens_in=tin,
             tokens_out=tout,
             model=self.model,
             provider=self.report_provider,
-            usd=self._usd(u),
+            usd=usd,
             **(cache_split(u) or {}),
         )
         from arslan.execution_checkpoint import save
@@ -207,18 +208,19 @@ class LLMAdapter:
                 # K4a: charged as `_account` charges a non-streamed answer (cache reads at 0.1). The raw sum
                 # charged DeepSeek's cache hits in full and left out Anthropic's cache reads and writes.
                 from arslan.llm.usage_weight import charged_tokens
-                usage_sink.report(int(tokens_in) + int(tokens_out), charged=charged_tokens(real.get("usage")))
+                usd = self._usd(real.get("usage"))
+                usage_sink.report(int(tokens_in) + int(tokens_out), charged=charged_tokens(real.get("usage")), usd=usd)
                 usage_sink.report_detail(
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
                     model=self.model,
                     provider=self.report_provider,
-                    usd=self._usd(real.get("usage")),
+                    usd=usd,
                     # K3: a provider that saw the cache in the stream says so (Anthropic's message_start).
                     **{k: real[k] for k in ("cache_read", "cache_write", "input_total") if k in real},
                 )
             else:
-                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
+                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)), usd=None)
                 usage_sink.report_detail(
                     tokens_in=None,
                     tokens_out=None,
