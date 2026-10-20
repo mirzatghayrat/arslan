@@ -2185,6 +2185,8 @@ def _stop_for_limit(runtime, reason: str, trace: list[dict], *, finishing: bool 
 # What a wrapping-up run may still call (0.1.50): the save tools, plus run_command
 # to process files it already fetched — run without network (terminal_exec.OFFLINE).
 FINISH_TOOLS = WRAP_UP_TOOLS | {"run_command"}
+# K3: refused calls while wrapping up before the next step is text only (the table never narrows).
+WRAP_REFUSALS_BEFORE_TEXT = 2
 
 
 def _host_turn(caller, progress_lane) -> bool:
@@ -2440,7 +2442,10 @@ async def _run_native(
     finish_steps = 0
     # Wrap-up keeps the FULL tool list (an unchanged list keeps the provider's prompt
     # cache: a narrowed one re-sent ~28k tokens uncached in the S6 bench). K3: it no
-    # longer narrows after a refused research call either; refusals say why.
+    # longer narrows after a refused research call either; refusals say why, and after
+    # the second refused call the next step is text only (the same table, tool_choice
+    # none), so a model that keeps reaching for research still delivers.
+    wrap_refused = 0
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -2464,7 +2469,8 @@ async def _run_native(
         finish_done = finish_reason is not None and not finishing and (can_save or finish_reason == "no_progress")
         forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
                   or budget.tool_calls >= budget.limits.tool_calls
-                  or (max_tool_calls is not None and step >= max_tool_calls))
+                  or (max_tool_calls is not None and step >= max_tool_calls)
+                  or wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT)
         no_progress = policy.stopped or finish_reason == "no_progress"
         if forced or (finishing and no_progress):
             stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
@@ -2482,6 +2488,9 @@ async def _run_native(
                          "was verified and what remains. Text only." if truncation_stop else
                          "The web reading allowance for this run is used up: report the verified results and "
                          "remaining work. Text only." if finish_reason == "fetch_budget" else
+                         "Research is over and the calls outside wrapping up were refused: give the final answer "
+                         "now from what you have, marking what is unverified. Text only."
+                         if wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT else
                          "Tool budget exhausted: report the verified results and remaining work. Text only.")
         # 0.1.43 completion first: past the soft limit (or, 0.1.50, in finish mode),
         # stop gathering and FINISH. Research tools are withdrawn; saving the
@@ -2676,11 +2685,13 @@ async def _run_native(
                         desktop_status.note_plan(plan.items)
                     continue
                 if policy.stopped and not (finishing and name in FINISH_TOOLS):
+                    wrap_refused += bool(wrap_up)
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
                 if wrap_up and name not in FINISH_TOOLS:
+                    wrap_refused += 1
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
                         "error": "Wrapping up: no more research. Write the deliverable from what you have."
                                  + offline_note},

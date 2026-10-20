@@ -76,16 +76,16 @@ async def test_without_save_tools_a_stop_answers_at_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_finish_mode_lasts_three_steps_keeps_the_tool_table_and_refuses_research(monkeypatch):
+async def test_finish_mode_keeps_the_tool_table_and_a_second_refusal_ends_research(monkeypatch):
     # K3: the table never narrows within a turn (it renders before Claude's cached system); the
-    # status says what still runs, and a research call is refused with its reason.
-    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), _search(12),
-                                                golden._Resp("Here is what I have.")]
+    # status says what still runs, a research call is refused with its reason, and after a second
+    # refused call the next step is text only (same table, no tools) instead of looping on refusals.
+    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), golden._Resp("Here is what I have.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked())
-    assert [c["tools"] for c in calls[4:8]] == [["web_search", "write_file", "escalate"]] * 3 + [None]
-    assert all("Tools that still run: write_file; any other call is refused." in c["user"] for c in calls[4:7])
+    assert [c["tools"] for c in calls[4:7]] == [["web_search", "write_file", "escalate"]] * 2 + [None]
+    assert all("Tools that still run: write_file; any other call is refused." in c["user"] for c in calls[4:6])
     refused = [r for r in result["tool_trace"] if r["result"].get("code") in ("wrap_up", "task_no_progress")]
-    assert len(refused) == 3 and result["final"] == "Here is what I have."
+    assert len(refused) == 2 and result["final"] == "Here is what I have."
 
 
 @pytest.mark.asyncio

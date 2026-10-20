@@ -4,7 +4,7 @@ import pytest
 
 from server.orchestrator import tool_loop
 from server.orchestrator.recovery_hints import hint_for
-from server.orchestrator.untrusted import DELIM_CLOSE
+from server.orchestrator.untrusted import DELIM_CLOSE, TOOL_CLOSE
 
 APPLE = {"ok": False, "exit_code": 1, "stdout": "",
          "stderr": "128:133: execution error: Reminders got an error: A privilege violation occurred. (-10004)"}
@@ -36,8 +36,8 @@ def test_hint_is_trusted_text_after_the_untrusted_frame():
     tool_loop._record_tool_result("run_command", {"command": "osascript …"}, APPLE,
                                   lambda e: None, trace, "{}", convo)
     content = convo[-1]["content"]
-    assert DELIM_CLOSE in content
-    after = content.split(DELIM_CLOSE, 1)[1]
+    assert TOOL_CLOSE in content          # K3: a local command's output is framed as tool output
+    after = content.split(TOOL_CLOSE, 1)[1]
     assert after.startswith("\n[Host hint:") and "EventKit" in after
 
 
