@@ -445,3 +445,16 @@ def test_run_command_takes_network_and_why():
     from server.orchestrator import tool_loop
     props = tool_loop._NATIVE_PARAM_SCHEMAS["run_command"]["properties"]
     assert props["network"]["type"] == "boolean" and "why" in props
+
+
+async def test_only_the_users_click_lets_a_plain_osascript_run_bare(monkeypatch):
+    """A card answered by anything but the user (a stored rule, a mode) never unwraps a command."""
+    from server.services import permissions
+
+    class _ByRule(_Cards):
+        async def __call__(self, command, argv, **kw):
+            permissions.LAST_DECISION.set(permissions.Decision(True, "rule", "always"))
+            return True
+    ex = _Exec()
+    result = await _dispatch(monkeypatch, PLAIN_OSA, ex, _ByRule())
+    assert ex.runs == [(False, False)] and not result.get("ran_outside_sandbox")

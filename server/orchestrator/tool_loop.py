@@ -1238,6 +1238,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     run_outside = False          # 0.1.51 P3: this command leaves the sandbox (a click said so)
     sandbox_on = False
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
+    network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
