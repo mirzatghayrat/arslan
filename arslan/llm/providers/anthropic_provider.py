@@ -119,9 +119,9 @@ def _translate(content: Any) -> Any:
     """Neutral blocks → Anthropic content blocks. Plain strings pass through:
     text-only calls (the overwhelming majority) must keep their exact payload.
 
-    Note the cost shape this creates, disclosed in the spec (T6): the cache
-    breakpoint sits on the system prefix, so images ride AFTER it and are never
-    cached — a tool loop re-sends and re-bills them on every step."""
+    Cost shape (spec T6): on a legacy request the only breakpoint sits on the
+    system prefix, so images ride after it uncached. On a native request (K3) the
+    tail breakpoint caches the turn's images too, so later steps read them."""
     if not isinstance(content, list):
         return content
     out: list[dict[str, Any]] = []
@@ -337,6 +337,9 @@ class AnthropicProvider(BaseLLMProvider):
         renders adjacent text blocks with no separator, so ``"".join(block texts)`` is
         byte-identical to the plain-string form — the model sees the same prompt either
         way; only the cache boundary is added.
+
+        This is the legacy request's shape; a native request moves the marker to the system's last
+        block and adds the history and tail markers (``_mark_cache``, K3).
 
         Floor degrade (spec R4): a ``cache_control`` breakpoint on a prefix shorter than
         the model's minimum-cacheable floor is simply not honored by Anthropic — it does
