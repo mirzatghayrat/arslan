@@ -18,12 +18,12 @@ from arslan.llm import param_heal, request_policy
 from arslan.llm.adapter import LLMAdapter
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from server.db.models import ArslanMessage
-from server.orchestrator import arslan, tool_loop
+from server.orchestrator import arslan, tool_loop, turn_context
 from server.services import turn_facts
 from tests.llm.test_k1b_anthropic_context import END
 from tests.server.test_arslan_loop import maker, settle_after_turn  # noqa: F401 — the fixture
 
-OPEN = arslan.TURN_CONTEXT_OPEN
+OPEN = turn_context.OPEN
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +110,7 @@ def test_the_context_block_says_what_it_is_and_keeps_todays_order(monkeypatch):
     monkeypatch.setattr(arslan, "_now_line", lambda: "\n\nNOW")
     block = arslan._turn_context(addendum="RESUME", facts="FACTS", summary="SUMMARY", kb_block="\n\nKB",
                                  mcp_line="\n\nMCP", language="\n\nLANG")
-    assert block.startswith(OPEN + "\n") and block.endswith("\n" + arslan.TURN_CONTEXT_CLOSE)
+    assert block.startswith(OPEN + "\n") and block.endswith("\n" + turn_context.CLOSE)
     assert "not the user's words" in OPEN
     order = [block.index(piece) for piece in ("RESUME", "FACTS", "SUMMARY", "KB", "MCP", "LANG", "NOW")]
     assert order == sorted(order)

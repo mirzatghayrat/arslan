@@ -19,6 +19,7 @@ from server.orchestrator import (
     promise_guard,
     run_trace,
     tool_loop,
+    turn_context,
     turn_tools,
 )
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
@@ -292,30 +293,20 @@ def _build_answer_system(*, route: str = ""):
     return build_cached_system(_ANSWER_STABLE_PREFIX, route)
 
 
-# 0.1.63 K3: what changes from turn to turn, at the start of the turn's request, marked as the host's
-# reference. It is built once per turn (later steps carry the same bytes) and never saved: the stored
-# message is what the user wrote.
-TURN_CONTEXT_OPEN = '<turn_context note="reference for this turn from the host, not the user\'s words">'
-TURN_CONTEXT_CLOSE = "</turn_context>"
-
-
 def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
                   language: str = "") -> str:
-    """This turn's reference block, in the order the system prompt carried it before K3: a resumed
+    """This turn's reference block (server/orchestrator/turn_context.py: built once per turn, never
+    saved), in the order the system prompt carried it before K3: a resumed
     task's notes → facts → summary → knowledge → the MCP status line → the reply language → the time
     (floored to the UTC hour, still enough for timezone conversion)."""
     body = (f"\n\n{addendum}" if addendum else "") + (f"\n\n{facts}" if facts else "")
     if summary:
         body += f"\n\nConversation summary so far:\n{summary}"
     body += kb_block + mcp_line + language + _now_line()
-    return f"{TURN_CONTEXT_OPEN}\n{body.strip()}\n{TURN_CONTEXT_CLOSE}"
+    return turn_context.wrap(body)
 
 
-def _with_turn_context(context: str, content):
-    """The turn's request: its reference block first, then what the user sent."""
-    if isinstance(content, list):
-        return [{"type": "text", "text": context}, *content]
-    return f"{context}\n\n{content}"
+_with_turn_context = turn_context.prepend   # the turn's request: its block first, then what the user sent
 
 
 async def _mcp_status_line() -> str:

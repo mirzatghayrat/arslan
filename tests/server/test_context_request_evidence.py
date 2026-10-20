@@ -125,8 +125,8 @@ async def test_selection_not_in_system_and_user_quotation_are_not_attributed(sel
 
 def _with_reference(text: str, words: str) -> str:
     """A request as the answer path builds it since K3: the host's reference block, then the user's words."""
-    from server.orchestrator import arslan
-    return f"{arslan.TURN_CONTEXT_OPEN}\n{text}\n{arslan.TURN_CONTEXT_CLOSE}\n\n{words}"
+    from server.orchestrator import turn_context
+    return f"{turn_context.OPEN}\n{text}\n{turn_context.CLOSE}\n\n{words}"
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "gemini"])

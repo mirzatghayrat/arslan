@@ -19,6 +19,7 @@ from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, 
 from server.orchestrator import run_trace
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
+from server.orchestrator import turn_context
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import replay_safety
@@ -2375,7 +2376,7 @@ async def _run_native(
     if _host_turn(caller, progress_lane):
         from server.services import lessons, personal_context
         ctx_now = personal_context.current()
-        recalled = await lessons.recall((ctx_now.query if ctx_now else "") or user_content)
+        recalled = await lessons.recall((ctx_now.query if ctx_now else "") or turn_context.users_words(user_content))
         lesson_notes = lessons.status_lines(recalled)
         if _facts is not None:
             _facts["recalled_lessons"] = recalled
@@ -2738,7 +2739,8 @@ async def _run_native(
                     if review_enabled is None:
                         review_enabled = await _research_review_enabled()
                     if review_enabled:
-                        await _review_saved_report(a, args, result, tool_trace, user_content,
+                        # K3: checked against what the user asked, not the turn's reference block.
+                        await _review_saved_report(a, args, result, tool_trace, turn_context.users_words(user_content),
                                                    research_review_cache, emit)
                 if not provider_content:
                     if name == "web_extract" and _web_read_feedback(name, args, result) is not None:

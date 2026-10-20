@@ -204,7 +204,7 @@ def _turn_reference(payload) -> str | None:
     text that OPENS a user message (or one of its text parts) counts, and only the latest such: the
     current request always starts with the host's block, so a block the user quotes inside their own
     words is never taken for it."""
-    from server.orchestrator.arslan import TURN_CONTEXT_CLOSE, TURN_CONTEXT_OPEN
+    from server.orchestrator.turn_context import CLOSE, OPEN
     latest = None
     for message in [*(payload.get("messages") or []), *(payload.get("contents") or [])]:
         if not isinstance(message, dict) or message.get("role") != "user":
@@ -212,8 +212,8 @@ def _turn_reference(payload) -> str | None:
         content = message.get("content", message.get("parts"))
         for piece in [content] if isinstance(content, str) else content if isinstance(content, list) else []:
             text = piece.get("text") if isinstance(piece, dict) else piece
-            if isinstance(text, str) and text.startswith(TURN_CONTEXT_OPEN) and TURN_CONTEXT_CLOSE in text:
-                latest = text[:text.index(TURN_CONTEXT_CLOSE)]
+            if isinstance(text, str) and text.startswith(OPEN) and CLOSE in text:
+                latest = text[:text.index(CLOSE)]
     return latest
 
 

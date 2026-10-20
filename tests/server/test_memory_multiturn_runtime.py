@@ -13,7 +13,7 @@ from sqlalchemy import insert, select, update
 from arslan.models import LLMResponse
 from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
 from server.db.models import ArslanMessage, CompanionTask, ContextReceiptRecord, ConversationContext, Project, ProviderConfig, Run
-from server.orchestrator import arslan, memory, tool_loop
+from server.orchestrator import arslan, memory, tool_loop, turn_context
 from server.registry.memory_executors import RememberExecutor
 from server.services import knowledge, personal_context, task_context
 from server.services.memory_activation import activate_sync
@@ -24,9 +24,9 @@ from server.services.memory_repository import repository
 def _turn_context_of(user) -> str:
     """The turn's reference block (K3) out of a request, without the user's own words."""
     text = user if isinstance(user, str) else "".join(b.get("text", "") for b in user if isinstance(b, dict))
-    if not text.startswith(arslan.TURN_CONTEXT_OPEN):
+    if not text.startswith(turn_context.OPEN):
         return ""
-    return text[:text.index(arslan.TURN_CONTEXT_CLOSE) + len(arslan.TURN_CONTEXT_CLOSE)]
+    return text[:text.index(turn_context.CLOSE) + len(turn_context.CLOSE)]
 
 
 SCENARIOS = {item["id"]: item for item in json.loads((
