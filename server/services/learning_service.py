@@ -1,8 +1,7 @@
-"""Distill know-how (心得) from concrete signals ONLY — a distill recap event, a
-user correction (Feedback), or a repeated successful run pattern. The LLM turns a
-REAL signal into one crisp lesson; it never invents. Every learning carries a
-non-empty source_ref and the whole thing is fail-open: producing nothing beats
-producing something fake."""
+"""Store know-how (心得) as learnings. `append` is the entry point (RememberExecutor).
+Every learning carries a non-empty source_ref and the write is fail-open: writing
+nothing beats writing something wrong. 0.1.63 (C1c-1): the LLM distill path that
+lived here lost its last caller with the experts and was deleted."""
 from __future__ import annotations
 
 import logging
@@ -14,17 +13,8 @@ from server.db import session as db_session
 from server.db.models import Learning, MemoryProposal
 from server.services import fact_dedup, memory_temporal
 from server.services.fact_dedup import norm, similar
-from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
-
-_SYS = ("Turn what really happened below into ONE reusable working practice (at most 40 words, in the "
-        "same language as the text below; use only what is given, invent nothing). Output only that "
-        "sentence.")
-
-
-def _get_adapter():
-    return build_adapter(role="summarize")
 
 
 async def _write(content: str, label: str, source_kind: str, source_ref: dict,
@@ -132,34 +122,3 @@ async def append(content: str, *, label: str, source_kind: str, source_ref: dict
     a swallowed failure). RememberExecutor's Tier1 learning append/supersede
     paths depend on getting a real id back (supersede needs it as new_id)."""
     return await _write(content, label, source_kind, source_ref, spawn_id)
-
-
-async def _distill_one(signal_text: str, label: str, source_kind: str,
-                       source_ref: dict, spawn_id: int | None) -> int:
-    if not (signal_text or "").strip():
-        return 0
-    from server.services.memory_repository import is_active
-    if await is_active():
-        from server.services.personal_context import current
-        ctx = current()
-        if ctx is None or ctx.no_learning or ctx.temporary or not ctx.cloud_memory_effective:
-            return 0
-        if spawn_id is not None and str(spawn_id) != ctx.expert_id:
-            return 0
-    try:
-        adapter = _get_adapter()
-        a = await adapter if hasattr(adapter, "__await__") else adapter
-        resp = await a.chat(system=_SYS, user=signal_text)
-        lesson = (resp.content or "").strip()
-    except Exception as exc:  # noqa: BLE001 — nothing beats fake
-        logger.warning("learning distill LLM failed (non-fatal): %s", exc)
-        return 0
-    return await _write(lesson, label, source_kind, source_ref, spawn_id)
-
-
-async def distill_from_event(*, conversation_id: str, spawn_id: int | None,
-                             spawn_name: str | None, signal_text: str) -> int:
-    return await _distill_one(
-        signal_text, label=f"{spawn_name or '分身'} 心得", source_kind="distill",
-        source_ref={"conversation_id": conversation_id, "spawn_id": spawn_id},
-        spawn_id=spawn_id)

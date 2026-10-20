@@ -131,18 +131,3 @@ async def test_temporary_none_expiry_fails_closed(seeded, maker):
     # The temporary grant (expires_turn=None) must NOT be treated as active, so extra_tool
     # is absent — only the universal safe baseline remains.
     assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=0)} == _UNIVERSAL
-
-
-@pytest.mark.asyncio
-async def test_grant_temporary_is_safe_only(seeded, maker):
-    """Spec test #3: temp grants can ONLY be safe-subset; execution tier raises."""
-    from server.registry import service
-
-    async with maker() as s:
-        s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
-        await s.commit()
-
-    await service.grant_temporary(1, "web_search_scraping", current_turn=1)
-    for key in ("code_execution", "terminal_processes", "computer_use"):
-        with pytest.raises(service.NotAssignableError):
-            await service.grant_temporary(1, key, current_turn=1)

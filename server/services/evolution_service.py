@@ -86,38 +86,6 @@ def record_feedback(
     apply_tier1_evolution(config.settings.spawns_dir / spawn_name)
 
 
-def record_verdict(
-    spawn_name: str,
-    *,
-    session_id: str,
-    user_input: str,
-    agent_output: str,
-    action: str,
-    elapsed_seconds: float,
-    edits: dict | None = None,
-) -> None:
-    """Record a deliverable verdict as a leveling signal, tagged with the confirm-speed bucket.
-
-    Args:
-        spawn_name: The spawn identifier
-        session_id: Session ID for context
-        user_input: The original user input
-        agent_output: The agent's response
-        action: Verdict action ("accept", "discard", etc.)
-        elapsed_seconds: Time elapsed before confirmation
-        edits: Optional additional edits to include in feedback
-    """
-    record_feedback(
-        spawn_name,
-        session_id=session_id,
-        user_input=user_input,
-        agent_output=agent_output,
-        user_action=action,
-        # Computed speed is authoritative — caller edits cannot clobber the leveling signal.
-        edits={**(edits or {}), "speed": speed_weight(elapsed_seconds)},
-    )
-
-
 def prompt_suffix(spawn_name: str) -> str:
     """Active evolution rules rendered as a system-prompt suffix (empty if none).
 

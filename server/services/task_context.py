@@ -154,19 +154,3 @@ async def execute_entry(conversation_id, instruction, emit, body, *, driver=None
                 return await task_service.resume_entry(task_id, existing.version, conversation_id,
                     instruction, emit, body, ctx=ctx, driver=driver)
         return await task_service.run_turn(function, conversation_id, instruction, emit, _driver=driver)
-
-
-def scoped_dispatch(function):
-    @wraps(function)
-    async def wrapped(conversation_id, spawn_id, task_brief, emit, *args, **kwargs):
-        async def body(sink):
-            return await function(conversation_id, spawn_id, task_brief, sink, *args, **kwargs)
-        instruction = kwargs.get("user_message") or task_brief
-        refinement = kwargs.get("instruction")
-        if refinement and refinement != instruction:
-            instruction = f"{instruction}\n\nRequested refinement:\n{refinement}"
-        if task_brief and task_brief not in instruction:
-            instruction = f"Task brief:\n{task_brief}\n\nUser request:\n{instruction}"
-        return await execute_entry(conversation_id, instruction, emit, body,
-                                   driver={"kind": "expert", "id": spawn_id})
-    return wrapped

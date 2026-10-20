@@ -64,11 +64,6 @@ async def test_handle_answer_llm_error_emits_error_frame(db, monkeypatch):
     """If the LLM raises during streaming in _handle_answer, an error frame
     must be emitted and the function must return normally."""
     from server.orchestrator import arslan
-    import server.services.phase_service as ps
-
-
-    monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
-
     from server.orchestrator import tool_loop
     from tests.server.conftest import MockAdapter
 
@@ -92,11 +87,6 @@ async def test_handle_answer_llm_error_emits_error_frame(db, monkeypatch):
 async def test_normal_answer_still_works_after_error_guard(db, monkeypatch):
     """Ensure the error guard doesn't break the normal answer path."""
     from server.orchestrator import arslan
-    import server.services.phase_service as ps
-
-
-    monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
-
     from server.orchestrator import tool_loop
     from tests.server.conftest import MockAdapter
 
@@ -140,11 +130,3 @@ def test_gemini_stream_uses_httpx_timeout_object():
     src_chat = inspect.getsource(GeminiProvider.chat)
     assert "timeout=60.0" not in src_chat
     assert "httpx.Timeout" in src_chat
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-async def _async_none():
-    return None

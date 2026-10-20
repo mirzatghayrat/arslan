@@ -34,55 +34,6 @@ def normalize_capabilities(value: Any) -> list[str]:
     return items[:_MAX_CAPABILITIES]
 
 
-def normalize_draft(draft: Any) -> dict:
-    """Return a copy of a suggested-spawn draft with `capabilities` coerced to a list."""
-    if not isinstance(draft, dict):
-        return {}
-    normalized = dict(draft)
-    normalized["capabilities"] = normalize_capabilities(draft.get("capabilities"))
-    return normalized
-
-
-_SUFFIX_RE = re.compile(r"^(?P<base>.+)-\d+$")
-
-
-def _names_overlap(a: str, b: str) -> bool:
-    """True iff equal, or one is the other plus a '-<digits>' uniqueness suffix.
-
-    Stripping suffixes from BOTH sides over-matched (top-10 vs top-1); the
-    pairwise rule only treats '-N' as a suffix relative to an existing base.
-    (plan: Task 6, step 3)
-    """
-    a = (a or "").strip().lower()
-    b = (b or "").strip().lower()
-    if not a or not b:
-        return False
-    if a == b:
-        return True
-    ma, mb = _SUFFIX_RE.match(a), _SUFFIX_RE.match(b)
-    return bool(ma and ma.group("base") == b) or bool(mb and mb.group("base") == a)
-
-
-def find_overlap(draft: dict, spawns: list) -> dict | None:
-    """Return {spawn_id, name, axes} for an existing spawn that overlaps the draft, else None.
-
-    Overlap fires on (1) pairwise NAME overlap (_names_overlap), or (2) full
-    'category.subcategory' domain equality. Coarse domain_category alone NEVER matches
-    (finance.equity-research and finance.crypto are distinct). `axes` is left [] here;
-    callers may merge the LLM's axes.
-    """
-    ddomain = (draft.get("domain") or "").strip().lower()
-    _dcat, _, dsub = ddomain.partition(".")
-    for s in spawns:
-        if _names_overlap(draft.get("name") or "", s.name):
-            return {"spawn_id": s.id, "name": s.name, "axes": []}
-        if dsub and s.domain_subcategory:
-            s_full = f"{s.domain_category}.{s.domain_subcategory}".strip().lower()
-            if s_full == ddomain:
-                return {"spawn_id": s.id, "name": s.name, "axes": []}
-    return None
-
-
 def build_system_prompt(draft: dict) -> str:
     role = draft.get("persona_role") or "a helpful assistant"
     tone = draft.get("persona_tone") or ""
@@ -199,45 +150,6 @@ async def update_config(
     return spawn
 
 
-_SPECIALIZATION_MARK = "\n\nSpecialization"
-
-
-async def apply_conversational_update(session: AsyncSession, spawn_id: int,
-                                      changes: dict) -> Spawn | None:
-    """Apply a confirmed conversational update (persona_role / persona_tone / capabilities).
-
-    CRITICAL: dispatch uses the STORED system_prompt (build_spawn_system takes it as the
-    base), so a persona edit must REGENERATE the prompt or nothing changes behaviorally.
-    We rebuild the base from the (new) persona fields + current domain via the same
-    build_system_prompt used at creation, preserving any Specialization suffix. Equipment
-    changes are NOT handled here — they go through replace_user_equipment (Layer-2 choke)."""
-    spawn = await session.get(Spawn, spawn_id)
-    if spawn is None:
-        return None
-    persona_changed = False
-    if isinstance(changes.get("persona_role"), str) and changes["persona_role"].strip():
-        spawn.persona_role = changes["persona_role"].strip()
-        persona_changed = True
-    if isinstance(changes.get("persona_tone"), str) and changes["persona_tone"].strip():
-        spawn.persona_tone = changes["persona_tone"].strip()
-        persona_changed = True
-    if isinstance(changes.get("capabilities"), list):
-        spawn.capabilities = [str(c).strip() for c in changes["capabilities"] if str(c).strip()]
-    if persona_changed:
-        old = spawn.system_prompt or ""
-        suffix = ""
-        if _SPECIALIZATION_MARK in old:
-            suffix = _SPECIALIZATION_MARK + old.split(_SPECIALIZATION_MARK, 1)[1]
-        spawn.system_prompt = build_system_prompt({
-            "persona_role": spawn.persona_role,
-            "persona_tone": spawn.persona_tone,
-            "domain": _domain(spawn),
-        }) + suffix
-    await session.commit()
-    await session.refresh(spawn)
-    return spawn
-
-
 class BuiltInSpawnError(Exception):
     """Raised when a delete targets a built-in (is_default) spawn."""
 
@@ -279,18 +191,6 @@ async def load_all_spawns() -> list[Spawn]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(select(Spawn).order_by(Spawn.id))
         return list(rows.scalars().all())
-
-
-async def load_one_spawn(spawn_id: int) -> Spawn | None:
-    """Load a single Spawn by id, managing its own session (session-less callers).
-
-    Mirrors `load_all_spawns` for call-sites that don't already hold a session —
-    e.g. the orchestrator building an invite-card capability summary.
-    """
-    from server.db import session as db_session
-
-    async with db_session.AsyncSessionLocal() as db:
-        return await db.get(Spawn, spawn_id)
 
 
 async def create_spawn(session: AsyncSession, **fields) -> Spawn:

@@ -1,8 +1,8 @@
 """SAFETY-CRITICAL: the orchestrator-only run_command tool can NEVER reach a spawn.
 
 run_command is an orchestrator-tier tool (whitelisted shell). Spawns operate under
-the layer-3 safe-tier gate (wired_tools_for_spawn) and the escalation path
-(grant_temporary). Neither must ever surface run_command.
+the layer-3 safe-tier gate (wired_tools_for_spawn), and every spawn capability write
+goes through the layer-2 gate (assert_assignable). Neither must ever let run_command in.
 """
 import pytest
 import pytest_asyncio
@@ -48,9 +48,10 @@ async def test_spawn_wired_tools_never_include_run_command(spawn):
 
 
 @pytest.mark.asyncio
-async def test_grant_temporary_refuses_run_command_toolset(spawn):
+async def test_run_command_toolset_is_never_assignable(spawn):
     from server.registry import service
 
     # run_command is not a safe-tier assignable toolset; assert_assignable must reject it.
+    # (0.1.63 C1c-1: this went through grant_temporary, deleted with the escalation path.)
     with pytest.raises(service.NotAssignableError):
-        await service.grant_temporary(spawn, "run_command", current_turn=1)
+        await service.assert_assignable("toolset", "run_command")

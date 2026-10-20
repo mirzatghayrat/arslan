@@ -5,7 +5,6 @@ import pytest
 
 import server.db.session as db_session
 from server.orchestrator import arslan, tool_loop
-from server.services import phase_service
 from tests.server.test_promise_guard import _SeqAdapter, maker  # noqa: F401
 
 
@@ -40,15 +39,26 @@ async def test_naming_an_expert_still_gets_arslan_answering(maker, no_dispatch, 
 
 @pytest.mark.asyncio
 async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, no_dispatch, monkeypatch):  # noqa: F811
-    await phase_service.set_inviting("main", 6, task_brief="make a deck", user_message="make a deck")
+    # 0.1.63 (C1c-1): phase_service is gone; park the row the way it used to write it.
+    import json
+
+    from sqlalchemy import select
+
+    from server.db.models import SpawnPhase
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(SpawnPhase(conversation_id="main", spawn_id=0, phase="inviting", direction=json.dumps(
+            {"spawn_id": 6, "task_brief": "make a deck", "user_message": "make a deck",
+             "needs_proposal": False, "announced": False})))
+        await db.commit()
 
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _SeqAdapter(["Sure."]))
     await arslan.handle_user_message("main", "好", lambda e: None)   # a bare confirm used to accept it
     assert no_dispatch == []
     # 0.1.63 (C1): the turn no longer clears the parked row (nothing reads it any more);
     # what matters is that it did not fire.
-    assert await phase_service.get_pending_invite("main") is not None
-    assert db_session  # the maker fixture points the session factory at the test database
+    async with db_session.AsyncSessionLocal() as db:
+        parked = (await db.execute(select(SpawnPhase).where(SpawnPhase.conversation_id == "main"))).scalar_one()
+    assert parked.phase == "inviting"
 
 
 def test_migration_0056_hands_every_scheduled_task_to_arslan_and_keeps_the_rest(tmp_path):

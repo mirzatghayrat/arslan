@@ -50,7 +50,6 @@ NOT_COVERED = [
     "tool_intent",
     "mcp_suggest",
     "skill_suggest",
-    "learning_service",
     "note_service",
 ]
 
