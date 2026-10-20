@@ -64,15 +64,15 @@ SANDBOX_APPLE_EVENTS_HINT = (
     "AppleScript as its own run_command (`osascript -e '…'` or a here-doc, nothing else in the command): the "
     "user is asked, and an approved one runs outside the sandbox. Or use mac_applescript if it is in your tools, "
     "or the desktop_* tools for that app if you have them; otherwise tell the user what you needed.")
-# S2a-1 (U11, ③Hands): an approved script that is not a plain one-app script by Hands' reading (a step
-# past the app, a high-reach app, delete/send/money words, or no app named) is kept under the sandbox's
-# profiles, where it reaches no app.
+# S2a-1 (U11, ③Hands, ⓪Plan): an approved script runs bare only when it is a plain script for
+# Reminders, Calendar, Notes or Contacts that saves, exports or names no file (by Hands' reading and
+# task_service.unwrapped_once). Any other is kept under the sandbox's profiles, where it reaches no app.
 KEPT_WRAPPED_HINT = (
-    "This AppleScript is not a plain script for one app (it reaches past the app — a shell, other script "
-    "text, a raw event, AppleScriptObjC, a file write —, drives an app like System Events or Finder, deletes, "
-    "sends or pays, or names no app), so even approved it stays sandboxed, where Apple Events can't be sent. "
-    "Use mac_applescript if it is in your tools: its card shows the user the whole script. Otherwise tell the "
-    "user what you needed.")
+    "This AppleScript stays sandboxed even approved, where Apple Events can't be sent. Only a plain script "
+    "for Reminders, Calendar, Notes or Contacts runs outside the sandbox, and only if it doesn't reach past "
+    "the app (a shell, other script text, a raw event, AppleScriptObjC), touch a file (read, write, save, "
+    "export, a file path), hand off a URL or the clipboard, delete, send or pay. Use mac_applescript if it "
+    "is in your tools: its card shows the user the whole script. Otherwise tell the user what you needed.")
 
 
 def hint_for(tool_key: str, result: dict) -> str | None:

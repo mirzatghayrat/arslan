@@ -157,6 +157,16 @@ _OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Applicati
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
                             r"write\s|set\s+eof)", re.I)
+# The only apps an approved osascript runs bare for (U11, ⓪Plan), by name or bundle id, compared
+# case-insensitively.
+_BARE_APPS = frozenset({"reminders", "calendar", "notes", "contacts",
+                        "com.apple.reminders", "com.apple.ical", "com.apple.notes", "com.apple.addressbook"})
+# Words that keep even such a script wrapped: saving, exporting, or a file the script names (⓪Plan:
+# save/export/saving; and from these four apps' own dictionaries: Calendar's open-file and sound-file
+# alarms, Notes attachments, and any path); and a Calendar attendee (the user: on an iCloud or Exchange
+# calendar it sends an invitation email, which is sending on the user's behalf).
+_KEEP_WRAPPED_WORDS = re.compile(r"\b(?:save|saving|export|attachment|filepath|open\s+file\s+alarm|sound\s+file|"
+                                 r"POSIX\s+(?:file|path)|file\s+\"|alias\s+\"|attendees?\b)", re.I)
 _OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
 _OSA_TELL_BLOCK = re.compile(r'tell\s+application\s+"[^"]+"\Z', re.I)
 _OSA_SYNTAX = re.compile(r"\A(?:\d+:\d+: )?syntax error: .+\(-?\d+\)\Z")   # compile phase, not "execution error: …"
@@ -312,6 +322,10 @@ def _inline_osascript(command: str) -> str | None:
 _SHORTCUT_FLAGS = {"-i", "--input-path", "-o", "--output-path", "--output-type"}
 
 
+def _runs_bare_for(app: str) -> bool:
+    return app.strip().casefold() in _BARE_APPS
+
+
 def unwrapped_once(command: str) -> bool:
     from server.services.hands_service import never_touched, script_apps, script_kind
     script = _inline_osascript(command)
@@ -323,7 +337,13 @@ def unwrapped_once(command: str) -> bool:
         # script text, raw events, AppleScriptObjC, file writes), a high-reach app (System Events,
         # Finder, Terminal…) and a script that names no app ("opaque") stay wrapped, and go through
         # mac_applescript's card, which shows the whole script. D4's own act-elsewhere forms stay too.
-        return bool(script.strip()) and script_kind(script)[0] == "app" and not _OSA_ELSEWHERE.search(script)
+        # ⓪Plan (U11, after the #267 review): only Reminders, Calendar, Notes and Contacts, which have no
+        # file-backed documents, and no word that saves, exports, names a file or adds an attendee. A word
+        # list can't keep up with other apps' verbs (Shortcuts Events `run shortcut`, BBEdit `run unix
+        # script`), and every app with documents can `save … in <file>`. The user can widen the list.
+        kind, apps = script_kind(script)
+        return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
+                and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script))
     if _shell_expands(command):
         return False
     try:

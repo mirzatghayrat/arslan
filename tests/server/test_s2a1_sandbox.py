@@ -340,7 +340,7 @@ async def test_an_approved_script_that_acts_elsewhere_is_kept_wrapped(monkeypatc
     ex, cards = _Exec(refused), _UserClick(True)
     result = await _dispatch(monkeypatch, SHELL_OSA, ex, cards)
     assert ex.runs == [(False, False)] and result.get("kept_wrapped") is True
-    assert hint_for("run_command", result).startswith("This AppleScript is not a plain script for one app")
+    assert hint_for("run_command", result).startswith("This AppleScript stays sandboxed even approved")
 
 
 async def test_a_declined_apple_events_card_runs_nothing(monkeypatch):
@@ -573,6 +573,68 @@ def test_a_high_reach_app_never_runs_bare(app, bare):
 ])
 def test_a_script_hands_does_not_call_a_plain_app_script_never_runs_bare(script):
     assert not task_service.unwrapped_once(f"osascript -e '{script}'")
+
+
+# ⓪Plan (U11, after the #267 review): a block-list of words can't keep up with third-party verbs
+# (Shortcuts Events `run shortcut`, BBEdit `run unix script`), and every app with documents can
+# `save … in <file>` / `export … to <file>`. So only four apps with no file-backed documents run bare.
+@pytest.mark.parametrize("script, bare", [
+    ('tell application "Reminders" to count lists', True),
+    ('tell application "Calendar" to count calendars', True),
+    ('tell application "Notes" to count notes', True),
+    ('tell application "Contacts" to count people', True),
+    ('tell application "Reminders"\n  count lists\nend tell\ntell application "Notes" to count notes', True),
+    ('tell application "Shortcuts Events" to run shortcut "Anything"', False),   # any Shortcut
+    ('tell application "BBEdit" to run unix script', False),                     # a third-party shell verb
+    ('tell application "TextEdit" to count documents', False),                   # file-backed documents
+    ('tell application "Mail" to count mailboxes', False),                       # saves attachments
+    ('tell application "Reminders" to count lists\ntell application "Mail" to count mailboxes', False),
+])
+def test_only_reminders_calendar_notes_and_contacts_run_bare(script, bare):
+    assert task_service.unwrapped_once(f"osascript -e '{script}'") is bare
+
+
+@pytest.mark.parametrize("app", ["Reminders", "calendar", "com.apple.reminders", "com.apple.iCal",
+                                 "com.apple.Notes", "com.apple.AddressBook"])
+def test_the_bare_list_matches_names_and_bundle_ids(app):
+    assert task_service._runs_bare_for(app)
+
+
+def test_the_bundle_id_form_itself_stays_wrapped_by_d4s_filter():
+    """`application id` is in D4's `_OSA_ELSEWHERE` (defence in depth ③Hands asked to keep), so the
+    bundle-id form never reaches the list: it goes through mac_applescript."""
+    assert not task_service.unwrapped_once("osascript -e 'tell application id \"com.apple.reminders\" to count lists'")
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders" to save',                                       # ⓪Plan's case
+    'tell application "Contacts" to save',
+    'tell application "Notes" to export note 1',
+    'tell application "Notes" to close window 1 saving yes',
+    # Not in ⓪Plan's list, the same reason, from these four apps' own dictionaries: Calendar's
+    # open-file alarm launches a file at alarm time; a Notes attachment carries a file's data; and any
+    # path the script names is a file it reaches outside the sandbox.
+    'tell application "Calendar" to make new open file alarm at end of open file alarms of event 1 '
+    'of calendar 1 with properties {filepath:"/Users/x/run.command"}',
+    'tell application "Calendar" to set sound file of sound alarm 1 of event 1 of calendar 1 to "x"',
+    'tell application "Notes" to make new attachment at note 1 with data "x"',
+    'tell application "Notes" to make new note with properties {body:POSIX file "/Users/x/a"}',
+    'tell application "Contacts" to set image of person 1 to (read file "Disk:Users:x:a.png")',
+    'tell application "Contacts" to set image of person 1 to alias "Disk:Users:x:a.png"',
+])
+def test_a_script_that_saves_exports_or_names_a_file_stays_wrapped(script):
+    assert not task_service.unwrapped_once(f"osascript -e '{script}'")
+
+
+@pytest.mark.parametrize("with_attendee, bare", [(False, True), (True, False)])
+def test_a_calendar_script_that_adds_an_attendee_stays_wrapped(with_attendee, bare):
+    """The user (via ⓪Plan): an attendee on an iCloud or Exchange calendar sends an invitation email,
+    which is sending on the user's behalf and can carry out content read elsewhere."""
+    attendee = "\n  make new attendee at end of attendees of e with properties {email:\"a@x.test\"}" \
+        if with_attendee else ""
+    script = ('tell application "Calendar"\n  set e to make new event at end of events of calendar 1 '
+              f'with properties {{summary:"x"}}{attendee}\nend tell')
+    assert task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF") is bare
 
 
 # ── a card whose command would run with no sandbox is approved in the window only (⓪Plan) ──
