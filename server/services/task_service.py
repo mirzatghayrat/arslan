@@ -176,6 +176,12 @@ _KEEP_WRAPPED_WORDS = re.compile(r"\b(?:save|saving|export|attachment|filepath|o
 # literal blanked, each `application` / `app` left must be followed by one.
 _OSA_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 _OSA_APP_NOT_LITERAL = re.compile(r'\b(?:application|app)\b(?!\s*"")', re.I)
+# ⓪Plan's re-review: `application"Finder"` (no space) compiles to application "Finder", and Hands'
+# script_apps needs a space, so the gate reads every literal app name itself and checks each against the
+# list. A `--` or `#` comment anywhere keeps a script wrapped: a quote inside one shifts which quotes pair
+# up, and a variable app target could hide in what looked like a string (`(*` is D4's).
+_OSA_APP_LITERAL = re.compile(r'\b(?:application|app)\s*"((?:[^"\\]|\\.)*)"', re.I)
+_OSA_COMMENT = re.compile(r"--|#")
 _OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
 _OSA_TELL_BLOCK = re.compile(r'tell\s+application\s+"[^"]+"\Z', re.I)
 _OSA_SYNTAX = re.compile(r"\A(?:\d+:\d+: )?syntax error: .+\(-?\d+\)\Z")   # compile phase, not "execution error: …"
@@ -370,7 +376,9 @@ def unwrapped_once(command: str) -> bool:
         kind, apps = script_kind(script)
         return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
                 and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
-                and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script)))
+                and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script))
+                and not _OSA_COMMENT.search(script)
+                and all(_runs_bare_for(name) for name in _OSA_APP_LITERAL.findall(script)))
     if _shell_expands(command):
         return False
     try:

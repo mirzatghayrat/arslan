@@ -665,6 +665,27 @@ def test_a_computed_or_variable_app_name_stays_wrapped(script):
     assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
 
 
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders" to count lists\ntell application"Finder" to activate',
+    'tell application "Reminders" to count lists\nget name of application"Terminal"',
+])
+def test_an_app_named_with_no_space_before_its_quote_is_still_checked_against_the_list(script):
+    """⓪Plan's re-review (🔴5): `application"Finder"` compiles to application "Finder", and Hands'
+    script_apps needs a space, so it never saw Finder. The gate reads every literal itself."""
+    assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
+@pytest.mark.parametrize("script", [
+    'set a to "TextEdit" -- "\ntell application a to activate -- "\ntell application "Reminders" to count lists',
+    'tell application "Reminders" to count lists -- how many',
+    '# how many\ntell application "Reminders" to count lists',
+])
+def test_a_script_with_a_comment_stays_wrapped(script):
+    """⓪Plan's re-review (🔴6): a quote inside a `--` or `#` comment shifts which quotes pair up, so a
+    variable app target could hide inside what looked like a string."""
+    assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
 def test_a_literal_name_inside_a_string_or_a_plural_word_is_not_an_app_target():
     script = ('tell application "Reminders" to make new reminder with properties '
               '{name:"app review", body:"two applications"}')
