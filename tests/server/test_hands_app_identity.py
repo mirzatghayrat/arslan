@@ -183,3 +183,19 @@ async def test_a_never_list_app_by_a_path_padded_past_120_characters_is_refused(
         result = await hands_tools.MacAppleScriptExecutor().execute({"script": f'tell application "{target}" to quit'})
         assert result.get("code") == "app_denied", target
     assert seen == [] and ran == []
+
+
+def _hfs(path):
+    """An HFS spelling of a POSIX path: a volume name, then the path's parts joined by ":"."""
+    return "Some Volume:" + ":".join(path.parts[1:]) + ":"
+
+
+def test_a_renamed_never_list_bundle_by_an_hfs_path_is_refused(apps_folder, tmp_path_factory):
+    """②Main on #271: _bundle_at read POSIX paths only, so the HFS path to the same bundle was not."""
+    pm = _bundle(tmp_path_factory.mktemp("hfs"), "Pm", "com.1password.1password")
+    assert hands_service.never_touched(_hfs(pm)), _hfs(pm)
+
+
+def test_a_renamed_copy_of_terminal_by_an_hfs_path_is_still_high_reach(apps_folder, tmp_path_factory):
+    tm = _bundle(tmp_path_factory.mktemp("hfscopy"), "Tm", "com.apple.Terminal")
+    assert hands_service.script_kind(f'tell application "{_hfs(tm)}" to activate')[0] == "app_risky"

@@ -256,15 +256,23 @@ def app_key(app: str) -> str:
     return app_name(app).lower()
 
 
-def _bundle_at(app: str) -> str:
-    """The bundle id of an app named by a POSIX path to its bundle ("/Applications/1Password.app",
-    "~/Applications/…"), read from that bundle's own Info.plist — so a renamed bundle, or one outside
-    the usual folders, is known by what it is, not by its file name. "" when the text is no path to an
-    existing app bundle. Only a regular file under a size cap is read; nothing is ever launched."""
-    text = app.strip()
-    if "/" not in text:
-        return ""
-    bundle = Path(text).expanduser()
+def _bundle_paths(text: str) -> list[Path]:
+    """Where an app named by a path lives: a POSIX path as it is; an HFS path ("Macintosh
+    HD:Applications:Notes.app:") on that volume under /Volumes and on the startup disk, both tried
+    (②Main on #271: HFS paths were not read at all). Empty for a plain name or a bundle id."""
+    if "/" in text:
+        return [Path(text).expanduser()]
+    if ":" not in text:
+        return []
+    parts = [p for p in text.strip(":").split(":") if p]
+    if len(parts) < 2:
+        return []
+    return [Path("/Volumes", *parts), Path("/", *parts[1:])]
+
+
+def _read_bundle_id(bundle: Path) -> str:
+    """CFBundleIdentifier from a bundle's own Info.plist: a regular file under a size cap, nothing
+    launched. "" when there is none."""
     if bundle.suffix.lower() != ".app":
         return ""
     plist = bundle / "Contents" / "Info.plist"
@@ -276,6 +284,16 @@ def _bundle_at(app: str) -> str:
     except (OSError, plistlib.InvalidFileException, ValueError):
         return ""
     return str(info.get("CFBundleIdentifier") or "") if isinstance(info, dict) else ""
+
+
+def _bundle_at(app: str) -> str:
+    """The bundle id of an app named by a path to its bundle (POSIX, "~/…" or HFS), read from that
+    bundle's own Info.plist — so a renamed bundle, or one outside the usual folders, is known by what
+    it is, not by its file name. "" when the text is no path to an existing app bundle."""
+    for bundle in _bundle_paths(app.strip()):
+        if bundle_id := _read_bundle_id(bundle):
+            return bundle_id
+    return ""
 
 
 def _bundles_of(app: str) -> set[str]:
