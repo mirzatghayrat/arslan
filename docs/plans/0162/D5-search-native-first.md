@@ -6,7 +6,7 @@
 | 版本 | v0.1.63 |
 | 分级 | 应该（用户 2026-10-20 要求出这张卡，版本和分级由 ⓪Plan 定，理由见下） |
 | 依赖 | — |
-| 合并位置 | **不进 K 线串行链。** 改 `server/registry/search_providers.py`、`server/registry/executors.py` 的 `web_search` 那一段、新增 `arslan/llm/anthropic_search.py`、设置页的搜索一节，以及把「这一轮用的是哪个模型」带给工具的那一处（见「改哪些文件」1）。都不是 K 线的热点文件；K5 要改工具说明，D5 先合就让 K5 照新的写 |
+| 合并位置 | **不进 K 线串行链，但要在 R63 用 Claude 跑最后一轮全套之前合（用户 2026-10-20）。** 改 `server/registry/search_providers.py`、`server/registry/executors.py` 的 `web_search` 那一段、新增 `arslan/llm/anthropic_search.py`、设置页的搜索一节，以及把「这一轮用的是哪个模型」带给工具的那一处（见「改哪些文件」1）。都不是 K 线的热点文件；K5 要改工具说明，D5 先合就让 K5 照新的写 |
 | 推动的门槛 | §5.1 T2、T3（在 Claude 上）；R63 的「对 Claude Code」对比 |
 | 分支 | `claude/0163-d5-search-native-first` |
 | 迁移号 | 无。沿用 `search_provider` / `search_api_key` / `search_base_url`，新增一个普通设置项 `search_provider_role`（键值表里的一行，登记在 `settings_service._PLAIN_KEYS` 和两个 pydantic schema 上）。开工时核对确实不需要迁移 |
@@ -68,7 +68,7 @@
 
 ## 不做
 
-- **不照搬 Hermes 的「无 key 免费档」**（匿名调用 Exa、Parallel、Firecrawl、Keenable 的公开接口）。用户的查询会发给用户没有账号、也没同意过的第三方，而且这些免费档没有约定、随时可能限流或下线。要不要做是隐私上的取舍，记进 README §8 的 v0.1.64 候选，由用户定。
+- **不照搬 Hermes 的「无 key 免费档」。** 用户 2026-10-20 定了方向：v0.1.64 做成自动四层的第④层，只用官方的免 key 接口，默认关、首次问一次同意、本地模型的对话不走，见 [W1](W1-search-four-layers.md)。本卡不做。
 - **不把 Anthropic 的服务端搜索直接挂在主循环上**，也就是不让主模型自己发服务端工具调用。那要在 K1 的原生轨迹里回放服务端工具的结果块（加密内容），风险更大。本卡用「一小轮专门搜索」的 provider，和 DeepSeek 的做法一致；挂主循环记进 v0.1.64 候选。
 - 不改 `web_extract` 和浏览器。
 
