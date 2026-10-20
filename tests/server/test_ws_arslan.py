@@ -108,47 +108,9 @@ def _drain(ws, max_frames: int = 30) -> list[dict]:
     return frames
 
 
-def _drain_roster_after_created(ws) -> None:
-    """After receiving spawn_created, drain the roster frames the server now always emits:
-    optionally roster_event("joined", ...) followed by roster_update(...).
-    Call this any time a test receives spawn_created and doesn't need the roster frames."""
-    f = ws.receive_json()
-    if f.get("type") == "roster_event":
-        # roster_event is only emitted when newly_joined; consume it then get roster_update
-        roster = ws.receive_json()
-        assert roster["type"] == "roster_update"
-    else:
-        # No roster_event, this frame should already be roster_update
-        assert f["type"] == "roster_update"
-
-
 # ---------------------------------------------------------------------------
 # _to_frame unit tests — verify protocol builders are the wire-shape authority
 # ---------------------------------------------------------------------------
-
-def test_to_frame_escalation_resolved():
-    """_to_frame routes escalation_resolved through the protocol builder."""
-    from server.ws.arslan import _to_frame
-    from server.ws import protocol
-
-    ev = {"type": "escalation_resolved", "spawn_id": 7, "how": "granted", "detail": "image_generation"}
-    frame = _to_frame(ev)
-    assert frame == protocol.escalation_resolved(7, "granted", "image_generation")
-    assert frame["type"] == "escalation_resolved"
-    assert frame["how"] == "granted"
-    assert frame["detail"] == "image_generation"
-
-
-def test_to_frame_orchestrator_action():
-    """_to_frame routes orchestrator_action through the protocol builder."""
-    from server.ws.arslan import _to_frame
-    from server.ws import protocol
-
-    ev = {"type": "orchestrator_action", "tool": "web_search", "reason": "fetching for spawn"}
-    frame = _to_frame(ev)
-    assert frame == protocol.orchestrator_action("web_search", "fetching for spawn")
-    assert frame["type"] == "orchestrator_action"
-
 
 def test_to_frame_tool_call_and_tool_result():
     from server.ws.arslan import _to_frame
@@ -159,18 +121,6 @@ def test_to_frame_tool_call_and_tool_result():
 
     tr = _to_frame({"type": "tool_result", "tool": "web_extract", "ok": True, "summary": "5 chars extracted"})
     assert tr == protocol.tool_result("web_extract", True, "5 chars extracted")
-
-
-def test_to_frame_escalation_and_refused():
-    from server.ws.arslan import _to_frame
-    from server.ws import protocol
-
-    esc = _to_frame({"type": "escalation", "spawn_id": 3, "spawn_name": "测试",
-                     "kind": "capability", "need": "image gen"})
-    assert esc == protocol.escalation(3, "测试", "capability", "image gen")
-
-    ref = _to_frame({"type": "escalation_refused", "spawn_id": 3, "why": "action not allowed"})
-    assert ref == protocol.escalation_refused(3, "action not allowed")
 
 
 # --- Task 4: in-chat attach storage intent ----------------------------------

@@ -4,31 +4,6 @@ from __future__ import annotations
 from typing import Any
 
 
-def question(
-    node_id: str,
-    text: str,
-    options: list[str] | None,
-    multi_select: bool,
-    hint: str,
-) -> dict[str, Any]:
-    return {
-        "type": "question",
-        "node_id": node_id,
-        "text": text,
-        "options": options,
-        "multi_select": multi_select,
-        "hint": hint,
-    }
-
-
-def progress(step: int, total: int, node_id: str) -> dict[str, Any]:
-    return {"type": "progress", "step": step, "total": total, "node_id": node_id}
-
-
-def build_complete(spawn_id: int, spawn_name: str) -> dict[str, Any]:
-    return {"type": "build_complete", "spawn_id": spawn_id, "spawn_name": spawn_name}
-
-
 def stream_start(message_id: int, run_id: int | None = None) -> dict[str, Any]:
     # run_id (S3-M1): only on recorded runs — the cancel target for POST /runs/{id}/cancel.
     # Key omitted when unset so unrecorded streams stay byte-identical.
@@ -66,18 +41,6 @@ def run_in_progress(run_id: int) -> dict[str, Any]:
     return {"type": "run_in_progress", "run_id": run_id}
 
 
-def routing(
-    spawn_id: int, spawn_name: str | None = None, announcement: str | None = None
-) -> dict[str, Any]:
-    """The dispatch handoff frame. `announcement` (optional) is the routing brief —
-    need restatement + @-mention duty lines — included only when non-empty so the
-    frame stays byte-identical for plain routings."""
-    frame: dict[str, Any] = {"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name}
-    if announcement:
-        frame["announcement"] = announcement
-    return frame
-
-
 def stream_start_src(source: str, spawn_id: int | None = None,
                      run_id: int | None = None) -> dict[str, Any]:
     # run_id (S3-M1): only on recorded runs — the cancel target for POST /runs/{id}/cancel.
@@ -86,18 +49,6 @@ def stream_start_src(source: str, spawn_id: int | None = None,
     if run_id is not None:
         frame["run_id"] = run_id
     return frame
-
-
-def spawn_meta(
-    *, arslan_message_id: int, spawn_id: int, assistant_message_id: int, task_brief: str
-) -> dict[str, Any]:
-    return {
-        "type": "spawn_meta",
-        "arslan_message_id": arslan_message_id,
-        "spawn_id": spawn_id,
-        "assistant_message_id": assistant_message_id,
-        "task_brief": task_brief,
-    }
 
 
 def fact_saved(content: str, sensitive: bool, entry_id: str | None = None,
@@ -116,26 +67,6 @@ def fact_saved(content: str, sensitive: bool, entry_id: str | None = None,
     return frame
 
 
-def spawn_created(
-    spawn_id: int,
-    spawn_name: str,
-    equipment: dict[str, Any] | None = None,
-    intro: str | None = None,
-    capability_warnings: list[str] | None = None,
-) -> dict[str, Any]:
-    # capability_warnings (HX-6/P2): advisory persona-vs-equipment delivery lint —
-    # non-empty when the persona promises a format the spawn's tools/system channels
-    # cannot actually deliver. Never blocks creation.
-    return {
-        "type": "spawn_created",
-        "spawn_id": spawn_id,
-        "spawn_name": spawn_name,
-        "equipment": equipment or {"toolsets": [], "skills": []},
-        "intro": intro,
-        "capability_warnings": capability_warnings or [],
-    }
-
-
 def tool_call(tool: str, args_summary: str) -> dict[str, Any]:
     return {"type": "tool_call", "tool": tool, "args_summary": args_summary}
 
@@ -148,42 +79,6 @@ def tool_result(tool: str, ok: bool, summary: str, artifact: dict | None = None,
     if artifacts:
         frame["artifacts"] = artifacts
     return frame
-
-
-def escalation(spawn_id: int, spawn_name: str | None, kind: str, need: str) -> dict[str, Any]:
-    return {"type": "escalation", "spawn_id": spawn_id, "spawn_name": spawn_name,
-            "kind": kind, "need": need}
-
-
-def escalation_refused(spawn_id: int, why: str) -> dict[str, Any]:
-    return {"type": "escalation_refused", "spawn_id": spawn_id, "why": why}
-
-
-def escalation_resolved(spawn_id: int, how: str, detail: str = "") -> dict[str, Any]:
-    return {"type": "escalation_resolved", "spawn_id": spawn_id, "how": how, "detail": detail}
-
-
-def orchestrator_action(tool: str, reason: str) -> dict[str, Any]:
-    return {"type": "orchestrator_action", "tool": tool, "reason": reason}
-
-
-def proposal(spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
-    return {"type": "proposal", "spawn_id": spawn_id, "spawn_name": spawn_name}
-
-
-def roster_update(members: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"type": "roster_update", "members": members}
-
-
-def attachment_stored(spawn_name: str | None, chunks: int) -> dict[str, Any]:
-    return {"type": "attachment_stored", "spawn_name": spawn_name, "chunks": chunks}
-
-
-def spawn_updated(spawn_id: int, spawn_name: str, applied: dict[str, Any],
-                  equipment: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Ack after a confirmed update was applied: what changed + the fresh equipment."""
-    return {"type": "spawn_updated", "spawn_id": spawn_id, "spawn_name": spawn_name,
-            "applied": applied, "equipment": equipment or {"toolsets": [], "skills": []}}
 
 
 def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "",
@@ -331,19 +226,3 @@ def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, A
         "options": [{"label": str(o.get("label", "")), "hint": str(o.get("hint") or "")}
                     for o in options],
     }
-
-
-def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
-    """Notify the client of a roster membership change.
-
-    `action` is one of:
-      • "joined"            — the spawn entered the roster
-      • "left"              — the spawn was kicked
-      • "recruited"         — a cell-6 recruiting invite was accepted (enroll only,
-                              the task Arslan already answered is NOT re-dispatched)
-      • "joined_no_pending" — a CARD accept found no parked task: joined only, so the
-                              client explains that nothing was queued (BUG2: never silent)
-    The renderer falls back to the neutral joined label for unknown actions, so adding
-    one here is safe — but update web/src/types.ts and adapters.ts alongside it.
-    """
-    return {"type": "roster_event", "action": action, "spawn_id": spawn_id, "spawn_name": spawn_name}

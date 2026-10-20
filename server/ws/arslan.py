@@ -777,9 +777,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 def _to_frame(ev: dict) -> dict:
     """Map an orchestration event dict to a wire frame (already frame-shaped here)."""
     t = ev.get("type")
-    if t == "routing":
-        return protocol.routing(ev.get("spawn_id"), ev.get("spawn_name"),
-                                announcement=ev.get("announcement"))
     if t == "stream_start":
         # run_id must ride through the rebuild — it is the client's cancel handle (S3-M1).
         return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"),
@@ -793,22 +790,6 @@ def _to_frame(ev: dict) -> dict:
     if t == "tool_result":
         return protocol.tool_result(ev.get("tool", ""), bool(ev.get("ok")),
                                     ev.get("summary", ""), ev.get("artifact"), ev.get("artifacts"))
-    if t == "escalation":
-        return protocol.escalation(
-            ev.get("spawn_id"), ev.get("spawn_name"), ev.get("kind", "data"), ev.get("need", "")
-        )
-    if t == "escalation_refused":
-        return protocol.escalation_refused(ev.get("spawn_id"), ev.get("why", ""))
-    if t == "escalation_resolved":
-        return protocol.escalation_resolved(
-            ev.get("spawn_id"), ev.get("how", ""), ev.get("detail", "")
-        )
-    if t == "orchestrator_action":
-        return protocol.orchestrator_action(ev.get("tool", ""), ev.get("reason", ""))
-    if t == "roster_event":
-        return protocol.roster_event(ev.get("action", ""), ev.get("spawn_id"), ev.get("spawn_name"))
-    if t == "roster_update":
-        return protocol.roster_update(ev.get("members", []))
     if t == "propose_connect_mcp":
         return protocol.propose_connect_mcp(
             call_id=ev.get("call_id", ""), key=ev.get("key", ""), label=ev.get("label", ""),
@@ -823,4 +804,4 @@ def _to_frame(ev: dict) -> dict:
             server_id=ev.get("server_id"), tool_count=ev.get("tool_count", 0),
             safe_count=ev.get("safe_count", 0), restricted_count=ev.get("restricted_count", 0),
             assignable=bool(ev.get("assignable")), call_id=ev.get("call_id"))
-    return ev  # stream_chunk / stream_end / error / spawn_meta already match the wire shape
+    return ev  # stream_chunk / stream_end / error already match the wire shape
