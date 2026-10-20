@@ -297,7 +297,9 @@ describe("locale parity", () => {
     // conversation" says what it covers when that is more than the request on the card.
     // 1769 → 1771 (0.1.61 PR 2b final review, M6): inbox.openInArslan, inbox.heldCapability — the Inbox's card for a new capability has no Allow
     // (the server answers it only where its whole card is shown): "Open in Arslan", in the island's words, and the line that says why.
-    expect(enKeys).toHaveLength(1771);
+    // 1771 → 1769 (C2c, v0.1.63): wswrite.scope, schedgrant.scope — only the old write and schedule cards (before
+    // 0.1.61) said them; every card now comes with its options, which say how long a yes lasts.
+    expect(enKeys).toHaveLength(1769);
   });
 
   // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.
@@ -314,33 +316,19 @@ describe("locale parity", () => {
       runcmd: { remember: string; sandboxOutsideLabel: string; sandboxOutsideNote: string };
       settings: { navAbilities: string; terminalRulesEmpty: string };
       kit: { scope: { always: string } };
-      schedgrant: { scope: string; unattended: string };
+      schedgrant: { unattended: string };
     };
     /** The app's own word for the sandbox and for Arslan's working folder (runcmd.sandboxOutside*). */
     const SANDBOX_AND_FOLDER: Record<string, [string, string]> = {
       en: ["sandbox", "working folder"], zh: ["沙盒", "工作文件夹"], ja: ["サンドボックス", "作業フォルダ"],
       es: ["entorno aislado", "carpeta de trabajo"], de: ["Sandbox", "Arbeitsordner"], fr: ["bac à sable", "dossier de travail"],
     };
-    /** What schedgrant.scope used to say a scheduled run cannot do. It can: scheduler.run_arslan_turn runs what needs no card. */
-    const CANNOT_WRITE_OR_RUN: Record<string, string> = {
-      en: "cannot write files or run commands", zh: "写不了文件、跑不了命令", ja: "ファイルの書き込みやコマンドの実行はできません",
-      es: "no escribir archivos ni ejecutar comandos", de: "keine Dateien schreiben und keine Befehle ausführen",
-      fr: "ne peuvent ni écrire de fichiers ni lancer de commandes",
-    };
     for (const [lang, data] of Object.entries(LOCALES)) {
       const d = data as unknown as CardWords;
 
-      it(`${lang}: schedgrant.scope (an old card's line) ends with what schedgrant.unattended says, not that a scheduled run cannot write or run`, () => {
-        expect(Object.keys(CANNOT_WRITE_OR_RUN).sort()).toEqual(Object.keys(LOCALES).sort());
-        expect(d.schedgrant.scope).not.toContain(CANNOT_WRITE_OR_RUN[lang]);
-        expect(d.schedgrant.scope.endsWith(d.schedgrant.unattended)).toBe(true);        // one truthful sentence, said once
-        expect(d.schedgrant.scope.length).toBeGreaterThan(d.schedgrant.unattended.length);   // and what a yes lasts is still there
-      });
-
       if (lang === "zh" || lang === "ja") {
-        it(`${lang}: schedgrant.scope is written with full-width punctuation throughout, as schedgrant.unattended is`, () => {
-          expect(d.schedgrant.scope).not.toMatch(/[,;:]/);                       // an ASCII , ; : in a sentence here is a slip
-          expect(d.schedgrant.unattended).not.toMatch(/[,;:]/);
+        it(`${lang}: schedgrant.unattended is written with full-width punctuation throughout`, () => {
+          expect(d.schedgrant.unattended).not.toMatch(/[,;:]/);                  // an ASCII , ; : in a sentence here is a slip
         });
       }
 

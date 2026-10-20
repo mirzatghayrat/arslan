@@ -16,7 +16,8 @@ vi.mock('react-i18next', () => ({
 
 import ScheduleGrantCard, { humanCadence } from '../components/ScheduleGrantCard';
 
-const base = { callId: 'sc1', name: 'morning CI', when: 'cron: 0 9 * * *' };
+// Every schedule card comes from permissions.decide, with its options (C2c removed the older card).
+const base = { callId: 'sc1', name: 'morning CI', when: 'cron: 0 9 * * *', options: ['once', 'conversation'] };
 
 describe('humanCadence', () => {
   it('turns seconds into something a person can judge', () => {
@@ -54,24 +55,24 @@ describe('ScheduleGrantCard', () => {
     expect(card.textContent).toContain('0 9 * * *');
   });
 
-  it('offers no remember checkbox — approval already lasts the session', () => {
+  it('offers no remember checkbox: the choice says how long a yes lasts', () => {
     render(<ScheduleGrantCard {...base} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
-  it('says that scheduled runs cannot write or execute', () => {
-    /** The user is agreeing to unattended runs; what those runs CANNOT do is
-     *  part of what makes the decision safe to make. */
+  it('says what an unattended run does', () => {
+    /** The user is agreeing to unattended runs; what those runs do (a step that needs an OK is
+     *  skipped) is part of what makes the decision safe to make. */
     render(<ScheduleGrantCard {...base} onConfirm={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByTestId('schedule-scope')).toBeTruthy();
+    expect(screen.getByTestId('schedule-unattended')).toBeTruthy();
   });
 
-  it('confirm and cancel report the call id', () => {
+  it('confirm reports the call id and the scope, cancel the call id', () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
     render(<ScheduleGrantCard {...base} onConfirm={onConfirm} onCancel={onCancel} />);
     fireEvent.click(screen.getByTestId('schedule-allow'));
-    expect(onConfirm).toHaveBeenCalledWith('sc1');
+    expect(onConfirm).toHaveBeenCalledWith('sc1', 'once');
     fireEvent.click(screen.getByTestId('schedule-deny'));
     expect(onCancel).toHaveBeenCalledWith('sc1');
   });
