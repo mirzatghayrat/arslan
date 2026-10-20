@@ -45,26 +45,26 @@
 | [M2](M2-weekly-usage-report.md) | 本机用量周报脚本（只读、只出数字） | ⓪Plan | 脚本 | 必须 | —（FR 之前合） | 已合并（#193 = `d76d79d6`） |
 | [M3](M3-acceptance-checklist.md) | 体感验收清单（§5.3 的 11 条） | ⓪Plan | 文档 | 必须 | — | 已合并（#192 = `adadd569`） |
 | [M1B](M1B-baseline.md) | 在 v0.1.62 上跑基线；K1 合并要等它 | ⓪Plan + 用户 | 脚本 | 必须 | M1、FR | 已跑完，结果在 [M1B-baseline-results.md](M1B-baseline-results.md)（Claude Code 有 4 格要在 bench 修好后重跑） |
-| [F5b](F5b-delete-cua-engine.md) | 删 Cua Driver 引擎代码（③Hands 审）；文件内改动约 600 行，超出 U2 的 50 行，默认拆 F5b-1 断开接线、F5b-2 按 U2 删整文件（更正 E14） | ②Main | v0.1.63 | 必须 | F5a | F5b-1 待审 #249（③Hands 审，并用合并前 sha 跑 `hands_smoke.py`）；F5b-2 待开工 |
+| [F5b](F5b-delete-cua-engine.md) | 删 Cua Driver 引擎代码（③Hands 审）；文件内改动约 600 行，超出 U2 的 50 行，默认拆 F5b-1 断开接线、F5b-2 按 U2 删整文件（更正 E14） | ②Main | v0.1.63 | 必须 | F5a | F5b-1 #249：③Hands 已批代码、CI 绿（39343358885 / 39343362761），等用户在场跑 `hands_smoke.py` 再合；F5b-2 分支已备好（`claude/0162-f5b2-remove-cua-files`），#249 合后开 PR |
 | [H1](H1-hands-chat-cap-answer.md) | 书面回答：聊天里 5 步上限防什么（⓪Plan 代为提交） | ③Hands | v0.1.63 | 必须 | —（K4 开工前交） | 已合并（#188 = `d74869f5`） |
 | [H3](H3-hands-chat-cap-change.md) | 去掉聊天里 Hands 的 5 次和「一轮一个 App」，并进 K4；Stop 对聊天回合也停住（U8） | ③Hands | v0.1.63 | 应该 | H1（已同意，U8）、K4b | 待开工 |
 | [C1](C1-tests-test-product.md) | 让测试测产品：删打开专家的 fixture 和只在专家开启时跑的路径 | ②Main | v0.1.63 | 必须 | F5a；合并等热修合回 main | 已合并（#203 = `f28b52bc`） |
 | [C1b](C1b-expert-modules.md) | 删 9 个不可达的专家模块 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#210 = `e13318ad`） |
 | [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
 | [C2a](C2a-memory-v1.md) | 删记忆 v1 死分支（超 800 行时拆两个） | ②Main | v0.1.63 | 必须 | C1（K2 开工前合） | C2a-1 已合并（#237 = `83d8a581`；测试库开机顺序补丁 #244 = `0612813b`）；C2a-2 待开工 |
-| [C2b](C2b-evolution-first-batch.md) | 删进化第一批；拆 C2b-1 接口、C2b-2 自动路径 | ②Main | v0.1.63 | 必须 | C1 | 待开工（卡的决定和命令更正待合并 #248） |
-| [C2c](C2c-0161-leftovers.md) | 0.1.61 遗留死代码 | ②Main | v0.1.63 | 必须 | C1 | Hands 那半已合并（#246 = `c40483c8`）；其余待开工 |
+| [C2b](C2b-evolution-first-batch.md) | 删进化第一批；拆 C2b-1 接口、C2b-2 自动路径 | ②Main | v0.1.63 | 必须 | C1 | 待开工（卡的决定和命令更正已合并：#248 = `fc505f24`） |
+| [C2c](C2c-0161-leftovers.md) | 0.1.61 遗留死代码 | ②Main | v0.1.63 | 必须 | C1 | 已合并（Hands 那半 #246 = `c40483c8`；其余 #253 = `43a1027c`，③Hands 安全审过） |
 | [C2d](C2d-legacy-cli.md) | 删旧命令行 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#238 = `aea8a2d2`） |
-| [C2e](C2e-misc-python.md) | Python 杂项死代码；拆 C2e-1 杂项、C2e-2 媒体与 MCP 探测 | ②Main | v0.1.63 | 必须 | C1 | C2e-1 待合并 #247；C2e-2 待开工 |
+| [C2e](C2e-misc-python.md) | Python 杂项死代码；拆 C2e-1 杂项、C2e-2 媒体与 MCP 探测 | ②Main | v0.1.63 | 必须 | C1 | C2e-1 已合并（#247 = `5e25ac92`）；C2e-2 待审 #254 |
 | [C2f](C2f-misc-web-repo.md) | 网页杂项与误提交文件 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#243 = `3e0de127`） |
 | [C3](C3-tool-exposure.md) | 删 / 降级没人用的工具；拆 C3a 删除、C3b 降级 | ②Main | v0.1.63 | 必须 | C1、K5（K7 之前合；C1b 最好先合） | 待开工 |
-| [C4](C4-remove-shadow-judgment.md) | 删影子评判；记录撤回决定② | ②Main | v0.1.63 | 必须 | C1、C2c | 待开工 |
+| [C4](C4-remove-shadow-judgment.md) | 删影子评判；记录撤回决定② | ②Main | v0.1.63 | 必须 | C1、C2c | 进行中（②Main；`scripts/usage_report.py` 的影子评判表经 ⓪Plan 同意在本卡一起删） |
 | [C5a](C5a-process-docs-privacy.md) | 过程文档移到存档分支；从文件里删隐私段落 | ②Main | v0.1.63 | 应该 | — | 待开工 |
 | [C5b](C5b-version-source-inventory.md) | 唯一版本来源；能力清单只在发版时生成（越早合越好） | ②Main | v0.1.63 | 应该 | — | 已合并（#201 = `90fd3c11`） |
 | [C6](C6-ci-parallel-coverage.md) | CI 并行与覆盖率 | ②Main | v0.1.63 | 应该 | F5a | 待开工 |
 | [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 已合并（K1a #212 = `df18ba0e`；K1b #213 = `18d691bb`；合并后对照在 #213） |
-| [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | K2a 已合并（#240 = `4f471a30`；合并前 ⓪Plan 前后对照）；K2b 待开工 |
-| [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 待开工 |
+| [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 已合并（K2a #240 = `4f471a30`；K2b #252 = `8780fc34`，⓪Plan 的 k2b-ds 过门槛：19/27 通过，基线 18；③Hands 审过） |
+| [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 待开工（K 线下一张，门槛 DeepSeek + Claude sonnet-5） |
 | [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | 待开工 |
 | [K5](K5-working-method-tool-docs.md) | 工作方法与工具说明；多步骤任务结束时给用户四行收尾 | ②Main | v0.1.63 | 必须 | K4b、F1 | 待开工 |
 | [K7](K7-tools-on-demand.md) | MCP 和少用的工具按需取用 | ②Main | v0.1.63 | 必须 | K5、C3、F3 | 待开工 |
