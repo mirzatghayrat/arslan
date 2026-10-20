@@ -173,3 +173,49 @@ def test_compaction_preserves_opaque_provider_and_response_pair():
     kept, compacted = bounded_history([{"role": "user", "content": "x" * 1000}, opaque, response], max_chars=10)
     assert compacted and kept == [opaque, response]
     assert kept[0] is opaque and kept[1] is response
+
+
+# ── K4a: no progress = the same result 4 times, or the same failing call 3 times ──────────────
+
+FAIL = {"ok": False, "error": "fetch failed: http 403"}
+
+
+def test_the_same_failing_call_three_times_stops():
+    policy = ProgressPolicy()
+    for _ in range(2):
+        policy.observe("web_extract", {"url": "https://a.test"}, FAIL)
+        assert not policy.stopped
+    policy.observe("web_extract", {"url": "https://a.test"}, FAIL)
+    assert policy.stopped and (policy.count, policy.limit) == (3, 3)
+
+
+def test_different_failures_do_not_add_up():
+    """Five blocked sites in a row are five different calls, not one stuck step (web_extract's errors
+    don't carry the URL, so the error alone can't tell them apart)."""
+    policy = ProgressPolicy()
+    for site in "abcde":
+        policy.observe("web_extract", {"url": f"https://{site}.test"}, FAIL)
+    assert not policy.stopped
+
+
+def test_the_same_result_four_times_still_stops_and_a_failure_does_not_reset_it():
+    policy = ProgressPolicy()
+    assert policy.observe("read", {"i": 1}, {"ok": True, "text": "same"})
+    for i in range(2):
+        assert not policy.observe("read", {"i": i + 2}, {"ok": True, "text": "same"})
+    policy.observe("read", {"i": 9}, FAIL)                       # neither adds to the streak nor resets it
+    assert policy.stalled == 2 and not policy.stopped
+    for i in range(2):
+        policy.observe("read", {"i": i + 5}, {"ok": True, "text": "same"})
+    assert policy.stopped and (policy.count, policy.limit) == (4, 4)
+
+
+def test_the_progress_note_counts_against_the_limit_that_applies():
+    policy = ProgressPolicy()
+    policy.observe("web_extract", {"url": "https://a.test"}, FAIL)
+    policy.observe("web_extract", {"url": "https://a.test"}, FAIL)
+    assert "2 of 3" in tool_loop._progress_note(policy)
+    policy.observe("read", {"i": 1}, {"ok": True, "text": "same"})
+    policy.observe("read", {"i": 2}, {"ok": True, "text": "same"})
+    policy.observe("read", {"i": 3}, {"ok": True, "text": "same"})
+    assert "2 of 4" in tool_loop._progress_note(policy)

@@ -488,7 +488,7 @@ def _schema_problem(args: dict, schema: dict | None) -> str | None:
 def _progress_note(policy) -> str:
     """Trusted host note appended to a result that made no progress, so the
     model sees the loop detector before it stops the turn."""
-    return (f"\n[Host note: no new progress — {policy.stalled} of {policy.max_stalled} steps without "
+    return (f"\n[Host note: no new progress — {policy.count} of {policy.limit} steps without "
             "progress before this turn stops. Change approach, or answer with what you have.]")
 
 
@@ -2861,7 +2861,7 @@ async def _run_native(
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)
-                if not policy.observe(name, args, result) and policy.stalled >= 2 and convo \
+                if not policy.observe(name, args, result) and policy.count >= 2 and convo \
                         and convo[-1].get("role") == "tool":
                     convo[-1]["content"] += _progress_note(policy)
                 # 0.1.50: a saved table of links gets the host link check (link_check).

@@ -69,24 +69,33 @@ def tool_failure(result: dict) -> FailureKind | None:
 
 @dataclass
 class ProgressPolicy:
-    """Detect repeated identical work and consecutive failures within one loop.
+    """Detect a loop that makes no progress (K4a, v0.1.63): the same returned evidence 4 times (a new
+    result resets that streak), or the same failing call — tool, arguments and error — 3 times.
 
-    Counters contain only hashes and structural classifications. A novel successful
-    tool result resets a failure streak; repeating the same returned evidence with
-    differently phrased queries does not. Global budgets remain the ultimate bounds.
+    Different failures don't add up: five blocked sites in a row are five calls, not one stuck step
+    (web_extract's errors don't carry the URL, so the error alone can't tell them apart). Before K4a any
+    4 failures in a row stopped the loop. Counters contain only hashes and structural classifications;
+    global budgets remain the ultimate bounds.
     """
     max_stalled: int = 4
+    max_same_failure: int = 3
     stalled: int = 0
     observations: int = 0
     seen: set[str] = field(default_factory=set)
+    failures: dict[str, int] = field(default_factory=dict)
     last_failure: FailureKind | None = None
+    _failed_call: str | None = field(default=None, repr=False)
 
     def observe(self, tool: str, arguments: dict, result: dict) -> bool:
         self.observations += 1
         self.last_failure = tool_failure(result)
         if self.last_failure is not None:
-            self.stalled += 1
+            call = json.dumps([tool, arguments, str(result.get("error") or result.get("code") or "")],
+                              ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+            self._failed_call = hashlib.sha256(call.encode()).hexdigest()
+            self.failures[self._failed_call] = self.failures.get(self._failed_call, 0) + 1
             return False
+        self._failed_call = None
         evidence = result
         if tool == "web_extract" and isinstance(result.get("source"), dict):
             # Refetching identical evidence is not progress merely because the
@@ -105,8 +114,17 @@ class ProgressPolicy:
         return novel
 
     @property
+    def count(self) -> int:
+        """How far the last observation is toward its stop: the same failing call, or the same result."""
+        return self.failures[self._failed_call] if self._failed_call else self.stalled
+
+    @property
+    def limit(self) -> int:
+        return self.max_same_failure if self._failed_call else self.max_stalled
+
+    @property
     def stopped(self) -> bool:
-        return self.stalled >= self.max_stalled
+        return self.stalled >= self.max_stalled or any(n >= self.max_same_failure for n in self.failures.values())
 
 
 def bounded_history(history: list[dict], *, max_chars: int = 64_000,

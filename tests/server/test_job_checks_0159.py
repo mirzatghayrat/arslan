@@ -551,6 +551,12 @@ def _search(i):
     return golden._Resp(None, [golden._tc("web_search", {"query": f"q{i}"}, f"s{i}")])
 
 
+def _stuck():
+    """K4a: the same failing call three times is a stuck loop (different failures don't add up)."""
+    from tests.server import test_trajectory_golden as golden
+    return [golden._Resp(None, [golden._tc("web_search", {"query": "jobs"}, f"s{i}")]) for i in range(3)]
+
+
 def _write():
     from tests.server import test_trajectory_golden as golden
     return golden._Resp(None, [golden._tc("write_file", {"path": "jobs.csv", "content": "a,b\n1,2\n"}, "w1")])
@@ -591,14 +597,14 @@ async def _native_in_task(monkeypatch, disk, replies, checks):
 
 def _stop_then_save():
     from tests.server import test_trajectory_golden as golden
-    return [_search(i) for i in range(4)] + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
+    return _stuck() + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
 
 
 async def test_no_progress_then_saving_with_a_passing_file_check_succeeds(execution_db, disk, monkeypatch):
     # 0.1.50's wrap-up order through run_native: no progress -> finishing -> save -> answer.
     task, state, calls = await _native_in_task(monkeypatch, disk, _stop_then_save(),
                                                [check("file_saved", "saved", target="jobs.csv")])
-    assert "research has stopped" in calls[4]["user"]          # it really went through the finishing step
+    assert "research has stopped" in calls[3]["user"]          # it really went through the finishing step
     assert (state["pause"], state["limit"]) == (None, "task_no_progress")
     assert (task.phase, task.pause_reason) == ("succeeded", None)
 
@@ -610,14 +616,14 @@ async def test_no_progress_then_saving_with_only_an_answer_check_holds(execution
 
 async def test_no_progress_then_an_answer_without_saving_holds(execution_db, disk, monkeypatch):
     from tests.server import test_trajectory_golden as golden
-    replies = [_search(i) for i in range(4)] + [golden._Resp("Could not find anything.")]
+    replies = _stuck() + [golden._Resp("Could not find anything.")]
     task, _, _ = await _native_in_task(monkeypatch, disk, replies, [check("file_saved", "saved", target="jobs.csv")])
     assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
 
 
 async def test_finishing_steps_that_never_save_hold_in_the_loop(execution_db, disk, monkeypatch):
     from tests.server import test_trajectory_golden as golden
-    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), _search(12), golden._Resp("Here is what I have.")]
+    replies = _stuck() + [_search(10), _search(11), _search(12), golden._Resp("Here is what I have.")]
     task, state, _ = await _native_in_task(monkeypatch, disk, replies, [_answer_check()])
     assert state["pause"] == "task_no_progress"
     assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
