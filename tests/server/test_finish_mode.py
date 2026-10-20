@@ -1,7 +1,8 @@
 """Completion first after a stop (0.1.50, S6 bench T2).
 
 Repeated failure or a spent fetch allowance ends research, not the deliverable:
-the run gets up to two steps offering only the save tools, then answers in text.
+the run gets up to two steps where only the save tools run, then answers in text.
+K3: those steps keep the whole tool table (Claude's cache); other calls are refused.
 And the synthesis fallback keeps each finding's link."""
 import pytest
 
@@ -75,13 +76,16 @@ async def test_without_save_tools_a_stop_answers_at_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_finish_mode_lasts_three_steps_and_narrows_after_a_refused_research_call(monkeypatch):
+async def test_finish_mode_lasts_three_steps_keeps_the_tool_table_and_refuses_research(monkeypatch):
+    # K3: the table never narrows within a turn (it renders before Claude's cached system); the
+    # status says what still runs, and a research call is refused with its reason.
     replies = [_search(i) for i in range(4)] + [_search(10), _search(11), _search(12),
                                                 golden._Resp("Here is what I have.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked())
-    assert "web_search" in calls[4]["tools"]                    # full list first
-    assert [c["tools"] for c in calls[5:8]] == [["write_file"], ["write_file"], None]
-    assert result["final"] == "Here is what I have."
+    assert [c["tools"] for c in calls[4:8]] == [["web_search", "write_file", "escalate"]] * 3 + [None]
+    assert all("Tools that still run: write_file; any other call is refused." in c["user"] for c in calls[4:7])
+    refused = [r for r in result["tool_trace"] if r["result"].get("code") in ("wrap_up", "task_no_progress")]
+    assert len(refused) == 3 and result["final"] == "Here is what I have."
 
 
 @pytest.mark.asyncio
@@ -176,7 +180,7 @@ async def test_outside_wrap_up_commands_keep_the_network(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_soft_wrap_up_narrows_after_one_refused_research_call(monkeypatch):
+async def test_soft_wrap_up_keeps_the_tool_table_after_a_refused_research_call(monkeypatch):
     from arslan.execution_budget import Budget, Limits, scope
     replies = [_search(0), _search(1), _search(2), _write(), golden._Resp("Saved jobs.csv.")]
     with scope(Budget(Limits(tool_calls=10), soft=Limits(tool_calls=2))):
@@ -184,5 +188,6 @@ async def test_soft_wrap_up_narrows_after_one_refused_research_call(monkeypatch)
     assert "web_search" in calls[2]["tools"] and "Work budget nearly used" in calls[2]["user"]
     refused = [r for r in result["tool_trace"] if r["result"].get("code") == "wrap_up"]
     assert len(refused) == 1                                       # the third search did not run
-    assert calls[3]["tools"] == ["write_file"]                     # narrowed after the refusal
+    assert calls[3]["tools"] == ["web_search", "write_file", "escalate"]   # K3: the same table, refusals
+    assert "Tools that still run: write_file; any other call is refused." in calls[3]["user"]
     assert result["final"] == "Saved jobs.csv."

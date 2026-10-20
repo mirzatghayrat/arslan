@@ -360,13 +360,14 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     tool_trace.append({"tool": tool_key, "args": args, "result": result})
     run_trace.record(tool=tool_key, args=args, result=result,
                       ok=bool(result.get("ok")), error=result.get("error"), ms=None)
-    framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
     from server.orchestrator import untrusted as _untrusted
+    framed = (raw_payload if result.get("external") is False else wrap_external(raw_payload)
+              if _untrusted.from_the_web(tool_key, args) else _untrusted.wrap_tool_output(raw_payload))
     if result.get("ok") and (_untrusted.counts_as_external(tool_key, args)
                              or (tool_key == "read_skill" and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
-    # PB-3 degrade hint. Placement is deliberate: `framed` ends with DELIM_CLOSE, so the
-    # hint sits AFTER the wrap_external data frame — it is OUR trusted framing (like the
+    # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
+    # hint sits AFTER the data frame — it is OUR trusted framing (like the
     # "TOOL RESULT for X" header and the "Use this to continue" trailer), never inside
     # the untrusted region the GUARD_NOTE tells the model to distrust.
     hint = ""
@@ -2430,16 +2431,15 @@ async def _run_native(
     pending_feedback = len(convo) - unseen_start
     # 0.1.50 completion first after a stop (S6 bench, T2): repeated failure or a
     # spent fetch allowance ends RESEARCH, not the deliverable. The run enters
-    # finish mode once (sticky): up to two steps that offer only the save tools,
-    # then text only. Without save tools a no-progress stop forces an answer at
+    # finish mode once (sticky): up to two steps where only the save tools run (K3: the
+    # table stays, other calls are refused), then text only. Without save tools a no-progress stop forces an answer at
     # once, as before; a spent fetch allowance then changes nothing.
     finish_reason: str | None = None
     finish_from = 0
     finish_steps = 0
-    # Wrap-up keeps the FULL tool list while the model complies (an unchanged list
-    # keeps the provider's prompt cache: a narrowed one re-sent ~28k tokens uncached
-    # in the S6 bench); after its first refused research call, the list narrows.
-    wrap_refused = 0
+    # Wrap-up keeps the FULL tool list (an unchanged list keeps the provider's prompt
+    # cache: a narrowed one re-sent ~28k tokens uncached in the S6 bench). K3: it no
+    # longer narrows after a refused research call either; refusals say why.
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -2487,6 +2487,11 @@ async def _run_native(
         # deliverable stays possible. Not a failure: the completion checks decide
         # the outcome as usual.
         wrap_up = not forced and (finishing or budget.soft_reached())
+        # K3: the tool table stays as it is (narrowing it would rewrite Claude's cache from the tools
+        # on); the status says what still runs, and dispatch refuses the rest with its reason.
+        still_run = sorted(FINISH_TOOLS & wired_keys)
+        allowed_note = (f" Tools that still run: {', '.join(still_run)}; any other call is refused."
+                        if still_run else " No tool runs any more: answer in text.") if wrap_up else ""
         if finishing:
             finish_steps += 1
             notes.append(("Repeated actions made no progress, so research has stopped."
@@ -2494,11 +2499,12 @@ async def _run_native(
                           "The web reading allowance for this run is used up, so research has stopped.")
                          + " Using only what you already have, save the deliverable now if one was asked for "
                            "(write_file), marking anything missing or unverified; then give the final answer: "
-                           "what was done, what is blocked." + offline_note)
+                           "what was done, what is blocked." + allowed_note + offline_note)
         elif wrap_up:
             notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
                          "produce the complete deliverable the user asked for (save it if a file was asked for), "
-                         "clearly marking anything you could not verify. Then give the final answer." + offline_note)
+                         "clearly marking anything you could not verify. Then give the final answer."
+                         + allowed_note + offline_note)
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -2545,10 +2551,10 @@ async def _run_native(
         # Rolling evidence eviction must not erase this turn's task or its
         # restrictions. Restore the exact request at user priority, not as a
         # system instruction or an invented summary, only in this payload.
-        # K1b: on Claude's native path a wrap-up tool list is a prefix change, so the API drops the
-        # thinking blocks after it (counted in the run record); K3 keeps the tool list fixed.
-        step_tools = (None if forced else [t for t in schemas if t["function"]["name"] in FINISH_TOOLS]
-                      or None if wrap_up and wrap_refused else schemas)
+        # K3: the same tool table on every step of the turn, wrapping up included (a narrowed table was a
+        # cache miss from the tools on, K1b). Exceptions, one miss each: a capability added mid-turn, an
+        # MCP schema the provider refused, relax() on a retry.
+        step_tools = None if forced else schemas
         offered = {t["function"]["name"] for t in step_tools or []}
         # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
         # block — the request goes out as the user wrote it. Step 0's write
@@ -2669,13 +2675,11 @@ async def _run_native(
                         desktop_status.note_plan(plan.items)
                     continue
                 if policy.stopped and not (finishing and name in FINISH_TOOLS):
-                    wrap_refused += bool(wrap_up)
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
                 if wrap_up and name not in FINISH_TOOLS:
-                    wrap_refused += 1
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
                         "error": "Wrapping up: no more research. Write the deliverable from what you have."
                                  + offline_note},
