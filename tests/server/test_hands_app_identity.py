@@ -199,3 +199,18 @@ def test_a_renamed_never_list_bundle_by_an_hfs_path_is_refused(apps_folder, tmp_
 def test_a_renamed_copy_of_terminal_by_an_hfs_path_is_still_high_reach(apps_folder, tmp_path_factory):
     tm = _bundle(tmp_path_factory.mktemp("hfscopy"), "Tm", "com.apple.Terminal")
     assert hands_service.script_kind(f'tell application "{_hfs(tm)}" to activate')[0] == "app_risky"
+
+
+async def test_a_script_with_a_computed_app_target_is_refused_before_any_card(hands, asks, in_job, monkeypatch):
+    """⓪Plan's rule: nothing runs, no card, and the model is told to write the name as a literal."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    result = await hands_tools.MacAppleScriptExecutor().execute(
+        {"script": 'tell application ("1Pass" & "word") to activate'})
+    assert result.get("code") == "bad_request" and "literal strings" in result.get("error", ""), result
+    assert seen == [] and ran == []

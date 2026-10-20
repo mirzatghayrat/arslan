@@ -324,6 +324,84 @@ def never_touched(app: str) -> bool:
 _SCRIPT_APP = re.compile(r'\b(?:application|app)\s+(?:id\s+)?"([^"\n]+)"', re.I)
 
 
+def _mask(script: str) -> str:
+    """The script with its comments (`--`, `#`, nesting `(* … *)`) and the insides of its strings
+    blanked to spaces, at the same length: what is left is code, every `"` still marks where a literal
+    string stood, and a position in it is the same position in the script."""
+    out, i, n, depth = list(script), 0, len(script), 0
+    while i < n:
+        two = script[i:i + 2]
+        if depth or two == "(*":
+            if two in ("(*", "*)"):
+                depth += 1 if two == "(*" else -1
+                out[i] = out[i + 1] = " "
+                i += 2
+                continue
+            if script[i] != "\n":
+                out[i] = " "
+            i += 1
+            continue
+        if script[i] == '"':
+            j = i + 1
+            while j < n and script[j] != '"':
+                step = 2 if script[j] == "\\" and j + 1 < n else 1
+                for k in range(j, min(j + step, n)):
+                    if script[k] != "\n":
+                        out[k] = " "
+                j += step
+            i = j + 1
+            continue
+        if two == "--" or script[i] == "#":
+            while i < n and script[i] != "\n":
+                out[i] = " "
+                i += 1
+            continue
+        i += 1
+    return "".join(out)
+
+
+_APP_WORD = re.compile(r"\b(?:application|app)\b", re.I)
+_RAW_APP_CLASS = re.compile(r"«\s*class\s+capp\s*»", re.I)
+_GAP = re.compile(r"[\s¬]*")
+_WORD = re.compile(r"\|[^|\n]*\||[A-Za-z_][A-Za-z0-9_]*")
+# What may follow `application` when it is a class name and not the app a script talks to: System
+# Events' and Finder's classes, and the words a type test or a filter goes on with.
+_NOT_A_TARGET = frozenset({
+    "process", "processes", "file", "files", "then", "of", "in", "is", "whose", "where", "and", "or",
+    "as", "else", "end", "to", "from", "by", "with", "without", "contains", "returning", "given", "not",
+    "equals", "comes", "before", "after", "but", "thru", "through", "into", "onto", "on", "at", "for"})
+
+
+def computed_app_target(script: str) -> str | None:
+    """Where a script names the app it talks to other than as a literal string — `tell application
+    ("1Pass" & "word")`, `tell application x`, `application id x`, a raw `«class capp»` — or None
+    (v0.1.63 H4, ⓪Plan's rule). An app chosen while the script runs can't be checked against the
+    never-list, so mac_applescript refuses the script instead of asking. `application` as a class name
+    is no target (`current application's …`, `tell current application to`, `every application process`
+    all go on with a word or mark skipped below); comments and strings are not read. A literal in
+    parentheses (`application ("Notes")`) counts as computed: refused, and the message names the form."""
+    code = _mask(script)
+    if raw := _RAW_APP_CLASS.search(code):
+        return script[raw.start():raw.end()]
+    for m in _APP_WORD.finditer(code):
+        at = _GAP.match(code, m.end()).end()
+        following = code[at:at + 1]
+        if not following or following == '"':
+            continue
+        word = _WORD.match(code, at)
+        if word is None and following not in "(«":
+            continue                                      # ")", ",", a line's end: the class itself
+        if word is not None:
+            name = word.group(0).lower()
+            if name == "id" and code[_GAP.match(code, word.end()).end():][:1] == '"':
+                continue
+            if name in _NOT_A_TARGET:
+                continue
+        line_end = script.find("\n", m.start())
+        return script[m.start():line_end if line_end != -1 else len(script)].strip()[:80]
+    return None
+
+
 def script_apps(script: str) -> list[str]:
     """The apps an AppleScript names, in order, without repeats (0.1.61 §A2's "apps" category and
     mac_applescript check these against the never-list). Repeats are by exact spelling, never by
