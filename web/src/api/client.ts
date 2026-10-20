@@ -437,7 +437,7 @@ export const api = {
   },
   getRegistry: () => request<RegistryCatalog>("/registry"),
   /** PC-5 on-demand skill health probe (bounded storage + script-runnability check on the
-   * server; never executes skill code). Mirrors checkMcpHealth. */
+   * server; never executes skill code). */
   checkSkillHealth: (key: string) =>
     request<SkillHealth>(`/registry/skills/${encodeURIComponent(key)}/health`, { method: "POST" }),
   updateEquipment: (id: number, body: { toolsets: string[]; skills: string[] }) =>
@@ -626,18 +626,6 @@ export const api = {
         last_checked_at?: string | null;
       }>
     >("/mcp/servers"),
-  /** PB-4 on-demand equipment health probe (bounded list_tools on the server side). */
-  checkMcpHealth: (id: number) =>
-    request<{
-      id: number;
-      label: string;
-      transport: string;
-      health_status: "ok" | "failing";
-      last_checked_at: string | null;
-      last_error: string | null;
-      tool_count: number | null;
-      proxy_source: string;
-    }>(`/mcp/${id}/health`, { method: "POST" }),
   // ── Skill Forge: self-authored skills → observe → gate → promote ──────────────
   /** Package a SKILL.md into a candidate. 400 (surfaced as ApiError.message) on invalid. */
   forgeSkill: (body: {

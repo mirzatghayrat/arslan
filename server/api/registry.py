@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
-# PC-5 条件: the health probe is bounded (mirrors PB-4's _HEALTH_PROBE_TIMEOUT). Skill health
+# PC-5 条件: the health probe is bounded (as PB-4's MCP probe was, removed in C2e-2). Skill health
 # is local/cheap (small filesystem reads, no network/subprocess), so a short 5s bound suffices.
 _SKILL_HEALTH_TIMEOUT = 5.0
 

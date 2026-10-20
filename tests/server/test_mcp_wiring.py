@@ -84,14 +84,6 @@ async def _boot_background_drained():
     await _boot_background_done()
 
 
-async def _until(predicate, *, tries=500):
-    for _ in range(tries):
-        if predicate():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError("condition never met")
-
-
 def _record_plans(monkeypatch, sup):
     plans = []
     real_new_plan = sup._new_plan
@@ -219,24 +211,6 @@ async def test_removing_a_capability_removes_its_server_row_before_forgetting_it
     assert seen == [(7, None)]
 
 
-async def test_a_health_probe_that_times_out_schedules_a_fresh_start(execution_db, monkeypatch):
-    """A ready server's live session that does not answer within the bound is dropped (it must not
-    poison later calls) and the supervisor restarts the server (fix round 1: the probe reports on
-    the live session only)."""
-    await _seed(execution_db, state="ready", status="connected")
-    _live_session(monkeypatch, 1)
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 0.05)
-
-    async def wedged(server, cursor=None):
-        await asyncio.sleep(5)
-    monkeypatch.setattr(session.manager, "list_tools", wedged)
-    scheduled = []
-    monkeypatch.setattr(sm.supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
-    out = await mcp_service.check_health(1)
-    assert out["health_status"] == "failing" and scheduled == [(1, {"fresh": True})]
-    assert session.manager.cached(1) is None
-
-
 async def test_the_server_list_carries_the_state(execution_db):
     await _seed(execution_db, state="failed")
     (row,) = await mcp_service.list_servers()
@@ -262,114 +236,6 @@ async def test_capability_rows_say_starting_without_connect_and_trust_the_pinned
 
 
 # ── the carries (carries.md "Task 6 (wiring)") ───────────────────────────────────────────
-
-async def test_a_probe_during_a_start_answers_at_once_and_never_touches_its_session(
-        execution_db, own_supervisor, monkeypatch):
-    """Carry 2b by construction, F1/F2 (review P1b): a probe never waits for a start (no session
-    lock) and never lists through the session a start is opening, so it can neither kill that start
-    nor miss that session's death — it answers with the state at once; the start ends `ready`
-    with its session, listed once."""
-    await _seed(execution_db, state="ready", status="connected", health_status="ok")
-    opening, release, opens, calls = asyncio.Event(), asyncio.Event(), [], []
-
-    class _DiesOnSecondList:
-        async def list_tools(self, params=None):
-            calls.append(1)
-            if len(calls) == 1:
-                return _listing("a")
-            raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
-
-    async def slow_open(server):
-        opens.append(server["id"])
-        opening.set()
-        await release.wait()
-        return _DiesOnSecondList(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", slow_open)
-    start = asyncio.create_task(own_supervisor.restart(1))          # a Connect: it holds the lock
-    try:
-        await asyncio.wait_for(opening.wait(), 5)
-        out = await asyncio.wait_for(mcp_service.check_health(1), 5)     # at once: nothing to wait on
-    finally:
-        release.set()
-    result = await asyncio.wait_for(start, 5)
-    # the state it is shown in, and never `ok` while it is not ready (final review M-1)
-    assert (out["state"], out["health_status"], out["tool_count"]) == ("starting", None, None)
-    assert result.state == "ready" and opens == [1] and calls == [1]
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
-    assert session.manager.cached(1) is not None
-
-
-async def test_a_probe_never_spawns_and_switching_on_afterwards_starts_it(execution_db, own_supervisor, monkeypatch):
-    """F2 (review P2): with no live session the probe answers with the stored state — it spawns
-    nothing, so a switched-off server stays without a process, and switching it on afterwards
-    starts it (the probe's own session used to make that switch a no-op: stuck `off`)."""
-    await _seed(execution_db, state="off", status="connected", host_allowed=False)
-    opens = []
-
-    async def open_(server):
-        opens.append(server["id"])
-        return _Live(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", open_)
-    out = await mcp_service.check_health(1)
-    assert (out["state"], out["tool_count"]) == ("off", None) and opens == []
-    assert session.manager.cached(1) is None
-    own_supervisor.start(run_loops=False)
-    await mcp_service.set_host_allowed(1, True)                 # the user's switch: on
-    plans = [t for t in own_supervisor._inflight.values() if not t.done()]
-    await asyncio.wait_for(asyncio.gather(*plans), 5)
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    assert (row.host_allowed, row.state) == (True, "ready") and opens == [1]
-
-
-async def test_a_probe_that_lost_the_session_it_ran_on_schedules_a_fresh_start(execution_db, monkeypatch):
-    """Carry (Task 5 concern 3, 2c): list_tools drops the session it failed on and never tells the
-    supervisor, so the probe does — a fresh start. With no live session the probe opens nothing and
-    schedules nothing: it answers with the stored state (fix round 1)."""
-    await _seed(execution_db, state="ready", status="connected")
-
-    class _Dead:
-        async def list_tools(self, params=None):
-            raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
-    monkeypatch.delitem(session.manager._fingerprints, 1, raising=False)     # this session as it is
-    monkeypatch.setitem(session.manager._sessions, 1, (_Dead(), SimpleNamespace(aclose=_closed)))
-    scheduled = []
-    monkeypatch.setattr(sm.supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
-    out = await mcp_service.check_health(1)
-    assert out["health_status"] == "failing" and session.manager.cached(1) is None
-    assert scheduled == [(1, {"fresh": True})]
-
-    opens = []
-
-    async def no_such_command(server):
-        opens.append(server["id"])
-        raise FileNotFoundError("command 'x' was not found on PATH")
-    monkeypatch.setattr(session.manager, "_open_session", no_such_command)
-    out = await mcp_service.check_health(1)
-    # what is stored, shown as it is in this process: a `ready` with no session is starting (M-1)
-    assert (out["state"], out["health_status"]) == ("starting", "failing")
-    assert opens == [] and scheduled == [(1, {"fresh": True})]               # no open, no second
-
-
-async def test_a_health_probe_failure_is_stored_with_the_servers_secrets_masked(execution_db, monkeypatch):
-    """Every writer of `last_error` masks (0.1.61 §B1) — the supervisor, this probe and the executor
-    (fix round 1, F3): the column reaches the Capabilities page, the server list and, through a
-    not-ready answer, a tool result."""
-    secret = "-".join(["s3cr3t", "value", "456"])
-    await _seed(execution_db, state="ready", status="connected", env=crypto.encrypt(json.dumps({"KEY": secret})))
-    _live_session(monkeypatch, 1)
-
-    async def leaky(server, cursor=None):
-        raise RuntimeError(f"rejected key {secret}")
-    monkeypatch.setattr(session.manager, "list_tools", leaky)
-    out = await mcp_service.check_health(1)
-    async with execution_db() as db:
-        stored = (await db.get(MCPServer, 1)).last_error
-    assert out["health_status"] == "failing" and "health probe list_tools: rejected key ****" in stored
-    assert secret not in stored and out["last_error"] == stored
-
 
 async def test_an_edit_drops_the_old_session_and_schedules_a_fresh_start(execution_db, monkeypatch):
     """Carry (env-only edit): call_tool keeps using the cached session — it never compares
@@ -453,30 +319,22 @@ async def test_boot_sends_forgotten_folders_older_than_30_days_to_the_trash(own_
     assert sorted(trashed) == sorted([old.name, old_n.name])
 
 
-async def test_boot_skips_the_health_sweep_when_the_supervisor_runs_and_never_fails(monkeypatch):
-    """Ruling 2: the opt-in PB-4 boot sweep runs only when the supervisor does not (it would probe
-    every server while the supervisor starts them); neither ever breaks boot."""
-    swept = []
+async def test_boot_starts_the_supervisor_and_never_fails(monkeypatch):
+    """MCP at boot is the supervisor (C2e-2 removed the opt-in PB-4 sweep); a start that raises
+    never breaks boot."""
+    started = []
 
-    async def sweep():
-        swept.append(1)
-    monkeypatch.setattr(mcp_service, "check_health_all", sweep)
-    monkeypatch.setenv("ARSLAN_MCP_HEALTH_ON_BOOT", "1")
-    for supervised, expected in ((True, []), (False, [1])):
-        swept.clear()
-
-        async def start(supervised=supervised):
-            return supervised
-        monkeypatch.setattr(main, "_start_mcp_supervisor", start)
-        await main._boot_mcp()
-        assert swept == expected
+    async def start():
+        started.append(1)
+        return True
+    monkeypatch.setattr(main, "_start_mcp_supervisor", start)
+    await main._boot_mcp()
+    assert started == [1]
 
     async def broken():
         raise RuntimeError("boom")
     monkeypatch.setattr(main, "_start_mcp_supervisor", broken)
-    swept.clear()
     await main._boot_mcp()                         # never raises
-    assert swept == [1]
 
 
 async def test_a_failed_starts_last_error_is_only_the_supervisors_masked_text(execution_db, own_supervisor, monkeypatch):
@@ -631,190 +489,6 @@ async def test_a_start_whose_session_died_under_another_lister_never_ends_ready(
     assert row.last_error.startswith("the server exited during start") and row.next_retry_at is not None
 
 
-async def test_a_give_up_drop_waking_a_probe_is_not_a_death(execution_db, own_supervisor, monkeypatch):
-    """F1 (review P11): a supervisor verb's deliberate drop — the give-up after 5 reconnects,
-    "Arslan retries it later" — wakes a pending probe. That is not a death: the generation moved,
-    so the probe schedules nothing, and the give-up's `failed` and its backoff land; nothing opens."""
-    await _seed(execution_db, state="ready", status="connected")
-    pending = asyncio.Event()
-
-    class _Blocking:
-        async def list_tools(self, params=None):
-            pending.set()
-            await asyncio.Event().wait()
-    _live_session(monkeypatch, 1, _Blocking())
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-    opens = []
-
-    async def open_(server):
-        opens.append(server["id"])
-        return _Live(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", open_)
-    own_supervisor.running = True                     # schedule() acts; no loop, no boot
-    try:
-        probe = asyncio.create_task(mcp_service.check_health(1))
-        await asyncio.wait_for(pending.wait(), 5)
-        await own_supervisor._give_up(1)
-        await asyncio.wait_for(probe, 5)
-        plans = [t for t in own_supervisor._inflight.values() if not t.done()]
-        await asyncio.wait_for(asyncio.gather(*plans), 5)
-    finally:
-        own_supervisor.running = False
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    assert opens == [] and row.state == "failed" and row.next_retry_at is not None
-    assert row.last_error.startswith("the server keeps dropping its connection")
-
-
-async def test_a_probe_woken_by_a_deliberate_drop_writes_nothing(execution_db, own_supervisor, monkeypatch):
-    """F1: a new plan's deliberate drop (its generation moved) wakes the probe pending on the old
-    session. That is not the server failing: the probe writes nothing over the state the new plan
-    owns, and schedules nothing."""
-    await _seed(execution_db, state="ready", status="connected", health_status="ok")
-    pending = asyncio.Event()
-
-    class _Blocking:
-        async def list_tools(self, params=None):
-            pending.set()
-            await asyncio.Event().wait()
-    _live_session(monkeypatch, 1, _Blocking())
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-    scheduled = []
-    monkeypatch.setattr(own_supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
-    probe = asyncio.create_task(mcp_service.check_health(1))
-    await asyncio.wait_for(pending.wait(), 5)
-    own_supervisor._bump(1)                    # a new plan began (it has written nothing yet) ...
-    await session.manager.drop(1)              # ... and dropped the old session first
-    out = await asyncio.wait_for(probe, 5)
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
-    # its session is gone: shown as starting, never `ok` while not ready (final review M-1)
-    assert scheduled == [] and (out["state"], out["health_status"]) == ("starting", None)
-
-
-async def test_a_probe_writes_nothing_once_the_state_left_ready(execution_db, own_supervisor, monkeypatch):
-    """F2: the probe writes health and last_error only over a `ready` row. When the state moved on
-    while it listed without any new plan or verb (a boot reset makes every enabled server
-    `starting`), its finding is not written over the new state."""
-    await _seed(execution_db, state="ready", status="connected", health_status="ok")
-    pending = asyncio.Event()
-
-    class _Blocking:
-        async def list_tools(self, params=None):
-            pending.set()
-            await asyncio.Event().wait()
-    _live_session(monkeypatch, 1, _Blocking())
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-    monkeypatch.setattr(own_supervisor, "schedule", lambda sid, **kw: None)
-    probe = asyncio.create_task(mcp_service.check_health(1))
-    await asyncio.wait_for(pending.wait(), 5)
-    await own_supervisor.reset_for_boot()      # `starting` — no generation moves
-    await session.manager.drop(1)              # then the session dies under the probe
-    out = await asyncio.wait_for(probe, 5)
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    assert (row.state, row.health_status, row.last_error) == ("starting", "ok", None)
-    assert out["state"] == "starting"
-
-
-async def test_a_probe_never_touches_a_starting_servers_session(execution_db, monkeypatch):
-    """F2 / carry 2b: a server that is `starting` — even with the session its start has opened
-    cached already — is answered with its state; the probe never lists through a start's session."""
-    await _seed(execution_db, state="starting", status="connecting")
-    calls = []
-
-    class _Recording:
-        async def list_tools(self, params=None):
-            calls.append(1)
-            return _listing("a")
-    _live_session(monkeypatch, 1, _Recording())
-    out = await asyncio.wait_for(mcp_service.check_health(1), 5)
-    assert out["state"] == "starting" and calls == []
-
-
-async def test_a_probe_never_touches_a_server_whose_start_is_queued(execution_db, own_supervisor, monkeypatch):
-    """F2 / carry 2b: a start queued for a slot (in flight, but it has neither dropped the session
-    nor written yet) owns the server — the probe answers with the state and never lists."""
-    await _seed(execution_db, state="ready", status="connected")
-    calls = []
-
-    class _Recording:
-        async def list_tools(self, params=None):
-            calls.append(1)
-            return _listing("a")
-    _live_session(monkeypatch, 1, _Recording())
-
-    async def open_(server):
-        return _Live(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", open_)
-    own_supervisor.start(run_loops=False)
-    for _ in range(sm.MAX_CONCURRENT):
-        await own_supervisor._sem.acquire()       # every slot busy: the start waits its turn
-    try:
-        own_supervisor.schedule(1, fresh=True)
-        await _until(lambda: own_supervisor.start_in_flight(1))
-        out = await asyncio.wait_for(mcp_service.check_health(1), 5)
-        assert out["state"] == "ready" and calls == []
-    finally:
-        for _ in range(sm.MAX_CONCURRENT):
-            own_supervisor._sem.release()
-    plans = [t for t in own_supervisor._inflight.values() if not t.done()]
-    await asyncio.wait_for(asyncio.gather(*plans), 5)
-    async with execution_db() as db:
-        assert (await db.get(MCPServer, 1)).state == "ready"
-
-
-async def test_a_probe_of_a_failed_server_keeps_the_classified_cause(execution_db, monkeypatch):
-    """F2 (review P3): a probe never touches a server that is not `ready` — whatever its listing
-    would say, the supervisor's classified cause, state and retry stay, so the prompt keeps its
-    reason."""
-    cause = "did not start within 120 s (still downloading?)"
-    await _seed(execution_db, state="failed", status="error", last_error=cause, fail_count=1)
-    for behaviour in ("ok", "boom"):
-        async def probe_list(server, cursor=None, behaviour=behaviour):
-            if behaviour == "boom":
-                raise RuntimeError("boom")
-            return _listing("a")
-        monkeypatch.setattr(session.manager, "list_tools", probe_list)
-        out = await mcp_service.check_health(1)
-        async with execution_db() as db:
-            row = await db.get(MCPServer, 1)
-        assert (row.state, row.last_error, row.health_status) == ("failed", cause, None), behaviour
-        assert out["last_error"] == cause and sm.safe_reason(row.last_error) == cause
-
-
-async def test_a_probe_never_replaces_a_first_start_plan(execution_db, own_supervisor, monkeypatch):
-    """F2 (review P5): a probe while a `first` plan sleeps between its attempts — no session, no
-    attempt — has nothing to time out on and never replaces that plan."""
-    await _seed(execution_db, state="starting", status="connecting")
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 0.05)
-    plans = []
-    real_new_plan = own_supervisor._new_plan
-
-    def record(sid, plan):
-        plans.append(plan)
-        return real_new_plan(sid, plan)
-    monkeypatch.setattr(own_supervisor, "_new_plan", record)
-    own_supervisor.running = True                 # schedule() acts; no loop, no boot
-    sleeper = asyncio.create_task(asyncio.sleep(3600))
-    own_supervisor._inflight[1] = sleeper        # a first plan between attempts: no _attempt_fut
-
-    async def wedged(server, cursor=None):
-        await asyncio.sleep(5)
-    monkeypatch.setattr(session.manager, "list_tools", wedged)
-    try:
-        out = await mcp_service.check_health(1)
-        await asyncio.sleep(0)
-        assert plans == [] and not sleeper.cancelled() and out["state"] == "starting"
-    finally:
-        own_supervisor.running = False
-        if own_supervisor._inflight.get(1) is sleeper:
-            del own_supervisor._inflight[1]
-        sleeper.cancel()
-        await asyncio.gather(sleeper, return_exceptions=True)
-
-
 async def test_switching_on_follows_the_state_not_only_a_cached_session(execution_db, monkeypatch):
     """F2: `set_enabled(on)` returns early only for a server that is `starting` or `ready`. A
     session its state does not account for (any path that cached one for an `off` server) is
@@ -911,33 +585,6 @@ async def test_the_forgotten_prune_line_is_thirty_days(monkeypatch, tmp_path):
     assert session.prune_forgotten() == [older.name] and trashed == [older.name]
 
 
-async def test_a_starts_own_drop_waking_a_probe_never_reschedules(execution_db, own_supervisor, monkeypatch):
-    """F4 (R4, review P9): a Connect's deliberate drop wakes the probe pending on the old session;
-    the generation moved, so the probe schedules nothing over the start that is running."""
-    await _seed(execution_db, state="ready", status="connected")
-    pending = asyncio.Event()
-
-    class _Blocking:
-        async def list_tools(self, params=None):
-            pending.set()
-            await asyncio.Event().wait()
-    _live_session(monkeypatch, 1, _Blocking())
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-
-    async def open_(server):
-        return _Live(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", open_)
-    scheduled = []
-    monkeypatch.setattr(own_supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
-    probe = asyncio.create_task(mcp_service.check_health(1))
-    await asyncio.wait_for(pending.wait(), 5)
-    result = await asyncio.wait_for(own_supervisor.restart(1), 5)        # a Connect: drops first
-    await asyncio.wait_for(probe, 5)
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    assert result.state == "ready" and scheduled == [] and (row.state, row.last_error) == ("ready", None)
-
-
 async def test_an_install_test_survives_one_overtaken_start(execution_db, own_supervisor, monkeypatch):
     """F4 (R34, review P10): the install test also starts an overtaken start once more (start_now):
     new folders while its start opens never fail the install."""
@@ -1028,51 +675,6 @@ async def test_boot_never_waits_for_the_forgotten_prune_and_logs_its_failure(own
 
 # ── fix round 2 (task-6-fix-round-2.md, N-1 … N-5) ───────────────────────────────────────
 
-async def test_an_edit_waking_a_probe_is_one_plan_and_no_failure(execution_db, own_supervisor, monkeypatch):
-    """N-1 (re-review D1, D1-running): an edit moves the generation before it drops the old session
-    — the order of every supervisor verb — so a probe pending on that session, woken while the
-    drop's close still runs, takes it for what it is: nothing written, nothing scheduled. One plan,
-    the edit's own, starts the server with its new settings."""
-    await _seed(execution_db, state="ready", status="connected", health_status="ok")
-    pending, closing, release_close = asyncio.Event(), asyncio.Event(), asyncio.Event()
-
-    class _Blocking:
-        async def list_tools(self, params=None):
-            pending.set()
-            await asyncio.Event().wait()
-
-    async def slow_close():                        # a stdio process exiting, an http DELETE
-        closing.set()
-        await release_close.wait()
-    _live_session(monkeypatch, 1, _Blocking(), aclose=slow_close)
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-    opens = []
-
-    async def open_(server):
-        opens.append(server["id"])
-        return _Live(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", open_)
-    plans = _record_plans(monkeypatch, own_supervisor)
-    own_supervisor.start(run_loops=False)
-    probe = asyncio.create_task(mcp_service.check_health(1))
-    await asyncio.wait_for(pending.wait(), 5)
-    edit = asyncio.create_task(mcp_service.restart_after_edit(1))      # new folders / an env edit
-    try:
-        await asyncio.wait_for(closing.wait(), 5)
-        out = await asyncio.wait_for(probe, 5)
-    finally:
-        release_close.set()
-    await asyncio.wait_for(edit, 5)
-    await _plans_done(own_supervisor)
-    async with execution_db() as db:
-        row = await db.get(MCPServer, 1)
-    # no failure: ok if the edit's start was already live when the probe answered, else not yet
-    # checked (shown, final review M-1) — never `failing`
-    assert plans == ["refresh"] and opens == [1]
-    assert (out["state"], out["health_status"]) in (("ready", "ok"), ("starting", None))
-    assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
-
-
 @pytest.mark.parametrize("slow_close", [True, False], ids=["slow-close", "instant-close"])
 async def test_an_edit_during_a_connects_tool_write_is_followed_not_failed(execution_db, own_supervisor,
                                                                           monkeypatch, slow_close):
@@ -1119,66 +721,6 @@ async def test_an_edit_during_a_connects_tool_write_is_followed_not_failed(execu
         row = await db.get(MCPServer, 1)
     assert [t["name"] for t in tools] == ["a"]
     assert (row.state, row.fail_count, row.next_retry_at) == ("ready", 0, None)
-
-
-async def test_a_probe_resuming_after_a_new_plan_never_schedules_over_it(execution_db, own_supervisor, monkeypatch):
-    """N-3 (re-review D3): the probe notes the generation before it reads the row. A plan created
-    while it reads — a Connect's restart, whose first step has not run yet, so no start is "in
-    flight" — has moved the generation by the time the probe lists, and the probe never schedules a
-    fresh start over that start when its attempt drops the old session."""
-    from server.db import session as db_session
-    await _seed(execution_db, state="ready", status="connected")
-    pending = asyncio.Event()
-
-    class _Blocking:
-        async def list_tools(self, params=None):
-            pending.set()
-            await asyncio.Event().wait()
-    _live_session(monkeypatch, 1, _Blocking())
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-    opening, release_open = asyncio.Event(), asyncio.Event()
-
-    async def slow_open(server):
-        opening.set()
-        await release_open.wait()
-        return _Live(), SimpleNamespace(aclose=_closed)
-    monkeypatch.setattr(session.manager, "_open_session", slow_open)
-    scheduled = []
-    monkeypatch.setattr(own_supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
-    real_maker = db_session.AsyncSessionLocal
-    reached, release = asyncio.Event(), asyncio.Event()
-    armed = [True]
-
-    class _Gated:                                  # the probe's row read; it resumes on `release`
-        def __init__(self):
-            self.cm = real_maker()
-
-        async def __aenter__(self):
-            return await self.cm.__aenter__()
-
-        async def __aexit__(self, *exc):
-            out = await self.cm.__aexit__(*exc)
-            reached.set()
-            await release.wait()
-            return out
-
-    def maker():
-        if armed[0]:
-            armed[0] = False
-            return _Gated()
-        return real_maker()
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-    probe = asyncio.create_task(mcp_service.check_health(1))
-    await asyncio.wait_for(reached.wait(), 5)          # it has read `ready`
-    release.set()                                       # its wake-up is queued ...
-    own_supervisor._new_plan(1, "restart")             # ... then a restart's plan, in the same turn
-    try:
-        await asyncio.wait_for(opening.wait(), 5)       # the attempt dropped the old session; it opens
-        out = await asyncio.wait_for(probe, 5)
-    finally:
-        release_open.set()
-    await _plans_done(own_supervisor)
-    assert out["state"] in ("starting", "ready") and scheduled == []
 
 
 async def test_a_key_straddling_the_6000_character_cut_never_reaches_the_model(execution_db, monkeypatch):
@@ -1306,18 +848,6 @@ async def test_a_switch_racing_a_delete_answers_404(execution_db, own_supervisor
     fired = _deleted_before_the_write(monkeypatch, execution_db, 1)
     response = await api.patch("/api/v1/mcp/servers/1/host", json={"allowed": False})
     assert fired == [1] and response.status_code == 404
-
-
-async def test_a_health_probe_racing_a_delete_answers_404_and_restarts_nothing(execution_db, own_supervisor,
-                                                                               api, monkeypatch):
-    await _seed(execution_db, state="ready", status="connected")
-    _live_session(monkeypatch, 1)
-    plans = _record_plans(monkeypatch, own_supervisor)
-    own_supervisor.start(run_loops=False)
-    fired = _deleted_before_the_write(monkeypatch, execution_db, 1)
-    response = await api.post("/api/v1/mcp/1/health")
-    assert fired == [1] and response.status_code == 404
-    assert plans == []
 
 
 async def test_a_supervisor_write_racing_a_delete_is_a_no_op(execution_db, own_supervisor, monkeypatch):
