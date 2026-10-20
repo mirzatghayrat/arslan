@@ -301,9 +301,11 @@ def money_label(label: str | None) -> bool:
 
 
 # Apps that reach every other app or the whole Mac (0.1.61 §A4): their card never offers
-# "Always". System Settings is on the never-list besides.
+# "Always". System Settings is on the never-list besides. Shortcuts and its scripting target run any
+# Shortcut the user has, which can run a shell script — the same reach as Terminal (②Main, #267).
 HIGH_REACH = frozenset({"com.apple.systemevents", "com.apple.Terminal", "com.googlecode.iterm2",
-                        "com.apple.finder", "com.apple.systempreferences", "com.apple.ScriptEditor2"})
+                        "com.apple.finder", "com.apple.systempreferences", "com.apple.ScriptEditor2",
+                        "com.apple.shortcuts", "com.apple.shortcuts.events"})
 
 
 def always_label(bundle_id: str, name: str) -> str:
@@ -336,7 +338,7 @@ _SCRIPT_REACH_OTHERWISE = re.compile(
 # A script for one of these is a script for every app (System Events drives any process, and is
 # how a script reaches an app the never-list names without naming it), the shell, or the files.
 _HIGH_REACH_NAMES = frozenset({"system events", "terminal", "iterm", "iterm2", "finder", "system settings",
-                               "system preferences", "script editor"})
+                               "system preferences", "script editor", "shortcuts", "shortcuts events"})
 
 
 def _high_reach(app: str) -> bool:
