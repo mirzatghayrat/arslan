@@ -20,6 +20,15 @@ from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
 
+
+def _turn_context_of(user) -> str:
+    """The turn's reference block (K3) out of a request, without the user's own words."""
+    text = user if isinstance(user, str) else "".join(b.get("text", "") for b in user if isinstance(b, dict))
+    if not text.startswith(arslan.TURN_CONTEXT_OPEN):
+        return ""
+    return text[:text.index(arslan.TURN_CONTEXT_CLOSE) + len(arslan.TURN_CONTEXT_CLOSE)]
+
+
 SCENARIOS = {item["id"]: item for item in json.loads((
     Path(__file__).resolve().parents[2] / "evals/companion/memory-scenarios.json"
 ).read_text())["scenarios"]}
@@ -39,12 +48,9 @@ async def runtime(execution_db, monkeypatch):
 
     async def no_materials(*args, **kwargs):
         return []
-    async def no_roster(*args, **kwargs):
-        return ""
     async def memory_tools():
         return [{"key": "remember", "description": "Remember synthetic preference"}]
     monkeypatch.setattr(knowledge, "retrieve_scoped", no_materials)
-    monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(arslan, "_arslan_tools", memory_tools)
     monkeypatch.setitem(tool_loop.EXECUTORS, "remember", RememberExecutor())
 
@@ -54,7 +60,9 @@ async def runtime(execution_db, monkeypatch):
             self.pending = None
 
         async def chat(self, system, user, **kwargs):
-            self.requests.append({"system": system, "user": user})
+            # "context": what the host told the model besides the user's words: the system prompt and,
+            # since K3, the turn's reference block at the start of the request (memory rides there).
+            self.requests.append({"context": f"{system}\n\n{_turn_context_of(user)}", "user": user})
             if self.pending is not None:
                 content, self.pending = self.pending, None
                 return LLMResponse(content="", usage={}, tool_calls=[{
@@ -111,7 +119,7 @@ async def test_explicit_save_reaches_next_task_prompt_and_receipt(
         message = await db.get(ArslanMessage, source["reference"]["message_id"])
     assert message.content == scenario["turns"][0]["content"]
     second = await runtime("second", scenario["turns"][1]["content"])
-    assert content in second[0]["system"]
+    assert content in second[0]["context"]
     async with execution_db() as db:
         receipts = (await db.scalars(select(ContextReceiptRecord).where(
             ContextReceiptRecord.conversation_id == "second"))).all()
@@ -137,7 +145,7 @@ async def test_nonexplicit_or_disabled_learning_never_confirms_next_task_memory(
     else:
         assert len(entries) == 1 and entries[0]["status"] == "proposed"
     second = await runtime("second", "Design an unrelated screen.")
-    assert content not in second[0]["system"]
+    assert content not in second[0]["context"]
 
 
 async def test_disabled_memory_is_not_sent_and_is_not_deleted(runtime, execution_db):
@@ -148,11 +156,11 @@ async def test_disabled_memory_is_not_sent_and_is_not_deleted(runtime, execution
         db.add(ConversationContext(id="second", no_memory=True))
         await db.commit()
     second = await runtime("second", "Prepare a report without personal memory.")
-    assert content not in second[0]["system"]
+    assert content not in second[0]["context"]
     async with repository() as repo:
         assert (await repo.list_entries())[0]["content"] == content
     third = await runtime("third", "Prepare a normal report.")
-    assert content in third[0]["system"]
+    assert content in third[0]["context"]
 
 
 async def test_project_identity_is_reloaded_for_each_task(runtime, execution_db):
@@ -172,9 +180,9 @@ async def test_project_identity_is_reloaded_for_each_task(runtime, execution_db)
     a = await runtime("a-read", "Design for Notes.")
     b = await runtime("b-read", "Design for Notes.")
     unassigned = await runtime("unassigned", "Design for Notes.")
-    assert orange in a[0]["system"] and blue not in a[0]["system"]
-    assert blue in b[0]["system"] and orange not in b[0]["system"]
-    assert orange not in unassigned[0]["system"] and blue not in unassigned[0]["system"]
+    assert orange in a[0]["context"] and blue not in a[0]["context"]
+    assert blue in b[0]["context"] and orange not in b[0]["context"]
+    assert orange not in unassigned[0]["context"] and blue not in unassigned[0]["context"]
     async with execution_db() as db:
         receipts = (await db.scalars(select(ContextReceiptRecord).where(
             ContextReceiptRecord.conversation_id == "b-read"))).all()
@@ -197,12 +205,12 @@ async def test_disable_or_delete_excludes_later_host_prompt(runtime, deleted):
             paused = await repo.set_status(entry["id"], entry["version"], "paused", MemoryActor(origin="user"))
             assert await repo.history(entry["id"])
     later = await runtime("later", "Prepare a report.")
-    assert content not in later[0]["system"]
+    assert content not in later[0]["context"]
     if not deleted:
         async with repository() as repo:
             await repo.set_status(entry["id"], paused["version"], "active", MemoryActor(origin="user"))
         restored = await runtime("restored", "Prepare a report.")
-        assert content in restored[0]["system"]
+        assert content in restored[0]["context"]
 
 
 async def test_real_task_receipt_reviews_old_revision_but_never_resurrects_deleted_memory(
@@ -219,7 +227,7 @@ async def test_real_task_receipt_reviews_old_revision_but_never_resurrects_delet
     updated = "Use blue report headings and concise conclusions."
     await runtime("receipt-save", f"Remember: {original}", save=original)
     used = await runtime("receipt-used", "Prepare a report with headings.")
-    assert all(original in request["system"] for request in used)
+    assert all(original in request["context"] for request in used)
     async with repository() as repo:
         entry = (await repo.list_entries())[0]
         changed = await repo.revise(entry["id"], entry["version"], MemoryWrite(
@@ -254,7 +262,7 @@ async def test_real_task_receipt_reviews_old_revision_but_never_resurrects_delet
         assert {row["id"] for row in listed.json()} == {row.id for row in receipts}
         assert original not in listed.text and updated not in listed.text
     later = await runtime("receipt-after-delete", "Prepare another report with headings.")
-    assert all(original not in request["system"] and updated not in request["system"] for request in later)
+    assert all(original not in request["context"] and updated not in request["context"] for request in later)
     async with execution_db() as db:
         after = (await db.scalars(select(ContextReceiptRecord).where(
             ContextReceiptRecord.conversation_id == "receipt-after-delete"))).all()
@@ -378,7 +386,7 @@ async def test_local_only_memory_is_filtered_from_cloud_prompt(runtime, executio
         db.add(ConversationContext(id="cloud", cloud_memory_allowed=True, allow_sensitive=True))
         await db.commit()
     cloud = await runtime("cloud", "Prepare a report.")
-    assert content not in cloud[0]["system"]
+    assert content not in cloud[0]["context"]
     async with repository() as repo:
         assert (await repo.list_entries())[0]["content"] == content
 
@@ -402,7 +410,7 @@ async def test_sensitive_project_memory_needs_both_task_permissions(
                                              use_policy="cloud_allowed"), MemoryActor(origin="user"))
     requests = await runtime("sensitive-task", "Prepare a project report with headings.")
     expected = cloud_allowed and sensitive_allowed
-    assert all((content in request["system"]) == expected for request in requests)
+    assert all((content in request["context"]) == expected for request in requests)
     async with execution_db() as db:
         receipts = (await db.scalars(select(ContextReceiptRecord).where(
             ContextReceiptRecord.conversation_id == "sensitive-task"))).all()
@@ -426,7 +434,7 @@ async def test_restored_memory_is_absent_from_next_host_request_until_fresh_revi
         result = await connection.run_sync(mark_restored_sync)
     assert result["review_required"] and result["quarantined_entries"] == 1
     after = await runtime("after-restore", "Prepare a report with headings.")
-    assert all(content not in request["system"] for request in after)
+    assert all(content not in request["context"] for request in after)
     async with execution_db() as db:
         receipts = (await db.scalars(select(ContextReceiptRecord).where(
             ContextReceiptRecord.conversation_id == "after-restore"))).all()
@@ -437,7 +445,7 @@ async def test_restored_memory_is_absent_from_next_host_request_until_fresh_revi
         await repo.revise(entry["id"], restored["version"], MemoryWrite(
             content=content, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
     reviewed = await runtime("after-review", "Prepare a report with headings.")
-    assert content in reviewed[0]["system"]
+    assert content in reviewed[0]["context"]
 
 
 @pytest.mark.parametrize("record_source", ["imported", "current_installation"])
@@ -476,7 +484,7 @@ async def test_later_deletion_manifest_blocks_old_backup_in_actual_host_request(
         with monkeypatch.context() as patch:
             patch.setattr(db_session, "AsyncSessionLocal", maker)
             requests = await runtime("post-restore-new-task", "Prepare a report with headings.")
-            assert all(content not in request["system"] and content not in request["user"] for request in requests)
+            assert all(content not in request["context"] and content not in request["user"] for request in requests)
             async with maker() as db:
                 receipts = (await db.scalars(select(ContextReceiptRecord).where(
                     ContextReceiptRecord.conversation_id == "post-restore-new-task"))).all()
@@ -503,7 +511,7 @@ async def test_repeated_save_keeps_one_active_entry(runtime):
         entries = await repo.list_entries()
     assert len(entries) == 1 and entries[0]["status"] == "active"
     later = await runtime("third", SCENARIOS["M01-06"]["turns"][1]["content"])
-    assert later[0]["system"].count(entries[0]["id"]) == 1
+    assert later[0]["context"].count(entries[0]["id"]) == 1
 
 
 @pytest.mark.parametrize("scenario_id,project,original,candidate,later_query", [
@@ -537,8 +545,8 @@ async def test_one_off_instruction_does_not_replace_later_task_memory(
         proposed = [entry for entry in entries if entry["content"] == candidate]
         assert len(proposed) == 1 and proposed[0]["status"] == "proposed"
     later = await runtime("later", later_query)
-    assert original in later[0]["system"]
-    assert candidate not in later[0]["system"]
+    assert original in later[0]["context"]
+    assert candidate not in later[0]["context"]
     assert instruction not in later[0]["user"]
     async with execution_db() as db:
         receipts = (await db.scalars(select(ContextReceiptRecord).where(
@@ -565,7 +573,7 @@ async def test_explicit_credential_save_does_not_reach_next_task_memory(
     async with repository() as repo:
         assert await repo.list_entries() == []
     later = await runtime("credential-inspection", "Show my preferences")
-    assert all(credential not in request["system"] and credential not in request["user"]
+    assert all(credential not in request["context"] and credential not in request["user"]
                for request in later)
     async with execution_db() as db:
         receipts = (await db.scalars(select(ContextReceiptRecord).where(
@@ -583,7 +591,7 @@ async def test_candidate_cannot_replace_confirmed_context(runtime):
     assert len(entries) == 2
     assert {entry["content"]: entry["status"] for entry in entries} == {old: "active", candidate: "proposed"}
     later = await runtime("third", "Prepare a report before any confirmation.")
-    assert old in later[0]["system"] and candidate not in later[0]["system"]
+    assert old in later[0]["context"] and candidate not in later[0]["context"]
 
 
 @pytest.mark.parametrize("newer_confirmed", [False, True])
@@ -605,7 +613,7 @@ async def test_rejected_guess_stays_out_of_later_context_and_preserves_correctio
         proposal_id = await db.scalar(select(MemoryProposal.id).where(
             MemoryProposal.target_entry_id == entry["id"]))
     before = await runtime("correction-task", correction)
-    assert all(guess not in request["system"] for request in before)
+    assert all(guess not in request["context"] for request in before)
     if newer_confirmed:
         async with repository() as repo:
             changed = await repo.revise(entry["id"], entry["version"], MemoryWrite(
@@ -613,8 +621,8 @@ async def test_rejected_guess_stays_out_of_later_context_and_preserves_correctio
     async with repository() as repo:
         await repo.resolve_proposal(proposal_id, accept=False, actor=MemoryActor(origin="user"))
     later = await runtime("after-dismissal", "Prepare a report with headings.")
-    assert all(guess not in request["system"] for request in later)
-    assert all((corrected in request["system"]) == newer_confirmed for request in later)
+    assert all(guess not in request["context"] for request in later)
+    assert all((corrected in request["context"]) == newer_confirmed for request in later)
     async with repository() as repo:
         retained = await repo.present(await repo.get(entry["id"]))
     assert retained["status"] == ("active" if newer_confirmed else "paused")
@@ -649,7 +657,7 @@ async def test_user_revision_replaces_prompt_but_retains_history(runtime):
         assert changed["version"] == 2
         assert [item["content"] for item in await repo.history(entry["id"])] == [new, old]
     later = await runtime("second", "Prepare a report.")
-    assert new in later[0]["system"] and old not in later[0]["system"]
+    assert new in later[0]["context"] and old not in later[0]["context"]
 
 
 @pytest.mark.parametrize("via_proposals", [False, True], ids=["M04-03", "M04-06"])
@@ -677,8 +685,8 @@ async def test_stale_edit_or_conflicting_confirmation_cannot_change_next_task_co
             second = await repo.revise(entry["id"], entry["version"], stale_write,
                                        MemoryActor(origin="host"))
         before = await runtime("before-review", "Prepare a report with headings.")
-        assert all(old in request["system"] and chosen not in request["system"]
-                   and stale not in request["system"] for request in before)
+        assert all(old in request["context"] and chosen not in request["context"]
+                   and stale not in request["context"] for request in before)
         async with repository() as repo:
             changed = await repo.resolve_proposal(first["proposal_id"], accept=True, actor=user)
         with pytest.raises(MemoryError, match="^memory_version_conflict$"):
@@ -696,8 +704,8 @@ async def test_stale_edit_or_conflicting_confirmation_cannot_change_next_task_co
                 await repo.revise(entry["id"], entry["version"], stale_write, user)
     assert changed["version"] == entry["version"] + 1
     later = await runtime("after-stale-refusal", "Prepare a report with headings.")
-    assert all(chosen in request["system"] and old not in request["system"]
-               and stale not in request["system"] for request in later)
+    assert all(chosen in request["context"] and old not in request["context"]
+               and stale not in request["context"] for request in later)
     async with repository() as repo:
         current = await repo.present(await repo.get(entry["id"]))
         history = await repo.history(entry["id"])
@@ -721,7 +729,7 @@ async def test_effective_time_changes_later_task_context(runtime, monkeypatch, f
         entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global"),
                                              **{field: boundary.replace(tzinfo=UTC)}), MemoryActor(origin="user"))
     first = await runtime("before", "Prepare a report.")
-    assert (content in first[0]["system"]) is (field == "expires_at")
+    assert (content in first[0]["context"]) is (field == "expires_at")
 
     class Later(datetime):
         @classmethod
@@ -729,7 +737,7 @@ async def test_effective_time_changes_later_task_context(runtime, monkeypatch, f
             return boundary + timedelta(seconds=1)
     monkeypatch.setattr(personal_context, "datetime", Later)
     second = await runtime("after", "Prepare a report.")
-    assert (content in second[0]["system"]) is (field == "valid_from")
+    assert (content in second[0]["context"]) is (field == "valid_from")
     async with repository() as repo:
         assert (await repo.history(entry["id"]))[0]["content"] == content
 
@@ -744,7 +752,7 @@ async def test_unrelated_memory_is_absent_from_actual_next_host_request(runtime,
                else "For design work use orange minimalist layouts.")
     await runtime("save-design", f"Remember: {content}", save=content)
     later = await runtime("unrelated", query)
-    assert content not in later[0]["system"]
+    assert content not in later[0]["context"]
     async with execution_db() as db:
         receipt = await db.scalar(select(ContextReceiptRecord).where(
             ContextReceiptRecord.conversation_id == "unrelated"))
@@ -752,7 +760,7 @@ async def test_unrelated_memory_is_absent_from_actual_next_host_request(runtime,
     assert "irrelevant" in receipt.receipt["filter_reasons"]
     # Exclusion is task-local, not deletion or permanent memory disablement.
     related = await runtime("related", "Prepare a report." if query == "Write a code patch." else "Design a new layout.")
-    assert content in related[0]["system"]
+    assert content in related[0]["context"]
 
 
 @pytest.mark.parametrize("query", [
@@ -763,4 +771,4 @@ async def test_english_report_preference_reaches_related_task_in_each_locale(run
     content = "I prefer concise English reports."
     await runtime("save-report", f"Remember: {content}", save=content)
     later = await runtime("related-report", query)
-    assert content in later[0]["system"]
+    assert content in later[0]["context"]

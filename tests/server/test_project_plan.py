@@ -462,10 +462,11 @@ async def test_a_turn_in_the_project_sees_the_card_and_one_outside_does_not(api,
     from server.services import personal_context as pc
     pid = (await _create(api))["id"]
     await _plan(api, pid)
-    systems = []
+    requests = []
 
     async def fake_run_native(**kw):
-        systems.append(kw["system"])
+        assert "This conversation belongs to a project" not in kw["system"]   # K3: per turn, never the system
+        requests.append(kw["user_content"])
         return {"answer": "ok"}
 
     monkeypatch.setattr(arslan.tool_loop, "run_native", fake_run_native)
@@ -473,8 +474,8 @@ async def test_a_turn_in_the_project_sees_the_card_and_one_outside_does_not(api,
         await arslan._handle_answer_body("c1", "what next?", lambda ev: None)
     with pc.bind(pc.TaskMemoryContext(task_id="t2", run_id="r2", conversation_id="c2", model_is_local=True)):
         await arslan._handle_answer_body("c2", "what next?", lambda ev: None)
-    assert "This conversation belongs to a project" in systems[0] and "Sluice (sample)" in systems[0]
-    assert "This conversation belongs to a project" not in systems[1]
+    assert "This conversation belongs to a project" in requests[0] and "Sluice (sample)" in requests[0]
+    assert "This conversation belongs to a project" not in requests[1]
 
 
 # ── a changed plan, proposed (§7) ────────────────────────────────────────────

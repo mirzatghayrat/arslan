@@ -36,7 +36,7 @@ from urllib.parse import urlparse
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence, tool_schema
+from arslan.llm import param_heal, request_evidence, tool_schema, trajectory
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
@@ -72,23 +72,22 @@ _DROP_BLOCK = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior":
 _FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-")
 # Marks the system entry of a message list built by build_trajectory_messages (never sent).
 _TRAJECTORY = "_trajectory"
+_HISTORY_END = "_history_end"
 
 # 0.1.63 K1b: on the native path the API clears old tool results (context editing; it never
 # invalidates thinking on Fable 5.1 and the 5.5 generation), so the host never edits what it sent.
 # Measured in input tokens. Results of the tools below are never cleared: the model's own plan, saved
 # progress and the skill it is following. clear_tool_inputs stays at its default (false).
-# Values: K1 card point 12, corrections E22 / E23. Until K3 adds message-level cache breakpoints only
-# the system prefix is cached, so clearing invalidates no extra cache while every uncleared token is
-# paid in full each step (a long Claude turn would hit the 128k chat token budget within a few steps):
-# trigger 24k, clear_at_least 8k, the same order as today's local trim (E23). K3, in the PR that adds
-# the breakpoints, restores E22's 60k / 20k (clear rarely, a lot at once, to keep the cache). M1 on
-# Claude reports cleared counts and tokens (run record), per-task input and charged tokens, stop
-# reasons and the long task's cache hits.
+# Values: K1 card point 12, correction E22: trigger 60k, clear_at_least 20k. With K3's message-level
+# cache breakpoints every clearing rewrites the cache after it, so clear rarely and a lot at once (the
+# interim 24k / 8k of E23 served while only the system prefix was cached). M1 on Claude reports
+# cleared counts and tokens (run record), per-task input and charged tokens, stop reasons and the long
+# task's cache hits.
 CONTEXT_BETA = "context-management-2025-06-27"
 _CLEAR = {"type": "clear_tool_uses_20250919",
-          "trigger": {"type": "input_tokens", "value": 24_000},
+          "trigger": {"type": "input_tokens", "value": 60_000},
           "keep": {"type": "tool_uses", "value": 6},
-          "clear_at_least": {"type": "input_tokens", "value": 8_000}}
+          "clear_at_least": {"type": "input_tokens", "value": 20_000}}
 # Context editing goes only to Claude on Anthropic's own host: an Anthropic-protocol endpoint elsewhere
 # may ignore the field silently, which would leave the turn with no trimming at all.
 _OFFICIAL_HOST = "api.anthropic.com"
@@ -267,6 +266,7 @@ class AnthropicProvider(BaseLLMProvider):
         its own text block after that step's results. Consecutive same-role messages merge."""
         endpoint = self.endpoint_fingerprint()
         turns: list[tuple[str, Any]] = []
+        request_at = None
         for m in messages:
             role = m.get("role")
             if role == "assistant":
@@ -292,10 +292,15 @@ class AnthropicProvider(BaseLLMProvider):
             elif m.get("_status"):
                 turns.append(("user", [{"type": "text", "text": m["content"]}]))
             else:
+                if m.get(trajectory.TURN_REQUEST):
+                    request_at = len(turns)
                 turns.append((role or "user", _translate(m.get("content"))))
         out: list[dict[str, Any]] = [{"role": "system", "content": system, _TRAJECTORY: True}]
-        for role, content in turns:
+        for at, (role, content) in enumerate(turns):
             last = out[-1]
+            if at == request_at and last["role"] != "system" and _blocks(last["content"]):
+                # K3: breakpoint ② goes on the history's last block (indices in the convo, system excluded).
+                out[0][_HISTORY_END] = (len(out) - 2, len(_blocks(last["content"])) - 1)
             if last["role"] == role and role != "system":
                 last["content"] = [*_blocks(last["content"]), *_blocks(content)]
             else:
@@ -449,6 +454,7 @@ class AnthropicProvider(BaseLLMProvider):
         if translated:
             payload["tools"] = translated
         if native:
+            self._mark_cache(payload, messages)
             # 0.1.63 K1: only native requests replay thinking; the legacy request stays as it was.
             betas = []
             if self._binds_thinking() and "thinking" not in payload:
@@ -463,6 +469,35 @@ class AnthropicProvider(BaseLLMProvider):
             if betas:
                 payload["_betas"] = betas
         return payload
+
+    def _long_cache(self) -> bool:
+        """K3: a person is chatting and this is Claude on Anthropic's host (or a listed verbatim proxy):
+        the system and history entries live an hour. Another Anthropic-protocol endpoint may refuse `ttl`,
+        so it never gets one."""
+        from arslan.llm.request_policy import long_prompt_cache
+        return long_prompt_cache.get() and self._clears_server_side()
+
+    def _mark_cache(self, payload: dict[str, Any], messages: list[dict[str, Any]]) -> None:
+        """0.1.63 K3: Claude's three cache breakpoints on a native request (the API takes four):
+        ① the system's last block (tools render before the system, so the entry covers both),
+        ② the last block of the history before this turn's request, ③ the request's last block.
+        ① and ② live an hour while a person chats on Anthropic's host, ③ always five minutes; an
+        hour-long marker always comes before a five-minute one. Marked blocks are copies: what the
+        trajectory keeps (thinking replayed byte for byte) is never written into."""
+        lasting = (lambda: {"type": "ephemeral", "ttl": "1h"}) if self._long_cache() else _short
+        system = payload.get("system")
+        if isinstance(system, str):
+            system = [{"type": "text", "text": system}] if system else []
+        if system:
+            system = [{k: v for k, v in block.items() if k != "cache_control"} for block in system]
+            system[-1]["cache_control"] = lasting()
+            payload["system"] = system
+        convo = payload["messages"]
+        end = next((m.get(_HISTORY_END) for m in messages if m.get("role") == "system"), None)
+        if end is not None:
+            _mark_block(convo, *end, lasting())
+        if convo:
+            _mark_block(convo, len(convo) - 1, len(_blocks(convo[-1]["content"])) - 1, _short())
 
     async def chat(
         self,
@@ -487,7 +522,9 @@ class AnthropicProvider(BaseLLMProvider):
         response = self._parse_response(data)
         native = any(m.get(_TRAJECTORY) for m in messages if m.get("role") == "system")
         _note_context(response.input_transformations, data.get("context_management"),
-                      clearing_off=native and self._clears_server_side() and not self.trims_context_server_side())
+                      clearing_off=native and self._clears_server_side() and not self.trims_context_server_side(),
+                      ttl_off=native and self._long_cache()
+                      and param_heal.refused(self.endpoint_fingerprint(), "ttl"))
         return response
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -627,14 +664,36 @@ class AnthropicProvider(BaseLLMProvider):
         )
 
 
+def _short() -> dict[str, str]:
+    return {"type": "ephemeral"}
+
+
+def _mark_block(convo: list[dict[str, Any]], at: int, block: int, marker: dict[str, str]) -> None:
+    """Put `marker` on the last markable block at or before `block` of message `at`, in a copy. A
+    thinking block or an empty text block cannot carry one."""
+    if not 0 <= at < len(convo):
+        return
+    blocks = _blocks(convo[at]["content"])
+    for index in range(min(block, len(blocks) - 1), -1, -1):
+        b = blocks[index]
+        if b.get("type") in ("thinking", "redacted_thinking") or (b.get("type") == "text" and not str(
+                b.get("text") or "").strip()):
+            continue
+        blocks[index] = {**b, "cache_control": marker}
+        convo[at] = {**convo[at], "content": blocks}
+        return
+
+
 _ANTHROPIC_FINISH = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
                      "tool_use": "tool_calls", "refusal": "content_filter"}
 
 
-def _note_context(entries: list[dict[str, Any]] | None, management: Any, *, clearing_off: bool) -> None:
+def _note_context(entries: list[dict[str, Any]] | None, management: Any, *, clearing_off: bool,
+                  ttl_off: bool = False) -> None:
     """What the API changed in the conversation, for the run record, as counts (never content):
     thinking blocks it dropped, per reason; tool uses and input tokens it cleared (K1b); and, once per run, that
-    this endpoint refused context editing, so the host trims locally again (K1b)."""
+    this endpoint refused context editing, so the host trims locally again (K1b), or refused the hour-long
+    cache marker, so its entries live five minutes (K3)."""
     from arslan.execution_budget import current
     budget = current()
     if budget is None:
@@ -655,3 +714,5 @@ def _note_context(entries: list[dict[str, Any]] | None, management: Any, *, clea
                 budget.note_context(kind, reason=str(edit.get("type")), count=edit[field])
     if clearing_off and not any(e["kind"] == "server_clearing_off" for e in budget.context_events):
         budget.note_context("server_clearing_off", reason="endpoint refused context_management", count=1)
+    if ttl_off and not any(e["kind"] == "cache_ttl_off" for e in budget.context_events):
+        budget.note_context("cache_ttl_off", reason="endpoint refused cache_control.ttl", count=1)

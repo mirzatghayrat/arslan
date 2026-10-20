@@ -34,9 +34,6 @@ async def _emitted_error(monkeypatch, raw_error: str, *, images=None) -> str:
         return ""
     monkeypatch.setattr(arslan_mod.memory, "facts_text", facts)
 
-    async def roster(*a, **k):
-        return ""
-    monkeypatch.setattr(arslan_mod, "_team_roster", roster)
 
     try:
         await arslan_mod._handle_answer_body(

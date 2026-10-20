@@ -10,9 +10,6 @@ from server.services import knowledge, llm_factory
 async def test_host_receives_evidence_scope_and_brevity_rules(execution_db, monkeypatch, language):
     captured = []
 
-    async def empty(*args, **kwargs):
-        return ""
-
     async def no_knowledge(*args, **kwargs):
         return []
 
@@ -23,7 +20,6 @@ async def test_host_receives_evidence_scope_and_brevity_rules(execution_db, monk
         captured.append(kwargs["system"])
         return {"final": "Offline fixture only.", "tool_trace": []}
 
-    monkeypatch.setattr(arslan, "_team_roster", empty)
     monkeypatch.setattr(knowledge, "retrieve_scoped", no_knowledge)
     monkeypatch.setattr(arslan.ocr_fallback, "current_ui_language", locale)
     monkeypatch.setattr(tool_loop, "run_native", native)

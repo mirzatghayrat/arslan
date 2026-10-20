@@ -178,7 +178,11 @@ async def record(result: PersonalContext):
 
 
 def _system_fragments(payload):
-    """Text from the final supported provider system fields, not user quotations."""
+    """Text from the final supported provider system fields, not user quotations; since K3 also the
+    host's reference block at the start of this turn's request, where memory now rides."""
+    block = _turn_reference(payload)
+    if block:
+        yield block
     pending = [payload.get("system"), payload.get("systemInstruction")]
     pending.extend(message.get("content") for message in payload.get("messages", [])
                    if isinstance(message, dict) and message.get("role") in {"system", "developer"})
@@ -193,6 +197,24 @@ def _system_fragments(payload):
                 pending.extend(value)
             else:
                 pending.extend(value[key] for key in ("text", "content", "parts") if key in value)
+
+
+def _turn_reference(payload) -> str | None:
+    """0.1.63 K3: the reference block the answer path puts at the very start of a turn's request. Only
+    text that OPENS a user message (or one of its text parts) counts, and only the latest such: the
+    current request always starts with the host's block, so a block the user quotes inside their own
+    words is never taken for it."""
+    from server.orchestrator.arslan import TURN_CONTEXT_CLOSE, TURN_CONTEXT_OPEN
+    latest = None
+    for message in [*(payload.get("messages") or []), *(payload.get("contents") or [])]:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content", message.get("parts"))
+        for piece in [content] if isinstance(content, str) else content if isinstance(content, list) else []:
+            text = piece.get("text") if isinstance(piece, dict) else piece
+            if isinstance(text, str) and text.startswith(TURN_CONTEXT_OPEN) and TURN_CONTEXT_CLOSE in text:
+                latest = text[:text.index(TURN_CONTEXT_CLOSE)]
+    return latest
 
 
 async def _count_request(context, identities, *, response=False):

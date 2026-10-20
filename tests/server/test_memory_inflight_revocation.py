@@ -40,8 +40,6 @@ async def test_deleted_context_stops_real_host_before_next_action(selected, exec
         await db.commit()
     async def empty(*args, **kwargs):
         return []
-    async def no_roster(*args, **kwargs):
-        return ""
     async def wired():
         return [{"key": "web_search", "description": "Synthetic read"}]
     async def execute(args):
@@ -54,7 +52,6 @@ async def test_deleted_context_stops_real_host_before_next_action(selected, exec
             from arslan.companion.memory import MemoryActor
             await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
     monkeypatch.setattr(knowledge, "retrieve_scoped", empty)
-    monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(arslan, "_arslan_tools", wired)
     monkeypatch.setitem(tool_loop.EXECUTORS, "web_search", SimpleNamespace(execute=execute))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)

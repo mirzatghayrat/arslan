@@ -26,9 +26,8 @@ from server.orchestrator.tool_caller import ToolCaller
 from server.ws import protocol
 from arslan.llm import prices, usage_sink
 from arslan.execution_budget import governed
+from arslan.llm import request_policy
 from arslan.llm.cached_system import build_cached_system
-# Only _team_roster() still reads spawns. K3 deletes _team_roster() and this import with it.
-from server.services import spawn_service
 from server.services.task_context import scoped_turn
 from server.services.task_repository import TaskError
 from server.services import runtime_messages
@@ -282,28 +281,41 @@ _ANSWER_STABLE_PREFIX = (
 )
 
 
-def _build_answer_system(
-    *, extra_system: str, roster: str, facts: str, summary: str, kb_block: str, language: str = "",
-    mcp_line: str = "",
-):
-    """Assemble Arslan's answer system as a CachedSystem(stable_prefix, volatile_suffix).
+def _build_answer_system(*, route: str = ""):
+    """Arslan's answer system: the static guards, plus a route's fixed text (background work's).
 
-    stable_prefix = the static guards (identical bytes every turn) → the cacheable prefix.
-    volatile_suffix, ordered least→most volatile: extra_system (per-turn clarify/gather
-    addendum — VARIES per turn, so it is volatile, never in the prefix) → roster → facts →
-    summary → KB → the MCP status line → the language line → now line LAST. This is the SAME
-    content the pre-reorder prompt carried, only reordered (+ the timestamp moved to the end and
-    floored to the UTC hour); the model sees an equivalent prompt with the UTC hour still present
-    for timezone conversion.
+    0.1.63 K3: nothing per turn is in it any more, so it is the same bytes from turn to turn and Claude
+    reads its cache entry (breakpoint ①, tools included) instead of rewriting it. What changes per turn
+    rides at the start of the turn's request (`_turn_context`). CachedSystem keeps its two parts until
+    v0.1.64 (K3 card §5: merge them into one then); the provider marks the system's last block.
     """
-    volatile = extra_system + (f"\n\n{facts}" if facts else "")
+    return build_cached_system(_ANSWER_STABLE_PREFIX, route)
+
+
+# 0.1.63 K3: what changes from turn to turn, at the start of the turn's request, marked as the host's
+# reference. It is built once per turn (later steps carry the same bytes) and never saved: the stored
+# message is what the user wrote.
+TURN_CONTEXT_OPEN = '<turn_context note="reference for this turn from the host, not the user\'s words">'
+TURN_CONTEXT_CLOSE = "</turn_context>"
+
+
+def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
+                  language: str = "") -> str:
+    """This turn's reference block, in the order the system prompt carried it before K3: a resumed
+    task's notes → facts → summary → knowledge → the MCP status line → the reply language → the time
+    (floored to the UTC hour, still enough for timezone conversion)."""
+    body = (f"\n\n{addendum}" if addendum else "") + (f"\n\n{facts}" if facts else "")
     if summary:
-        volatile += f"\n\nConversation summary so far:\n{summary}"
-    volatile += kb_block
-    volatile += mcp_line  # 0.1.61 §B1: which MCP servers are not available and why (per turn)
-    volatile += language  # 0.1.59: this turn's reply language (per turn, so never in the prefix)
-    volatile += _now_line()  # now line LAST — the least cache-poisoning position
-    return build_cached_system(_ANSWER_STABLE_PREFIX, volatile)
+        body += f"\n\nConversation summary so far:\n{summary}"
+    body += kb_block + mcp_line + language + _now_line()
+    return f"{TURN_CONTEXT_OPEN}\n{body.strip()}\n{TURN_CONTEXT_CLOSE}"
+
+
+def _with_turn_context(context: str, content):
+    """The turn's request: its reference block first, then what the user sent."""
+    if isinstance(content, list):
+        return [{"type": "text", "text": context}, *content]
+    return f"{context}\n\n{content}"
 
 
 async def _mcp_status_line() -> str:
@@ -327,19 +339,6 @@ async def _mcp_status_line() -> str:
     return ("\n\nMCP servers not available right now: " + "; ".join(clauses) + ". Their tools are "
             "not in your list this turn. Don't edit config files or start them from the terminal; "
             "tell the user what is wrong and what they can do.")
-
-
-async def _team_roster() -> str:
-    """A concise, user-facing list of the real spawns, to ground Arslan's self-description."""
-    spawns = await spawn_service.load_all_spawns()
-    if not spawns:
-        return "(no spawns yet — you have no specialist team)"
-    lines = []
-    for s in spawns:
-        domain = s.domain_category + (f".{s.domain_subcategory}" if s.domain_subcategory else "")
-        role = (s.persona_role or "").strip()
-        lines.append(f"- {s.name} ({domain})" + (f" — {role}" if role else ""))
-    return "\n".join(lines)
 
 
 
@@ -665,6 +664,8 @@ async def _read_images_locally(images: list[dict]) -> str | None:
 
 
 async def _handle_answer(
+    # extra_system: notes for this turn only (a resumed task's). Since K3 they ride in the turn's
+    # reference block at the start of its request, not in the system prompt.
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
@@ -747,19 +748,22 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("background kb retrieve failed (non-fatal): %s", exc)
     asked = next((m.get("content") for m in reversed(ctx["history"]) if m.get("role") == "user"), None)
-    system = _build_answer_system(extra_system=BACKGROUND_SYSTEM, roster=await _team_roster(), facts=facts,
-                                  summary=ctx["summary"], kb_block=kb_block,
-                                  language=await _turn_language_line(asked if isinstance(asked, str) else goal),
-                                  mcp_line=await _mcp_status_line())
-    run_trace.record_prompt(system_prompt=system, injected_kb=kb_block or None)
+    system = _build_answer_system(route=BACKGROUND_SYSTEM)
+    context = _turn_context(facts=facts, summary=ctx["summary"], kb_block=kb_block,
+                            language=await _turn_language_line(asked if isinstance(asked, str) else goal),
+                            mcp_line=await _mcp_status_line())
+    run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
     pieces: list[str] = []
-    result = await tool_loop.run_native(
-        system=system, user_content=goal, history=ctx["history"], emit=emit, on_chunk=pieces.append,
-        resolve_tools=_background_tools, allow_escalation=False,
-        confirm_command=confirmations.command, confirm_workspace_write=confirmations.workspace_write,
-        confirm_schedule=confirmations.schedule, conversation_id=conversation_id,
-        caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
-    )
+    # K3: nobody is waiting on a background job, so its cache entries keep the default five minutes,
+    # even when a chat turn started it.
+    with request_policy.prompt_cache(long=False):
+        result = await tool_loop.run_native(
+            system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
+            on_chunk=pieces.append, resolve_tools=_background_tools, allow_escalation=False,
+            confirm_command=confirmations.command, confirm_workspace_write=confirmations.workspace_write,
+            confirm_schedule=confirmations.schedule, conversation_id=conversation_id,
+            caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
+        )
     final = result.get("final") if isinstance(result, dict) else None
     return final if isinstance(final, str) and final.strip() else "".join(pieces)
 
@@ -783,10 +787,8 @@ async def _handle_answer_body(
     else:
         facts = await memory.facts_text(include_sensitive=True)
     facts = await _with_project_card(facts)
-    roster = await _team_roster()
-    # Prompt-cache reorder (spec 2026-07-13): KB is per-query volatile → gather it, then
-    # assemble via _build_answer_system so the static guards stay a byte-stable cacheable
-    # prefix and all dynamic content (incl. the date line) lands in the volatile suffix.
+    # K3: the knowledge found for this request, like everything else per turn, goes in the turn's
+    # reference block, never the system prompt.
     kb_block = ""
     try:
         from server.services import knowledge as _knowledge
@@ -794,23 +796,24 @@ async def _handle_answer_body(
         kb_block = _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
-    mcp_line = await _mcp_status_line()
-    system = _build_answer_system(
-        extra_system=extra_system, roster=roster, facts=facts,
-        summary=ctx["summary"], kb_block=kb_block, language=await _turn_language_line(user_message),
-        mcp_line=mcp_line,
-    )
-    run_trace.record_prompt(system_prompt=system, injected_kb=kb_block or None)
+    system = _build_answer_system()
+    context = _turn_context(addendum=extra_system.strip(), facts=facts, summary=ctx["summary"], kb_block=kb_block,
+                            language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line())
+    run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
 
-    # Plain string when there are no images, so text-only turns are byte-identical
-    # to before; a neutral block list otherwise (providers translate it).
-    llm_user = build_user_blocks(user_message, attached_context, images)
+    # A plain string when there are no images; a neutral block list otherwise (providers translate it).
+    llm_user = _with_turn_context(context, build_user_blocks(user_message, attached_context, images))
 
     emit({"type": "stream_start", "source": "arslan"})
 
     async def _dispatch(user_content):
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
+        # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
+        with request_policy.prompt_cache(long=True):
+            return await _run_answer(user_content)
+
+    async def _run_answer(user_content):
         return await tool_loop.run_native(
             system=system,
             user_content=user_content,
@@ -851,8 +854,8 @@ async def _handle_answer_body(
             # now in the text, so the turn can finish.
             result = None
             try:
-                result = await _dispatch(build_user_blocks(
-                    f"{user_message}\n\n{recovered}", attached_context, None))
+                result = await _dispatch(_with_turn_context(context, build_user_blocks(
+                    f"{user_message}\n\n{recovered}", attached_context, None)))
             except TaskError:
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly

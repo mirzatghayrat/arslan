@@ -19,3 +19,19 @@ def critique_request():
         yield
     finally:
         bounded_critique.reset(token)
+
+
+# 0.1.63 K3: how long Claude keeps this request's cache entries for the system and the history.
+# True while a person is chatting (they come back within the hour; the hour costs 2x to write, five
+# minutes 1.25x); background work and everything else keep the default five minutes. The provider
+# sends the hour only to Claude on Anthropic's own host (or a listed verbatim proxy).
+long_prompt_cache = ContextVar("long_prompt_cache", default=False)
+
+
+@contextmanager
+def prompt_cache(*, long: bool):
+    token = long_prompt_cache.set(long)
+    try:
+        yield
+    finally:
+        long_prompt_cache.reset(token)

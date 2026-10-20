@@ -21,8 +21,7 @@ def test_handle_answer_assembles_capability_self():
     # capability block is actually spliced into the assembled system. The prompt-cache
     # reorder (spec 2026-07-13) moved the assembly into the pure helper _build_answer_system,
     # so assert on its real output — the capability guard is part of the stable prefix.
-    system = arslan._build_answer_system(
-        extra_system="", roster="(none)", facts="", summary="", kb_block="")
+    system = arslan._build_answer_system()
     assert arslan._CAPABILITY_SELF in system
     assert arslan._CAPABILITY_SELF in system.stable  # it's a byte-stable cacheable guard
     # and the source of truth referenced by the helper:

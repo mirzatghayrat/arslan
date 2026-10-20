@@ -19,11 +19,11 @@ from server.orchestrator import tool_loop
 from server.registry import executors
 
 CONTEXT_BETA = "context-management-2025-06-27"
-# E23: interim values until K3 adds message-level cache breakpoints (then E22's 60k / 20k).
+# E22's values, restored by K3 with its message-level cache breakpoints (E23's 24k / 8k was interim).
 CLEAR = {"type": "clear_tool_uses_20250919",
-         "trigger": {"type": "input_tokens", "value": 24_000},
+         "trigger": {"type": "input_tokens", "value": 60_000},
          "keep": {"type": "tool_uses", "value": 6},
-         "clear_at_least": {"type": "input_tokens", "value": 8_000}}
+         "clear_at_least": {"type": "input_tokens", "value": 20_000}}
 
 
 def tool_reply(call_id, query, sig):
@@ -94,6 +94,12 @@ async def claude_turn(monkeypatch, replies, *, model="claude-opus-5-5", search=N
     return result, sent, headers
 
 
+def unmarked(messages):
+    """K3 moves the tail cache breakpoint every step; the content sent stays the same."""
+    from tests.llm.test_k3_cache_breakpoints import unmarked as strip
+    return strip(messages)
+
+
 def results_text(request):
     return json.dumps(request["messages"])
 
@@ -111,13 +117,13 @@ async def test_claude_gets_the_native_protocol_by_default(monkeypatch):
 
 async def test_a_sent_screenshot_stays_byte_for_byte(monkeypatch):
     _, sent, _ = await claude_turn(monkeypatch, THREE_STEPS, search=Search(images=True))
-    assert sent[3]["messages"][:3] == sent[1]["messages"][:3]
+    assert unmarked(sent[3]["messages"][:3]) == unmarked(sent[1]["messages"][:3])
     assert "PNG-one" in results_text(sent[3]) and "no longer shown" not in results_text(sent[3])
 
 
 async def test_claude_native_history_is_not_trimmed_locally(monkeypatch, tight_history):
     _, sent, _ = await claude_turn(monkeypatch, THREE_STEPS)
-    assert sent[3]["messages"][:3] == sent[1]["messages"][:3]
+    assert unmarked(sent[3]["messages"][:3]) == unmarked(sent[1]["messages"][:3])
     assert "result-one" in results_text(sent[3])
 
 
@@ -274,7 +280,7 @@ async def test_a_listed_metering_proxy_is_treated_as_anthropics_host(monkeypatch
     _, sent, headers = await claude_turn(monkeypatch, THREE_STEPS, base_url=PROXY)
     assert all(body["context_management"] == {"edits": [CLEAR]} for body in sent)
     assert CONTEXT_BETA in headers[0]["anthropic-beta"]
-    assert sent[3]["messages"][:3] == sent[1]["messages"][:3]            # nothing trimmed here
+    assert unmarked(sent[3]["messages"][:3]) == unmarked(sent[1]["messages"][:3])            # nothing trimmed here
 
 
 @pytest.mark.parametrize("listed", [frozenset(), frozenset({"127.0.0.1:8902"}), frozenset({"127.0.0.1"})])

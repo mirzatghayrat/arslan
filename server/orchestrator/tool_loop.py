@@ -1880,9 +1880,12 @@ def _tool_params(t: dict) -> dict:
 def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[dict]:
     """Turn resolve_tools()'s [{key, description, input_schema}] into OpenAI function schemas.
     Tools carrying a stored `input_schema` expose it as `parameters`; keys with no schema get a
-    permissive one (executor re-validates args). Adds `escalate` when allowed."""
+    permissive one (executor re-validates args). Adds `escalate` when allowed.
+
+    0.1.63 K3: sorted by name, `escalate` last. The table renders before Claude's cached system, so its
+    order is part of the cache key; tools loaded later (K7) are appended after it, never sorted in."""
     schemas: list[dict] = []
-    for t in wired:
+    for t in sorted(wired, key=lambda tool: tool["key"]):
         key = t["key"]
         schemas.append({
             "type": "function",
@@ -2360,7 +2363,7 @@ async def _run_native(
     # assistant message per model reply that called tools, one tool record per
     # handled call. It is rendered per request (_render_request); compaction
     # evicts whole call groups.
-    current_request = {"role": "user", "content": user_content}
+    current_request = trajectory.request(user_content)
     convo: list[dict] = list(history) + [current_request]
     tool_trace: list[dict] = []
     if _facts is not None:
