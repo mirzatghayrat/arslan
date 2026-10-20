@@ -600,6 +600,17 @@ def test_the_bare_list_matches_names_and_bundle_ids(app):
     assert task_service._runs_bare_for(app)
 
 
+def test_the_bare_list_takes_only_the_literal_app_name():
+    """The user (via ⓪Plan): Reminders named by its path, by `application id`, or as a process System
+    Events drives, all stay wrapped. The list itself never reads a path or a `.app` name as the app."""
+    for spelled in ("/System/Applications/Reminders.app", "Reminders.app", "Macintosh HD:System:Applications:Reminders.app:"):
+        assert not task_service._runs_bare_for(spelled), spelled
+    for script in ('tell application "/System/Applications/Reminders.app" to count lists',
+                   'tell application id "com.apple.reminders" to count lists',
+                   'tell application "System Events" to tell process "Reminders" to count windows'):
+        assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF"), script
+
+
 def test_the_bundle_id_form_itself_stays_wrapped_by_d4s_filter():
     """`application id` is in D4's `_OSA_ELSEWHERE` (defence in depth ③Hands asked to keep), so the
     bundle-id form never reaches the list: it goes through mac_applescript."""
