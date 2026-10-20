@@ -299,7 +299,8 @@ class GeminiProvider(BaseLLMProvider):
                         if meta.get("candidatesTokenCount") is not None:
                             tout = int(meta["candidatesTokenCount"])
                         if tin is not None or tout is not None:
-                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout}
+                            # K4a: the whole frame too (cachedContentTokenCount, thoughtsTokenCount).
+                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout, "usage": dict(meta)}
                     text = _first_text(obj)
                     if text:
                         yield text

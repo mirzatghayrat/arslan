@@ -196,7 +196,10 @@ class LLMAdapter:
             tokens_in = real.get("tokens_in")
             tokens_out = real.get("tokens_out")
             if tokens_in is not None and tokens_out is not None:
-                usage_sink.report(int(tokens_in) + int(tokens_out))
+                # K4a: charged as `_account` charges a non-streamed answer (cache reads at 0.1). The raw sum
+                # charged DeepSeek's cache hits in full and left out Anthropic's cache reads and writes.
+                from arslan.llm.usage_weight import charged_tokens
+                usage_sink.report(int(tokens_in) + int(tokens_out), charged=charged_tokens(real.get("usage")))
                 usage_sink.report_detail(
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
