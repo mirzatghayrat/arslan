@@ -318,20 +318,22 @@ async def test_tick_overlap_records_one_skip_per_due_period(memdb, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# kind='scheduled' survives finalize (recorder unit pin)
+# a non-live kind survives finalize (recorder unit pin)
 # ---------------------------------------------------------------------------
 
-async def test_finalize_preserves_scheduled_kind(memdb):
+async def test_finalize_preserves_a_non_live_kind(memdb):
+    # 0.1.63 (C1c-1): this pinned kind='scheduled'; no run is created with that kind since C1,
+    # so it pins the same S3-M4 rule on kind='host'.
     rec = await run_recorder.RunRecorder.start(
         conversation_id="scheduled-1", spawn_id=None, spawn_name="S",
-        user_message="做每日早报", kind="scheduled")
+        user_message="做每日早报", kind="host")
     tee = rec.tee(lambda e: None)
     tee({"type": "stream_start", "source": "spawn", "spawn_id": 1, "run_id": rec.run_id})
     await rec.finalize(summary_message_id=None, full_output="ok")
     async with memdb() as db:
         run = await db.get(Run, rec.run_id)
-    assert run.kind == "scheduled"       # finalize must NOT clobber it back to 'live'
-    assert run.status == "recorded"
+    assert run.kind == "host"            # finalize must NOT clobber it back to 'live'
+    assert run.status == "completed"
     assert run.epoch == 1
 
 

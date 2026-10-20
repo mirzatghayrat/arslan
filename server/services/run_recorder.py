@@ -351,21 +351,21 @@ class RunRecorder:
                         # S3-M1: status_override ("cancelled"/"interrupted") is a user/boot terminal
                         # state — it bypasses scoring entirely, so such runs can never enter the
                         # corpus (replay_set only collects status='scored').
-                        # S3-M4: PRESERVE a non-live kind set at start() — a scheduled run must
-                        # stay kind='scheduled' end-to-end (the corpus filters key on kind=='live',
-                        # so clobbering it back to 'live' here would leak scheduled runs into the
-                        # evolution corpus). The `or "live"` keeps the unset-column re-affirmation.
+                        # S3-M4: PRESERVE a non-live kind set at start() — the corpus filters key
+                        # on kind=='live', so clobbering it back to 'live' here would leak those runs
+                        # into the evolution corpus. The `or "live"` keeps the unset-column re-affirmation.
                         terminal = ("failed" if error_kind else "completed") if self.kind in {"host", "recipe", "recipe_step", "worker"} else "recorded"
                         run.status = status_override or ("replayed" if replay else terminal)
                         run.kind = "replay" if replay else (run.kind or "live")
                         run.epoch = 1
                         run.continuation = self.continuation
-                        # M4 final review I-1: scheduled deliverables land in a
-                        # sidebar-unreachable dedicated conversation (scheduled-{id}),
-                        # so the run row carries the full text for RunReplay. Plain
-                        # live runs still do NOT persist it (storage discipline —
-                        # their output lives in the reachable conversation).
-                        if replay or status_override is not None or run.kind in {"scheduled", "host", "recipe", "recipe_step", "worker"}:
+                        # M4 final review I-1: these kinds' run row carries the full text for
+                        # RunReplay. Plain live runs still do NOT persist it (storage discipline —
+                        # their output lives in the reachable conversation). 0.1.63 (C1c-1):
+                        # 'scheduled' left this set; nothing has created a scheduled run since C1
+                        # (fires are Arslan turns). Old kind='scheduled' rows are still read
+                        # (usage, runs API, reaper).
+                        if replay or status_override is not None or run.kind in {"host", "recipe", "recipe_step", "worker"}:
                             run.final_output = full_output
                         else:
                             run.final_output = None  # Completed live output is in its linked message.

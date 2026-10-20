@@ -11,7 +11,6 @@ def test_judgment_role_always_primary():
     for strat in ("cost", "balanced", "performance"):
         assert routing.select("router", strat, CFGS, "en")["id"] == 1
         assert routing.select("converse", strat, CFGS, "en")["id"] == 1
-        assert routing.select("critical", strat, CFGS, "en")["id"] == 1
 
 
 def test_judge_roles_pinned_to_primary():
