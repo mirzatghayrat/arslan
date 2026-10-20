@@ -1,12 +1,13 @@
-"""run_command's offline mode (0.1.50): kernel-enforced no network, files still work."""
+"""run_command's offline mode (0.1.50): kernel-enforced no network, files still work. Since S2a-1 a
+command outside the sandbox runs under the minimal profile, which carries the offline rule."""
 import socket
 import sys
 
 import pytest
 
-from server.services import terminal_exec
+from server.services import command_sandbox, terminal_exec
 
-macos = pytest.mark.skipif(sys.platform != "darwin" or terminal_exec.offline_wrapper() is None,
+macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
 
 CONNECT = "python3 -c \"import socket,sys; socket.create_connection(('127.0.0.1', int(sys.argv[1])), 2)\" {port}"
@@ -38,7 +39,7 @@ async def test_normal_mode_keeps_the_network(tmp_path, listener):
 
 
 async def test_offline_without_a_wrapper_refuses(tmp_path, monkeypatch):
-    monkeypatch.setattr(terminal_exec, "offline_wrapper", lambda: None)
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)      # seatbelt cannot start
     out = await terminal_exec.run("echo hi", cwd=tmp_path, offline=True)
     assert out["ok"] is False and "cannot isolate the network" in out["error"]
 

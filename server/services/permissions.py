@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "system", "screen",
                    "opaque", "app", "app_risky", "money", "takeover", "shortcut", "site",
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
-                   "workspace_write"})
+                   "workspace_write", "network"})
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
 #: of a stored rule or grant that are never a request's own. A command's "Always" is a
 #: `legacy_rule` per rule it matched (§A9). (§A5 also names the rule kinds `command_prefix` and
@@ -61,8 +61,10 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 #: could be taken back only with the Inbox's 10-second Undo. Take them out of this set, and out of
 #: nowhere else, when that page ships: the card, the Inbox's "Always allow" (`always_from`) and the
 #: rule lookup (`_standing`) all follow it.
+# S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
+# time or for this conversation, never "Always": outside content can steer what it sends.
 _NEVER_ALWAYS = (_ONCE_ONLY
-                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut"}))
+                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network"}))
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
 if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: "

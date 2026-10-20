@@ -43,8 +43,9 @@ def test_rule_order_denies_writes_reopens_folders_and_closes_protected_last(tmp_
     ws, secret = tmp_path / "ws", tmp_path / "ws" / "secret"
     text = command_sandbox.profile([ws], [secret])
     lines = text.splitlines()
-    assert lines[:3] == ["(version 1)", "(allow default)", '(deny file-write* (subpath "/"))']
-    assert lines[3].startswith("(allow file-write* ") and json.dumps(str(ws.resolve())) in lines[3]
+    # S2a-1: no Apple Events from the sandbox (test_s2a1_sandbox).
+    assert lines[:4] == ["(version 1)", "(allow default)", "(deny appleevent-send)", '(deny file-write* (subpath "/"))']
+    assert lines[4].startswith("(allow file-write* ") and json.dumps(str(ws.resolve())) in lines[4]
     assert lines[-2].startswith("(deny file-read* file-write* ") and json.dumps(str(secret.resolve())) in lines[-2]
     # The protected paths are closed to sockets too; TCP and everything else stay open.
     assert lines[-1] == lines[-2].replace("(deny file-read* file-write* ", "(deny network-outbound ", 1)
@@ -140,6 +141,8 @@ async def test_without_seatbelt_commands_run_as_before_and_say_so(tmp_path, monk
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **k: None)
     out = await terminal_exec.run("echo hi", cwd=tmp_path, sandbox=True)
     assert out["ok"] is True and out["sandbox"] == "unavailable" and "not available" in out["sandbox_note"]
+    # S2a-1: outside the sandbox the minimal profile applies where seatbelt can start; here it cannot.
+    monkeypatch.setattr(command_sandbox, "outside_wrapper", lambda **k: None)
     off = await terminal_exec.run("echo hi", cwd=tmp_path)
     assert off["sandbox"] == "off" and "sandbox_note" not in off
 
@@ -366,7 +369,7 @@ async def test_the_executor_closes_the_folders_only_while_the_setting_is_off(tmp
     monkeypatch.setattr(executors, "_project_folders", projects)
     seen = []
 
-    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False, closed=(), readable=()):
+    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False, closed=(), readable=(), **kw):
         seen.append((list(closed), list(readable)))
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": "workspace"}
     monkeypatch.setattr(terminal_exec, "run", fake_run)
