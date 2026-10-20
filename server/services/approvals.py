@@ -43,6 +43,9 @@ FIRST_CHOICE_ONLY = ("phone", "island")
 #: How the last card this task waited on ended: "approved", "declined", or "expired" (nobody
 #: answered in time). A tool result must not tell the model the user said no when nobody did.
 LAST_OUTCOME: ContextVar[str | None] = ContextVar("approvals_last_outcome", default=None)
+#: S2a-1: who answered the last plain card this task waited on ("mac" for the asking window, or a
+#: SOURCES entry), None when nobody did. Only the asking window's own click unlocks a bare run (U11).
+LAST_ANSWERED_BY: ContextVar[str | None] = ContextVar("approvals_last_answered_by", default=None)
 ANSWERS = {
     "confirm_workspace_write": True, "cancel_workspace_write": False,
     "confirm_schedule": True, "cancel_schedule": False,
@@ -392,6 +395,7 @@ class BroadcastAsker:
             self.unanswered = True
         LAST_OUTCOME.set("approved" if decision["approved"]
                          else "expired" if decision["by"] is None else "declined")
+        LAST_ANSWERED_BY.set(decision["by"])
         # The card the user answered: an identical ask that joined it records that one (§A8).
         # A copy: waiters on one card share the decision dict.
         return {**decision, "call_id": pending.call_id}

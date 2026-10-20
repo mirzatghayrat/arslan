@@ -288,16 +288,56 @@ PLAIN_OSA = "osascript -e 'tell application \"Reminders\" to count lists'"
 SHELL_OSA = "osascript -e 'do shell script \"ls ~\"'"
 
 
+class _UserClick(_Cards):
+    """A card the user clicked: decide records it (permissions.LAST_DECISION, by "user")."""
+
+    async def __call__(self, command, argv, **kw):
+        from server.services import permissions
+        answer = await super().__call__(command, argv, **kw)
+        permissions.LAST_DECISION.set(permissions.Decision(answer, "user", "once"))
+        return answer
+
+
 async def test_an_approved_plain_osascript_runs_bare_once(monkeypatch):
-    ex, cards = _Exec(), _Cards(True)
+    ex, cards = _Exec(), _UserClick(True)
     result = await _dispatch(monkeypatch, PLAIN_OSA, ex, cards)
     assert ex.runs == [(True, True)] and result["ran_outside_sandbox"] is True
+
+
+async def test_an_allow_with_no_recorded_click_never_runs_bare(monkeypatch):
+    """The user (via ⓪Plan): only an explicitly recorded click unlocks the bare run. A confirm that
+    says yes with nothing recorded (a future approval path that answers on its own) keeps it wrapped."""
+    ex = _Exec()
+    result = await _dispatch(monkeypatch, PLAIN_OSA, ex, _Cards(True))
+    assert ex.runs == [(False, False)] and not result.get("ran_outside_sandbox")
+
+
+class _OutsideCard(_Cards):
+    """The plain "run outside the sandbox" card: the window records who answered it."""
+
+    def __init__(self, by):
+        super().__init__(True)
+        self.by = by
+
+    async def __call__(self, command, argv, **kw):
+        from server.services import approvals
+        answer = await super().__call__(command, argv, **kw)
+        approvals.LAST_OUTCOME.set("approved")
+        approvals.LAST_ANSWERED_BY.set(self.by)
+        return answer
+
+
+@pytest.mark.parametrize("by, bare", [("mac", True), (None, False), ("phone", False)])
+async def test_the_outside_card_unwraps_only_on_the_asking_windows_click(monkeypatch, by, bare):
+    ex = _Exec()
+    await _dispatch(monkeypatch, PLAIN_OSA, ex, _OutsideCard(by), outside_sandbox=True, why="needs Reminders")
+    assert ex.runs == [(True, bare)]
 
 
 async def test_an_approved_script_that_acts_elsewhere_is_kept_wrapped(monkeypatch):
     refused = {"ok": False, "exit_code": 1, "stdout": "", "sandbox": "workspace",
                "stderr": "0:20: execution error: Not authorized to send Apple events. (-600)"}
-    ex, cards = _Exec(refused), _Cards(True)
+    ex, cards = _Exec(refused), _UserClick(True)
     result = await _dispatch(monkeypatch, SHELL_OSA, ex, cards)
     assert ex.runs == [(False, False)] and result.get("kept_wrapped") is True
     assert hint_for("run_command", result).startswith("This AppleScript is not a plain script for one app")
@@ -605,3 +645,19 @@ def test_the_window_only_check_reads_the_command_as_the_loop_runs_it():
     split = protocol.propose_run_command("k1", "osascript", ["-e", 'tell application "Reminders" to count lists'])
     assert split["pretty"] != "osascript -e 'tell application \"Reminders\" to count lists'"   # unquoted display
     assert approvals.window_only(split)
+
+
+async def test_an_earlier_cards_click_never_unwraps_a_later_command(monkeypatch):
+    """A click recorded for an earlier card of the turn must not count for this one: here the outside
+    confirm records an approval but not whose (as permissions.decide does), so nothing was clicked."""
+    from server.services import approvals
+
+    class _ApprovedNoClicker(_Cards):
+        async def __call__(self, command, argv, **kw):
+            answer = await super().__call__(command, argv, **kw)
+            approvals.LAST_OUTCOME.set("approved")
+            return answer
+    approvals.LAST_ANSWERED_BY.set("mac")                      # left over from an earlier card
+    ex = _Exec()
+    await _dispatch(monkeypatch, PLAIN_OSA, ex, _ApprovedNoClicker(True), outside_sandbox=True, why="x")
+    assert ex.runs == [(True, False)]

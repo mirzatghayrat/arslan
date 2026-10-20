@@ -1274,13 +1274,20 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             why = str(args.get("why") or "").strip()[:300]
+            from server.services import approvals as _approvals
+            _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
+            _approvals.LAST_ANSWERED_BY.set(None)
             if not await confirm_command(command, argv, sandbox="outside", why=why):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
-            unwrapped, kept_wrapped = _bare_once(command, by_user=True)
+            # S2a-1: the plain outside card records whose click approved it (approvals.LAST_ANSWERED_BY);
+            # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
+            unwrapped, kept_wrapped = _bare_once(
+                command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
+                and _approvals.LAST_ANSWERED_BY.get() == "mac")
         elif (sandbox_on and not run_outside and terminal_policy.runs_freely_in_sandbox(command)
               and not await _asks_for_everything()):
             pass                          # 0.1.52: a plain script inside the sandbox needs no card
@@ -1294,16 +1301,20 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
+            from server.services import permissions
+            permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
             approved = True if confirm_command is None else await confirm_command(command, argv)
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
-            from server.services import permissions
+            # S2a-1 (the user, via ⓪Plan): only an explicitly recorded click unlocks the bare run — decide's
+            # record of this card, answered by the user. Nothing recorded (a yes from any other path) keeps
+            # the command wrapped.
             decided = permissions.LAST_DECISION.get()
             unwrapped, kept_wrapped = _bare_once(
-                command, by_user=confirm_command is not None and (decided is None or decided.by == "user"))
+                command, by_user=confirm_command is not None and decided is not None and decided.by == "user")
             run_outside = run_outside or unwrapped
         network = await _network_after_outside_content(command, args, sandbox_on=sandbox_on,
                                                        run_outside=run_outside, unwrapped=unwrapped,

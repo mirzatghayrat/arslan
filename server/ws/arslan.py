@@ -454,6 +454,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             turn_unanswered["yes"] = True      # nobody answered: the person is away
         approvals.LAST_OUTCOME.set("approved" if decision["approved"]
                                    else "expired" if decision["by"] is None else "declined")
+        approvals.LAST_ANSWERED_BY.set(decision["by"])         # S2a-1: whose click (U11's bare run)
         return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"]),
                 "scope": decision.get("scope"), "note": decision.get("note") or "",
                 "by": decision["by"], "extras": decision.get("extras") or {},
