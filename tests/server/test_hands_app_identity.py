@@ -68,3 +68,98 @@ async def test_a_script_naming_a_never_list_app_is_refused_before_any_card(hands
     ok = await hands_tools.MacAppleScriptExecutor().execute({"script": 'tell application "Notes2" to activate'})
     assert [f["kind"] for f in seen] == ["mac_script"], ok
     assert len(ran) == 1, "only the allowed script ran"
+
+
+# ── v0.1.63 H4 (②Main): AppleScript takes "X.app" and a full path for the same app ─────────────────
+
+def _bundle(folder, name, bundle_id):
+    contents = folder / f"{name}.app" / "Contents"
+    contents.mkdir(parents=True)
+    with (contents / "Info.plist").open("wb") as f:
+        plistlib.dump({"CFBundleIdentifier": bundle_id, "CFBundleName": name}, f)
+    return folder / f"{name}.app"
+
+
+@pytest.mark.parametrize("named", ["Vault.app", "VAULT.APP", "{folder}/Vault.app", "{folder}/Vault.app/"])
+def test_a_never_list_app_by_its_app_suffix_or_path_is_refused(apps_folder, named):
+    assert hands_service.never_touched(named.format(folder=apps_folder)), named
+
+
+@pytest.mark.parametrize("named", [
+    "/Applications/1Password.app", "/APPLICATIONS/1PASSWORD.APP", "~/Applications/1Password.app",
+    "Macintosh HD:Applications:1Password.app:", "/System/Applications/Utilities/Keychain Access.app",
+    "/System/Applications/System Settings.app",
+])
+def test_a_never_list_app_by_path_is_refused_whether_or_not_it_is_installed(apps_folder, named):
+    # _APP_DIRS points at a folder without these apps: where one is not installed the name still counts.
+    assert hands_service.never_touched(named), named
+
+
+def test_a_renamed_never_list_app_is_known_by_the_bundle_id_inside_it(apps_folder, tmp_path_factory):
+    pm = _bundle(tmp_path_factory.mktemp("elsewhere"), "Pm", "com.1password.1password")
+    assert hands_service.never_touched(str(pm)), "its own Info.plist says 1Password, whatever its file name"
+
+
+def test_a_benign_app_by_path_stays_allowed(apps_folder):
+    assert not hands_service.never_touched(str(apps_folder / "Notes2.app"))
+    assert not hands_service.never_touched("/System/Applications/Notes.app")
+    assert not hands_service.never_touched("/no/such/Bundle.app")
+
+
+def test_the_users_own_never_entry_counts_however_it_was_written(apps_folder):
+    hands_service.update_settings(never=["/Applications/Notes2.app"])
+    assert hands_service.never_touched("Notes2")
+    hands_service.update_settings(never=["Notes2.app"])
+    assert hands_service.never_touched("Notes2") and hands_service.never_touched(str(apps_folder / "Notes2.app"))
+
+
+def test_one_app_named_three_ways_is_one_app_in_the_scripts_list():
+    script = ('tell application "Notes" to activate\ntell application "Notes.app" to activate\n'
+              'tell application "/System/Applications/Notes.app" to quit')
+    assert hands_service.script_apps(script) == ["Notes"]
+
+
+def test_a_renamed_copy_of_a_high_reach_app_is_still_high_reach(apps_folder, tmp_path_factory):
+    term = _bundle(tmp_path_factory.mktemp("copies"), "Tm", "com.apple.Terminal")
+    assert hands_service.script_kind(f'tell application "{term}" to activate')[0] == "app_risky"
+    _bundle(apps_folder, "Tm2", "com.apple.Terminal")          # a usual folder, under a new name
+    hands_service.app_identity.cache_clear()
+    assert hands_service.script_kind('tell application "Tm2" to activate')[0] == "app_risky"
+
+
+async def test_a_script_naming_a_never_list_app_by_path_is_refused_before_any_card(hands, asks, in_job,
+                                                                                  apps_folder, monkeypatch):
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in (f'tell application "{apps_folder}/Vault.app" to quit',
+                   'tell application "/Applications/1Password.app" to activate',
+                   'tell application "Keychain Access.app" to activate',
+                   'tell application "Macintosh HD:Applications:1Password.app:" to activate'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == [], "refused before any card, and nothing ran"
+
+
+async def test_a_never_list_app_by_a_path_padded_past_120_characters_is_refused(hands, asks, in_job,
+                                                                               apps_folder, monkeypatch):
+    """The capture used to stop at 120 characters, so a longer name was no app at all to the check."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    padded = "/Applications/" + "./" * 80 + "1Password.app"
+    vault = str(apps_folder) + "/" + "./" * 80 + "Vault.app"
+    assert len(padded) > 120 and len(vault) > 120
+    for target in (padded, vault):
+        assert hands_service.script_apps(f'tell application "{target}" to quit') == [target]
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": f'tell application "{target}" to quit'})
+        assert result.get("code") == "app_denied", target
+    assert seen == [] and ran == []

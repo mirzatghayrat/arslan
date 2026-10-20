@@ -232,29 +232,90 @@ def app_identity(app: str) -> dict | None:
     return None
 
 
+_PATH_PARTS = re.compile(r"[/:]")
+_MAX_INFO_PLIST = 1 << 20
+
+
+def app_name(app: str) -> str:
+    """The app an AppleScript means, as a name (v0.1.63 H4, found by ②Main): AppleScript takes
+    "Finder", "Finder.app", a POSIX path to the bundle ("/System/Library/CoreServices/Finder.app") or
+    an HFS one ("Macintosh HD:System:Library:CoreServices:Finder.app:") for the same app. The last
+    path component, without a trailing ".app" in any case. A bundle id comes back as it is."""
+    name = app.strip()
+    if "/" in name or ":" in name:
+        parts = [p.strip() for p in _PATH_PARTS.split(name) if p.strip()]
+        name = parts[-1] if parts else ""
+    if name.lower().endswith(".app"):
+        name = name[:-4].strip()
+    return name
+
+
+def app_key(app: str) -> str:
+    """`app_name` in lower case: what the never-list, the high-reach set and `script_apps` compare, so
+    one app named three ways is one app."""
+    return app_name(app).lower()
+
+
+def _bundle_at(app: str) -> str:
+    """The bundle id of an app named by a POSIX path to its bundle ("/Applications/1Password.app",
+    "~/Applications/…"), read from that bundle's own Info.plist — so a renamed bundle, or one outside
+    the usual folders, is known by what it is, not by its file name. "" when the text is no path to an
+    existing app bundle. Only a regular file under a size cap is read; nothing is ever launched."""
+    text = app.strip()
+    if "/" not in text:
+        return ""
+    bundle = Path(text).expanduser()
+    if bundle.suffix.lower() != ".app":
+        return ""
+    plist = bundle / "Contents" / "Info.plist"
+    try:
+        if not plist.is_file() or plist.stat().st_size > _MAX_INFO_PLIST:
+            return ""
+        with plist.open("rb") as f:
+            info = plistlib.load(f)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return ""
+    return str(info.get("CFBundleIdentifier") or "") if isinstance(info, dict) else ""
+
+
+def _bundles_of(app: str) -> set[str]:
+    """Every bundle id `app` can mean: the bundle at its path, and the installed app with its name."""
+    by_name = (app_identity(app_name(app)) or {}).get("bundle_id") or ""
+    return {b for b in (_bundle_at(app), by_name) if b}
+
+
 def never_touched(app: str) -> bool:
     """A name or bundle id on the built-in never-list or the user's own — matched by the name and by
     the bundle id of the installed app with that name (0.1.61 §A11), so a script that names an app
-    and a rule that holds its bundle id see the same list."""
-    app = app.strip()
-    identity = app_identity(app) or {}
-    bundle = identity.get("bundle_id") or ""
-    keys = {app.lower(), bundle.lower()} - {""}
-    if any(n.strip().lower() in keys for n in settings()["never"]):
+    and a rule that holds its bundle id see the same list. v0.1.63 H4: the name is `app_name`'s, so
+    "1Password.app", "/Applications/1Password.app" and an HFS path are 1Password too; an app named by
+    its path is also known by the bundle id inside it (a renamed copy is still refused)."""
+    raw = app.strip()
+    name = app_name(raw)
+    bundles = _bundles_of(raw)
+    keys = ({raw.lower(), name.lower()} | {b.lower() for b in bundles}) - {""}
+    if any(n.strip().lower() in keys or app_key(n) in keys for n in settings()["never"]):
         return True
-    return any(_matches(g, bundle or app, app) or _matches(g, app, app) for g in policy()["denied"])
+    return any(_matches(g, candidate, name) for g in policy()["denied"] for candidate in bundles | {raw})
 
 
 # `tell application "X"`, `tell app "X"`, `application id "com.x"`, `using terms from application "X"`.
-_SCRIPT_APP = re.compile(r'\b(?:application|app)\s+(?:id\s+)?"([^"\n]{1,120})"', re.I)
+# Any length: AppleScript takes a long path as well as a short name, and a name this did not capture
+# was never checked against the never-list (v0.1.63 H4: a path padded past 120 characters, "/Applications/
+# ./././…/1Password.app", named no app here). The card trims what it shows; the check sees it whole.
+_SCRIPT_APP = re.compile(r'\b(?:application|app)\s+(?:id\s+)?"([^"\n]+)"', re.I)
 
 
 def script_apps(script: str) -> list[str]:
     """The apps an AppleScript names, in order, without repeats (0.1.61 §A2's "apps" category and
-    mac_applescript check these against the never-list)."""
+    mac_applescript check these against the never-list). One app named two ways ("Notes", "Notes.app")
+    counts once, by `app_key`; each is returned as the script spells it, so the card shows its words."""
     seen: list[str] = []
+    keys: set[str] = set()
     for m in _SCRIPT_APP.finditer(script or ""):
-        if m.group(1) not in seen:
+        key = app_key(m.group(1))
+        if key not in keys:
+            keys.add(key)
             seen.append(m.group(1))
     return seen
 
@@ -342,8 +403,14 @@ _HIGH_REACH_NAMES = frozenset({"system events", "terminal", "iterm", "iterm2", "
 
 
 def _high_reach(app: str) -> bool:
-    name = app.strip().lower()
-    return name in _HIGH_REACH_NAMES or name in {b.lower() for b in HIGH_REACH}
+    """By `app_key` (so "System Events.app" and its full path are System Events, v0.1.63 H4), by a
+    bundle id the script gives, or by the bundle id really behind the name or path (a renamed copy of
+    Terminal is still Terminal)."""
+    reach_ids = {b.lower() for b in HIGH_REACH}
+    key = app_key(app)
+    if key in _HIGH_REACH_NAMES or key in reach_ids or app.strip().lower() in reach_ids:
+        return True
+    return any(b.lower() in reach_ids for b in _bundles_of(app))
 
 
 def script_kind(script: str) -> tuple[str, list[str]]:

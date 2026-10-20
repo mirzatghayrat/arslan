@@ -143,6 +143,16 @@ def test_a_script_that_deletes_sends_pays_or_reaches_past_its_app_is_never_an_ap
     'tell application "Shortcuts Events" to run shortcut "x"',
     'tell application "Shortcuts" to run shortcut "x"',
     'tell application id "com.apple.shortcuts.events" to run shortcut "x"',
+    'tell application id "com.apple.shortcuts" to run shortcut "x"',      # ②Main: pins this bundle id
+    # v0.1.63 H4 (②Main): AppleScript takes ".app", a POSIX path or an HFS path for the same app.
+    'tell application "System Events.app" to get name of every process',
+    'tell application "/System/Library/CoreServices/System Events.app" to get name of every process',
+    'tell application "Finder.app" to get name of every window',
+    'tell application "FINDER.APP" to get name of every window',
+    'tell application "Macintosh HD:System:Library:CoreServices:Finder.app:" to activate',
+    'tell application "Terminal.app" to activate',
+    'tell application "/System/Applications/Utilities/Terminal.app" to activate',
+    'tell application "Shortcuts Events.app" to run shortcut "x"',
 ])
 def test_a_script_for_an_app_that_reaches_every_other_app_is_asked_every_time(script):
     assert hands_service.script_kind(script)[0] == "app_risky"
