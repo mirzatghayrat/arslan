@@ -137,7 +137,7 @@ def _inside(path: Path, folders: list[Path]) -> bool:
 
 
 def profile(writable: list[Path], protected: list[Path], *, offline: bool = False,
-            closed: list[Path] = (), readable: list[Path] = ()) -> str:
+            closed: list[Path] = (), readable: list[Path] = (), copies: list[Path] = ()) -> str:
     """The SBPL text. Order matters: deny all writes, re-allow the writable
     folders, close `closed` (0.1.59: the user's Desktop/Documents/Downloads while
     they are off) and re-open what lives inside them — writable folders read and
@@ -165,18 +165,22 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
         closed = " ".join(_rule(_real(p)) for p in protected)
         lines.append("(deny file-read* file-write* " + closed + ")")
         lines.append("(deny network-outbound " + closed + ")")   # sockets under them
+    if copies:
+        # S2a-1 piece 5: the saved tool outputs this conversation was given, read-only and one file at
+        # a time, after the protected paths (the last rule wins). Never the folder: `ls` stays closed.
+        lines.append("(allow file-read* " + " ".join(f"(literal {json.dumps(str(_real(p)))})" for p in copies) + ")")
     return "\n".join(lines) + "\n"
 
 
 def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
-            readable: list[Path] = ()) -> list[str] | None:
+            readable: list[Path] = (), copies: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
     return ["/usr/bin/sandbox-exec", "-p",
             profile(default_writable(workspace), default_protected(), offline=offline,
-                    closed=closed, readable=readable)]
+                    closed=closed, readable=readable, copies=copies)]
 
 
 def available() -> bool:

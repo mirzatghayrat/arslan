@@ -828,10 +828,13 @@ class RunCommandExecutor:
             readable = await _project_folders()
         # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
         # the loop says they clicked to let THIS command out (never the model's args).
+        # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
+        from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
                                          sandbox=sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get(),
-                                         closed=closed, readable=readable)
+                                         closed=closed, readable=readable,
+                                         copies=tool_outputs.given(tool_outputs.conversation.get()))
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")

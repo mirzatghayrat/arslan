@@ -138,6 +138,12 @@ def _shell() -> str:
     return "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh"
 
 
+def _reads_a_saved_output(result: dict) -> bool:
+    from server.services import tool_outputs
+    folder = str(tool_outputs.outputs_dir())
+    return folder in f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"
+
+
 def offline_wrapper() -> list[str] | None:
     """Kernel-enforced no-network wrapper (macOS seatbelt, deny network*), or None
     where there is none — offline mode then refuses rather than runs unisolated."""
@@ -147,7 +153,7 @@ def offline_wrapper() -> list[str] | None:
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
               offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
-              readable: list[Path] = ()) -> dict:
+              readable: list[Path] = (), copies: list[Path] = ()) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
     sandbox="unavailable" (offline mode still refuses without isolation)."""
@@ -162,7 +168,8 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     prefix: list[str] = []
     mode = "off"
     if sandbox:
-        prefix = command_sandbox.wrapper(cwd, offline=offline, closed=closed, readable=readable) or []
+        prefix = command_sandbox.wrapper(cwd, offline=offline, closed=closed, readable=readable,
+                                         copies=copies) or []
         mode = "workspace" if prefix else "unavailable"
     if offline and not prefix:
         prefix = offline_wrapper() or []
@@ -219,7 +226,12 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
-    if command_sandbox.stopped_by_sandbox(result):
+    if command_sandbox.stopped_by_sandbox(result) and _reads_a_saved_output(result):
+        # S2a-1 piece 5: a saved tool output this conversation was not given. read_file reads it;
+        # running the command outside the sandbox would open far more than one copy, so no card.
+        result["note"] = ("Saved tool outputs are read with read_file (path, offset, limit), not from a "
+                          "command. A command may read only the copies saved in this conversation.")
+    elif command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
         result["note"] = command_sandbox.note(cwd, closed)
     elif mode == "unavailable":
