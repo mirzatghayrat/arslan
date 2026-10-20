@@ -75,7 +75,7 @@
 | [D2](D2-checks-not-run.md) | 「检查跑不了」不再把做完的事挂成「等你」：常见代码和配置文件按文本解析，没有解析器的类型记「不适用」（M1B 基线发现，⓪Plan 2026-10-19 加；不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#221 = `84d90f98`） |
 | [D3](D3-read-timeout-known.md) | 只读命令超时，不记成「结果不明」：`_reads_only` 认得 `&&`、`;`、`\|` 连起来的只读命令和丢弃输出的重定向（K1 合并后对照发现；U10 提为必须，不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#230 = `053f6b42`） |
 | [D4](D4-osascript-not-authorized.md) | osascript 报「未授权」（`-1743`，核实后加 `-10004`），只对一个 App 说话时算已知失败（K1 合并前后对照发现；U10 提为必须，不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#231 = `0d15026b`；后续 #245 = `5e33c5e5`，⓪Plan 实测 T1 2/3，K2a 时 0/3）；还有两种写法记在卡末，以后再看 |
-| [D5](D5-search-native-first.md) | 搜索：先用模型自带的搜索（Claude 用 Anthropic 服务端 web search，只在官方 host 或允许清单上）；配好的 Tavily / SearXNG 改成备选；每个 provider 被拦都报「搜索被拦」（用户 2026-10-20 要求，⓪Plan 定为应该；不进严格链） | ②Main | v0.1.63 | 应该 | — | 待开工 |
+| [D5](D5-search-native-first.md) | 搜索：先用这个对话这一轮模型自带的搜索（Claude 用 Anthropic 服务端 web search，只在官方 host 或允许清单上；本地模型的对话不用任何云端自带搜索，DeepSeek 一起改）；Tavily / SearXNG 可以设成备选，已存的选择照旧只用它，选了服务就不再落到 DuckDuckGo；403、429、人机验证报「搜索被拦」，401 报 key 被拒（用户 2026-10-20 要求，⓪Plan 定为应该；③Hands 审卡改过；不进严格链） | ②Main | v0.1.63 | 应该 | — | 待开工 |
 | [D1](D1-deliver-files.md) | 回合做出的文件送到窗口和 iPhone：新工具 `attach_file`；来自 iPhone 的回合告诉模型路径没用（用户报告，⓪Plan 2026-10-18 加；不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#217 = `57a2218b`）；M3 第 12 条（真 Mac + iPhone 截图）待用户验 |
 | [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | 待开工 |
 | [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main | v0.1.63 | 必须 | F4a、C1、C4 | 待开工 |
