@@ -101,14 +101,18 @@ def spawn_meta(
 
 
 def fact_saved(content: str, sensitive: bool, entry_id: str | None = None,
-               version: int | None = None) -> dict[str, Any]:
+               version: int | None = None, reply_message_id: int | None = None) -> dict[str, Any]:
     """D1 (0.1.55): carries the entry id and version, so the chat's quiet line can
-    Undo exactly that entry (DELETE at the version it was created with)."""
+    Undo exactly that entry (DELETE at the version it was created with). K2b: and the reply
+    its turn ended with, so the window puts the line under it even once the next message is
+    in (facts are looked for after the turn). The window's frame only: the phone never gets it."""
     frame: dict[str, Any] = {"type": "fact_saved", "content": content, "sensitive": sensitive}
     if entry_id:
         frame["entry_id"] = entry_id
     if version is not None:
         frame["version"] = version
+    if reply_message_id is not None:
+        frame["reply_message_id"] = reply_message_id
     return frame
 
 

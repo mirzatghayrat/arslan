@@ -105,6 +105,28 @@ async def test_two_compactions_at_once_write_one_summary(execution_db, monkeypat
     assert len(await _summaries(execution_db)) == before + 1
 
 
+async def test_a_conversation_deleted_while_it_is_summarized_gets_no_summary_back(execution_db, monkeypatch):
+    """③Hands' K2b review: compaction runs after the turn, so the user can delete the conversation
+    (its messages and summaries, as DELETE /conversations/{id} does) while the summarizer runs. The
+    summary of what was deleted is not written back."""
+    from sqlalchemy import delete
+
+    from server.db.models import ArslanMessage
+
+    class _Deleting(_Summarizer):
+        async def chat(self, system, user, **kwargs):
+            async with execution_db() as db:
+                for model in (ArslanMessage, ArslanSummary):
+                    await db.execute(delete(model).where(model.conversation_id == "cd"))
+                await db.commit()
+            return await super().chat(system, user, **kwargs)
+
+    monkeypatch.setattr(memory, "_get_adapter", lambda: _Deleting())
+    await _seed("cd", 8)
+    await memory.maybe_compact("cd", budget=BUDGET)
+    assert await _summaries(execution_db) == []
+
+
 async def test_older_turns_tool_details_are_masked_and_the_latest_kept(execution_db):
     await _seed("cm", 6, tools=True)
     history = (await memory.assemble_working_context("cm", budget=50_000))["history"]

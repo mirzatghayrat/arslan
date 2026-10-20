@@ -619,7 +619,6 @@ function makeActions(set: SetState, get: GetState) {
         case "message": {
           const item = rowToItem(frame);
           if (frame.job_id) { item.jobId = frame.job_id; item.jobOutcome = frame.outcome ?? null; }
-          if (frame.task_id) item.taskId = frame.task_id;
           set({
             items: [...state.items, item],
             lastMessageId: Math.max(state.lastMessageId, frame.message_id),
@@ -765,7 +764,6 @@ function makeActions(set: SetState, get: GetState) {
             // on the created item so the bubble can render its usage chip.
             // (run_cancelled finalization deliberately never sets this.)
             ...(frame.usage ? { usage: frame.usage } : {}),
-            ...(frame.task_id ? { taskId: frame.task_id } : {}),
             // 🔒 SECURITY: artifactHtml comes ONLY from the backend stream_end frame's
             // artifact (HX-2 HTML deliverable channel — sniffed/stored server-side),
             // NEVER from LLM message text. Same invariant as artifactSvg/Chart/Pptx.
@@ -947,26 +945,25 @@ function makeActions(set: SetState, get: GetState) {
           // D1 (0.1.55): everything remembered after one turn becomes ONE quiet line.
           // Facts arrive after the answer, back to back; a new item starts the next turn.
           // K2b: they are looked for after the turn, so the next message may be in by then. The
-          // line goes under the reply of its own turn (the frame's task_id); without one, last.
+          // line goes under the reply its turn ended with (the frame's reply_message_id); without
+          // one, or that reply not shown here, last.
           const fact = {
             content: frame.content, sensitive: frame.sensitive,
             entryId: frame.entry_id ?? null, version: frame.version ?? null,
             status: frame.type === "memory_proposed" ? "proposed" as const : "active" as const,
           };
-          const taskId = frame.task_id ?? null;
-          let at = state.items.length;              // where the line goes, or where it already is + 1
-          if (taskId) {
-            const reply = state.items.map((it) => it.taskId).lastIndexOf(taskId);
-            if (reply >= 0) at = reply + 1;
-          }
-          const before = state.items[at - 1];
+          const replyId = typeof frame.reply_message_id === "number" ? frame.reply_message_id : null;
+          const reply = replyId == null ? -1
+            : state.items.findIndex((it) => it.kind === "message" && it.role !== "user" && it.id === replyId);
           const items = [...state.items];
-          if (before && before.kind === "fact" && (before.taskId ?? null) === taskId) {
-            const facts = [...(before.facts ?? []), fact];
-            items[at - 1] = { ...before, facts, content: facts.map((f) => f.content).join(" · ") };
+          const at = reply >= 0 ? reply + 1 : items.length;    // where this turn's line is, or goes
+          const line = reply >= 0 ? items[at] : items[at - 1];
+          if (line && line.kind === "fact" && (reply < 0 || line.replyMessageId === replyId)) {
+            const facts = [...(line.facts ?? []), fact];
+            items[items.indexOf(line)] = { ...line, facts, content: facts.map((f) => f.content).join(" · ") };
           } else {
             items.splice(at, 0, { id: nextClientId(), kind: "fact", role: "arslan", content: frame.content,
-              sensitive: frame.sensitive, facts: [fact], taskId });
+              sensitive: frame.sensitive, facts: [fact], replyMessageId: replyId });
           }
           set({ items });
           break;

@@ -6,6 +6,7 @@ through two more model calls after the answer, and a message sent right after th
 lets a closed window break it."""
 import asyncio
 
+import pytest
 from sqlalchemy import select
 
 import server.db.session as db_session
@@ -127,3 +128,75 @@ async def test_one_conversations_jobs_run_in_turn(maker, monkeypatch):  # noqa: 
         release.set()
     await settle_after_turn()
     assert order == ["first:start", "first:end", "second:start", "second:end"]
+
+
+async def test_a_late_fact_names_the_reply_it_belongs_to_on_the_wire(maker, monkeypatch):  # noqa: F811
+    """③Hands' K2b review: the window places a fact that arrives after the next message by the reply
+    it belongs to. The frame says which, through the same mapping the socket uses (ws/arslan.py
+    _to_frame). The phone never receives these frames (①iOS), and stream_end is unchanged."""
+    from server.ws import arslan as ws_arslan
+
+    async def _facts(conv, msg):
+        return [{"content": "likes short answers", "sensitive": False}]
+
+    monkeypatch.setattr(turn_facts, "extract", _facts)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _NativeAdapter([_LLMResp(content="noted")]))
+    events = []
+    await arslan.handle_user_message("c1", "I prefer short answers", _events(events))
+    await settle_after_turn()
+    [end] = [e for e in events if e["type"] == "stream_end"]
+    [fact] = [e for e in events if e["type"] in {"fact_saved", "memory_proposed"}]
+    wire = ws_arslan._to_frame(fact)
+    assert end["message_id"] and wire["reply_message_id"] == end["message_id"]
+    assert "reply_message_id" not in ws_arslan._to_frame(end)
+
+
+@pytest.mark.parametrize("switch", ["no_memory", "no_learning"])
+async def test_a_switch_turned_off_while_facts_are_looked_for_saves_nothing(maker, monkeypatch, switch):  # noqa: F811
+    """③Hands' K2b review: the fact model's call takes seconds; a switch turned off meanwhile is read
+    again right before anything is saved. (Saving itself refuses no_learning too; no_memory only
+    this check catches.)"""
+    looking, release = asyncio.Event(), asyncio.Event()
+
+    async def _facts(conv, msg):
+        looking.set()
+        await release.wait()
+        return [{"content": "likes short answers", "sensitive": False}]
+
+    monkeypatch.setattr(turn_facts, "extract", _facts)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _NativeAdapter([_LLMResp(content="ok")]))
+    events = []
+    await arslan.handle_user_message("c1", "I prefer short answers", _events(events))
+    await asyncio.wait_for(looking.wait(), 5)
+    async with db_session.AsyncSessionLocal() as db:
+        await db.merge(ConversationContext(id="c1", **{switch: True}))
+        await db.commit()
+    release.set()
+    await settle_after_turn()
+    assert not any(e["type"] in {"fact_saved", "memory_proposed"} for e in events)
+    async with db_session.AsyncSessionLocal() as db:
+        assert (await db.execute(select(UserFact))).scalars().all() == []
+
+
+async def test_a_row_landing_after_the_reply_does_not_take_its_place(maker, monkeypatch):  # noqa: F811
+    """③Hands' re-review: another row can land in the conversation between the reply and the end of
+    the turn (a background job's result). The fact still names the turn's own reply: the id its
+    stream_end carried, not the newest row."""
+    async def _facts(conv, msg):
+        return [{"content": "likes short answers", "sensitive": False}]
+
+    real_budget = memory.turn_budget
+
+    async def _budget_after_a_job_result(conversation_id, **kwargs):
+        await memory.add_message(conversation_id, "arslan", "a background job's result")
+        return await real_budget(conversation_id, **kwargs)
+
+    monkeypatch.setattr(turn_facts, "extract", _facts)
+    monkeypatch.setattr(memory, "turn_budget", _budget_after_a_job_result)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _NativeAdapter([_LLMResp(content="noted")]))
+    events = []
+    await arslan.handle_user_message("c1", "I prefer short answers", _events(events))
+    await settle_after_turn()
+    [end] = [e for e in events if e["type"] == "stream_end"]
+    [fact] = [e for e in events if e["type"] in {"fact_saved", "memory_proposed"}]
+    assert fact["reply_message_id"] == end["message_id"]

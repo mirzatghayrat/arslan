@@ -846,7 +846,8 @@ def _to_frame(ev: dict) -> dict:
                                          run_id=ev.get("run_id"))
     if t == "fact_saved":
         return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")),
-                                   entry_id=ev.get("entry_id"), version=ev.get("version"))
+                                   entry_id=ev.get("entry_id"), version=ev.get("version"),
+                                   reply_message_id=ev.get("reply_message_id"))
     if t == "tool_call":
         return protocol.tool_call(ev.get("tool", ""), ev.get("args_summary", ""))
     if t == "tool_result":

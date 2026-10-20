@@ -198,7 +198,8 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
         from sqlalchemy import exists, insert, literal
         from server.services import memory_snapshot_guard
         # Read-then-write is not serialized: since K2b compaction runs after the turn, outside its
-        # lock. The write below lands only if no summary was written since this read.
+        # lock. The write below lands only if no summary was written since this read, and only while
+        # the last message it folds is still there (the conversation was not deleted meanwhile).
         async with db_session.AsyncSessionLocal() as db:
             snapshot_token = await memory_snapshot_guard.capture(db)
             summ = await _latest_summary(db, conversation_id)
@@ -251,11 +252,13 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
         newer = select(ArslanSummary.id).where(ArslanSummary.conversation_id == conversation_id)
         if summ is not None:
             newer = newer.where(ArslanSummary.id > summ.id)
+        folded = select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id,
+                                                ArslanMessage.id == new_cutoff)
         async with db_session.AsyncSessionLocal() as db:
             await db.execute(insert(ArslanSummary).from_select(
                 ["conversation_id", "summary", "up_to_message_id"],
                 select(literal(conversation_id), literal(new_summary), literal(new_cutoff))
-                .where(memory_snapshot_guard.unchanged(snapshot_token), ~exists(newer))))
+                .where(memory_snapshot_guard.unchanged(snapshot_token), ~exists(newer), exists(folded))))
             await db.commit()
     except Exception:  # noqa: BLE001 - degrade gracefully, keep full thread
         logger.warning("compaction failed for %s; keeping full thread", conversation_id, exc_info=True)

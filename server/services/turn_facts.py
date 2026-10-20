@@ -12,6 +12,7 @@ Same cheap model and slot as the router used (`router_config_id`, else role
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import logging
 from typing import Any
@@ -108,17 +109,28 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     return parse(response.content)
 
 
-async def capture(conversation_id: str, user_message: str, emit) -> int:
-    """Extract and save; announce what was saved. Never raises. Returns how many."""
+async def capture(conversation_id: str, user_message: str, emit, *, recheck=None) -> int:
+    """Extract and save; announce what was saved. Never raises. Returns how many.
+
+    `recheck` (K2b, the post-turn job): called after the model call, which takes seconds. It returns
+    the memory context to learn and save under, read again now, or None when remembering is off by
+    then: nothing is learned or saved."""
     _practices.set([])
     _after_reply.set(False)
     try:
         facts = await extract(conversation_id, user_message)
-        _learn_practices(conversation_id, emit)
-        if not facts:
-            return 0
-        created = await memory.save_facts(
-            facts, provenance={"source_kind": "conversation", "conversation_id": conversation_id})
+        context = None
+        if recheck is not None:
+            context = await recheck()
+            if context is None:
+                return 0
+        from server.services import personal_context
+        with personal_context.bind(context) if context is not None else contextlib.nullcontext():
+            _learn_practices(conversation_id, emit)
+            if not facts:
+                return 0
+            created = await memory.save_facts(
+                facts, provenance={"source_kind": "conversation", "conversation_id": conversation_id})
     except Exception as exc:  # noqa: BLE001 — remembering is a bonus, never a failure of the turn
         logger.info("turn facts skipped: %s", type(exc).__name__)
         return 0
