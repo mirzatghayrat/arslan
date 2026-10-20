@@ -82,6 +82,10 @@ async def _dispatch(monkeypatch, command, cards, cid="c1"):
 
 
 async def test_the_loop_skips_the_card_for_a_plain_sandboxed_script(monkeypatch):
+    from server.services import command_sandbox
+    # Run as on a Mac (CI's Linux has no seatbelt): an untracked turn counts as having read outside
+    # content (S2a-1), and the script's text shows a URL, so it runs offline in the sandbox, no card.
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     asked = []
 
     async def cards(command, argv, **kw):

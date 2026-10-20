@@ -394,6 +394,12 @@ async def test_outside_the_sandbox_arslans_data_stays_closed_and_the_users_secre
 
 # ── piece 2: after outside content, no network unless the user says so ────────────────
 
+def _seatbelt(monkeypatch):
+    """These tests are about what the wrapper does, so they run as on a Mac: seatbelt can start (CI's
+    Linux has none, and there only the card holds, by design)."""
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+
+
 class _NetExec(_Exec):
     async def execute(self, args):
         self.runs.append((terminal_exec.OUTSIDE_SANDBOX.get(), terminal_exec.OFFLINE.get()))
@@ -414,6 +420,7 @@ async def _after_outside_content(monkeypatch, command, *, asker=None, outside=Fa
     from server.services import permissions
     seen = untrusted.track_turn()
     untrusted.mark_external()                  # this turn read a web page
+    _seatbelt(monkeypatch)
     ex = _NetExec()
     if outside:
         command_sandbox.grant("c1")            # "for the rest of this conversation" outside the sandbox
@@ -497,6 +504,7 @@ async def test_a_retry_outside_the_sandbox_stays_offline_after_outside_content(e
             return dict(denied) if not terminal_exec.OUTSIDE_SANDBOX.get() else dict(self.result)
     seen = untrusted.track_turn()
     untrusted.mark_external()
+    _seatbelt(monkeypatch)
     ex = _DeniedInside()
     try:
         with permissions.asking_with(_Asker()):
@@ -521,6 +529,7 @@ async def test_a_retry_outside_asks_again_for_a_network_command_whatever_was_gra
             return dict(denied) if not terminal_exec.OUTSIDE_SANDBOX.get() else dict(self.result)
     seen = untrusted.track_turn()
     untrusted.mark_external()
+    _seatbelt(monkeypatch)
     asker, ex = _Asker(), _DeniedInside()
     try:
         with permissions.asking_with(asker):
