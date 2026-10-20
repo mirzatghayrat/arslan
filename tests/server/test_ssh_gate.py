@@ -193,14 +193,6 @@ def test_ask_risky_does_not_exempt_a_remote_read_only_command():
     assert ws_arslan.may_skip_card("me@192.168.1.8", **local) is False
 
 
-def test_a_standing_answer_does_not_reach_across_the_network():
-    # 0.1.61: the per-socket session allow-list is gone (grants are permissions.decide's, which a
-    # remote command never reaches); the standing answer is the one shortcut left to pin here.
-    both = dict(always_allowed=True, policy="ask_all", risk="LOW")
-    assert ws_arslan.may_skip_card(None, **both) is True
-    assert ws_arslan.may_skip_card("me@192.168.1.8", **both) is False
-
-
 def test_ask_all_still_shows_a_card_locally():
     assert ws_arslan.may_skip_card(None, policy="ask_all", risk="LOW") is False
 

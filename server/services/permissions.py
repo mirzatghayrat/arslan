@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 #: Every kind a request may have: spec §A11's `Kind`, plus `workspace_write` (the write card the
 #: chat window and jobs ask through `decide`). The protections key on these exact strings — the
 #: money rung, the once-only kinds, the kinds that never offer "Always" — so a kind outside this
-#: set is a caller bug, never an ordinary kind: `decide`, `decide_many`, `would_ask` and
+#: set is a caller bug, never an ordinary kind: `decide`, `decide_many` and
 #: `record_standing` raise ValueError for it before any card, grant, rule or ledger row ("payment"
 #: for "money" would otherwise be offered "In this conversation" and "Always"). A later PR that
 #: adds a kind adds it HERE and, in the same change, decides its scope sets below.
@@ -221,14 +221,6 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     return decisions
 
 
-async def would_ask(req: Request, ctx: Context) -> bool:
-    """Would `decide` show a card? No side effects: nothing asked, nothing recorded, and no setting
-    read (the mode only goes into the ledger row, which `record=False` never writes). A kind
-    outside `KINDS` raises, as in `decide`."""
-    _check(req)
-    return await _standing(req, _filled(ctx), "", record=False) is None
-
-
 #: Who may have decided a standing yes that `record_standing` writes, and the scope it records:
 #: an "Always" rule, or the mode (§A8's `decided_by`), which stores nothing and has no scope.
 _STANDING_BY = {"rule": "always", "mode": None}
@@ -303,7 +295,7 @@ def _check(req: Request) -> None:
 
 # ── the ladder ────────────────────────────────────────────────────────────────
 
-async def _standing(req: Request, ctx: Context, mode: str, *, record: bool = True) -> Decision | None:
+async def _standing(req: Request, ctx: Context, mode: str) -> Decision | None:
     if req.kind in _ONCE_ONLY or req.once_only:
         return None
     async with db_session.AsyncSessionLocal() as db:
@@ -312,15 +304,13 @@ async def _standing(req: Request, ctx: Context, mode: str, *, record: bool = Tru
                 if req.kind not in _NEVER_ALWAYS else None)
         if rule is not None:
             decision = Decision(True, "rule", "always")
-            if record:
-                await _note_standing_use(db, req, ctx, mode, decision, rule=rule)
+            await _note_standing_use(db, req, ctx, mode, decision, rule=rule)
             return decision
         grant = await permission_store.find_grant(db, ctx.conversation_id, ctx.task_id,
                                                   req.kind, req.target)
         if grant is not None:
             decision = Decision(True, "grant", "task" if grant.task_id else "conversation")
-            if record:
-                await _note_standing_use(db, req, ctx, mode, decision, grant=grant)
+            await _note_standing_use(db, req, ctx, mode, decision, grant=grant)
             return decision
     return None
 

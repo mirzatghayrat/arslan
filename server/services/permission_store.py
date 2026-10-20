@@ -146,19 +146,12 @@ def _not_asked():
                  for decided_by, decision in NOT_ASKED))
 
 
-async def refused_since(db, since: datetime) -> list[ApprovalEvent]:
-    """Boundaries that could not be asked (`NOT_ASKED`): a run with nobody to ask (a scheduled
-    run), or a card that never opened while the person was away. The Inbox offers "Always allow"
-    for next time (spec §A4)."""
-    return list((await db.execute(select(ApprovalEvent).where(
-        _not_asked(), ApprovalEvent.created_at >= since,
-    ).order_by(ApprovalEvent.created_at.desc()))).scalars().all())
-
-
 async def refused_groups(db, since: datetime, *, limit: int = 500
                          ) -> list[tuple[ApprovalEvent, int, datetime]]:
-    """`refused_since`, one entry per (kind, target): its latest row, how many times it was
-    refused, and when first — newest first, at most `limit` groups."""
+    """Boundaries that could not be asked (`NOT_ASKED`) since `since`: a run with nobody to ask (a
+    scheduled run), or a card that never opened while the person was away. One entry per (kind,
+    target): its latest row, how many times it was refused, and when first — newest first, at most
+    `limit` groups. The Inbox offers "Always allow" for next time (spec §A4)."""
     groups = (await db.execute(
         select(func.max(ApprovalEvent.id), func.count(), func.min(ApprovalEvent.created_at))
         .where(_not_asked(), ApprovalEvent.created_at >= since)

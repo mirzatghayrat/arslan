@@ -26,7 +26,6 @@ window was given.
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -157,35 +156,6 @@ def close_card(pending: Pending) -> dict:
     return decision
 
 
-async def ask(conversation_id: str, frame: dict) -> bool:
-    """Broadcast one card and wait for its answer. False on timeout or refusal.
-
-    The plain card Hands still uses (until it moves onto permissions.decide). Like decide it asks
-    only where someone can answer: a chat turn and a job bind a card surface
-    (permissions.asking_with); a run with none — a scheduled run — is refused at once, with no
-    card, no wait and (unlike decide) no ledger row yet. While it waits, the wall clocks of the
-    turn or job stand still (`task_service.paused_clock`)."""
-    from server.services import permissions
-    _forget_decision()
-    LAST_OUTCOME.set(None)
-    if permissions.current_asker() is None:
-        LAST_OUTCOME.set("declined")         # as decide's refusal for want of a surface
-        return False
-    # Marked so the card can say it is a background job asking, and hide the
-    # "remember" option this path never honours.
-    pending = open_card(conversation_id, frame | {"background": True})
-    try:
-        with _paused_clock(), desktop_status.awaiting_approval(conversation_id):
-            await asyncio.wait_for(asyncio.shield(pending.future), timeout=remaining(pending))
-    except TimeoutError:
-        pass
-    finally:
-        decision = close_card(pending)
-    # close_card answers "by" nobody exactly when the card expired.
-    LAST_OUTCOME.set("approved" if decision["approved"] else "expired" if decision["by"] is None else "declined")
-    return bool(decision["approved"])
-
-
 def answer(data: dict) -> bool:
     """Route one reply frame to a pending shared card. True if it was one.
 
@@ -193,10 +163,9 @@ def answer(data: dict) -> bool:
     never approve a pending command card. The first reply decides; a later one
     (the other side answering too) is swallowed.
 
-    The decision carries a scope, one of the card's `options` (0.1.61 §A4): what the
-    reply chose, else the old "remember" checkbox mapped (`_legacy_scope`: with no
-    "remember", the card's first, narrowest choice); the phone and the island give only
-    the first option. A "No" carries the user's note.
+    The decision carries a scope, one of the card's `options` (0.1.61 §A4): what the reply
+    chose, else the card's first, narrowest choice; the phone and the island give only the first
+    option. A "No" carries the user's note.
     """
     call_id = data.get("call_id") if isinstance(data, dict) else None
     kind = data.get("type") if isinstance(data, dict) else None
@@ -220,7 +189,7 @@ def answer(data: dict) -> bool:
             # phone send none and are clamped to the first choice above. A yes with none from anywhere
             # else (a tab left open from before the update, a script) gets the card's first, narrowest
             # choice too: it is asked again next time, never silently widened to the conversation.
-            scope = _legacy_scope(options, remember)
+            scope = options[0] if options else None
         decision = {"approved": ANSWERS[kind], "remember": remember,
                     "scope": scope if ANSWERS[kind] else None,
                     "note": "" if ANSWERS[kind] else str(data.get("note") or "").strip()[:500],
@@ -229,18 +198,6 @@ def answer(data: dict) -> bool:
             decision["extras"] = _extras(pending.frame, data) if ANSWERS[kind] else {}
         pending.future.set_result(decision)
     return True
-
-
-def _legacy_scope(options: list[str], remember: bool) -> str | None:
-    """A reply without a scope it offered (a client from before 0.1.61 PR 2b): the old checkbox,
-    mapped — "remember" is the widest choice offered, else the first."""
-    if not options:
-        return None
-    if remember:
-        for preferred in ("always", "conversation"):
-            if preferred in options:
-                return preferred
-    return options[0]
 
 
 def _extras(frame: dict, data: dict) -> dict:
@@ -279,8 +236,6 @@ def waiters(call_id: str) -> int:
 #: AppleScript / Shortcuts, which can do any of those from inside an app.
 _ISLAND_RISKY_RULES = {"delete", "send-mail", "send-message", "upload", "publish", "git-push",
                        "remote-shell", "apple-events", "login-items", "install"}
-_RISKY_SCRIPT = re.compile(r"\b(?:delete|send|move|do\s+shell\s+script|purchase|buy|pay|submit|transfer|empty\s+trash)\b",
-                           re.IGNORECASE)
 #: The permission kinds whose `propose_action` card the island answers (0.1.61 §A4: "Once (For
 #: this task) or No for folder, app (look and act, merged), screen, MCP tool, schedule, site and
 #: Shortcut cards"). Everything else opens Arslan: money, send, delete, a risky step in an app, a
@@ -303,8 +258,8 @@ def island_may_answer(frame: dict) -> bool:
     type or command text says (PR 3a rides send, delete and system cards on `propose_run_command`
     frames). Past that gate a `propose_action` card is decided by `ISLAND_KINDS` alone — never the
     legacy `kind` its caller's frame may keep, which would let the island answer a takeover — and
-    the other card types by their own rule. A card without a permission kind is read by the 0.1.55
-    table below."""
+    the other card types by their own rule. A `propose_action` card without a permission kind is
+    not answerable: none is sent (permissions._ask stamps every card), so one is something new."""
     kind = frame.get("type")
     if "perm_kind" in frame:
         perm_kind = frame["perm_kind"]
@@ -313,17 +268,8 @@ def island_may_answer(frame: dict) -> bool:
     if kind in ("propose_workspace_write", "propose_schedule"):
         return True
     if kind == "propose_action":
-        if "perm_kind" in frame:
-            perm_kind = frame["perm_kind"]
-            return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
-        action = frame.get("kind")
-        # A frame with no permission kind (none is sent any more: permissions._ask stamps every card). A takeover is
-        # answered in Arslan whatever the frame carries (spec §A4), and nothing asks with `desktop_look` now: both are "anything new".
-        if action in ("browser_site", "desktop_app", "mac_shortcut"):
-            return True
-        if action == "mac_script":
-            return not _RISKY_SCRIPT.search(str(frame.get("detail") or ""))
-        return False                       # desktop_risky, and anything new
+        perm_kind = frame.get("perm_kind")
+        return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
     if kind == "propose_run_command":
         if frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry"):
             return False                   # another machine, or writing outside the sandbox

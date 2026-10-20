@@ -397,9 +397,8 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
         user's folder, a schedule and another machine ("no callback" means
         "refuse", P1); these refusals write no approvals ledger row yet;
       - a permissions.decide request is refused with a ledger row
-        (decided_by=policy), which the Inbox lists;
-      - a Hands card (approvals.ask) is refused, with no ledger row until
-        Hands moves onto decide.
+        (decided_by=policy), which the Inbox lists. Hands' cards are among
+        them: they go through decide too (0.1.61).
     It is not a policy someone could forget to apply. Unattended execution is
     exactly the surface the two arXiv analyses of OpenClaw are about; here it
     is closed by construction.
