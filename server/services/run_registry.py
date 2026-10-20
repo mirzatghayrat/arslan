@@ -89,15 +89,18 @@ def detach_sink(conversation_id: str, sink: Callable[[dict], None]) -> None:
         _sinks.pop(conversation_id, None)
 
 
-def make_emit(conversation_id: str) -> Callable[[dict], None]:
+def make_emit(conversation_id: str, *, skip: Callable[[dict], None] | None = None) -> Callable[[dict], None]:
     """Fan-out emit for one conversation: delivers ev to every currently-attached
     sink. The sink set is snapshotted per call (a sink may detach mid-iteration)
     and each sink is isolated — a broken sink (dead socket) must not break the
     others or the dispatch. No sinks -> drop silently (journal has them via tee).
+    `skip` (S2a-1b): one sink left out — the Bridge's, for a card only a Mac window may approve.
     """
 
     def _emit(ev: dict) -> None:
         for sink in tuple(_sinks.get(conversation_id, ())):
+            if sink is skip:
+                continue
             try:
                 sink(ev)
             except Exception:

@@ -379,7 +379,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
                     "extras": {}, "call_id": frame.get("call_id"), "away": True}
         loop = asyncio.get_running_loop()
-        pending = approvals.open_card(conversation_id, frame, broadcast=broadcast)
+        # S2a-1b: a turn the iPhone started runs on the Bridge's own socket (this one). A card only a Mac
+        # window may approve (approvals.window_only: a command that would run with no sandbox, U11) skips
+        # it: the phone shows "另有 N 项只能在 Mac 上处理" from the open approvals instead of an Allow it
+        # cannot use and a No the Bridge would then refuse. Every Mac window still gets the card. A job's
+        # cards still reach the Bridge (v0.1.64: the Bridge socket says what it is).
+        mac_only = sink if phone_turn["on"] and approvals.window_only(frame) else None
+        pending = approvals.open_card(conversation_id, frame, broadcast=broadcast, skip=mac_only)
         # An ask identical to a card still waiting in this conversation joined it (0.1.61 §A4):
         # this window shows THAT card, with its own call_id, or nothing when it is on this screen
         # already (a job's card is on every window; this window's own card is here).
@@ -394,7 +400,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         try:
             if joined and broadcast and pending.private:
                 pending.private = False            # a phone turn's ask: everyone must see the card
-                emit(pending.frame)
+                (emit if mac_only is None else run_registry.make_emit(conversation_id, skip=mac_only))(pending.frame)
             elif not broadcast and not on_screen:
                 if socket_gone["yes"]:
                     _window_gone(pending)

