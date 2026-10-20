@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
@@ -135,7 +136,8 @@ def joining(conversation_id: str, frame: dict) -> Pending | None:
     return None
 
 
-def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True) -> Pending:
+def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True,
+              skip: Callable[[dict], None] | None = None) -> Pending:
     """Register one card so a reply from anywhere resolves `pending.future` (see
     `answer`): any socket on the conversation, the Inbox, the island (0.1.55). With
     `broadcast`, it is also sent to every socket on the conversation; a window's own
@@ -153,7 +155,10 @@ def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True) -> P
                       private=not broadcast)
     _pending[pending.call_id] = pending
     if broadcast:
-        run_registry.make_emit(conversation_id)(frame)
+        # `skip` (S2a-1b, see ws/arslan._ask_everywhere): one socket left out, the Bridge's.
+        emit = run_registry.make_emit(conversation_id) if skip is None else run_registry.make_emit(
+            conversation_id, skip=skip)
+        emit(frame)
     return pending
 
 
