@@ -114,6 +114,13 @@
 - C1c-1 约 −650；
 - C1c-2 约 −400，另有翻译约 6 × 265 行，不计入。
 
+**实施记录（②Main，2026-10-20）：** C1c-1 实测产品代码 +100 / −876，超过约 800 行的规矩，U2 的例外也不适用（删的是活文件里的函数和帧构造函数）。按 ⓪Plan 拆成两个 PR，文件不重叠：
+
+- **C1c-1a（#257）：** 零调用的模块和函数、C1 交过来的几项、注释和文档。`learning_service` 里随 `distill_from_event` 一起没了调用者的 `_distill_one`、`_SYS`、`_get_adapter` 也删了，它不再调用模型，于是从 `usage.NOT_COVERED` 拿掉（12 → 11）。
+- **C1c-1b（#258）：** 15 个从不发出的帧构造函数和 `_to_frame` 分支；三处 `if True:` 去缩进。
+
+**后续候选（不在本卡）：** `scripts/frozen_sidecar_smoke.py:196-212` 发 `confirm_create`，再等 `spawn_created` 帧。服务端在 C1c 之前就没有 `confirm_create` 的处理，所以这段冒烟本来就过不了。它不在 CI 里。要么删掉这一段，要么改成测现有的路径。
+
 ## 风险与回退
 
 - **留着的旧路径和删除条件**（`docs/sessions.md` §9；代码注释里也写）：`rowToItem` 的 `spawn_summary` 分支，和 C1 卡里的专家表同一次删。删之前，旧对话里的专家回答要先转成普通回答，或者确认库里已经没有。
