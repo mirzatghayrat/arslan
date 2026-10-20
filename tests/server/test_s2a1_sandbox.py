@@ -350,3 +350,98 @@ async def test_outside_the_sandbox_arslans_data_stays_closed_and_the_users_secre
     events = await terminal_exec.run("osascript -e 'tell application \"Finder\" to count windows'",
                                      cwd=ws, sandbox=False)
     assert "(-600)" in events["stderr"]                                    # only an approved plain call runs bare
+
+
+# ── piece 2: after outside content, no network unless the user says so ────────────────
+
+class _NetExec(_Exec):
+    async def execute(self, args):
+        self.runs.append((terminal_exec.OUTSIDE_SANDBOX.get(), terminal_exec.OFFLINE.get()))
+        return dict(self.result)
+
+
+class _Asker:
+    def __init__(self, approve=True, scope="once"):
+        self.frames, self.approve, self.scope = [], approve, scope
+
+    async def __call__(self, frame):
+        self.frames.append(frame)
+        return {"approved": self.approve, "scope": self.scope, "by": "user", "call_id": frame["call_id"]}
+
+
+async def _after_outside_content(monkeypatch, command, *, asker=None, outside=False, **args):
+    from server.orchestrator import untrusted
+    from server.services import permissions
+    seen = untrusted.track_turn()
+    untrusted.mark_external()                  # this turn read a web page
+    ex = _NetExec()
+    if outside:
+        command_sandbox.grant("c1")            # "for the rest of this conversation" outside the sandbox
+    try:
+        with permissions.asking_with(asker):
+            result = await _dispatch(monkeypatch, command, ex, _Cards(True), **args)
+    finally:
+        untrusted.end_turn(seen)
+        command_sandbox._reset_for_tests()
+    return ex, result
+
+
+async def test_after_outside_content_a_command_in_the_sandbox_runs_offline(execution_db, monkeypatch):
+    ex, result = await _after_outside_content(monkeypatch, "python3 report.py")
+    assert ex.runs == [(False, True)] and result["ok"]
+
+
+async def test_without_outside_content_nothing_changes(execution_db, monkeypatch):
+    from server.orchestrator import untrusted
+    seen = untrusted.track_turn()              # a turn that read nothing from outside
+    ex = _NetExec()
+    try:
+        await _dispatch(monkeypatch, "curl -s https://example.test", ex, _Cards(True))
+    finally:
+        untrusted.end_turn(seen)
+    assert ex.runs == [(False, False)]
+
+
+async def test_a_command_that_reaches_the_network_asks_first_and_keeps_it_on_yes(execution_db, monkeypatch):
+    asker = _Asker()
+    ex, result = await _after_outside_content(monkeypatch, "curl -s https://example.test/data.json", asker=asker)
+    [frame] = asker.frames
+    assert frame["perm_kind"] == "network" and frame["options"] == ["once", "conversation"]
+    assert ex.runs == [(False, False)] and result["ok"]
+    from server.services import approvals
+    assert not approvals.island_may_answer(frame)                  # answered in Arslan, never the island
+
+
+async def test_a_no_on_the_network_card_runs_nothing(execution_db, monkeypatch):
+    ex, result = await _after_outside_content(monkeypatch, "curl -s https://example.test", asker=_Asker(approve=False))
+    assert ex.runs == [] and not result["ok"]
+
+
+async def test_the_model_can_say_a_script_needs_the_network(execution_db, monkeypatch):
+    asker = _Asker()
+    ex, _ = await _after_outside_content(monkeypatch, "python3 fetch.py", asker=asker, network=True,
+                                         why="downloads the price list")
+    assert [f["perm_kind"] for f in asker.frames] == ["network"] and asker.frames[0]["why"] == "downloads the price list"
+    assert ex.runs == [(False, False)]
+
+
+async def test_outside_the_sandbox_the_network_card_is_this_time_only_and_ignores_a_grant(execution_db, monkeypatch):
+    from server.services import permission_store
+    async with execution_db() as db:
+        await permission_store.add_grant(db, "c1", "", "network", "network:*")
+        await db.commit()
+    asker = _Asker()
+    ex, _ = await _after_outside_content(monkeypatch, "curl -s https://example.test", asker=asker, outside=True)
+    assert [f["options"] for f in asker.frames] == [["once"]]       # asked again, this time only
+    assert ex.runs == [(True, False)]
+
+
+async def test_with_nobody_to_ask_a_network_command_in_the_sandbox_runs_offline(execution_db, monkeypatch):
+    ex, result = await _after_outside_content(monkeypatch, "curl -s https://example.test")
+    assert ex.runs == [(False, True)] and "without network" in result["network_note"]
+
+
+def test_run_command_takes_network_and_why():
+    from server.orchestrator import tool_loop
+    props = tool_loop._NATIVE_PARAM_SCHEMAS["run_command"]["properties"]
+    assert props["network"]["type"] == "boolean" and "why" in props

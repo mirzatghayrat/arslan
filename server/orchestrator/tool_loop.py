@@ -1061,6 +1061,35 @@ async def _writing_in_own_folder() -> bool:
         return False
 
 
+async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
+                                         unwrapped: bool, conversation_id: str | None) -> dict:
+    """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command in
+    the sandbox runs offline (the kernel's rule); one that reaches the network (by its text, or the
+    model's `network: true`) asks first: this time or this conversation inside the sandbox, this time
+    only outside it, where no offline rule holds a command that also reads the user's secrets (a stored
+    grant does not count there). The island never answers it. With nobody to ask: offline in the
+    sandbox, refused outside. An approved plain osascript/Shortcut (U11) is not a network command.
+
+    Returns {"offline": bool, "note": str} or {"refused": model text}."""
+    from server.orchestrator import untrusted as _untrusted
+    from server.services import background_jobs, command_sandbox, permissions
+    if unwrapped or not _untrusted.external_seen():
+        return {}
+    inside = sandbox_on and not run_outside and command_sandbox.available()
+    if not (args.get("network") is True or _untrusted.reaches_network(command)):
+        return {"offline": True} if inside else {}
+    if inside and permissions.current_asker() is None:
+        return {"offline": True, "note": "ran without network: this turn read outside content, and there was "
+                                         "nobody to allow the network for it"}
+    decision = await permissions.decide(permissions.Request(
+        kind="network", target="network:*", title=f"Let `{command[:80]}` use the network?", detail=command,
+        why=str(args.get("why") or "").strip()[:300], conversation_ok=inside, once_only=not inside),
+        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+    if decision.allowed:
+        return {}
+    return {"refused": decision.model_text or "the user did not allow this command to use the network"}
+
+
 def _bare_once(command: str, *, by_user: bool) -> tuple[bool, bool]:
     """S2a-1 piece 4, decision U11: (run with no wrapper, kept wrapped) for an approved command. Only
     a command with an Apple Events or Shortcuts rule, approved by the user's click on its card (a
@@ -1271,6 +1300,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             unwrapped, kept_wrapped = _bare_once(
                 command, by_user=confirm_command is not None and (decided is None or decided.by == "user"))
             run_outside = run_outside or unwrapped
+        network = await _network_after_outside_content(command, args, sandbox_on=sandbox_on,
+                                                       run_outside=run_outside, unwrapped=unwrapped,
+                                                       conversation_id=conversation_id)
+        if network.get("refused"):
+            result = {"ok": False, "error": network["refused"]}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
 
     # Reaching another machine (P3b). Every call asks, with no session memory and
     # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
@@ -1455,9 +1492,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 from server.services import terminal_exec
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
                 bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
+                # S2a-1 piece 2: offline in the sandbox after outside content (wrap-up may have set it too).
+                cut = terminal_exec.OFFLINE.set(True) if network.get("offline") and not outside else None
                 try:
                     return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
                 finally:
+                    if cut is not None:
+                        terminal_exec.OFFLINE.reset(cut)
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             result = await run_once(run_outside)
@@ -1472,6 +1513,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 result["ran_outside_sandbox"] = True
             if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
                 result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
+            if tool_key == "run_command" and network.get("note") and isinstance(result, dict):
+                result["network_note"] = network["note"]
         except TaskError as exc:
             if exc.code not in {"task_reconciliation_required", "task_action_already_completed"}:
                 raise
@@ -1708,9 +1751,13 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                        "description": "Only when the command must write outside "
                                                                       "the working folder (moving the user's files, "
                                                                       "installing software). The user is asked."},
+                                   "network": {"type": "boolean",
+                                               "description": "The command needs the network (a download, an "
+                                                              "API). After you read outside content in this turn, "
+                                                              "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "With outside_sandbox: one short sentence the user "
-                                                          "reads on the card."}},
+                                           "description": "With outside_sandbox or network: one short sentence "
+                                                          "the user reads on the card."}},
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,

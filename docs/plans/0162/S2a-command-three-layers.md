@@ -11,6 +11,36 @@
 | 分支 | `claude/0162-s2a1-sandbox`（S2a-1）、`claude/0162-s2a2-command-layers`（S2a-2） |
 | 迁移号 | 无 |
 
+## 实测与实施记录（S2a-1，②Main，2026-10-20）
+
+**写代码前的实测**（只读 osascript，只记退出码和错误号，不记列表名）：
+
+| 配置 | 提醒事项 `count lists` | 访达 `count windows` |
+|---|---|---|
+| 沙箱外（不包） | 成功 | 成功 |
+| 只有 `(version 1)(allow default)` | -10004 privilege violation | -10004 |
+| 今天的工作区配置（没有 Apple Events 规则） | -10004 | — |
+| `(allow default)` + `(deny appleevent-send)` | -600「Application isn't running」 | -600 |
+
+结论：在这台 macOS 上，**只要套了 sandbox-exec，Apple Events 对任何 App 都发不出去**，和配置里有没有那条规则无关。所以第 1 条「卡批准后这一次运行去掉这条」做不到：去掉规则也照样 -10004。
+
+**决定 U11（用户 2026-10-20 选 A，⓪Plan 转达）：** 批准了的 Apple Events / Shortcuts 卡，那一条命令不套沙箱、只这一次、从不记住，和今天一样；其他沙箱外的命令套最小配置。和 Claude Code、Codex 一致。
+
+**U11 落地时收窄了一处（⓪Plan 同意，③Hands 审过范围）：**
+- 只有「一条干净的调用」才不套：整条命令就是一个 osascript（脚本写在 `-e` 或 here-doc 里，shell 不会先展开或先跑别的），或者就是一个 `shortcuts run <名字>`（可带输入、输出文件）。
+- osascript 的脚本里有作用到别处的写法（`do shell script`、`run script`、`load script` / `store script`、«原始事件»、AppleScriptObjC、`open for access` / `write` 写文件、`keystroke`、`move` 等，即 D4 的 `_OSA_ELSEWHERE` 加 Hands 的 `_SCRIPT_REACH` / `_SCRIPT_REACH_OTHERWISE`）的，批准了也照样套沙箱，Apple Events 发不出去，提示改用 `mac_applescript`（它的卡把整段脚本给用户看）。
+- **为什么：** 不套沙箱时，这类脚本就是一个不受任何限制的 shell，连 Arslan 自己的数据都挡不住；而走「批准 Apple Events 卡」这条路，今天这类脚本本来也跑不通（今天批准后是在沙箱里跑）。
+- **一个变化要说明：** 沙箱外重跑卡（`outside_sandbox: true`）批准的、带 `do shell script` 的 osascript，S2a-1 之前是不套沙箱跑的，之后套最小配置（它的 Apple Events 发不出去，`do shell script` 能跑但碰不到 Arslan 的数据）。测试和基准题里没有依赖这一点的：`git grep "do shell script"` 只在 D4、Hands、灵动岛和基准的测试里出现，都是「这类脚本要多问 / 不算已知失败」的断言，没有一条要求它在沙箱外跑通。
+- **用户想放宽时：** 把 `task_service.unwrapped_once` 里排除的写法删掉对应的那几个（代码注释写着），或者让 Hands 的 `mac_applescript` 管这类脚本（今天就是）。
+- **快捷指令的卡写明「它以你的身份在沙箱外运行，Arslan 看不到快捷指令做了什么」**（③Hands：`shortcuts run` 看不进去）。
+
+**S2a-1 各条的实际做法：**
+1. 工作区配置加 `(deny appleevent-send)`（纵深防御：这台机器上本来就发不出去，规则让错误号变成 -600，别的系统版本上也挡）。被挡时的提示照实说：沙箱里发不出 Apple Events；把 AppleScript 单独作为一条 run_command（会问用户，批准的在沙箱外跑），或用 `mac_applescript` / `desktop_*`；不再让用户去「系统设置 → 自动化」（D4 那句提示在沙箱外对，在沙箱里是错的，这里一并改正）；不出「沙箱外重跑」卡。D4 的「已知失败」也认沙箱（和最小配置）下的 -600。
+2. 本轮读过外部内容后：沙箱里的命令一律断网（内核规则）；看得出要联网的（文字，或模型传 `network: true` 加理由）先出卡，权限种类 `network`，目标 `network:*`，不给「总是」，灵动岛不能答；沙箱里可选「这一次 / 本对话」，沙箱外只给「这一次」、已存的授权不算。没人可问：沙箱里断网跑并在结果里写明，沙箱外拒绝。（沙箱外不能内核断网：任何包装都会让 Apple Events 失效，见上表。）
+3. 受保护路径拆成 `arslan_protected()` 和 `user_secrets()`（卡上那些凭据和浏览器配置都加了），`default_protected()` 是两者之和。读文件工具（`file_tools`）也用它，所以也读不到这些凭据了。
+4. 最小配置（U11 之后放行）：`(allow default)`、禁 Apple Events、该断网时断网、拒读写 `arslan_protected()`（文件和 socket），不拒 `user_secrets()`；本对话的工具输出副本照样能读。取代 `terminal_exec.offline_wrapper`。`code_sandbox._SEATBELT_PROFILE` **保留**：`SeatbeltBackend.wrapper()` 不传配置时还用它。seatbelt 起不来时沙箱外照旧不包。
+5. 工具输出副本按文件放行：每个对话最近 64 个，只在内存里；`literal` 规则写在拒受保护路径之后；目录本身不放行；没放行的副本被挡时指向 `read_file`，不出卡。
+
 ## 目标
 
 第③层「其余在沙箱里直接跑、不出卡」，前提是沙箱挡得住。今天的配置是 `(allow default)`，只管写文件（`server/services/command_sandbox.py:115-141`），网络、Apple Events、XPC 全开（更正 E11）。所以先收紧沙箱（S2a-1），再换三层（S2a-2）。
