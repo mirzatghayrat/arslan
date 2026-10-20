@@ -286,3 +286,56 @@ def test_a_quote_in_a_comment_cannot_hide_a_computed_app_target(apps_folder):
     assert hands_service.computed_app_target("-- it's \"odd\ntell application x to activate")
     assert hands_service.computed_app_target("# it's \"odd\ntell application x to activate")
     assert hands_service.never_listed_target('set a to "Notes2" -- "\ntell application "Vault" to quit -- "') == "Vault"
+
+
+# ── ②Main's review of d99ab828 (⓪Plan on Opus 5.5): class words bound as variables, a process named by a
+# variable or index, and never-list strings handed to any high-reach app ───────────────────────────────
+
+@pytest.mark.parametrize("script", [
+    'set process to "Vault"\ntell application process to activate',
+    'set processes to "Vault"\ntell application processes to activate',
+    'set files to "Vault"\ntell application files to activate',
+    'property process : "Vault"\ntell application process to activate',
+    'repeat with process in {"Vault"}\ntell application process to activate\nend repeat',
+    'on f(process)\ntell application process to activate\nend f',
+])
+def test_a_class_word_the_script_binds_as_a_variable_is_a_computed_target(script):
+    assert hands_service.computed_app_target(script), script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "System Events" to get name of every application process',
+    'tell application "System Events" to get name of every application process whose visible is true',
+    'tell current application\ndisplay dialog "x"\nend tell',
+    'tell application "System Events"\ncount processes\nset x to 1\nend tell',
+    'tell application "System Events" to tell process "Notes2" to set frontmost to true',
+    'tell application "System Events" to tell (first process whose frontmost is true) to get name',
+    'tell application "Notes2"\nset process to 1\nend tell',
+])
+def test_class_uses_and_filters_are_not_computed_targets(script):
+    assert hands_service.computed_app_target(script) is None, script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "System Events"\nset p to "Vault"\ntell process p to set frontmost to true\nend tell',
+    'tell application "System Events" to tell process 1 to set frontmost to true',
+])
+def test_a_process_named_by_a_variable_or_index_is_a_computed_target(script):
+    assert hands_service.computed_app_target(script), script
+
+
+async def test_a_never_list_app_handed_to_finder_by_id_or_path_is_refused(hands, asks, in_job, apps_folder,
+                                                                         monkeypatch):
+    """②Main: the string check ran for System Events only; Finder opens an app by id or path."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application "Finder" to open application file id "com.1password.vault"',
+                   f'tell application "Finder" to open file "{_hfs(apps_folder / "Vault.app")}"'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == []

@@ -366,7 +366,9 @@ def _mask(script: str) -> str:
 
 _APP_WORD = re.compile(r"\b(?:application|app)\b", re.I)
 _RAW_APP_CLASS = re.compile(r"«\s*class\s+capp\s*»", re.I)
-_GAP = re.compile(r"[\s¬]*")
+# Spaces, and a `¬` continuation onto the next line; a plain line end ends the statement, so a class name
+# at the end of a line (`tell current application`, `count processes`) is followed by nothing.
+_GAP = re.compile(r"(?:[ \t]|¬[ \t]*\r?\n)*")
 _WORD = re.compile(r"\|[^|\n]*\||[A-Za-z_][A-Za-z0-9_]*")
 # What may follow `application` when it is a class name and not the app a script talks to: System
 # Events' and Finder's classes, and the words a type test or a filter goes on with.
@@ -374,6 +376,55 @@ _NOT_A_TARGET = frozenset({
     "process", "processes", "file", "files", "then", "of", "in", "is", "whose", "where", "and", "or",
     "as", "else", "end", "to", "from", "by", "with", "without", "contains", "returning", "given", "not",
     "equals", "comes", "before", "after", "but", "thru", "through", "into", "onto", "on", "at", "for"})
+
+
+# `process`, `processes` and `files` are class names (System Events, Finder) that AppleScript also takes
+# as variable names (②Main on #271, compile-checked: `set process to "1Password"` then `tell application
+# process to activate`). After `application` they are the class unless the script binds them.
+_CLASS_WORDS = frozenset({"process", "processes", "files"})
+_IDENT = r"\|[^|\n]*\||[A-Za-z_][A-Za-z0-9_]*"
+_BINDING = re.compile(
+    r"\bset\s+(" + _IDENT + r")\s+to\b"                          # set x to …
+    r"|\bset\s+\{([^}\n]*)\}\s+to\b"                              # set {a, b} to …
+    r"|\bcopy\b[^\n]*?\bto\s+(" + _IDENT + r"|\{[^}\n]*\})"        # copy … to x / {a, b}
+    r"|\bproperty\s+(" + _IDENT + r")\s*:"                       # property x : …
+    r"|\b(?:global|local)\s+([^\n]*)"                             # global a, b
+    r"|\brepeat\s+with\s+(" + _IDENT + r")\s+(?:in|from)\b"      # repeat with x in / from
+    r"|^[ \t]*(?:on|to)\s+(?:" + _IDENT + r")\b([^\n]*)",          # a handler's line: its parameters
+    re.I | re.M)
+_PROCESS_WORD = re.compile(r"\bprocess(?:es)?\b", re.I)
+
+
+def _bound_names(code: str) -> set[str]:
+    """The names a script binds as variables (set, copy … to, property, global/local, repeat with, a
+    handler's parameters), lower case, without pipes."""
+    names: set[str] = set()
+    for m in _BINDING.finditer(code):
+        for group in m.groups():
+            for part in re.findall(_IDENT, group or ""):
+                names.add(part.strip("|").lower())
+    return names
+
+
+def _talks_to_system_events(script: str) -> bool:
+    return any(_system_events(app) for app in script_apps(script))
+
+
+def _computed_process(code: str, script: str) -> str | None:
+    """In a System Events script, a process named other than by a literal string or a filter: `tell
+    process x`, `process 1`, `process (…)` (②Main on #271). A filter (`first process whose frontmost is
+    true`) is a query, not a name: it stays asked every time with the whole script shown."""
+    for m in _PROCESS_WORD.finditer(code):
+        at = _GAP.match(code, m.end()).end()
+        following = code[at:at + 1]
+        if not following or following == '"' or following in "),}]\r\n":
+            continue
+        word = _WORD.match(code, at)
+        if word is not None and word.group(0).lower() in _NOT_A_TARGET:
+            continue
+        line_end = script.find("\n", m.start())
+        return script[m.start():line_end if line_end != -1 else len(script)].strip()[:80]
+    return None
 
 
 def computed_app_target(script: str) -> str | None:
@@ -387,10 +438,11 @@ def computed_app_target(script: str) -> str | None:
     code = _mask(script)
     if raw := _RAW_APP_CLASS.search(code):
         return script[raw.start():raw.end()]
+    bound = _bound_names(code) & _CLASS_WORDS
     for m in _APP_WORD.finditer(code):
         at = _GAP.match(code, m.end()).end()
         following = code[at:at + 1]
-        if not following or following == '"':
+        if not following or following == '"' or following in "\r\n":
             continue
         word = _WORD.match(code, at)
         if word is None and following not in "(«":
@@ -399,10 +451,12 @@ def computed_app_target(script: str) -> str | None:
             name = word.group(0).lower()
             if name == "id" and code[_GAP.match(code, word.end()).end():][:1] == '"':
                 continue
-            if name in _NOT_A_TARGET:
+            if name in _NOT_A_TARGET and name not in bound:
                 continue
         line_end = script.find("\n", m.start())
         return script[m.start():line_end if line_end != -1 else len(script)].strip()[:80]
+    if _talks_to_system_events(script):
+        return _computed_process(code, script)
     return None
 
 
@@ -441,15 +495,18 @@ def _system_events(app: str) -> bool:
 
 def never_listed_target(script: str) -> str | None:
     """The first app on the never-list the script reaches, or None. An app it names; and, when it talks to
-    System Events, any string in it that names a never-list app — a process by its name or bundle id is
-    that app (v0.1.63 H4, ③Hands' process-name point, written by ⓪Plan on Opus 5.5 at the user's request).
+    System Events or another high-reach app (Finder `open application file id "…"`, a path to the bundle),
+    any string in it that names a never-list app — a process by its name or bundle id is that app (v0.1.63
+    H4, ③Hands' process-name point and ②Main's review, written by ⓪Plan on Opus 5.5 at the user's request).
+    Text a shell or another script runs (`do shell script "open -a …"`, `run script "…"`) is not read here;
+    such a script is app_risky, asked every time with the whole script shown.
     Partial matches (`whose name contains "1Pass"`) are not refused here; such a script is still asked
     every time with the whole script shown, because System Events is high-reach."""
     apps = script_apps(script)
     for app in apps:
         if never_touched(app):
             return app
-    if any(_system_events(app) for app in apps):
+    if any(_system_events(app) or _high_reach(app) for app in apps):
         for text in _string_literals(script):
             if text.strip() and text not in apps and never_touched(text):
                 return text
