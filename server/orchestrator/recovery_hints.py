@@ -55,11 +55,23 @@ _WEB_SITE_REFUSED_BY_CODE = {
 }
 
 
+# S2a-1: inside the command sandbox no Apple Event reaches any app (-600 under its deny rule; -10004
+# under any seatbelt wrapper on macOS 26, measured 2026-10-20). Automation permission is not the
+# cause there, so the hint never sends the user to System Settings, and no outside card is offered.
+_SANDBOX_APPLE_EVENTS = re.compile(r"execution error: .*\((?:-600|-1743|-10004)\)")
+SANDBOX_APPLE_EVENTS_HINT = (
+    "Apple Events can't be sent from inside the command sandbox, so this AppleScript reached no app. Use "
+    "mac_applescript if it is in your tools (the user approves the script); otherwise use the desktop_* tools "
+    "for that app if you have them; otherwise tell the user what you needed. Do not retry it with run_command.")
+
+
 def hint_for(tool_key: str, result: dict) -> str | None:
     """A trusted recovery hint for a failed tool result, or None."""
     if result.get("ok"):
         return None
     text = " ".join(str(result.get(k) or "") for k in ("error", "stderr", "stdout", "summary"))
+    if result.get("sandbox") == "workspace" and _SANDBOX_APPLE_EVENTS.search(text):
+        return SANDBOX_APPLE_EVENTS_HINT
     if tool_key == "web_extract":
         error = str(result.get("error") or "")
         if error.startswith(_WEB_GUARD_PREFIX):

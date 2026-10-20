@@ -43,8 +43,9 @@ def test_rule_order_denies_writes_reopens_folders_and_closes_protected_last(tmp_
     ws, secret = tmp_path / "ws", tmp_path / "ws" / "secret"
     text = command_sandbox.profile([ws], [secret])
     lines = text.splitlines()
-    assert lines[:3] == ["(version 1)", "(allow default)", '(deny file-write* (subpath "/"))']
-    assert lines[3].startswith("(allow file-write* ") and json.dumps(str(ws.resolve())) in lines[3]
+    # S2a-1: no Apple Events from the sandbox (test_s2a1_sandbox).
+    assert lines[:4] == ["(version 1)", "(allow default)", "(deny appleevent-send)", '(deny file-write* (subpath "/"))']
+    assert lines[4].startswith("(allow file-write* ") and json.dumps(str(ws.resolve())) in lines[4]
     assert lines[-2].startswith("(deny file-read* file-write* ") and json.dumps(str(secret.resolve())) in lines[-2]
     # The protected paths are closed to sockets too; TCP and everything else stay open.
     assert lines[-1] == lines[-2].replace("(deny file-read* file-write* ", "(deny network-outbound ", 1)

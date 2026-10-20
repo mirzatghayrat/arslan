@@ -85,22 +85,46 @@ def default_writable(workspace: Path) -> list[Path]:
             _real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
 
 
-def default_protected() -> list[Path]:
-    """Never readable or writable from a command, whatever else is allowed."""
-    from server import config
-    from server.services import hands_client
-    home = Path.home()
-    paths = [home / ".ssh", home / "Library" / "Keychains", config.data_dir(),
-             home / "Library" / "Application Support" / "Arslan", home / ".arslan",
-             home / ".arslan-updater.key", home / "arslan-signing-backup",
-             # 0.1.53: Arslan Hands' socket, token and state (it holds Accessibility).
-             hands_client.folder()]
+def _resolved(paths) -> list[Path]:
     out: list[Path] = []
     for p in paths:
         r = _real(p)
         if r not in out:
             out.append(r)
     return out
+
+
+def arslan_protected() -> list[Path]:
+    """Arslan's own data, keys and Hands' folder (S2a-1). The minimal profile for commands run outside
+    the sandbox would close these too (piece 4, held for the user's decision: any seatbelt wrapper
+    blocks Apple Events, measured 2026-10-20)."""
+    from server import config
+    from server.services import hands_client
+    home = Path.home()
+    return _resolved([config.data_dir(), home / "Library" / "Application Support" / "Arslan", home / ".arslan",
+                      home / ".arslan-updater.key", home / "arslan-signing-backup",
+                      # 0.1.53: Arslan Hands' socket, token and state (it holds Accessibility).
+                      hands_client.folder()])
+
+
+# S2a-1: the user's credentials and browser profiles. Closed inside the sandbox; a command the user
+# lets out of it (ssh, git push, gh, aws) needs them, so they are not part of `arslan_protected`.
+_SECRETS = (".ssh", "Library/Keychains", ".aws", ".config/gcloud", ".kube", ".docker/config.json", ".netrc",
+            ".npmrc", ".pypirc", ".config/gh", ".git-credentials", ".gnupg", ".azure",
+            "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
+            "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
+            "Library/Application Support/Arc", "Library/Safari", "Library/Cookies")
+
+
+def user_secrets() -> list[Path]:
+    ours = arslan_protected()
+    return [p for p in _resolved(Path.home() / name for name in _SECRETS) if p not in ours]
+
+
+def default_protected() -> list[Path]:
+    """Never readable or writable from a sandboxed command, whatever else is allowed: Arslan's own
+    paths and the user's secrets."""
+    return [*arslan_protected(), *user_secrets()]
 
 
 def _rule(path: Path) -> str:
@@ -119,7 +143,10 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
     they are off) and re-open what lives inside them — writable folders read and
     write, `readable` ones (project folders) read only — then close the protected
     paths (last rule wins) — to files and to sockets alike."""
-    lines = ["(version 1)", "(allow default)"]
+    # S2a-1: no Apple Events from the sandbox. On macOS 26 any seatbelt wrapper already makes them
+    # fail (-10004, measured 2026-10-20); the rule makes it explicit (they fail with -600) and holds
+    # wherever that is not so. Nothing lifts it: an approved osascript cannot work inside seatbelt.
+    lines = ["(version 1)", "(allow default)", "(deny appleevent-send)"]
     if offline:
         lines.append("(deny network*)")
     lines.append('(deny file-write* (subpath "/"))')

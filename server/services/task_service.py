@@ -151,6 +151,9 @@ _PRIVILEGE_ALL_OR_NOTHING = {"reminders"}
 _OSA_HEREDOC = re.compile(r"\A\s*(?:/usr/bin/)?osascript\s*<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*)\n\2\s*\Z", re.S)
 _OSA_NOT_ALLOWED = re.compile(r"execution error: Not authorized to send Apple events to (.+)\. \(-1743\)\Z")
 _OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege violation occurred\. \(-10004\)\Z")
+# S2a-1: under the workspace sandbox's `(deny appleevent-send)` no event leaves the process, so the
+# script's one app answers "isn't running" (-600) whatever it is doing: nothing happened there.
+_OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
                             r"write\s|set\s+eof)", re.I)
@@ -336,10 +339,11 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
     if type(code) is not int or code <= 0 or result.get("code") == "time_limit":
         return False
     script = _inline_osascript(terminal_policy.as_shell(arguments.get("command"), arguments.get("argv")))
-    return script is not None and _osascript_refused(script, str(result.get("stderr") or ""))
+    return script is not None and _osascript_refused(script, str(result.get("stderr") or ""),
+                                                     sandboxed=result.get("sandbox") == "workspace")
 
 
-def _osascript_refused(script: str, stderr: str) -> bool:
+def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> bool:
     """An AppleScript that failed without acting: it never compiled, or its one app refused it."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not script.strip() or not lines:
@@ -353,6 +357,8 @@ def _osascript_refused(script: str, stderr: str) -> bool:
         # Compiled first, so nothing ran, if it really did not compile: the script controls its stderr.
         return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
+        return match.group(1).lower() in apps
+    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])
     return match is not None and match.group(1).lower() in apps & _PRIVILEGE_ALL_OR_NOTHING
