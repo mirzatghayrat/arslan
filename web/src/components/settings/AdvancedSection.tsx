@@ -25,13 +25,16 @@ import type { VoiceMode } from '../../types';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
 export type BackgroundJobBudget = 'lean' | 'standard' | 'ample';
-// Mirrors arslan/execution_budget.JOB_TIERS (the soft limits). A backend test
+// Mirrors arslan/execution_budget.TIERS (the soft limits; K4a: a chat turn's too). A backend test
 // pins the same numbers, so the two cannot drift silently.
 export const JOB_TIER_NUMBERS: Record<BackgroundJobBudget, { requests: number; tools: number; tokens: string; minutes: number }> = {
   lean: { requests: 60, tools: 40, tokens: '300k', minutes: 15 },
   standard: { requests: 120, tools: 80, tokens: '600k', minutes: 30 },
   ample: { requests: 240, tools: 160, tokens: '1.2M', minutes: 60 },
 };
+
+/** K4a: per-task dollar caps offered, US$ (the server takes up to 100). */
+export const USD_CAPS = [0.5, 1, 2, 5, 10, 20];
 
 export interface AdvancedSectionProps {
   /** Diagnostic-telemetry opt-in. */
@@ -49,6 +52,9 @@ export interface AdvancedSectionProps {
   /** 0.1.43: where a background job wraps up. Optional so older hosts still render. */
   backgroundJobBudget?: BackgroundJobBudget;
   onBackgroundJobBudgetChange?: (value: BackgroundJobBudget) => void;
+  /** K4a: the per-task dollar cap (US$). Optional so older hosts still render. */
+  taskUsdCap?: number;
+  onTaskUsdCapChange?: (value: number) => void;
   /** Directory the file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   onWorkspaceDirChange: (value: string) => void;
@@ -90,6 +96,8 @@ export default function AdvancedSection({
   onTerminalSandboxChange,
   backgroundJobBudget = 'standard',
   onBackgroundJobBudgetChange,
+  taskUsdCap = 2,
+  onTaskUsdCapChange,
   workspaceDir,
   onWorkspaceDirChange,
   lanDiscoveryEnabled,
@@ -366,6 +374,22 @@ export default function AdvancedSection({
           />
         </div>
         </>}
+        {/* K4a: the per-task dollar cap, on by default. A stored value outside the list is shown as itself. */}
+        {onTaskUsdCapChange && (
+        <div className="flex items-center justify-between gap-4 mt-4">
+          <div>
+            <h4 className="text-[13px] font-medium text-foreground">{t('jobs.usdCapLabel')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl" data-testid="task-usd-cap-desc">
+              {t('jobs.usdCapDesc')}
+            </p>
+          </div>
+          <select data-testid="settings-task-usd-cap" aria-label={t('jobs.usdCapLabel')} value={taskUsdCap}
+            onChange={(e) => onTaskUsdCapChange(Number(e.target.value))}
+            className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground w-40">
+            {(USD_CAPS.includes(taskUsdCap) ? USD_CAPS : [...USD_CAPS, taskUsdCap].sort((a, b) => a - b))
+              .map((value) => <option key={value} value={value}>{`$${value.toFixed(2)}`}</option>)}
+          </select>
+        </div>)}
     </>)],
     ['browser', (<>
         {/* 0.1.42: moved here from the work panel's footer — this is the one

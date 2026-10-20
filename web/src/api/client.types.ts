@@ -361,6 +361,7 @@ export interface AppSettings {
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
+  task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
   workspace_dir?: string;   // "" = unset = file tools not offered
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;

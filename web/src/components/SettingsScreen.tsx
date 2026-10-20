@@ -132,6 +132,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onTerminalSandboxChange={(v) => saveField({ terminalSandboxEnabled: v })}
         backgroundJobBudget={localSettings.backgroundJobBudget ?? 'standard'}
         onBackgroundJobBudgetChange={(v) => saveField({ backgroundJobBudget: v })}
+        taskUsdCap={localSettings.taskUsdCap ?? 2}
+        onTaskUsdCapChange={(v) => saveField({ taskUsdCap: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
         onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}
         lanDiscoveryEnabled={localSettings.lanDiscoveryEnabled ?? false}

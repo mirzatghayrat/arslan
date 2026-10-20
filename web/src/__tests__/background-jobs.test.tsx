@@ -120,6 +120,14 @@ describe("card", () => {
     expect(screen.queryByText("jobs.stop")).toBeNull();
   });
 
+  it("names a dollar stop in dollars (K4a)", () => {
+    useArslanStore.getState().handleFrame(update({ phase: "finished", outcome: "out_of_budget",
+      detail: "task_budget_exhausted", budget: { reason: "usd", used: "$0.11", limit: "$0.10" } }));
+    render(<JobCard jobId="job-1" />);
+    expect(screen.getByTestId("job-detail").textContent).toMatch(/^jobs\.budgetStop:jobs\.budgetWhat\.usd.*\|\$0\.11\|\$0\.10$/);
+    for (const messages of Object.values(jobMessages)) expect(messages.budgetWhat.usd).toBeTruthy();
+  });
+
   it("names the limit a job ran out of, in words, never the raw code", () => {
     useArslanStore.getState().handleFrame(update({ phase: "finished", outcome: "out_of_budget",
       detail: "task_budget_exhausted", budget: { reason: "tool_calls", used: 120, limit: 120 },

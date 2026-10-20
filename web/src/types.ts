@@ -230,6 +230,8 @@ export interface AppSettings {
   shellConfirmPolicy: 'ask_all' | 'ask_risky';
   /** Budget tier for one background job (0.1.43). The tier is where a job wraps up. */
   backgroundJobBudget: 'lean' | 'standard' | 'ample';
+  /** K4a: the per-task dollar cap, US$ (default 2, at most 100). */
+  taskUsdCap: number;
   /** Directory Arslan's file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   /** Periodic checklist turn. Default OFF; an empty checklist means no task. */
