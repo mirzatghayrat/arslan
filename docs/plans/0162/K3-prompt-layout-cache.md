@@ -21,6 +21,8 @@
 - **聊天用 1 小时、后台用 5 分钟：** `request_policy.prompt_cache(long=...)`。聊天回合进入 `long=True`；后台任务显式进入 `long=False`，因为它可能是在聊天回合里启动的，会继承上下文。
 - **回合内工具表的例外（各算一次未命中，前缀测试对这种回合豁免）：** 回合中装了新能力；provider 拒了某个 MCP 工具的 schema（0.1.62 F3）；重试时的 `relax()`。
 - **收尾不再收窄工具表：** 状态块写「仍能用的工具：…；其他调用会被拒绝」，越界的调用由分发拒绝并说明原因（原有的 `code: "wrap_up"`）。
+  - **兜底（全量测试里发现）：** 工具表不收窄以后，一直要去查的模型会被一次次拒绝，直到模型请求数用完，最后回「我停在这里」而不是交付。现在收尾时被拒两次，下一步就只许文字（同一张工具表，原生协议上 `tool_choice: none`），照样交付（`WRAP_REFUSALS_BEFORE_TEXT = 2`）。
+- **定住的测试文件：** `evals/companion/stage2-inputs.freeze.json` 钉着 `test_memory_multiturn_runtime.py` 的哈希。记忆挪进参考块以后，这个测试的替身记下的是「system + 参考块」（`context`），哈希随之更新，并在 `binding_change` 里写明：输入、场景和断言都没变。
 - **本地工具输出的标记：** 关键字用 `ARSLAN_TOOL_OUTPUT`（带前缀，免得误伤代码里正常出现的 `TOOL_OUTPUT`）。网页、浏览器、MCP、联网的命令仍用 `EXTERNAL_WEB_CONTENT`。两个关键字在两种框里都会被去伪造。`GUARD_NOTE` 加了一句说明这种框。「本回合读过外部内容」的判断照旧按工具来（`counts_as_external`），不看框，所以联网前要确认、学到的做法不立即生效这些规则都不受影响。
 - **K1 回滚 golden：** 只因为 `GUARD_NOTE` 这一句而变（⓪Plan 同意：回滚要保的是 v0.1.62 的线上格式，没变）。测试用 sha256 钉住「去掉这一句就等于 v0.1.62 录下的那份」。
 - **记忆证据（K3 引出的修正）：** 记忆从 system 挪进了本轮参考块，记忆收据数「请求次数」时原来只看 system 字段，会数不到。现在也认请求开头的参考块（`personal_context._turn_reference`），只认开在用户消息最前面、最新的那一块，用户自己话里引用的块不算。
