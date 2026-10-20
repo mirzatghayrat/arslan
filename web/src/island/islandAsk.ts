@@ -78,13 +78,9 @@ export function heldNoteKey(card: PendingCard):
   return 'heldGeneric';
 }
 
-/** The one line the island adds under an AppleScript card it will answer (final review, M3): the script is asked as the app it names (`kind` app, the
- *  bundle id), so the "Allow for this task" it takes also lets Arslan Hands look at and act in that app for the task (spec §A5: one list of allowed
- *  apps, shared by Hands and osascript). The chat card says so in `grant.mac_script`; null for every other card. */
-export function alsoAllowsKey(card: PendingCard): 'scriptAlsoHands' | null {
-  const f = card.frame;
-  return f.type === 'propose_action' && f.kind === 'mac_script' && f.perm_kind === 'app' ? 'scriptAlsoHands' : null;
-}
+// C2c (v0.1.63): the line under an AppleScript card the island answers, saying that its yes also lets Arslan Hands act in that app
+// (`alsoAllowsKey` → `scriptAlsoHands`), is gone. While 0.1.61's "every script asks" gate holds, every script card is `app_risky`
+// (server/registry/hands_tools.py), so the line could never show. It comes back with the card that lifts that gate (git history).
 
 /** What Allow says here (0.1.61 §A4). The island answers a card once only — "for this task" on a
  *  card whose first choice is that (the server holds it there, approvals.FIRST_CHOICE_ONLY) — so
