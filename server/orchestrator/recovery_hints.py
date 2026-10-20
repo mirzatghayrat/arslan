@@ -69,10 +69,11 @@ SANDBOX_APPLE_EVENTS_HINT = (
 # task_service.unwrapped_once). Any other is kept under the sandbox's profiles, where it reaches no app.
 KEPT_WRAPPED_HINT = (
     "This AppleScript stays sandboxed even approved, where Apple Events can't be sent. Only a plain script "
-    "for Reminders, Calendar, Notes or Contacts runs outside the sandbox, and only if it doesn't reach past "
-    "the app (a shell, other script text, a raw event, AppleScriptObjC), touch a file (read, write, save, "
-    "export, a file path), hand off a URL or the clipboard, delete, send or pay. Use mac_applescript if it "
-    "is in your tools: its card shows the user the whole script. Otherwise tell the user what you needed.")
+    "for Reminders, Calendar, Notes or Contacts, each named as a literal, runs outside the sandbox, and only "
+    "if it doesn't reach past the app (a shell, other script text, a raw event, AppleScriptObjC, an app's "
+    "own actions), touch a file (read, write, save, export, a file path), hand off a URL or the clipboard, "
+    "delete, send or pay. Use mac_applescript if it is in your tools: its card shows the user the whole "
+    "script. Otherwise tell the user what you needed.")
 
 
 def hint_for(tool_key: str, result: dict) -> str | None:

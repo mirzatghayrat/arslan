@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import re
 import shlex
 from collections.abc import Awaitable, Callable, Iterator
@@ -163,10 +164,18 @@ _BARE_APPS = frozenset({"reminders", "calendar", "notes", "contacts",
                         "com.apple.reminders", "com.apple.ical", "com.apple.notes", "com.apple.addressbook"})
 # Words that keep even such a script wrapped: saving, exporting, or a file the script names (⓪Plan:
 # save/export/saving; and from these four apps' own dictionaries: Calendar's open-file and sound-file
-# alarms, Notes attachments, and any path); and a Calendar attendee (the user: on an iCloud or Exchange
-# calendar it sends an invitation email, which is sending on the user's behalf).
+# alarms, Notes attachments, and any path); a Calendar attendee (the user: on an iCloud or Exchange
+# calendar it sends an invitation email, which is sending on the user's behalf); and, from ⓪Plan's S-gate
+# review, a URL the script hands to an app (Calendar's `GetURL`, any `://`: a bare run has no offline
+# rule) and an app's own actions (Notes' `open note location`, Contacts' `perform action`).
 _KEEP_WRAPPED_WORDS = re.compile(r"\b(?:save|saving|export|attachment|filepath|open\s+file\s+alarm|sound\s+file|"
-                                 r"POSIX\s+(?:file|path)|file\s+\"|alias\s+\"|attendees?\b)", re.I)
+                                 r"POSIX\s+(?:file|path)|file\s+\"|alias\s+\"|attendees?\b|getURL\b|"
+                                 r"open\s+note\s+location\b|perform\s+action\b)|://", re.I)
+# ⓪Plan's S-gate review: `script_apps` reads only literal names, so `tell application ("Fin" & "der")` or
+# `tell application a` next to a literal Reminders tell looked like a Reminders script. With every string
+# literal blanked, each `application` / `app` left must be followed by one.
+_OSA_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+_OSA_APP_NOT_LITERAL = re.compile(r'\b(?:application|app)\b(?!\s*"")', re.I)
 _OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
 _OSA_TELL_BLOCK = re.compile(r'tell\s+application\s+"[^"]+"\Z', re.I)
 _OSA_SYNTAX = re.compile(r"\A(?:\d+:\d+: )?syntax error: .+\(-?\d+\)\Z")   # compile phase, not "execution error: …"
@@ -320,6 +329,23 @@ def _inline_osascript(command: str) -> str | None:
 # script with `do shell script` and the like stays under the minimal profile (unwrapped it would be
 # an unconfined shell); mac_applescript, whose card shows the whole script, is the way for those.
 _SHORTCUT_FLAGS = {"-i", "--input-path", "-o", "--output-path", "--output-type"}
+_SHORTCUT_PATH_FLAGS = {"-i", "--input-path", "-o", "--output-path"}
+
+
+def _in_arslans_folder(path: str) -> bool:
+    """⓪Plan's S-gate review: a bare Shortcut's `-i` / `-o` file is read or written outside the sandbox,
+    so it must be an absolute path inside Arslan's own folder, resolved (a link inside it pointing out
+    does not count). Arslan's own folder, not the chosen workspace: the card (approvals.window_only) and
+    the run must decide alike, and neither can read the settings store here. A relative path stays
+    wrapped for the same reason: neither knows the command's folder. v0.1.64 candidate: the chosen
+    workspace, once the card carries it."""
+    from server.services.settings_service import default_workspace
+    expanded = os.path.expanduser(path)
+    if not os.path.isabs(expanded):
+        return False
+    root = os.path.realpath(default_workspace())
+    resolved = os.path.realpath(expanded)
+    return os.path.commonpath([root, resolved]) == root and resolved != root
 
 
 def _runs_bare_for(app: str) -> bool:
@@ -343,7 +369,8 @@ def unwrapped_once(command: str) -> bool:
         # script`), and every app with documents can `save … in <file>`. The user can widen the list.
         kind, apps = script_kind(script)
         return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
-                and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script))
+                and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
+                and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script)))
     if _shell_expands(command):
         return False
     try:
@@ -356,7 +383,13 @@ def unwrapped_once(command: str) -> bool:
         return False
     rest = words[3:]
     return len(rest) % 2 == 0 and all(flag in _SHORTCUT_FLAGS for flag in rest[::2]) \
-        and not any(set(word) <= set(";&|<>()") for word in words)
+        and not any(set(word) <= set(";&|<>()") for word in words) \
+        and all(_in_arslans_folder(value) for flag, value in zip(rest[::2], rest[1::2]) if flag in _SHORTCUT_PATH_FLAGS)
+
+
+def bare_shortcut(command: str) -> bool:
+    """An approved `shortcuts run` that runs with no wrapper (as opposed to a bare osascript)."""
+    return _inline_osascript(command) is None and unwrapped_once(command)
 
 
 def _fails_to_compile(script: str) -> bool:

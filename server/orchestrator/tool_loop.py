@@ -1070,14 +1070,30 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     network (by its text, or the model's `network: true`) asks first: this time or this conversation
     inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
     does not count there). The island never answers it. With nobody to ask: offline. An approved plain
-    osascript/Shortcut (U11) runs with no wrapper and is not a network command. Where seatbelt cannot
-    start nothing is wrapped, so only the card holds.
+    osascript (U11) runs with no wrapper and is not a network command; an approved bare Shortcut asks for
+    the network, this time only, and does not run without it. Where seatbelt cannot start nothing is
+    wrapped, so only the card holds.
 
     Returns {"offline": bool, "note": str} or {"refused": model text}."""
     from server.orchestrator import untrusted as _untrusted
-    from server.services import background_jobs, command_sandbox, permissions
-    if unwrapped or not _untrusted.external_seen():
+    from server.services import background_jobs, command_sandbox, permissions, task_service
+    if not _untrusted.external_seen():
         return {}
+    if unwrapped:
+        # ⓪Plan's S-gate review: a bare osascript (one of four apps, no URL) is not a network command,
+        # but a Shortcut can do anything, the network included, and a bare run has no offline rule. It
+        # asks first, this time only; with nobody to ask, or on a no, it does not run.
+        if not task_service.bare_shortcut(command):
+            return {}
+        if permissions.current_asker() is None:
+            return {"refused": "this Shortcut did not run: this turn read outside content, and there was "
+                               "nobody to allow the network for it"}
+        decision = await permissions.decide(permissions.Request(
+            kind="network", target="network:*", title=f"Let the Shortcut `{command[:80]}` use the network?",
+            detail=command, why=str(args.get("why") or "").strip()[:300], conversation_ok=False, once_only=True),
+            permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+        return {} if decision.allowed else {
+            "refused": decision.model_text or "the user did not allow this Shortcut to use the network"}
     wrapped = command_sandbox.available()
     inside = sandbox_on and not run_outside and wrapped
     if not (args.get("network") is True or _untrusted.reaches_network(command)):

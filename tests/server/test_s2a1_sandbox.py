@@ -214,7 +214,7 @@ async def test_an_outside_run_gets_the_minimal_profile_and_an_exempt_one_none(tm
     ("osascript -e 'tell application \"Reminders\" to get name of every list'", True),
     ("osascript <<'EOF'\ntell application \"Reminders\"\n  make new reminder with properties {name:\"x\"}\nend tell\nEOF", True),
     ("shortcuts run \"Morning\"", True),
-    ("/usr/bin/shortcuts run Morning -i ~/in.txt", True),
+    ("/usr/bin/shortcuts run Morning -i ~/in.txt", False),                 # input outside Arslan's folder
     ("osascript -e 'do shell script \"ls\"'", False),                        # an unconfined shell
     ("osascript -e 'tell application \"Notes\" to «event sysoexec» \"ls\"'", False),
     ("osascript -e 'tell application \"Finder\" to move file \"a\" to trash'", False),
@@ -639,8 +639,8 @@ def test_a_script_that_saves_exports_or_names_a_file_stays_wrapped(script):
 
 @pytest.mark.parametrize("script", [
     'tell application "Notes"\n  set t to (read f)\nend tell',                               # read a file
-    'tell application "Notes" to open location "https://x.test/?d=1"',                      # open location
-    'tell application "Calendar" to set url of event 1 of calendar 1 to "https://x.test"',  # URL
+    'tell application "Notes" to open location u',                                         # open location
+    'tell application "Calendar" to set url of event 1 of calendar 1 to u',                 # URL
     'tell application "Reminders" to make new reminder with properties {name:(the clipboard)}',  # clipboard
 ])
 def test_a_script_that_reads_a_file_hands_off_a_url_or_uses_the_clipboard_stays_wrapped(script):
@@ -650,6 +650,95 @@ def test_a_script_that_reads_a_file_hands_off_a_url_or_uses_the_clipboard_stays_
     assert hands_service.script_kind(script)[0] == "app_risky"
     assert not task_service._KEEP_WRAPPED_WORDS.search(script)       # #267's word alone keeps it wrapped
     assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
+# ⓪Plan's S-gate review of #265 (Opus 5.5), four findings, each with its own test.
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders" to count lists\ntell application ("Fin" & "der") to count windows',
+    'tell application "Reminders" to count lists\nset a to "Terminal"\ntell application a to activate',
+    'tell application "Reminders" to count lists\ntell application (path to frontmost application) to quit',
+])
+def test_a_computed_or_variable_app_name_stays_wrapped(script):
+    """🔴1: `script_apps` sees only literal names, so a computed target next to a literal Reminders tell
+    looked like a Reminders script. Every `application` / `app` must be followed by a string literal."""
+    assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
+def test_a_literal_name_inside_a_string_or_a_plural_word_is_not_an_app_target():
+    script = ('tell application "Reminders" to make new reminder with properties '
+              '{name:"app review", body:"two applications"}')
+    assert task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Calendar" to GetURL u',                                           # 🔴2: subscribe to a URL
+    'tell application "Reminders" to make new reminder with properties {body:"see https://x.test"}',  # any ://
+    'tell application "Notes" to open note location "x"',                                # 🟠3
+    'tell application "Contacts" to perform action',                                     # 🟠3
+])
+def test_a_script_that_reaches_a_url_or_runs_an_app_action_stays_wrapped(script):
+    """A bare run skips the offline rule, so a URL the script hands to an app must keep it wrapped."""
+    assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
+def test_a_bare_shortcut_reads_and_writes_only_inside_arslans_folder(tmp_path, monkeypatch):
+    """🟠4: `-i` / `-o` name files outside the sandbox. They must be absolute paths inside Arslan's own
+    folder (resolved, so a link inside it pointing out does not count); a relative path stays wrapped,
+    because the card and the run must decide alike without knowing the command's folder."""
+    home = tmp_path / "Arslan"
+    (home / "in").mkdir(parents=True)
+    (home / "out-link").symlink_to(tmp_path / "LaunchAgents", target_is_directory=True)
+    monkeypatch.setenv("ARSLAN_DEFAULT_WORKSPACE", str(home))
+    run = lambda rest: task_service.unwrapped_once(f"shortcuts run Morning {rest}")       # noqa: E731
+    assert run(f"-i {home}/in/a.txt -o {home}/out.txt --output-type public.plain-text")
+    assert run("--output-type public.plain-text")
+    for rest in (f"-i {tmp_path}/secrets.txt", f"-o {home}/out-link/x.plist", "-i in/a.txt",
+                 f"--input-path {home}/../secrets.txt"):
+        assert not run(rest), rest
+
+
+class _NetAsker:
+    def __init__(self, approve):
+        self.frames, self.approve = [], approve
+
+    async def __call__(self, frame):
+        self.frames.append(frame)
+        return {"approved": self.approve, "scope": "once", "by": "user", "call_id": frame["call_id"]}
+
+
+@pytest.mark.parametrize("approve", [True, False])
+async def test_after_outside_content_a_bare_shortcut_asks_for_the_network_this_time_only(
+        execution_db, monkeypatch, approve):
+    """🟠4: a Shortcut can do anything, the network included, and a bare run has no offline rule. After
+    the turn read outside content it asks first, this time only; a no runs nothing."""
+    from server.orchestrator import untrusted
+    from server.services import permissions
+    seen = untrusted.track_turn()
+    untrusted.mark_external()
+    ex, asker = _Exec(), _NetAsker(approve)
+    try:
+        with permissions.asking_with(asker):
+            await _dispatch(monkeypatch, 'shortcuts run "Morning"', ex, _UserClick(True))
+    finally:
+        untrusted.end_turn(seen)
+    [frame] = asker.frames
+    assert frame["perm_kind"] == "network" and frame["options"] == ["once"]
+    assert ex.runs == ([(True, True)] if approve else [])
+
+
+async def test_after_outside_content_a_bare_reminders_script_needs_no_network_card(execution_db, monkeypatch):
+    from server.orchestrator import untrusted
+    from server.services import permissions
+    seen = untrusted.track_turn()
+    untrusted.mark_external()
+    ex, asker = _Exec(), _NetAsker(True)
+    try:
+        with permissions.asking_with(asker):
+            await _dispatch(monkeypatch, PLAIN_OSA, ex, _UserClick(True))
+    finally:
+        untrusted.end_turn(seen)
+    assert asker.frames == [] and ex.runs == [(True, True)]
 
 
 @pytest.mark.parametrize("with_attendee, bare", [(False, True), (True, False)])
