@@ -94,3 +94,11 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
 - **`mac_applescript` 工具套同一套规则**：脚本取自参数，stderr 取自结果的 `error`。超时和其他错误码照旧算不明。实例：T1 r1 的 -1708 发生在 `make new list` 之后，不算已知。
 - **顺带补上第一版的口子**：命令里有在单引号之外的 `$` 或反引号时，一律不判。理由：shell 会先替换、先跑，osascript 看到的已经不是写出来的脚本。第一版里，`-e "…$(curl …)…"` 碰上 -1743，会被当成「什么都没发生」。
 
+## 以后再看（⓪Plan 2026-10-21 实测，不开新 PR）
+
+#245 合并后 T1 ×3（main `5e33c5e5` 之后，DeepSeek，A 方案）：2/3 通过，K2a 时是 0/3；r2 被拒的 osascript 已算已知失败。r1 还是「需要你核对」，因为脚本里有两种写法不在白名单里：
+
+- `end tell` 之后顶层的 `return "done"`。这段脚本还有一个别的错误号的编译错误：`syntax error: Invalid date and time date …（-30720）`，日期字符串是中文格式。
+- `set time of t1 to 9 * 60 * 60`：日期属性设成纯数字算式，前后带 `--` 注释，之后报 -10004。
+
+脚本原文在 ⓪Plan 那次跑分（fresh-arslan-T1-r1-d4b-ds）的 run_steps 里。要放宽时，两条都按同一份白名单的思路加：只认没有副作用的写法，编译错误照旧要 osacompile 确认。
