@@ -169,3 +169,35 @@ async def test_a_malformed_fixed_budget_is_ignored(execution_db, monkeypatch):
         monkeypatch.setenv("ARSLAN_WORKING_TOKEN_BUDGET", value)
         assert await memory.turn_budget("c") == cw.history_budget(200_000)
         assert memory._token_budget() == cw.FLOOR
+
+
+@pytest.mark.parametrize("base_url", [
+    "http://localhost:1234/v1",          # LM Studio
+    "http://127.0.0.1:8080/v1",          # llama.cpp server
+    "http://192.168.1.20:8000/v1",       # vLLM on the LAN
+    "http://100.101.102.103:8000/v1",    # over Tailscale
+    "http://gpu-box:8000/v1",            # a machine on the LAN by its name
+    "http://studio.local:1234/v1",
+])
+def test_a_self_hosted_openai_compatible_server_gets_the_small_window(base_url):
+    """③Hands' K2a review: LM Studio, llama.cpp and local vLLM serve a small context by default, but
+    they connect as "OpenAI-compatible", so the model's name decided (deepseek-r1 → 128k)."""
+    assert cw.window_for("deepseek-r1-distill-qwen-32b", provider="custom", base_url=base_url) == (
+        cw.LOCAL_WINDOW, "local")
+
+
+@pytest.mark.parametrize("base_url", ["https://api.deepseek.com/v1", "https://8.8.8.8/v1", ""])
+def test_a_cloud_endpoint_keeps_its_models_window(base_url):
+    assert cw.window_for("deepseek-chat", provider="deepseek", base_url=base_url) == (128_000, "table")
+
+
+async def test_a_turn_on_a_self_hosted_server_gets_the_small_budget(execution_db, monkeypatch):
+    from server.orchestrator import memory, tool_loop
+    monkeypatch.delenv("ARSLAN_WORKING_TOKEN_BUDGET", raising=False)
+    # Built as llm_factory builds a custom config: the base_url is the only sign it is self-hosted.
+    from arslan.llm.adapter import LLMAdapter
+    from arslan.llm.presets import expand_preset
+    provider, model, base_url = expand_preset("custom", "deepseek-r1-distill-qwen-32b", "http://localhost:1234/v1")
+    adapter = LLMAdapter(provider, model, api_key="", base_url=base_url, report_provider="custom")
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    assert await memory.turn_budget("c") == cw.history_budget(cw.LOCAL_WINDOW)

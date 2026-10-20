@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import ConversationEvent, Spawn
 from tests.server.conftest import MockAdapter, boot_schema
+from tests.server.test_arslan_loop import settle_after_turn
 
 
 @pytest_asyncio.fixture
@@ -53,6 +54,7 @@ async def test_memory_event_logged_on_facts(maker, monkeypatch):
 
     events = []
     await arslan.handle_user_message("main", "我对半导体很感兴趣", _events(events))
+    await settle_after_turn()                      # facts are looked for after the turn (K2b)
 
     from sqlalchemy import select
 
@@ -78,6 +80,7 @@ async def test_no_memory_event_without_facts(maker, monkeypatch):
 
     events = []
     await arslan.handle_user_message("main2", "hello", _events(events))
+    await settle_after_turn()
 
     from sqlalchemy import select
 

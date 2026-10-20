@@ -60,6 +60,9 @@ class LLMAdapter:
         self._report_provider = report_provider or provider_name
         self.model = model
         self.api_key = api_key
+        # Where it connects (server.orchestrator.context_window sizes history by it: a self-hosted
+        # OpenAI-compatible server serves a small context).
+        self.base_url = base_url
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
         if max_tokens is not None:
             # Explicit opening output budget (e.g. a cost-capped eval whose

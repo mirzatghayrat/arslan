@@ -7,7 +7,7 @@ import pytest
 
 from server.orchestrator import arslan, tool_loop
 from server.services import turn_facts
-from tests.server.test_arslan_loop import _LLMResp, _NativeAdapter, _events, maker  # noqa: F401
+from tests.server.test_arslan_loop import _LLMResp, _NativeAdapter, _events, maker, settle_after_turn  # noqa: F401
 
 
 class _SeeingAdapter(_NativeAdapter):
@@ -53,6 +53,7 @@ async def test_facts_are_looked_for_after_the_answer_not_before(maker, monkeypat
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Adapter([_LLMResp(content="ok")]))
     monkeypatch.setattr(turn_facts, "extract", _facts)
     await arslan.handle_user_message("c1", "I prefer short answers", _events([]))
+    await settle_after_turn()                      # after the turn, outside its lock (K2b)
     assert order == ["answer", "facts"]
 
 
@@ -64,6 +65,7 @@ async def test_a_failing_fact_step_never_breaks_the_turn(maker, monkeypatch):  #
     monkeypatch.setattr(turn_facts, "extract", _boom)
     events = []
     await arslan.handle_user_message("c1", "hi", _events(events))
+    assert not [o for o in await settle_after_turn() if isinstance(o, BaseException)]
     assert any(e["type"] == "stream_end" for e in events)
     assert not any(e["type"] == "error" for e in events)
 
@@ -84,6 +86,7 @@ async def test_no_facts_in_a_private_conversation(maker, monkeypatch, flag):  # 
     base = personal_context.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c1")
     monkeypatch.setattr(personal_context, "current", lambda: replace(base, **{flag: True}))
     await arslan.handle_user_message("c1", "my salary is 10k", _events([]))
+    await settle_after_turn()
     assert called == []
 
 

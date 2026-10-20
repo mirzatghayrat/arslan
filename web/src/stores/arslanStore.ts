@@ -542,7 +542,8 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["message", "error", "fact_saved", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
+      // K2b: fact_saved is not here: facts are looked for after the turn and may arrive during the next one.
+      const RESPONDING_TYPES = new Set(["message", "error", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -943,20 +944,28 @@ function makeActions(set: SetState, get: GetState) {
         case "memory_proposed": {
           // D1 (0.1.55): everything remembered after one turn becomes ONE quiet line.
           // Facts arrive after the answer, back to back; a new item starts the next turn.
+          // K2b: they are looked for after the turn, so the next message may be in by then. The
+          // line goes under the reply its turn ended with (the frame's reply_message_id); without
+          // one, or that reply not shown here, last.
           const fact = {
             content: frame.content, sensitive: frame.sensitive,
             entryId: frame.entry_id ?? null, version: frame.version ?? null,
             status: frame.type === "memory_proposed" ? "proposed" as const : "active" as const,
           };
-          const last = state.items[state.items.length - 1];
-          if (last && last.kind === "fact") {
-            const facts = [...(last.facts ?? []), fact];
-            set({ items: [...state.items.slice(0, -1),
-              { ...last, facts, content: facts.map((f) => f.content).join(" · ") }] });
+          const replyId = typeof frame.reply_message_id === "number" ? frame.reply_message_id : null;
+          const reply = replyId == null ? -1
+            : state.items.findIndex((it) => it.kind === "message" && it.role !== "user" && it.id === replyId);
+          const items = [...state.items];
+          const at = reply >= 0 ? reply + 1 : items.length;    // where this turn's line is, or goes
+          const line = reply >= 0 ? items[at] : items[at - 1];
+          if (line && line.kind === "fact" && (reply < 0 || line.replyMessageId === replyId)) {
+            const facts = [...(line.facts ?? []), fact];
+            items[items.indexOf(line)] = { ...line, facts, content: facts.map((f) => f.content).join(" · ") };
           } else {
-            set({ items: [...state.items, { id: nextClientId(), kind: "fact", role: "arslan",
-              content: frame.content, sensitive: frame.sensitive, facts: [fact] }] });
+            items.splice(at, 0, { id: nextClientId(), kind: "fact", role: "arslan", content: frame.content,
+              sensitive: frame.sensitive, facts: [fact], replyMessageId: replyId });
           }
+          set({ items });
           break;
         }
         case "spawn_updated":

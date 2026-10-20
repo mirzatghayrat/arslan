@@ -620,6 +620,10 @@ export interface ArslanThreadItem {
   sensitive?: boolean; // kind === "fact"
   /** kind === "fact" (D1, 0.1.55): everything remembered in this turn, shown as one quiet line. */
   facts?: RememberedFact[];
+  /** kind === "fact" (K2b): the reply its turn ended with (the frame's `reply_message_id`). Facts
+   *  are looked for after the turn, so one may arrive once the next message is in; it still goes
+   *  under that reply. */
+  replyMessageId?: number | null;
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
@@ -750,8 +754,8 @@ export type ArslanServerMessage =
   | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
       restricted_count: number; assignable: boolean; call_id?: string }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
-  | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
-  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
+  | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
+  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.

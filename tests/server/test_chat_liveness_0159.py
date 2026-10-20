@@ -110,6 +110,45 @@ def test_a_message_on_the_same_window_waits_too(app_client, slow):
     assert slow.order == ["first:start", "first:end", "second"]
 
 
+def test_a_message_sent_right_after_the_answer_is_not_queued(app_client, slow, monkeypatch):
+    """K2b, M3 #11: the first turn's post-turn work (looking for facts) is still running, and a
+    message sent once the turn's lock is free starts at once, with no "queued". Before K2b the lock
+    was held until the facts were looked for. (Sent the instant stream_end arrives, a message can
+    still meet the turn's own last bookkeeping, a few milliseconds.)"""
+    import threading
+
+    from server.services import turn_facts
+    slow.seconds = 0
+    looking_done = threading.Event()
+    fallback = threading.Timer(4, looking_done.set)    # before K2b the second message waits for this
+
+    async def _still_looking(conv, msg):
+        while not looking_done.is_set():
+            await asyncio.sleep(0.02)
+        return []
+
+    monkeypatch.setattr(turn_facts, "extract", _still_looking)
+    fallback.start()
+    try:
+        with app_client.websocket_connect("/ws/arslan/main") as w:
+            w.receive_json()
+            w.send_json({"type": "user_message", "content": "first: hi"})
+            _until(w, lambda f: f.get("type") == "stream_end")
+            deadline = time.monotonic() + 3
+            while ws_arslan._turn_lock("main").locked() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            # The turn's lock is free while its facts are still being looked for.
+            assert not ws_arslan._turn_lock("main").locked() and not looking_done.is_set()
+            w.send_json({"type": "user_message", "content": "second: and now?"})
+            frames = _until(w, lambda f: f.get("type") == "stream_end")
+            assert "queued" not in [f.get("type") for f in frames]
+            assert _said(frames) == "answer two"
+            assert not looking_done.is_set()           # answered while the first turn's facts were looked for
+    finally:
+        looking_done.set()
+        fallback.cancel()
+
+
 def test_still_working_beats_reach_the_window_and_are_never_replayed(app_client, slow, monkeypatch):
     monkeypatch.setattr(ws_arslan, "_WORKING_BEAT_S", 0.2)
     slow.seconds = 2.5

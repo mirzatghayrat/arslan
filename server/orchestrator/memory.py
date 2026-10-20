@@ -77,7 +77,8 @@ async def turn_budget(conversation_id: str | None, *, has_images: bool = False) 
             adapter = await tool_loop._adapter_for_turn(has_images=has_images, conversation_id=conversation_id)
             # report_provider, not provider_name: presets map ollama onto the "openai" wire protocol.
             provider = getattr(adapter, "report_provider", None) or getattr(adapter, "provider_name", None)
-            window, source = context_window.window_for(getattr(adapter, "model", None), provider=provider)
+            window, source = context_window.window_for(getattr(adapter, "model", None), provider=provider,
+                                                       base_url=getattr(adapter, "base_url", "") or "")
             budget = context_window.history_budget(window)
         except Exception:  # noqa: BLE001 — the budget is never a reason for a turn to fail
             window, source, budget = None, "unresolved", context_window.FLOOR
@@ -194,9 +195,11 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
     KEEP_TURNS user turns stay as they were while they fit in half the budget (fewer otherwise, at
     least the last message). On any failure, leave the thread un-compacted (never drop)."""
     try:
-        from sqlalchemy import insert, literal
+        from sqlalchemy import exists, insert, literal
         from server.services import memory_snapshot_guard
-        # NOTE: read-then-write is not serialized; safe for v1's single sequential user.
+        # Read-then-write is not serialized: since K2b compaction runs after the turn, outside its
+        # lock. The write below lands only if no summary was written since this read, and only while
+        # the last message it folds is still there (the conversation was not deleted meanwhile).
         async with db_session.AsyncSessionLocal() as db:
             snapshot_token = await memory_snapshot_guard.capture(db)
             summ = await _latest_summary(db, conversation_id)
@@ -246,11 +249,16 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
                 new_summary = await _summarize(adapter, f"Existing summary:\n{new_summary}\n\nNew messages:\n(none)")
                 new_summary = clip_context(new_summary, summary_cap)
 
+        newer = select(ArslanSummary.id).where(ArslanSummary.conversation_id == conversation_id)
+        if summ is not None:
+            newer = newer.where(ArslanSummary.id > summ.id)
+        folded = select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id,
+                                                ArslanMessage.id == new_cutoff)
         async with db_session.AsyncSessionLocal() as db:
             await db.execute(insert(ArslanSummary).from_select(
                 ["conversation_id", "summary", "up_to_message_id"],
                 select(literal(conversation_id), literal(new_summary), literal(new_cutoff))
-                .where(memory_snapshot_guard.unchanged(snapshot_token))))
+                .where(memory_snapshot_guard.unchanged(snapshot_token), ~exists(newer), exists(folded))))
             await db.commit()
     except Exception:  # noqa: BLE001 - degrade gracefully, keep full thread
         logger.warning("compaction failed for %s; keeping full thread", conversation_id, exc_info=True)

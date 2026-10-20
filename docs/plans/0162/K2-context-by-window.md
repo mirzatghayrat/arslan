@@ -20,10 +20,19 @@
 - **拆成两个 PR：**
   - **K2a**：按窗口给历史、工具摘要、约 75% 时压缩、搜索片段。推动「三轮追问 3/3」。
   - **K2b**：抽事实和压缩挪到回合锁外（U5 ①②、M3 第 11 条）。K2a 合后单独出计划，因为它要碰回合锁、任务租约和 `stream_end` 之后的帧。
+- **K2b 的做法（实施记录）：**
+  - `handle_user_message` 回答完只排一个回合后任务就返回，回合锁马上放开。任务自己一个 asyncio task，脱离已结束的回合（`task_service.detached_context`：没有回合检查点，有自己的预算），记账分类 `memory_facts`、`memory` 照旧。同一个对话的回合后任务按顺序跑，后一个能看到前一个存下的东西。
+  - 任务的记忆上下文：身份沿用本回合的（task、run、消息，事实引用它们，删那条消息会压住它）；开关取本回合和此刻重读的对话开关里更严的那个。回答期间关掉的记忆、学习、临时对话都算数。
+  - 任务发的帧在 `stream_end` 之后到；窗口已经关了就丢掉，不重试。网页：`fact_saved` 不再清掉「思考中」。
+  - 事实那一行放在它那一回合的回答下面：回合从自己发出的 `stream_end` 记下回答的 id（不查库，免得别的行插进来顶替），任务发的 `fact_saved`、`memory_proposed` 带上 `reply_message_id`。只有网页窗口收这两种帧，iPhone 收不到（①iOS 核过）；`stream_end` 和 Bridge 读的帧都没改。（第一版以为帧上本来就带 `task_id`，其实 socket 重建 `fact_saved` 时没有它：③Hands 审出来的。）
+  - 摘要写入加了两个条件：读完之后没有新写的摘要；它折进去的最后一条消息还在（对话在摘要期间被删了，就不写回）。
+  - 抽事实的模型调用要几秒，存之前再读一次开关。
+  - **剩下的：** 进程退出时排着的任务丢失（只丢那一回的事实，下一次压缩会补上）。删对话不会拦下排着的抽事实：记忆本来就比对话活得久。`stream_end` 一到就立刻发下一条，还可能碰上本回合最后几毫秒的收尾，看到一闪而过的「排队」；人手发不出这么快。
 - **本地服务的窗口（③Hands 审，未做完）：**
   - 由 Ollama 提供的模型一律按 8k 窗口算（`LOCAL_WINDOW`，来源记 `local`）。
   - LM Studio、llama.cpp 服务、本地 vLLM 默认上下文也小，但它们以 openai 兼容方式接入，现在认不出，会按家族表或默认值给预算，可能被静默截断。
-  - 后续：建 adapter 时从 provider config 的 `base_url` 带上 locality（`llm_factory` 手里有），再给它们小窗口。
+  - 已补（K2b PR）：adapter 记下 `base_url`。本机、不在互联网上的地址（局域网、Tailscale）、不带点的主机名或 `.local` / `.lan` / `.internal` / `.home.arpa` 结尾的，一律按小窗口算，来源记 `local`。只用来定历史长度（小是保守的一边，不低于 FLOOR），不是隐私判断；隐私判断仍由 `arslan.llm.locality` 管，更严。
+- **超时在工具摘要里写明（③Hands 审 K2a，K2b PR 补）：** `run_python` 超时以前只记成「failed: error」，现在记「failed: timed out」。只认执行器自己的说法（开头的 `timed out after Ns`），stderr 里出现这几个字不算。
 - **回退开关用环境变量，不加界面设置：**
   - 旧固定预算：`ARSLAN_WORKING_TOKEN_BUDGET`，本来就有。
   - 关掉工具摘要：`ARSLAN_TURN_TOOL_SUMMARY=off`。
