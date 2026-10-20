@@ -626,6 +626,21 @@ def test_a_script_that_saves_exports_or_names_a_file_stays_wrapped(script):
     assert not task_service.unwrapped_once(f"osascript -e '{script}'")
 
 
+@pytest.mark.parametrize("script", [
+    'tell application "Notes"\n  set t to (read f)\nend tell',                               # read a file
+    'tell application "Notes" to open location "https://x.test/?d=1"',                      # open location
+    'tell application "Calendar" to set url of event 1 of calendar 1 to "https://x.test"',  # URL
+    'tell application "Reminders" to make new reminder with properties {name:(the clipboard)}',  # clipboard
+])
+def test_a_script_that_reads_a_file_hands_off_a_url_or_uses_the_clipboard_stays_wrapped(script):
+    """The user's #265 review, item ①, in Hands' `script_kind` (#267): each word makes the script
+    app_risky, so even one of the four apps runs it under the sandbox."""
+    from server.services import hands_service
+    assert hands_service.script_kind(script)[0] == "app_risky"
+    assert not task_service._KEEP_WRAPPED_WORDS.search(script)       # #267's word alone keeps it wrapped
+    assert not task_service.unwrapped_once(f"osascript <<'EOF'\n{script}\nEOF")
+
+
 @pytest.mark.parametrize("with_attendee, bare", [(False, True), (True, False)])
 def test_a_calendar_script_that_adds_an_attendee_stays_wrapped(with_attendee, bare):
     """The user (via ⓪Plan): an attendee on an iCloud or Exchange calendar sends an invitation email,
