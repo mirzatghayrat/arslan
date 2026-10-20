@@ -298,6 +298,11 @@ def test_a_quote_in_a_comment_cannot_hide_a_computed_app_target(apps_folder):
     'property process : "Vault"\ntell application process to activate',
     'repeat with process in {"Vault"}\ntell application process to activate\nend repeat',
     'on f(process)\ntell application process to activate\nend f',
+    'set my process to "Vault"\ntell application process to activate',
+    'set process of me to "Vault"\ntell application process to activate',
+    # With System Events named the class word is allowed, so only the binding check catches these.
+    'tell application "System Events"\nset my process to "x"\ntell application process to activate\nend tell',
+    'tell application "System Events"\nset process of me to "x"\ntell application process to activate\nend tell',
 ])
 def test_a_class_word_the_script_binds_as_a_variable_is_a_computed_target(script):
     assert hands_service.computed_app_target(script), script
@@ -339,3 +344,22 @@ async def test_a_never_list_app_handed_to_finder_by_id_or_path_is_refused(hands,
         result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
         assert result.get("code") == "app_denied", script
     assert seen == [] and ran == []
+
+
+@pytest.mark.parametrize("script", [
+    'tell application process to activate',            # no System Events named: `process` is a value
+    'tell application processes to activate',
+    'tell application files to activate',              # no Finder named
+    'tell application "System Events"\nset n to "x"\ntell process named n to set frontmost to true\nend tell',
+])
+def test_a_class_word_outside_its_own_app_or_a_named_variable_is_a_computed_target(script):
+    """②Main's gate on #271: a class word is the class only in a script that names its app by a literal."""
+    assert hands_service.computed_app_target(script), script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Finder" to open application file id "com.example.notes2"',
+    'tell application "System Events" to tell process named "Notes2" to set frontmost to true',
+])
+def test_a_class_word_with_its_own_app_named_and_a_named_literal_are_not_computed(script):
+    assert hands_service.computed_app_target(script) is None, script

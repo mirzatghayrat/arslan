@@ -385,6 +385,8 @@ _CLASS_WORDS = frozenset({"process", "processes", "files"})
 _IDENT = r"\|[^|\n]*\||[A-Za-z_][A-Za-z0-9_]*"
 _BINDING = re.compile(
     r"\bset\s+(" + _IDENT + r")\s+to\b"                          # set x to …
+    r"|\bset\s+my\s+(" + _IDENT + r")\s+to\b"                    # set my x to …
+    r"|\bset\s+(" + _IDENT + r")\s+of\s+me\s+to\b"                # set x of me to …
     r"|\bset\s+\{([^}\n]*)\}\s+to\b"                              # set {a, b} to …
     r"|\bcopy\b[^\n]*?\bto\s+(" + _IDENT + r"|\{[^}\n]*\})"        # copy … to x / {a, b}
     r"|\bproperty\s+(" + _IDENT + r")\s*:"                       # property x : …
@@ -410,6 +412,24 @@ def _talks_to_system_events(script: str) -> bool:
     return any(_system_events(app) for app in script_apps(script))
 
 
+def _talks_to_finder(script: str) -> bool:
+    return any(app_key(app) == "finder" or app.strip().lower() == "com.apple.finder"
+               or any(b.lower() == "com.apple.finder" for b in _bundles_of(app)) for app in script_apps(script))
+
+
+def _class_after_application(name: str, script: str, bound: set[str]) -> bool:
+    """Whether `application <name>` is the class (②Main's gate on #271): `process` / `processes` only in a
+    script that names System Events by a literal, `file` / `files` only in one that names Finder, and
+    never a word the script binds. Anywhere else the word is a value, so the target is computed."""
+    if name in bound:
+        return False
+    if name in ("process", "processes"):
+        return _talks_to_system_events(script)
+    if name in ("file", "files"):
+        return _talks_to_finder(script)
+    return True
+
+
 def _computed_process(code: str, script: str) -> str | None:
     """In a System Events script, a process named other than by a literal string or a filter: `tell
     process x`, `process 1`, `process (…)` (②Main on #271). A filter (`first process whose frontmost is
@@ -422,6 +442,9 @@ def _computed_process(code: str, script: str) -> str | None:
         word = _WORD.match(code, at)
         if word is not None and word.group(0).lower() in _NOT_A_TARGET:
             continue
+        if word is not None and word.group(0).lower() == "named" and \
+                code[_GAP.match(code, word.end()).end():][:1] == '"':
+            continue                                     # `process named "Notes"`: a literal name
         line_end = script.find("\n", m.start())
         return script[m.start():line_end if line_end != -1 else len(script)].strip()[:80]
     return None
@@ -451,7 +474,7 @@ def computed_app_target(script: str) -> str | None:
             name = word.group(0).lower()
             if name == "id" and code[_GAP.match(code, word.end()).end():][:1] == '"':
                 continue
-            if name in _NOT_A_TARGET and name not in bound:
+            if name in _NOT_A_TARGET and _class_after_application(name, script, bound):
                 continue
         line_end = script.find("\n", m.start())
         return script[m.start():line_end if line_end != -1 else len(script)].strip()[:80]
