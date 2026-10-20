@@ -167,23 +167,11 @@ async def _start_mcp_supervisor() -> bool:
 
 
 async def _boot_mcp() -> None:
-    """MCP at boot (0.1.61 §B1): the supervisor, or — only when it is off — the opt-in PB-4 health
-    sweep (ARSLAN_MCP_HEALTH_ON_BOOT=1, sequential, 10 s bound each), which would otherwise probe
-    every server while the supervisor starts it. Neither ever breaks boot."""
-    import os
-
+    """MCP at boot (0.1.61 §B1): the supervisor. It never breaks boot."""
     try:
-        supervised = await _start_mcp_supervisor()
+        await _start_mcp_supervisor()
     except Exception as exc:  # noqa: BLE001 — MCP must never break boot
-        supervised = False
         logger.warning("MCP supervisor start failed (non-fatal): %s", exc)
-    if os.environ.get("ARSLAN_MCP_HEALTH_ON_BOOT") == "1" and not supervised:
-        try:
-            from server.services import mcp_service
-
-            await mcp_service.check_health_all()
-        except Exception as exc:  # noqa: BLE001 — boot sweep must never break startup
-            logger.warning("MCP boot health sweep failed (non-fatal): %s", exc)
 
 
 @asynccontextmanager

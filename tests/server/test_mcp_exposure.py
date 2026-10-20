@@ -363,41 +363,6 @@ async def test_a_stuck_call_never_drops_a_session_that_replaced_its_own(db, own_
     assert session.manager._sessions.get(1) is newer and scheduled == []
 
 
-async def test_a_probe_waiting_on_a_stuck_session_takes_its_replacement_for_deliberate(
-        db, own_supervisor, monkeypatch):
-    """The replacement moves the generation before the drop wakes anyone (every verb's order): a
-    health probe pending on the stuck session writes nothing and plans nothing of its own."""
-    own_supervisor.start(run_loops=False)
-    own_supervisor._sem = asyncio.Semaphore(0)
-    monkeypatch.setattr(executor, "CALL_BOUND_S", 0.2)
-    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
-    listing, closing, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
-
-    class _StuckBoth(_Stuck):
-        async def list_tools(self, params=None):
-            listing.set()
-            await asyncio.Event().wait()
-
-    async def slow_close():                           # a real close waits for the process to exit
-        closing.set()
-        await release.wait()
-    _live_session(monkeypatch, 1, _StuckBoth(), aclose=slow_close)
-    plans = _record_plans(monkeypatch, own_supervisor)
-    probe = asyncio.create_task(mcp_service.check_health(1))
-    await asyncio.wait_for(listing.wait(), 5)
-    call = asyncio.create_task(executor.MCPProxyExecutor(1, "t").execute({}))
-    try:
-        await asyncio.wait_for(closing.wait(), 5)       # the stuck session is being closed …
-        await asyncio.wait_for(probe, 5)                # … and the probe woke meanwhile
-    finally:
-        release.set()
-    result = await asyncio.wait_for(call, 5)
-    assert plans == [(1, "refresh")] and (await _row(db, 1)).health_status != "failing"
-    assert "timed out after 0.2 s" in result["error"]
-
-
-# ── review M-3: the words never mislead the model ───────────────────────────────────────────────
-
 async def test_a_switched_on_server_whose_row_still_says_off_is_told_as_starting(db):
     """(a) set_host_allowed(True) committed the switch; set_enabled's `starting` write has not landed
     (or failed). Never "switched off", and never a raw state word in the prompt."""
@@ -766,12 +731,12 @@ async def test_the_tick_never_repairs_a_server_a_deliberate_verb_is_acting_on(db
     assert scheduled == []
 
 
-async def test_a_cancelled_probe_that_dropped_a_healthy_session_is_restarted_by_the_tick(
+async def test_a_cancelled_listing_that_dropped_a_healthy_session_is_restarted_by_the_tick(
         db, own_supervisor, monkeypatch):
-    """Carry (Task 6 re-review D5): a health probe cancelled while it lists (a stopped chat turn, a
-    client gone) drops the healthy session — `list_tools` drops on any BaseException — and tells
-    nobody: the row stays `ready` with no session behind it. The tick restarts it: one fresh start,
-    and a live session again."""
+    """Carry (Task 6 re-review D5): a tool listing cancelled midway (a stopped chat turn, a client
+    gone) drops the healthy session — `list_tools` drops on any BaseException — and tells nobody:
+    the row stays `ready` with no session behind it. The tick restarts it: one fresh start, and a
+    live session again. (Found with the PB-4 health probe, removed in C2e-2; any listing does it.)"""
     pending = asyncio.Event()
 
     class _Blocking:
@@ -792,7 +757,7 @@ async def test_a_cancelled_probe_that_dropped_a_healthy_session_is_restarted_by_
     monkeypatch.setattr(session.manager, "_open_session", open_)
     plans = _record_plans(monkeypatch, own_supervisor)
     own_supervisor.start(run_loops=False)
-    probe = asyncio.create_task(mcp_service.check_health(1))
+    probe = asyncio.create_task(session.manager.list_tools({"id": 1, "live_only": True}))
     await asyncio.wait_for(pending.wait(), 5)
     probe.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -1048,7 +1013,6 @@ async def test_no_reader_of_last_error_shows_the_servers_own_key(legacy_rows):
         seen[f"not_ready_result {sid}"] = executor.not_ready_result(srv)
         seen[f"execute {sid}"] = await executor.MCPProxyExecutor(sid, "t").execute({})
         seen[f"not_ready_for_key {sid}"] = await executor.not_ready_for_key(f"mcp_{sid}__t")
-        seen[f"check_health {sid}"] = await mcp_service.check_health(sid)
         seen[f"last_error_text {sid}"] = await mcp_service.last_error_text(sid)
     head = _LEGACY_KEY[:10]                  # a key cut before it was masked leaves its head behind
     leaks = [name for name, shown in seen.items() if head in json.dumps(shown)]
@@ -1061,7 +1025,7 @@ async def test_no_reader_of_last_error_shows_the_servers_own_key(legacy_rows):
 # ── final review M-1: one readiness rule on every surface ───────────────────────────────────────
 
 async def test_a_ready_row_with_no_live_session_reads_starting_on_every_surface(db, monkeypatch):
-    """GET /mcp/servers, the health answer and Arslan's own MCP server said ready / connected / ok for
+    """GET /mcp/servers and Arslan's own MCP server said ready / connected / ok for
     a `ready` row with no session in this process, while the model and the Capabilities rows said
     still starting. The stored `state` stays (PR 8 and the Capabilities rows read it); `shown` is new,
     and the legacy `status` / `health_status` follow it."""
@@ -1070,8 +1034,6 @@ async def test_a_ready_row_with_no_live_session_reads_starting_on_every_surface(
     servers = {s["id"]: s for s in await mcp_service.list_servers()}
     assert (servers[1]["state"], servers[1]["shown"], servers[1]["status"]) == ("ready", "starting", "connecting")
     assert servers[1]["health_status"] != "ok"
-    health = await mcp_service.check_health(1)
-    assert health["state"] == "starting" and health["health_status"] != "ok"
     own = {s["label"]: s["status"] for s in (await own_mcp.list_capabilities())["mcp_servers"]}
     assert own["good"] == "connecting"
     _live_session(monkeypatch, 1)                         # its session, live: ready on every surface

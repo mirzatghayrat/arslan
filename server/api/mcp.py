@@ -169,15 +169,6 @@ async def set_host(server_id: int, body: ServerHostBody):
     return {"ok": True}
 
 
-@router.post("/{server_id}/health")
-async def check_health(server_id: int):
-    """PB-4 on-demand equipment health probe (bounded list_tools; writes status columns)."""
-    try:
-        return await mcp_service.check_health(server_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
 @router.post("/servers/{server_id}/reconnect")
 async def reconnect(server_id: int):
     """A fresh start now (0.1.61 §B1); the server list says how it went."""

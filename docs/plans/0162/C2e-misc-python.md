@@ -58,6 +58,12 @@ MCP 的 PB-4 巡检（已被 supervisor 取代）：
 - `web/src/api/client.ts:630-640`：`checkMcpHealth`，组件里调用为 0。
 - 测试：`tests/server/test_mcp_health.py`，以及 `test_mcp_wiring.py`、`test_mcp_exposure.py` 里相关的断言。
 
+**C2e-2 实施记录（②Main 的 PR）：**
+- 媒体照卡删；`comfyui.py` 只剩说明、模块常量和 `capabilities()`。`implemented` 四项都改成 `False`（对外说法的修改：不再声称能生成、能定点取消、能验 PNG），`test_companion_api` 加了断言，这条在 main 上是红的。
+- PB-4 巡检照卡删。`mcp_service` 里只给它用的 `_HEALTH_PROBE_TIMEOUT`、`_STORED_ERROR_CAP` 一起删（executor 自己有一份 `_STORED_ERROR_CAP`，不受影响）。
+- 测试：只测探针本身的删掉（`test_mcp_wiring` 16 条、`test_mcp_exposure` 1 条、`test_mcp_health` 9 条和只给它们用的夹具）。拿探针当其中一个读取面的两条，只去掉探针那一面。拿探针制造「健康会话被取消的列举丢掉」的那条，改成直接取消一次 `list_tools`，测的还是 supervisor 的 tick 会把它重启。开机那条改成测「只启动 supervisor，它抛错也不打断开机」。迁移 0027 和派发提示（读 health 列）的测试保留：列还在，由 supervisor 写。
+- 顺带：`server/registry/executors.py:6` 的说明删掉已不存在的 ArslanTool/ToolResult 协议（③Hands 审 #247 时提的）。
+
 ## 不许碰
 
 - App Store Connect 的写入链路：`server/services/asc_draft_execution.py`、`server/connectors/app_store_connect/*`、`server/api/companion.py:102-105`。用户还没说是不是路线图预留，本版不动、不删。

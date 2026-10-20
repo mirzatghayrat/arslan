@@ -138,6 +138,8 @@ async def test_media_capabilities_are_read_only_and_honest(api):
     assert result.status_code == 200
     value = result.json()
     assert value["local"] == {"generate": False, "edit": False}
+    # C2e-2: the adapter is gone, so nothing is said to be implemented (generation, cancel, verified PNGs).
+    assert value["implemented"] and not any(value["implemented"].values())
     assert value["blocked_reason"] == "media_host_setup_required"
     assert not value["automatic_install"] and not value["cloud_reference_upload"]
     assert (await api.post(endpoint, json={"execution_enabled": True})).status_code == 405

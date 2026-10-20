@@ -3,7 +3,7 @@
 Adding a tool later = implement Executor + add to EXECUTORS + set the registry
 row's status to "wired" in seed_catalog.
 
-Server executors return {ok, ...} dicts — distinct from the CLI package's ArslanTool/ToolResult protocol.
+Server executors return {ok, ...} dicts.
 """
 from __future__ import annotations
 
