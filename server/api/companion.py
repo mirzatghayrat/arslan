@@ -63,8 +63,8 @@ class ProjectInput(Contract):
 
     @model_validator(mode="after")
     def no_credentials(self):
-        from arslan.companion.content_policy import contains_credential
-        if contains_credential(self.model_dump_json()):
+        from arslan.companion.content_policy import contains_credential_data
+        if contains_credential_data(self.model_dump(mode="json")):          # raw values (D6)
             raise ValueError("credentials_not_project_metadata")
         return self
 

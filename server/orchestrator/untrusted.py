@@ -84,6 +84,11 @@ def counts_as_external(tool_key: str, args: dict | None) -> bool:
     return False
 
 
+def reaches_network(command: str) -> bool:
+    """A command whose text shows it reaches the network (curl, git clone, pip download, a URL…)."""
+    return bool(_NETWORK_COMMAND.search(command or ""))
+
+
 def track_turn() -> contextvars.Token:
     return _EXTERNAL.set({"seen": False})
 

@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import re
 import shlex
 from collections.abc import Awaitable, Callable, Iterator
@@ -151,9 +152,36 @@ _PRIVILEGE_ALL_OR_NOTHING = {"reminders"}
 _OSA_HEREDOC = re.compile(r"\A\s*(?:/usr/bin/)?osascript\s*<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*)\n\2\s*\Z", re.S)
 _OSA_NOT_ALLOWED = re.compile(r"execution error: Not authorized to send Apple events to (.+)\. \(-1743\)\Z")
 _OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege violation occurred\. \(-10004\)\Z")
+# S2a-1: under `(deny appleevent-send)` (the workspace sandbox, and the minimal profile outside it) no
+# event leaves the process, so the script's one app answers "isn't running" (-600): nothing happened there.
+_OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
                             r"write\s|set\s+eof)", re.I)
+# The only apps an approved osascript runs bare for (U11, ⓪Plan), by name or bundle id, compared
+# case-insensitively.
+_BARE_APPS = frozenset({"reminders", "calendar", "notes", "contacts",
+                        "com.apple.reminders", "com.apple.ical", "com.apple.notes", "com.apple.addressbook"})
+# Words that keep even such a script wrapped: saving, exporting, or a file the script names (⓪Plan:
+# save/export/saving; and from these four apps' own dictionaries: Calendar's open-file and sound-file
+# alarms, Notes attachments, and any path); a Calendar attendee (the user: on an iCloud or Exchange
+# calendar it sends an invitation email, which is sending on the user's behalf); and, from ⓪Plan's S-gate
+# review, a URL the script hands to an app (Calendar's `GetURL`, any `://`: a bare run has no offline
+# rule) and an app's own actions (Notes' `open note location`, Contacts' `perform action`).
+_KEEP_WRAPPED_WORDS = re.compile(r"\b(?:save|saving|export|attachment|filepath|open\s+file\s+alarm|sound\s+file|"
+                                 r"POSIX\s+(?:file|path)|file\s+\"|alias\s+\"|attendees?\b|getURL\b|"
+                                 r"open\s+note\s+location\b|perform\s+action\b)|://", re.I)
+# ⓪Plan's S-gate review: `script_apps` reads only literal names, so `tell application ("Fin" & "der")` or
+# `tell application a` next to a literal Reminders tell looked like a Reminders script. With every string
+# literal blanked, each `application` / `app` left must be followed by one.
+_OSA_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+_OSA_APP_NOT_LITERAL = re.compile(r'\b(?:application|app)\b(?!\s*"")', re.I)
+# ⓪Plan's re-review: `application"Finder"` (no space) compiles to application "Finder", and Hands'
+# script_apps needs a space, so the gate reads every literal app name itself and checks each against the
+# list. A `--` or `#` comment anywhere keeps a script wrapped: a quote inside one shifts which quotes pair
+# up, and a variable app target could hide in what looked like a string (`(*` is D4's).
+_OSA_APP_LITERAL = re.compile(r'\b(?:application|app)\s*"((?:[^"\\]|\\.)*)"', re.I)
+_OSA_COMMENT = re.compile(r"--|#")
 _OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
 _OSA_TELL_BLOCK = re.compile(r'tell\s+application\s+"[^"]+"\Z', re.I)
 _OSA_SYNTAX = re.compile(r"\A(?:\d+:\d+: )?syntax error: .+\(-?\d+\)\Z")   # compile phase, not "execution error: …"
@@ -299,6 +327,79 @@ def _inline_osascript(command: str) -> str | None:
     return "\n".join(script for flag, script in pairs) if all(flag == "-e" for flag, _ in pairs) else None
 
 
+# S2a-1 piece 4, decision U11 (scope reviewed by ③Hands): an approved Apple Events or Shortcuts card
+# runs its command with no seatbelt wrapper, once (any wrapper blocks Apple Events). Only exactly one
+# plain call: one osascript with its script inline (_inline_osascript, which refuses anything the
+# shell would expand or run first) that Hands' script_kind calls a plain "app" script, or one
+# `shortcuts run <name>` with optional input/output files. Narrower than U11's letter on purpose: a
+# script with `do shell script` and the like stays under the minimal profile (unwrapped it would be
+# an unconfined shell); mac_applescript, whose card shows the whole script, is the way for those.
+_SHORTCUT_FLAGS = {"-i", "--input-path", "-o", "--output-path", "--output-type"}
+_SHORTCUT_PATH_FLAGS = {"-i", "--input-path", "-o", "--output-path"}
+
+
+def _in_arslans_folder(path: str) -> bool:
+    """⓪Plan's S-gate review: a bare Shortcut's `-i` / `-o` file is read or written outside the sandbox,
+    so it must be an absolute path inside Arslan's own folder, resolved (a link inside it pointing out
+    does not count). Arslan's own folder, not the chosen workspace: the card (approvals.window_only) and
+    the run must decide alike, and neither can read the settings store here. A relative path stays
+    wrapped for the same reason: neither knows the command's folder. v0.1.64 candidate: the chosen
+    workspace, once the card carries it."""
+    from server.services.settings_service import default_workspace
+    expanded = os.path.expanduser(path)
+    if not os.path.isabs(expanded):
+        return False
+    root = os.path.realpath(default_workspace())
+    resolved = os.path.realpath(expanded)
+    return os.path.commonpath([root, resolved]) == root and resolved != root
+
+
+def _runs_bare_for(app: str) -> bool:
+    return app.strip().casefold() in _BARE_APPS
+
+
+def unwrapped_once(command: str) -> bool:
+    from server.services.hands_service import never_touched, script_apps, script_kind
+    script = _inline_osascript(command)
+    if script is not None:
+        if any(never_touched(app) for app in script_apps(script)):
+            return False                     # Hands' never-list holds for scripts too, before script_kind
+        # ⓪Plan and ③Hands on the internal review: Hands' own reading decides. Only a script it calls a
+        # plain "app" script runs bare; money and delete/send words, a step past the app (a shell, other
+        # script text, raw events, AppleScriptObjC, file writes), a high-reach app (System Events,
+        # Finder, Terminal…) and a script that names no app ("opaque") stay wrapped, and go through
+        # mac_applescript's card, which shows the whole script. D4's own act-elsewhere forms stay too.
+        # ⓪Plan (U11, after the #267 review): only Reminders, Calendar, Notes and Contacts, which have no
+        # file-backed documents, and no word that saves, exports, names a file or adds an attendee. A word
+        # list can't keep up with other apps' verbs (Shortcuts Events `run shortcut`, BBEdit `run unix
+        # script`), and every app with documents can `save … in <file>`. The user can widen the list.
+        kind, apps = script_kind(script)
+        return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
+                and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
+                and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script))
+                and not _OSA_COMMENT.search(script)
+                and all(_runs_bare_for(name) for name in _OSA_APP_LITERAL.findall(script)))
+    if _shell_expands(command):
+        return False
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        words = list(lexer)
+    except ValueError:
+        return False
+    if len(words) < 3 or words[0] not in ("shortcuts", "/usr/bin/shortcuts") or words[1] != "run":
+        return False
+    rest = words[3:]
+    return len(rest) % 2 == 0 and all(flag in _SHORTCUT_FLAGS for flag in rest[::2]) \
+        and not any(set(word) <= set(";&|<>()") for word in words) \
+        and all(_in_arslans_folder(value) for flag, value in zip(rest[::2], rest[1::2]) if flag in _SHORTCUT_PATH_FLAGS)
+
+
+def bare_shortcut(command: str) -> bool:
+    """An approved `shortcuts run` that runs with no wrapper (as opposed to a bare osascript)."""
+    return _inline_osascript(command) is None and unwrapped_once(command)
+
+
 def _fails_to_compile(script: str) -> bool:
     """osacompile compiles without running (③Hands checked: a real syntax error exits 1; a script that
     only prints one compiles, and does not run). Unavailable, timed out or failing to start: False, so the
@@ -336,10 +437,11 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
     if type(code) is not int or code <= 0 or result.get("code") == "time_limit":
         return False
     script = _inline_osascript(terminal_policy.as_shell(arguments.get("command"), arguments.get("argv")))
-    return script is not None and _osascript_refused(script, str(result.get("stderr") or ""))
+    return script is not None and _osascript_refused(script, str(result.get("stderr") or ""),
+                                                     sandboxed=result.get("sandbox") in ("workspace", "outside"))
 
 
-def _osascript_refused(script: str, stderr: str) -> bool:
+def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> bool:
     """An AppleScript that failed without acting: it never compiled, or its one app refused it."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not script.strip() or not lines:
@@ -353,6 +455,8 @@ def _osascript_refused(script: str, stderr: str) -> bool:
         # Compiled first, so nothing ran, if it really did not compile: the script controls its stderr.
         return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
+        return match.group(1).lower() in apps
+    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])
     return match is not None and match.group(1).lower() in apps & _PRIVILEGE_ALL_OR_NOTHING

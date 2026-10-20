@@ -44,6 +44,10 @@ EXPECTED_FILES: dict[str, int] = {
     # +2 0.1.59: with "Desktop, Documents, Downloads" off those folders are closed to commands
     # (also via /System/Volumes/Data and a symlink), the working folder and projects inside stay open.
     "server/test_command_sandbox.py": 9,
+    # 2026-10-20 (0.1.63 S2a-1): real sandbox-exec runs — an Apple Event from the sandbox reaches no app
+    # (-600), a command reads its own conversation's saved output and nothing else in that folder, and
+    # outside the sandbox the minimal profile keeps Arslan's data closed and the user's secrets open.
+    "server/test_s2a1_sandbox.py": 3,
     # 2026-10-02 (0.1.50): run_command's offline mode is /usr/bin/sandbox-exec
     # with deny network*; the two kernel facts (blocked connect, file write still
     # works) exist only on macOS. Appended boundary case.
@@ -90,7 +94,7 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 56  # +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 59  # +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5

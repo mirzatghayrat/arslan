@@ -29,6 +29,10 @@ OFFLINE: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_offline
 # clicked: this command runs outside the workspace sandbox.
 OUTSIDE_SANDBOX: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_outside_sandbox", default=False)
 
+# S2a-1 piece 4 (U11): set by the tool loop only, for one call whose Apple Events or Shortcuts card
+# the user approved and whose command is one plain call (task_service.unwrapped_once): no wrapper.
+UNWRAPPED: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_unwrapped", default=False)
+
 DEFAULT_TIMEOUT_S = 120
 MIN_TIMEOUT_S = 5
 MAX_TIMEOUT_S = 600
@@ -138,19 +142,23 @@ def _shell() -> str:
     return "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh"
 
 
-def offline_wrapper() -> list[str] | None:
-    """Kernel-enforced no-network wrapper (macOS seatbelt, deny network*), or None
-    where there is none — offline mode then refuses rather than runs unisolated."""
-    from server.services.code_sandbox import _seatbelt_wrapper
-    return _seatbelt_wrapper()
+def _reads_a_saved_output(result: dict) -> bool:
+    from server.services import tool_outputs
+    folder = str(tool_outputs.outputs_dir())
+    return folder in f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"
 
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
               offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
-              readable: list[Path] = ()) -> dict:
+              readable: list[Path] = (), copies: list[Path] = (), unwrapped: bool = False) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
-    sandbox="unavailable" (offline mode still refuses without isolation)."""
+    sandbox="unavailable" (offline mode still refuses without isolation).
+
+    S2a-1 piece 4 (U11): outside the sandbox the command runs under the minimal profile
+    (sandbox="outside"), except an approved plain osascript or `shortcuts run` (`unwrapped`, set by
+    the tool loop for that one call), which runs with no wrapper (sandbox="off"), as does any
+    command where seatbelt cannot start."""
     # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
     # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
     # failed (0.1.49 bench). Keep both inside the process temp dir.
@@ -162,14 +170,16 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     prefix: list[str] = []
     mode = "off"
     if sandbox:
-        prefix = command_sandbox.wrapper(cwd, offline=offline, closed=closed, readable=readable) or []
+        prefix = command_sandbox.wrapper(cwd, offline=offline, closed=closed, readable=readable,
+                                         copies=copies) or []
         mode = "workspace" if prefix else "unavailable"
+    elif not unwrapped:
+        prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies) or []
+        mode = "outside" if prefix else "off"
     if offline and not prefix:
-        prefix = offline_wrapper() or []
-        if not prefix:
-            return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
-                    "error": "wrapping up: commands run without network now, and this system cannot "
-                             "isolate the network — save the deliverable with write_file instead"}
+        return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
+                "error": "commands run without network now, and this run cannot isolate the network — "
+                         "save the deliverable with write_file instead"}
     proc = await asyncio.create_subprocess_exec(
         *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -219,9 +229,17 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
-    if command_sandbox.stopped_by_sandbox(result):
+    if command_sandbox.stopped_by_sandbox(result) and _reads_a_saved_output(result):
+        # S2a-1 piece 5: a saved tool output this conversation was not given. read_file reads it;
+        # running the command outside the sandbox would open far more than one copy, so no card.
+        result["note"] = ("Saved tool outputs are read with read_file (path, offset, limit), not from a "
+                          "command. A command may read only the copies saved in this conversation.")
+    elif command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
         result["note"] = command_sandbox.note(cwd, closed)
+    elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
+        result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
+                          "Arslan Hands' folder. Tell the user what you needed.")
     elif mode == "unavailable":
         result["sandbox_note"] = "ran without the sandbox: it is not available on this system"
     return result

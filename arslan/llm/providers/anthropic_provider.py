@@ -78,16 +78,17 @@ _HISTORY_END = "_history_end"
 # invalidates thinking on Fable 5.1 and the 5.5 generation), so the host never edits what it sent.
 # Measured in input tokens. Results of the tools below are never cleared: the model's own plan, saved
 # progress and the skill it is following. clear_tool_inputs stays at its default (false).
-# Values: K1 card point 12, correction E22: trigger 60k, clear_at_least 20k. With K3's message-level
-# cache breakpoints every clearing rewrites the cache after it, so clear rarely and a lot at once (the
-# interim 24k / 8k of E23 served while only the system prefix was cached). M1 on Claude reports
-# cleared counts and tokens (run record), per-task input and charged tokens, stop reasons and the long
-# task's cache hits.
+# Values: K1 card point 12, correction E22, set by the user after K3's Claude run (K3b, 2026-10-20):
+# trigger 100k, clear_at_least 40k (were 60k / 20k). The oldest results sit right after the system
+# prompt, so with K3's message-level cache breakpoints a first clearing rewrites the whole history once:
+# 21-38k tokens per long task at 60k / 20k, while each later request saved only about 2k of cache
+# reads. So clear only in long tasks, and a lot at once (the interim 24k / 8k of E23 served while only
+# the system prefix was cached). The run record reports cleared counts and tokens per request.
 CONTEXT_BETA = "context-management-2025-06-27"
 _CLEAR = {"type": "clear_tool_uses_20250919",
-          "trigger": {"type": "input_tokens", "value": 60_000},
+          "trigger": {"type": "input_tokens", "value": 100_000},
           "keep": {"type": "tool_uses", "value": 6},
-          "clear_at_least": {"type": "input_tokens", "value": 20_000}}
+          "clear_at_least": {"type": "input_tokens", "value": 40_000}}
 # Context editing goes only to Claude on Anthropic's own host: an Anthropic-protocol endpoint elsewhere
 # may ignore the field silently, which would leave the turn with no trimming at all.
 _OFFICIAL_HOST = "api.anthropic.com"
