@@ -321,7 +321,11 @@ def never_touched(app: str) -> bool:
 # Any length: AppleScript takes a long path as well as a short name, and a name this did not capture
 # was never checked against the never-list (v0.1.63 H4: a path padded past 120 characters, "/Applications/
 # ./././…/1Password.app", named no app here). The card trims what it shows; the check sees it whole.
-_SCRIPT_APP = re.compile(r'\b(?:application|app)\s+(?:id\s+)?"([^"\n]+)"', re.I)
+# Matched on the code (`_mask`: comments and string insides blanked) and read back from the script at the
+# same place, so the gap before the quote is whatever AppleScript takes: none at all (`application"X"`,
+# which it compiles to `application "X"`) or a `¬` line continuation (⓪Plan, Opus 5.5, on #265/#271: both
+# compiled, and `\s+` saw neither); and a word in a comment or a string is no app.
+_SCRIPT_APP = re.compile(r'\b(?:application|app)[\s¬]*(?:id[\s¬]*)?"', re.I)
 
 
 def _mask(script: str) -> str:
@@ -407,11 +411,49 @@ def script_apps(script: str) -> list[str]:
     mac_applescript check these against the never-list). Repeats are by exact spelling, never by
     `app_key`: "Notes" and ".../Notes.app" are two names to check, because the second can be a renamed
     bundle that is really 1Password (②Main on #271: folding them by key let the path go unchecked)."""
+    script = script or ""
+    code = _mask(script)
     seen: list[str] = []
-    for m in _SCRIPT_APP.finditer(script or ""):
-        if m.group(1) not in seen:
-            seen.append(m.group(1))
+    for m in _SCRIPT_APP.finditer(code):
+        end = code.find('"', m.end())           # the literal's closing quote (its inside is blanked)
+        name = script[m.end():end] if end != -1 else ""
+        if name and name not in seen:
+            seen.append(name)
     return seen
+
+
+# System Events reaches any app through its process: `tell process "1Password"`, `application process
+# "1Password"`, `first process whose bundle identifier is "com.1password.1password"`.
+_SYSTEM_EVENTS = frozenset({"system events", "com.apple.systemevents"})
+
+
+def _string_literals(script: str) -> list[str]:
+    """Every string literal in the script, outside comments (`_mask` keeps only their quotes)."""
+    code = _mask(script)
+    quotes = [i for i, c in enumerate(code) if c == '"']
+    return [script[a + 1:b] for a, b in zip(quotes[::2], quotes[1::2])]
+
+
+def _system_events(app: str) -> bool:
+    return (app_key(app) in _SYSTEM_EVENTS or app.strip().lower() in _SYSTEM_EVENTS
+            or any(b.lower() == "com.apple.systemevents" for b in _bundles_of(app)))
+
+
+def never_listed_target(script: str) -> str | None:
+    """The first app on the never-list the script reaches, or None. An app it names; and, when it talks to
+    System Events, any string in it that names a never-list app — a process by its name or bundle id is
+    that app (v0.1.63 H4, ③Hands' process-name point, written by ⓪Plan on Opus 5.5 at the user's request).
+    Partial matches (`whose name contains "1Pass"`) are not refused here; such a script is still asked
+    every time with the whole script shown, because System Events is high-reach."""
+    apps = script_apps(script)
+    for app in apps:
+        if never_touched(app):
+            return app
+    if any(_system_events(app) for app in apps):
+        for text in _string_literals(script):
+            if text.strip() and text not in apps and never_touched(text):
+                return text
+    return None
 
 
 def sends_on_return(bundle_id: str, name: str) -> bool:

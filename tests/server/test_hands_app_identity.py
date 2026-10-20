@@ -214,3 +214,75 @@ async def test_a_script_with_a_computed_app_target_is_refused_before_any_card(ha
         {"script": 'tell application ("1Pass" & "word") to activate'})
     assert result.get("code") == "bad_request" and "literal strings" in result.get("error", ""), result
     assert seen == [] and ran == []
+
+
+# ── v0.1.63 H4 (⓪Plan, Opus 5.5): every spelling AppleScript compiles, and System Events' processes ──
+
+def test_a_name_with_no_space_or_a_line_continuation_before_it_is_still_read():
+    """AppleScript compiles `application"X"` (to `application "X"`) and a `¬` continuation; `\\s+` saw neither."""
+    assert hands_service.script_apps('tell application"Vault" to quit') == ["Vault"]
+    assert hands_service.script_apps('tell application ¬\n"Vault" to quit') == ["Vault"]
+    assert hands_service.script_apps('tell application id"com.1password.vault" to quit') == ["com.1password.vault"]
+
+
+def test_an_app_named_only_in_a_comment_or_a_string_is_no_app():
+    script = ('-- tell application "Vault"\n# tell app "Vault"\nset t to "tell application \\"Vault\\""\n'
+              'tell application "Notes2" to activate')
+    assert hands_service.script_apps(script) == ["Notes2"]
+
+
+async def test_a_never_list_app_with_no_space_or_a_continuation_is_refused_before_any_card(
+        hands, asks, in_job, apps_folder, monkeypatch):
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application"Vault" to quit', 'tell application ¬\n"Vault" to quit',
+                   'tell application"1Password" to activate'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == []
+
+
+async def test_a_never_list_app_reached_as_a_system_events_process_is_refused(hands, asks, in_job, apps_folder,
+                                                                             monkeypatch):
+    """③Hands' process-name point: System Events reaches any app through its process."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application "System Events" to tell process "Vault" to set frontmost to true',
+                   'tell application "System Events" to get every UI element of application process "1Password"',
+                   'tell application "System Events" to get (first process whose bundle identifier is '
+                   '"com.1password.vault")',
+                   'tell application "System Events.app" to tell process "Keychain Access" to set frontmost to true'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == []
+
+
+async def test_a_benign_process_is_asked_and_a_never_list_word_outside_system_events_is_text(
+        hands, asks, in_job, apps_folder, monkeypatch):
+    seen, _ = asks
+
+    async def run(argv, *a, **kw):
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application "System Events" to tell process "Notes2" to set frontmost to true',
+                   'tell application "Notes2" to make new note with properties {name:"Vault"}'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") != "app_denied", script
+    assert len(seen) == 2, "both were asked, neither refused"
+
+
+def test_a_quote_in_a_comment_cannot_hide_a_computed_app_target(apps_folder):
+    """`_mask` scans left to right: a `--` or `#` comment ends at the line's end, quote or not."""
+    assert hands_service.computed_app_target("-- it's \"odd\ntell application x to activate")
+    assert hands_service.computed_app_target("# it's \"odd\ntell application x to activate")
+    assert hands_service.never_listed_target('set a to "Notes2" -- "\ntell application "Vault" to quit -- "') == "Vault"
