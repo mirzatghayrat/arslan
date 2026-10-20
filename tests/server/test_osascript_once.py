@@ -202,5 +202,5 @@ async def test_no_rule_or_grant_answers_a_once_only_request(execution_db):
         await db.commit()
     ctx = permissions.Context(conversation_id="c-once")
     base = dict(kind="command", target="rules:install", title="t", always_label="installs software")
-    assert await permissions._standing(permissions.Request(**base, once_only=True), ctx, "", record=False) is None
-    assert await permissions._standing(permissions.Request(**base), ctx, "", record=False) is not None
+    assert await permissions._standing(permissions.Request(**base, once_only=True), ctx, "") is None
+    assert await permissions._standing(permissions.Request(**base), ctx, "") is not None
