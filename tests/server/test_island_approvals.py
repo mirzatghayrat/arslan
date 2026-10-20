@@ -34,9 +34,11 @@ def cmd(text: str, **kw) -> dict:
     # Harmless or merely changing local things: the island may approve.
     (protocol.propose_workspace_write("w", "~/Arslan", "write", "notes.md"), True),
     (protocol.propose_schedule("s", "Morning brief", "cron: 0 9 * * *"), True),
-    (protocol.propose_action("a", "browser_site", "example.com", ""), True),
-    (protocol.propose_action("a", "desktop_app", "Notes", ""), True),
-    (protocol.propose_action("a", "mac_shortcut", "Morning", ""), True),
+    # An action card without a permission kind: none is sent any more (permissions._ask stamps every card), so it is
+    # something new and never answerable here (C2c removed the 0.1.55 table that read these).
+    (protocol.propose_action("a", "browser_site", "example.com", ""), False),
+    (protocol.propose_action("a", "desktop_app", "Notes", ""), False),
+    (protocol.propose_action("a", "mac_shortcut", "Morning", ""), False),
     (cmd("git status"), True),                                  # shown under "ask for everything"
     (cmd("ffmpeg -i a.mov b.mp4"), True),
     (cmd("brew list"), True),
@@ -58,12 +60,6 @@ def cmd(text: str, **kw) -> dict:
 ])
 def test_what_the_island_may_answer(frame, ok):
     assert approvals.island_may_answer(frame) is ok
-
-
-def test_a_harmless_applescript_that_only_reads_is_answerable():
-    # A false-positive guard: reading a name is not risky.
-    frame = protocol.propose_action("a", "mac_script", "Notes", 'tell application "Notes" to get name of every note')
-    assert approvals.island_may_answer(frame) is True
 
 
 @pytest.fixture
@@ -193,12 +189,12 @@ def test_whatever_legacy_kind_a_decide_card_keeps_its_permission_kind_alone_deci
 
 
 @pytest.mark.parametrize("frame, ok", [
-    # A card without a permission kind: the 0.1.55 table, except that a takeover is answered in Arslan whatever the frame
-    # carries (spec §A4), and nothing asks with `desktop_look` any more (it is "anything new": not answerable).
+    # An action card without a permission kind is never answerable (C2c), whatever it asks: a takeover (spec §A4), a look,
+    # a harmless script alike.
     (protocol.propose_action("a", "desktop_takeover", "Keynote", "about 5 minutes"), False),
     (protocol.propose_action("a", "desktop_look", "Notes", ""), False),
     (protocol.propose_action("a", "mac_script", "Finder", 'tell application "Finder" to delete file "a.txt"'), False),
-    (protocol.propose_action("a", "mac_script", "Notes", 'tell application "Notes" to get name'), True),
+    (protocol.propose_action("a", "mac_script", "Notes", 'tell application "Notes" to get name'), False),
     # Other card types keep their own rule, whatever permission kind they carry.
     (protocol.propose_workspace_write("w", "~/Arslan", "write", "notes.md") | {"perm_kind": "workspace_write"}, True),
     (protocol.propose_schedule("s", "Morning brief", "cron: 0 9 * * *") | {"perm_kind": "schedule"}, True),

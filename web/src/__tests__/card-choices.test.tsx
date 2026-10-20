@@ -64,22 +64,13 @@ describe("a rule card (run a command)", () => {
 });
 
 describe("the write and schedule cards", () => {
-  it("a write card offers Once / In this conversation, drops the 'rest of the session' line, answers the scope", () => {
+  it("a write card offers Once / In this conversation and answers the scope", () => {
     const onConfirm = vi.fn();
     render(<WorkspaceWriteCard callId="w1" workspace="/Users/me/Arslan" action="write_file" path="a.md"
       options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
-    expect(screen.queryByText("wswrite.scope")).toBeNull();
     fireEvent.click(screen.getByTestId("wswrite-scope-conversation"));
     fireEvent.click(screen.getByTestId("wswrite-allow"));
     expect(onConfirm).toHaveBeenCalledWith("w1", "conversation");
-  });
-
-  it("an old write card is unchanged: the session line, (callId) only", () => {
-    const onConfirm = vi.fn();
-    render(<WorkspaceWriteCard callId="w2" workspace="/w" action="write_file" path="a.md" onConfirm={onConfirm} onCancel={vi.fn()} />);
-    expect(screen.getByText("wswrite.scope")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("wswrite-allow"));
-    expect(onConfirm.mock.calls[0]).toStrictEqual(["w2"]);
   });
 
   it("a schedule card says what an unattended run does, not 'for the rest of this session'", () => {
@@ -87,7 +78,6 @@ describe("the write and schedule cards", () => {
     render(<ScheduleGrantCard callId="s1" name="digest" when="every: 86400" options={["once", "conversation"]}
       onConfirm={onConfirm} onCancel={onCancel} />);
     expect(screen.getByTestId("schedule-unattended")).toHaveTextContent("schedgrant.unattended");
-    expect(screen.queryByTestId("schedule-scope")).toBeNull();
     fireEvent.click(screen.getByTestId("schedule-allow"));
     expect(onConfirm).toHaveBeenCalledWith("s1", "once");
     fireEvent.click(screen.getByText("kit.noteLink"));
@@ -118,14 +108,6 @@ describe("an action card", () => {
     expect(screen.getByTestId("action-allow").className).toContain("danger");
   });
 
-  it("an old frame answers with no arguments, as before", () => {
-    const onConfirm = vi.fn(), onCancel = vi.fn();
-    render(<ActionApprovalCard kind="browser_site" target="x.com" detail="click" onConfirm={onConfirm} onCancel={onCancel} />);
-    fireEvent.click(screen.getByTestId("action-allow"));
-    fireEvent.click(screen.getByTestId("action-deny"));
-    expect(onConfirm.mock.calls[0]).toStrictEqual([]);
-    expect(onCancel.mock.calls[0]).toStrictEqual([]);
-  });
 });
 
 // ── What the brief's tests leave open, checked on all four cards ────────────────────────────────────────
@@ -140,8 +122,9 @@ interface Row {
   /** the arguments a yes carries for a scope, and a No for a note (none typed = a plain No) */
   yesArgs: (scope: string) => unknown[];
   noArgs: (note?: string) => unknown[];
-  /** the arguments of a yes on a card with no choices: what an old card has always sent */
-  oldYesArgs: unknown[];
+  /** the arguments of a yes on a card with no choices: what an old card has always sent. Only the command card still
+   *  takes an old frame; the write, schedule and action cards always come with options (C2c: permissions.decide). */
+  oldYesArgs?: unknown[];
 }
 
 const CARDS: Row[] = [
@@ -150,13 +133,13 @@ const CARDS: Row[] = [
     yesArgs: (scope) => ["r1", false, scope], noArgs: (note) => (note ? ["r1", note] : ["r1"]), oldYesArgs: ["r1", false] },
   { name: "write", choices: "wswrite-scope", note: "wswrite-note", allow: "wswrite-allow", deny: "wswrite-deny",
     mount: (p) => <WorkspaceWriteCard callId="w1" workspace="/w" action="write_file" path="a.md" {...p} />,
-    yesArgs: (scope) => ["w1", scope], noArgs: (note) => (note ? ["w1", note] : ["w1"]), oldYesArgs: ["w1"] },
+    yesArgs: (scope) => ["w1", scope], noArgs: (note) => (note ? ["w1", note] : ["w1"]) },
   { name: "schedule", choices: "schedule-choice", note: "schedule-note", allow: "schedule-allow", deny: "schedule-deny",
     mount: (p) => <ScheduleGrantCard callId="s1" name="digest" when="every: 86400" {...p} />,
-    yesArgs: (scope) => ["s1", scope], noArgs: (note) => (note ? ["s1", note] : ["s1"]), oldYesArgs: ["s1"] },
+    yesArgs: (scope) => ["s1", scope], noArgs: (note) => (note ? ["s1", note] : ["s1"]) },
   { name: "action", choices: "action-scope", note: "action-note", allow: "action-allow", deny: "action-deny",
     mount: (p) => <ActionApprovalCard kind="app" target="com.example.App" detail="" title="Use App?" {...p} />,
-    yesArgs: (scope) => [scope], noArgs: (note) => (note ? [note] : []), oldYesArgs: [] },
+    yesArgs: (scope) => [scope], noArgs: (note) => (note ? [note] : []) },
 ];
 
 const spies = () => ({ onConfirm: vi.fn<(...args: unknown[]) => void>(), onCancel: vi.fn<(...args: unknown[]) => void>() });
@@ -250,16 +233,19 @@ describe.each(CARDS)("the $name card", (row) => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it.each([["no options", undefined], ["an empty options list", [] as string[]]])(
-    "a card with %s offers neither a choice nor a note: a No there would lose the note", (_what, options) => {
-    const { onConfirm, onCancel } = spies();
-    render(row.mount({ options, onConfirm, onCancel }));
-    expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(screen.queryByTestId(`${row.note}-open`)).toBeNull();
-    expect(screen.queryByText("kit.noteLink")).toBeNull();
-    fireEvent.click(screen.getByTestId(row.allow));
-    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.oldYesArgs);          // answered exactly as an old card is
-  });
+  if (row.oldYesArgs) {
+    const oldYesArgs = row.oldYesArgs;
+    it.each([["no options", undefined], ["an empty options list", [] as string[]]])(
+      "a card with %s offers neither a choice nor a note: a No there would lose the note", (_what, options) => {
+      const { onConfirm, onCancel } = spies();
+      render(row.mount({ options, onConfirm, onCancel }));
+      expect(screen.queryByRole("radiogroup")).toBeNull();
+      expect(screen.queryByTestId(`${row.note}-open`)).toBeNull();
+      expect(screen.queryByText("kit.noteLink")).toBeNull();
+      fireEvent.click(screen.getByTestId(row.allow));
+      expect(onConfirm.mock.calls.at(-1)).toStrictEqual(oldYesArgs);            // answered exactly as an old card is
+    });
+  }
 
   it("a busy card is inert: its note sends nothing, by key, by button or by submit; the text waits for it", () => {
     const { onConfirm, onCancel } = spies();
@@ -372,31 +358,6 @@ describe.each(KINDED)("the $name card and its permission kind", (row) => {
     fireEvent.click(screen.getByTestId(row.allow));
     expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("conversation"));
   });
-});
-
-// ── The write card's session line ───────────────────────────────────────────────────────────────────────
-
-describe("the write card's session line", () => {
-  const write = (options?: string[], alwaysLabel?: string) => (
-    <WorkspaceWriteCard callId="w" workspace="/w" action="write_file" path="a.md" options={options} alwaysLabel={alwaysLabel}
-      onConfirm={vi.fn()} onCancel={vi.fn()} />);
-
-  it.each([
-    ["two choices", ["once", "conversation"], undefined],
-    ["one choice", ["once"], undefined],
-    ["a hidden Always beside one", ["once", "always"], ""],
-    ["a labelled Always beside one", ["once", "always"], "this folder"],
-  ])("a card from the permission layer (%s) never says 'the rest of this session': the frame's options say how long",
-    (_what, options, alwaysLabel) => {
-      render(write(options, alwaysLabel));
-      expect(screen.queryByText("wswrite.scope")).toBeNull();
-    });
-
-  it.each([["no options", undefined], ["an empty options list", [] as string[]]])(
-    "an old card (%s) keeps the line", (_what, options) => {
-      render(write(options));
-      expect(screen.getByText("wswrite.scope")).toBeInTheDocument();
-    });
 });
 
 // ── The action card ─────────────────────────────────────────────────────────────────────────────────────
@@ -659,15 +620,7 @@ describe("the action card's words, its icon and its red", () => {
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");
   });
 
-  it("an old frame (no choices) names a job as its asker: no card only looks any more, so there is no kind that is Arslan's own", () => {
-    render(card({ kind: "desktop_app", background: false }));
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
-    cleanup();
-    render(card({ kind: "desktop_look", background: false, title: "Read Notes?" }));           // a stray frame of the kind that is gone
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
-  });
-
-  it("an old frame the server marked background (approvals.ask stamps it on every plain card) names the same asker", () => {
+  it("a card the server marked background (a job's) names the job as its asker", () => {
     render(card({ kind: "desktop_app", background: true }));
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
   });

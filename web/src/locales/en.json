@@ -1847,7 +1847,6 @@
   "wswrite": {
     "label": "Workspace access",
     "body": "Arslan wants to write in your workspace:",
-    "scope": "Approving lets it create and edit files anywhere in this directory for the rest of this session.",
     "allow": "Allow",
     "deny": "Not now",
     "action": {
@@ -1859,7 +1858,6 @@
   "schedgrant": {
     "label": "Scheduling",
     "body": "Arslan wants to schedule a recurring task:",
-    "scope": "Approving lets it create scheduled tasks for the rest of this session. Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done. What needs no OK still runs: looking things up, ordinary commands in the sandbox, and writing in Arslan's own working folder.",
     "allow": "Allow",
     "deny": "Not now",
     "every_day": "every day",

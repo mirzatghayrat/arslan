@@ -87,7 +87,6 @@ class SettingsIn(BaseModel):
     lan_discovery_enabled: str | None = None
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
-    voice_output_enabled: str | None = None
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
@@ -160,7 +159,6 @@ class SettingsOut(BaseModel):
     lan_discovery_enabled: str = ""
     ssh_enabled: str = ""
     default_read_enabled: str = ""
-    voice_output_enabled: str = ""
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""

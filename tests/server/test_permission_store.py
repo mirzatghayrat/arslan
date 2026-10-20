@@ -43,6 +43,11 @@ async def test_a_conversation_grant_covers_every_task_and_a_task_grant_only_its_
         assert await permission_store.find_grant(db, None, "turn-a", "app", "com.apple.Notes") is None
 
 
+async def _refused(db, since):
+    """What the Inbox lists as refused (`refused_groups`): one row per (kind, target), newest first."""
+    return [row for row, _, _ in await permission_store.refused_groups(db, since)]
+
+
 async def test_the_ledger_keeps_90_days_and_lists_policy_refusals():
     async with db_session.AsyncSessionLocal() as db:
         old = await permission_store.record(db, kind="app", target="x", mode="standard",
@@ -57,7 +62,7 @@ async def test_the_ledger_keeps_90_days_and_lists_policy_refusals():
         await db.commit()
         targets = [e.target for e in await permission_store.recent(db)]
         assert "x" not in targets and {"y", "*"} <= set(targets)
-        refused = await permission_store.refused_since(db, datetime.utcnow() - timedelta(hours=24))
+        refused = await _refused(db, datetime.utcnow() - timedelta(hours=24))
         assert [(e.kind, e.decided_by) for e in refused] == [("schedule", "policy")]
 
 
@@ -177,9 +182,9 @@ async def test_only_policy_refusals_inside_the_window_are_listed_as_refused():
             await permission_store.record(db, kind="app", target=target, mode="standard",
                                           decided_by=decided_by, decision=decision)
         await db.commit()
-        day = await permission_store.refused_since(db, datetime.utcnow() - timedelta(hours=24))
+        day = await _refused(db, datetime.utcnow() - timedelta(hours=24))
         assert [e.target for e in day] == ["refused"]
-        week = await permission_store.refused_since(db, datetime.utcnow() - timedelta(days=7))
+        week = await _refused(db, datetime.utcnow() - timedelta(days=7))
         assert [e.target for e in week] == ["refused", "old"]
 
 
@@ -196,7 +201,6 @@ async def test_a_card_that_never_opened_while_the_person_was_away_is_listed_as_r
                                           decided_by=decided_by, decision=decision)
         await db.commit()
         since = datetime.utcnow() - timedelta(hours=1)
-        assert {e.target for e in await permission_store.refused_since(db, since)} == {"away", "scheduled"}
         assert [row.target for row, _, _ in await permission_store.refused_groups(db, since)] \
             == ["away", "scheduled"]
         for row in await permission_store.recent(db):

@@ -102,9 +102,8 @@ def test_skip_card_rules():
     assert may_skip_card(None, policy="ask_risky", risk="LOW")
     assert not may_skip_card(None, policy="ask_all", risk="LOW")
     assert not may_skip_card(None, policy="ask_risky", risk="MEDIUM")
-    assert may_skip_card(None, policy="ask_all", risk="MEDIUM", always_allowed=True)
-    assert not may_skip_card(None, policy="ask_risky", risk="HIGH", always_allowed=True)
-    assert not may_skip_card("box", policy="ask_risky", risk="LOW", always_allowed=True)
+    assert not may_skip_card(None, policy="ask_risky", risk="HIGH")
+    assert not may_skip_card("box", policy="ask_risky", risk="LOW")
 
 
 @pytest.mark.parametrize("command,rule", [

@@ -1847,7 +1847,6 @@
   "wswrite": {
     "label": "Accès à l'espace de travail",
     "body": "Arslan souhaite écrire dans votre espace de travail :",
-    "scope": "En acceptant, il pourra créer et modifier des fichiers partout dans ce dossier pour le reste de cette session.",
     "allow": "Autoriser",
     "deny": "Pas maintenant",
     "action": {
@@ -1859,7 +1858,6 @@
   "schedgrant": {
     "label": "Planification",
     "body": "Arslan souhaite planifier une tâche récurrente :",
-    "scope": "En acceptant, il pourra créer des tâches planifiées pour le reste de cette session. Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée. Ce qui n’en demande pas se fait quand même : consulter, lancer des commandes ordinaires dans le bac à sable et écrire dans le dossier de travail d’Arslan.",
     "allow": "Autoriser",
     "deny": "Pas maintenant",
     "every_day": "chaque jour",

@@ -231,11 +231,9 @@ async def test_background_tools_exist_only_in_a_turn_never_inside_a_job(executio
 
 
 async def _job_ask(conversation_id: str, frame: dict) -> bool:
-    """`approvals.ask` as a job calls it: with the job's card surface bound (0.1.61: with no
-    surface — a scheduled run — it is refused at once, with no card)."""
-    from server.services import permissions
-    with permissions.asking_with(approvals.BroadcastAsker(conversation_id)):
-        return await approvals.ask(conversation_id, frame)
+    """One card on a job's card surface (`approvals.BroadcastAsker`): every window, the Inbox, the
+    island and the phone see it."""
+    return bool((await approvals.BroadcastAsker(conversation_id)(frame))["approved"])
 
 
 async def test_cards_are_answered_by_call_id_and_kind_and_time_out_to_no(monkeypatch):

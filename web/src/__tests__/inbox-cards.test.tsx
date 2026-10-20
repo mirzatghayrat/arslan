@@ -103,17 +103,6 @@ describe("the write and schedule cards in the Inbox offer their choices and send
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/s1/answer",
       { method: "POST", body: JSON.stringify({ approve: false, source: "inbox", note: "not on weekends" }) }));
   });
-
-  it("an old write card (no options) still answers with just approve", async () => {
-    const req = serve([row({ type: "propose_workspace_write", call_id: "w2", workspace: "/w", action: "edit_file", path: "a.md" })]);
-    render(<InboxApprovals onOpenConversation={() => {}} />);
-    expect(screen.queryByTestId("wswrite-scope-conversation")).toBeNull();
-    await screen.findByTestId("wswrite-allow");
-    await pastGuard();
-    fireEvent.click(screen.getByTestId("wswrite-allow"));
-    await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/w2/answer",
-      { method: "POST", body: JSON.stringify({ approve: true, source: "inbox" }) }));
-  });
 });
 
 describe("a card of a kind the card has no words for is asked in the model's why, with the server's own words under it", () => {

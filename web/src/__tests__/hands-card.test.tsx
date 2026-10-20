@@ -22,7 +22,7 @@ describe("action approval card", () => {
   it("shows an AppleScript in full and answers with the buttons", () => {
     const onConfirm = vi.fn(), onCancel = vi.fn();
     render(<ActionApprovalCard kind="mac_script" target="AppleScript" detail={'tell application "Reminders" to count reminders'}
-      onConfirm={onConfirm} onCancel={onCancel} />);
+      options={["once"]} onConfirm={onConfirm} onCancel={onCancel} />);
     expect(screen.getByTestId("action-script")).toHaveTextContent('tell application "Reminders" to count reminders');
     fireEvent.click(screen.getByTestId("action-allow"));
     fireEvent.click(screen.getByTestId("action-deny"));

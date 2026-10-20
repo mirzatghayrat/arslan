@@ -63,39 +63,17 @@ def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
     return terminal_policy.risk_grade(terminal_policy.as_shell(command, argv))
 
 
-def may_skip_card(remote_host: str | None, *, policy: str, risk: str,
-                  always_allowed: bool = False) -> bool:
+def may_skip_card(remote_host: str | None, *, policy: str, risk: str) -> bool:
     """Whether a confirmation may be answered without showing a card.
 
     Every shortcut is local-only: a remote command always gets a card, because the
     thing being asked (which machine) is not in the command text the shortcuts key
-    on. HIGH (forbidden) never skips. "Always allowed" is the user's standing
-    answer for a rule, and holds even under ask_all. (0.1.61: what a card allowed
-    beyond once is permissions.decide's — a remote command never reaches it, so it is
-    never remembered: P3b ruling ③.)"""
+    on. HIGH (forbidden) never skips. (0.1.61: what a card allowed beyond once, the
+    user's standing answers included, is permissions.decide's — a remote command never
+    reaches it, so it is never remembered: P3b ruling ③.)"""
     if remote_host or risk == "HIGH":
         return False
-    if always_allowed:
-        return True
     return policy == "ask_risky" and risk == "LOW"
-
-
-def _cmd_sig(command: str, argv: list) -> str:
-    # signature = binary + subcommand (kept literal) + arg SHAPE of the rest
-    # (flags kept, free values blanked). Keeping the FIRST non-flag token — the
-    # git/gh subcommand, the risk-bearing token — is what stops "remember git
-    # status" from auto-approving "git push".
-    sig_parts: list[str] = []
-    seen_subcommand = False
-    for a in argv:
-        if a.startswith("-"):
-            sig_parts.append(a)            # flags kept verbatim
-        elif not seen_subcommand:
-            sig_parts.append(a)            # first non-flag token = subcommand, kept
-            seen_subcommand = True
-        else:
-            sig_parts.append("·")          # later free values blanked
-    return command + "\x1f" + "\x1f".join(sig_parts)
 
 
 async def _history(conversation_id: str) -> list[dict]:

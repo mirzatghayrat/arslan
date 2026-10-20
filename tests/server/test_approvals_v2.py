@@ -46,11 +46,17 @@ async def test_an_answer_carries_a_scope_the_card_offered_and_a_note_on_no(monke
     assert (d["approved"], d["note"]) == (False, "use Bear instead")
 
 
-async def test_legacy_remember_maps_to_a_scope(monkeypatch):
+@pytest.mark.parametrize("options", [("once", "conversation", "always"), ("task", "conversation", "always"),
+                                     ("task", "conversation"), ("once",)])
+async def test_a_yes_without_a_scope_gets_the_cards_first_choice_only(monkeypatch, options):
+    """C2c: a yes with no scope it offered (a client older than 0.1.61 PR 2b, its old "remember"
+    ticked or not) gets the card's first, narrowest choice: never widened to the conversation or
+    Always, as `_legacy_scope` used to widen a ticked "remember"."""
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
-    p = approvals.open_card("conv", frame(options=("once", "conversation", "always")))
-    approvals.answer({"type": "confirm_action", "call_id": "c1", "remember": True})
-    assert approvals.close_card(p)["scope"] == "always"
+    for i, reply in enumerate([{"remember": True}, {"remember": False}, {}]):
+        p = approvals.open_card("conv", frame(f"c{i}", dedupe=f"d{i}", options=options))
+        approvals.answer({"type": "confirm_action", "call_id": f"c{i}", **reply})
+        assert approvals.close_card(p)["scope"] == options[0], reply
 
 
 @pytest.mark.parametrize("source", ["phone", "island"])
@@ -376,26 +382,6 @@ async def test_a_card_an_identical_ask_joined_expires_for_every_waiter_at_the_ti
         protocol.card_resolved("c1", "expired", None)]
 
 
-async def test_a_plain_ask_that_joins_a_card_waits_only_what_is_left_of_it(monkeypatch):
-    """The third place a card is waited on (`approvals.ask`, Hands' plain card) keeps the same
-    rule: an ask that joins a card on screen ends with it."""
-    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.6)
-    loop = asyncio.get_running_loop()
-    first = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c1")))
-    await asyncio.sleep(0.3)
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
-
-    async def surface(f):                                      # a job or a turn is asking
-        raise AssertionError("approvals.ask opens its own card")
-    with permissions.asking_with(surface):
-        started = loop.time()
-        assert await approvals.ask("conv", frame("c2")) is False
-        waited = loop.time() - started
-    assert waited < 0.6 and approvals.LAST_OUTCOME.get() == "expired"
-    assert (await first)["by"] is None and approvals.known_ids() == set()
-
-
 async def test_a_step_of_the_system_clock_never_changes_how_long_a_card_waits(monkeypatch):
     """Review M1 (P6): a card's time runs on the monotonic clock, like the waits on it. The wall
     clock stepping back an hour must not stretch it; stepping forward must not end it."""
@@ -552,14 +538,11 @@ async def test_an_answer_by_nobody_never_allows(job_db):
     assert (d.allowed, d.by) == (False, "expired")
 
 
-async def test_a_yes_has_no_note_and_remember_takes_the_widest_scope_offered(monkeypatch):
+async def test_a_yes_has_no_note(monkeypatch):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = approvals.open_card("conv", frame("c1"))
     approvals.answer({"type": "confirm_action", "call_id": "c1", "note": "only on a no"})
     assert approvals.close_card(p)["note"] == ""
-    q = approvals.open_card("conv", frame("c2", dedupe="q", options=("once", "conversation")))
-    approvals.answer({"type": "confirm_action", "call_id": "c2", "remember": True})
-    assert approvals.close_card(q)["scope"] == "conversation"   # no "always" here: the next widest
 
 
 async def test_decline_pending_leaves_a_card_someone_else_also_waits_on(monkeypatch):

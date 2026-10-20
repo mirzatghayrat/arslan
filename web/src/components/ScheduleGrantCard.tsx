@@ -20,9 +20,9 @@ interface Props {
   busy?: boolean;
   queue?: AskQueuePosition;
   onOpenContext?: () => void;
-  /** An old card answers (callId); a v2 card answers (callId, scope). */
+  /** A yes answers (callId, scope). */
   onConfirm: (callId: string, scope?: string) => void;
-  /** A v2 card's No may carry the user's note. */
+  /** A No may carry the user's note. */
   onCancel: (callId: string, note?: string) => void;
 }
 
@@ -54,14 +54,13 @@ export function humanCadence(when: string, t?: TFunction): string {
  * A `propose_schedule` grant: no "remember". The thing agreed to recurs and keeps costing, so
  * the cadence leads. The card says what an unattended run does: it never waits for anyone, so a
  * step that needs an OK is skipped; what needs none (reading, ordinary commands in the sandbox,
- * writing in Arslan's own folder) still runs (scheduler.run_arslan_turn). An old card is asked
- * once per session; a card from the permission layer (0.1.61) lets the person choose how long,
- * and takes a note on No.
+ * writing in Arslan's own folder) still runs (scheduler.run_arslan_turn). The person chooses how
+ * long the yes lasts (the frame's options, 0.1.61: permissions.decide sends every schedule card),
+ * and a No takes a note.
  */
 export default function ScheduleGrantCard({ callId, name, when, background, expiresAt, options, alwaysLabel, busy, queue,
                                             onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
-  const v2 = Boolean(options?.length);
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
   const [scope, setScope] = useState(() => scopeToSend(options, undefined, alwaysLabel) ?? "");
   return (
@@ -69,20 +68,19 @@ export default function ScheduleGrantCard({ callId, name, when, background, expi
       title={t("schedgrant.label")}
       detail={<><p className="text-[13px] text-muted-foreground">{t("schedgrant.body")}</p><CodeBox code={name} numbered={false} /></>}
       context={[{ icon: lineIcon(CalendarClock), text: humanCadence(when, t) },
-                // 0.1.61: a v2 card's choice says how long the yes lasts; this line says only what an
-                // unattended run does (it never waits: a step that needs you is skipped).
-                v2 ? { icon: lineIcon(Eye), text: <span data-testid="schedule-unattended">{t("schedgrant.unattended")}</span> }
-                   : { icon: lineIcon(Eye), text: <span data-testid="schedule-scope">{t("schedgrant.scope")}</span> }]}
+                // The choice says how long the yes lasts; this line says only what an unattended run
+                // does (it never waits: a step that needs you is skipped).
+                { icon: lineIcon(Eye), text: <span data-testid="schedule-unattended">{t("schedgrant.unattended")}</span> }]}
       // "In this conversation" lets it create ANY scheduled task here without asking (the grant's target is every schedule).
-      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
-        conversationLabel={t("schedgrant.anyTask")} testId="schedule-choice" /> : undefined}
-      extra={v2 ? <DeclineNote testId="schedule-note" disabled={busy}
-        onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
+      options={<ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
+        conversationLabel={t("schedgrant.anyTask")} testId="schedule-choice" />}
+      extra={<DeclineNote testId="schedule-note" disabled={busy}
+        onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
-      allowDisabled={v2 && scopeToSend(options, scope, alwaysLabel) === undefined}
+      allowDisabled={scopeToSend(options, scope, alwaysLabel) === undefined}
       allowLabel={t("schedgrant.allow")} declineLabel={t("schedgrant.deny")}
       allowTestId="schedule-allow" declineTestId="schedule-deny"
-      onAllow={() => (v2 ? onConfirm(callId, scopeToSend(options, scope, alwaysLabel)) : onConfirm(callId))}
+      onAllow={() => onConfirm(callId, scopeToSend(options, scope, alwaysLabel))}
       onDecline={() => onCancel(callId)} />
   );
 }

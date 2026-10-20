@@ -37,7 +37,7 @@ _PLAIN_KEYS = (
                # 0.1.58 §1: raw tool input/output under a reply's steps ("true" | "false"; default off).
                "show_technical_details",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
-               "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
+               "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")

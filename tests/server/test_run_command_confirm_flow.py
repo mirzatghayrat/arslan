@@ -138,6 +138,15 @@ def _stub_run_command_executor(monkeypatch, result: dict | None = None) -> _Fake
     return fake
 
 
+def _remembered(card: dict) -> dict:
+    """What the window sends to keep its answer: the widest choice the card offers ("Always", else
+    "In this conversation"). C2c: a yes with no scope (the old "remember" tick, a client from before
+    0.1.61) gets only the card's first choice; it is never widened."""
+    options = card.get("options") or []
+    assert options, f"a card from permissions.decide offers its choices: {card}"
+    return {"scope": "always" if "always" in options else "conversation"}
+
+
 def _collect_until(ws, want_type: str, max_frames: int = 40) -> list[dict]:
     """Drain frames until one of `want_type` is seen (inclusive)."""
     frames: list[dict] = []
@@ -259,7 +268,7 @@ def test_remember_auto_approves_same_shape(app_client, monkeypatch):
         ws.send_json({"type": "user_message", "content": "check repo"})
         frames = _collect_until(ws, "propose_run_command")
         call_id = frames[-1]["call_id"]
-        ws.send_json({"type": "confirm_run_command", "call_id": call_id, "remember": True})
+        ws.send_json({"type": "confirm_run_command", "call_id": call_id, **_remembered(frames[-1])})
         after1 = _collect_until(ws, "stream_end")
         assert any(f.get("type") == "tool_result" for f in after1)
 
@@ -292,7 +301,7 @@ def test_remember_low_does_not_auto_approve_high(app_client, monkeypatch):
         ws.send_json({"type": "user_message", "content": "check repo"})
         frames = _collect_until(ws, "propose_run_command")
         call_id = frames[-1]["call_id"]
-        ws.send_json({"type": "confirm_run_command", "call_id": call_id, "remember": True})
+        ws.send_json({"type": "confirm_run_command", "call_id": call_id, **_remembered(frames[-1])})
         after1 = _collect_until(ws, "stream_end")
         assert any(f.get("type") == "tool_result" for f in after1)
 
@@ -307,8 +316,8 @@ def test_remember_low_does_not_auto_approve_high(app_client, monkeypatch):
         assert frames2[-1]["command"] == "git push"
         assert frames2[-1]["argv"] == []
         call_id2 = frames2[-1]["call_id"]
-        # Even confirm it WITH remember=true; a HIGH command must never be allowlisted.
-        ws.send_json({"type": "confirm_run_command", "call_id": call_id2, "remember": True})
+        # Even confirm it with the widest choice it offers; a HIGH command must never be allowlisted.
+        ws.send_json({"type": "confirm_run_command", "call_id": call_id2, **_remembered(frames2[-1])})
         after2 = _collect_until(ws, "stream_end")
         assert any(f.get("type") == "tool_result" for f in after2)
 
@@ -367,7 +376,8 @@ def test_dont_ask_again_holds_in_a_new_session_for_that_kind_of_command(app_clie
         ws.send_json({"type": "user_message", "content": "delete old.txt"})
         card = _collect_until(ws, "propose_run_command")[-1]
         assert card["rule"] == "delete" and card["reason"] == "deletes files"
-        ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "remember": True})
+        assert "always" in (card.get("options") or [])
+        ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], **_remembered(card)})
         _collect_until(ws, "stream_end")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["other.txt"])
     with app_client.websocket_connect("/ws/arslan/main") as ws:     # a new session

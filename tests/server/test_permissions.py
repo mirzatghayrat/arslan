@@ -171,9 +171,12 @@ async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():
         out = await permissions.decide_many(reqs, CTX, title="Use Reminders and Mail?")
     assert [d.by for d in out] == ["rule", "user", "user"]
     assert len(asker.frames) == 1 and "com.apple.Notes" not in asker.frames[0]["detail"]
-    with permissions.asking_with(Asker()):
-        assert not await permissions.would_ask(app("com.apple.mail"), CTX)
-        assert await permissions.would_ask(app("com.apple.Safari"), CTX)
+    # The conversation's grant now decides Mail; Safari, never asked about, has none.
+    assert (await permissions.decide(app("com.apple.mail"), CTX)).by == "grant"
+    asker = Asker(no())
+    with permissions.asking_with(asker):
+        assert (await permissions.decide(app("com.apple.Safari"), CTX)).by == "user"
+    assert len(asker.frames) == 1
 
 
 async def test_decide_many_hides_always_when_any_app_cannot_be_remembered():
@@ -322,7 +325,6 @@ async def test_a_once_only_kind_asks_even_if_something_was_stored_for_it(kind):
     with permissions.asking_with(asker):
         d = await permissions.decide(req, CTX)
     assert (d.allowed, d.by) == (False, "user") and len(asker.frames) == 1
-    assert await permissions.would_ask(req, CTX)
 
 
 async def test_a_rule_is_read_before_a_grant():
@@ -335,17 +337,13 @@ async def test_a_rule_is_read_before_a_grant():
     assert (d.by, d.scope) == ("rule", "always")
 
 
-async def test_a_rule_that_decides_is_counted_and_would_ask_counts_nothing():
+async def test_a_rule_that_decides_is_counted():
     with permissions.asking_with(Asker(yes("always"))):
         await permissions.decide(app(), CTX)
     async with db_session.AsyncSessionLocal() as db:
-        rows_before = len(await permission_store.recent(db))
-    assert not await permissions.would_ask(app(), CTX)                  # a peek...
-    async with db_session.AsyncSessionLocal() as db:
         rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
-        assert (rule.use_count, rule.last_used_at) == (0, None)         # ...counts no use
-        assert len(await permission_store.recent(db)) == rows_before    # ...and writes no row
-    await permissions.decide(app(), CTX)                                # a decision does both
+        assert (rule.use_count, rule.last_used_at) == (0, None)         # stored by the answer, not used yet
+    await permissions.decide(app(), CTX)                                # deciding counts a use and writes a row
     async with db_session.AsyncSessionLocal() as db:
         rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
         assert (rule.use_count, rule.last_used_at is not None) == (1, True)
@@ -751,13 +749,6 @@ async def test_a_ledger_that_cannot_be_written_does_not_take_back_a_standing_yes
         assert (await permission_store.recent(db))[0].decided_by == "rule"
 
 
-async def test_would_ask_opens_one_session_and_reads_no_settings(monkeypatch):
-    sessions = _OpenSessions(db_session.AsyncSessionLocal)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", sessions)
-    assert await permissions.would_ask(app(), CTX)
-    assert sessions.opened == 1                       # the lookup; the mode (a setting) would be a second
-
-
 async def test_the_ledger_keeps_a_long_target_whole():
     """A many-app card's target is every bundle id joined: cutting it at 2000 characters cut an app in
     two. Only an absurd one (past 20 000) is cut."""
@@ -813,8 +804,6 @@ async def _call(call: str, req: Request):
     if call == "decide_many":
         return await permissions.decide_many([req, replace(req, target=req.target + ".2")], CTX,
                                              title="t")
-    if call == "would_ask":
-        return await permissions.would_ask(req, CTX)
     return await permissions.record_standing(req, CTX)
 
 
@@ -828,10 +817,12 @@ def test_the_kinds_are_the_specs_and_every_scope_set_names_only_them():
 
 @pytest.mark.parametrize("kind", SPEC_KINDS)
 async def test_every_known_kind_is_decided(kind):
-    assert await permissions.would_ask(Request(kind=kind, target="x", title="t"), CTX) is True
+    asker = Asker(no())
+    with permissions.asking_with(asker):                # known: decided, never raised; nothing standing allows it
+        assert not (await permissions.decide(Request(kind=kind, target="x", title="t"), CTX)).allowed
 
 
-@pytest.mark.parametrize("call", ["decide", "decide_many", "would_ask", "record_standing"])
+@pytest.mark.parametrize("call", ["decide", "decide_many", "record_standing"])
 @pytest.mark.parametrize("kind", TYPOS)
 async def test_an_unknown_kind_raises_before_anything_is_asked_stored_or_recorded(kind, call):
     """F1 (final review I1, probe P1): a mistyped kind was an ordinary one. Its card offered "In
@@ -849,7 +840,7 @@ async def test_an_unknown_kind_raises_before_anything_is_asked_stored_or_recorde
     assert await _store_counts() == (1, 0, 0)            # the rule put there first, and nothing else
 
 
-@pytest.mark.parametrize("call", ["decide", "decide_many", "would_ask"])
+@pytest.mark.parametrize("call", ["decide", "decide_many"])
 @pytest.mark.parametrize("field, entries", [
     ("remember_as", (("app", "com.apple.Notes"), ("payment", "com.shop.app"))),
     ("remember_as", (("legacy-rule", "delete", "deletes files"),)),
@@ -1070,7 +1061,7 @@ async def test_a_step_a_mode_let_start_without_a_card_is_recorded_as_the_modes()
                                           by="mode")
     async with db_session.AsyncSessionLocal() as db:
         [event] = await permission_store.recent(db)
-        assert await permission_store.refused_since(db, datetime.utcnow() - timedelta(hours=1)) == []
+        assert await permission_store.refused_groups(db, datetime.utcnow() - timedelta(hours=1)) == []
     assert (event.kind, event.decided_by, event.decision, event.scope, event.job_id) \
         == ("takeover", "mode", "allow", None, "job-away")
     assert (event.rule_id, event.grant_id) == (None, None)
@@ -1246,5 +1237,4 @@ async def test_a_rule_stored_for_a_site_or_a_shortcut_decides_nothing(make):
     with permissions.asking_with(asker):
         decision = await permissions.decide(req, CTX)
     assert (decision.allowed, decision.by) == (False, "user") and len(asker.frames) == 1
-    assert await permissions.would_ask(req, CTX)
     assert (await permissions.decide(req, CTX)).by == "policy"          # no surface bound

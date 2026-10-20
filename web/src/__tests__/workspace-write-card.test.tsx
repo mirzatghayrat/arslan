@@ -35,14 +35,15 @@ describe('WorkspaceWriteCard', () => {
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
-  it('confirm and cancel report the call id', () => {
+  it('confirm reports the call id and the scope, cancel the call id', () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
+    // Every write card comes from permissions.decide, with its options (C2c removed the older card).
     const { rerender } = render(
-      <WorkspaceWriteCard {...base} onConfirm={onConfirm} onCancel={onCancel} />);
+      <WorkspaceWriteCard {...base} options={['once', 'conversation']} onConfirm={onConfirm} onCancel={onCancel} />);
     fireEvent.click(screen.getByTestId('wswrite-allow'));
-    expect(onConfirm).toHaveBeenCalledWith('abc123');
-    rerender(<WorkspaceWriteCard {...base} onConfirm={onConfirm} onCancel={onCancel} />);
+    expect(onConfirm).toHaveBeenCalledWith('abc123', 'once');
+    rerender(<WorkspaceWriteCard {...base} options={['once', 'conversation']} onConfirm={onConfirm} onCancel={onCancel} />);
     fireEvent.click(screen.getByTestId('wswrite-deny'));
     expect(onCancel).toHaveBeenCalledWith('abc123');
   });

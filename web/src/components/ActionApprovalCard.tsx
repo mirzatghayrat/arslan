@@ -15,8 +15,8 @@ const GRANTS = new Set(["browser_site", "mac_script", "desktop_app", "desktop_ri
  * full), Mac apps through Arslan Hands (a button that deletes / sends / pays / buys / transfers /
  * submits: every time, named by its real label). 0.1.55: in the AskCard; for AppleScript the
  * risk line is read from the script itself (decision 1), never from a summary.
- * 0.1.61: a card from the permission layer (a frame with `options`) offers its choices and takes a
- * note on No; a kind this card has no words for reads the frame's own question. A website, a
+ * 0.1.61: every card comes from the permission layer (permissions.decide), offers its choices and
+ * takes a note on No; a kind this card has no words for reads the frame's own question. A website, a
  * Shortcut and an app are task-first: "for this task", then the conversation, then Always. Looking
  * at an app and acting in it is ONE `desktop_app` card (③Hands moved onto permissions.decide), so
  * there is no `desktop_look` card: a frame of that kind would read as one this card has no words for.
@@ -34,9 +34,9 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
   queue?: AskQueuePosition; onOpenContext?: () => void;
-  /** An old card answers (); a v2 card answers (scope). */
+  /** A yes answers with the scope chosen (none when the card shows none it may send). */
   onConfirm: (scope?: string) => void;
-  /** A v2 card's No may carry the user's note. */
+  /** A No may carry the user's note. */
   onCancel: (note?: string) => void;
 }) {
   const { t } = useTranslation();
@@ -46,7 +46,6 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   const Icon = known ? ICONS[kind] : CircleQuestionMark;
   const script = kind === "mac_script";
   const offered = offeredScopes(options, permKind);
-  const v2 = Boolean(offered?.length);
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
   const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
   // A scope sentence ("for this task only") would contradict a choice shown below it.
@@ -72,7 +71,7 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   const red = kind === "desktop_risky" || RED_KINDS.has(permKind ?? "");
   return (
     <AskCard testId="action-card" attrs={{ "data-kind": kind, "data-risky": String(red) }}
-      who={v2 && !background ? t("kit.whoArslan") : t("jobs.askingBadge")}
+      who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
       title={<span className="inline-flex max-w-full items-start gap-2">{lineIcon(Icon)}
         <span data-testid="action-title" lang={fromFrame ? "en" : undefined} className="min-w-0 [overflow-wrap:anywhere]">{heading}</span></span>}
       said={known && modelLine ? modelLine : null} saidTestId="action-said"
@@ -88,14 +87,14 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
           </div>)
         : detailLine}
       context={grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
-      options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="action-scope" /> : undefined}
-      extra={v2 ? <DeclineNote testId="action-note" disabled={busy}
-        onDeclineWithNote={(note) => (note ? onCancel(note) : onCancel())} /> : undefined}
+      options={<ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="action-scope" />}
+      extra={<DeclineNote testId="action-note" disabled={busy}
+        onDeclineWithNote={(note) => (note ? onCancel(note) : onCancel())} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
-      allowDisabled={v2 && scopeToSend(offered, scope, alwaysLabel) === undefined}
+      allowDisabled={scopeToSend(offered, scope, alwaysLabel) === undefined}
       allowLabel={t("hands.allow")} declineLabel={t("hands.deny")}
       allowTestId="action-allow" declineTestId="action-deny"
-      onAllow={() => (v2 ? onConfirm(scopeToSend(offered, scope, alwaysLabel)) : onConfirm())}
+      onAllow={() => onConfirm(scopeToSend(offered, scope, alwaysLabel))}
       onDecline={() => onCancel()} />
   );
 }

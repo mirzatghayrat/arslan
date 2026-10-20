@@ -77,6 +77,15 @@
 3. 6 种语言同一个提交删 key；`locale-parity.test.ts` 通过才算完。
 4. 推送前跑 ruff。
 
+## 实施记录（②Main 的 PR）
+
+- 服务端照卡删：`approvals.ask`、`island_may_answer` 不带 `perm_kind` 的分支和 `_RISKY_SCRIPT`、`_legacy_scope`、`_cmd_sig`、`may_skip_card` 的 `always_allowed`、`permissions.would_ask`（它是 `_standing(record=False)` 唯一的调用者，这个参数一起删）、`permission_store.refused_since`、`voice_output_enabled`。
+- 测试：只测这些函数的改成测产品路径（`decide`、`BroadcastAsker`、`refused_groups`）或删掉。删掉的每一条，`decide` 那边都有对应的测试（没人可问时当场拒、卡等待不算工作时间、过期不算拒绝）。
+  - 新加：没带 `scope` 的「允许」只得到卡上第一个选项，`remember` 勾没勾都一样。这条在 main 上是红的（`remember` 会被放宽到「总是」或「本对话」）。
+- 网页：三种卡去掉旧分支。它们一定带 `options`，没带的卡现在「允许」按钮不可点（只能拒绝）。两个文案 key × 6 种语言；`locale-parity` 的总数 1771 → 1769。
+- AppleScript 的网页这一半单独一个提交：删 `alsoAllowsKey`、灵动岛那一行、6 种语言的 `scriptAlsoHands` 和只测它的测试。`islandAsk.ts` 原处留了一句注释：0.1.61「每个脚本都问」的门放开时，由放开它的卡把这些加回来（从 git 历史取）。服务端那一半是 ③Hands 的 #246，已合并。
+- `hands_service.py:318` 的注释提到「approvals._RISKY_SCRIPT did」，是讲历史，留着没动（③Hands 的文件）。
+
 ## 验收
 
 - 本地全量绿、CI 绿，贴 run id。

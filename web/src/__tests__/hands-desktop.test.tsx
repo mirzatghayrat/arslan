@@ -27,7 +27,8 @@ const state = (over: Record<string, unknown> = {}) => ({
 
 describe("desktop cards", () => {
   it("an app card (looking and acting in one) names its title; a risky button is marked and named", () => {
-    const { rerender } = render(<ActionApprovalCard kind="desktop_app" target="Notes" detail="click" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const { rerender } = render(<ActionApprovalCard kind="desktop_app" target="Notes" detail="click" options={["task"]} background
+      onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText("hands.title.desktop_app:Notes")).toBeInTheDocument();
     expect(screen.getByText("jobs.askingBadge")).toBeInTheDocument();
     rerender(<ActionApprovalCard kind="desktop_risky" target="Mail · “Send”" detail="send" onConfirm={vi.fn()} onCancel={vi.fn()} />);

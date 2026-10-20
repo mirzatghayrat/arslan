@@ -97,7 +97,7 @@ def test_the_island_answers_once_only_through_the_api(client, monkeypatch):
     scope it sends (the clamp is approvals', never re-implemented here)."""
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = _open(client, "c", {"type": "propose_action", "call_id": "k3", "kind": "desktop_app",
-                            "target": "Notes", "detail": "",
+                            "target": "Notes", "detail": "", "perm_kind": "app",      # as decide stamps every card
                             "options": ["task", "conversation", "always"]})
     r = client.post("/api/v1/approvals/k3/answer",
                     json={"approve": True, "source": "island", "scope": "always"})

@@ -1847,7 +1847,6 @@
   "wswrite": {
     "label": "Workspace-Zugriff",
     "body": "Arslan möchte in deinen Workspace schreiben:",
-    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung überall in diesem Verzeichnis Dateien anlegen und ändern.",
     "allow": "Erlauben",
     "deny": "Jetzt nicht",
     "action": {
@@ -1859,7 +1858,6 @@
   "schedgrant": {
     "label": "Zeitplanung",
     "body": "Arslan möchte eine wiederkehrende Aufgabe einplanen:",
-    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner.",
     "allow": "Erlauben",
     "deny": "Jetzt nicht",
     "every_day": "jeden Tag",
