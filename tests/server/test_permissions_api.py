@@ -492,9 +492,6 @@ def test_a_jobs_card_after_one_went_unanswered_is_listed_and_always_allow_makes_
     """F3 (final review I3, probe P4; §A4: once one card of a job expires, its later cards "are
     refused at once as 'waiting for you' and listed in the Inbox the same way"). The row is an
     expiry, never a denial, and "Always allow" on it stores what "Always" on its card would have."""
-    from server.services import judgment
-    monkeypatch.setattr(judgment, "shadow", lambda *args, **kwargs: None)
-    monkeypatch.setattr(judgment, "record_outcome_later", lambda *args, **kwargs: None)
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
     opened = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bookmark, CircleCheckBig, Flag, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Bookmark, CircleCheckBig, Flag, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { request } from "../api/client";
 import { formatUiDateTime } from "../lib/localeFormatting";
@@ -18,7 +18,6 @@ export interface JudgmentRow {
 }
 
 const POINT_KEY: Record<string, string> = {
-  "tool.approval": "activityPage.pointApproval",
   "memory.worth": "activityPage.pointWorth",
   "memory.merge": "activityPage.pointMerge",
   "memory.applied": "activityPage.pointApplied",
@@ -29,13 +28,12 @@ const POINT_KEY: Record<string, string> = {
 };
 
 /**
- * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked, what it said,
- * and — for shadow decisions such as "ask before this command?" — what you actually
- * chose. Hidden until there is something to show.
+ * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked and what it said.
+ * Hidden until there is something to show. (The command cards' shadow question, "ask before
+ * this command?", was removed in v0.1.63 C4; the server no longer lists its old rows.)
  */
 /** 0.1.58 §7: one small icon per family of question. */
 export function judgmentIcon(point: string): LucideIcon {
-  if (point.startsWith("tool.")) return ShieldCheck;
   if (point.startsWith("memory.")) return Bookmark;
   if (point.startsWith("project.")) return Flag;
   return CircleCheckBig;

@@ -21,14 +21,15 @@ describe("JudgmentsCard", () => {
 
   it("lists the question, the judge's view and what you chose", async () => {
     request.mockResolvedValue({ items: [
-      { id: 1, point: "tool.approval", mode: "shadow", verdict: false, probability: 0.2, latency_ms: 400,
+      // A shadow row with what you chose: the card still shows one (C4 removed the command cards' point).
+      { id: 1, point: "project.progress", mode: "shadow", verdict: false, probability: 0.2, latency_ms: 400,
         outcome: "declined", created_at: "2026-10-03T08:00:00Z" },
       { id: 2, point: "memory.worth", mode: "active", verdict: null, probability: null, latency_ms: 2000,
         outcome: null, created_at: "2026-10-03T08:01:00Z" },
     ] });
     render(<JudgmentsCard />);
     const row = await screen.findByTestId("judgment-1");
-    expect(row).toHaveTextContent("activityPage.pointApproval");
+    expect(row).toHaveTextContent("activityPage.pointProgress");
     expect(row).toHaveTextContent("activityPage.judgeShadow");
     expect(row).toHaveTextContent('activityPage.judgeNo:{"p":80}');
     expect(row).toHaveTextContent("activityPage.youDeclined");

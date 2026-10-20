@@ -88,8 +88,6 @@ SCHEMA_400 = ("error_kind = 'ModelCallError' AND instr(error_text, 'HTTP 400') >
               " OR instr(lower(error_text), 'invalid schema') > 0"
               " OR instr(error_text, 'is not a regex') > 0 OR error_text GLOB '*tools.[0-9]*'"
               " OR error_text GLOB '*mcp_[0-9]*__*')")
-SANDBOXED, RULE = _json("state", "sandboxed"), _json("state", "rule")
-JUDGED = f"FROM judgments WHERE point = 'tool.approval' AND {_week('created_at')}"
 WAITING = "phase = 'waiting_user'"
 # turn_facts.py:105 (facts) and orchestrator/memory.py:165 (summary), after the answer
 FACTS, SUMMARY = "scope = 'memory_facts'", "scope = 'memory'"
@@ -109,7 +107,6 @@ WEEKLY = [
      f"AND {_week('created_at')}", ("mcp_relaxed",)),
     (f"SELECT {_n('decided_by IN ' + SHOWN)}, {_n('decided_by NOT IN ' + SHOWN)} "
      f"FROM approval_events WHERE {_week('created_at')}", ("cards_shown", "cards_auto")),
-    (f"SELECT COUNT(*) {JUDGED}", ("judged_cards",)),
     (f"SELECT {_n(FACTS)}, {_n(SUMMARY)} FROM usage_ledger WHERE {_week('ts')}",
      ("memory_facts", "memory")),
 ]
@@ -121,10 +118,6 @@ BREAKDOWNS = {
              f"ELSE 'other' END, COUNT(*), {_n(FAILED)} {STEPS} GROUP BY 1",
     "shown_by_kind": f"SELECT {_code('kind')}, COUNT(*) FROM approval_events "
                      f"WHERE decided_by IN {SHOWN} AND {_week('created_at')} GROUP BY 1",
-    "judged_kind": f"SELECT CASE WHEN {SANDBOXED} = 0 THEN 'sandbox exit' WHEN {SANDBOXED} "
-                   f"IS NULL AND COALESCE({RULE}, '') != '' THEN 'rule card' ELSE 'other' END, "
-                   f"COUNT(*) {JUDGED} GROUP BY 1",
-    "judged_outcome": f"SELECT {_code('outcome')}, COUNT(*) {JUDGED} GROUP BY 1",
 }
 
 
@@ -253,15 +246,12 @@ def render(weeks: list[date], data: dict) -> str:
            "≈ by text: live turns that failed with ModelCallError, HTTP 400 and a tool-schema "
            "refusal (input_schema, invalid schema, not a regex, tools.<n>, mcp_<id>__). "
            "mcp_schema_relaxed events start with F3.")
-    weekly("## Cards", ["Ledger: cards shown", "Ledger: auto-decided", "judgments: command cards"],
-           lambda w: [w["cards_shown"], w["cards_auto"], w["judged_cards"]],
-           "Do not add these columns: a command card that goes through decide() is in both. "
-           "Shown = decided by user or expired; auto = any other decider. After C4 removes the "
-           "shadow judge the judgments column drops to 0; sandbox-exit cards reach the ledger "
-           "only after S4a.")
+    weekly("## Cards", ["Ledger: cards shown", "Ledger: auto-decided"],
+           lambda w: [w["cards_shown"], w["cards_auto"]],
+           "Shown = decided by user or expired; auto = any other decider. Sandbox-exit cards "
+           "reach the ledger only after S4a. (The judgments table's command-card rows went with "
+           "the shadow judge in C4; old ones age out under KEEP_DAYS.)")
     split("### Cards shown, by kind (ledger)", plain(data["shown_by_kind"]))
-    split("### Command cards in judgments (tool.approval)",
-          plain(data["judged_kind"]) + plain(data["judged_outcome"], "outcome: "))
     weekly("## Post-turn model calls", ["memory_facts rows", "memory rows"],
            lambda w: [w["memory_facts"], w["memory"]],
            "usage_ledger rows: one per scope and model, so about one per call (a scope that "

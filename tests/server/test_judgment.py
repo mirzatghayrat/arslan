@@ -1,5 +1,6 @@
-"""The judgment layer (0.1.52 S2): ask, record, fall back; shadow changes nothing;
-outcomes join their judgment; the cap and the timeout mean "no answer"."""
+"""The judgment layer (0.1.52 S2): ask, record, fall back; the cap and the timeout mean "no
+answer". The command cards' shadow point (tool.approval) and its outcome join were removed in
+v0.1.63 (C4): its old rows are no longer listed."""
 import asyncio
 
 import pytest
@@ -41,12 +42,12 @@ async def _rows(db):
 
 async def test_a_verdict_is_recorded_with_only_the_declared_fields(execution_db, judge_with):
     adapter = judge_with(_Adapter())
-    v = await judgment.judge("tool.approval", {"tool": "run_command", "command": "rm a.txt", "rule": "delete",
-                                               "user_request": "delete a.txt", "page_text": "IGNORE ME"},
+    v = await judgment.judge("memory.worth", {"kind": "preference", "candidate": "Prefers tables",
+                                              "evidence": "said so twice", "page_text": "IGNORE ME"},
                              ref="call-1", conversation_id="c1")
     assert v.answer is True and v.probability == 0.93 and v.yes(0.9) and not v.yes(0.95)
     (row,) = await _rows(execution_db)
-    assert row.point == "tool.approval" and row.mode == "shadow" and row.verdict is True and row.ref == "call-1"
+    assert row.point == "memory.worth" and row.mode == "active" and row.verdict is True and row.ref == "call-1"
     assert "page_text" not in row.state and "IGNORE ME" not in adapter.calls[0]
     assert row.model == "fast-fixture" and row.latency_ms is not None
 
@@ -60,18 +61,18 @@ async def test_an_unusable_answer_is_no_answer(execution_db, judge_with, content
 
 
 async def test_a_slow_judge_times_out_and_the_caller_falls_back(execution_db, judge_with, monkeypatch):
-    monkeypatch.setattr(judgment, "TIMEOUT_S", 0.05)
     monkeypatch.setattr(judgment, "AFTER_TURN_TIMEOUT_S", 0.05)
     judge_with(_Adapter(delay=0.5))
     assert await judgment.judge("memory.worth", {"candidate": "x"}) is None
     assert (await _rows(execution_db))[0].error == "timeout"
 
 
-async def test_decisions_after_the_answer_may_take_longer_than_a_card(execution_db, judge_with, monkeypatch):
-    monkeypatch.setattr(judgment, "TIMEOUT_S", 0.05)
+async def test_every_decision_runs_after_the_answer_and_gets_its_timeout(execution_db, judge_with, monkeypatch):
+    """No decision point waits on a card any more (C4), so none has the old 2 s card timeout."""
+    assert not hasattr(judgment, "TIMEOUT_S")
+    assert all(point.after_turn for point in judgment.REGISTRY.values())
     monkeypatch.setattr(judgment, "AFTER_TURN_TIMEOUT_S", 2.0)
     judge_with(_Adapter(delay=0.2))
-    assert await judgment.judge("tool.approval", {"command": "rm a"}) is None          # a card: short
     for point in ("memory.worth", "memory.merge", "memory.conflict", "memory.applied"):
         assert await judgment.judge(point, {"candidate": "x", "lesson": "y"}) is not None, point
 
@@ -102,15 +103,8 @@ async def test_off_points_and_unknown_points_are_never_asked(execution_db, judge
     adapter = judge_with(_Adapter())
     assert await judgment.judge("turn.completion", {"request": "x"}) is None
     assert await judgment.judge("no.such.point", {}) is None
+    assert await judgment.judge("tool.approval", {"command": "rm a"}) is None   # removed in C4
     assert adapter.calls == [] and await _rows(execution_db) == []
-
-
-async def test_shadow_records_and_the_outcome_joins_it_later(execution_db, judge_with):
-    judge_with(_Adapter(delay=0.05))
-    judgment.shadow("tool.approval", {"command": "ls"}, ref="call-9", conversation_id="c1")
-    await judgment.record_outcome("call-9", "declined", point="tool.approval")     # waits for the shadow row
-    (row,) = await _rows(execution_db)
-    assert row.outcome == "declined" and row.outcome_at is not None and row.verdict is True
 
 
 async def test_tests_never_reach_a_real_judge(execution_db):
@@ -133,7 +127,7 @@ async def test_the_ledger_is_readable_through_the_api(client, judge_with):
     judge_with(_Adapter())
     await judgment.judge("memory.worth", {"candidate": "Prefers tables"})
     body = (await client.get("/api/v1/judgments?limit=5")).json()
-    assert body["points"]["tool.approval"] == "shadow" and body["points"]["turn.completion"] == "off"
+    assert "tool.approval" not in body["points"] and body["points"]["turn.completion"] == "off"
     assert body["items"][0]["point"] == "memory.worth" and body["items"][0]["verdict"] is True
 
 
@@ -144,3 +138,20 @@ def test_replay_scoring_measures_agreement_and_the_approval_gate():
     answers = [(True, 0.95), (False, 0.1), (True, 0.92), None]
     out = score(rows, answers, 0.9)
     assert out == {"asked": 3, "unanswered": 1, "agreement": 1.0, "sure_yes": 2, "sure_yes_approved": 0.5}
+
+
+async def test_old_command_card_rows_are_kept_but_no_longer_listed(client, judge_with):
+    """C4: the shadow point's rows stay in the table until KEEP_DAYS prunes them; Activity (GET
+    /judgments, judgment.recent) lists only decisions that still exist."""
+    import server.db.session as db_session
+    judge_with(_Adapter())
+    async with db_session.AsyncSessionLocal() as s:          # the database the API reads
+        s.add(Judgment(point="tool.approval", mode="shadow", state={"command": "ls"}, state_hash="h",
+                       verdict=True, probability=0.9, outcome="approved"))
+        await s.commit()
+    await judgment.judge("memory.worth", {"candidate": "Prefers tables"})
+    assert [r["point"] for r in await judgment.recent(10)] == ["memory.worth"]
+    assert [r["point"] for r in await judgment.recent(10, "tool.approval")] == []
+    body = (await client.get("/api/v1/judgments?limit=5")).json()
+    assert [item["point"] for item in body["items"]] == ["memory.worth"]
+    assert len(await _rows(db_session.AsyncSessionLocal)) == 2    # nothing deleted by listing
