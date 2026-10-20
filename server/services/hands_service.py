@@ -308,14 +308,12 @@ _SCRIPT_APP = re.compile(r'\b(?:application|app)\s+(?:id\s+)?"([^"\n]+)"', re.I)
 
 def script_apps(script: str) -> list[str]:
     """The apps an AppleScript names, in order, without repeats (0.1.61 §A2's "apps" category and
-    mac_applescript check these against the never-list). One app named two ways ("Notes", "Notes.app")
-    counts once, by `app_key`; each is returned as the script spells it, so the card shows its words."""
+    mac_applescript check these against the never-list). Repeats are by exact spelling, never by
+    `app_key`: "Notes" and ".../Notes.app" are two names to check, because the second can be a renamed
+    bundle that is really 1Password (②Main on #271: folding them by key let the path go unchecked)."""
     seen: list[str] = []
-    keys: set[str] = set()
     for m in _SCRIPT_APP.finditer(script or ""):
-        key = app_key(m.group(1))
-        if key not in keys:
-            keys.add(key)
+        if m.group(1) not in seen:
             seen.append(m.group(1))
     return seen
 

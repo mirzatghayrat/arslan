@@ -113,10 +113,30 @@ def test_the_users_own_never_entry_counts_however_it_was_written(apps_folder):
     assert hands_service.never_touched("Notes2") and hands_service.never_touched(str(apps_folder / "Notes2.app"))
 
 
-def test_one_app_named_three_ways_is_one_app_in_the_scripts_list():
+def test_every_spelling_of_an_app_is_kept_so_each_is_checked():
+    """Folded by key, a path that is really a renamed 1Password hid behind an earlier "Notes" (②Main)."""
     script = ('tell application "Notes" to activate\ntell application "Notes.app" to activate\n'
-              'tell application "/System/Applications/Notes.app" to quit')
-    assert hands_service.script_apps(script) == ["Notes"]
+              'tell application "/System/Applications/Notes.app" to quit\ntell application "Notes" to quit')
+    assert hands_service.script_apps(script) == ["Notes", "Notes.app", "/System/Applications/Notes.app"]
+
+
+async def test_a_renamed_never_list_bundle_after_a_plain_name_of_the_same_key_is_refused(
+        hands, asks, in_job, apps_folder, tmp_path_factory, monkeypatch):
+    """②Main's probe on #271: a bundle called Notes.app whose Info.plist says 1Password, named by its
+    path after a plain "Notes" line. Both share the key "notes"; the path must still be checked."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    fake = _bundle(tmp_path_factory.mktemp("lookalike"), "Notes", "com.1password.1password")
+    script = f'tell application "Notes" to count notes\ntell application "{fake}" to activate'
+    assert str(fake) in hands_service.script_apps(script)
+    result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+    assert result.get("code") == "app_denied", result
+    assert seen == [] and ran == []
 
 
 def test_a_renamed_copy_of_a_high_reach_app_is_still_high_reach(apps_folder, tmp_path_factory):
