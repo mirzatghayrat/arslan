@@ -22,17 +22,3 @@ def test_capabilities_none_and_garbage_become_empty_list():
     assert spawn_service.normalize_capabilities(None) == []
     assert spawn_service.normalize_capabilities(42) == []
     assert spawn_service.normalize_capabilities("") == []
-
-
-def test_normalize_draft_coerces_capabilities_and_preserves_other_fields():
-    draft = {"name": "x", "domain": "finance.research", "capabilities": "a,b", "persona_role": "r"}
-    out = spawn_service.normalize_draft(draft)
-    assert out["capabilities"] == ["a", "b"]
-    assert out["name"] == "x" and out["domain"] == "finance.research" and out["persona_role"] == "r"
-    # does not mutate the input
-    assert draft["capabilities"] == "a,b"
-
-
-def test_normalize_draft_non_dict_returns_empty():
-    assert spawn_service.normalize_draft(None) == {}
-    assert spawn_service.normalize_draft("nope") == {}

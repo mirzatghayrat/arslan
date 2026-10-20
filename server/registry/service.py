@@ -574,27 +574,3 @@ async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dic
         by_key.setdefault(t.key, t)
     rows = sorted(by_key.values(), key=lambda t: t.key)
     return [{"key": t.key, "description": t.description, "input_schema": t.input_schema or {}} for t in rows]
-
-
-async def grant_temporary(spawn_id: int, ref_key: str, *, current_turn: int,
-                          turns: int = 3) -> None:
-    """Escalation path (b): temporary safe-only grant. Validated, idempotent."""
-    await assert_assignable("toolset", ref_key)
-    async with db_session.AsyncSessionLocal() as db:
-        existing = (await db.execute(
-            select(SpawnCapability).where(
-                SpawnCapability.spawn_id == spawn_id,
-                SpawnCapability.kind == "toolset",
-                SpawnCapability.ref_key == ref_key,
-            )
-        )).scalar_one_or_none()
-        if existing is not None:
-            if existing.grant == "temporary":
-                existing.expires_turn = current_turn + turns
-        else:
-            db.add(SpawnCapability(
-                spawn_id=spawn_id, kind="toolset", ref_key=ref_key,
-                grant="temporary", granted_by="escalation",
-                expires_turn=current_turn + turns,
-            ))
-        await db.commit()

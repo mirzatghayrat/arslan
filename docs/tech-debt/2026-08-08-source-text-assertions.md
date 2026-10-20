@@ -17,7 +17,7 @@
 | 4 | `tests/test_websocket_runtime_dependency.py` |
 | 2 | `tests/server/test_capability_supply_chain.py` |
 | 2 | `tests/server/test_hermetic_budget_refund.py` |
-| 2 | `tests/server/test_live_evals_have_not_rotted.py` |
+| 2 | `tests/server/test_live_evals_have_not_rotted.py`(0.1.63 C1 已删) |
 | 2 | `tests/server/test_llm_error_surfacing.py` |
 | 2 | `tests/server/test_packaging_entry.py` |
 | 2 | `tests/server/test_release_workflow.py` |
@@ -33,7 +33,7 @@
    **就是**断言行为,因为那份文件是被 GitHub Actions / Tauri 消费的东西,不是它的描述。
    **不算债。**
 2. **刻意的漂移哨**(`test_macos_marker_covers_the_platform_set`、
-   `test_live_evals_have_not_rotted` 的语料计数、`test_capability_supply_chain`):
+   `test_live_evals_have_not_rotted` 的语料计数(0.1.63 C1 已随文件删除)、`test_capability_supply_chain`):
    它们要断言的**就是源码的形状**(某个 marker 打没打、某条注册表有没有漏),
    行为断言表达不了。**不算债**,但它们各自的 docstring 应写清「我保障不了什么」。
 3. **真债**:用 grep 代替一次可以真跑的观察 —— `test_startup_backfill` 那条是样本。

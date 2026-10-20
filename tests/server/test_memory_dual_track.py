@@ -62,10 +62,10 @@ async def _seed_spawn(maker, spawn_id: int, name: str) -> None:
 
 async def test_dual_track_learning_provenance_distinguishable(maker, monkeypatch):
     """learnings: one agentic write (RememberExecutor, source_ref.actor) and one
-    Tier0 write (learning_service.distill_from_event, source_kind='distill' —
-    the real session-distill call-site) land in the SAME table (same well,
-    spawn_id=61). Querying each back proves the two tracks are distinguishable
-    via source_kind/source_ref alone."""
+    Tier0 write (source_kind='distill', the shape the session-distill call-site
+    wrote; 0.1.63 C1c-1 deleted that call-site, so it goes through learning_service.append)
+    land in the SAME table (same well, spawn_id=61). Querying each back proves the two
+    tracks are distinguishable via source_kind/source_ref alone."""
     await _seed_spawn(maker, 61, "分身61")
 
     agentic_out = await _remember(
@@ -75,20 +75,9 @@ async def test_dual_track_learning_provenance_distinguishable(maker, monkeypatch
 
     from server.services import learning_service
 
-    class _Resp:
-        content = "轨道二:Tier0 distill 心得"
-
-    class _StubAdapter:
-        async def chat(self, system, user, **kw):
-            return _Resp()
-
-    async def _fake_build_adapter(*a, **kw):
-        return _StubAdapter()
-
-    monkeypatch.setattr(learning_service, "build_adapter", _fake_build_adapter)
-    tier0_id = await learning_service.distill_from_event(
-        conversation_id="c-tier0", spawn_id=61, spawn_name="分身61",
-        signal_text="真实会话信号")
+    tier0_id = await learning_service.append(
+        "轨道二:Tier0 distill 心得", label="分身61 心得", source_kind="distill",
+        source_ref={"conversation_id": "c-tier0", "spawn_id": 61}, spawn_id=61)
     assert tier0_id > 0
 
     async with maker() as db:

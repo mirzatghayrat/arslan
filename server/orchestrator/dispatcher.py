@@ -86,12 +86,6 @@ async def _load_spawn(spawn_id: int) -> Spawn | None:
         return await db.get(Spawn, spawn_id)
 
 
-async def get_spawn_name(spawn_id: int) -> str | None:
-    """Resolve a spawn's name (used to caption the routing frame before streaming)."""
-    spawn = await _load_spawn(spawn_id)
-    return spawn.name if spawn else None
-
-
 async def _spawn_history(spawn_id: int) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(

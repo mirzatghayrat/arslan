@@ -1,13 +1,10 @@
-"""Records one route→dispatch turn as a Run + ordered RunSteps.
+"""Records one turn as a Run + ordered RunSteps.
 
-A RunRecorder is created at the top of _dispatch_spawn; its tee() wraps the
-EventSink so every emitted event is both forwarded live AND timestamped for
-step derivation. finalize() persists steps, links the spawn-summary message,
-and schedules async judge scoring.
-
-Note: the escalation re-dispatch path emits its spawn_meta through this same
-teed sink before finalize runs, so the dispatch step closes normally; finalize
-is called once per turn by the orchestrator.
+A RunRecorder is created at the start of host_run.execute (an Arslan turn) or
+dispatcher._dispatch_replay (a replay arm); its tee() wraps the EventSink so every
+emitted event is both forwarded live AND timestamped for step derivation.
+finalize() persists steps, links the summary message, and schedules async judge
+scoring.
 """
 from __future__ import annotations
 
@@ -312,7 +309,7 @@ class RunRecorder:
         and trace, and schedule_scoring is NOT called — a replay is evaluated by the
         paired ReplayGate (E4), not the per-run judge."""
         # S3-M1 (review I1 + residual): finalize must be idempotent — a cancel landing
-        # during one of the awaits below re-enters finalize via _dispatch_spawn's cancel
+        # during one of the awaits below re-enters finalize via host_run.execute's cancel
         # handler. _finalizing flips BEFORE any await (synchronously, same task context)
         # so a truly re-entrant call short-circuits; _finalized flips only AFTER the
         # commit returned. A cancel in the PRE-commit phase rolled the write back, so
@@ -351,21 +348,21 @@ class RunRecorder:
                         # S3-M1: status_override ("cancelled"/"interrupted") is a user/boot terminal
                         # state — it bypasses scoring entirely, so such runs can never enter the
                         # corpus (replay_set only collects status='scored').
-                        # S3-M4: PRESERVE a non-live kind set at start() — a scheduled run must
-                        # stay kind='scheduled' end-to-end (the corpus filters key on kind=='live',
-                        # so clobbering it back to 'live' here would leak scheduled runs into the
-                        # evolution corpus). The `or "live"` keeps the unset-column re-affirmation.
+                        # S3-M4: PRESERVE a non-live kind set at start() — the corpus filters key
+                        # on kind=='live', so clobbering it back to 'live' here would leak those runs
+                        # into the evolution corpus. The `or "live"` keeps the unset-column re-affirmation.
                         terminal = ("failed" if error_kind else "completed") if self.kind in {"host", "recipe", "recipe_step", "worker"} else "recorded"
                         run.status = status_override or ("replayed" if replay else terminal)
                         run.kind = "replay" if replay else (run.kind or "live")
                         run.epoch = 1
                         run.continuation = self.continuation
-                        # M4 final review I-1: scheduled deliverables land in a
-                        # sidebar-unreachable dedicated conversation (scheduled-{id}),
-                        # so the run row carries the full text for RunReplay. Plain
-                        # live runs still do NOT persist it (storage discipline —
-                        # their output lives in the reachable conversation).
-                        if replay or status_override is not None or run.kind in {"scheduled", "host", "recipe", "recipe_step", "worker"}:
+                        # M4 final review I-1: these kinds' run row carries the full text for
+                        # RunReplay. Plain live runs still do NOT persist it (storage discipline —
+                        # their output lives in the reachable conversation). 0.1.63 (C1c-1):
+                        # 'scheduled' left this set; nothing has created a scheduled run since C1
+                        # (fires are Arslan turns). Old kind='scheduled' rows are still read
+                        # (usage, runs API, reaper).
+                        if replay or status_override is not None or run.kind in {"host", "recipe", "recipe_step", "worker"}:
                             run.final_output = full_output
                         else:
                             run.final_output = None  # Completed live output is in its linked message.

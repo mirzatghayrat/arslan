@@ -37,8 +37,8 @@ from server.schemas import (
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
-# LLM call sites NOT ledgered yet — mirrors spec §S3-D's 未计入清单 annotation
-# (2026-07-11-s3-table-stakes-design.md). Update BOTH places when wiring a new scope.
+# LLM call sites NOT ledgered yet. Take a name off when its call site is wired to a
+# ledger scope or deleted.
 NOT_COVERED = [
     "compare_judge",
     "optimizer",
@@ -50,7 +50,6 @@ NOT_COVERED = [
     "tool_intent",
     "mcp_suggest",
     "skill_suggest",
-    "learning_service",
     "note_service",
 ]
 

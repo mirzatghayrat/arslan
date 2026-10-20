@@ -300,7 +300,9 @@ async def test_usage_summary_not_covered_footnote(client):
     # itself and the meta-upflow) now run inside usage_ledger.scope("distill"), so
     # claiming it is unaccounted would itself be the dishonest statement.
     assert "distill_service" not in nc
-    assert len(nc) == 12
+    # learning_service LEFT it in 0.1.63 (C1c-1): its only LLM call (the distill) was deleted.
+    assert "learning_service" not in nc
+    assert len(nc) == 11
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 <section class="chapter" id="runtime"><h2><span class="num">06 / 执行运行时</span>让一次请求有过程、有边界、有结果</h2>
-<p>Arslan 的执行核心负责把用户意图变成一连串可观察的动作：准备上下文、调用模型、校验工具请求、执行获准的操作、读取真实结果，再决定继续还是交付。v0.1.60 的默认入口采用统一循环，<code>EXPERTS_ENABLED=False</code>；消息直接进入答复流程，长期事实的提取放在答复之后。历史专家系统仍留有兼容代码，当前主流程不再先经过一次模型路由。</p>
+<p>Arslan 的执行核心负责把用户意图变成一连串可观察的动作：准备上下文、调用模型、校验工具请求、执行获准的操作、读取真实结果，再决定继续还是交付。v0.1.60 的默认入口采用统一循环，专家已关闭；消息直接进入答复流程，长期事实的提取放在答复之后。历史专家系统仍留有兼容代码，当前主流程不再先经过一次模型路由。</p>
 <div class="flow"><div class="flow-step"><b>建立任务</b><span>绑定会话、工作区与权限</span></div><div class="flow-step"><b>准备输入</b><span>历史、记忆、资料和可用工具</span></div><div class="flow-step"><b>模型决策</b><span>请求工具，或生成答复</span></div><div class="flow-step"><b>真实执行</b><span>校验、授权、记录与结果回流</span></div><div class="flow-step"><b>检查交付</b><span>核对约定、证据和产物</span></div></div>
 <p class="evidence">源码：{{source:server/orchestrator/arslan.py|消息入口与上下文组装}}；{{source:server/services/task_context.py|可信任务上下文}}；{{source:server/orchestrator/tool_loop.py|统一工具循环}}。</p>
 

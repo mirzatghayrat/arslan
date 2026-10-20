@@ -70,19 +70,6 @@ async def test_headless_entry_does_not_regrant_remember_authority(execution_db, 
         assert row.phase == "waiting_user" and row.pause_reason == "task_budget_exhausted"
 
 
-async def test_refinement_keeps_original_goal_in_durable_spec(execution_db, active_context):
-    @task_context.scoped_dispatch
-    async def expert(cid, spawn_id, brief, emit, **kwargs):
-        return None
-    await expert("entry", 7, "Compare the supplied designs", lambda event: None,
-                 instruction="Make the comparison shorter", user_message="Keep the accessibility findings")
-    async with repository() as repo:
-        spec = await repo.spec(await repo.get("entry-task"))
-        assert "Compare the supplied designs" in spec.instruction
-        assert "Make the comparison shorter" in spec.instruction
-        assert "Keep the accessibility findings" in spec.instruction
-
-
 @pytest.mark.parametrize("driver", [[], "expert", {}, {"kind": "expert", "id": True}])
 def test_malformed_saved_driver_fails_closed(driver):
     with pytest.raises(TaskError, match="task_invalid_driver"):
