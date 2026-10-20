@@ -60,9 +60,16 @@ _WEB_SITE_REFUSED_BY_CODE = {
 # cause there, so the hint never sends the user to System Settings, and no outside card is offered.
 _SANDBOX_APPLE_EVENTS = re.compile(r"execution error: .*\((?:-600|-1743|-10004)\)")
 SANDBOX_APPLE_EVENTS_HINT = (
-    "Apple Events can't be sent from inside the command sandbox, so this AppleScript reached no app. Use "
-    "mac_applescript if it is in your tools (the user approves the script); otherwise use the desktop_* tools "
-    "for that app if you have them; otherwise tell the user what you needed. Do not retry it with run_command.")
+    "Apple Events can't be sent from inside the command sandbox, so this AppleScript reached no app. Run the "
+    "AppleScript as its own run_command (`osascript -e '…'` or a here-doc, nothing else in the command): the "
+    "user is asked, and an approved one runs outside the sandbox. Or use mac_applescript if it is in your tools, "
+    "or the desktop_* tools for that app if you have them; otherwise tell the user what you needed.")
+# S2a-1 (U11, ③Hands): an approved script that acts beyond its app (do shell script, run script, raw
+# events, AppleScriptObjC, file writes) is kept under the sandbox's profiles, where it reaches no app.
+KEPT_WRAPPED_HINT = (
+    "This AppleScript acts beyond its app (do shell script, run script, a raw event, AppleScriptObjC or a file "
+    "write), so even approved it stays sandboxed, where Apple Events can't be sent. Use mac_applescript if it is "
+    "in your tools: its card shows the user the whole script. Otherwise tell the user what you needed.")
 
 
 def hint_for(tool_key: str, result: dict) -> str | None:
@@ -70,8 +77,8 @@ def hint_for(tool_key: str, result: dict) -> str | None:
     if result.get("ok"):
         return None
     text = " ".join(str(result.get(k) or "") for k in ("error", "stderr", "stdout", "summary"))
-    if result.get("sandbox") == "workspace" and _SANDBOX_APPLE_EVENTS.search(text):
-        return SANDBOX_APPLE_EVENTS_HINT
+    if result.get("sandbox") in ("workspace", "outside") and _SANDBOX_APPLE_EVENTS.search(text):
+        return KEPT_WRAPPED_HINT if result.get("kept_wrapped") else SANDBOX_APPLE_EVENTS_HINT
     if tool_key == "web_extract":
         error = str(result.get("error") or "")
         if error.startswith(_WEB_GUARD_PREFIX):

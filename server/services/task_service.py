@@ -151,8 +151,8 @@ _PRIVILEGE_ALL_OR_NOTHING = {"reminders"}
 _OSA_HEREDOC = re.compile(r"\A\s*(?:/usr/bin/)?osascript\s*<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*)\n\2\s*\Z", re.S)
 _OSA_NOT_ALLOWED = re.compile(r"execution error: Not authorized to send Apple events to (.+)\. \(-1743\)\Z")
 _OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege violation occurred\. \(-10004\)\Z")
-# S2a-1: under the workspace sandbox's `(deny appleevent-send)` no event leaves the process, so the
-# script's one app answers "isn't running" (-600) whatever it is doing: nothing happened there.
+# S2a-1: under `(deny appleevent-send)` (the workspace sandbox, and the minimal profile outside it) no
+# event leaves the process, so the script's one app answers "isn't running" (-600): nothing happened there.
 _OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
@@ -302,6 +302,37 @@ def _inline_osascript(command: str) -> str | None:
     return "\n".join(script for flag, script in pairs) if all(flag == "-e" for flag, _ in pairs) else None
 
 
+# S2a-1 piece 4, decision U11 (scope reviewed by ③Hands): an approved Apple Events or Shortcuts card
+# runs its command with no seatbelt wrapper, once (any wrapper blocks Apple Events). Only exactly one
+# plain call: one osascript with its script inline (_inline_osascript, which refuses anything the
+# shell would expand or run first) and none of the forms that act beyond its app, or one
+# `shortcuts run <name>` with optional input/output files. Narrower than U11's letter on purpose: a
+# script with `do shell script` and the like stays under the minimal profile (unwrapped it would be
+# an unconfined shell); mac_applescript, whose card shows the whole script, is the way for those.
+_SHORTCUT_FLAGS = {"-i", "--input-path", "-o", "--output-path", "--output-type"}
+
+
+def unwrapped_once(command: str) -> bool:
+    from server.services.hands_service import _SCRIPT_REACH, _SCRIPT_REACH_OTHERWISE
+    script = _inline_osascript(command)
+    if script is not None:
+        return bool(script.strip()) and not any(
+            p.search(script) for p in (_OSA_ELSEWHERE, _SCRIPT_REACH, _SCRIPT_REACH_OTHERWISE))
+    if _shell_expands(command):
+        return False
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        words = list(lexer)
+    except ValueError:
+        return False
+    if len(words) < 3 or words[0] not in ("shortcuts", "/usr/bin/shortcuts") or words[1] != "run":
+        return False
+    rest = words[3:]
+    return len(rest) % 2 == 0 and all(flag in _SHORTCUT_FLAGS for flag in rest[::2]) \
+        and not any(set(word) <= set(";&|<>()") for word in words)
+
+
 def _fails_to_compile(script: str) -> bool:
     """osacompile compiles without running (③Hands checked: a real syntax error exits 1; a script that
     only prints one compiles, and does not run). Unavailable, timed out or failing to start: False, so the
@@ -340,7 +371,7 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
         return False
     script = _inline_osascript(terminal_policy.as_shell(arguments.get("command"), arguments.get("argv")))
     return script is not None and _osascript_refused(script, str(result.get("stderr") or ""),
-                                                     sandboxed=result.get("sandbox") == "workspace")
+                                                     sandboxed=result.get("sandbox") in ("workspace", "outside"))
 
 
 def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> bool:

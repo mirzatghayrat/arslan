@@ -484,7 +484,14 @@ def _command_request(shell: str, rules: list[str], frame: dict | None):
     target = "rules:" + "|".join(rules) if rules else "text:" + shell
     if set(rules) & terminal_policy.ONCE_ONLY_RULES:
         # 0.1.62 F4a: osascript or `shortcuts run` in it: this time only, nothing to remember.
-        return permissions.Request(kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,
+        # S2a-1 (U11): an approved plain one runs outside the sandbox, and the card says so; a Shortcut
+        # cannot be inspected, so its card says it runs as the user (③Hands' review).
+        from server.services import task_service
+        where = ""
+        if task_service.unwrapped_once(shell):
+            where = (" It runs as you, outside the sandbox; Arslan cannot see what the Shortcut does."
+                     if "shortcuts" in rules else " It runs outside the sandbox, this once.")
+        return permissions.Request(kind="command", target=target, title=f"Run `{shell[:80]}`?{where}", detail=shell,
                                    conversation_ok=False, once_only=True, frame=frame)
     return permissions.Request(
         kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,

@@ -1061,6 +1061,18 @@ async def _writing_in_own_folder() -> bool:
         return False
 
 
+def _bare_once(command: str, *, by_user: bool) -> tuple[bool, bool]:
+    """S2a-1 piece 4, decision U11: (run with no wrapper, kept wrapped) for an approved command. Only
+    a command with an Apple Events or Shortcuts rule, approved by the user's click on its card (a
+    once-only card: no grant or rule ever answers it), and one plain call runs bare, this once.
+    Approved but not plain (a script that acts beyond its app): kept under the sandbox's profiles."""
+    from server.services import task_service, terminal_policy
+    if not (by_user and terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES):
+        return False, False
+    bare = task_service.unwrapped_once(command)
+    return bare, not bare
+
+
 async def _sandbox_enabled() -> bool:
     """Settings → Advanced → "Run commands in a sandbox" (0.1.51 P3), default on."""
     from server.db import session as db_session
@@ -1196,6 +1208,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     run_outside = False          # 0.1.51 P3: this command leaves the sandbox (a click said so)
     sandbox_on = False
+    unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
@@ -1233,6 +1246,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
+            unwrapped, kept_wrapped = _bare_once(command, by_user=True)
         elif (sandbox_on and not run_outside and terminal_policy.runs_freely_in_sandbox(command)
               and not await _asks_for_everything()):
             pass                          # 0.1.52: a plain script inside the sandbox needs no card
@@ -1252,6 +1266,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
+            from server.services import permissions
+            decided = permissions.LAST_DECISION.get()
+            unwrapped, kept_wrapped = _bare_once(
+                command, by_user=confirm_command is not None and (decided is None or decided.by == "user"))
+            run_outside = run_outside or unwrapped
 
     # Reaching another machine (P3b). Every call asks, with no session memory and
     # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
@@ -1435,9 +1454,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             async def run_once(outside: bool) -> dict:
                 from server.services import terminal_exec
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
+                bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
                 try:
                     return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
                 finally:
+                    terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             result = await run_once(run_outside)
             if (tool_key == "run_command" and sandbox_on and not run_outside and confirm_command is not None
@@ -1449,6 +1470,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                         result["ran_outside_sandbox"] = True
             elif tool_key == "run_command" and run_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
+            if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
+                result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
         except TaskError as exc:
             if exc.code not in {"task_reconciliation_required", "task_action_already_completed"}:
                 raise

@@ -168,7 +168,7 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
     if copies:
         # S2a-1 piece 5: the saved tool outputs this conversation was given, read-only and one file at
         # a time, after the protected paths (the last rule wins). Never the folder: `ls` stays closed.
-        lines.append("(allow file-read* " + " ".join(f"(literal {json.dumps(str(_real(p)))})" for p in copies) + ")")
+        lines.append(_copies_rule(copies))
     return "\n".join(lines) + "\n"
 
 
@@ -181,6 +181,35 @@ def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
     return ["/usr/bin/sandbox-exec", "-p",
             profile(default_writable(workspace), default_protected(), offline=offline,
                     closed=closed, readable=readable, copies=copies)]
+
+
+def _copies_rule(copies) -> str:
+    return "(allow file-read* " + " ".join(f"(literal {json.dumps(str(_real(p)))})" for p in copies) + ")"
+
+
+def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
+    """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
+    the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
+    write Arslan's own data, keys and Hands' folder (files and sockets). The user's secrets stay open:
+    ssh, git push, gh and aws need them out here. The saved copies this conversation was given stay
+    readable, file by file (piece 5). An approved plain osascript or `shortcuts run` runs with no
+    wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events."""
+    lines = ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+    if offline:
+        lines.append("(deny network*)")
+    ours = " ".join(_rule(p) for p in arslan_protected())
+    lines += [f"(deny file-read* file-write* {ours})", f"(deny network-outbound {ours})"]
+    if copies:
+        lines.append(_copies_rule(copies))
+    return "\n".join(lines) + "\n"
+
+
+def outside_wrapper(*, offline: bool = False, copies: list[Path] = ()) -> list[str] | None:
+    """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
+    command outside the sandbox runs as before)."""
+    if not available():
+        return None
+    return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies)]
 
 
 def available() -> bool:
@@ -204,6 +233,11 @@ def stopped_by_sandbox(result: dict) -> bool:
     same): a false positive only offers a re-run card the user can decline."""
     if result.get("sandbox") != "workspace" or result.get("ok") or result.get("exit_code") in (0, None):
         return False
+    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+
+
+def refused_outside(result: dict) -> bool:
+    """A command under the minimal outside profile that failed with EPERM (piece 4)."""
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 

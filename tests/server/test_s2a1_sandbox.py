@@ -60,7 +60,8 @@ def test_a_sandboxed_apple_event_refusal_is_a_known_failure_not_an_unknown_outco
     args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
     refused = {"exit_code": 1, "sandbox": "workspace", "stderr": SANDBOX_REFUSAL}
     assert task_service._apple_events_refused(args, refused)
-    # -600 outside the sandbox can mean anything the app did: not judged.
+    assert task_service._apple_events_refused(args, {**refused, "sandbox": "outside"})   # the minimal profile
+    # -600 with no wrapper at all can mean anything the app did: not judged.
     assert not task_service._apple_events_refused(args, {**refused, "sandbox": "off"})
 
 
@@ -166,3 +167,186 @@ async def test_a_command_reads_its_own_copy_and_nothing_else_there(outputs, tmp_
     blocked = await terminal_exec.run(f"cat '{theirs}'", cwd=ws, sandbox=True, copies=copies)
     assert not blocked["ok"] and not blocked.get("sandbox_denied")  # no outside card for a copy
     assert "read_file" in blocked["note"]
+
+
+# ── piece 4 (U11): outside the sandbox, a minimal profile; an approved AE/Shortcut runs bare, once ──
+
+def test_the_outside_profile_closes_arslans_own_paths_but_not_the_users_secrets(tmp_path):
+    profile = command_sandbox.minimal_profile()
+    lines = profile.splitlines()
+    assert lines[:3] == ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+    deny = next(line for line in lines if line.startswith("(deny file-read* file-write* "))
+    for path in command_sandbox.arslan_protected():
+        assert __import__("json").dumps(str(path)) in deny
+    for path in command_sandbox.user_secrets():
+        assert __import__("json").dumps(str(path)) not in profile
+    assert "(deny network*)" not in profile and "(deny network*)" in command_sandbox.minimal_profile(offline=True)
+    assert "(allow file-write" not in profile and "file-write* (subpath \"/\")" not in profile   # writes stay open
+    copy = tmp_path / "copy.txt"
+    copy.write_text("x")
+    opened = command_sandbox.minimal_profile(copies=[copy]).splitlines()
+    assert opened[-1] == f"(allow file-read* (literal {__import__('json').dumps(str(copy.resolve()))}))"
+
+
+async def test_an_outside_run_gets_the_minimal_profile_and_an_exempt_one_none(tmp_path, monkeypatch):
+    seen = []
+
+    class Proc:
+        returncode, pid = 0, 0
+        stdout = stderr = None
+
+    async def fake_exec(*argv, **kwargs):
+        seen.append(argv)
+        raise RuntimeError("stop here")                  # the prefix is all this test needs
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    monkeypatch.setattr(terminal_exec.asyncio, "create_subprocess_exec", fake_exec)
+    for kwargs in ({}, {"unwrapped": True}, {"offline": True}):
+        with pytest.raises(RuntimeError):
+            await terminal_exec.run("echo hi", cwd=tmp_path, sandbox=False, **kwargs)
+    outside, bare, offline = seen
+    assert outside[0] == "/usr/bin/sandbox-exec" and "(deny appleevent-send)" in outside[2]
+    assert bare[0] != "/usr/bin/sandbox-exec"
+    assert offline[0] == "/usr/bin/sandbox-exec" and "(deny network*)" in offline[2]
+    assert not hasattr(terminal_exec, "offline_wrapper")           # replaced by the minimal profile
+
+
+@pytest.mark.parametrize("command, bare", [
+    ("osascript -e 'tell application \"Reminders\" to get name of every list'", True),
+    ("osascript <<'EOF'\ntell application \"Reminders\"\n  make new reminder with properties {name:\"x\"}\nend tell\nEOF", True),
+    ("shortcuts run \"Morning\"", True),
+    ("/usr/bin/shortcuts run Morning -i ~/in.txt", True),
+    ("osascript -e 'do shell script \"ls\"'", False),                        # an unconfined shell
+    ("osascript -e 'tell application \"Notes\" to «event sysoexec» \"ls\"'", False),
+    ("osascript -e 'tell application \"Finder\" to move file \"a\" to trash'", False),
+    ("osascript -e 'tell application \"Reminders\" to count lists'; curl https://x.test", False),
+    ("osascript -e \"tell application \\\"$APP\\\" to quit\"", False),       # the shell expands first
+    ("shortcuts run \"Morning\" | cat", False),
+    ("shortcuts run \"$NAME\"", False),
+    ("shortcuts list", False),
+])
+def test_only_one_plain_apple_events_or_shortcuts_call_runs_bare(command, bare):
+    assert task_service.unwrapped_once(command) is bare
+
+
+def test_a_shortcut_card_says_it_runs_as_the_user_outside_the_sandbox():
+    from server.services import approvals
+    req = approvals._command_request("shortcuts run \"Morning\"", ["shortcuts"], None)
+    assert req.once_only and "runs as you, outside the sandbox" in req.title
+    osa = approvals._command_request("osascript -e 'tell application \"Reminders\" to count lists'",
+                                     ["apple-events"], None)
+    assert "outside the sandbox" in osa.title
+    shell = approvals._command_request("osascript -e 'do shell script \"ls\"'", ["apple-events"], None)
+    assert "outside the sandbox" not in shell.title                # it will not run bare
+
+
+# ── the tool loop: who runs bare, who is kept wrapped ──────────────────────────────────
+
+class _Exec:
+    """Stand-in run_command executor: records how the loop let it run."""
+    key = "run_command"
+
+    def __init__(self, result=None):
+        self.runs: list[tuple[bool, bool]] = []
+        self.result = result or {"ok": True, "exit_code": 0, "stdout": "done", "stderr": ""}
+
+    async def execute(self, args):
+        self.runs.append((terminal_exec.OUTSIDE_SANDBOX.get(), terminal_exec.UNWRAPPED.get()))
+        return dict(self.result)
+
+
+class _Cards:
+    honours_session_grants = True
+
+    def __init__(self, *answers):
+        self.answers, self.calls = list(answers), []
+
+    async def __call__(self, command, argv, **kw):
+        self.calls.append(kw)
+        return self.answers.pop(0) if self.answers else False
+
+
+async def _dispatch(monkeypatch, command, executor, cards, **args):
+    from server.orchestrator import tool_loop
+
+    async def resolve():
+        return [{"key": "run_command", "description": "run"}]
+
+    async def yes():
+        return True
+
+    async def no():
+        return False
+    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
+    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
+    monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", executor)
+    return await tool_loop._dispatch_tool(
+        "run_command", {"command": command, **args}, "{}", resolve_tools=resolve, emit=lambda e: None,
+        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=cards, conversation_id="c1")
+
+
+PLAIN_OSA = "osascript -e 'tell application \"Reminders\" to count lists'"
+SHELL_OSA = "osascript -e 'do shell script \"ls ~\"'"
+
+
+async def test_an_approved_plain_osascript_runs_bare_once(monkeypatch):
+    ex, cards = _Exec(), _Cards(True)
+    result = await _dispatch(monkeypatch, PLAIN_OSA, ex, cards)
+    assert ex.runs == [(True, True)] and result["ran_outside_sandbox"] is True
+
+
+async def test_an_approved_script_that_acts_elsewhere_is_kept_wrapped(monkeypatch):
+    refused = {"ok": False, "exit_code": 1, "stdout": "", "sandbox": "workspace",
+               "stderr": "0:20: execution error: Not authorized to send Apple events. (-600)"}
+    ex, cards = _Exec(refused), _Cards(True)
+    result = await _dispatch(monkeypatch, SHELL_OSA, ex, cards)
+    assert ex.runs == [(False, False)] and result.get("kept_wrapped") is True
+    assert hint_for("run_command", result).startswith("This AppleScript acts beyond its app")
+
+
+async def test_a_declined_apple_events_card_runs_nothing(monkeypatch):
+    ex, cards = _Exec(), _Cards(False)
+    result = await _dispatch(monkeypatch, PLAIN_OSA, ex, cards)
+    assert ex.runs == [] and not result["ok"]
+
+
+async def test_an_approved_apple_events_card_never_becomes_a_standing_grant(execution_db, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from server.services import approvals, permission_store, run_registry, settings_service
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    asked = []
+
+    def window(frame):
+        if frame["type"] == "propose_run_command":
+            asked.append(frame["options"])
+            approvals.answer({"type": "confirm_run_command", "call_id": frame["call_id"], "scope": "conversation"})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
+    job = approvals.JobConfirmations("job-c", job_id="job-1")
+    assert await job.command(PLAIN_OSA, []) is True
+    assert await job.command(PLAIN_OSA, []) is True                 # asked again: nothing was kept
+    assert asked == [["once"], ["once"]]
+    async with execution_db() as db:
+        assert await permission_store.find_grant(db, "job-c", "", "command", "rules:apple-events") is None
+
+
+@pytest.mark.macos
+@macos
+async def test_outside_the_sandbox_arslans_data_stays_closed_and_the_users_secrets_open(tmp_path, monkeypatch):
+    from server import config
+    data, home, ws = tmp_path / "data", tmp_path / "home", tmp_path / "ws"
+    (home / ".ssh").mkdir(parents=True)
+    data.mkdir()
+    ws.mkdir()
+    (data / "arslan.db").write_text("db")
+    (home / ".ssh" / "id").write_text("key")
+    monkeypatch.setattr(config, "data_dir", lambda: data)
+    monkeypatch.setenv("HOME", str(home))
+    ours = await terminal_exec.run(f"cat '{data / 'arslan.db'}'", cwd=ws, sandbox=False)
+    assert ours["sandbox"] == "outside" and not ours["ok"] and "Arslan's own data" in ours["note"]
+    secret = await terminal_exec.run(f"cat '{home / '.ssh' / 'id'}'", cwd=ws, sandbox=False)
+    assert secret["ok"] and secret["stdout"].strip() == "key"            # ssh, git push, gh need these
+    inside = await terminal_exec.run(f"cat '{home / '.ssh' / 'id'}'", cwd=ws, sandbox=True)
+    assert not inside["ok"]                                               # but never from the sandbox
+    events = await terminal_exec.run("osascript -e 'tell application \"Finder\" to count windows'",
+                                     cwd=ws, sandbox=False)
+    assert "(-600)" in events["stderr"]                                    # only an approved plain call runs bare

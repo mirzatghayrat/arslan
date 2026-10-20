@@ -141,6 +141,8 @@ async def test_without_seatbelt_commands_run_as_before_and_say_so(tmp_path, monk
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **k: None)
     out = await terminal_exec.run("echo hi", cwd=tmp_path, sandbox=True)
     assert out["ok"] is True and out["sandbox"] == "unavailable" and "not available" in out["sandbox_note"]
+    # S2a-1: outside the sandbox the minimal profile applies where seatbelt can start; here it cannot.
+    monkeypatch.setattr(command_sandbox, "outside_wrapper", lambda **k: None)
     off = await terminal_exec.run("echo hi", cwd=tmp_path)
     assert off["sandbox"] == "off" and "sandbox_note" not in off
 
@@ -367,7 +369,7 @@ async def test_the_executor_closes_the_folders_only_while_the_setting_is_off(tmp
     monkeypatch.setattr(executors, "_project_folders", projects)
     seen = []
 
-    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False, closed=(), readable=()):
+    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False, closed=(), readable=(), **kw):
         seen.append((list(closed), list(readable)))
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": "workspace"}
     monkeypatch.setattr(terminal_exec, "run", fake_run)
