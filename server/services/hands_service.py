@@ -301,9 +301,11 @@ def money_label(label: str | None) -> bool:
 
 
 # Apps that reach every other app or the whole Mac (0.1.61 §A4): their card never offers
-# "Always". System Settings is on the never-list besides.
+# "Always". System Settings is on the never-list besides. Shortcuts and its scripting target run any
+# Shortcut the user has, which can run a shell script — the same reach as Terminal (②Main, #267).
 HIGH_REACH = frozenset({"com.apple.systemevents", "com.apple.Terminal", "com.googlecode.iterm2",
-                        "com.apple.finder", "com.apple.systempreferences", "com.apple.ScriptEditor2"})
+                        "com.apple.finder", "com.apple.systempreferences", "com.apple.ScriptEditor2",
+                        "com.apple.shortcuts", "com.apple.shortcuts.events"})
 
 
 def always_label(bundle_id: str, name: str) -> str:
@@ -323,13 +325,20 @@ _SCRIPT_REACH = re.compile(
 # The same steps without those words (0.1.63, found reviewing D4): a raw Apple event in chevrons
 # («event sysoexec» is `do shell script`), AppleScriptObjC (`use framework`, `current application's
 # NSTask`), and Standard Additions writing a file from the script itself (`open for access`, `write`,
-# `set eof`). A plain word such as a reminder named "write report" also matches: that only asks more.
+# `set eof`).
+# Reading the user's files and carrying them off (0.1.63, user 2026-10-20): Standard Additions `read`
+# (read any file), `open location` and a `URL` (hand a URL — which can carry a secret — to the browser
+# or another app, outside the "offline after reading a page" rule), and the `clipboard` (read it or
+# stuff it). Without these a plain "app" script could read `~/.aws` and send it out through Safari's
+# `open location`, unwrapped. A plain word such as a note named "read me" or "url list" also matches:
+# that only asks more.
 _SCRIPT_REACH_OTHERWISE = re.compile(
-    r"«|\b(?:current\s+application|use\s+framework|open\s+for\s+access|write|set\s+eof)\b", re.I)
+    r"«|\b(?:current\s+application|use\s+framework|open\s+for\s+access|open\s+location|read|write|"
+    r"set\s+eof|clipboard|URL)\b", re.I)
 # A script for one of these is a script for every app (System Events drives any process, and is
 # how a script reaches an app the never-list names without naming it), the shell, or the files.
 _HIGH_REACH_NAMES = frozenset({"system events", "terminal", "iterm", "iterm2", "finder", "system settings",
-                               "system preferences", "script editor"})
+                               "system preferences", "script editor", "shortcuts", "shortcuts events"})
 
 
 def _high_reach(app: str) -> bool:
