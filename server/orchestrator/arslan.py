@@ -616,8 +616,13 @@ def _usage_frame(detail: dict) -> dict:
         "tokens_out": detail["tokens_out"],
         "tokens_total": usage_sink.total(),
         "calls": usage_sink.calls(),
-        # 0.1.58 §6: the last call's input — the composer's context ring.
+        # 0.1.58 §6: the last call's input — the composer's context ring. K3: the whole input, cache
+        # reads and writes included (Anthropic's input_tokens leaves them out).
         "last_input": usage_sink.last_input(),
+        # K3: what this reply read from the provider's cache, of its whole input (the footer's hit rate);
+        # cache_read is None when the provider reported nothing about its cache.
+        "cache_read": detail.get("cache_read"),
+        "input_total": detail.get("input_total"),
         "estimated": detail["tokens_in"] is None,
         "usd": _frame_usd(detail["buckets"]),
         # 🔴 Who answered. detail() has computed this every turn and _usage_frame threw

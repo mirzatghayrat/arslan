@@ -588,6 +588,7 @@ class AnthropicProvider(BaseLLMProvider):
         # confirms the message actually completed.
         self._last_stream_usage = None
         tin: int | None = None
+        cache: dict[str, int | None] = {}
         async with self._client() as client:
             async with client.stream(
                 "POST",
@@ -623,6 +624,8 @@ class AnthropicProvider(BaseLLMProvider):
                         usage = (obj.get("message") or {}).get("usage") or {}
                         if usage.get("input_tokens") is not None:
                             tin = int(usage["input_tokens"])
+                            from arslan.llm.usage_weight import cache_split
+                            cache = cache_split(usage) or {}       # K3: input_tokens leaves the cache out
                     elif etype == "message_delta":
                         # message_delta usage is CUMULATIVE per the API docs, so
                         # last-wins assignment (not summation) is the correct read.
@@ -631,6 +634,7 @@ class AnthropicProvider(BaseLLMProvider):
                             self._last_stream_usage = {
                                 "tokens_in": tin,
                                 "tokens_out": int(usage["output_tokens"]),
+                                **cache,
                             }
 
     def _parse_response(self, data: dict[str, Any]) -> LLMResponse:

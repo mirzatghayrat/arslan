@@ -54,6 +54,9 @@ def report_detail(
     tokens_out: int | None,
     model: str | None,
     provider: str | None,
+    cache_read: int | None = None,
+    cache_write: int | None = None,
+    input_total: int | None = None,
 ) -> None:
     """Structured usage from a provider response, accumulated into the call's
     (model, provider) bucket. A report with a None tokens_in/out (stream path, no
@@ -61,16 +64,25 @@ def report_detail(
     alone is erasable (a later real report into the same bucket would do
     (None or 0)+real and silently launder the estimated call's tokens into a
     real-flagged total). Real values still accumulate per-bucket regardless of the
-    flag. No-op without context."""
+    flag. No-op without context.
+
+    0.1.63 K3: `input_total` is the whole input when it differs from tokens_in (Anthropic's input_tokens
+    leaves out cache reads and writes); the ring reads it. `cache_read` / `cache_write` add up per bucket
+    when the provider reports them."""
+    whole = input_total if input_total is not None else tokens_in
     holder = _last_in.get()
-    if holder is not None and tokens_in is not None:
-        holder["value"] = int(tokens_in)
+    if holder is not None and whole is not None:
+        holder["value"] = int(whole)
     buckets = _detail.get()
     if buckets is None:
         return
     b = buckets.setdefault(
-        (model, provider), {"tokens_in": None, "tokens_out": None, "estimated": False}
+        (model, provider), {"tokens_in": None, "tokens_out": None, "estimated": False,
+                            "cache_read": None, "cache_write": None, "input_total": None}
     )
+    for key, value in (("cache_read", cache_read), ("cache_write", cache_write), ("input_total", whole)):
+        if value is not None:
+            b[key] = (b[key] or 0) + int(value)
     if tokens_in is None or tokens_out is None:
         # Sticky, never cleared: once ANY report into this bucket lacked real
         # numbers, the bucket's figures are incomplete for the whole collection.
@@ -106,7 +118,7 @@ def detail() -> dict:
     same-bucket real report could erase. All-None when no context/reports."""
     buckets = _detail.get()
     if not buckets:
-        return {"tokens_in": None, "tokens_out": None,
+        return {"tokens_in": None, "tokens_out": None, "cache_read": None, "input_total": None,
                 "model": None, "provider": None, "buckets": []}
     rows = [
         {"model": m, "provider": p,
@@ -121,8 +133,14 @@ def detail() -> dict:
            else sum(r["tokens_in"] for r in rows))
     tout = (None if blind or any(r["tokens_out"] is None for r in rows)
             else sum(r["tokens_out"] for r in rows))
+    # K3: the whole input and the cache reads, under the same honesty rule; cache_read is None unless
+    # some bucket reported one (a provider that says nothing about its cache gets no hit rate).
+    whole = [b["input_total"] for b in buckets.values()]
+    reads = [b["cache_read"] for b in buckets.values() if b["cache_read"] is not None]
+    input_total = None if blind or any(v is None for v in whole) else sum(whole)
+    cache_read = None if blind or not reads else sum(reads)
     prim = primary()
-    return {"tokens_in": tin, "tokens_out": tout,
+    return {"tokens_in": tin, "tokens_out": tout, "cache_read": cache_read, "input_total": input_total,
             "model": prim["model"], "provider": prim["provider"], "buckets": rows}
 
 

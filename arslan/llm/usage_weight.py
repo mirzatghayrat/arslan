@@ -43,3 +43,24 @@ def charged_tokens(usage: dict[str, Any] | None) -> int | None:
         thoughts = _int(u.get("thoughtsTokenCount")) or 0
         return round(g_prompt - g_cached + CACHED_WEIGHT * g_cached + g_out + thoughts)
     return None
+
+
+def cache_split(usage: dict[str, Any] | None) -> dict[str, int | None] | None:
+    """0.1.63 K3: {cache_read, cache_write, input_total} of one response, or None when it reports no
+    cache. input_total is the whole input: Anthropic's input_tokens leaves out cache reads and writes,
+    the others already count them. cache_write is None where the provider does not report writes."""
+    u = usage or {}
+    read, a_in = _int(u.get("cache_read_input_tokens")), _int(u.get("input_tokens"))
+    if a_in is not None and "prompt_tokens" not in u:                   # Anthropic (cache fields optional)
+        read, written = read or 0, _int(u.get("cache_creation_input_tokens")) or 0
+        return {"cache_read": read, "cache_write": written, "input_total": a_in + read + written}
+    prompt = _int(u.get("prompt_tokens"))
+    hit = _int(u.get("prompt_cache_hit_tokens"))                         # DeepSeek
+    details = u.get("prompt_tokens_details") if isinstance(u.get("prompt_tokens_details"), dict) else {}
+    cached = hit if hit is not None else _int(details.get("cached_tokens"))  # OpenAI
+    if prompt is not None and cached is not None and cached <= prompt:
+        return {"cache_read": cached, "cache_write": None, "input_total": prompt}
+    g_cached, g_prompt = _int(u.get("cachedContentTokenCount")), _int(u.get("promptTokenCount"))
+    if g_cached is not None and g_prompt is not None and g_cached <= g_prompt:   # Gemini
+        return {"cache_read": g_cached, "cache_write": None, "input_total": g_prompt}
+    return None

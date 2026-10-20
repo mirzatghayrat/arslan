@@ -83,8 +83,13 @@ export interface StreamUsage {
   models?: { model: string; provider: string | null }[];
   /** 0.1.58: how many model calls the turn made (why a short answer carries a large input). */
   calls?: number;
-  /** 0.1.58 §6: the last call's input tokens — how full the context is (the composer's ring). */
+  /** 0.1.58 §6: the last call's input tokens — how full the context is (the composer's ring).
+   *  0.1.63 K3: the whole input, cache reads and writes included. */
   last_input?: number | null;
+  /** 0.1.63 K3: input tokens read from the provider's cache this turn; null when it reported none. */
+  cache_read?: number | null;
+  /** 0.1.63 K3: the turn's whole input (on Claude, uncached + cache read + cache write). */
+  input_total?: number | null;
 }
 
 /** 0.1.58 §1: GET /runs/{id}/process. */

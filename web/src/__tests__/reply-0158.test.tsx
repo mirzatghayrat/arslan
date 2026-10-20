@@ -198,6 +198,19 @@ describe("what the turn used", () => {
     expect(usage).toHaveTextContent("process.unknown");
     expect(usage).toHaveTextContent("≈ 2k");
   });
+  it("K3: the share of the input read from the cache, when the provider reported it", () => {
+    footer({ tokens_in: 300, tokens_out: 9, tokens_total: 309, estimated: false, usd: null, cache_read: 900,
+      input_total: 1200, models: [{ model: "claude-opus-5-5", provider: "anthropic" }] });
+    fireEvent.click(screen.getByTestId("reply-model"));
+    expect(screen.getByTestId("reply-cache")).toHaveTextContent("process.cacheHit");
+    expect(screen.getByTestId("reply-cache")).toHaveTextContent("75%");
+  });
+  it("K3: no cache report, no hit-rate row", () => {
+    footer({ tokens_in: 300, tokens_out: 9, tokens_total: 309, estimated: false, usd: null, cache_read: null,
+      input_total: 300, models: [{ model: "local", provider: "ollama" }] });
+    fireEvent.click(screen.getByTestId("reply-model"));
+    expect(screen.queryByTestId("reply-cache")).toBeNull();
+  });
   it("no model, no name (a frame from before models were reported)", () => {
     footer({ tokens_in: 1, tokens_out: 1, tokens_total: 2, estimated: false, usd: 0 });
     expect(screen.queryByTestId("reply-model")).toBeNull();

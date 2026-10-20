@@ -129,7 +129,8 @@ def test_primary_helper():
 def test_detail_empty_shapes_include_buckets_key():
     # outside any context
     assert usage_sink.detail() == {
-        "tokens_in": None, "tokens_out": None, "model": None, "provider": None, "buckets": [],
+        "tokens_in": None, "tokens_out": None, "cache_read": None, "input_total": None,
+        "model": None, "provider": None, "buckets": [],
     }
     # inside a fresh context with no reports
     with usage_sink.collecting():

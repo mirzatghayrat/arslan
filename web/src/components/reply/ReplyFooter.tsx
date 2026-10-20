@@ -34,10 +34,12 @@ function ModelUsage({ summary }: { summary: ProcessSummary }) {
   const models = usage?.models?.map((m) => m.model).filter(Boolean) ?? [];
   if (!models.length) return null;
   const est = usage?.estimated ? "≈ " : "";
-  const row = (label: string, value: string) => (
-    <div className="flex justify-between gap-6"><span className="text-muted-foreground">{label}</span>
+  const row = (label: string, value: string, testId?: string) => (
+    <div className="flex justify-between gap-6" data-testid={testId}><span className="text-muted-foreground">{label}</span>
       <span className="font-mono tabular-nums">{value}</span></div>
   );
+  // K3: the share of the turn's whole input read from the provider's cache (only when it reported one).
+  const cacheHit = usage?.cache_read != null && usage.input_total ? Math.round((usage.cache_read / usage.input_total) * 100) : null;
   return (
     <span className="relative">
       <button ref={anchorRef} type="button" onClick={() => { setUp(upward(anchorRef.current)); setOpen((v) => !v); }}
@@ -54,6 +56,7 @@ function ModelUsage({ summary }: { summary: ProcessSummary }) {
           {usage?.tokens_in != null && row(t("process.input"), `${est}${fmtTok(usage.tokens_in)}`)}
           {usage?.tokens_out != null && row(t("process.output"), `${est}${fmtTok(usage.tokens_out)}`)}
           {usage?.tokens_in == null && usage?.tokens_total != null && row(t("process.input"), `${est}${fmtTok(usage.tokens_total)}`)}
+          {cacheHit != null && row(t("process.cacheHit"), `${cacheHit}%`, "reply-cache")}
           {row(t("process.cost"), usage?.usd != null ? `≈ ${fmtUsd(usage.usd)}` : t("process.unknown"))}
           {summary.ms != null && row(t("process.time"), fmtDuration(summary.ms))}
         </div>
