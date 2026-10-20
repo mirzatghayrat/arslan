@@ -41,6 +41,8 @@ async def settle_after_turn() -> list:
     import asyncio
 
     from server.orchestrator import arslan
+    loop = asyncio.get_running_loop()
+    arslan._AFTER_TURN.difference_update({t for t in arslan._AFTER_TURN if t.get_loop() is not loop})
     outcomes = []
     while arslan._AFTER_TURN:
         outcomes += await asyncio.gather(*list(arslan._AFTER_TURN), return_exceptions=True)

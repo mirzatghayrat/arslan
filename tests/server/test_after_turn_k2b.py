@@ -100,3 +100,30 @@ async def test_a_closed_window_never_stops_the_job(maker, monkeypatch):  # noqa:
     assert not [o for o in outcomes if isinstance(o, BaseException)]
     assert compacted == ["c1"]
     assert any(e["type"] == "stream_end" for e in events)
+
+
+async def test_one_conversations_jobs_run_in_turn(maker, monkeypatch):  # noqa: F811
+    """The second turn's job starts once the first turn's job is done, so it sees what that one
+    saved (the facts already known, the latest summary)."""
+    order, release = [], asyncio.Event()
+
+    async def _facts(conv, msg):
+        order.append(f"{msg}:start")
+        if msg == "first":
+            await release.wait()
+        order.append(f"{msg}:end")
+        return []
+
+    adapter = _NativeAdapter([_LLMResp(content="one"), _LLMResp(content="two")])
+    monkeypatch.setattr(turn_facts, "extract", _facts)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    try:
+        await arslan.handle_user_message("c1", "first", _events([]))
+        await arslan.handle_user_message("c1", "second", _events([]))
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert order == ["first:start"]
+    finally:
+        release.set()
+    await settle_after_turn()
+    assert order == ["first:start", "first:end", "second:start", "second:end"]

@@ -470,8 +470,11 @@ def _after_turn_later(conversation_id: str, user_message: str, emit: EventSink, 
     one before it saved. A job still pending when the process exits is lost: only that turn's
     facts, and the next compaction covers its history (K2 card, accepted risk)."""
     from server.services import task_service
+    loop = asyncio.get_running_loop()
     previous = _after_turn_tail.get(conversation_id)
-    job = asyncio.get_running_loop().create_task(
+    if previous is not None and previous.get_loop() is not loop:
+        previous = None                 # left by a loop that has ended (tests run one loop each)
+    job = loop.create_task(
         _after_turn(conversation_id, user_message, emit, turn_context, budget=budget, after=previous),
         context=task_service.detached_context())
     _AFTER_TURN.add(job)
