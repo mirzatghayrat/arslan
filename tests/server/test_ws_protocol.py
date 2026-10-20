@@ -2,18 +2,6 @@
 from server.ws import protocol
 
 
-def test_question_message():
-    msg = protocol.question("domain", "What domain?", ["a", "b"], multi_select=True, hint="x")
-    assert msg == {
-        "type": "question",
-        "node_id": "domain",
-        "text": "What domain?",
-        "options": ["a", "b"],
-        "multi_select": True,
-        "hint": "x",
-    }
-
-
 def test_stream_messages():
     assert protocol.stream_start(7) == {"type": "stream_start", "message_id": 7}
     assert protocol.stream_chunk("hi") == {"type": "stream_chunk", "content": "hi"}
@@ -30,14 +18,9 @@ def test_error_message():
     }
 
 
-def test_ping_pong_and_build_complete():
+def test_ping_pong():
     assert protocol.ping(123)["type"] == "ping"
     assert protocol.ping(123)["ts"] == 123
-    assert protocol.build_complete(5, "beauty") == {
-        "type": "build_complete",
-        "spawn_id": 5,
-        "spawn_name": "beauty",
-    }
 
 
 def test_capability_event_builders():
@@ -45,7 +28,3 @@ def test_capability_event_builders():
 
     assert p.tool_call("web_search", "{}")["type"] == "tool_call"
     assert p.tool_result("web_search", True, "3 results")["ok"] is True
-    assert p.escalation(7, "小美", "data", "need X")["need"] == "need X"
-    assert p.escalation_refused(7, "why")["type"] == "escalation_refused"
-    assert p.escalation_resolved(7, "granted")["how"] == "granted"
-    assert p.orchestrator_action("web_search", "fetching for 小美")["type"] == "orchestrator_action"

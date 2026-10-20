@@ -52,32 +52,31 @@ async def list_conversations(
     # tests. This one was caught doing exactly that — it came back with the
     # user's own conversations — and `get_session` is the codebase's normal
     # dependency anyway (spawns.py, registry.py, create.py).
-    if True:
-        agg = (await db.execute(
-            select(ArslanMessage.conversation_id,
-                   func.count(ArslanMessage.id),
-                   func.max(ArslanMessage.timestamp))
-            .group_by(ArslanMessage.conversation_id)
+    agg = (await db.execute(
+        select(ArslanMessage.conversation_id,
+               func.count(ArslanMessage.id),
+               func.max(ArslanMessage.timestamp))
+        .group_by(ArslanMessage.conversation_id)
+    )).all()
+    if not agg:
+        return []
+    # Titles from the first USER message per conversation — not simply the
+    # first message, which is often Arslan's greeting and would name every
+    # recovered conversation the same thing.
+    first_user = (await db.execute(
+        select(ArslanMessage.conversation_id, func.min(ArslanMessage.id))
+        .where(ArslanMessage.role == "user")
+        .group_by(ArslanMessage.conversation_id)
+    )).all()
+    ids = [mid for _, mid in first_user]
+    bodies = {}
+    if ids:
+        rows = (await db.execute(
+            select(ArslanMessage.id, ArslanMessage.content)
+            .where(ArslanMessage.id.in_(ids))
         )).all()
-        if not agg:
-            return []
-        # Titles from the first USER message per conversation — not simply the
-        # first message, which is often Arslan's greeting and would name every
-        # recovered conversation the same thing.
-        first_user = (await db.execute(
-            select(ArslanMessage.conversation_id, func.min(ArslanMessage.id))
-            .where(ArslanMessage.role == "user")
-            .group_by(ArslanMessage.conversation_id)
-        )).all()
-        ids = [mid for _, mid in first_user]
-        bodies = {}
-        if ids:
-            rows = (await db.execute(
-                select(ArslanMessage.id, ArslanMessage.content)
-                .where(ArslanMessage.id.in_(ids))
-            )).all()
-            by_msg = dict(rows)
-            bodies = {cid: (by_msg.get(mid) or "") for cid, mid in first_user}
+        by_msg = dict(rows)
+        bodies = {cid: (by_msg.get(mid) or "") for cid, mid in first_user}
 
     out = [
         ConversationListItem(
@@ -218,20 +217,19 @@ async def delete_conversation(
     # user's real one and the listing read a temp one. `get_session` reads the
     # module global at call time, so fixtures that patch AsyncSessionLocal keep
     # working exactly as before.
-    if True:
-        for model in (
-            ArslanMessage,
-            ArslanSummary,
-            ConversationEvent,
-            ConversationSpawn,
-            SpawnPhase,
-            DistilledSession,
-            PermissionGrant,
-        ):
-            res = await db.execute(
-                delete(model).where(model.conversation_id == conversation_id))
-            deleted[model.__tablename__] = res.rowcount or 0
-        await db.commit()
+    for model in (
+        ArslanMessage,
+        ArslanSummary,
+        ConversationEvent,
+        ConversationSpawn,
+        SpawnPhase,
+        DistilledSession,
+        PermissionGrant,
+    ):
+        res = await db.execute(
+            delete(model).where(model.conversation_id == conversation_id))
+        deleted[model.__tablename__] = res.rowcount or 0
+    await db.commit()
     return {"ok": True, "deleted": deleted}
 
 
