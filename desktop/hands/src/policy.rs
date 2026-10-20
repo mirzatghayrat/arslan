@@ -154,9 +154,175 @@ pub fn tier_name(tier: Tier) -> &'static str {
     }
 }
 
+/// Keys that never put a character into a field, with or without shift or option. An allowlist:
+/// a key name not here (a letter, a digit, `space`, a punctuation name) may type one.
+/// Function keys (`f1`…) are matched by shape in keys_may_type.
+const NON_TEXT_KEYS: [&str; 16] = [
+    "return",
+    "enter",
+    "tab",
+    "escape",
+    "esc",
+    "delete",
+    "backspace",
+    "forwarddelete",
+    "up",
+    "down",
+    "left",
+    "right",
+    "home",
+    "end",
+    "pageup",
+    "pagedown",
+];
+
+/// Whether pressing `keys` (a combo agent-desktop presses, `argv::combo_ok`) may put text into the
+/// focused field: a key outside NON_TEXT_KEYS with no modifier, shift or option (which type
+/// characters too, `option+e`), a paste (`cmd+v`), or Cocoa's `ctrl+y` / `ctrl+o`. Other cmd and
+/// ctrl shortcuts do not.
+pub fn keys_may_type(keys: &str) -> bool {
+    let parts: Vec<&str> = keys.split('+').collect();
+    let Some((key, mods)) = parts.split_last() else {
+        return true;
+    };
+    let held = |names: [&str; 2]| mods.iter().any(|m| names.contains(m));
+    if held(["cmd", "command"]) {
+        return *key == "v";
+    }
+    if held(["ctrl", "control"]) {
+        return matches!(*key, "y" | "o"); // Cocoa text: yank (the kill ring), open line
+    }
+    let function_key =
+        key.len() > 1 && key.starts_with('f') && key[1..].bytes().all(|b| b.is_ascii_digit());
+    !(NON_TEXT_KEYS.contains(key) || function_key)
+}
+
+/// Why `press` is refused, given whether the app's focused element is a password field (None: the
+/// app did not say). "Arslan never types into password fields" holds for keys too (0.1.63): type and
+/// set_value check their target; a press has none, so the focused element is asked. Unknown refuses
+/// only keys that may type, so return and tab still work where an app leaves focus unanswered.
+pub fn press_refusal(keys: &str, focused_secure: Option<bool>) -> Option<&'static str> {
+    match focused_secure {
+        Some(true) => {
+            Some("the focused field is a password field; Arslan never types into password fields")
+        }
+        Some(false) => None,
+        None if keys_may_type(keys) => Some(
+            "this app did not say whether its focused field is a password field, and these keys \
+             may type; Arslan never types into password fields",
+        ),
+        None => None,
+    }
+}
+
+/// Whether a menu item puts text into the focused field: a paste, by its key equivalent (command
+/// with `v`, whatever else is held: Paste, Paste and Match Style) or its English title. Not covered
+/// (③Hands, #251): a paste item with no key equivalent and a title in another language.
+pub fn menu_item_may_type(path: &[String], shortcut: Option<&(String, i64)>) -> bool {
+    let paste_key = shortcut.is_some_and(|(key, bits)| key == "v" && bits & 8 == 0);
+    let paste_title = path
+        .last()
+        .is_some_and(|title| title.to_lowercase().contains("paste"));
+    paste_key || paste_title
+}
+
+/// Why a menu item is not pressed, given whether the app's focused element is a password field: a
+/// menu item acts on that element as keys do (Edit › Paste is cmd+v), so the same rule as press.
+pub fn menu_refusal(
+    path: &[String],
+    shortcut: Option<&(String, i64)>,
+    focused_secure: Option<bool>,
+) -> Option<&'static str> {
+    match focused_secure {
+        Some(true) => {
+            Some("the focused field is a password field; Arslan presses no menu item into it")
+        }
+        Some(false) => None,
+        None if menu_item_may_type(path, shortcut) => Some(
+            "this app did not say whether its focused field is a password field, and this item \
+             pastes; Arslan never types into password fields",
+        ),
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_press_into_a_focused_password_field_is_refused_and_unknown_refuses_only_typing_keys() {
+        // (keys, focused secure, unknown): printable single keys, a modifier combo, non-printable keys.
+        let cases = [
+            ("a", true, true),
+            ("1", true, true),
+            ("space", true, true),
+            ("shift+a", true, true),
+            ("option+e", true, true),
+            ("cmd+v", true, true),
+            ("period", true, true), // a key name Hands does not know may type
+            ("cmd+b", true, false),
+            ("ctrl+a", true, false),
+            ("shift+tab", true, false),
+            ("return", true, false),
+            ("tab", true, false),
+            ("delete", true, false),
+            ("escape", true, false),
+            ("down", true, false),
+            ("f12", true, false),
+            ("ctrl+y", true, true), // yank
+            ("ctrl+o", true, true),
+            ("cmd+o", true, false),
+            ("f", true, true),
+        ];
+        for (keys, refused_when_secure, refused_when_unknown) in cases {
+            assert_eq!(
+                press_refusal(keys, Some(true)).is_some(),
+                refused_when_secure,
+                "{keys} secure"
+            );
+            assert!(
+                press_refusal(keys, Some(false)).is_none(),
+                "{keys} not secure"
+            );
+            assert_eq!(
+                press_refusal(keys, None).is_some(),
+                refused_when_unknown,
+                "{keys} unknown"
+            );
+        }
+    }
+
+    #[test]
+    fn a_menu_item_that_pastes_is_refused_into_a_password_field_and_when_focus_is_unknown() {
+        let path = |titles: &[&str]| titles.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        let key = |c: &str, bits: i64| Some((c.to_string(), bits));
+        // (path, key equivalent, pastes)
+        let cases = [
+            (path(&["Edit", "Paste"]), key("v", 0), true),
+            (path(&["Edit", "Paste and Match Style"]), key("v", 3), true),
+            (path(&["Edit", "粘贴"]), key("v", 0), true),
+            (path(&["Edit", "Paste Special"]), None, true),
+            (path(&["Format", "Font", "Bold"]), key("b", 0), false),
+            (path(&["Edit", "Copy"]), key("c", 0), false),
+            (path(&["View", "Page Down"]), key("v", 4 | 8), false), // ctrl+v, no command
+        ];
+        for (p, k, pastes) in cases {
+            assert!(
+                menu_refusal(&p, k.as_ref(), Some(true)).is_some(),
+                "{p:?} secure"
+            );
+            assert!(
+                menu_refusal(&p, k.as_ref(), Some(false)).is_none(),
+                "{p:?} not secure"
+            );
+            assert_eq!(
+                menu_refusal(&p, k.as_ref(), None).is_some(),
+                pastes,
+                "{p:?} unknown"
+            );
+        }
+    }
 
     #[test]
     fn password_managers_settings_and_arslan_itself_are_denied() {

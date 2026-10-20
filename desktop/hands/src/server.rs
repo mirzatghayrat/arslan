@@ -734,6 +734,34 @@ fn looks_like_password(target: &refmap::Target, states: &[String]) -> bool {
     PASSWORD_WORDS.iter().any(|w| name.contains(w))
 }
 
+/// In tests: what answers the focused-element question (None: accessibility).
+type FocusedAsker = fn(i64) -> Option<bool>;
+static FOCUSED_STAND_IN: std::sync::Mutex<Option<FocusedAsker>> = std::sync::Mutex::new(None);
+
+pub fn focused_password_stand_in_for_tests(asker: Option<FocusedAsker>) {
+    *FOCUSED_STAND_IN.lock().unwrap_or_else(|p| p.into_inner()) = asker;
+}
+
+/// Whether app `pid`'s focused element is a password field, asked of accessibility now. None when
+/// it cannot say (no focused element, no grant, not macOS): policy::press_refusal decides then.
+fn focused_password_field(pid: i64) -> Option<bool> {
+    let stand_in = *FOCUSED_STAND_IN.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(asker) = stand_in {
+        return asker(pid);
+    }
+    ask_focused_secure(pid)
+}
+
+#[cfg(target_os = "macos")]
+fn ask_focused_secure(pid: i64) -> Option<bool> {
+    crate::macos::focused_secure(i32::try_from(pid).ok()?)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ask_focused_secure(_pid: i64) -> Option<bool> {
+    None
+}
+
 fn live_states(ctx: &Ctx, reference: &str, session: Option<&str>) -> Result<Vec<String>, Refusal> {
     let argv = argv::build(
         "get",
@@ -971,6 +999,14 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     if shared {
         by_window(ctx, op, &app, &mut call)?;
     }
+    // 0.1.63: keys go to the app's focused element, which no ref names, so that element is asked
+    // (type and set_value check their target above).
+    if op == "press" {
+        let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
+        if let Some(why) = policy::press_refusal(keys, focused_password_field(app.pid)) {
+            return Err(refuse("password_field", why));
+        }
+    }
     let argv = argv::build(op, &call, session.as_deref())?;
     let key = (session.clone().unwrap_or_default(), app.pid);
     if matches!(op, "snapshot" | "find") {
@@ -1035,6 +1071,17 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     if wants_front && borrowed.is_some() && !crate::borrow::standing_in() {
         if let Ok(pid) = i32::try_from(app.pid) {
             restore_front(pid); // the app comes forward for this one action
+        }
+    }
+    // A borrow may have waited (up to borrow::WAIT_MAX) and the app has come forward since the press
+    // was checked: its focused element is asked again right before the keys go.
+    if op == "press" && borrowed.is_some() {
+        let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
+        if let Some(why) = policy::press_refusal(keys, focused_password_field(app.pid)) {
+            if let Some(borrowed) = borrowed {
+                crate::borrow::end(borrowed);
+            }
+            return Err(refuse("password_field", why));
         }
     }
     if acts(op) {
@@ -1307,7 +1354,7 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
         )
     })?;
     let item = match crate::menus::find(&items, &path) {
-        Ok(item) => item.path.clone(),
+        Ok(item) => item.clone(),
         Err(crate::menus::NotThere::Disabled) => {
             return Err(refuse(
                 "menu_disabled",
@@ -1330,7 +1377,14 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
             ))
         }
     };
-    press_item(&app, tier, &item, None)
+    if let Some(why) = policy::menu_refusal(
+        &item.path,
+        item.shortcut.as_ref(),
+        focused_password_field(app.pid),
+    ) {
+        return Err(refuse("password_field", why));
+    }
+    press_item(&app, tier, &item.path, None)
 }
 
 /// Press `path`'s item and answer as an action does.
