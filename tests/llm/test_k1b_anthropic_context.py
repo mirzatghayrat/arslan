@@ -19,11 +19,12 @@ from server.orchestrator import tool_loop
 from server.registry import executors
 
 CONTEXT_BETA = "context-management-2025-06-27"
-# E22's values, restored by K3 with its message-level cache breakpoints (E23's 24k / 8k was interim).
+# E22's values as the user set them after K3's Claude run (K3b, 2026-10-20): 100k / 40k, keep 6. A first
+# clearing rewrites everything after the system prompt once, so clear only in long tasks and a lot at once.
 CLEAR = {"type": "clear_tool_uses_20250919",
-         "trigger": {"type": "input_tokens", "value": 60_000},
+         "trigger": {"type": "input_tokens", "value": 100_000},
          "keep": {"type": "tool_uses", "value": 6},
-         "clear_at_least": {"type": "input_tokens", "value": 20_000}}
+         "clear_at_least": {"type": "input_tokens", "value": 40_000}}
 
 
 def tool_reply(call_id, query, sig):

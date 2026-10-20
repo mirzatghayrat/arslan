@@ -2766,9 +2766,12 @@ async def _run_native(
                 if not provider_content:
                     if name == "web_extract" and _web_read_feedback(name, args, result) is not None:
                         research_source_feedback.append((convo[-1], result))
-                    elif (name == "write_file" and result.get("ok") is True
+                    elif (name == "write_file" and result.get("ok") is True and not _SENT_IS_FINAL.get()
                           and len(research_source_feedback) >= 2
                           and str(args.get("path", "")).lower().endswith((".md", ".txt"))):
+                        # K3b: never on a provider that clears old results itself (Claude's native path):
+                        # editing what was sent sends the prompt cache back to the system prompt, and the
+                        # request rewrites the whole history (45k tokens in K3's Claude run, T2 r1).
                         from server.orchestrator import research_review
                         history_compacted = research_review.compact_saved_context(
                             convo, research_source_feedback, args.get("content")) or history_compacted
