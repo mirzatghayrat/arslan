@@ -43,6 +43,9 @@ FIRST_CHOICE_ONLY = ("phone", "island")
 #: How the last card this task waited on ended: "approved", "declined", or "expired" (nobody
 #: answered in time). A tool result must not tell the model the user said no when nobody did.
 LAST_OUTCOME: ContextVar[str | None] = ContextVar("approvals_last_outcome", default=None)
+#: S2a-1: who answered the last plain card this task waited on ("mac" for the asking window, or a
+#: SOURCES entry), None when nobody did. Only the asking window's own click unlocks a bare run (U11).
+LAST_ANSWERED_BY: ContextVar[str | None] = ContextVar("approvals_last_answered_by", default=None)
 ANSWERS = {
     "confirm_workspace_write": True, "cancel_workspace_write": False,
     "confirm_schedule": True, "cancel_schedule": False,
@@ -63,7 +66,23 @@ def window_only(frame: dict) -> bool:
     that carries the `capability` permission kind (a `propose_action` frame rides it). The phone never gets one and the island refuses it;
     a yes from the phone is swallowed and a yes from the Inbox or the island is "open in Arslan". Saying no is allowed from anywhere."""
     perm_kind = frame.get("perm_kind")
-    return frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
+    return (frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
+            or _runs_bare(frame))
+
+
+def _runs_bare(frame: dict) -> bool:
+    """S2a-1 (U11, ⓪Plan for v0.1.63): a command card whose command, approved, runs with no sandbox at all
+    (one plain osascript or `shortcuts run`, `task_service.unwrapped_once`) is approved only in the window,
+    where the whole command is shown. Decided from the card's own command, so no frame field changes.
+    v0.1.64 candidate: allow it from the phone once the phone's card shows the whole script."""
+    if frame.get("type") != "propose_run_command" or frame.get("remote_host"):
+        return False
+    from server.services import task_service, terminal_policy
+    # The shell line the tool loop runs (terminal_policy.as_shell, as tool_loop builds it), never the
+    # card's display field: the card and the executor are judged on the same string (③Hands, #265).
+    command = terminal_policy.as_shell(frame.get("command"), frame.get("argv"))
+    return bool(terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES) \
+        and task_service.unwrapped_once(command)
 
 
 @dataclass
@@ -261,6 +280,8 @@ def island_may_answer(frame: dict) -> bool:
     the other card types by their own rule. A `propose_action` card without a permission kind is
     not answerable: none is sent (permissions._ask stamps every card), so one is something new."""
     kind = frame.get("type")
+    if window_only(frame):
+        return False                       # answered in the asking window only (capability, a bare run)
     if "perm_kind" in frame:
         perm_kind = frame["perm_kind"]
         if not (isinstance(perm_kind, str) and perm_kind in _ISLAND_CARD_KINDS):
@@ -374,6 +395,7 @@ class BroadcastAsker:
             self.unanswered = True
         LAST_OUTCOME.set("approved" if decision["approved"]
                          else "expired" if decision["by"] is None else "declined")
+        LAST_ANSWERED_BY.set(decision["by"])
         # The card the user answered: an identical ask that joined it records that one (§A8).
         # A copy: waiters on one card share the decision dict.
         return {**decision, "call_id": pending.call_id}
@@ -484,7 +506,14 @@ def _command_request(shell: str, rules: list[str], frame: dict | None):
     target = "rules:" + "|".join(rules) if rules else "text:" + shell
     if set(rules) & terminal_policy.ONCE_ONLY_RULES:
         # 0.1.62 F4a: osascript or `shortcuts run` in it: this time only, nothing to remember.
-        return permissions.Request(kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,
+        # S2a-1 (U11): an approved plain one runs outside the sandbox, and the card says so; a Shortcut
+        # cannot be inspected, so its card says it runs as the user (③Hands' review).
+        from server.services import task_service
+        where = ""
+        if task_service.unwrapped_once(shell):
+            where = (" It runs as you, outside the sandbox; Arslan cannot see what the Shortcut does."
+                     if "shortcuts" in rules else " It runs outside the sandbox, this once.")
+        return permissions.Request(kind="command", target=target, title=f"Run `{shell[:80]}`?{where}", detail=shell,
                                    conversation_ok=False, once_only=True, frame=frame)
     return permissions.Request(
         kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,

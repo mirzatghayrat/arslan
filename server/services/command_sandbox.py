@@ -85,22 +85,46 @@ def default_writable(workspace: Path) -> list[Path]:
             _real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
 
 
-def default_protected() -> list[Path]:
-    """Never readable or writable from a command, whatever else is allowed."""
-    from server import config
-    from server.services import hands_client
-    home = Path.home()
-    paths = [home / ".ssh", home / "Library" / "Keychains", config.data_dir(),
-             home / "Library" / "Application Support" / "Arslan", home / ".arslan",
-             home / ".arslan-updater.key", home / "arslan-signing-backup",
-             # 0.1.53: Arslan Hands' socket, token and state (it holds Accessibility).
-             hands_client.folder()]
+def _resolved(paths) -> list[Path]:
     out: list[Path] = []
     for p in paths:
         r = _real(p)
         if r not in out:
             out.append(r)
     return out
+
+
+def arslan_protected() -> list[Path]:
+    """Arslan's own data, keys and Hands' folder (S2a-1). The minimal profile for commands run outside
+    the sandbox would close these too (piece 4, held for the user's decision: any seatbelt wrapper
+    blocks Apple Events, measured 2026-10-20)."""
+    from server import config
+    from server.services import hands_client
+    home = Path.home()
+    return _resolved([config.data_dir(), home / "Library" / "Application Support" / "Arslan", home / ".arslan",
+                      home / ".arslan-updater.key", home / "arslan-signing-backup",
+                      # 0.1.53: Arslan Hands' socket, token and state (it holds Accessibility).
+                      hands_client.folder()])
+
+
+# S2a-1: the user's credentials and browser profiles. Closed inside the sandbox; a command the user
+# lets out of it (ssh, git push, gh, aws) needs them, so they are not part of `arslan_protected`.
+_SECRETS = (".ssh", "Library/Keychains", ".aws", ".config/gcloud", ".kube", ".docker/config.json", ".netrc",
+            ".npmrc", ".pypirc", ".config/gh", ".git-credentials", ".gnupg", ".azure",
+            "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
+            "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
+            "Library/Application Support/Arc", "Library/Safari", "Library/Cookies")
+
+
+def user_secrets() -> list[Path]:
+    ours = arslan_protected()
+    return [p for p in _resolved(Path.home() / name for name in _SECRETS) if p not in ours]
+
+
+def default_protected() -> list[Path]:
+    """Never readable or writable from a sandboxed command, whatever else is allowed: Arslan's own
+    paths and the user's secrets."""
+    return [*arslan_protected(), *user_secrets()]
 
 
 def _rule(path: Path) -> str:
@@ -113,13 +137,16 @@ def _inside(path: Path, folders: list[Path]) -> bool:
 
 
 def profile(writable: list[Path], protected: list[Path], *, offline: bool = False,
-            closed: list[Path] = (), readable: list[Path] = ()) -> str:
+            closed: list[Path] = (), readable: list[Path] = (), copies: list[Path] = ()) -> str:
     """The SBPL text. Order matters: deny all writes, re-allow the writable
     folders, close `closed` (0.1.59: the user's Desktop/Documents/Downloads while
     they are off) and re-open what lives inside them — writable folders read and
     write, `readable` ones (project folders) read only — then close the protected
     paths (last rule wins) — to files and to sockets alike."""
-    lines = ["(version 1)", "(allow default)"]
+    # S2a-1: no Apple Events from the sandbox. On macOS 26 any seatbelt wrapper already makes them
+    # fail (-10004, measured 2026-10-20); the rule makes it explicit (they fail with -600) and holds
+    # wherever that is not so. Nothing lifts it: an approved osascript cannot work inside seatbelt.
+    lines = ["(version 1)", "(allow default)", "(deny appleevent-send)"]
     if offline:
         lines.append("(deny network*)")
     lines.append('(deny file-write* (subpath "/"))')
@@ -138,18 +165,51 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
         closed = " ".join(_rule(_real(p)) for p in protected)
         lines.append("(deny file-read* file-write* " + closed + ")")
         lines.append("(deny network-outbound " + closed + ")")   # sockets under them
+    if copies:
+        # S2a-1 piece 5: the saved tool outputs this conversation was given, read-only and one file at
+        # a time, after the protected paths (the last rule wins). Never the folder: `ls` stays closed.
+        lines.append(_copies_rule(copies))
     return "\n".join(lines) + "\n"
 
 
 def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
-            readable: list[Path] = ()) -> list[str] | None:
+            readable: list[Path] = (), copies: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
     return ["/usr/bin/sandbox-exec", "-p",
             profile(default_writable(workspace), default_protected(), offline=offline,
-                    closed=closed, readable=readable)]
+                    closed=closed, readable=readable, copies=copies)]
+
+
+def _copies_rule(copies) -> str:
+    return "(allow file-read* " + " ".join(f"(literal {json.dumps(str(_real(p)))})" for p in copies) + ")"
+
+
+def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
+    """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
+    the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
+    write Arslan's own data, keys and Hands' folder (files and sockets). The user's secrets stay open:
+    ssh, git push, gh and aws need them out here. The saved copies this conversation was given stay
+    readable, file by file (piece 5). An approved plain osascript or `shortcuts run` runs with no
+    wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events."""
+    lines = ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+    if offline:
+        lines.append("(deny network*)")
+    ours = " ".join(_rule(p) for p in arslan_protected())
+    lines += [f"(deny file-read* file-write* {ours})", f"(deny network-outbound {ours})"]
+    if copies:
+        lines.append(_copies_rule(copies))
+    return "\n".join(lines) + "\n"
+
+
+def outside_wrapper(*, offline: bool = False, copies: list[Path] = ()) -> list[str] | None:
+    """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
+    command outside the sandbox runs as before)."""
+    if not available():
+        return None
+    return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies)]
 
 
 def available() -> bool:
@@ -173,6 +233,11 @@ def stopped_by_sandbox(result: dict) -> bool:
     same): a false positive only offers a re-run card the user can decline."""
     if result.get("sandbox") != "workspace" or result.get("ok") or result.get("exit_code") in (0, None):
         return False
+    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+
+
+def refused_outside(result: dict) -> bool:
+    """A command under the minimal outside profile that failed with EPERM (piece 4)."""
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 

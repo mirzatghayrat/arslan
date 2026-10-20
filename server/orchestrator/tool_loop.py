@@ -1073,6 +1073,67 @@ async def _writing_in_own_folder() -> bool:
         return False
 
 
+async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
+                                         unwrapped: bool, conversation_id: str | None) -> dict:
+    """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
+    runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
+    which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
+    reading a secret, let out by the retry card, must not get the network with it). One that reaches the
+    network (by its text, or the model's `network: true`) asks first: this time or this conversation
+    inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
+    does not count there). The island never answers it. With nobody to ask: offline. An approved plain
+    osascript (U11) runs with no wrapper and is not a network command; an approved bare Shortcut asks for
+    the network, this time only, and does not run without it. Where seatbelt cannot start nothing is
+    wrapped, so only the card holds.
+
+    Returns {"offline": bool, "note": str} or {"refused": model text}."""
+    from server.orchestrator import untrusted as _untrusted
+    from server.services import background_jobs, command_sandbox, permissions, task_service
+    if not _untrusted.external_seen():
+        return {}
+    if unwrapped:
+        # ⓪Plan's S-gate review: a bare osascript (one of four apps, no URL) is not a network command,
+        # but a Shortcut can do anything, the network included, and a bare run has no offline rule. It
+        # asks first, this time only; with nobody to ask, or on a no, it does not run.
+        if not task_service.bare_shortcut(command):
+            return {}
+        if permissions.current_asker() is None:
+            return {"refused": "this Shortcut did not run: this turn read outside content, and there was "
+                               "nobody to allow the network for it"}
+        decision = await permissions.decide(permissions.Request(
+            kind="network", target="network:*", title=f"Let the Shortcut `{command[:80]}` use the network?",
+            detail=command, why=str(args.get("why") or "").strip()[:300], conversation_ok=False, once_only=True),
+            permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+        return {} if decision.allowed else {
+            "refused": decision.model_text or "the user did not allow this Shortcut to use the network"}
+    wrapped = command_sandbox.available()
+    inside = sandbox_on and not run_outside and wrapped
+    if not (args.get("network") is True or _untrusted.reaches_network(command)):
+        return {"offline": True} if wrapped else {}
+    if wrapped and permissions.current_asker() is None:
+        return {"offline": True, "note": "ran without network: this turn read outside content, and there was "
+                                         "nobody to allow the network for it"}
+    decision = await permissions.decide(permissions.Request(
+        kind="network", target="network:*", title=f"Let `{command[:80]}` use the network?", detail=command,
+        why=str(args.get("why") or "").strip()[:300], conversation_ok=inside, once_only=not inside),
+        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+    if decision.allowed:
+        return {}
+    return {"refused": decision.model_text or "the user did not allow this command to use the network"}
+
+
+def _bare_once(command: str, *, by_user: bool) -> tuple[bool, bool]:
+    """S2a-1 piece 4, decision U11: (run with no wrapper, kept wrapped) for an approved command. Only
+    a command with an Apple Events or Shortcuts rule, approved by the user's click on its card (a
+    once-only card: no grant or rule ever answers it), and one plain call runs bare, this once.
+    Approved but not plain (a script that acts beyond its app): kept under the sandbox's profiles."""
+    from server.services import task_service, terminal_policy
+    if not (by_user and terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES):
+        return False, False
+    bare = task_service.unwrapped_once(command)
+    return bare, not bare
+
+
 async def _sandbox_enabled() -> bool:
     """Settings → Advanced → "Run commands in a sandbox" (0.1.51 P3), default on."""
     from server.db import session as db_session
@@ -1208,6 +1269,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     run_outside = False          # 0.1.51 P3: this command leaves the sandbox (a click said so)
     sandbox_on = False
+    unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
+    network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
@@ -1239,12 +1302,20 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             why = str(args.get("why") or "").strip()[:300]
+            from server.services import approvals as _approvals
+            _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
+            _approvals.LAST_ANSWERED_BY.set(None)
             if not await confirm_command(command, argv, sandbox="outside", why=why):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
+            # S2a-1: the plain outside card records whose click approved it (approvals.LAST_ANSWERED_BY);
+            # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
+            unwrapped, kept_wrapped = _bare_once(
+                command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
+                and _approvals.LAST_ANSWERED_BY.get() == "mac")
         elif (sandbox_on and not run_outside and terminal_policy.runs_freely_in_sandbox(command)
               and not await _asks_for_everything()):
             pass                          # 0.1.52: a plain script inside the sandbox needs no card
@@ -1258,12 +1329,29 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
+            from server.services import permissions
+            permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
             approved = True if confirm_command is None else await confirm_command(command, argv)
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
+            # S2a-1 (the user, via ⓪Plan): only an explicitly recorded click unlocks the bare run — decide's
+            # record of this card, answered by the user. Nothing recorded (a yes from any other path) keeps
+            # the command wrapped.
+            decided = permissions.LAST_DECISION.get()
+            unwrapped, kept_wrapped = _bare_once(
+                command, by_user=confirm_command is not None and decided is not None and decided.by == "user")
+            run_outside = run_outside or unwrapped
+        network = await _network_after_outside_content(command, args, sandbox_on=sandbox_on,
+                                                       run_outside=run_outside, unwrapped=unwrapped,
+                                                       conversation_id=conversation_id)
+        if network.get("refused"):
+            result = {"ok": False, "error": network["refused"]}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
 
     # Reaching another machine (P3b). Every call asks, with no session memory and
     # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
@@ -1447,20 +1535,38 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             async def run_once(outside: bool) -> dict:
                 from server.services import terminal_exec
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
+                bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
+                # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
+                cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
                 try:
                     return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
                 finally:
+                    if cut is not None:
+                        terminal_exec.OFFLINE.reset(cut)
+                    terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             result = await run_once(run_outside)
             if (tool_key == "run_command" and sandbox_on and not run_outside and confirm_command is not None
                     and isinstance(result, dict) and result.get("sandbox_denied")):
                 # Stopped by the sandbox: offer ONE re-run outside it, from the start.
                 if await confirm_command(command, argv, sandbox="retry"):
-                    result = await run_once(True)
-                    if isinstance(result, dict):
+                    # S2a-1: outside, the network rule is decided again as for an outside run (this time
+                    # only, a stored grant does not count): the retry card is about files.
+                    network = await _network_after_outside_content(
+                        command, args, sandbox_on=sandbox_on, run_outside=True, unwrapped=False,
+                        conversation_id=conversation_id)
+                    if network.get("refused"):
+                        result = {"ok": False, "error": network["refused"]}
+                    else:
+                        result = await run_once(True)
+                    if isinstance(result, dict) and not network.get("refused"):
                         result["ran_outside_sandbox"] = True
             elif tool_key == "run_command" and run_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
+            if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
+                result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
+            if tool_key == "run_command" and network.get("note") and isinstance(result, dict):
+                result["network_note"] = network["note"]
         except TaskError as exc:
             if exc.code not in _REFUSED_STEP:
                 raise
@@ -1695,9 +1801,13 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                        "description": "Only when the command must write outside "
                                                                       "the working folder (moving the user's files, "
                                                                       "installing software). The user is asked."},
+                                   "network": {"type": "boolean",
+                                               "description": "The command needs the network (a download, an "
+                                                              "API). After you read outside content in this turn, "
+                                                              "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "With outside_sandbox: one short sentence the user "
-                                                          "reads on the card."}},
+                                           "description": "With outside_sandbox or network: one short sentence "
+                                                          "the user reads on the card."}},
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,
@@ -2216,8 +2326,11 @@ async def run_native(**kwargs) -> dict:
     the stop itself."""
     facts: dict = {}
     from server.orchestrator import untrusted as _untrusted
+    from server.services import tool_outputs
     seen = _untrusted.track_turn()
     sent_is_final = _SENT_IS_FINAL.set(False)
+    # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
+    copies_of = tool_outputs.conversation.set(kwargs.get("conversation_id"))
     try:
         result = await _run_native(**kwargs, _facts=facts)
         if isinstance(result, dict):
@@ -2245,6 +2358,7 @@ async def run_native(**kwargs) -> dict:
     finally:
         _untrusted.end_turn(seen)
         _SENT_IS_FINAL.reset(sent_is_final)
+        tool_outputs.conversation.reset(copies_of)
 
 
 def _learn_after(kwargs: dict, facts: dict, result: dict) -> None:
