@@ -1145,37 +1145,36 @@ async def _arslan_tools() -> list[dict]:
              "Look again after every action — refs go stale when the window changes."}]
         # Hands v2 §5.7: acting is offered in chat replies too, at most five actions in one app per
         # reply (the executors count); longer work goes to background work.
-        if True:
-            tools += [
-                {"key": "desktop_click", "description": "Click an element by ref from your latest desktop_look of "
-                 "that app. args: {app, element (what it is, in words), ref}. The first action in each app asks "
-                 "the user once; buttons that delete, send, pay, buy, transfer or submit ask every time."},
-                {"key": "desktop_type", "description": "Set the text of a field (by ref): replaces what is there; "
-                 "mode=append adds to the end; submit=true presses Return after. Works without taking focus. "
-                 "Never for passwords — ask the user to type those."},
-                {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
-                {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
-                {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
-                 "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
-                 "Background work only; asks the user every time; the screen edge glows; the user's first "
-                 "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
-                 "background actions, then front: true, first."},
-                {"key": "desktop_open", "description": "Open a Mac app, or a file in it, in the background "
-                 "(behind the user's windows; it does not come to the front): {app, path?}. Asks the user once. "
-                 "Then desktop_look it. Always open apps and documents this way, never with `open` in run_command: "
-                 "that brings the app to the front and does not give it back. If its window is on another "
-                 "desktop, looking or acting goes there by itself and comes back."},
-                {"key": "desktop_batch", "description": "Several actions in one app in one call, then one look: "
-                 "{app, steps: [{action: click|type|select|scroll|press|menu, …that action's args}] (up to 8)}. "
-                 "Every step asks and checks as its own call would; the batch stops at the first step that "
-                 "did not go through (or when the window changed), and ends with the window as it is now. "
-                 "Use refs from one look; prefer it to many single calls."},
-                {"key": "desktop_menu", "description": "Choose a menu-bar item of an app, in the background, by its "
-                 "titles: {app, path: [\"Format\", \"Font\", \"Bold\"]}. Prefer a button in the window; then a "
-                 "menu item; keys last. A missing item answers with what that menu has. Items that delete, send, "
-                 "quit and the like ask every time. Not in terminals, editors or browsers."},
-                {"key": "desktop_press", "description": "Press keys in an app, e.g. return, escape, tab, cmd+n, "
-                 "cmd+s. Delete/send shortcuts ask every time. Not available in terminals, editors or browsers."}]
+        tools += [
+            {"key": "desktop_click", "description": "Click an element by ref from your latest desktop_look of "
+             "that app. args: {app, element (what it is, in words), ref}. The first action in each app asks "
+             "the user once; buttons that delete, send, pay, buy, transfer or submit ask every time."},
+            {"key": "desktop_type", "description": "Set the text of a field (by ref): replaces what is there; "
+             "mode=append adds to the end; submit=true presses Return after. Works without taking focus. "
+             "Never for passwords — ask the user to type those."},
+            {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
+            {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
+            {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
+             "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
+             "Background work only; asks the user every time; the screen edge glows; the user's first "
+             "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
+             "background actions, then front: true, first."},
+            {"key": "desktop_open", "description": "Open a Mac app, or a file in it, in the background "
+             "(behind the user's windows; it does not come to the front): {app, path?}. Asks the user once. "
+             "Then desktop_look it. Always open apps and documents this way, never with `open` in run_command: "
+             "that brings the app to the front and does not give it back. If its window is on another "
+             "desktop, looking or acting goes there by itself and comes back."},
+            {"key": "desktop_batch", "description": "Several actions in one app in one call, then one look: "
+             "{app, steps: [{action: click|type|select|scroll|press|menu, …that action's args}] (up to 8)}. "
+             "Every step asks and checks as its own call would; the batch stops at the first step that "
+             "did not go through (or when the window changed), and ends with the window as it is now. "
+             "Use refs from one look; prefer it to many single calls."},
+            {"key": "desktop_menu", "description": "Choose a menu-bar item of an app, in the background, by its "
+             "titles: {app, path: [\"Format\", \"Font\", \"Bold\"]}. Prefer a button in the window; then a "
+             "menu item; keys last. A missing item answers with what that menu has. Items that delete, send, "
+             "quit and the like ask every time. Not in terminals, editors or browsers."},
+            {"key": "desktop_press", "description": "Press keys in an app, e.g. return, escape, tab, cmd+n, "
+             "cmd+s. Delete/send shortcuts ask every time. Not available in terminals, editors or browsers."}]
         if not in_job:
             tools[-1]["description"] += (" In this reply you may act at most five times, all in one app; for "
                                          "more, start background work.")
