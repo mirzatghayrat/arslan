@@ -208,25 +208,42 @@ _APP_DIRS = ("/Applications", "/Applications/Utilities", "/System/Applications",
 _BUNDLE_ID = re.compile(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$")
 
 
+def _app_bundles_named(folder: Path, app: str) -> list[Path]:
+    """`<app>.app` in `folder`, then any entry whose name matches it ignoring case: AppleScript takes an
+    app's name in any case ("VAULT.APP" is Vault), and on a case-sensitive volume (and CI's Linux) the
+    exact path alone missed it, so the never-list did too (v0.1.63 H4, found by CI on #271)."""
+    exact = folder / f"{app}.app"
+    found = [exact]
+    try:
+        wanted = f"{app}.app".casefold()
+        found += sorted(p for p in folder.iterdir() if p.name.casefold() == wanted and p.name != exact.name)
+    except OSError:
+        pass
+    return found
+
+
 @functools.lru_cache(maxsize=256)
 def app_identity(app: str) -> dict | None:
     """{"name", "bundle_id"} for an app name or bundle id, read from the installed app's Info.plist —
     never by launching it (`osascript -e 'id of app "X"'` would). A bundle id is taken as given. None
     when no installed app has that name and it is no bundle id. Running apps outside these folders are resolved by Hands
     (`which_app`) on the Hands path."""
-    app = app.strip().removesuffix(".app")
+    app = app.strip()
+    if app.lower().endswith(".app"):
+        app = app[:-4].strip()
     if not app or "/" in app:
         return None
     for folder in _APP_DIRS:
-        plist = Path(folder).expanduser() / f"{app}.app" / "Contents" / "Info.plist"
-        try:
-            with plist.open("rb") as f:
-                info = plistlib.load(f)
-        except (OSError, plistlib.InvalidFileException, ValueError):
-            continue
-        bundle = str(info.get("CFBundleIdentifier") or "")
-        if bundle:
-            return {"name": str(info.get("CFBundleName") or app), "bundle_id": bundle}
+        for bundle_dir in _app_bundles_named(Path(folder).expanduser(), app):
+            plist = bundle_dir / "Contents" / "Info.plist"
+            try:
+                with plist.open("rb") as f:
+                    info = plistlib.load(f)
+            except (OSError, plistlib.InvalidFileException, ValueError):
+                continue
+            bundle = str(info.get("CFBundleIdentifier") or "")
+            if bundle:
+                return {"name": str(info.get("CFBundleName") or app), "bundle_id": bundle}
     if _BUNDLE_ID.match(app):                     # no app has that name: it is a bundle id
         return {"name": "", "bundle_id": app}
     return None

@@ -363,3 +363,11 @@ def test_a_class_word_outside_its_own_app_or_a_named_variable_is_a_computed_targ
 ])
 def test_a_class_word_with_its_own_app_named_and_a_named_literal_are_not_computed(script):
     assert hands_service.computed_app_target(script) is None, script
+
+
+def test_an_app_name_in_any_case_finds_the_installed_bundle(apps_folder):
+    """CI's Linux (case-sensitive) missed "VAULT.APP": the lookup now also matches the folder's entries
+    ignoring case. Checked by the entry's real name, so it holds on a case-insensitive Mac volume too."""
+    assert "Vault.app" in [p.name for p in hands_service._app_bundles_named(apps_folder, "VAULT")]
+    hands_service.app_identity.cache_clear()
+    assert hands_service.app_identity("vault.APP") == {"name": "Vault", "bundle_id": "com.1password.vault"}
