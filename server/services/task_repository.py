@@ -16,7 +16,7 @@ from pydantic import Field
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from arslan.companion.content_policy import contains_credential, contains_credential_data
+from arslan.companion.content_policy import contains_credential_data
 from arslan.companion.action_policy import ACCOUNT_ACTION_EFFECTS
 from arslan.companion.contracts import (
     CheckResult, Contract, Identifier, ResourceRef, TaskSpec, TaskState,
@@ -52,7 +52,9 @@ def encoded_action(tool_key: str, arguments: dict) -> str:
                              ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError, RecursionError) as exc:
         raise TaskError("task_action_arguments_not_journalable") from exc
-    if len(encoded) > 262144 or contains_credential_data(arguments) or contains_credential(encoded):
+    # D6: secrets are screened on the raw values (contains_credential_data), never on `encoded`, where a
+    # newline is a literal `\\n`; the size is the encoded length.
+    if len(encoded) > 262144 or contains_credential_data(arguments):
         raise TaskError("task_action_arguments_not_journalable")
     return encoded
 
@@ -120,7 +122,7 @@ class TaskRepository:
             raise TaskError("temporary_task_not_persisted")
         if not conversation_id.strip() or len(conversation_id) > 100:
             raise TaskError("invalid_conversation_id")
-        if contains_credential(spec.model_dump_json()):
+        if contains_credential_data(spec.model_dump(mode="json")):          # raw values (D6)
             raise TaskError("credentials_not_task_data")
         if spec.scope.project_id:
             project = await self.db.get(Project, spec.scope.project_id)
@@ -218,7 +220,7 @@ class TaskRepository:
             raise TaskError("task_still_running")
         if spec.id != row.id or spec.revision != row.spec_revision + 1 or spec.scope.owner_id != owner_id:
             raise TaskError("task_revision_mismatch")
-        if spec.memory_mode == "temporary" or contains_credential(spec.model_dump_json()):
+        if spec.memory_mode == "temporary" or contains_credential_data(spec.model_dump(mode="json")):
             raise TaskError("task_revision_not_persistable")
         project = await self.db.get(Project, spec.scope.project_id) if spec.scope.project_id else None
         if spec.scope.project_id and (project is None or project.owner_id != owner_id or project.status != "active"):

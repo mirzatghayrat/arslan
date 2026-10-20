@@ -19,7 +19,9 @@ def contains_credential(content: str) -> bool:
 
 
 def contains_credential_data(value: object) -> bool:
-    """Screen structured arguments before execution; never log detected values."""
+    """Screen structured arguments before execution; never log detected values. Screens raw values,
+    never JSON-encoded text (D6: an encoded newline is a literal `\\n`, not whitespace, so a rule's value
+    ran on into the next line and refused a note)."""
     if isinstance(value, dict):
         for key, item in value.items():
             normalized = re.sub(r"[\s_-]", "", unicodedata.normalize("NFKC", str(key))).casefold()
@@ -27,6 +29,17 @@ def contains_credential_data(value: object) -> bool:
                               "sessioncookie", "authorization", "privatekey", "密码", "密钥", "令牌"}:
                 if item not in (None, "", False):
                     return True
+            # D6: what the check on encoded text caught as a side effect, where the rule ran across
+            # `"key":"value"`: a key that is itself a secret, a key that contains a credential word with
+            # its value ("db_password: hunter22"), and a structure under such a key (checked with a
+            # placeholder: its JSON would bring the escape back). A true/false is not a secret.
+            if contains_credential(str(key)):
+                return True
+            if isinstance(item, (str, int, float)) and not isinstance(item, bool):
+                if contains_credential(f"{key}: {item}"):
+                    return True
+            elif isinstance(item, (dict, list, tuple)) and item and contains_credential(f"{key}: <value>"):
+                return True
             if contains_credential_data(item):
                 return True
         return False

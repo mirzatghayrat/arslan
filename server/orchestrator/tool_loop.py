@@ -34,6 +34,18 @@ TOOL_TIMEOUT_S = 20.0
 # 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
 # is fixed: the command's limit first (with its output), this backstop next, the turn last.
 _RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
+# Task-record refusals that end one call, never the turn or the job (_dispatch_tool): what the model is told.
+_REFUSED_STEP = {
+    "task_reconciliation_required": "This exact action already ran and its outcome is unknown. Do not repeat it; "
+                                    "tell the user to check whether it happened.",
+    "task_action_already_completed": "This exact action already succeeded in this task. Do not repeat it.",
+    # D6 (K3's Claude run, T2 r2): it used to stop the whole background job.
+    "task_action_arguments_not_journalable": (
+        "This step did not run: its arguments can't go into the task record. They are over 256 KB, or contain "
+        "something that looks like a secret (a password, key, token or cookie value). Don't put secrets in files "
+        "or commands: read them from an environment variable or a file the user names. Split a very long write "
+        "into several smaller ones."),
+}
 
 # The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
 # list in _arslan_tools decides what is OFFERED, this decides what is GATED, and
@@ -1450,13 +1462,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             elif tool_key == "run_command" and run_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
         except TaskError as exc:
-            if exc.code not in {"task_reconciliation_required", "task_action_already_completed"}:
+            if exc.code not in _REFUSED_STEP:
                 raise
-            # 0.1.44: refuse the repeat, never the turn. The model is told why.
-            result = {"ok": False, "external": False, "code": exc.code, "error": (
-                "This exact action already ran and its outcome is unknown. Do not repeat it; tell the user "
-                "to check whether it happened." if exc.code == "task_reconciliation_required" else
-                "This exact action already succeeded in this task. Do not repeat it.")}
+            # 0.1.44: refuse the repeat, never the turn. The model is told why. D6: a step whose
+            # arguments can't go into the task record is refused alone, before it runs; the task goes on.
+            result = {"ok": False, "external": False, "code": exc.code, "error": _REFUSED_STEP[exc.code]}
         except BudgetExceeded:
             raise
         except TimeoutError:

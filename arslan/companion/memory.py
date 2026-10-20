@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from arslan.companion.content_policy import contains_credential, normalized_memory
+from arslan.companion.content_policy import contains_credential, contains_credential_data, normalized_memory
 from arslan.companion.contracts import Contract, Identifier
 from arslan.companion.design import StyleReference
 
@@ -99,7 +99,8 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
         raise MemoryError("invalid_memory_actor")
     if actor.no_learning or actor.temporary:
         raise MemoryError("learning_disabled")
-    if contains_credential(write.content) or (write.style_reference and contains_credential(write.style_reference.model_dump_json())):
+    if contains_credential(write.content) or (
+            write.style_reference and contains_credential_data(write.style_reference.model_dump(mode="json"))):
         raise MemoryError("credentials_not_memory")
     if write.scope.kind == "task":
         raise MemoryError("task_state_is_not_long_term_memory")
