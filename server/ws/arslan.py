@@ -267,9 +267,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # 0.1.61: what a card allows beyond once ("in this conversation", "Always") is kept by
     # permissions.decide in the conversation's grants and rules — across sockets and reloads —
     # instead of per-connection sets (the old exact-text command set and the write/schedule flags).
-    # 0.1.52 S2: the user's latest message on this socket — the judge's tool.approval
-    # question needs the user's own words, whether or not a memory context is bound.
-    latest_request = {"text": ""}
     # Mobile bridge: whether the turn running on this socket was started by the iPhone
     # (only the Arslan Bridge's socket ever sends source "phone").
     phone_turn = {"on": False}
@@ -511,18 +508,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict) -> bool:
         from server.services import command_sandbox
         call_id = uuid.uuid4().hex
-        from server.services import judgment
-        judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule, reason=verdict.reason,
-                                                                 sandboxed=False,
-                                                                 user_request=latest_request["text"]),
-                        ref=call_id, conversation_id=conversation_id)
         decision = await _ask(protocol.propose_run_command(
             call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
             sandbox=sandbox, why=why))
         if decision["approved"] and decision.get("remember"):
             command_sandbox.grant(conversation_id)    # this conversation only, never saved
-        judgment.record_outcome_later(call_id, "approved" if decision["approved"] else "declined",
-                                      point="tool.approval")
         return bool(decision["approved"])
 
     async def confirm_command(command: str, argv: list, *,
@@ -573,34 +563,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         frame = protocol.propose_run_command(uuid.uuid4().hex, command, argv,
                                              reason=verdict.reason or f"risk: {risk}",
                                              rule=verdict.rule or None)
-        return await _decide_with_shadow(approvals._command_request(shell, rules, frame), ctx, shell, verdict)
-
-    async def _decide_with_shadow(req, ctx, shell: str, verdict) -> bool:
-        """0.1.52 S2: the shadow judgment — what the judge would say about a card, joined to the
-        user's real answer; it changes nothing (task book C2.1). As on a job's card surface
-        (0.1.61): it goes with a card this window is shown — none when a rule or a grant
-        decides, one per card (an ask that joins a card already on screen is not judged again) —
-        and a card nobody answered is joined as "expired", never "declined"."""
-        from server.services import judgment
-        judged: list[str] = []
-        surface = permissions.current_asker()          # the turn's: this window's cards
-
-        async def ask(frame: dict) -> dict:
-            # No await between this check and the card opening inside the surface. No judgment
-            # for a card that does not open: the person is away, or it joins one on screen.
-            if not turn_unanswered["yes"] and approvals.joining(conversation_id, frame) is None:
-                judgment.shadow("tool.approval", judgment.approval_state(
-                    shell, rule=verdict.rule, reason=verdict.reason, user_request=latest_request["text"]),
-                    ref=frame["call_id"], conversation_id=conversation_id)
-                judged.append(frame["call_id"])
-            return await surface(frame)
-
-        with permissions.asking_with(ask if surface is not None else None):
-            decision = await permissions.decide(req, ctx)
-        outcome = ("approved" if decision.allowed
-                   else "expired" if decision.by == "expired" else "declined")
-        for ref in judged:
-            judgment.record_outcome_later(ref, outcome, point="tool.approval")
+        # On the turn's card surface (this window's cards: permissions.current_asker()).
+        decision = await permissions.decide(approvals._command_request(shell, rules, frame), ctx)
         return decision.allowed
 
     # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
@@ -678,7 +642,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             from server.services import task_context, temporary_turn
             if await task_context.is_temporary(conversation_id):
                 if msg_type == "user_message":
-                    latest_request["text"] = str(data.get("content") or "")
                     phone_turn["on"] = message_source(data) == "phone"
                     with_context = await task_context.load(conversation_id)
                     from server.services.personal_context import bind
@@ -768,7 +731,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 continue
 
             content = data.get("content", "")
-            latest_request["text"] = str(content or "")
             phone_turn["on"] = message_source(data) == "phone"
             # Images ride in the frame itself (base64), not through /extract:
             # decision ③A means they are needed for exactly one turn, so there

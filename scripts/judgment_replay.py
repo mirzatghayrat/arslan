@@ -1,14 +1,15 @@
 """Re-ask recorded judgments with another judge model and compare (0.1.52 S2).
 
     python -m scripts.judgment_replay --db ~/Library/Application\\ Support/Arslan/arslan.db \\
-        --point tool.approval --provider openai --base-url http://127.0.0.1:11434/v1 --model qwen3 [--limit 200]
+        --point memory.worth --provider openai --base-url http://127.0.0.1:11434/v1 --model qwen3 [--limit 200]
 
 The ledger keeps each question's minimal state, so a candidate judge (a local model,
 for one) can be measured on the same questions without collecting new data. Spends
 whatever the candidate model costs; nothing here runs on its own. The report:
 agreement with the recorded judge, and — where the user's real answer is known —
-how often "yes with p >= threshold" matched an approval (the gate the task book sets
-before tool.approval may act).
+how often "yes with p >= threshold" matched an approval. Only tool.approval recorded
+the user's real answer, and it was removed in v0.1.63 (C4): for the points left those
+columns stay empty.
 """
 from __future__ import annotations
 
@@ -44,7 +45,7 @@ def load(db: str, point: str, limit: int) -> list[dict]:
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
-    ap.add_argument("--point", default="tool.approval")
+    ap.add_argument("--point", required=True, help="a decision point that still exists, e.g. memory.worth")
     ap.add_argument("--provider", required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--base-url", default="")

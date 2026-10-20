@@ -239,16 +239,14 @@ def test_mcp_whole_turn_failures_by_text_and_by_event(db):
     assert [w["mcp_relaxed"] for w in weekly] == [0, 2]
 
 
-def test_cards_ledger_and_judgments_stay_apart(db):
+def test_cards_come_from_the_ledger_and_the_shadow_judgments_are_not_read(db):
+    """C4 removed the command cards' shadow judgment: its old judgments rows (still in the fixture,
+    as in a database that has not pruned them yet) are no longer counted anywhere."""
     data = collect(db)
     weekly = data["weekly"]
-    assert [(w["cards_shown"], w["cards_auto"], w["judged_cards"]) for w in weekly] == [
-        (3, 4, 2), (1, 1, 2)]
+    assert [(w["cards_shown"], w["cards_auto"]) for w in weekly] == [(3, 4), (1, 1)]
     assert data["shown_by_kind"] == {"command": [2, 1], "mcp": [1, 0]}
-    # only `sandboxed`, `rule` and `outcome` are read: the other point's row is not counted
-    assert data["judged_kind"] == {"sandbox exit": [1, 1], "rule card": [1, 1]}
-    assert data["judged_outcome"] == {"approved": [1, 0], "declined": [1, 0], "expired": [0, 1],
-                                      "none": [0, 1]}
+    assert "judged_cards" not in weekly[0] and "judged_kind" not in data and "judged_outcome" not in data
 
 
 def test_post_turn_calls_come_from_the_usage_ledger(db):
@@ -260,10 +258,8 @@ def test_the_printed_tables(db, capsys):
     out = run(db, capsys)
     assert WEEK_A in out and WEEK_B in out and "2026-10-12" not in out
     cards = table(out, "## Cards")
-    assert cards[0][1:] == ["Ledger: cards shown", "Ledger: auto-decided",
-                            "judgments: command cards"]
-    assert row(cards, WEEK_A) == ["3", "4", "2"]          # side by side, never summed
-    assert any(line.startswith("Do not add") for line in out.splitlines())
+    assert cards[0][1:] == ["Ledger: cards shown", "Ledger: auto-decided"]
+    assert row(cards, WEEK_A) == ["3", "4"]
     assert row(table(out, "## Runs and tasks"), WEEK_A) == ["4", "5", "3", "60%"]
     assert row(table(out, "## Tool calls"), WEEK_B) == ["5", "4", "80%", "0", "0"]
     assert row(table(out, "## run_command time limits"), WEEK_A) == ["3", "1", "1", "0", "≈1"]
@@ -271,9 +267,7 @@ def test_the_printed_tables(db, capsys):
     assert row(table(out, "## Post-turn model calls"), WEEK_A) == ["3", "1"]
     assert row(table(out, "### Tool calls by tool (failed/calls)"), "mcp") == ["2/3", "0/0"]
     assert row(table(out, "### Waiting on you, by reason"), "other") == ["1", "0"]
-    judged = table(out, "### Command cards in judgments (tool.approval)")
-    assert row(judged, "sandbox exit") == ["1", "1"]
-    assert row(judged, "outcome: expired") == ["0", "1"]
+    assert "Command cards in judgments" not in out
 
 
 def test_nothing_but_numbers_and_fixed_codes_leaks(db, capsys):

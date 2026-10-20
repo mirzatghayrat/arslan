@@ -124,13 +124,13 @@ describe("the usage chart", () => {
 
 describe("判断记录 and Hands", () => {
   it("gives each family of question its icon and pages back by id", async () => {
-    const rows = Array.from({ length: 20 }, (_, i) => ({ id: 40 - i, point: i % 2 ? "memory.worth" : "tool.approval", mode: "active",
+    const rows = Array.from({ length: 20 }, (_, i) => ({ id: 40 - i, point: i % 2 ? "memory.worth" : "project.progress", mode: "active",
       verdict: true, probability: 0.8, latency_ms: 1, outcome: null, created_at: "2026-10-09T08:00:00Z" }));
     request.mockResolvedValueOnce({ items: rows }).mockResolvedValueOnce({ items: [] });
     render(<JudgmentsCard />);
     await screen.findByTestId("judgment-40");
     const icons = Array.from(document.querySelectorAll("[data-point-icon]")).slice(0, 2).map((el) => el.getAttribute("class") ?? "");
-    expect(icons[0]).toContain("shield");
+    expect(icons[0]).toContain("flag");
     expect(icons[1]).toContain("bookmark");
     const box = screen.getByTestId("judgments-box");
     Object.defineProperty(box, "scrollHeight", { value: 800, configurable: true });

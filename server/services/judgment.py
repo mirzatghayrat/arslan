@@ -4,15 +4,15 @@ Borrowed from mu's design (shadow -> active): each decision point is a narrow
 question over a MINIMAL, named-fields state (never page text), answered yes/no
 with a probability by Arslan's own fast model slot (`router_config_id`, else role
 "router" — user decision D5: not Jev). Every answer goes into the `judgments`
-ledger; what really happened is added later (`record_outcome`), so a decision
-point earns its way from `shadow` (record only) to `active` on data, and a
-different judge (a local model) can be compared offline against the same rows
-(scripts/judgment_replay.py).
+ledger, and a different judge (a local model) can be compared offline against the
+same rows (scripts/judgment_replay.py). The command cards' shadow judgment
+(tool.approval, with its outcome join) was removed in v0.1.63 (C4: the user withdrew
+"approve for me", D8); the ledger and `approval_events.reviewer` stay for v0.1.65's
+narrow reviewer (D7), and go in that version if it is not built.
 
-Never in the way: a timeout (2 s for a card someone may be waiting on, 15 s for
-the decisions made after the answer), any error, or the daily token cap means "no
-answer" (None) and the caller falls back — approvals ask as they do today,
-memory skips. Thinking is off where the endpoint allows it (critique_request). The question and the state go to the same model provider the
+Never in the way: a timeout (15 s; every decision runs after the answer), any error,
+or the daily token cap means "no answer" (None) and the caller falls back — memory
+skips. Thinking is off where the endpoint allows it (critique_request). The question and the state go to the same model provider the
 user already chose, with the same privacy.
 """
 from __future__ import annotations
@@ -29,9 +29,9 @@ from server.db import session as db_session
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_S = 2.0                    # a decision someone may be waiting on (a card)
-# Decisions made after the answer (memory, lessons) wait on nobody; 2 s there meant a
-# thinking model almost never answered and nothing was ever learned (0.1.52 acceptance).
+# Every decision runs after the answer (memory, lessons, projects) and waits on nobody; 2 s meant
+# a thinking model almost never answered and nothing was ever learned (0.1.52 acceptance). The one
+# point a card waited on, tool.approval's shadow, was removed in v0.1.63 (C4, decision D8).
 AFTER_TURN_TIMEOUT_S = 15.0
 DAILY_TOKEN_CAP = 200_000          # ~$0.05/day at DeepSeek flash prices; above it, no judging
 KEEP_DAYS = 90
@@ -52,16 +52,10 @@ class DecisionPoint:
     fields: tuple[str, ...]          # the only state keys sent; anything else is dropped
     mode: str                        # off | shadow | active
     threshold: float = 0.9
-    after_turn: bool = False         # runs after the answer: the longer timeout applies
+    after_turn: bool = False         # runs after the answer (every point does since C4)
 
 
 REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
-    # Shadow first (task book C2.1): every card still appears; this only records,
-    # with the user's real choice, until the gate is met and the user turns it on.
-    DecisionPoint("tool.approval",
-                  "Did the user clearly ask for exactly this action in their request, and does it stay "
-                  "inside the sandbox (no sending, paying, deleting outside the working folder)?",
-                  ("tool", "command", "rule", "reason", "sandboxed", "user_request"), "shadow"),
     # Active from the start (C2.2): they run after the answer, are reversible and visible.
     DecisionPoint("memory.worth",
                   "Is this worth remembering for future conversations with this user (a stable preference, "
@@ -187,7 +181,7 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
                 async with usage_ledger.scope("judgment", conversation_id):
                     response = await asyncio.wait_for(
                         adapter.chat(system=build_cached_system(_SYSTEM, ""), user=user),
-                        timeout=AFTER_TURN_TIMEOUT_S if point.after_turn else TIMEOUT_S)
+                        timeout=AFTER_TURN_TIMEOUT_S)
             parsed = parse(response.content)
             if parsed is None:
                 error = "unparsable"
@@ -214,61 +208,17 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
     return Verdict(verdict, probability, judgment_id)
 
 
-def approval_state(command: str, *, rule: str = "", reason: str = "", sandboxed: bool | None = None,
-                   user_request: str | None = None) -> dict:
-    """The tool.approval question's facts: the command, why it asks, and the user's own request
-    for this turn (their words — from the chat socket, else the trusted task context; never
-    page or tool text)."""
-    if not user_request:
-        from server.services import personal_context
-        ctx = personal_context.current()
-        user_request = (ctx.query if ctx else "") or ""
-    return {"tool": "run_command", "command": command, "rule": rule, "reason": reason,
-            "sandboxed": sandboxed, "user_request": user_request}
-
-
-def shadow(point_name: str, state: dict, *, ref: str | None = None, conversation_id: str | None = None) -> None:
-    """Fire and forget: record what the judge would say, change nothing."""
-    try:
-        asyncio.get_running_loop().create_task(judge(point_name, state, ref=ref, conversation_id=conversation_id))
-    except RuntimeError:
-        pass
-
-
-async def record_outcome(ref: str, outcome: str, *, point: str | None = None) -> None:
-    """What really happened, matched by ref (e.g. the card's call_id). Best-effort.
-    Waits briefly for a shadow judgment still in flight, so the pair is not lost."""
-    from sqlalchemy import select, update
-    from server.db.models import Judgment
-    for _ in range(int((TIMEOUT_S + 1.0) / 0.25)):
-        try:
-            async with db_session.AsyncSessionLocal() as db:
-                q = select(Judgment.id).where(Judgment.ref == str(ref)[:80])
-                if point:
-                    q = q.where(Judgment.point == point)
-                ids = (await db.scalars(q)).all()
-                if ids:
-                    await db.execute(update(Judgment).where(Judgment.id.in_(ids)).values(
-                        outcome=outcome[:20], outcome_at=datetime.utcnow()))
-                    await db.commit()
-                    return
-        except Exception:  # noqa: BLE001
-            return
-        await asyncio.sleep(0.25)
-
-
-def record_outcome_later(ref: str, outcome: str, *, point: str | None = None) -> None:
-    try:
-        asyncio.get_running_loop().create_task(record_outcome(ref, outcome, point=point))
-    except RuntimeError:
-        pass
+# Points removed since: their old rows stay in the table until KEEP_DAYS prunes them, but Activity
+# lists only decisions that still exist (v0.1.63 C4: tool.approval, the command cards' shadow).
+RETIRED_POINTS = ("tool.approval",)
 
 
 async def recent(limit: int = 100, point: str | None = None, *, before_id: int | None = None) -> list[dict]:
     from sqlalchemy import select
     from server.db.models import Judgment
     async with db_session.AsyncSessionLocal() as db:
-        q = select(Judgment).order_by(Judgment.created_at.desc(), Judgment.id.desc()).limit(max(1, min(limit, 500)))
+        q = (select(Judgment).where(Judgment.point.not_in(RETIRED_POINTS))
+             .order_by(Judgment.created_at.desc(), Judgment.id.desc()).limit(max(1, min(limit, 500))))
         if point:
             q = q.where(Judgment.point == point)
         if before_id is not None:       # 0.1.58: Activity's box pages back by id

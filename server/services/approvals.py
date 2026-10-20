@@ -439,9 +439,9 @@ class JobConfirmations:
             # 0.1.51 P3: leaving the sandbox is always a card; a job's card offers no
             # "rest of the conversation", and a job never uses one the chat window was
             # given: that grant is a session grant.
-            return await self._ask_with_shadow(protocol.propose_run_command(
+            return await self._card(protocol.propose_run_command(
                 uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-                sandbox=sandbox, why=why), command, verdict, sandboxed=False)
+                sandbox=sandbox, why=why))
         policy, standing = "", False
         if not remote_host:
             async with db_session.AsyncSessionLocal() as db:
@@ -464,42 +464,9 @@ class JobConfirmations:
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None)
-        return await self._decide_with_shadow(_command_request(shell, rules, frame), command, verdict)
-
-    async def _ask_with_shadow(self, frame: dict, command: str, verdict, *, sandboxed: bool | None = None) -> bool:
-        """0.1.52 S2: the card as before, plus a shadow judgment recorded with the real answer."""
-        from server.services import judgment
-        judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule, reason=verdict.reason,
-                                                                 sandboxed=sandboxed),
-                        ref=frame["call_id"], conversation_id=self.conversation_id)
-        approved = await self._card(frame)
-        judgment.record_outcome_later(frame["call_id"], "approved" if approved else "declined", point="tool.approval")
-        return approved
-
-    async def _decide_with_shadow(self, req, command: str, verdict) -> bool:
-        """`_ask_with_shadow` for a rule card, decided by `permissions.decide` on this job's card
-        surface. The shadow judgment goes with a card the user is shown: none when a rule or a
-        grant decides, none once the job stopped waiting, and one per card (an identical ask that
-        joins a card on screen is not judged again). It is joined to the real answer: "expired"
-        when nobody answered, never "declined"."""
-        from server.services import judgment, permissions
-        judged: list[str] = []
-
-        async def ask(frame: dict) -> dict:
-            # No await between this check and the card opening inside `self.asker`.
-            if not self.asker.unanswered and joining(self.conversation_id, frame) is None:
-                judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule,
-                                                                         reason=verdict.reason),
-                                ref=frame["call_id"], conversation_id=self.conversation_id)
-                judged.append(frame["call_id"])
-            return await self.asker(frame)
-
-        with permissions.asking_with(ask):
-            decision = await permissions.decide(req, self._context())
-        outcome = ("approved" if decision.allowed
-                   else "expired" if decision.by == "expired" else "declined")
-        for ref in judged:
-            judgment.record_outcome_later(ref, outcome, point="tool.approval")
+        from server.services import permissions
+        with permissions.asking_with(self.asker):
+            decision = await permissions.decide(_command_request(shell, rules, frame), self._context())
         return decision.allowed
 
 
