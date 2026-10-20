@@ -715,6 +715,7 @@ fn fixture_menus(pid: i32) -> Option<Vec<arslan_hands::menus::MenuItem>> {
         vec![
             item(&["Format", "Font", "Bold"], true, Some(("b", 0))),
             item(&["File", "Export"], false, None),
+            item(&["Edit", "Paste"], true, Some(("v", 0))),
         ]
     })
 }
@@ -798,13 +799,29 @@ fn a_menu_item_is_pressed_by_its_path_under_the_action_rules() {
     arslan_hands::menus::set_stand_in_for_tests(None);
 }
 
+// The focused-element question, stood in for: a password field, not one, no answer, and a field
+// that becomes a password field after the first ask (the app came forward under a borrow).
+fn secure(_pid: i64) -> Option<bool> {
+    Some(true)
+}
+fn not_secure(_pid: i64) -> Option<bool> {
+    Some(false)
+}
+fn no_answer(_pid: i64) -> Option<bool> {
+    None
+}
+static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+fn secure_from_the_second_ask(_pid: i64) -> Option<bool> {
+    Some(ASKED.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0)
+}
+
 #[test]
 fn keys_never_go_into_a_focused_password_field() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = start("presspw");
     let press = |keys: &str| hands.ask("press", json!({"app": "Hands Fixture", "keys": keys}));
     // The focused element is a password field: no key goes, typing or not.
-    arslan_hands::server::focused_password_stand_in_for_tests(Some(Some(true)));
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(secure));
     for keys in ["a", "cmd+v", "tab", "return"] {
         assert_eq!(code(&press(keys)), "password_field", "{keys}");
     }
@@ -814,8 +831,8 @@ fn keys_never_go_into_a_focused_password_field() {
         hands.calls()
     );
     // The app does not say: keys that may type are refused, the others go.
-    arslan_hands::server::focused_password_stand_in_for_tests(Some(None));
-    for keys in ["a", "shift+a", "option+e", "space", "cmd+v"] {
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(no_answer));
+    for keys in ["a", "shift+a", "option+e", "space", "cmd+v", "ctrl+y"] {
         assert_eq!(code(&press(keys)), "password_field", "{keys}");
     }
     assert!(
@@ -826,10 +843,72 @@ fn keys_never_go_into_a_focused_password_field() {
     assert_eq!(press("tab")["ok"], true);
     assert_eq!(press("cmd+b")["ok"], true);
     // Not a password field: letters go too.
-    arslan_hands::server::focused_password_stand_in_for_tests(Some(Some(false)));
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(not_secure));
     assert_eq!(press("a")["ok"], true);
     assert_eq!(hands.acted(), ["press", "press", "press"]);
     arslan_hands::server::focused_password_stand_in_for_tests(None);
+}
+
+#[test]
+fn a_menu_item_never_pastes_into_a_focused_password_field() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    with_menus();
+    let hands = start("menupw");
+    let menu = |path: &[&str]| hands.ask("menu", json!({"app": "Hands Fixture", "path": path}));
+    let paste: &[&str] = &["Edit", "Paste"];
+    let bold: &[&str] = &["Format", "Font", "Bold"];
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(secure));
+    assert_eq!(code(&menu(paste)), "password_field");
+    assert_eq!(code(&menu(bold)), "password_field");
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(no_answer));
+    assert_eq!(code(&menu(paste)), "password_field");
+    assert!(PRESSED.lock().unwrap().is_empty(), "no item pressed");
+    assert_eq!(menu(bold)["ok"], true);
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(not_secure));
+    assert_eq!(menu(paste)["ok"], true);
+    assert_eq!(PRESSED.lock().unwrap().len(), 2);
+    arslan_hands::server::focused_password_stand_in_for_tests(None);
+    arslan_hands::menus::set_stand_in_for_tests(None);
+}
+
+#[test]
+fn a_press_in_front_asks_again_once_the_app_is_forward() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    arslan_hands::borrow::stand_in_for_tests(true);
+    let hands = start("frontpw");
+    let press = |keys: &str| {
+        hands.ask(
+            "press",
+            json!({"app": "Hands Fixture", "keys": keys, "front": true, "borrow": true}),
+        )
+    };
+    // Not a password field when the press is checked; one by the time the borrow has the app forward.
+    ASKED.store(0, std::sync::atomic::Ordering::SeqCst);
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(secure_from_the_second_ask));
+    assert_eq!(code(&press("a")), "password_field");
+    assert_eq!(
+        ASKED.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "asked before and after the borrow"
+    );
+    assert!(
+        hands.acted().is_empty(),
+        "nothing pressed: {:?}",
+        hands.calls()
+    );
+    assert_eq!(
+        arslan_hands::borrow::phase(),
+        None,
+        "the borrow was given back"
+    );
+    // The next borrowed press goes.
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(not_secure));
+    let pressed = press("a");
+    assert_eq!(pressed["ok"], true, "{pressed}");
+    assert_eq!(pressed["mode_used"], "borrow");
+    assert_eq!(arslan_hands::borrow::borrows_for_tests(), 2);
+    arslan_hands::server::focused_password_stand_in_for_tests(None);
+    arslan_hands::borrow::stand_in_for_tests(false);
 }
 
 #[test]
