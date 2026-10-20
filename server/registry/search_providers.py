@@ -247,8 +247,10 @@ def _account_usage(usage: dict) -> None:
     tin, tout = usage.get("input_tokens"), usage.get("output_tokens")
     if isinstance(tin, int) and isinstance(tout, int):
         usage_sink.report(tin + tout, charged=charged_tokens(usage))
+        from arslan.llm import prices
         usage_sink.report_detail(tokens_in=tin, tokens_out=tout,
-                                 model=DeepSeekNativeProvider.MODEL, provider="deepseek")
+                                 model=DeepSeekNativeProvider.MODEL, provider="deepseek",
+                                 usd=prices.usd_for_usage(DeepSeekNativeProvider.MODEL, usage, provider="deepseek"))
 
 
 def deepseek_native_base(chat_base_url: str, model: str) -> str | None:

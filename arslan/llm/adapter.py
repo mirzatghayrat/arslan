@@ -132,6 +132,13 @@ class LLMAdapter:
         last = messages[-1].get("content") if messages else ""
         return await self._account(resp, system, last if isinstance(last, (str, list)) else "")
 
+    def _usd(self, usage: dict | None) -> float | None:
+        """K4a: this response's price by cache tier, or None when it can't be known honestly."""
+        from arslan.llm import prices
+        long_cache = getattr(self._provider, "_long_cache", None)
+        return prices.usd_for_usage(self.model, usage, provider=self.report_provider,
+                                    long_cache=bool(long_cache()) if callable(long_cache) else False)
+
     async def _account(self, resp: LLMResponse, system: str, user: Any) -> LLMResponse:
         u = resp.usage or {}
         # None-aware on purpose (NOT `or` chains — review S2): a REAL 0 is falsy
@@ -158,6 +165,7 @@ class LLMAdapter:
             tokens_out=tout,
             model=self.model,
             provider=self.report_provider,
+            usd=self._usd(u),
             **(cache_split(u) or {}),
         )
         from arslan.execution_checkpoint import save
@@ -205,6 +213,7 @@ class LLMAdapter:
                     tokens_out=tokens_out,
                     model=self.model,
                     provider=self.report_provider,
+                    usd=self._usd(real.get("usage")),
                     # K3: a provider that saw the cache in the stream says so (Anthropic's message_start).
                     **{k: real[k] for k in ("cache_read", "cache_write", "input_total") if k in real},
                 )

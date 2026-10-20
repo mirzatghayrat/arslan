@@ -25,7 +25,7 @@ from server.orchestrator import (
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.tool_caller import ToolCaller
 from server.ws import protocol
-from arslan.llm import prices, usage_sink
+from arslan.llm import usage_sink
 from arslan.execution_budget import governed
 from arslan.llm import request_policy
 from arslan.llm.cached_system import build_cached_system
@@ -563,18 +563,17 @@ def _frame_usd(buckets: list[dict]) -> float | None:
     mixed-model turn would silently bill sonnet tokens at haiku prices). None
     (unknown, not free) when there are no buckets, any bucket is estimated
     (estimates are never priced — the existing gate, kept), or any bucket's
-    model/provider has no known price (a partial sum would understate cost)."""
+    model/provider has no known price (a partial sum would understate cost).
+    K4a: a bucket's dollars are the sum of its responses' prices by cache tier
+    (prices.usd_for_usage, reported with each response); input and output alone
+    understated Anthropic's cache and overstated DeepSeek's hits."""
     if not buckets:
         return None
     total = 0.0
     for b in buckets:
-        if b["estimated"]:
+        if b["estimated"] or b.get("usd") is None:
             return None
-        v = prices.usd(b["model"], b["tokens_in"], b["tokens_out"],
-                       provider=b["provider"])
-        if v is None:
-            return None
-        total += v
+        total += b["usd"]
     return total
 
 

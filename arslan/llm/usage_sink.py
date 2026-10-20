@@ -57,6 +57,7 @@ def report_detail(
     cache_read: int | None = None,
     cache_write: int | None = None,
     input_total: int | None = None,
+    usd: float | None = None,
 ) -> None:
     """Structured usage from a provider response, accumulated into the call's
     (model, provider) bucket. A report with a None tokens_in/out (stream path, no
@@ -68,7 +69,10 @@ def report_detail(
 
     0.1.63 K3: `input_total` is the whole input when it differs from tokens_in (Anthropic's input_tokens
     leaves out cache reads and writes); the ring reads it. `cache_read` / `cache_write` add up per bucket
-    when the provider reports them."""
+    when the provider reports them.
+
+    K4a: `usd` is the response's price by cache tier (prices.usd_for_usage); it adds up per bucket, and a
+    real report without one marks the bucket's dollars incomplete (sticky `usd_missing`)."""
     whole = input_total if input_total is not None else tokens_in
     holder = _last_in.get()
     if holder is not None and whole is not None:
@@ -78,8 +82,13 @@ def report_detail(
         return
     b = buckets.setdefault(
         (model, provider), {"tokens_in": None, "tokens_out": None, "estimated": False,
-                            "cache_read": None, "cache_write": None, "input_total": None}
+                            "cache_read": None, "cache_write": None, "input_total": None,
+                            "usd": None, "usd_missing": False}
     )
+    if usd is None:
+        b["usd_missing"] = True
+    else:
+        b["usd"] = (b["usd"] or 0.0) + float(usd)
     for key, value in (("cache_read", cache_read), ("cache_write", cache_write), ("input_total", whole)):
         if value is not None:
             b[key] = (b[key] or 0) + int(value)
@@ -123,7 +132,7 @@ def detail() -> dict:
     rows = [
         {"model": m, "provider": p,
          "tokens_in": b["tokens_in"], "tokens_out": b["tokens_out"],
-         "estimated": b["estimated"]}
+         "estimated": b["estimated"], "usd": None if b["usd_missing"] else b["usd"]}
         for (m, p), b in buckets.items()
     ]
     # estimated goes True whenever a report leaves a field None, so the flag check
