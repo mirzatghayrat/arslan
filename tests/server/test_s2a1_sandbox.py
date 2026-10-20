@@ -586,3 +586,22 @@ def test_an_app_on_hands_never_list_never_runs_bare(app):
     from server.services import hands_service
     assert hands_service.never_touched(app)
     assert not task_service.unwrapped_once(f"osascript -e 'tell application \"{app}\" to count windows'")
+
+
+def test_d4s_own_filter_holds_even_if_hands_reading_loosens(monkeypatch):
+    """③Hands (#265): `_OSA_ELSEWHERE` stays as defence in depth. With script_kind stubbed to call
+    everything a plain "app" script, a `do shell script` osascript is still refused the bare run."""
+    from server.services import hands_service
+    monkeypatch.setattr(hands_service, "script_kind", lambda script: ("app", ["Notes"]))
+    assert not task_service.unwrapped_once(SHELL_OSA)
+    assert task_service.unwrapped_once(PLAIN_OSA)                     # the stub alone lets a plain one through
+
+
+def test_the_window_only_check_reads_the_command_as_the_loop_runs_it():
+    """③Hands (#265): the card and the executor key on the same string. A card that carries its
+    command split into argv is judged on the shell line the loop would run, not on the display field."""
+    from server.services import approvals
+    from server.ws import protocol
+    split = protocol.propose_run_command("k1", "osascript", ["-e", 'tell application "Reminders" to count lists'])
+    assert split["pretty"] != "osascript -e 'tell application \"Reminders\" to count lists'"   # unquoted display
+    assert approvals.window_only(split)

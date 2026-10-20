@@ -75,7 +75,9 @@ def _runs_bare(frame: dict) -> bool:
     if frame.get("type") != "propose_run_command" or frame.get("remote_host"):
         return False
     from server.services import task_service, terminal_policy
-    command = str(frame.get("pretty") or "")
+    # The shell line the tool loop runs (terminal_policy.as_shell, as tool_loop builds it), never the
+    # card's display field: the card and the executor are judged on the same string (③Hands, #265).
+    command = terminal_policy.as_shell(frame.get("command"), frame.get("argv"))
     return bool(terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES) \
         and task_service.unwrapped_once(command)
 
