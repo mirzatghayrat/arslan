@@ -68,3 +68,306 @@ async def test_a_script_naming_a_never_list_app_is_refused_before_any_card(hands
     ok = await hands_tools.MacAppleScriptExecutor().execute({"script": 'tell application "Notes2" to activate'})
     assert [f["kind"] for f in seen] == ["mac_script"], ok
     assert len(ran) == 1, "only the allowed script ran"
+
+
+# ── v0.1.63 H4 (②Main): AppleScript takes "X.app" and a full path for the same app ─────────────────
+
+def _bundle(folder, name, bundle_id):
+    contents = folder / f"{name}.app" / "Contents"
+    contents.mkdir(parents=True)
+    with (contents / "Info.plist").open("wb") as f:
+        plistlib.dump({"CFBundleIdentifier": bundle_id, "CFBundleName": name}, f)
+    return folder / f"{name}.app"
+
+
+@pytest.mark.parametrize("named", ["Vault.app", "VAULT.APP", "{folder}/Vault.app", "{folder}/Vault.app/"])
+def test_a_never_list_app_by_its_app_suffix_or_path_is_refused(apps_folder, named):
+    assert hands_service.never_touched(named.format(folder=apps_folder)), named
+
+
+@pytest.mark.parametrize("named", [
+    "/Applications/1Password.app", "/APPLICATIONS/1PASSWORD.APP", "~/Applications/1Password.app",
+    "Macintosh HD:Applications:1Password.app:", "/System/Applications/Utilities/Keychain Access.app",
+    "/System/Applications/System Settings.app",
+])
+def test_a_never_list_app_by_path_is_refused_whether_or_not_it_is_installed(apps_folder, named):
+    # _APP_DIRS points at a folder without these apps: where one is not installed the name still counts.
+    assert hands_service.never_touched(named), named
+
+
+def test_a_renamed_never_list_app_is_known_by_the_bundle_id_inside_it(apps_folder, tmp_path_factory):
+    pm = _bundle(tmp_path_factory.mktemp("elsewhere"), "Pm", "com.1password.1password")
+    assert hands_service.never_touched(str(pm)), "its own Info.plist says 1Password, whatever its file name"
+
+
+def test_a_benign_app_by_path_stays_allowed(apps_folder):
+    assert not hands_service.never_touched(str(apps_folder / "Notes2.app"))
+    assert not hands_service.never_touched("/System/Applications/Notes.app")
+    assert not hands_service.never_touched("/no/such/Bundle.app")
+
+
+def test_the_users_own_never_entry_counts_however_it_was_written(apps_folder):
+    hands_service.update_settings(never=["/Applications/Notes2.app"])
+    assert hands_service.never_touched("Notes2")
+    hands_service.update_settings(never=["Notes2.app"])
+    assert hands_service.never_touched("Notes2") and hands_service.never_touched(str(apps_folder / "Notes2.app"))
+
+
+def test_every_spelling_of_an_app_is_kept_so_each_is_checked():
+    """Folded by key, a path that is really a renamed 1Password hid behind an earlier "Notes" (②Main)."""
+    script = ('tell application "Notes" to activate\ntell application "Notes.app" to activate\n'
+              'tell application "/System/Applications/Notes.app" to quit\ntell application "Notes" to quit')
+    assert hands_service.script_apps(script) == ["Notes", "Notes.app", "/System/Applications/Notes.app"]
+
+
+async def test_a_renamed_never_list_bundle_after_a_plain_name_of_the_same_key_is_refused(
+        hands, asks, in_job, apps_folder, tmp_path_factory, monkeypatch):
+    """②Main's probe on #271: a bundle called Notes.app whose Info.plist says 1Password, named by its
+    path after a plain "Notes" line. Both share the key "notes"; the path must still be checked."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    fake = _bundle(tmp_path_factory.mktemp("lookalike"), "Notes", "com.1password.1password")
+    script = f'tell application "Notes" to count notes\ntell application "{fake}" to activate'
+    assert str(fake) in hands_service.script_apps(script)
+    result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+    assert result.get("code") == "app_denied", result
+    assert seen == [] and ran == []
+
+
+def test_a_renamed_copy_of_a_high_reach_app_is_still_high_reach(apps_folder, tmp_path_factory):
+    term = _bundle(tmp_path_factory.mktemp("copies"), "Tm", "com.apple.Terminal")
+    assert hands_service.script_kind(f'tell application "{term}" to activate')[0] == "app_risky"
+    _bundle(apps_folder, "Tm2", "com.apple.Terminal")          # a usual folder, under a new name
+    hands_service.app_identity.cache_clear()
+    assert hands_service.script_kind('tell application "Tm2" to activate')[0] == "app_risky"
+
+
+async def test_a_script_naming_a_never_list_app_by_path_is_refused_before_any_card(hands, asks, in_job,
+                                                                                  apps_folder, monkeypatch):
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in (f'tell application "{apps_folder}/Vault.app" to quit',
+                   'tell application "/Applications/1Password.app" to activate',
+                   'tell application "Keychain Access.app" to activate',
+                   'tell application "Macintosh HD:Applications:1Password.app:" to activate'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == [], "refused before any card, and nothing ran"
+
+
+async def test_a_never_list_app_by_a_path_padded_past_120_characters_is_refused(hands, asks, in_job,
+                                                                               apps_folder, monkeypatch):
+    """The capture used to stop at 120 characters, so a longer name was no app at all to the check."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    padded = "/Applications/" + "./" * 80 + "1Password.app"
+    vault = str(apps_folder) + "/" + "./" * 80 + "Vault.app"
+    assert len(padded) > 120 and len(vault) > 120
+    for target in (padded, vault):
+        assert hands_service.script_apps(f'tell application "{target}" to quit') == [target]
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": f'tell application "{target}" to quit'})
+        assert result.get("code") == "app_denied", target
+    assert seen == [] and ran == []
+
+
+def _hfs(path):
+    """An HFS spelling of a POSIX path: a volume name, then the path's parts joined by ":"."""
+    return "Some Volume:" + ":".join(path.parts[1:]) + ":"
+
+
+def test_a_renamed_never_list_bundle_by_an_hfs_path_is_refused(apps_folder, tmp_path_factory):
+    """②Main on #271: _bundle_at read POSIX paths only, so the HFS path to the same bundle was not."""
+    pm = _bundle(tmp_path_factory.mktemp("hfs"), "Pm", "com.1password.1password")
+    assert hands_service.never_touched(_hfs(pm)), _hfs(pm)
+
+
+def test_a_renamed_copy_of_terminal_by_an_hfs_path_is_still_high_reach(apps_folder, tmp_path_factory):
+    tm = _bundle(tmp_path_factory.mktemp("hfscopy"), "Tm", "com.apple.Terminal")
+    assert hands_service.script_kind(f'tell application "{_hfs(tm)}" to activate')[0] == "app_risky"
+
+
+async def test_a_script_with_a_computed_app_target_is_refused_before_any_card(hands, asks, in_job, monkeypatch):
+    """⓪Plan's rule: nothing runs, no card, and the model is told to write the name as a literal."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    result = await hands_tools.MacAppleScriptExecutor().execute(
+        {"script": 'tell application ("1Pass" & "word") to activate'})
+    assert result.get("code") == "bad_request" and "literal strings" in result.get("error", ""), result
+    assert seen == [] and ran == []
+
+
+# ── v0.1.63 H4 (⓪Plan, Opus 5.5): every spelling AppleScript compiles, and System Events' processes ──
+
+def test_a_name_with_no_space_or_a_line_continuation_before_it_is_still_read():
+    """AppleScript compiles `application"X"` (to `application "X"`) and a `¬` continuation; `\\s+` saw neither."""
+    assert hands_service.script_apps('tell application"Vault" to quit') == ["Vault"]
+    assert hands_service.script_apps('tell application ¬\n"Vault" to quit') == ["Vault"]
+    assert hands_service.script_apps('tell application id"com.1password.vault" to quit') == ["com.1password.vault"]
+
+
+def test_an_app_named_only_in_a_comment_or_a_string_is_no_app():
+    script = ('-- tell application "Vault"\n# tell app "Vault"\nset t to "tell application \\"Vault\\""\n'
+              'tell application "Notes2" to activate')
+    assert hands_service.script_apps(script) == ["Notes2"]
+
+
+async def test_a_never_list_app_with_no_space_or_a_continuation_is_refused_before_any_card(
+        hands, asks, in_job, apps_folder, monkeypatch):
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application"Vault" to quit', 'tell application ¬\n"Vault" to quit',
+                   'tell application"1Password" to activate'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == []
+
+
+async def test_a_never_list_app_reached_as_a_system_events_process_is_refused(hands, asks, in_job, apps_folder,
+                                                                             monkeypatch):
+    """③Hands' process-name point: System Events reaches any app through its process."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application "System Events" to tell process "Vault" to set frontmost to true',
+                   'tell application "System Events" to get every UI element of application process "1Password"',
+                   'tell application "System Events" to get (first process whose bundle identifier is '
+                   '"com.1password.vault")',
+                   'tell application "System Events.app" to tell process "Keychain Access" to set frontmost to true'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == []
+
+
+async def test_a_benign_process_is_asked_and_a_never_list_word_outside_system_events_is_text(
+        hands, asks, in_job, apps_folder, monkeypatch):
+    seen, _ = asks
+
+    async def run(argv, *a, **kw):
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application "System Events" to tell process "Notes2" to set frontmost to true',
+                   'tell application "Notes2" to make new note with properties {name:"Vault"}'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") != "app_denied", script
+    assert len(seen) == 2, "both were asked, neither refused"
+
+
+def test_a_quote_in_a_comment_cannot_hide_a_computed_app_target(apps_folder):
+    """`_mask` scans left to right: a `--` or `#` comment ends at the line's end, quote or not."""
+    assert hands_service.computed_app_target("-- it's \"odd\ntell application x to activate")
+    assert hands_service.computed_app_target("# it's \"odd\ntell application x to activate")
+    assert hands_service.never_listed_target('set a to "Notes2" -- "\ntell application "Vault" to quit -- "') == "Vault"
+
+
+# ── ②Main's review of d99ab828 (⓪Plan on Opus 5.5): class words bound as variables, a process named by a
+# variable or index, and never-list strings handed to any high-reach app ───────────────────────────────
+
+@pytest.mark.parametrize("script", [
+    'set process to "Vault"\ntell application process to activate',
+    'set processes to "Vault"\ntell application processes to activate',
+    'set files to "Vault"\ntell application files to activate',
+    'property process : "Vault"\ntell application process to activate',
+    'repeat with process in {"Vault"}\ntell application process to activate\nend repeat',
+    'on f(process)\ntell application process to activate\nend f',
+    'set my process to "Vault"\ntell application process to activate',
+    'set process of me to "Vault"\ntell application process to activate',
+    # With System Events named the class word is allowed, so only the binding check catches these.
+    'tell application "System Events"\nset my process to "x"\ntell application process to activate\nend tell',
+    'tell application "System Events"\nset process of me to "x"\ntell application process to activate\nend tell',
+])
+def test_a_class_word_the_script_binds_as_a_variable_is_a_computed_target(script):
+    assert hands_service.computed_app_target(script), script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "System Events" to get name of every application process',
+    'tell application "System Events" to get name of every application process whose visible is true',
+    'tell current application\ndisplay dialog "x"\nend tell',
+    'tell application "System Events"\ncount processes\nset x to 1\nend tell',
+    'tell application "System Events" to tell process "Notes2" to set frontmost to true',
+    'tell application "System Events" to tell (first process whose frontmost is true) to get name',
+    'tell application "Notes2"\nset process to 1\nend tell',
+])
+def test_class_uses_and_filters_are_not_computed_targets(script):
+    assert hands_service.computed_app_target(script) is None, script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "System Events"\nset p to "Vault"\ntell process p to set frontmost to true\nend tell',
+    'tell application "System Events" to tell process 1 to set frontmost to true',
+])
+def test_a_process_named_by_a_variable_or_index_is_a_computed_target(script):
+    assert hands_service.computed_app_target(script), script
+
+
+async def test_a_never_list_app_handed_to_finder_by_id_or_path_is_refused(hands, asks, in_job, apps_folder,
+                                                                         monkeypatch):
+    """②Main: the string check ran for System Events only; Finder opens an app by id or path."""
+    seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
+    for script in ('tell application "Finder" to open application file id "com.1password.vault"',
+                   f'tell application "Finder" to open file "{_hfs(apps_folder / "Vault.app")}"'):
+        result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+        assert result.get("code") == "app_denied", script
+    assert seen == [] and ran == []
+
+
+@pytest.mark.parametrize("script", [
+    'tell application process to activate',            # no System Events named: `process` is a value
+    'tell application processes to activate',
+    'tell application files to activate',              # no Finder named
+    'tell application "System Events"\nset n to "x"\ntell process named n to set frontmost to true\nend tell',
+])
+def test_a_class_word_outside_its_own_app_or_a_named_variable_is_a_computed_target(script):
+    """②Main's gate on #271: a class word is the class only in a script that names its app by a literal."""
+    assert hands_service.computed_app_target(script), script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Finder" to open application file id "com.example.notes2"',
+    'tell application "System Events" to tell process named "Notes2" to set frontmost to true',
+])
+def test_a_class_word_with_its_own_app_named_and_a_named_literal_are_not_computed(script):
+    assert hands_service.computed_app_target(script) is None, script
+
+
+def test_an_app_name_in_any_case_finds_the_installed_bundle(apps_folder):
+    """CI's Linux (case-sensitive) missed "VAULT.APP": the lookup now also matches the folder's entries
+    ignoring case. Checked by the entry's real name, so it holds on a case-insensitive Mac volume too."""
+    assert "Vault.app" in [p.name for p in hands_service._app_bundles_named(apps_folder, "VAULT")]
+    hands_service.app_identity.cache_clear()
+    assert hands_service.app_identity("vault.APP") == {"name": "Vault", "bundle_id": "com.1password.vault"}

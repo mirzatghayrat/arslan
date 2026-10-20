@@ -391,9 +391,17 @@ class MacAppleScriptExecutor:
         if _conversation_and_job()[1] is None:
             return _not_in_job()
         from server.services import hands_contract, hands_service
-        denied = [app for app in hands_service.script_apps(script) if hands_service.never_touched(app)]
-        if denied:                        # the never-list holds for scripts too (0.1.61 §A11)
-            return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=denied[0])
+        # v0.1.63 H4 (⓪Plan): the never-list is a refusal, and an app chosen while the script runs can't
+        # be checked against it, so such a script is refused, not asked.
+        if computed := hands_service.computed_app_target(script):
+            return _bad_request(
+                f"App names must be literal strings, like tell application \"Notes\" or application id "
+                f"\"com.apple.Notes\" — not `{computed}`. Arslan checks every app a script talks to against "
+                f"the apps it never touches, and an app chosen while the script runs can't be checked. "
+                f"Write the app's name in quotes.")
+        # The never-list holds for scripts too (0.1.61 §A11), and for a process System Events reaches (H4).
+        if denied := hands_service.never_listed_target(script):
+            return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=denied[:120])
         kind, named = hands_service.script_kind(script)
         # 0.1.61 release gate: a script runs outside the command sandbox, and script_kind reads what it
         # does past the app it names from its words only (raw «events», AppleScriptObjC and Standard

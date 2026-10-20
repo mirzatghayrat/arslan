@@ -151,6 +151,17 @@ def test_a_script_that_deletes_sends_pays_or_reaches_past_its_app_is_never_an_ap
     'tell application "Shortcuts Events" to run shortcut "x"',
     'tell application "Shortcuts" to run shortcut "x"',
     'tell application id "com.apple.shortcuts.events" to run shortcut "x"',
+    'tell application id "com.apple.shortcuts" to run shortcut "x"',      # ②Main: pins this bundle id
+    # v0.1.63 H4 (②Main): AppleScript takes ".app", a POSIX path or an HFS path for the same app.
+    'tell application "System Events.app" to get name of every process',
+    'tell application "/System/Library/CoreServices/System Events.app" to get name of every process',
+    'tell application "Finder.app" to get name of every window',
+    'tell application "FINDER.APP" to get name of every window',
+    'tell application "Macintosh HD:System:Library:CoreServices:Finder.app:" to activate',
+    'tell application "Terminal.app" to activate',
+    'tell application "/System/Applications/Utilities/Terminal.app" to activate',
+    'tell application "Shortcuts Events.app" to run shortcut "x"',
+    'tell application "system events.APP" to get name of every process',   # card H4's own casing
 ])
 def test_a_script_for_an_app_that_reaches_every_other_app_is_asked_every_time(script):
     assert hands_service.script_kind(script)[0] == "app_risky"
@@ -265,3 +276,46 @@ def test_each_kind_of_no_is_told_to_the_model_as_what_it_is(by, model_text, note
     assert told["code"] == code and said in told["error"] and not_said not in told["error"], told
     if model_text:
         assert told["error"] == model_text, "permissions' own sentence, as it is (nothing added twice)"
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders.app" to count reminders',
+    'tell application "/System/Applications/Reminders.app" to count reminders',
+    'tell application "Macintosh HD:System:Applications:Notes.app:" to count notes',
+])
+def test_a_plain_app_named_by_app_suffix_or_path_is_still_a_plain_app_script(script):
+    """Card H4: normalising the name never makes an ordinary app risky."""
+    assert hands_service.script_kind(script)[0] == "app", script
+
+
+# v0.1.63 H4 (⓪Plan's rule): an app chosen while the script runs can't be checked against the
+# never-list, so a script whose app target isn't a literal string is refused.
+@pytest.mark.parametrize("script", [
+    'tell application ("1Pass" & "word") to activate',
+    'tell application x to activate',
+    'set n to "Notes"\ntell application n to activate',
+    'tell application id x to activate',
+    'tell «class capp» "1Password" to activate',
+    'tell application ("Notes") to activate',          # a literal in parentheses: the form is named
+    'tell application |my app| to activate',
+])
+def test_a_script_whose_app_is_not_a_literal_is_refused(script):
+    assert hands_service.computed_app_target(script), script
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Notes" to activate',
+    'tell app "Notes" to activate',
+    'tell application id "com.apple.Notes" to activate',
+    "set s to current application's NSString's stringWithString:\"x\"",
+    'tell current application to activate',
+    'tell application "System Events" to get name of every application process',
+    'tell application "Finder" to get every application file of folder "Applications"',
+    'if class of x is application then beep',
+    '-- tell application x\ntell application "Notes" to activate',
+    '# tell application x\ntell application "Notes" to activate',
+    '(* tell application x (* nested *) *)\ntell application "Notes" to activate',
+    'display dialog "tell application x to quit"',
+])
+def test_a_literal_app_target_and_application_as_a_class_are_not_refused(script):
+    assert hands_service.computed_app_target(script) is None, script
