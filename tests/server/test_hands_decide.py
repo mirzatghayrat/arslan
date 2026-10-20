@@ -153,6 +153,7 @@ def test_a_script_that_deletes_sends_pays_or_reaches_past_its_app_is_never_an_ap
     'tell application "Terminal.app" to activate',
     'tell application "/System/Applications/Utilities/Terminal.app" to activate',
     'tell application "Shortcuts Events.app" to run shortcut "x"',
+    'tell application "system events.APP" to get name of every process',   # card H4's own casing
 ])
 def test_a_script_for_an_app_that_reaches_every_other_app_is_asked_every_time(script):
     assert hands_service.script_kind(script)[0] == "app_risky"
@@ -267,3 +268,13 @@ def test_each_kind_of_no_is_told_to_the_model_as_what_it_is(by, model_text, note
     assert told["code"] == code and said in told["error"] and not_said not in told["error"], told
     if model_text:
         assert told["error"] == model_text, "permissions' own sentence, as it is (nothing added twice)"
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders.app" to count reminders',
+    'tell application "/System/Applications/Reminders.app" to count reminders',
+    'tell application "Macintosh HD:System:Applications:Notes.app:" to count notes',
+])
+def test_a_plain_app_named_by_app_suffix_or_path_is_still_a_plain_app_script(script):
+    """Card H4: normalising the name never makes an ordinary app risky."""
+    assert hands_service.script_kind(script)[0] == "app", script
