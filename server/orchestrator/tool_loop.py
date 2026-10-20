@@ -1063,22 +1063,26 @@ async def _writing_in_own_folder() -> bool:
 
 async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
                                          unwrapped: bool, conversation_id: str | None) -> dict:
-    """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command in
-    the sandbox runs offline (the kernel's rule); one that reaches the network (by its text, or the
-    model's `network: true`) asks first: this time or this conversation inside the sandbox, this time
-    only outside it, where no offline rule holds a command that also reads the user's secrets (a stored
-    grant does not count there). The island never answers it. With nobody to ask: offline in the
-    sandbox, refused outside. An approved plain osascript/Shortcut (U11) is not a network command.
+    """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
+    runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
+    which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
+    reading a secret, let out by the retry card, must not get the network with it). One that reaches the
+    network (by its text, or the model's `network: true`) asks first: this time or this conversation
+    inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
+    does not count there). The island never answers it. With nobody to ask: offline. An approved plain
+    osascript/Shortcut (U11) runs with no wrapper and is not a network command. Where seatbelt cannot
+    start nothing is wrapped, so only the card holds.
 
     Returns {"offline": bool, "note": str} or {"refused": model text}."""
     from server.orchestrator import untrusted as _untrusted
     from server.services import background_jobs, command_sandbox, permissions
     if unwrapped or not _untrusted.external_seen():
         return {}
-    inside = sandbox_on and not run_outside and command_sandbox.available()
+    wrapped = command_sandbox.available()
+    inside = sandbox_on and not run_outside and wrapped
     if not (args.get("network") is True or _untrusted.reaches_network(command)):
-        return {"offline": True} if inside else {}
-    if inside and permissions.current_asker() is None:
+        return {"offline": True} if wrapped else {}
+    if wrapped and permissions.current_asker() is None:
         return {"offline": True, "note": "ran without network: this turn read outside content, and there was "
                                          "nobody to allow the network for it"}
     decision = await permissions.decide(permissions.Request(
@@ -1493,8 +1497,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 from server.services import terminal_exec
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
                 bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
-                # S2a-1 piece 2: offline in the sandbox after outside content (wrap-up may have set it too).
-                cut = terminal_exec.OFFLINE.set(True) if network.get("offline") and not outside else None
+                # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
+                cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
                 try:
                     return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
                 finally:
@@ -1507,8 +1511,16 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                     and isinstance(result, dict) and result.get("sandbox_denied")):
                 # Stopped by the sandbox: offer ONE re-run outside it, from the start.
                 if await confirm_command(command, argv, sandbox="retry"):
-                    result = await run_once(True)
-                    if isinstance(result, dict):
+                    # S2a-1: outside, the network rule is decided again as for an outside run (this time
+                    # only, a stored grant does not count): the retry card is about files.
+                    network = await _network_after_outside_content(
+                        command, args, sandbox_on=sandbox_on, run_outside=True, unwrapped=False,
+                        conversation_id=conversation_id)
+                    if network.get("refused"):
+                        result = {"ok": False, "error": network["refused"]}
+                    else:
+                        result = await run_once(True)
+                    if isinstance(result, dict) and not network.get("refused"):
                         result["ran_outside_sandbox"] = True
             elif tool_key == "run_command" and run_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True

@@ -305,7 +305,7 @@ def _inline_osascript(command: str) -> str | None:
 # S2a-1 piece 4, decision U11 (scope reviewed by ③Hands): an approved Apple Events or Shortcuts card
 # runs its command with no seatbelt wrapper, once (any wrapper blocks Apple Events). Only exactly one
 # plain call: one osascript with its script inline (_inline_osascript, which refuses anything the
-# shell would expand or run first) and none of the forms that act beyond its app, or one
+# shell would expand or run first) that Hands' script_kind calls a plain "app" script, or one
 # `shortcuts run <name>` with optional input/output files. Narrower than U11's letter on purpose: a
 # script with `do shell script` and the like stays under the minimal profile (unwrapped it would be
 # an unconfined shell); mac_applescript, whose card shows the whole script, is the way for those.
@@ -313,11 +313,17 @@ _SHORTCUT_FLAGS = {"-i", "--input-path", "-o", "--output-path", "--output-type"}
 
 
 def unwrapped_once(command: str) -> bool:
-    from server.services.hands_service import _SCRIPT_REACH, _SCRIPT_REACH_OTHERWISE
+    from server.services.hands_service import never_touched, script_apps, script_kind
     script = _inline_osascript(command)
     if script is not None:
-        return bool(script.strip()) and not any(
-            p.search(script) for p in (_OSA_ELSEWHERE, _SCRIPT_REACH, _SCRIPT_REACH_OTHERWISE))
+        if any(never_touched(app) for app in script_apps(script)):
+            return False                     # Hands' never-list holds for scripts too, before script_kind
+        # ⓪Plan and ③Hands on the internal review: Hands' own reading decides. Only a script it calls a
+        # plain "app" script runs bare; money and delete/send words, a step past the app (a shell, other
+        # script text, raw events, AppleScriptObjC, file writes), a high-reach app (System Events,
+        # Finder, Terminal…) and a script that names no app ("opaque") stay wrapped, and go through
+        # mac_applescript's card, which shows the whole script. D4's own act-elsewhere forms stay too.
+        return bool(script.strip()) and script_kind(script)[0] == "app" and not _OSA_ELSEWHERE.search(script)
     if _shell_expands(command):
         return False
     try:

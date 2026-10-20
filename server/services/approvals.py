@@ -63,7 +63,21 @@ def window_only(frame: dict) -> bool:
     that carries the `capability` permission kind (a `propose_action` frame rides it). The phone never gets one and the island refuses it;
     a yes from the phone is swallowed and a yes from the Inbox or the island is "open in Arslan". Saying no is allowed from anywhere."""
     perm_kind = frame.get("perm_kind")
-    return frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
+    return (frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
+            or _runs_bare(frame))
+
+
+def _runs_bare(frame: dict) -> bool:
+    """S2a-1 (U11, ⓪Plan for v0.1.63): a command card whose command, approved, runs with no sandbox at all
+    (one plain osascript or `shortcuts run`, `task_service.unwrapped_once`) is approved only in the window,
+    where the whole command is shown. Decided from the card's own command, so no frame field changes.
+    v0.1.64 candidate: allow it from the phone once the phone's card shows the whole script."""
+    if frame.get("type") != "propose_run_command" or frame.get("remote_host"):
+        return False
+    from server.services import task_service, terminal_policy
+    command = str(frame.get("pretty") or "")
+    return bool(terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES) \
+        and task_service.unwrapped_once(command)
 
 
 @dataclass
@@ -261,6 +275,8 @@ def island_may_answer(frame: dict) -> bool:
     the other card types by their own rule. A `propose_action` card without a permission kind is
     not answerable: none is sent (permissions._ask stamps every card), so one is something new."""
     kind = frame.get("type")
+    if window_only(frame):
+        return False                       # answered in the asking window only (capability, a bare run)
     if "perm_kind" in frame:
         perm_kind = frame["perm_kind"]
         if not (isinstance(perm_kind, str) and perm_kind in _ISLAND_CARD_KINDS):
