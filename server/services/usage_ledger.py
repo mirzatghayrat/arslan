@@ -9,7 +9,7 @@ exit, writes one ledger row per (model, provider) bucket.
 Nesting safety: ``usage_sink.collecting()`` is set-on-enter / reset-on-exit contextvars,
 so a scope opened inside an ALREADY-collecting region (or in a task that inherited an
 active bucket via ``asyncio.create_task`` — e.g. the judge task scheduled from inside
-_dispatch_spawn's collecting block) sees ONLY its own usage, and the outer bucket
+a run's collecting block, see RunRecorder.finalize) sees ONLY its own usage, and the outer bucket
 resumes untouched on exit. Nothing is stolen, nothing double-counted
 (proved by tests/server/test_usage_ledger.py::test_judge_scope_does_not_diminish_...).
 

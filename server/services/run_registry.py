@@ -3,16 +3,16 @@
 In-flight run registry — the cancellation seam (S3-M1) and the conversation
 sink registry (S3-M2).
 
-`_dispatch_spawn` registers the asyncio.Task executing each Run, keyed by
+`host_run.execute` registers the asyncio.Task executing each Run, keyed by
 run_id with a conversation index; `POST /runs/{id}/cancel` resolves the task
-and cancels it. The CancelledError surfaces inside _dispatch_spawn, which
+and cancels it. The CancelledError surfaces inside host_run.execute, which
 finalizes the Run as 'cancelled'. Process-local by design: a run only exists
 in the process executing it (a run that died with a previous process is the
 boot reaper's job — see run_reaper.mark_interrupted_runs).
 
 S3-M2 sink registry: frames outlive any single socket. Each WS connection
 attaches a sink (its queue-emit) per conversation; `make_emit(conversation_id)`
-hands `_dispatch_spawn` a fan-out emit that delivers every frame to whatever
+hands a turn a fan-out emit that delivers every frame to whatever
 sinks are attached at that moment — zero sinks means frames drop here (the
 RunRecorder journal still captures them via tee). Reattach contract: a
 connecting socket must pair `journal_snapshots(conversation_id)` +
@@ -90,7 +90,7 @@ def detach_sink(conversation_id: str, sink: Callable[[dict], None]) -> None:
 
 
 def make_emit(conversation_id: str) -> Callable[[dict], None]:
-    """Fan-out emit for _dispatch_spawn: delivers ev to every currently-attached
+    """Fan-out emit for one conversation: delivers ev to every currently-attached
     sink. The sink set is snapshotted per call (a sink may detach mid-iteration)
     and each sink is isolated — a broken sink (dead socket) must not break the
     others or the dispatch. No sinks -> drop silently (journal has them via tee).

@@ -1,13 +1,10 @@
-"""Records one route→dispatch turn as a Run + ordered RunSteps.
+"""Records one turn as a Run + ordered RunSteps.
 
-A RunRecorder is created at the top of _dispatch_spawn; its tee() wraps the
-EventSink so every emitted event is both forwarded live AND timestamped for
-step derivation. finalize() persists steps, links the spawn-summary message,
-and schedules async judge scoring.
-
-Note: the escalation re-dispatch path emits its spawn_meta through this same
-teed sink before finalize runs, so the dispatch step closes normally; finalize
-is called once per turn by the orchestrator.
+A RunRecorder is created at the start of host_run.execute (an Arslan turn) or
+dispatcher._dispatch_replay (a replay arm); its tee() wraps the EventSink so every
+emitted event is both forwarded live AND timestamped for step derivation.
+finalize() persists steps, links the summary message, and schedules async judge
+scoring.
 """
 from __future__ import annotations
 
@@ -312,7 +309,7 @@ class RunRecorder:
         and trace, and schedule_scoring is NOT called — a replay is evaluated by the
         paired ReplayGate (E4), not the per-run judge."""
         # S3-M1 (review I1 + residual): finalize must be idempotent — a cancel landing
-        # during one of the awaits below re-enters finalize via _dispatch_spawn's cancel
+        # during one of the awaits below re-enters finalize via host_run.execute's cancel
         # handler. _finalizing flips BEFORE any await (synchronously, same task context)
         # so a truly re-entrant call short-circuits; _finalized flips only AFTER the
         # commit returned. A cancel in the PRE-commit phase rolled the write back, so

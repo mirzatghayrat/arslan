@@ -56,7 +56,7 @@ TIER_MEDIUM_P = 0.20
 
 # Gate 8 (signed decision A): which spawn fields the router/matcher actually consume.
 # VERIFIED 2026-07-11 against the code:
-#   - server/orchestrator/router.py `_spawn_registry()` feeds the router LLM: name,
+#   - the router (server/orchestrator/router.py, removed in 0.1.48) fed its LLM: name,
 #     domain (domain_category[.domain_subcategory]), persona_role, capabilities.
 #   - the spawn matcher (removed in 0.1.63) read: domain_category /
 #     domain_subcategory (structural) and capabilities (LLM coverage).

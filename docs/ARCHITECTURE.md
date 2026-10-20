@@ -132,7 +132,7 @@ graph LR
 - `router.py` — two-stage routing; a single structured JSON decision with a doer-first bias.
 - `tool_loop.py` — the **native tool-calling reliability kernel** (`run_native`). If the model returns `tool_calls`, they run (through the gate / confirm / `wrap_external`) and free-form `content` is treated as a *note, never the answer*; with no tool calls, `content` *is* the answer. It also enforces timeout+retry, a search-convergence cap (`_SEARCH_CAP`), a `_synthesize_from_findings` fallback, and a deferral-stub length gate (`_is_deferral_stub`). These exist to cure three failure modes: **narration-as-answer, data leakage, and empty-handedness.**
 - `spawn_loop.py` — a dispatched spawn shares the *same* `run_native` kernel (with `force_tools`).
-- `dispatcher.py` — injects technique + wired tools, records the run, handles escalation (`grant_temporary`).
+- `dispatcher.py` — injects technique + wired tools, records the run, handles escalation.
 
 ## Capability layer
 
@@ -153,7 +153,7 @@ graph LR
 *Figure 4 — Capability layer.*
 
 - **Three libraries** — Tools, Toolsets, and SkillPacks, plus per-spawn `spawn_capabilities`, all in `server/registry/service.py`.
-- **Single-throat write gate** — `assert_assignable` is the **only** path that grants a capability, and it only lets through **safe + functional** ones. `safe_menu` lists what is assignable, `wired_tools_for_spawn` resolves a spawn's current capabilities, and `grant_temporary` handles escalation-time temporary grants.
+- **Single-throat write gate** — `assert_assignable` is the **only** path that grants a capability, and it only lets through **safe + functional** ones. `safe_menu` lists what is assignable, and `wired_tools_for_spawn` resolves a spawn's current capabilities.
 - **Built-in executors** (`server/registry/executors.py`) — `web_search`, `web_extract`, `render_chart`, `deck`, `run_python`, `run_command`, `create_skill`, `list_my_capabilities`, plus an MCP proxy executor (dispatched by the `mcp_` name prefix).
 - **Tier isolation invariant** — **orchestrator-tier** capabilities (e.g. `run_command`) are held **implicitly by Arslan only**; a spawn can never be granted one. Shell and MCP are **off by default**.
 
@@ -218,11 +218,11 @@ graph LR
 
 ### Spawn services
 
-`spawn_service` (create/store/emit skill-pack), `spawn_drafter` + `persona_seed_service` (a persona seed library and PM-style `create`), `spawn_match_service` (domain-match scoring + `classify_band`), `spawn_trust` (deterministic green/trusted aggregation), `staffing_gather` (a deterministic "who staffs this" gate).
+`spawn_service` (create/store/emit skill-pack), `spawn_drafter` + `persona_seed_service` (a persona seed library and PM-style `create`).
 
 ### Second brain (memory & knowledge)
 
-`distill_service` (session distillation, `distill_from_signals`, meta-knowledge upflow via `distill_meta_upflow`), `ingest` (PDF / docx / URL / OCR ingestion), `knowledge` (FTS5 task-scoped retrieval injected into runs), plus `curator` (retire dead skills), `titler`, `storage_intent`. The brain has **materials / learnings / a profile + `[[wiki-link]]` notes**, retrieved with hybrid FTS5 + embeddings and browsable as an Obsidian-style force-directed graph in the UI.
+`distill_service` (session distillation, `distill_from_signals`, meta-knowledge upflow via `distill_meta_upflow`), `ingest` (PDF / docx / URL / OCR ingestion), `knowledge` (FTS5 task-scoped retrieval injected into runs), plus `curator` (retire dead skills), `titler`. The brain has **materials / learnings / a profile + `[[wiki-link]]` notes**, retrieved with hybrid FTS5 + embeddings and browsable as an Obsidian-style force-directed graph in the UI.
 
 ### Evolution & evaluation
 
@@ -265,7 +265,7 @@ Reliability and safety here rest on a handful of load-bearing rules. Preserve th
 - **Untrusted tool output.** Every tool result goes through `wrap_external` and is treated as untrusted data.
 - **Sandbox fails closed.** No kernel sandbox → refuse to run (the macOS seatbelt is the only kernel sandbox today; other platforms are unavailable and fail closed).
 - **Credentials never enter the sandbox.** The MITM proxy injects tokens outside it.
-- **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran; a `persona_lint` keeps equipment/persona consistent. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.
+- **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.
 - **Evolution is human-gated.** Tier-2 edits are bounded, position-bias-corrected, and only ship on an explicit human promote.
 - **Safe-by-default auth.** Dev + localhost is unauthenticated on purpose; `prod` / packaged / non-loopback binds require a bearer token (auto-minted if unset), and cross-site requests are blocked by TrustedHost + CORS + WebSocket-Origin checks. See [SECURITY.md](../SECURITY.md).
 

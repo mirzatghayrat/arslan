@@ -95,7 +95,7 @@ async def score(run_id: int) -> None:
         # S3-M3 usage ledger: judge tokens never touch the Run row (task_tokens is
         # router+dispatch+tools, read at finalize BEFORE scoring is scheduled) — ledger
         # them under scope="judge". NESTING NOTE: this task is created (schedule_scoring)
-        # from INSIDE _dispatch_spawn's usage_sink.collecting() region and INHERITS that
+        # from INSIDE the run's usage_sink.collecting() region (host_run) and INHERITS that
         # bucket via its context copy; scope() opens a FRESH bucket on enter, so the judge
         # sees only its own usage and the dispatch Run's numbers are never diminished
         # (regression: tests/server/test_usage_ledger.py).
