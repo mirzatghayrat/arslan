@@ -90,6 +90,18 @@ export interface StreamUsage {
   cache_read?: number | null;
   /** 0.1.63 K3: the turn's whole input (on Claude, uncached + cache read + cache write). */
   input_total?: number | null;
+  /** 0.1.63 K4b: what the last request was made of, estimated by the server (the ring's breakdown;
+   *  its total stays last_input). Null when no request was measured. */
+  context_parts?: ContextParts | null;
+}
+
+/** 0.1.63 K4b: estimated tokens of each part of a request. */
+export interface ContextParts {
+  system: number;
+  tools: number;
+  context: number;
+  history: number;
+  turn: number;
 }
 
 /** 0.1.58 §1: GET /runs/{id}/process. */
