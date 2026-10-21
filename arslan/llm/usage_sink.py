@@ -28,10 +28,10 @@ def last_input() -> int | None:
 _parts: ContextVar[dict | None] = ContextVar("usage_context_parts", default=None)
 
 
-def note_context_parts(parts: dict[str, int]) -> None:
+def note_context_parts(parts: dict[str, int] | None) -> None:
     holder = _parts.get()
     if holder is not None:
-        holder["value"] = dict(parts)
+        holder["value"] = dict(parts) if parts is not None else None
 
 
 def context_parts() -> dict[str, int] | None:

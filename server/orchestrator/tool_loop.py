@@ -2718,7 +2718,11 @@ async def _run_native(
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
             wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
             notes=lesson_notes + turn_lines + notes)
-        usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
+        try:
+            usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
+        except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
+            logger.warning("context parts not measured", exc_info=True)
+            usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                  schemas=schemas, forced=forced, state=turn_state, status=status,
                                  drops=drops, conversation_id=conversation_id)

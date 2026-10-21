@@ -77,3 +77,19 @@ def test_the_reply_frame_carries_the_parts_or_none():
         frame = arslan._usage_frame(usage_sink.detail())
     assert frame["context_parts"] == parts and frame["last_input"] == 8000
     assert usage_sink.context_parts() is None                       # nothing outlives the turn's scope
+
+
+async def test_a_failed_measurement_never_fails_the_turn(monkeypatch):
+    """⓪Plan's review: the breakdown is telemetry. If measuring a request raises, the turn goes on and
+    the frame says nothing about parts (never a stale request's)."""
+    real, seen = tool_loop._context_parts, []
+
+    def second_fails(*args, **kwargs):
+        seen.append(1)
+        if len(seen) == 2:
+            raise ValueError("an unexpected message shape")
+        return real(*args, **kwargs)
+    monkeypatch.setattr(tool_loop, "_context_parts", second_fails)
+    calls, last = await _run(monkeypatch, "Sort my receipts by month.", [])
+    assert len(calls) == 2 and calls[0]["parts"] is not None    # the first request was measured
+    assert last is None                                          # the second wasn't, and says so
