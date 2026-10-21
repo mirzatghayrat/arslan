@@ -25,6 +25,21 @@
   - 今天的条件只看 `current_task()` 和 `inside_job()`（`server/orchestrator/arslan.py:1040`）。
   - 定时任务两样都满足：`_fire`（`server/services/scheduler.py:515-525`）经 `task_context.execute_entry` 走 `task_service.run_turn`（`server/services/task_context.py:131-156`），不设 job 标记。于是它能开一个后台任务，借那个任务把卡弹到窗口上（⓪Plan 提案 §6 第 6 条）。
 
+## U14：定时任务再加四项（云端审计 [2]，2026-10-21，用户转来）
+
+审计结论：定时任务不做成真只读，也不能只改说明；四项并进本卡（约 +50 行）。行号是审计在 main `da49a794` 上核的，开工时再核。
+
+- **a. 没有提问界面时（定时任务），`decide()` 不采信「总是允许」规则和本对话授权，直接按 policy 拒绝。** 做法：把本卡的 `refuse_unattended` 推广到所有种类，不只 MCP。
+  - 现状：`permissions.py:300-317` 先查规则、后看有没有人可问，所以一个设了「总是允许」的 App，定时任务可以连做 5 步桌面操作（H3 之后定时任务仍保留这个 5 步上限）。
+- **b. 定时任务里，`run_command` 只能写 `~/Arslan`；沙箱关闭或 seatbelt 不可用时，直接拒绝 `run_command`。**
+  - 现状：沙箱的可写范围是当前工作区（`command_sandbox.py:82-85`）。`write_file` 写用户文件夹会被拒（`tool_loop.py:1254`），`sed -i` 却能改。
+- **c. `tool_loop` 自己的拒绝也写一行 policy 账本**，收件箱才看得到（`scheduler.py:398` 自己写着 yet）。
+- **d. 定时任务的确认卡要显示任务内容（prompt）和边界。** 今天卡上只有名字和频率（`ws/protocol.py:131-135`）。
+- **说明改成这一句**（`arslan.py:1341-1342` 的 `schedule_task` 说明；`schedule_tools.py:9-11` 的文档同步）：
+  > Scheduled runs are unattended: they can search, read, and write files or run sandboxed commands only in Arslan's own folder (~/Arslan). Any step that needs the user's OK is refused and listed in the Inbox.
+- **S1-0，先做：** 今天的说明写着「Scheduled runs are read-only: they cannot write files or run commands」，模型会照着告诉用户「定时任务是只读的」，而这不是真的。S1 还没开工，所以先单独删掉这一句（不换成上面那句，那句要等 a–c 做完才成立），一行的 PR，K5 合并后、在 K 线空档里合。
+- 安全相关：由 Opus 5.5 写和审；新说明和卡上的文字定稿后先发云端审计看。
+
 ## 改哪些文件
 
 - `server/mcp/executor.py`

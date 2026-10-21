@@ -67,6 +67,7 @@
 | [C8](C8-curation-distill-research-review.md) | 删整理层、回合结束提炼和研究复核；引用要求写进 K5（用户 2026-10-21 定，U13） | ②Main | v0.1.63 | 应该 | C1；K5 写引用要求 | 待开工 |
 | [C9](C9-bundled-skills-mcp-catalog.md) | 自带技能只留 `designed-html-report` 和上游原文的 `skill-creator`，其余 44 个退役；删 MCP 推荐目录（已装的不动）（用户 2026-10-21 定，U13） | ③Hands | v0.1.63 | 应该 | D7 | 待开工 |
 | [C10](C10-docker.md) | 删 Docker 这条部署路径（三个文件和 7 份文档里的段落）；`web/`、静态文件服务、prod 模式不动（用户 2026-10-21 定，U13） | ③Hands | v0.1.63 | 应该 | — | 待开工 |
+| [C11](C11-prod-mode.md) | 删 prod 模式：先把打包版加固（空密钥拒绝启动、`ARSLAN_PACKAGED` 强制赋值、CORS 默认空、无 Origin 的 WebSocket 拒绝、禁用测试路由、mcp-token 重新生成要出示当前 token），再删 `is_prod`（云端审计 [3]，U14） | ③Hands | v0.1.63 | 应该 | C10；#298 先合 | 待开工 |
 | [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 已合并（K1a #212 = `df18ba0e`；K1b #213 = `18d691bb`；合并后对照在 #213） |
 | [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 已合并（K2a #240 = `4f471a30`；K2b #252 = `8780fc34`，⓪Plan 的 k2b-ds 过门槛：19/27 通过，基线 18；③Hands 审过） |
 | [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 已合并（K3 #259 = `f3bda58d`，DeepSeek 门槛过；K3b #275 = `7e8c57aa`：Claude 上不改已发出的历史、清理改 100k/40k，E26） |
@@ -85,7 +86,8 @@
 | [D1](D1-deliver-files.md) | 回合做出的文件送到窗口和 iPhone：新工具 `attach_file`；来自 iPhone 的回合告诉模型路径没用（用户报告，⓪Plan 2026-10-18 加；不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#217 = `57a2218b`）；M3 第 12 条（真 Mac + iPhone 截图）待用户验 |
 | [D7](D7-retire-only-seed-rows.md) | 退役名单只删自带的技能：导入的同名技能（notion、obsidian 等）今天会在重启时被删（④参谋发现，⓪Plan 核过；不进严格链） | ③Hands | v0.1.63 | 必须 | — | 待开工 |
 | [D8](D8-titles.md) | 对话标题：只把你的第一句话发给这段对话自己的模型起标题，失败再截断；删 `title_config_id` 槽（用户 2026-10-21 定，U13；不进严格链） | ③Hands | v0.1.63 | 应该 | — | 待开工 |
-| [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | 待开工 |
+| [D9](D9-attachment-truncation.md) | 附件被截断时告诉模型（全文多少字、原件在哪）；上限从 12,000 字调到 40,000 字（①iOS 转来的用户报告，用户 2026-10-21 定两条都做；不进严格链） | ③Hands | v0.1.63 | 应该 | — | 待开工 |
+| [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7）；定时任务再加四项：不采信「总是允许」、只写 `~/Arslan`、拒绝写账本、卡上显示任务内容（云端审计 [2]，U14）；先单独删掉说明里「只读」那句（S1-0） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | 待开工 |
 | [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main | v0.1.63 | 必须 | F4a、C1、C4 | S2a-1 已合并（#265 = `0183ff88`，⓪Plan 在 Opus 5.5 上三轮安全审查；Hands 词表 #267 = `5ddc8e4a`、#276 = `893fdd55`）；S2a-1b 已合并（#272 = `0d17ee13`）；S2a-2 待开工 |
 | [S2b](S2b-drop-vendored-hermes.md) | 删整份引入的 Hermes 规则；拆 S2b-1 换上自有的文本处理（约 150 行）、S2b-2 按 U2 只删文件 | ②Main | v0.1.63 | 必须 | S2a | 待开工 |
 | [S3](S3-checkpoints.md) | 检查点：文件和命令都能撤销；每回合克隆一次；拆 S3a 检查点、S3b 撤销界面 | ②Main | v0.1.63 | 必须 | C1、F4b（最好在 S2a-2 之前合） | 待开工 |
@@ -251,7 +253,13 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
   - **同版删掉**（`docs/sessions.md` §11 第 1 条）：RepoDossier 长文、ToolHub 各页签、收藏、打分、技能的候选表和评估门。
   - **保留：** `find_capability`、`skill_import`（带许可证检查）、手动添加 MCP 的表单。
   - **推荐的四条标准：** 能做 Arslan 自带工具做不到的事；官方或原作者维护；许可证没问题，原文不改；钉死版本。MCP 优先选官方的远程 OAuth 服务器。具体推荐哪些、预装哪些，不在这张卡里定（见下面「v0.1.65 之后」那一轮）。
-  - 安装卡有供应链风险（ClawHub 出过 341 个恶意技能），开工前先给云端审计看（用户自己拿去）。
+  - **安全底线（云端审计 [4]，2026-10-21，U14；作为开放新来源的门槛，写进那张卡）：** 定位是「扩来源 + 补洞」，0.1.57 已经有 find / propose / install / scan / sandbox 一整套。前提：S1、S7 先在 v0.1.63 合进去。
+    - **卡上必须有：** 发布者（Registry 已验证的命名空间，标明「服务官方」还是「第三方」）；钉死的版本和摘要（技能用 commit sha 加每个文件的 sha256，MCP 用包@版本加锁文件哈希）；许可证在钉死的版本上读（今天读的是 HEAD：`capability_install.py:83-95`）；技能的扫描命中放最上面标红，下面是全文（可展开）和脚本清单；MCP 的启动命令、本地还是远程、要哪些文件夹、要不要网络、要哪些钥匙。
+    - **脚本：** 安装时不执行，永远不自动执行，只经 `run_python` 跑（禁网）。新规则：`run_command` 引用第三方技能目录时，每次都出卡（只给「这一次」）、断网、按外部内容处理。原因：`python3 ~/.agents/skills/x/a.py` 今天是 run 级，不弹卡、可以联网，而「读过外部内容」的标记每轮清零。
+    - **本地 MCP：** 一键装的必须进 `capability_sandbox`；卡上写明网络授权是「可访问任何网站」。
+    - **来源白名单：** 一键卡只给两类：官方远程 OAuth 服务器，以及命名空间属于服务方官方组织的包；技能只收 `anthropics/skills` 和用户显式信任过的 GitHub 账号；不接 ClawHub 这类开放市场；其余来源只提示「请手动安装」。
+    - **同时补洞：** 第三方技能的 description 不进 `read_skill` 的工具描述，只放名字；扫描专门找「叫人或 agent 去下载、执行」的句子（ClawHavoc 走的就是这条路）；卡上展示的 sha 必须就是要装的 sha（今天扫描读 HEAD，安装时才钉版本）；记下工具列表的哈希，变了就停用并重新出卡；过滤 Registry 里 `status=deleted` 的条目；手动添加的 MCP 钉死版本；`/discovery/skills/import` 补上扫描（`api/discovery.py:123-142`）；一键装的 MCP 用独立的缓存目录（缓存投毒的路径还没核实）。
+    - 由 Opus 5.5 写和审；卡和安全文案定稿后先发云端审计看。
 - `click`、`rich` 两个依赖只有旧命令行在用（C2d 发现），删旧命令行后可以去掉。
 - ~~专家时代剩下的 REST 接口~~：并进 C7 第二步，v0.1.63 做（U13）。
 - 记忆 v1 的旧表、兼容视图和触发器：并进 C7 第三步，v0.1.64 用同一次迁移收掉（连同专家表、`router_decisions`；U13）。
