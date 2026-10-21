@@ -18,11 +18,11 @@ Three answers for any shell command:
           card when the sandbox can start (`command_sandbox.available()`); otherwise, or when
           the sandbox is switched off, it asks (target `unsandboxed:*`).
 
-The rules are Arslan's own. The hard floor (layer ①) is rewritten from Hermes Agent's (MIT;
-NousResearch/hermes-agent), keeping what applies to macOS. Commands are still read through
-Hermes' text normalization (vendored in arslan/vendor/hermes): the command-start pass, the
-variants with a newline at every real command start, and the quote masks. S2b replaces those
-with Arslan's own and deletes arslan/vendor (v0.1.63).
+The rules are Arslan's own; the hard floor (layer ①) is adapted from Hermes Agent's (MIT;
+NousResearch/hermes-agent), keeping what applies to macOS. Commands are read through
+server/services/shell_text.py (S2b-1), Arslan's copy of Hermes' text handling: the command-start
+pass, the variants with a newline at every real command start, and the quote masks. Hermes'
+license is in that module's header.
 
 Everything here is a pure function of the command text. It is a guard against mistakes and
 against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what
@@ -34,11 +34,11 @@ import re
 import shlex
 from dataclasses import dataclass
 
-from arslan.vendor.hermes import approval_detection as hermes
+from server.services import shell_text
 
 MAX_COMMAND_CHARS = 8000
 
-_POS = hermes._CMDPOS           # command position: start, after ; | && $( ` and sudo/env wrappers
+_POS = shell_text.CMDPOS        # command position: start, after ; | && $( ` and sudo/env wrappers
 
 # ── layer ①: forbid ──────────────────────────────────────────────────────────
 
@@ -272,18 +272,18 @@ def _launcher_args(text: str) -> tuple[str, ...]:
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:
-    """The forms the rules are matched against: as written, normalized, and Hermes' variants with
-    a newline at every real (quote-aware) command start. `_POS` anchors at a newline, not at `;`
-    `&&` `|` `(`, so without the variants only the first command of a chain was checked: `ls &&
-    git push` ran with no card. Hermes' text handling; S2b replaces it (v0.1.63)."""
+    """The forms the rules are matched against: as written, normalized, and the variants with a
+    newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
+    not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
+    `ls && git push` ran with no card."""
     inner = tuple(t for arg in _launcher_args(text) for t in _detection_texts(arg))
-    return (text, hermes._normalize_command_for_detection(text), *hermes._command_detection_variants(text), *inner)
+    return (text, shell_text.normalize(text), *shell_text.variants(text), *inner)
 
 
 def _masked_texts(texts: tuple[str, ...]) -> tuple[str, ...]:
     """Quoted prose masked out for the positionless forbid rules, except under a shell carrier
     (sh -c, eval, source), whose quoted argument is code (Hermes' hardline matcher)."""
-    return tuple(t if hermes._contains_shell_carrier(t) else hermes._mask_quoted_prose(t) for t in texts)
+    return tuple(t if shell_text.has_shell_carrier(t) else shell_text.mask_quoted_prose(t) for t in texts)
 
 
 def _matches(pattern, texts) -> bool:
@@ -309,9 +309,9 @@ def _quotes_close(text: str) -> bool:
 
 def _unparseable(text: str) -> str:
     """Why the command's text cannot be read at all, or "": then no other rule can be trusted."""
-    if hermes._command_parser_limit_exceeded(text):
+    if shell_text.too_complex(text):
         return "too complex to read before running"
-    if hermes._grep_safe_detection_variant(hermes._mask_quoted_newlines(text))[1] or not _quotes_close(text):
+    if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
     return ""
 
@@ -423,7 +423,7 @@ def assess(command: str) -> Assessment:
         return Assessment("forbid", "empty", "no command")
     if len(text) > MAX_COMMAND_CHARS:
         return Assessment("forbid", "too-long", "command is too long to review")
-    texts = _detection_texts(text) if not hermes._command_parser_limit_exceeded(text) else (text,)
+    texts = _detection_texts(text) if not shell_text.too_complex(text) else (text,)
     forbidden = _forbid(text, texts)
     if forbidden is not None:
         return forbidden

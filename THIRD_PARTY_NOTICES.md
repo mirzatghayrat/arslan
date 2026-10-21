@@ -90,6 +90,40 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
   detection that `server/services/terminal_policy.py` uses for its ask and forbid answers;
   Arslan's own outward-action and credential rules live in that policy file.
 
+## Terminal command reading — `server/services/shell_text.py` (0.1.63+)
+
+### NousResearch/hermes-agent — MIT License (verified at the source 2026-10-22)
+- `server/services/shell_text.py` is adapted from Hermes Agent's `tools/approval_detection.py`
+  and `tools/ansi_strip.py` at commit `6b2fe92af66a95ea6a5caa309e05c5643cdd79de`: the quote-aware
+  shell scanner, command starts and command words, `-c` and program-option payloads, quote and
+  grep-pattern masks, and command-word deobfuscation. The hard floor in
+  `server/services/terminal_policy.py` (layer ①) is adapted from the same file's hardline rules.
+- This notice stays when the vendored copy (`arslan/vendor/hermes/`) is removed.
+
+```
+MIT License
+
+Copyright (c) 2025 Nous Research
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Arslan Hands — `Arslan.app/Contents/Resources/hands/` (desktop 0.1.53+)
 
 ### lahfir/agent-desktop — Apache License 2.0 (verified 2026-10-03)
