@@ -985,22 +985,19 @@ class DesktopTakeoverExecutor:
                 "summary": f"takeover · {minutes} min"}
 
 
-# Hands v2 §5.7: in a chat reply (not background work) at most this many actions, all in one app.
-INLINE_ACTIONS = 5
-_inline: dict[tuple[str, str], tuple[int, str]] = {}      # (conversation, turn) → (actions, app)
-
-
-def _inline_refusal(why: str) -> dict:
-    return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                     "error": f"{why} Call start_background_work with this goal; the work continues there."})
-
-
-def _inline_turn() -> tuple[str, str] | None:
+def _in_a_conversation() -> bool:
     from server.services import personal_context
     ctx = personal_context.current()
-    if ctx is None or not ctx.conversation_id:
+    return ctx is not None and bool(ctx.conversation_id)
+
+
+def _stopped(job_id: str | None) -> dict | None:
+    """H3: Stop stops a chat turn's Hands calls as it stops a job's — checked before anything is sent."""
+    from server.services import hands_contract, hands_service
+    if not hands_service.stopped(job_id):
         return None
-    return ctx.conversation_id, str(ctx.run_id or "")
+    return _not_run({"ok": False, "external": False, "code": "stopped_by_user",
+                     "error": hands_contract.REFUSALS["stopped_by_user"]})
 
 
 # Roles named by what they hold, not by what clicking them does (§15 A19: in the L3 pilot a note's
@@ -1029,19 +1026,14 @@ class _DesktopAct:
         if name is None:
             return _bad_request("app required (a name from desktop_apps)")
         conversation_id, job_id = _conversation_and_job()
-        turn = _inline_turn() if job_id is None else None
-        if job_id is None:
-            if turn is None:
-                return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
-                                 "error": "Acting in a Mac app needs a conversation to ask the user in."})
-            if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
-                return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
-                                       "reply may.")
+        if job_id is None and not _in_a_conversation():
+            return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
+                             "error": "Acting in a Mac app needs a conversation to ask the user in."})
         if not desktop_available():
             return _unavailable()
-        if job_id is not None and hands_service.stopped(job_id):
-            return _not_run({"ok": False, "external": False, "code": "stopped_by_user",   # before any request
-                             "error": hands_contract.REFUSALS["stopped_by_user"]})
+        stop = _stopped(job_id)                     # before any request
+        if stop is not None:
+            return stop
         started = time.monotonic()
         target: dict = {}
         if self.op in ("press", "menu"):
@@ -1067,13 +1059,6 @@ class _DesktopAct:
         label = target.get("name") or args.get("element") or ""
         if self.op == "menu":
             label = " › ".join(_menu_path(args))
-        if turn is not None:
-            count, first = _inline.get(turn, (0, bundle))
-            if first != bundle:
-                return _inline_refusal("This reply already acted in another app; a chat reply acts in one app.")
-            if len(_inline) > 500:
-                _inline.clear()
-            _inline[turn] = (count + 1, first)
         verb = _VERBS.get(self.op, self.op)
         first = f"{verb} “{label or args.get('keys', '')}”"
         decision = await _decide_app(
@@ -1103,6 +1088,7 @@ class _DesktopAct:
             await _hands("session_label", {"session": session, "label": f"Arslan · {shown} {label}"[:80]})
         result = await self.run(args, app)
         _trace(self.op, app, "ok" if result.ok else (result.code or "error"), started, target=label,
+               mode_used=(result.reply or {}).get("mode_used") if isinstance(result.reply, dict) else None,
                **self.trace_extra(args))
         if not result.ok and result.code == "takeover_paused":
             return await _wait_for_the_user(job_id)
@@ -1364,16 +1350,14 @@ class DesktopOpenExecutor:
                                  "error": f"There is no file or folder at {path}. Check the path (list_dir shows "
                                           "a folder)."})
         conversation_id, job_id = _conversation_and_job()
-        turn = _inline_turn() if job_id is None else None
-        if job_id is None:
-            if turn is None:
-                return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
-                                 "error": "Opening a Mac app needs a conversation to ask the user in."})
-            if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
-                return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
-                                       "reply may.")
+        if job_id is None and not _in_a_conversation():
+            return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
+                             "error": "Opening a Mac app needs a conversation to ask the user in."})
         if not desktop_available():
             return _unavailable()
+        stop = _stopped(job_id)
+        if stop is not None:
+            return stop
         if hands_service.never_touched(name):
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
         running, _ = await _resolve_app(name, job_id)
@@ -1402,8 +1386,6 @@ class DesktopOpenExecutor:
         if not decision.allowed:
             _trace("open", name, "declined" if decision.by == "user" else decision.by, started)
             return _no(decision, f"opening {name}")
-        if turn is not None:
-            _inline[turn] = (_inline.get(turn, (0, name))[0] + 1, _inline.get(turn, (0, name))[1])
         argv = ["/usr/bin/open", "-g", "-a", name] + ([str(path)] if path is not None else [])
         process = await asyncio.create_subprocess_exec(
             *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)

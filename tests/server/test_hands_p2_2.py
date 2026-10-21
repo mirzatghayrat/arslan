@@ -55,11 +55,11 @@ async def test_a_browser_menu_is_refused_before_anyone_is_asked(hands, asks, in_
     assert seen == [] and hands.ops("menu") == []
 
 
-async def test_a_batch_in_a_chat_reply_counts_each_step(hands, asks, in_turn):
+async def test_a_batch_in_a_chat_reply_runs_all_its_steps(hands, asks, in_turn):
+    # H3: a batch is one tool call under the run's limits (K4); Hands no longer counts its steps.
     steps = [{"action": "press", "keys": "tab"}] * 7
     result = await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": steps})
-    assert hands.ops("press") == ["press"] * hands_tools.INLINE_ACTIONS
-    assert f"stopped at step {hands_tools.INLINE_ACTIONS + 1} (act_in_background)" in result["text"]
+    assert result["ok"] and hands.ops("press") == ["press"] * 7
 
 
 async def test_a_combo_that_went_to_its_menu_item_says_so(hands, asks, in_job, monkeypatch):

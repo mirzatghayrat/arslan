@@ -13,7 +13,9 @@ script answers "Allow" to (and records). It checks what tests cannot:
   6. Stop: a Hands call in flight ends within 1 second
   7. the P3 sandbox: a sandboxed command can neither reach Hands' socket nor read its token
   8. agent-desktop (next to Hands.app), run on its own, holds no Accessibility
-  Hands v2 (P2-5, spec 2026-10-08-0157 §8.1 L2): a chat reply acts at most five times;
+  Hands v2 (P2-5, spec 2026-10-08-0157 §8.1 L2; H3): a chat reply acts six times and more;
+  Stop in a chat reply ends the step in flight and refuses the reply's next call; borrows
+  while the user types lose no key and give the front back;
   a batch; a pop-up chosen by borrowing the front (given back); one card for several
   apps; an app allowed for good asks nothing; an app never screenshotted is read as
   text; a look with a screenshot (median, G8'); the same scripted task one call at a
@@ -413,6 +415,47 @@ def ref_of(text: str, label: str) -> str | None:
     return (refs_on(text, f"“{label}”") or [None])[0]
 
 
+async def borrows_while_typing(select, look, app: str) -> None:
+    """H3: several borrows in a row while "the user" types into a scratch TextEdit document this
+    script opened (System Events keystrokes, into that document only): no key is lost and TextEdit
+    is in front at the end. Skipped (not passed) when keystrokes are not allowed for this runner."""
+    folder = Path(tempfile.mkdtemp(prefix="hands-smoke-typing-"))
+    doc = folder / "typing.txt"
+    doc.write_text("")
+    subprocess.run(["open", "-a", "TextEdit", str(doc)], check=True)
+    time.sleep(2)
+    typed = "the quick brown fox jumps over the lazy dog " * 3
+    try:
+        if front_app() != "TextEdit":
+            print(f"  skip  borrows while typing: TextEdit did not come to the front ({front_app()})")
+            return
+        typing = await asyncio.create_subprocess_exec(
+            "osascript", "-e", 'tell application "System Events" to keystroke "' + typed + '"',
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        chose = []
+        with job("v2-typing", "v2-typing"):
+            for value in ("Red", "Blue", "Red"):
+                seen = await look.execute({"app": app})
+                chose.append(await select.execute({"app": app, "element": "Color",
+                                                   "ref": ref_of(seen.get("text", ""), "Color"), "value": value}))
+        _, err = await typing.communicate()
+        if typing.returncode != 0:
+            print(f"  skip  borrows while typing: keystrokes not allowed for this runner ({err.decode()[:120]})")
+            return
+        time.sleep(0.5)
+        text = subprocess.run(["osascript", "-e", 'tell application "TextEdit" to get text of document "typing.txt"'],
+                              capture_output=True, text=True).stdout.rstrip("\n")
+        record("borrows while the user types: no key lost, the front given back",
+               text == typed and front_app() == "TextEdit" and all(c.get("ok") for c in chose),
+               f"{len(text)}/{len(typed)} chars; front {front_app()}; "
+               f"{[c.get('code') or c.get('outcome') for c in chose]}")
+    finally:
+        subprocess.run(["osascript", "-e", 'tell application "TextEdit" to close document "typing.txt" saving no'],
+                       capture_output=True)
+        doc.unlink(missing_ok=True)
+        folder.rmdir()
+
+
 async def v2_checks(tools, hands_service, front: str) -> None:
     from server.services import personal_context as pc
     look, typ, click = tools.DesktopLookExecutor(), tools.DesktopTypeExecutor(), tools.DesktopClickExecutor()
@@ -420,12 +463,29 @@ async def v2_checks(tools, hands_service, front: str) -> None:
     app = "Hands Fixture"
     fixture_up()
     try:
-        # A chat reply acts at most INLINE_ACTIONS times, then says to continue in the background.
-        with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-1", conversation_id="v2-chat")):
-            codes = [(await press.execute({"app": app, "keys": "tab"})).get("code")
-                     for _ in range(tools.INLINE_ACTIONS + 1)]
-        record(f"a chat reply acts {tools.INLINE_ACTIONS} times, then is sent to the background",
-               codes[:-1] == [None] * tools.INLINE_ACTIONS and codes[-1] == "act_in_background", str(codes))
+        # H3 (U8): a chat reply has no Hands limit of its own; Stop stops it as it stops a job.
+        from server.services import desktop_status
+        with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-1", conversation_id="v2-chat")), \
+                desktop_status.working("v2-chat"):
+            codes = [(await press.execute({"app": app, "keys": "tab"})).get("code") for _ in range(7)]
+        record("a chat reply acts 7 times in one app", codes == [None] * 7, str(codes))
+        with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-2", conversation_id="v2-chat")), \
+                desktop_status.working("v2-chat"):
+            from server.services import hands_client
+            task = asyncio.create_task(look.execute({"app": app, "wait_for_text": "zz-this-text-never-appears"}))
+            await asyncio.sleep(1.5)
+            stop_at = time.monotonic()
+            hands_service.stop_running_jobs()
+            await hands_client.call("stop", {}, start=False)
+            await task
+            ended = time.monotonic() - stop_at
+            after = await press.execute({"app": app, "keys": "tab"})
+        record("Stop in a chat reply ends the step in flight within 1 s and refuses the reply's next call",
+               ended < 1.0 and after.get("code") == "stopped_by_user", f"{ended:.2f}s; next: {after.get('code')}")
+        with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-3", conversation_id="v2-chat")), \
+                desktop_status.working("v2-chat"):
+            fresh = await press.execute({"app": app, "keys": "tab"})
+        record("a chat reply after the Stop acts as usual", fresh.get("code") is None, str(fresh.get("code")))
 
         # A batch: type and click in one call, ending with one look that shows the effect.
         with job("v2-batch", "v2-batch"):
@@ -451,6 +511,8 @@ async def v2_checks(tools, hands_service, front: str) -> None:
             record("a pop-up is chosen by borrowing the front, and the front is given back",
                    chose.get("ok") is True and "color:Blue" in waited.get("text", "") and after == before,
                    f"{took:.2f}s in all; front {before} → {after}; {str(chose.get('text') or chose.get('error'))[:200]}")
+
+        await borrows_while_typing(select, look, app)
 
         # One card for several apps, then none for either.
         cards.clear()

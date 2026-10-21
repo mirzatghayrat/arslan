@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 import server.orchestrator.tool_loop as tool_loop_mod
-from server.registry import hands_tools
 from server.services import approvals, hands_client, hands_service, run_registry, task_context, turn_journal
 from tests.server.conftest import build_ws_client
 from tests.server.test_hands_0153 import FakeHands
@@ -49,11 +48,9 @@ def _clean(tmp_path, monkeypatch):
     approvals._reset_for_tests()
     monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
     hands_service._reset_for_tests()
-    hands_tools._inline.clear()
     yield
     approvals._reset_for_tests()
     hands_service._reset_for_tests()
-    hands_tools._inline.clear()
 
 
 @pytest.fixture
