@@ -25,10 +25,16 @@ async def test_read_file_says_it_pages_by_lines(execution_db, tmp_path):
 
 
 async def test_run_command_states_its_time_limit_and_its_network_argument(execution_db, tmp_path):
+    """K7: said once, by the parameter table every request carries; the description no longer repeats
+    it (⓪Plan's condition for trimming it). The limits are terminal_exec's own constants."""
+    from server.orchestrator import tool_loop
+    params = tool_loop._tool_params({"key": "run_command"})["properties"]
+    timeout = params["timeout_s"]
+    assert (timeout["minimum"], timeout["maximum"]) == (terminal_exec.MIN_TIMEOUT_S, terminal_exec.MAX_TIMEOUT_S)
+    assert f"default {terminal_exec.DEFAULT_TIMEOUT_S}" in timeout["description"]
+    assert "offline" in params["network"]["description"]
     text = (await _descriptions(execution_db, tmp_path))["run_command"]
-    assert f"{terminal_exec.DEFAULT_TIMEOUT_S} seconds" in text
-    assert f"{terminal_exec.MIN_TIMEOUT_S}-{terminal_exec.MAX_TIMEOUT_S}" in text
-    assert "network" in text and "offline" in text
+    assert f"{terminal_exec.DEFAULT_TIMEOUT_S} seconds" not in text and "network: true" not in text
 
 
 async def test_run_command_points_saved_outputs_to_read_file_not_cat(execution_db, tmp_path):

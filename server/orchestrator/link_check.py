@@ -82,7 +82,7 @@ def hint(path: str, found: dict) -> str:
         parts.append(f"{len(found['unseen'])} links never appeared in this turn's search results, opened "
                      f"pages or command output (e.g. {sample})")
     return (f"\n[Host check on {PurePosixPath(path).name}: " + "; ".join(parts) + ". A link must open the page "
-            "for its own row: open the doubtful ones (web_extract or browser_open) and replace any that show "
+            "for its own row: open the doubtful ones (web_extract, or browser_open via find_tools) and replace any that show "
             "something else, then save again. If you cannot check them, mark them unverified in the file and "
             "say so.]")
 

@@ -376,7 +376,7 @@ class WebExtractExecutor:
         # URL — steer it to other sources. 0.1.50: no longer "or answer with what you have",
         # which the kernel bench showed being taken as permission to stop after 3 failures.
         _STEER = (" — do not retry this URL; try another source from your web_search results (their "
-                  "snippets count too) or browser_open for script-rendered pages; answer with what you have "
+                  "snippets count too) or browser_open (via find_tools) for script-rendered pages; answer with what you have "
                   "only when sources are exhausted, and say what is missing")
         try:
             text = await net_pin._fetch_text(url)
@@ -430,10 +430,10 @@ class ListMyCapabilitiesExecutor:
         # _arslan_tools), and mcp.executor imports from registry, so module-level would cycle.
         from server.mcp.executor import error_line, rechecks_key, shown_state
         from server.mcp.supervisor import fix_for, supervisor
-        from server.orchestrator.arslan import _arslan_tools
+        from server.orchestrator.arslan import _callable_tools
         from server.services import mcp_service
 
-        host = await _arslan_tools()
+        host = await _callable_tools()     # K7 (Q8): what Arslan can reach, shown in a request or not
         builtin = [{"key": t["key"], "desc": t["description"]}
                    for t in host if not t["key"].startswith("mcp_")]
 

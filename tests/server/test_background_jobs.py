@@ -208,7 +208,8 @@ def test_criteria_always_keep_one_non_model_check_and_map_checkable_kinds():
 
 
 async def test_background_tools_exist_only_in_a_turn_never_inside_a_job(execution_db, active, monkeypatch):
-    from server.orchestrator.arslan import _arslan_tools, _background_tools
+    # K7: "exist" means reachable (shown in the request or found on demand)
+    from server.orchestrator.arslan import _background_callable as _background_tools, _callable_tools as _arslan_tools
     keys = {"start_background_work", "background_status", "stop_background_work"}
     seen = {}
 

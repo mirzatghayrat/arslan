@@ -33,7 +33,9 @@ async def test_every_message_reaches_the_agent_with_its_tools(maker, monkeypatch
     events = []
     await arslan.handle_user_message("c1", message, _events(events))
     assert adapter.offered, "the agent loop never ran"
-    assert "web_search" in adapter.offered[0] and "suggest_connector" in adapter.offered[0]
+    assert "web_search" in adapter.offered[0] and "find_tools" in adapter.offered[0]
+    # K7: suggest_connector is reached on demand (C9b deletes it)
+    assert "suggest_connector" in {t["key"] for t in await arslan._callable_tools()}
     text = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
     assert "don't have a preset" not in text and text == "On it."
 

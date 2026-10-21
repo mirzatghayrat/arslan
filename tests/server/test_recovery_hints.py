@@ -82,7 +82,7 @@ def test_a_name_that_does_not_resolve_keeps_todays_hint():
     """No hint today, before or after the guard's own hints were added."""
     from server.registry import net_pin
     steer = (" — do not retry this URL; try another source from your web_search results (their "
-             "snippets count too) or browser_open for script-rendered pages; answer with what you "
+             "snippets count too) or browser_open (via find_tools) for script-rendered pages; answer with what you "
              "have only when sources are exhausted, and say what is missing")
     error = f"fetch failed: {net_pin.categorize(net_pin._Unresolvable())}{steer}"
     assert hint_for("web_extract", {"ok": False, "error": error}) is None
@@ -113,13 +113,13 @@ async def test_web_extracts_real_refusal_gets_the_guard_hint(monkeypatch, cls_na
 
 SITE_REFUSED = {
     403: ("This site blocks automated reading. Don't retry this URL; use another source, or "
-          "browser_open if the page is essential."),
+          "browser_open (via find_tools) if the page is essential."),
     401: "This page needs a sign-in Arslan doesn't have; use another source.",
     451: "This page is unavailable for legal reasons here; use another source.",
 }
 WEB_BLOCKED = "That site refused the request. Use another source; do not retry this URL."
 STEER = (" — do not retry this URL; try another source from your web_search results (their "
-         "snippets count too) or browser_open for script-rendered pages; answer with what you "
+         "snippets count too) or browser_open (via find_tools) for script-rendered pages; answer with what you "
          "have only when sources are exhausted, and say what is missing")
 
 

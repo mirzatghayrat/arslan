@@ -39,6 +39,9 @@ _PLAIN_KEYS = (
                "projects_auto_advance",
                # 0.1.58 §1: raw tool input/output under a reply's steps ("true" | "false"; default off).
                "show_technical_details",
+               # 0.1.63 K7: every tool on every request ("true" | "false"; default off). No UI: M1's A/B
+               # and the rollback. DELETE-BY: v0.1.64 (see arslan.RESIDENT).
+               "tools_all_resident",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
@@ -301,6 +304,13 @@ async def research_review_enabled(session: AsyncSession) -> bool:
     positive rate is being calibrated. Never a gate on saving."""
     raw = await _get_raw(session, "research_review_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def tools_all_resident(session: AsyncSession) -> bool:
+    """K7: every tool on every request, as before tools were found on demand. Default off.
+    DELETE-BY: v0.1.64, with the key (see arslan.RESIDENT)."""
+    raw = await _get_raw(session, "tools_all_resident")
+    return str(raw).strip().lower() == "true" if raw is not None else False
 
 
 async def lan_discovery_enabled(session: AsyncSession) -> bool:

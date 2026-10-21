@@ -54,8 +54,8 @@ async def maker(tmp_path, monkeypatch):
 
 
 async def test_connected_server_gives_arslan_every_discovered_tool(maker):
-    from server.orchestrator.arslan import _arslan_tools
-    tools = {t["key"]: t for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    tools = {t["key"]: t for t in await _callable_tools()}
     assert "web_search" in tools and "render_chart" in tools     # built-ins still present
     # Server-level ruling: all three, regardless of per-tool wire/host state.
     assert {"mcp_1__read", "mcp_1__list", "mcp_1__write"} <= set(tools)
@@ -63,11 +63,11 @@ async def test_connected_server_gives_arslan_every_discovered_tool(maker):
 
 
 async def test_host_allowed_false_excludes_the_whole_server(maker):
-    from server.orchestrator.arslan import _arslan_tools
+    from server.orchestrator.arslan import _callable_tools
     from server.services import mcp_service
 
     await mcp_service.set_host_allowed(1, False)
-    keys = {t["key"] for t in await _arslan_tools()}
+    keys = {t["key"] for t in await _callable_tools()}
     assert not any(k.startswith("mcp_1__") for k in keys)
     assert "web_search" in keys                                   # built-ins unaffected
 
@@ -75,12 +75,12 @@ async def test_host_allowed_false_excludes_the_whole_server(maker):
     await mcp_service.set_host_allowed(1, True)
     async with maker() as s:
         assert (await s.get(MCPServer, 1)).state == "starting"
-    assert not any(k.startswith("mcp_1__") for k in {t["key"] for t in await _arslan_tools()})
+    assert not any(k.startswith("mcp_1__") for k in {t["key"] for t in await _callable_tools()})
     async with maker() as s:
         (await s.get(MCPServer, 1)).state = "ready"
         await s.commit()
     _live()                                                       # the start's session
-    assert "mcp_1__write" in {t["key"] for t in await _arslan_tools()}
+    assert "mcp_1__write" in {t["key"] for t in await _callable_tools()}
 
 
 async def test_set_host_allowed_persists_and_lists(maker):
