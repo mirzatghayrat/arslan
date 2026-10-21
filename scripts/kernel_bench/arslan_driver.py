@@ -60,10 +60,12 @@ OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "
 # approve. Declined like outward kinds; a test pins each name to a terminal_policy rule (rename guard).
 # S2a-2 (a straight rename, ⓪Plan): the layer ② rules that act through the system on the real Mac — the
 # keychain (securityd), system settings (their daemons), an app or link `open` starts (LaunchServices), other
-# programs killed, the screen or clipboard read — are declined like the daemon kinds. `delete-outside` and
+# programs killed, the screen or clipboard read — are declined like the daemon kinds, and so is a write into
+# the user's startup, SSH, credential or agent files (`protected-write`, ②Main's review): it lands outside. `delete-outside` and
 # `unreadable` stay approved inside the sandbox, as `delete` and Hermes' script findings were: it holds them.
 ESCAPES_SANDBOX = frozenset({"login-items", "macos-roots", "keychain-secrets", "arslan-keys", "sudo",
-                             "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard"})
+                             "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard",
+                             "protected-write"})
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
 # everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).

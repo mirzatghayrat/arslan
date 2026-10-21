@@ -124,6 +124,8 @@ def test_a_message_typed_while_a_card_waits_answers_it(app_client, monkeypatch):
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "check the repo"})
         card = _collect_until(ws, "propose_run_command")[-1]
+        # S2a-2 (②Main's review, D): no sandbox can start here, so the Careful-mode card is marked unsandboxed.
+        assert card.get("unsandboxed") is True
         ws.send_json({"type": "user_message", "content": "no — look at the other folder"})
         frames = _collect_until(ws, "stream_end")
         assert card["call_id"] not in approvals.known_ids()

@@ -486,12 +486,22 @@ class JobConfirmations:
         from server.services import permissions
         with permissions.asking_with(self.asker):
             decision = await permissions.decide(
-                _command_request(shell, rules, frame, ask_all=ask_all, network=network), self._context())
+                _command_request(shell, rules, frame, ask_all=ask_all, network=network,
+                                 unsandboxed=ask_all and await runs_unsandboxed()), self._context())
         return decision.allowed
 
 
+async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
+    """Whether a command run now would have no sandbox around it: the setting is off, seatbelt cannot
+    start (R4), or `conversation_id`'s grant lets it out (the window's own; a job never uses one)."""
+    from server.orchestrator.tool_loop import _sandbox_enabled
+    from server.services import command_sandbox
+    return (not (await _sandbox_enabled() and command_sandbox.available())
+            or (conversation_id is not None and command_sandbox.granted(conversation_id)))
+
+
 def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
-                     network: bool = False):
+                     network: bool = False, unsandboxed: bool = False):
     """A command card as a permission request, by the command's layer (S2a-2):
 
     - layer ② or `unreadable` (it matched rules): this time only; nothing is remembered and no stored
@@ -504,7 +514,9 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     commands that match it (`git push origin main`).
 
     `network`: the card also asks for the network (after outside content), and its title says so. A
-    click on it stands for the network this time only; a grant that answers it later does not."""
+    click on it stands for the network this time only; a grant that answers it later does not.
+    `unsandboxed`: under "ask for every command", the command would run with no sandbox around it
+    (`runs_unsandboxed`), so its card is marked like layer ③'s and the island leaves it."""
     from server.services import permissions, task_service
     net = " It will use the network, this time." if network else ""
     if rules:
@@ -519,7 +531,8 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
                                    conversation_ok=False, once_only=True, frame=frame)
     if ask_all:
         return permissions.Request(kind="command", target="text:" + shell, title=f"Run `{shell[:80]}`?{net}",
-                                   detail=shell, frame=frame)
+                                   detail=shell,
+                                   frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
     # Marked on the card (a key the web and the phone ignore), so the island never approves a command
     # that would run with no sandbox around it: `rm notes.txt` there is a real delete.
     return permissions.Request(kind="command", target="unsandboxed:*",
