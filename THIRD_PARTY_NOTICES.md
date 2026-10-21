@@ -33,10 +33,15 @@ their sources' notices. A user's own and imported skills keep their own licences
   the document skills `docx`, `pdf`, `pptx`, `xlsx` are source-available, not open source
   (the repository README). `skills/skill-creator/LICENSE.txt` is Apache-2.0, checked at commit
   `dbd4588f9e1033efb41dad4bef2f7947c8993d44` (2026-10-21).
-- `skill-creator` is **adapted**: Anthropic's version depends on Claude Code's eval tooling
-  (`claude -p`, sub-agents, an eval viewer); only the methodology was ported to Arslan's SKILL.md
-  format, as its `source:` line says. Apache-2.0 requires retaining this notice and stating
-  significant changes (done here and in that line).
+- `skill-creator` is **adapted** (the user's decision, 2026-10-21: Arslan's adaptation stays):
+  shortened and translated; Anthropic's version depends on Claude Code's eval tooling (`claude -p`,
+  sub-agents, an eval viewer, scripts), which was removed, and only the methodology was ported to
+  Arslan's SKILL.md format.
+- Apache-2.0 §4, as met here:
+  - the licence text ships beside the skill, as `arslan/skills/bundled/skill-creator/LICENSE.txt`
+    (upstream's file, byte for byte, at the commit above);
+  - the changed file says so at the top of its body, with source and commit;
+  - this notice keeps upstream's copyright line.
 
 ---
 

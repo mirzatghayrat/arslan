@@ -7,6 +7,8 @@ authors:
 source: adapted from anthropics/skills · skill-creator (Apache-2.0); Claude-Code-specific eval tooling removed
 ---
 
+> Adapted from Anthropic's skill-creator (Apache-2.0), github.com/anthropics/skills @ dbd4588f, skills/skill-creator. Changed: shortened and translated; Claude-Code-specific eval tooling (claude -p, subagents, eval viewer, scripts) removed.
+
 ## Trigger
 
 当用户想把一套"每次都这么做"的方法沉淀成可复用技能时激活 —— 新建技能、改进/优化已有技能、或让某个分身具备一项新的横向能力。产出是一份结构规范的 `SKILL.md`（技巧与规则，不是一次性答案），能被装备到任意分身。

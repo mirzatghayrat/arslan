@@ -58,3 +58,16 @@ async def test_an_upgraded_database_keeps_two_bundled_skills_and_the_users_own(d
     assert keys == BUNDLED | {"brainstorming"}
     for key in BUNDLED:
         assert (await db.get(SkillPack, key)).body, key
+
+
+def test_skill_creator_carries_its_apache_provenance():
+    """The user's decision (2026-10-21): Arslan's adaptation stays, with Apache-2.0 §4 met — the licence
+    beside it (upstream's file at dbd4588f), a note in the changed file, the copyright line kept."""
+    folder = Path(arslan.skills.__file__).parent / "bundled" / "skill-creator"
+    licence = (folder / "LICENSE.txt").read_text()
+    assert "Apache License" in licence and "Copyright 2026 Anthropic, PBC." in licence
+    body = seeder._skill_body("skill-creator")
+    assert body.startswith("> Adapted from Anthropic's skill-creator (Apache-2.0), github.com/anthropics/skills "
+                           "@ dbd4588f, skills/skill-creator.")
+    notices = (Path(arslan.skills.__file__).parents[2] / "THIRD_PARTY_NOTICES.md").read_text()
+    assert "Copyright 2026 Anthropic, PBC." in notices and "dbd4588f9e1033efb41dad4bef2f7947c8993d44" in notices
