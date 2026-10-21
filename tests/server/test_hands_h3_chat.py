@@ -371,6 +371,7 @@ async def test_a_scheduled_runs_refusals_never_send_it_to_background_work(hands,
     for name, result in results.items():
         assert result["code"] == "act_in_background" and result["executed"] is False, name
         assert "start_background_work" not in result["error"] and "Tell the user" in result["error"], name
+        assert "background work" not in result["error"], name           # it has none (R7)
     assert hands.ops("press") == []
 
 
