@@ -20,6 +20,7 @@ from server.orchestrator import run_trace
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator import on_demand, turn_context
+from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import replay_safety
@@ -1823,8 +1824,10 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                     "properties": {"command": {"type": "string",
                                                "description": "The full shell command line, e.g. "
                                                               "\"ls -la ~/Downloads | head -20\"."},
-                                   "timeout_s": {"type": "integer", "minimum": 5, "maximum": 600,
-                                                 "description": "Stop after this many seconds (default 120)."},
+                                   "timeout_s": {"type": "integer", "minimum": terminal_exec.MIN_TIMEOUT_S,
+                                                 "maximum": terminal_exec.MAX_TIMEOUT_S,
+                                                 "description": "Stop after this many seconds (default "
+                                                                f"{terminal_exec.DEFAULT_TIMEOUT_S})."},
                                    "outside_sandbox": {"type": "boolean",
                                                        "description": "Only when the command must write outside "
                                                                       "the working folder (moving the user's files, "
@@ -1881,11 +1884,11 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
     "find_tools": {"type": "object",
                    "properties": {"query": {"type": "string", "maxLength": 200,
-                                            "description": "A few English keywords for what the tool does."}},
+                                            "description": "English keywords, e.g. \"send file\"."}},
                    "required": ["query"], "additionalProperties": False},
     "use_tool": {"type": "object",
                  "properties": {"name": {"type": "string", "maxLength": 120,
-                                         "description": "The tool's name, as find_tools returned it."},
+                                         "description": "As find_tools returned it."},
                                 "arguments": {"type": "object",
                                               "description": "Its arguments, as its parameters say."}},
                  "required": ["name"], "additionalProperties": False},

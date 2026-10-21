@@ -24,15 +24,12 @@ _CONVERSATIONS = 128
 _used: OrderedDict[str, list[str]] = OrderedDict()
 
 FIND_TOOLS = {"key": "find_tools", "description":
-    "Find a tool that is not in your list: other built-in tools (schedules, charts, memory notes, "
-    "Shortcuts, SSH, …) and the tools of the user's connected MCP servers. args: {query} — a few English "
-    "keywords, e.g. \"github issue\", \"schedule recurring\", \"calendar event\" (tool descriptions are "
-    "in English). Returns up to 5 tools with what each does and its parameters; then call one with "
-    "use_tool."}
+    "Find a tool not in your list: sending a file to the user, the browser, a background job's status "
+    "or stop, schedules, charts, memory notes, Mac automation, the rest of Hands, SSH, the user's MCP "
+    "servers. Search in English keywords; call a result with use_tool."}
 USE_TOOL = {"key": "use_tool", "description":
-    "Call a tool that find_tools returned. args: {name, arguments} — arguments exactly as that tool's "
-    "parameters say. It runs as a direct call would, with the same approvals. From the next turn the tool "
-    "is in your list and you call it directly."}
+    "Call a tool find_tools returned, with the same approvals as a direct call. From the next turn it is "
+    "in your list."}
 OWN = frozenset({"find_tools", "use_tool"})
 
 _WORD = re.compile(r"[a-z0-9]+")

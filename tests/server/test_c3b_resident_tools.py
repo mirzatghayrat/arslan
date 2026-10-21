@@ -45,14 +45,14 @@ async def _keys(fn, *, job=False) -> set[str]:
 async def test_the_demoted_tools_are_not_carried_but_still_defined(execution_db, mac, job):
     resident, every = await _keys(arslan._arslan_tools, job=job), await _keys(arslan._every_tool, job=job)
     assert not DEMOTED & resident
-    assert {"browser_open", "browser_look"} <= resident
+    assert {"browser_open", "browser_look"} <= every - resident   # K7: on demand as well
     expected = DEMOTED if job else DEMOTED - {"browser_click", "browser_type", "browser_select", "browser_press"}
     assert expected <= every
     assert not DEMOTED & arslan.RESIDENT          # K7 keeps them on demand (find_tools / use_tool)
 
 
 async def test_a_chat_turn_is_still_told_where_page_actions_happen(execution_db, mac):
-    desc = {t["key"]: t["description"] for t in await arslan._arslan_tools()}
+    desc = {t["key"]: t["description"] for t in await arslan._callable_tools()}
     assert "To click, type or submit on a page, start background work" in desc["browser_open"]
 
 

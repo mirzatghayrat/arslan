@@ -25,7 +25,7 @@ _HINTS: tuple[tuple[re.Pattern, str], ...] = (
      "exactly which path was refused."),
 )
 
-_WEB_EMPTY = ("That page gave no readable text (it may need scripts). Try browser_open for script-rendered "
+_WEB_EMPTY = ("That page gave no readable text (it may need scripts). Try browser_open (via find_tools) for script-rendered "
               "pages, or another source from your search results.")
 _WEB_BLOCKED = "That site refused the request. Use another source; do not retry this URL."
 # web_extract says "url refused: <label>" when Arslan's OWN network guard (net_pin) refused the
@@ -48,7 +48,7 @@ _WEB_GUARD_REFUSED = ("Arslan's own network guard refused this address (it is on
 # produced today) gets the 403 sentence.
 _WEB_SITE_REFUSED_LABEL = re.compile(r"fetch failed: the site refused \(http (\d{3})\)")
 _WEB_SITE_REFUSED = ("This site blocks automated reading. Don't retry this URL; use another "
-                     "source, or browser_open if the page is essential.")
+                     "source, or browser_open (via find_tools) if the page is essential.")
 _WEB_SITE_REFUSED_BY_CODE = {
     401: "This page needs a sign-in Arslan doesn't have; use another source.",
     451: "This page is unavailable for legal reasons here; use another source.",

@@ -376,7 +376,7 @@ class WebExtractExecutor:
         # URL — steer it to other sources. 0.1.50: no longer "or answer with what you have",
         # which the kernel bench showed being taken as permission to stop after 3 failures.
         _STEER = (" — do not retry this URL; try another source from your web_search results (their "
-                  "snippets count too) or browser_open for script-rendered pages; answer with what you have "
+                  "snippets count too) or browser_open (via find_tools) for script-rendered pages; answer with what you have "
                   "only when sources are exhausted, and say what is missing")
         try:
             text = await net_pin._fetch_text(url)
