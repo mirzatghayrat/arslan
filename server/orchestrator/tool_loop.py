@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from arslan.execution_budget import BudgetExceeded, governed
-from arslan.llm import trajectory
+from arslan.llm import trajectory, usage_sink
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
@@ -826,6 +826,30 @@ async def _recover_truncation(a, resp, request, state, remaining):
     # The joined text is no single reply's output: no continuation state.
     return _replaced(resp, content=text, finish_reason=getattr(last, "finish_reason", None),
                      tool_calls=[], continuation=None)
+
+
+def _context_parts(system: str, schemas: list[dict] | None, convo: list[dict], current_request: dict,
+                   status: str) -> dict[str, int]:
+    """0.1.63 K4b: what the request about to be sent is made of, estimated with the one estimator, for
+    the composer's ring breakdown (its total stays the provider's last_input): the system text, the
+    tools, the turn's reference block (memory and context), earlier turns, and this turn (the user's
+    words, tool calls and results, kept and current status blocks)."""
+    from arslan.context_budget import IMAGE_TOKEN_GUESS, estimate_tokens
+
+    def size(messages: list[dict]) -> int:
+        rendered = json.dumps(trajectory.to_legacy(messages, images=False), ensure_ascii=False, default=str)
+        kept = "".join(m.get("content") or "" for m in messages if m.get("_status"))
+        return (estimate_tokens(rendered) + estimate_tokens(kept)
+                + IMAGE_TOKEN_GUESS * trajectory.image_count(messages))
+    at = next((i for i, m in enumerate(convo) if m is current_request), None)
+    history, after = (convo[:at], convo[at + 1:]) if at is not None else ([], convo)
+    content = current_request.get("content")
+    words = estimate_tokens(turn_context.users_words(content))
+    return {"system": estimate_tokens(system),
+            "tools": estimate_tokens(json.dumps(schemas, ensure_ascii=False)) if schemas else 0,
+            "context": max(0, estimate_tokens(content) - words),
+            "history": size(history),
+            "turn": words + size(after) + estimate_tokens(status)}
 
 
 def _rendered_size(messages: list[dict]) -> int:
@@ -2694,6 +2718,7 @@ async def _run_native(
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
             wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
             notes=lesson_notes + turn_lines + notes)
+        usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                  schemas=schemas, forced=forced, state=turn_state, status=status,
                                  drops=drops, conversation_id=conversation_id)

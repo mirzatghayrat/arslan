@@ -610,6 +610,9 @@ def _usage_frame(detail: dict) -> dict:
         # 0.1.58 §6: the last call's input — the composer's context ring. K3: the whole input, cache
         # reads and writes included (Anthropic's input_tokens leaves them out).
         "last_input": usage_sink.last_input(),
+        # K4b: the last request's parts, estimated (system, tools, context, history, turn): the ring's
+        # breakdown. None when no request was measured (a plain streamed answer).
+        "context_parts": usage_sink.context_parts(),
         # K3: what this reply read from the provider's cache, of its whole input (the footer's hit rate);
         # cache_read is None when the provider reported nothing about its cache.
         "cache_read": detail.get("cache_read"),

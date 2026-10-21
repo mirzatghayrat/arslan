@@ -23,6 +23,22 @@ def last_input() -> int | None:
     return holder["value"] if holder else None
 
 
+# 0.1.63 K4b: what the latest request was made of (system, tools, context, history, turn), estimated
+# with context_budget.estimate_tokens — the ring's breakdown. Its total stays last_input (the bill's).
+_parts: ContextVar[dict | None] = ContextVar("usage_context_parts", default=None)
+
+
+def note_context_parts(parts: dict[str, int]) -> None:
+    holder = _parts.get()
+    if holder is not None:
+        holder["value"] = dict(parts)
+
+
+def context_parts() -> dict[str, int] | None:
+    holder = _parts.get()
+    return holder["value"] if holder else None
+
+
 _NO_PRICE_INFO = object()
 
 
@@ -168,9 +184,11 @@ def collecting():
     token = _sink.set(bucket)
     dtoken = _detail.set(detail_buckets)
     ltoken = _last_in.set({"value": None})
+    ptoken = _parts.set({"value": None})
     try:
         yield bucket
     finally:
         _sink.reset(token)
         _detail.reset(dtoken)
         _last_in.reset(ltoken)
+        _parts.reset(ptoken)

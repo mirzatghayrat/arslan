@@ -10,7 +10,7 @@ Hangul count the same everywhere.
 # and the ledger cannot attribute it either (spec §0.7). A fixed, deliberately
 # rough placeholder beats the two wrong answers available: counting the base64
 # characters as prose (~5 000 tokens for a small screenshot), or counting zero.
-_IMAGE_TOKEN_GUESS = 800
+IMAGE_TOKEN_GUESS = 800
 
 
 def _flatten(part: object) -> str:
@@ -28,7 +28,7 @@ def _flatten(part: object) -> str:
             # Stand in for the image without letting its base64 reach the
             # character count. 'x' * n is the cheapest way to say "n tokens"
             # in a function whose whole vocabulary is characters.
-            return "x" * (_IMAGE_TOKEN_GUESS * 4)
+            return "x" * (IMAGE_TOKEN_GUESS * 4)
         return str(part.get("text", ""))
     return str(part)
 
