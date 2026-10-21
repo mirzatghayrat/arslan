@@ -97,17 +97,21 @@ async def extract_text(
 
     limit = settings.attach_extract_char_limit
     if len(text) > limit:
-        return text[:limit] + _cut_note(limit, len(text), page=data is None), True
+        return text[:limit] + _cut_note(limit, len(text), page=data is None,
+                                        readable=kind(filename or "") == "text"), True
     return text, source_truncated
 
 
-def _cut_note(kept: int, total: int, *, page: bool) -> str:
+def _cut_note(kept: int, total: int, *, page: bool, readable: bool) -> str:
     """D9 (v0.1.63): the model is told the attachment was cut, so it does not answer from the start
     as if it were all. A phone attachment's original is saved, and its message says where (the
-    Bridge's "Attached from iPhone: name → path"); a window attachment is never stored."""
+    Bridge's "Attached from iPhone: name → path"); a window attachment is never stored. read_file
+    reads text only (②Main's review of #302: a saved PDF, Word or Office file comes back as noise),
+    so it is offered for a plain-text file alone."""
+    head = f"\n\n[Only the first {kept:,} of {total:,} characters of this {'page' if page else 'file'} are included"
     if page:
-        return (f"\n\n[Only the first {kept:,} of {total:,} characters of this page are included; tell the user "
-                "that only the beginning was read.]")
-    return (f"\n\n[Only the first {kept:,} of {total:,} characters of this file are included. If the message says "
-            "where the file was saved, read the rest from there with read_file; otherwise tell the user that only "
-            "the beginning was read.]")
+        return head + "; tell the user that only the beginning was read.]"
+    if readable:
+        return (head + ". If the message says where the file was saved, read the rest from there with read_file; "
+                "otherwise tell the user that only the beginning was read.]")
+    return head + ". The original is not plain text, so read_file cannot read it: tell the user that only the beginning was read.]"

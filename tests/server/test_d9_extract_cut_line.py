@@ -28,6 +28,20 @@ async def test_a_cut_file_keeps_its_start_and_says_how_long_it_was(monkeypatch):
                     "the beginning was read.]")
 
 
+async def test_a_cut_pdf_does_not_send_the_model_to_read_file(monkeypatch):
+    """②Main's review of #302: read_file reads text, so a saved PDF (the phone's usual attachment)
+    would come back as noise; the line says to tell the user only the beginning was read."""
+    _limit(monkeypatch)
+    pages = "p" * 900
+    monkeypatch.setattr(extract, "_pdf_inventory", lambda text, layer: text)
+    monkeypatch.setattr(extract.ingest, "_pdf_text_layer", lambda data: type("L", (), {"has_text": False, "ocr_pages": []})())
+    monkeypatch.setattr(extract.ingest, "_extract_file", lambda fn, data, **kw: pages)
+    text, truncated = await extract.extract_text(filename="invoice.pdf", data=b"%PDF")
+    assert truncated is True and "read the rest from there with read_file" not in text
+    assert text.endswith("of 900 characters of this file are included. The original is not plain text, so "
+                         "read_file cannot read it: tell the user that only the beginning was read.]")
+
+
 async def test_a_file_within_the_cap_comes_back_whole_with_no_line(monkeypatch):
     _limit(monkeypatch)
     monkeypatch.setattr(extract.ingest, "_extract_file", lambda fn, data, **kw: "x" * LIMIT)
