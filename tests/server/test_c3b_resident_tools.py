@@ -1,6 +1,6 @@
 """C3b: tools nobody used leave the table every request carries (card C3; ⓪Plan's Q2–Q4 and the SSH call).
 
-- **NOT_RESIDENT** (0 calls in 30 days): the browser's back, click, type, select and press,
+- **Not resident** (0 calls in 30 days): the browser's back, click, type, select and press,
   `delegate_work` and `propose_capability`. `_arslan_tools()` no longer carries them. `_every_tool()`
   still defines them, and K7 makes them reachable on demand from there. Until K7, a job cannot act in
   the browser and `list_my_capabilities` does not list them. If K7 has not merged when R63's candidate
@@ -45,10 +45,10 @@ async def _keys(fn, *, job=False) -> set[str]:
 async def test_the_demoted_tools_are_not_carried_but_still_defined(execution_db, mac, job):
     resident, every = await _keys(arslan._arslan_tools, job=job), await _keys(arslan._every_tool, job=job)
     assert not DEMOTED & resident
-    assert {"browser_open", "browser_look", "find_capability"} <= resident
+    assert {"browser_open", "browser_look"} <= resident
     expected = DEMOTED if job else DEMOTED - {"browser_click", "browser_type", "browser_select", "browser_press"}
     assert expected <= every
-    assert arslan.NOT_RESIDENT == frozenset(DEMOTED)
+    assert not DEMOTED & arslan.RESIDENT          # K7 keeps them on demand (find_tools / use_tool)
 
 
 async def test_a_chat_turn_is_still_told_where_page_actions_happen(execution_db, mac):
@@ -79,12 +79,12 @@ async def test_ssh_offers_running_only_once_a_machine_is_enrolled(execution_db, 
     monkeypatch.setattr(executors, "AsyncSessionLocal", execution_db)   # the page's search row reads it by name
     await _ssh_on(execution_db, machines=machines)
     ssh_keys = {"ssh_probe", "ssh_run", "list_nodes", "enroll_node"}
-    assert await _keys(arslan._arslan_tools) & ssh_keys == offered
+    assert await _keys(arslan._callable_tools) & ssh_keys == offered         # K7: reachable
     row = next(r for r in await capability_list.capabilities() if r["key"] == "ssh")
     assert set(row["tools"]) == offered
 
 
 async def test_enroll_node_says_to_enrol_before_running_commands(execution_db):
     await _ssh_on(execution_db, machines=0)
-    desc = {t["key"]: t["description"] for t in await arslan._arslan_tools()}
+    desc = {t["key"]: t["description"] for t in await arslan._callable_tools()}
     assert "before running commands" in desc["enroll_node"]

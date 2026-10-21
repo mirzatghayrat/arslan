@@ -583,9 +583,9 @@ async def test_the_tool_is_offered_only_in_a_project_conversation(api, execution
     from server.services import personal_context as pc
     pid = (await _create(api))["id"]
     with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c", model_is_local=True, project_id=pid)):
-        assert "propose_plan_change" in {t["key"] for t in await arslan._arslan_tools()}
+        assert "propose_plan_change" in {t["key"] for t in await arslan._callable_tools()}
     with pc.bind(pc.TaskMemoryContext(task_id="t2", run_id="r2", conversation_id="c2", model_is_local=True)):
-        assert "propose_plan_change" not in {t["key"] for t in await arslan._arslan_tools()}
+        assert "propose_plan_change" not in {t["key"] for t in await arslan._callable_tools()}
 
 
 # ── the model's draft (§3.2), adapter stubbed ────────────────────────────────

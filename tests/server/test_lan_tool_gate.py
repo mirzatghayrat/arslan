@@ -31,16 +31,16 @@ async def _wire(tmp_path, monkeypatch, *, enabled: str | None):
 @pytest_asyncio.fixture
 async def keys_off(tmp_path, monkeypatch):
     engine = await _wire(tmp_path, monkeypatch, enabled=None)
-    from server.orchestrator.arslan import _arslan_tools
-    yield {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    yield {t["key"] for t in await _callable_tools()}
     await engine.dispose()
 
 
 @pytest_asyncio.fixture
 async def keys_on(tmp_path, monkeypatch):
     engine = await _wire(tmp_path, monkeypatch, enabled="true")
-    from server.orchestrator.arslan import _arslan_tools
-    yield {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    yield {t["key"] for t in await _callable_tools()}
     await engine.dispose()
 
 
@@ -55,16 +55,16 @@ async def test_enabling_offers_it(keys_on):
 
 async def test_the_description_says_it_only_looks(keys_on):
     """The model must not think this connects to anything."""
-    from server.orchestrator.arslan import _arslan_tools
-    tools = {t["key"]: t for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    tools = {t["key"]: t for t in await _callable_tools()}
     desc = tools[KEY]["description"].lower()
     assert "read-only" in desc or "does not connect" in desc
 
 
 async def test_explicitly_false_is_off(tmp_path, monkeypatch):
     engine = await _wire(tmp_path, monkeypatch, enabled="false")
-    from server.orchestrator.arslan import _arslan_tools
-    keys = {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    keys = {t["key"] for t in await _callable_tools()}
     assert KEY not in keys
     await engine.dispose()
 

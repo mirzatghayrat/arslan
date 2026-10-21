@@ -708,11 +708,17 @@ BACKGROUND_SYSTEM = (
     "what was done, where any output is, and anything that remains undone.")
 
 
+_LIVE_TURN_ONLY = frozenset({"ask_user_choice", "start_background_work", "background_status", "stop_background_work"})
+
+
 async def _background_tools() -> list[dict]:
     """The host toolset minus anything that only makes sense inside a live turn."""
-    return [tool for tool in await _arslan_tools()
-            if tool["key"] not in {"ask_user_choice", "start_background_work", "background_status",
-                                   "stop_background_work"}]
+    return [tool for tool in await _arslan_tools() if tool["key"] not in _LIVE_TURN_ONLY]
+
+
+async def _background_callable() -> list[dict]:
+    """What a job may run (K7): the same, over every reachable tool."""
+    return [tool for tool in await _callable_tools() if tool["key"] not in _LIVE_TURN_ONLY]
 
 
 async def _with_project_card(facts: str) -> str:
@@ -762,7 +768,8 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     with request_policy.prompt_cache(long=False):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
-            on_chunk=pieces.append, resolve_tools=_background_tools, allow_escalation=False,
+            on_chunk=pieces.append, resolve_tools=_background_tools, resolve_callable=_background_callable,
+            allow_escalation=False,
             confirm_command=confirmations.command, confirm_workspace_write=confirmations.workspace_write,
             confirm_schedule=confirmations.schedule, conversation_id=conversation_id,
             caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
@@ -822,7 +829,7 @@ async def _handle_answer_body(
             history=ctx["history"][:-1],
             emit=emit,
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
-            resolve_tools=_arslan_tools,
+            resolve_tools=_arslan_tools, resolve_callable=_callable_tools,
             allow_escalation=False,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
                              confirm_schedule=confirm_schedule,
@@ -1002,18 +1009,52 @@ async def _skill_index(limit: int = 80) -> str:
                      for r in rows)
 
 
-# C3b (v0.1.63): tools no request carries any more. Each had 0 calls in 30 days (reduce-proposal §2).
-# `_every_tool` still defines them, and K7 makes them reachable on demand from there.
-# DELETE-BY: R63's candidate. If K7 has not merged when it is cut, revert C3b before it (⓪Plan, Q3):
-# until K7, a job cannot click, type, select or press in the browser, and list_my_capabilities
-# does not list these.
-NOT_RESIDENT = frozenset({"browser_back", "browser_click", "browser_type", "browser_select", "browser_press",
-                          "delegate_work", "propose_capability"})
+# K7 (v0.1.63): the tools every request carries. Everything else `_callable_tools` reaches is found
+# with find_tools and called with use_tool, and from the next turn of that conversation it is appended
+# to this table (server/orchestrator/on_demand.py). Chosen by 30 days of one user's calls (⓪Plan, Q2):
+# run_command 320, web 156, desktop_* 90, memory 47, jobs 29, list_my_capabilities 25, MCP 18,
+# ask_user_choice ~12, read_skill 9, browser_open/look 8; update_plan stays for K5's working method.
+# With Hands on, the whole desktop family is resident: a Hands task is one long turn (Q1).
+# C3b's demotions (browser back/click/type/select/press, delegate_work, propose_capability) are here.
+RESIDENT = frozenset({
+    "web_search", "web_extract", "read_file", "list_dir", "search_files", "write_file", "edit_file",
+    "run_command", "update_plan", "ask_user_choice", "start_background_work", "background_status",
+    "stop_background_work", "recall", "remember", "attach_file", "read_skill", "list_my_capabilities",
+    "browser_open", "browser_look"})
+
+
+def _resident(key: str) -> bool:
+    return key in RESIDENT or key.startswith("desktop_")
+
+
+async def _all_resident() -> bool:
+    """`tools_all_resident`: every tool on every request, as before K7, for M1's comparison and as
+    the rollback. DELETE-BY: v0.1.64, once two v0.1.63 M1 rounds in a row show on demand no worse."""
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        return await settings_service.tools_all_resident(db)
 
 
 async def _arslan_tools() -> list[dict]:
-    """The tools every request carries: all of `_every_tool` except NOT_RESIDENT."""
-    return [tool for tool in await _every_tool() if tool["key"] not in NOT_RESIDENT]
+    """The tools a request is shown: the resident ones, find_tools and use_tool, then the tools this
+    conversation used on demand, in first-use order (marked `appended`: they follow the sorted table)."""
+    from server.orchestrator import on_demand
+    from server.services import personal_context
+    every = await _every_tool()
+    if await _all_resident():
+        return every
+    shown = [tool for tool in every if _resident(tool["key"])] + [on_demand.FIND_TOOLS, on_demand.USE_TOOL]
+    keys = {tool["key"] for tool in shown}
+    by_key = {tool["key"]: tool for tool in every}
+    context = personal_context.current()
+    return shown + [{**by_key[key], "appended": True}
+                    for key in on_demand.used(context.conversation_id if context else None)
+                    if key in by_key and key not in keys]
+
+
+async def _callable_tools() -> list[dict]:
+    """Every tool this turn may run, shown or not, under the same gates (job, Hands, SSH, MCP)."""
+    return await _every_tool()
 
 
 async def _every_tool() -> list[dict]:

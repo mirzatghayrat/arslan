@@ -41,6 +41,7 @@ async def runtime_case(execution_db, monkeypatch):
     monkeypatch.setattr(memory, "facts_text", facts)
     monkeypatch.setattr(knowledge, "retrieve_scoped", retrieve)
     monkeypatch.setattr(arslan, "_arslan_tools", tools)
+    monkeypatch.setattr(arslan, "_callable_tools", tools)        # K7: what the turn may run
     monkeypatch.setattr(dispatcher, "build_spawn_system", system)
     monkeypatch.setattr(spawn_loop, "wired_tools_for_spawn", tools)
 

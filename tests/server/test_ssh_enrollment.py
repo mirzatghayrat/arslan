@@ -163,8 +163,8 @@ async def test_node_tools_are_absent_when_ssh_is_off(tmp_path, monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    from server.orchestrator.arslan import _arslan_tools
-    keys = {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    keys = {t["key"] for t in await _callable_tools()}
     await engine.dispose()
     assert {"enroll_node", "list_nodes"} & keys == set()
 
@@ -172,12 +172,12 @@ async def test_node_tools_are_absent_when_ssh_is_off(tmp_path, monkeypatch):
 async def test_node_tools_are_offered_when_ssh_is_on(maker):
     """The other half. Without this, deleting the registration outright would
     leave the suite green — "absent when off" is satisfied by "absent always"."""
-    from server.orchestrator.arslan import _arslan_tools
-    keys = {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    keys = {t["key"] for t in await _callable_tools()}
     assert "enroll_node" in keys and "list_nodes" not in keys   # C3b: listing waits for a machine
     async with maker() as s:
         from server.services import ssh_nodes
         await ssh_nodes.enroll(s, name="box", host="192.168.1.8", username="me",
                                host_keys=["ssh-ed25519 AAAA"], fingerprints=["SHA256:x"])
-    keys = {t["key"] for t in await _arslan_tools()}
+    keys = {t["key"] for t in await _callable_tools()}
     assert {"enroll_node", "list_nodes"} <= keys

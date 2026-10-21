@@ -430,10 +430,10 @@ class ListMyCapabilitiesExecutor:
         # _arslan_tools), and mcp.executor imports from registry, so module-level would cycle.
         from server.mcp.executor import error_line, rechecks_key, shown_state
         from server.mcp.supervisor import fix_for, supervisor
-        from server.orchestrator.arslan import _arslan_tools
+        from server.orchestrator.arslan import _callable_tools
         from server.services import mcp_service
 
-        host = await _arslan_tools()
+        host = await _callable_tools()     # K7 (Q8): what Arslan can reach, shown in a request or not
         builtin = [{"key": t["key"], "desc": t["description"]}
                    for t in host if not t["key"].startswith("mcp_")]
 

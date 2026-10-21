@@ -75,8 +75,9 @@ async def _reads_home_folders(execution_db) -> bool:
 
 
 async def _offered() -> set[str]:
+    """K7 (Q8): what the model can reach, shown in a request or found on demand."""
     from server.orchestrator import arslan
-    return {tool["key"] for tool in await arslan._arslan_tools()}
+    return {tool["key"] for tool in await arslan._callable_tools()}
 
 
 @pytest.mark.parametrize("values", [

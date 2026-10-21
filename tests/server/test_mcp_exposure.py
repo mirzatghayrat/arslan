@@ -78,12 +78,12 @@ async def _row(maker, sid):
 
 async def _dispatch(tool_key):
     return await tool_loop._dispatch_tool(
-        tool_key, {}, "{}", resolve_tools=arslan._arslan_tools, emit=lambda e: None,
+        tool_key, {}, "{}", resolve_tools=arslan._callable_tools, emit=lambda e: None,
         tool_timeout_s=5, tool_trace=[], convo=[])
 
 
 async def _offered() -> set:
-    return {t["key"] for t in await arslan._arslan_tools()}
+    return {t["key"] for t in await arslan._callable_tools()}
 
 
 async def test_only_ready_servers_tools_are_offered(db, monkeypatch):
@@ -545,7 +545,7 @@ async def test_a_slow_close_never_costs_the_answer_or_last_error(db, own_supervi
     _live_session(monkeypatch, 1, _Stuck(), aclose=slow_close)
     plans = _record_plans(monkeypatch, own_supervisor)
     result = await tool_loop._dispatch_tool(
-        "mcp_1__t", {}, "{}", resolve_tools=arslan._arslan_tools, emit=lambda e: None,
+        "mcp_1__t", {}, "{}", resolve_tools=arslan._callable_tools, emit=lambda e: None,
         tool_timeout_s=0.1, tool_trace=[], convo=[])
     assert "timed out after 0.2 s" in str(result.get("error"))
     assert "timed out after 0.2 s" in ((await _row(db, 1)).last_error or "")
@@ -775,7 +775,7 @@ async def test_a_cancelled_listing_that_dropped_a_healthy_session_is_restarted_b
 # ── Task 8: one readiness rule everywhere a server's readiness is shown or its tools offered ───────
 #
 # The rule is `supervisor.ready_now(sid, state)`: the row says `ready` AND the session manager holds
-# a live session. Five surfaces answer to it: the model's tool list (`_arslan_tools`), what
+# a live session. Five surfaces answer to it: the model's tool list (`_callable_tools`), what
 # `list_my_capabilities` calls usable, the Capabilities row ("on"), the status line, and the tools a
 # spawn is offered (`wired_tools_for_spawn`). A surface that says "usable" while another withholds
 # the tools is the silent disappearance these pages exist to end.

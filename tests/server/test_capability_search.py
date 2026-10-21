@@ -303,7 +303,7 @@ def test_the_tool_is_offered_with_a_schema_and_counts_as_outside_content():
 
 async def test_the_main_assistant_is_offered_find_capability(execution_db):
     from server.orchestrator import arslan
-    tools = await arslan._arslan_tools()
+    tools = await arslan._callable_tools()
     assert any(t["key"] == "find_capability" for t in tools)
 
 

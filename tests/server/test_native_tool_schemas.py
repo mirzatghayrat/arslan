@@ -2,7 +2,7 @@
 
 The `input_schema` captured at MCP discovery and stored on `Tool` is the JSON Schema
 the model needs to call the tool with the right argument names. Both native tool-list
-builders — `_native_tool_schemas` (spawn path) and `_arslan_tools` (host path, whose
+builders — `_native_tool_schemas` (spawn path) and `_callable_tools` (host path, whose
 output flows through `_native_tool_schemas` via `run_native`) — must pass that schema
 through as the OpenAI `function.parameters`, instead of an empty/permissive `{}` that
 forces the model to guess argument names.
@@ -94,10 +94,10 @@ async def host_maker(tmp_path, monkeypatch):
 
 
 async def test_arslan_host_mcp_tool_schema_reaches_model(host_maker):
-    """Arslan's host MCP tools must carry input_schema through `_arslan_tools` so it
+    """Arslan's host MCP tools must carry input_schema through `_callable_tools` so it
     survives the `_native_tool_schemas` conversion in run_native."""
-    from server.orchestrator.arslan import _arslan_tools
+    from server.orchestrator.arslan import _callable_tools
 
-    tools = await _arslan_tools()
+    tools = await _callable_tools()
     schemas = _native_tool_schemas(tools, allow_escalation=False)
     assert _params_for(schemas, "mcp_1__search") == _MCP_SCHEMA

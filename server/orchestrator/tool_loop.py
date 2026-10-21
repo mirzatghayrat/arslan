@@ -19,7 +19,7 @@ from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, 
 from server.orchestrator import run_trace
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
-from server.orchestrator import turn_context
+from server.orchestrator import on_demand, turn_context
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import replay_safety
@@ -1164,6 +1164,23 @@ async def _sandbox_enabled() -> bool:
         return True
 
 
+async def _unavailable(tool_key: str, live: set[str]) -> dict:
+    """The answer to a call this turn cannot run."""
+    if tool_key.startswith("mcp_"):
+        # 0.1.61 §B1: a server that stopped since this turn's tool list was built answers with its
+        # state and reason, not "not available to you" — the call never left Arslan.
+        from server.mcp.executor import not_ready_for_key
+        not_ready = await not_ready_for_key(tool_key)
+        if not_ready is not None:
+            return not_ready
+    import difflib
+    near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
+    return {"ok": False, "external": False, "code": "tool_unavailable",
+            "error": f"tool '{tool_key}' is not available to you"
+                     + (f"; available tools include: {', '.join(near)}" if near else "")
+                     + "; you may escalate a need instead"}
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                         confirm_workspace_write=None,
@@ -1173,7 +1190,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                          conversation_id: str | None = None,
                          log_events: bool = True,
                          caller: ToolCaller | None = None,
-                         turn_adapter=None) -> dict:
+                         turn_adapter=None,
+                         resolve_callable=None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
 
@@ -1218,6 +1236,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
           # "now doing" line and the phone's step titles. Never framed to a window.
           "target": desktop_status.step_target(tool_key, args)})
     desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
+
+    # K7: what this turn can run is settled before any card or file I/O (⓪Plan, Q4): a call to a tool
+    # the turn cannot run never shows the user an approval card. The set is every reachable tool,
+    # shown in this request or found on demand.
+    live = {t["key"] for t in await (resolve_callable or resolve_tools)()}
+    if tool_key not in live:
+        return _record_tool_result(tool_key, args, await _unavailable(tool_key, live), emit, tool_trace,
+                                   assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
 
     # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
     refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
@@ -1506,23 +1532,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
 
-    live = {t["key"] for t in await resolve_tools()}
-    executor = (await resolve_executor(tool_key)) if tool_key in live else None
-    not_ready = None
-    if executor is None and tool_key.startswith("mcp_"):
-        # 0.1.61 §B1: a server that stopped since this turn's tool list was built answers with its
-        # state and reason, not "not available to you" — the call never left Arslan.
-        from server.mcp.executor import not_ready_for_key
-        not_ready = await not_ready_for_key(tool_key)
-    if not_ready is not None:
-        result = not_ready
-    elif executor is None:
-        import difflib
-        near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
-        result = {"ok": False, "external": False, "code": "tool_unavailable",
-                  "error": f"tool '{tool_key}' is not available to you"
-                           + (f"; available tools include: {', '.join(near)}" if near else "")
-                           + "; you may escalate a need instead"}
+    executor = await resolve_executor(tool_key)
+    if executor is None:
+        result = await _unavailable(tool_key, live)
     else:
         # Caller identity (brain-P2 Task 1): set ONLY around the executor call so a
         # memory-write executor can read who is calling (host vs. spawn) and fail-closed
@@ -1866,6 +1878,17 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                   "description": "The service, e.g. GitHub, Notion."}},
                           "required": ["name"]},
     "update_plan": _PLAN_PARAMS,
+    # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
+    "find_tools": {"type": "object",
+                   "properties": {"query": {"type": "string", "maxLength": 200,
+                                            "description": "A few English keywords for what the tool does."}},
+                   "required": ["query"], "additionalProperties": False},
+    "use_tool": {"type": "object",
+                 "properties": {"name": {"type": "string", "maxLength": 120,
+                                         "description": "The tool's name, as find_tools returned it."},
+                                "arguments": {"type": "object",
+                                              "description": "Its arguments, as its parameters say."}},
+                 "required": ["name"], "additionalProperties": False},
     # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).
     "propose_capability": {
         "type": "object",
@@ -2110,7 +2133,8 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     0.1.63 K3: sorted by name, `escalate` last. The table renders before Claude's cached system, so its
     order is part of the cache key; tools loaded later (K7) are appended after it, never sorted in."""
     schemas: list[dict] = []
-    for t in sorted(wired, key=lambda tool: tool["key"]):
+    resident = sorted((t for t in wired if not t.get("appended")), key=lambda tool: tool["key"])
+    for t in resident + [t for t in wired if t.get("appended")]:
         key = t["key"]
         schemas.append({
             "type": "function",
@@ -2504,6 +2528,7 @@ async def _run_native(
     emit: Callable[[dict], None],
     on_chunk: Callable[[str], None],
     resolve_tools: ResolveTools,
+    resolve_callable: ResolveTools | None = None,
     allow_escalation: bool = True,
     max_tool_calls: int | None = None,
     tool_timeout_s: float = TOOL_TIMEOUT_S,
@@ -2558,6 +2583,8 @@ async def _run_native(
 
     drops = _SchemaDrops(a)
     resolve_tools = _hiding(resolve_tools, drops)
+    # K7: what the turn may run, shown or found on demand. Paths without on-demand tools pass none.
+    resolve_callable = _hiding(resolve_callable, drops) if resolve_callable is not None else resolve_tools
     wired = await resolve_tools()
     wired_keys = {t["key"] for t in wired}
     if stream_without_tools:
@@ -2645,7 +2672,8 @@ async def _run_native(
                 confirm_workspace_write=confirm_workspace_write,
                 confirm_schedule=confirm_schedule,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events, caller=caller, turn_adapter=a)
+                conversation_id=conversation_id, log_events=log_events, caller=caller, turn_adapter=a,
+                resolve_callable=resolve_callable)
             policy.observe("web_search", {"query": q}, result)
 
     pending_feedback = len(convo) - unseen_start
@@ -2877,11 +2905,36 @@ async def _run_native(
                             "escalation": {"kind": str(args.get("kind") or "data"),
                                            "need": str(args.get("need") or "").strip(),
                                            "context": str(args.get("context") or "").strip()}}
+                # K7: find_tools ranks what this turn can run but was not shown. use_tool, or a direct call
+                # of such a tool, goes on under the tool's real name once its arguments check out against
+                # its own table, so the approval, the trace and the receipts are a direct call's.
+                on_demand_call = False
+                if name == "find_tools" and "find_tools" in wired_keys:
+                    emit({"type": "tool_call", "tool": name, "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+                    unseen = [t for t in await resolve_callable() if t["key"] not in wired_keys]
+                    result = _record_tool_result(name, args, on_demand.find(str(args.get("query") or ""), unseen, _tool_params),
+                                                 emit, tool_trace, json.dumps({"tool": name, "args": args}, ensure_ascii=False),
+                                                 convo)
+                    policy.observe(name, args, result)
+                    continue
+                if "use_tool" in wired_keys and (name == "use_tool" or name not in wired_keys):
+                    reachable = {t["key"]: t for t in await resolve_callable()}
+                    if name == "use_tool" or name in reachable:
+                        wanted = args if name == "use_tool" else {"name": name, "arguments": args}
+                        real, inner, refusal = on_demand.unwrap(wanted, reachable, wired_keys, _tool_params,
+                                                                _schema_problem)
+                        if refusal is not None:
+                            result = _record_tool_result(name, args, refusal, emit, tool_trace,
+                                                         json.dumps({"tool": name, "args": args}, ensure_ascii=False), convo)
+                            policy.observe(name, args, result)
+                            continue
+                        name, args, on_demand_call = real, inner, True
+                        on_demand.note_used(on_demand.conversation(conversation_id), name)
                 # A neutral trace record, not a prompt-level execution protocol.
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
                 # 0.1.50 S2: the plan is host bookkeeping — no executor, no tool
                 # budget, no progress signal; allowed during wrap-up too.
-                if name == "propose_plan_change" and name in wired_keys:
+                if name == "propose_plan_change" and (name in wired_keys or on_demand_call):
                     # 0.1.56 §7: bookkeeping like update_plan — the proposal waits for the
                     # user on a card; nothing in the plan changes here.
                     emit({"type": "tool_call", "tool": name,
@@ -2889,7 +2942,7 @@ async def _run_native(
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     continue
-                if name == "propose_capability" and name in wired_keys:
+                if name == "propose_capability" and (name in wired_keys or on_demand_call):
                     # 0.1.57 §3: the install-and-retry card. A blocking ask in THIS window
                     # (confirm_command carries it); a job or a turn nobody watches records
                     # the find instead. On success the tools are read again, so the new
@@ -2965,7 +3018,8 @@ async def _run_native(
                         confirm_workspace_write=confirm_workspace_write,
                         confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
                         mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                        log_events=log_events, caller=caller, turn_adapter=a)
+                        log_events=log_events, caller=caller, turn_adapter=a,
+                        resolve_callable=resolve_callable)
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)

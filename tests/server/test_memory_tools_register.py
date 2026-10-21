@@ -5,7 +5,7 @@ Covers:
     that key is in seeder.RETIRED_TOOLSET_KEYS and gets deleted every boot).
   - EXECUTORS wiring: RecallExecutor + RememberExecutor instances under keys
     "recall"/"remember".
-  - host wiring: arslan._arslan_tools() offers both.
+  - host wiring: arslan._callable_tools() offers both.
   - native tool-calling param schemas for both.
   - RecallExecutor: 🔴 BLOCKER fix — sensitive-fact fail-closed isolation. Only an
     explicit host caller sees sensitive facts; a spawn actor OR a missing caller
@@ -111,7 +111,7 @@ async def test_arslan_host_tools_include_recall_and_remember(monkeypatch):
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
 
-    tools = await arslan._arslan_tools()
+    tools = await arslan._callable_tools()
     keys = {t["key"] for t in tools}
     assert {"recall", "remember", "conversation_search", "memory_note"} <= keys
 

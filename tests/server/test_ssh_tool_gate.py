@@ -34,8 +34,8 @@ async def _wire(tmp_path, monkeypatch, **settings):
 @pytest_asyncio.fixture
 async def keys_off(tmp_path, monkeypatch):
     engine, _ = await _wire(tmp_path, monkeypatch)
-    from server.orchestrator.arslan import _arslan_tools
-    yield {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    yield {t["key"] for t in await _callable_tools()}
     await engine.dispose()
 
 
@@ -47,8 +47,8 @@ async def keys_on(tmp_path, monkeypatch):
         from server.services import ssh_nodes
         await ssh_nodes.enroll(s, name="box", host="192.168.1.8", username="me",
                                host_keys=["ssh-ed25519 AAAA"], fingerprints=["SHA256:x"])
-    from server.orchestrator.arslan import _arslan_tools
-    yield {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    yield {t["key"] for t in await _callable_tools()}
     await engine.dispose()
 
 
@@ -65,8 +65,8 @@ async def test_the_lan_switch_does_not_also_grant_reach(tmp_path, monkeypatch):
     """Seeing a machine and logging into it are separate consents. Someone who
     opted into discovery has not thereby opted into execution."""
     engine, _ = await _wire(tmp_path, monkeypatch, lan_discovery_enabled="true")
-    from server.orchestrator.arslan import _arslan_tools
-    keys = {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    keys = {t["key"] for t in await _callable_tools()}
     await engine.dispose()
     assert "scan_local_network" in keys
     assert TOOLS & keys == set()
@@ -74,8 +74,8 @@ async def test_the_lan_switch_does_not_also_grant_reach(tmp_path, monkeypatch):
 
 async def test_the_shell_switch_does_not_also_grant_reach(tmp_path, monkeypatch):
     engine, _ = await _wire(tmp_path, monkeypatch, orchestrator_shell_enabled="true")
-    from server.orchestrator.arslan import _arslan_tools
-    keys = {t["key"] for t in await _arslan_tools()}
+    from server.orchestrator.arslan import _callable_tools
+    keys = {t["key"] for t in await _callable_tools()}
     await engine.dispose()
     assert "run_command" in keys
     assert TOOLS & keys == set()

@@ -210,7 +210,8 @@ def test_an_expired_card_to_leave_the_sandbox_is_no_answer_either(app_client, mo
 
 def test_a_write_with_no_folder_is_not_told_an_earlier_refusal(app_client, monkeypatch, tmp_path):
     """No card at all (the folder the user chose is gone): the earlier card's words are not this
-    refusal's."""
+    refusal's. K7 (Q4): with the folder gone write_file is not offered, so it is refused as not
+    callable before any card or folder check."""
     from server.services import settings_service
     _enable_shell(app_client, policy="ask_risky")
 
@@ -229,7 +230,8 @@ def test_a_write_with_no_folder_is_not_told_an_earlier_refusal(app_client, monke
         ws.send_json({"type": "cancel_run_command", "call_id": rule["call_id"], "note": "keep build"})
         frames = _collect_until(ws, "stream_end")
     summaries = [f["summary"] for f in frames if f.get("type") == "tool_result"]
-    assert summaries[-1] == "user declined workspace write access", summaries
+    assert "write_file' is not available" in summaries[-1] and "keep build" not in summaries[-1], summaries
+    assert not any(f.get("type") == "propose_workspace_write" for f in frames)
 
 
 # ── carry 3: a window ask identical to a job's card shows THAT card ───────────
