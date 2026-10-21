@@ -1,12 +1,12 @@
 """Hands engine harness, L1 (spec docs/specs/2026-10-08-0157-hands-v2.md §8): drives a
-development Arslan Hands directly over its socket, with either engine, against the
+development Arslan Hands directly over its socket, with agent-desktop, against the
 HarnessFixture app, judging every case by ground truth and the observer.
 
     .venv/bin/python -m scripts.hands_harness.run --hands-app ".../Arslan Hands DEV.app" \\
-        [--engines agent-desktop,cua] [--cases a,b] [--runs 3] [--typist] [--out DIR]
+        [--engines agent-desktop] [--cases a,b] [--runs 3] [--typist] [--out DIR]
 
-Needs macOS, a development Hands with Cua Driver beside it (HANDS_CUA_DRIVER=1), allowed
-Accessibility and Screen Recording, and Xcode's swiftc. Acts only on the fixture app.
+Needs macOS, a development Hands, allowed Accessibility and Screen Recording, and Xcode's
+swiftc. Acts only on the fixture app.
 
 --typist starts the user's stand-in: a front window the harness types into at 8 characters a
 second during every action, by posting key events as a user would. It takes the keyboard:
@@ -27,7 +27,7 @@ from pathlib import Path
 
 from scripts.hands_harness import cases as C
 from scripts.hands_harness import oracles
-from scripts.hands_harness.engines import AgentDesktop, Arc, Cua, Hands
+from scripts.hands_harness.engines import AgentDesktop, Hands
 from scripts.hands_harness.observer import Observer
 
 HERE = Path(__file__).resolve().parent
@@ -74,14 +74,14 @@ def start_hands(app: Path) -> Hands:
             time.sleep(0.1)
     hands = Hands()
     status = hands.call("status")
-    if not (status.get("accessibility") and status.get("cua_driver")):
+    if not status.get("accessibility"):
         sys.exit(f"Hands is not ready for the harness: {status}")
     return hands
 
 
 def engine_pids() -> set[int]:
     """Hands and its engines draw their own windows (the agent cursor): not the user's."""
-    out = subprocess.run(["pgrep", "-f", "arslan-hands|cua-driver|agent-desktop"], capture_output=True, text=True)
+    out = subprocess.run(["pgrep", "-f", "arslan-hands|agent-desktop"], capture_output=True, text=True)
     return {int(p) for p in out.stdout.split()} | {os.getpid()}
 
 
@@ -201,7 +201,7 @@ def summarize(results: list[C.Result]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--hands-app", required=True, type=Path)
-    parser.add_argument("--engines", default="agent-desktop,cua")
+    parser.add_argument("--engines", default="agent-desktop")
     parser.add_argument("--cases", default=",".join(C.CASES))
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--typist", action="store_true")
@@ -220,7 +220,7 @@ def main() -> int:
     try:
         if not fixture.wait(lambda s: "title" in s, timeout=10):
             sys.exit("the fixture did not start")
-        time.sleep(3)          # its window's accessibility tree is not ready at once (arc: measured)
+        time.sleep(3)          # its window's accessibility tree is not ready at once (measured)
         hands = start_hands(args.hands_app)
         typist = None
         if args.typist:
@@ -230,12 +230,10 @@ def main() -> int:
         ignore = engine_pids()
         results: list[C.Result] = []
         for engine_name in [e.strip() for e in args.engines.split(",") if e.strip()]:
-            if engine_name == "arc":
-                engine = Arc(os.environ["ARC_CUA"], FIXTURE_NAME)
-            elif engine_name == "agent-desktop":
+            if engine_name == "agent-desktop":
                 engine = AgentDesktop(hands, FIXTURE_NAME)
             else:
-                engine = Cua(hands, FIXTURE_NAME)
+                sys.exit(f"unknown engine {engine_name!r} (agent-desktop)")
             for run in range(args.runs):
                 for name in [c.strip() for c in args.cases.split(",") if c.strip()]:
                     ctx = C.Ctx(engine=engine, fixture=fixture, observe=lambda: Observer(ignore | engine_pids()),

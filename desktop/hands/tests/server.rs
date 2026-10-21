@@ -104,9 +104,6 @@ fn start_pinned(name: &str, pin: impl FnOnce(&Path) -> Option<String>) -> Hands 
         home: dir.clone(),
         idle: Duration::from_secs(3600),
         team: None,
-        cua_driver: None,
-        cua_driver_sha256: None,
-        host_bundle_id: "com.arslan.desktop.hands.test".into(),
     };
     std::thread::spawn(move || {
         let _ = arslan_hands::server::run(config);
@@ -192,9 +189,6 @@ fn the_folder_socket_and_token_are_private() {
         home: hands.dir.clone(),
         idle: Duration::from_secs(1),
         team: None,
-        cua_driver: None,
-        cua_driver_sha256: None,
-        host_bundle_id: "com.arslan.desktop.hands.test".into(),
     });
     assert!(second.unwrap_err().contains("already running"));
 }

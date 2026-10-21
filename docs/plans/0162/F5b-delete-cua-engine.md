@@ -32,12 +32,13 @@
   - `src/paths.rs:17-20`，以及只给 `host_bundle_id` 用的 `own_bundle_id`（`:73` 起）；
   - `src/outcome.rs:25-26` 的 `from_cua`，以及它在 `:56-64` 的单元测试；
   - `tests/server.rs:107-109`、`:195-197`（Config 字段）。
+  - `src/macos.rs` 的 `app_of_pid`、`secure_at`（和只给它用的 `AXUIElementCopyElementAtPosition` 声明）：只有 `server.rs` 的 Cua 段在调。它们是 `pub`，编译器不报未使用，F5b-1 一起删（更正：原卡漏列）。同样只有 Cua 段在调的 `focused_secure` 和 `secure` 留着：③Hands 要用它们给 agent-desktop 的 `press` 加密码框检查（③Hands 的卡，v0.1.63/64），那张卡不做了就一起删。
 - **打包和脚本里的触点：**
   - `build_hands.sh:27-32`、`:88-127`、`:161-166`、`:176-185`、`:232-237`、`:241-242`；
   - `scripts/hands_harness/engines.py:140` 起的 `Cua` 类；
   - `scripts/hands_harness/run.py:6`、`:8`、`:30`、`:77`、`:84`、`:204`、`:234-238`；
   - `scripts/hands_harness/cases.py:75` 的注释。
-- **文档：** `docs-site/sections/{en,de,es,ja,tr,zh}/09-security.html` 各有一句「Cua Driver 那条路径留在代码里，不进正式版」。这句描述的是已发布的版本，等 v0.1.63 发布后的文档同步再改，本卡不改。
+- **文档：** `docs-site/sections/{en,de,es,ja,tr,zh}/09-security.html` 各有一句「Cua Driver 那条路径留在代码里，不进正式版」。这句描述的是已发布的版本，等 v0.1.63 发布后的文档同步再改，本卡不改。同一句也在 `docs/docs/{,de,es,ja,tr}/index.html:476` 和 `docs/docs/zh/index.html:475`（更正：原卡漏列），删除条件相同。
 
 ## 改哪些文件
 
@@ -72,7 +73,7 @@
 1. 每一步都要过 `cargo fmt --check`、`cargo clippy --all-targets -D warnings` 和 `cargo test`，在 Linux 和 macOS 两个 job 里都要过（`ci.yml:110-111`、`:236-243`）。去掉字段后留下的未用导入会被 `-D warnings` 判红。
 2. **`refused_after` 和 `Completion` 只在 Cua 段里用，随 Cua 段一起删。** H2 不要复用它们：H2 的「没执行」写在 Python 端。
 3. **status 去掉 `cua_driver` 和 `cua_driver_pinned` 两个字段之前，再 grep 一遍。** 服务端 Python 没有读它们，只有测试台和探针脚本读（`run.py:77`、`hands_cua_probe.py:121`）。
-4. 测试台的 `Arc` 引擎（`engines.py:214` 起）留不留，③Hands 审本 PR 时定。留的话，`Arc` 的注释和本卡都写明删除条件（`docs/sessions.md` §9）；不留就本 PR 一起删。
+4. 测试台的 `Arc` 引擎（`engines.py:214` 起）：③Hands 审 F5b-1（#249）时定为删，在 F5b-1 里一起删。它只是对照用的候选，不在 Hands 后面，用的是测试台进程自己的授权。
 
 ## 验收
 
@@ -92,8 +93,9 @@
 ## 风险与回退
 
 - **风险：** 以后想重新评估 Cua 时，要从 git 历史里取回来。fork、pin 和评估记录都留在历史和 `docs/specs/` 里。
-- **风险：** 测试台少了一个引擎，对照实验只剩 agent-desktop（和 Arc，见第 4 步）。
+- **风险：** 测试台少了两个引擎（Cua 和 Arc），对照实验只剩 agent-desktop。
 - **留着的东西和删除条件**（`docs/sessions.md` §9）：
-  - docs-site 那 6 句：v0.1.63 发布后的文档同步里改掉。
-  - `Arc` 引擎：见第 4 步，由 ③Hands 定删除条件。
+  - docs-site 那 6 句和 `docs/docs` 里同样的 6 句：v0.1.63 发布后的文档同步里改掉。
+  - `src/macos.rs` 的 `focused_secure`、`secure`：③Hands 那张 `press` 密码框检查的卡不做了，就和它一起删。
+  - `server/registry/hands_tools.py:68` 的四个拒绝码和 `:1137` 那条 `refused` 分支：F5b 之后没有引擎再发它们。本卡不碰服务端 Python，交 ③Hands 在 F5b-2 合并后清掉。
 - **回退：** revert 合并提交（拆成两个时，按顺序 revert F5b-2、F5b-1）。
