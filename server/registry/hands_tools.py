@@ -87,7 +87,17 @@ def _not_run(result: dict) -> dict:
     return {**result, "executed": False}
 
 
+# S1a (U14 a): a scheduled run has nobody to ask, so permissions.decide refuses every action there, and R7
+# takes start_background_work out of it. Its refusals say what to do instead: tell the user.
+_SCHEDULED_INSTEAD = ("A scheduled run cannot act on this Mac: nobody is there to approve it. Tell the user what "
+                      "you would have done, so they can do it or ask you in a conversation.")
+
+
 def _not_in_job() -> dict:
+    if _scheduled_run() is not None:
+        return _not_run({"ok": False, "external": False, "code": "act_in_background",
+                         "error": "Acting in the browser and running Shortcuts or scripts happen in background "
+                                  "work. " + _SCHEDULED_INSTEAD})
     return _not_run({"ok": False, "external": False, "code": "act_in_background",
                      "error": "Acting in the browser and running Shortcuts or scripts happen in background work. "
                               "Call start_background_work with this goal; looking at pages is fine here."})
@@ -958,8 +968,9 @@ class DesktopTakeoverExecutor:
         conversation_id, job_id = _conversation_and_job()
         if job_id is None:
             return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                             "error": "Taking the screen over runs in background work only. Call "
-                                      "start_background_work."})
+                             "error": "Taking the screen over runs in background work only. "
+                                      + (_SCHEDULED_INSTEAD if _scheduled_run() is not None
+                                         else "Call start_background_work.")})
         if not desktop_available():
             return _unavailable()
         if (stop := _stopped(job_id)) is not None:
@@ -1003,8 +1014,10 @@ class DesktopTakeoverExecutor:
 
 # Hands v2 §5.7, kept for scheduled runs only (⓪Plan on #290, 2026-10-21): U8 lifts the cap for chat
 # replies; a scheduled run acts with nobody at the Mac, and what scheduled runs may do is with the
-# audit. At most this many actions, all in one app, per run (a batch counts its steps). Removed, if
-# ever, by the user's decision after that audit — not by H3.
+# audit. At most this many actions, all in one app, per run (a batch counts its steps).
+# Defence in depth since S1a (U14 a): permissions.decide refuses every action when no asker is bound, as in
+# a scheduled run, so this cap cannot be reached while that holds. DELETE-BY: v0.1.64 if M2 shows the policy
+# refusal holding (no scheduled run acted on the Mac).
 SCHEDULED_ACTIONS = 5
 _scheduled: dict[int, tuple[int, str]] = {}      # desktop_status work id → (actions, app)
 
@@ -1018,7 +1031,7 @@ def _scheduled_run() -> int | None:
 
 def _scheduled_refusal(why: str) -> dict:
     return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                     "error": f"{why} Call start_background_work with this goal; the work continues there."})
+                     "error": f"{why} {_SCHEDULED_INSTEAD}"})
 
 
 def _scheduled_full(run: int | None) -> dict | None:
