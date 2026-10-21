@@ -105,6 +105,27 @@ final class FrameMapperTests: XCTestCase {
         }
     }
 
+    /// S1b (v0.1.63): the window's schedule card gains `prompt` (the task's text). The phone's card is
+    /// built from name / when / title / perm_kind / expires_at only, so it is the same with or without it:
+    /// no change for the iPhone, no Bridge format change.
+    func testAScheduleCardsPromptDoesNotChangeWhatThePhoneGets() throws {
+        let frame: [String: Any] = ["type": "propose_schedule", "call_id": "s1", "name": "Inbox digest", "when": "daily 08:00",
+                                    "title": "Schedule “Inbox digest”?", "perm_kind": "schedule", "expires_at": 1_790_987_000,
+                                    "options": ["once"]]
+        func phone(_ frame: [String: Any]) throws -> [String] {
+            try FrameMapper(conversationID: "c1").phoneMessages(for: frame, now: t0).map { message in
+                let body = try JSONSerialization.data(withJSONObject: message.body, options: [.sortedKeys])
+                return message.type + " " + String(decoding: body, as: UTF8.self)
+            }
+        }
+        let without = try phone(frame)
+        let with = try phone(frame.merging(["prompt": "Summarise my inbox"]) { a, _ in a })
+        XCTAssertEqual(without.count, 1)
+        XCTAssertTrue(without.first?.hasPrefix("approval.request ") == true)
+        XCTAssertEqual(with, without, "the phone's approval.request is identical with and without `prompt`")
+        XCTAssertFalse(with.joined().contains("Summarise my inbox"), "the task's text never reaches the phone")
+    }
+
     func testV2CardsUseTheirTitleRiskAndExpiry() throws {
         let m = FrameMapper(conversationID: "c1")
         let at = 1_790_987_400.75                        // the Mac sends Unix seconds as a float
