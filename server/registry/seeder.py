@@ -58,6 +58,14 @@ RETIRED_TOOLSET_KEYS: tuple[str, ...] = (
     "mixture_of_agents", "task_delegation", "memory", "clarifying_questions",
     "browser_automation", "terminal_processes", "cron_jobs", "computer_use",
     "context_engine", "yuanbao",
+    # C3a (v0.1.63): render_deck had no caller (the deck skill went with C9); these three
+    # toolsets' tools never had an executor.
+    "deck", "session_search", "skills_management", "task_planning",
+)
+# One retired row inside a toolset that stays, named with its toolset: a row of the same key
+# anywhere else is not the seeder's and is never deleted (D7's lesson, for tools).
+RETIRED_TOOLS: tuple[tuple[str, str], ...] = (
+    ("file_operations", "patch"),     # C3a: no executor; edit_file is the tool that edits
 )
 
 
@@ -91,6 +99,8 @@ async def _retire_removed_seeds(db: AsyncSession) -> None:
     """Delete retired seed rows (and the retired toolsets' tools). Idempotent;
     touches ONLY the literal keys above, and of skills only the seeder's own rows."""
     await db.execute(delete(Tool).where(Tool.toolset_key.in_(RETIRED_TOOLSET_KEYS)))
+    for toolset_key, key in RETIRED_TOOLS:
+        await db.execute(delete(Tool).where(Tool.key == key, Tool.toolset_key == toolset_key))
     await db.execute(delete(Toolset).where(Toolset.key.in_(RETIRED_TOOLSET_KEYS)))
     await db.execute(delete(SkillPack).where(SkillPack.key.in_(RETIRED_SKILL_KEYS), not_(_USERS_SKILL)))
 

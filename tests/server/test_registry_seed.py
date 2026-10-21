@@ -32,7 +32,8 @@ async def test_seed_counts_and_exclusions(maker):
         skills = (await s.execute(select(SkillPack))).scalars().all()
         tools = (await s.execute(select(Tool))).scalars().all()
 
-    assert len(toolsets) == 12  # Includes host-only recovery and temporary collaboration.
+    assert len(toolsets) == 8  # Includes host-only recovery and temporary collaboration. C3a: deck and
+    # the three toolsets with no executor (session_search, skills_management, task_planning) retired.
     assert len(skills) == 2   # C9: designed-html-report and skill-creator
     assert EXCLUDED.isdisjoint({t.key for t in toolsets})
     assert EXCLUDED.isdisjoint({sk.key for sk in skills})
@@ -54,7 +55,7 @@ async def test_seed_core_wiring_and_splits(maker):
         # READ/WRITE split inside File Operations
         assert (await s.get(Tool, "read_file")).tier == "safe"
         assert (await s.get(Tool, "write_file")).tier == "orchestrator"
-        assert (await s.get(Tool, "patch")).tier == "orchestrator"
+        assert await s.get(Tool, "patch") is None          # C3a: no executor; edit_file edits
         # the coding-delegation catalog entries are retired with the other bundled skills (C9)
         for key in ("claude-code", "codex", "opencode"):
             assert await s.get(SkillPack, key) is None
@@ -75,7 +76,7 @@ async def test_seed_idempotent_and_updates(maker):
         assert (await s.get(Toolset, "web_search_scraping")).tier == "safe"
         from sqlalchemy import func
         n = (await s.execute(select(func.count()).select_from(Toolset))).scalar_one()
-    assert n == 12
+    assert n == 8
 
 
 @pytest.mark.asyncio

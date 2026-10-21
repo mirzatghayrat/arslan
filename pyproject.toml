@@ -85,8 +85,8 @@ dependencies = [
     "python-pptx>=0.6.23",
     "python-multipart>=0.0.18",
     # Core, not OCR-only: python-pptx imports PIL internally
-    # (pptx/parts/image.py, pptx/text/layout.py), so `import deck_pptx` raises
-    # ModuleNotFoundError without it. It was briefly listed under the `ocr`
+    # (pptx/parts/image.py, pptx/text/layout.py), so `import pptx` raises
+    # ModuleNotFoundError without it (artifact_inspector reads .pptx with it). It was briefly listed under the `ocr`
     # extra on the mistaken basis that ingest.py:39,61 were its only importers
     # — true of OUR code, false of the dependency graph.
     "pillow>=10.0",

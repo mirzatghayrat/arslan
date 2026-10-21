@@ -15,8 +15,8 @@ async def test_registry_lists_catalog_with_assignable_flags(client):
     assert toolsets["web_search_scraping"]["assignable"] is True
     assert toolsets["web_search_scraping"]["name_key"] == "catalogUI.web_search_scraping.name"
     assert toolsets["web_search_scraping"]["description_key"] == "catalogUI.web_search_scraping.description"
-    assert toolsets["session_search"]["assignable"] is False        # no wired tool yet
-    assert toolsets["session_search"]["tier"] == "safe"             # listed, transparent
+    assert toolsets["file_operations"]["assignable"] is False       # no wired tool yet
+    assert toolsets["file_operations"]["tier"] == "safe"            # listed, transparent
     assert skills["designed-html-report"]["assignable"] is True
     assert skills["designed-html-report"]["name"] == "designed-html-report"
     assert skills["designed-html-report"]["name_key"] == "catalogUI.skills.designed-html-report.name"
@@ -52,4 +52,4 @@ async def test_registry_is_idempotent(client):
     body1 = resp1.json()
     body2 = resp2.json()
     assert body1 == body2
-    assert len(body1["toolsets"]) == 12
+    assert len(body1["toolsets"]) == 8

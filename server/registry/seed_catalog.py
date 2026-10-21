@@ -48,46 +48,14 @@ TOOLSETS: list[dict] = [
     {
         "key": "file_operations",
         "name": "File Operations",
-        "description": "Read & search files (write/patch is orchestrator-tier).",
+        "description": "Read & search files (write is orchestrator-tier).",
         "tier": "safe",
         "status": "registered",
         "tools": [
             ("read_file", "Read a file.", "safe", "registered"),
             ("search_files", "Search files.", "safe", "registered"),
             ("write_file", "Write a file.", "orchestrator", "registered"),
-            ("patch", "Patch a file.", "orchestrator", "registered"),
         ],
-    },
-    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
-    {
-        "key": "session_search",
-        "name": "Session Search",
-        "description": "Search past conversations.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("session_search", "Search past sessions.", "safe", "registered")],
-    },
-    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
-    {
-        "key": "skills_management",
-        "name": "Skills",
-        "description": "List/view skills (managing them is orchestrator-tier).",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [
-            ("skills_list", "List skills.", "safe", "registered"),
-            ("skill_view", "View a skill.", "safe", "registered"),
-            ("skill_manage", "Install/modify skills (capability mutation).", "orchestrator", "registered"),
-        ],
-    },
-    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
-    {
-        "key": "task_planning",
-        "name": "Task Planning",
-        "description": "todo lists.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("todo", "Maintain a todo list.", "safe", "registered")],
     },
     {
         "key": "charting",
@@ -121,45 +89,6 @@ TOOLSETS: list[dict] = [
              "Pass {key:'<skill-key>'} for the whole thing, or {key, section:'## Heading'} for one "
              "section. Use this when an injected technique block is summarized/truncated.",
              "safe", "wired"),
-        ],
-    },
-    {
-        "key": "deck",
-        "name": "Deck / PPTX",
-        "description": "render_deck — turn a structured deck spec into a native, editable PowerPoint "
-                       "(.pptx): themed slides with bullets, native tables, native editable charts and "
-                       "KPI stat blocks.",
-        "tier": "safe",
-        "status": "wired",
-        "tools": [
-            ("render_deck", "ONLY when the user EXPLICITLY asks for an editable PowerPoint / "
-             ".pptx FILE (说要'pptx文件'/'可编辑的PPT'/'PowerPoint'). For any other presentation "
-             "request the deliverable is a designed single-file HTML deck typed directly as your "
-             "reply (starts with <!DOCTYPE html); do NOT call "
-             "this tool for those. "
-             "Generate a native, editable PowerPoint (.pptx) from a deck spec. "
-             "slides=[{layout, ...}]. Per-layout fields (use ONLY these): "
-             "title→{title,subtitle} · section→{title} · bullets→{title,bullets:[str]} "
-             "(max ~6 shown; keep each bullet one short line) · "
-             "two-column→{title,left:[str],right:[str]} (left/right ONLY here, never on bullets; "
-             "may add {left_title,right_title} column headers) · "
-             "quote→{text,attribution} · big-number→{value,label} · "
-             "table→{title,headers:[str],rows:[[cell,...],...]} (native table, themed header + "
-             "zebra rows; ≤7 rows shown, extras go to speaker notes) · "
-             "chart→{title,chart_type:'bar'|'column'|'line'|'pie',categories:[str],"
-             "series:[{name,values:[number]}]} (native EDITABLE chart; every series' values "
-             "length must equal categories length; pie takes exactly 1 series) · "
-             "kpi→{title,items:[{value,label}]} (2-4 stat blocks, e.g. value:'92%', "
-             "label:'devs using AI'). "
-             "PICK THE LAYOUT BY DATA SHAPE — numeric comparisons/trends/shares → chart or "
-             "table; top-N lists or anything row/column-shaped → table; 1 headline stat → "
-             "big-number; 2-4 headline stats → kpi. Do NOT put rows of numbers in bullets — "
-             "bullets are for short prose points only. "
-             "Each slide may carry notes (speaker notes). Optional theme (string): 'ember' "
-             "(house default — wheat paper, warm black, rust-orange accent) | 'ember-dark' "
-             "(warm black bg, bright orange) | 'ink' (paper + chartreuse) | 'midnight' "
-             "(dark, cyan) | 'azure' (white, deep blue) | 'terra' (cream, orange). The user gets a downloadable .pptx — real designed shapes, text, "
-             "tables and charts, not images.", "safe", "wired"),
         ],
     },
     {

@@ -28,6 +28,11 @@ def test_every_offered_tool_has_words():
     assert not missing, f"tools without words in web/src/lib/toolWords.json: {missing}"
 
 
+# Tools that are gone, but whose steps old conversations still show: their words stay (C3a: render_deck).
+RETIRED_WITH_HISTORY = {"render_deck"}
+
+
 def test_no_words_for_tools_that_do_not_exist():
     words = {k for k in json.loads((ROOT / "web/src/lib/toolWords.json").read_text()) if not k.startswith("_")}
-    assert words <= _offered(), sorted(words - _offered())
+    assert words - RETIRED_WITH_HISTORY <= _offered(), sorted(words - RETIRED_WITH_HISTORY - _offered())
+    assert not RETIRED_WITH_HISTORY & _offered(), "a live tool is listed as retired"

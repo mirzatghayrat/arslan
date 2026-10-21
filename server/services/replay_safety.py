@@ -7,12 +7,9 @@ deny-list: everything not named here is dropped — every MCP tool (side effects
 real server), `create_skill` (writes a candidate row), the interactive `ask_user_choice`,
 and any future tool default to unsafe until proven hermetic.
 
-Why exactly these six:
+Why exactly these five:
   - web_search / web_extract   : read-only web fetches (no writes)
   - render_chart               : returns a chart spec/artifact in-memory (no disk write)
-  - render_deck                : builds the .pptx in-memory and returns it base64 (the deck
-                                 executor never writes disk; only the WS layer offers it as a
-                                 download, and replay's on_event is a no-op)
   - run_python                 : the code sandbox (ephemeral scrubbed tmpdir, no network)
   - read_skill                 : reads an equipped skill's own body (read-only)
 
@@ -41,7 +38,6 @@ REPLAY_SAFE_BUILTINS: frozenset[str] = frozenset({
     "web_search",
     "web_extract",
     "render_chart",
-    "render_deck",
     "run_python",
     "read_skill",
 })

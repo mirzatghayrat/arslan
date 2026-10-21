@@ -74,14 +74,14 @@ async def test_real_skill_still_equippable(seeded_registry):
 
 
 async def test_unwired_toolset_not_equippable(seeded_registry):
-    # 'session_search' is safe|registered but none of its tools are wired yet
+    # 'file_operations' is safe|registered but none of its tools are wired yet
     # (wire-candidate) — until then it's decoration, refuse.
     with pytest.raises(NotAssignableError, match="no wired tools"):
-        await assert_assignable("toolset", "session_search")
+        await assert_assignable("toolset", "file_operations")
 
 
 async def test_wired_toolset_still_equippable(seeded_registry):
-    for key in ("web_search_scraping", "charting", "deck"):
+    for key in ("web_search_scraping", "charting"):
         await assert_assignable("toolset", key)
 
 
@@ -90,11 +90,12 @@ async def test_safe_menu_lists_only_functional(seeded_registry):
     ts_keys = {t["key"] for t in menu["toolsets"]}
     sk_keys = {s["key"] for s in menu["skills"]}
     # functional ones present
-    assert {"web_search_scraping", "charting", "skill_authoring", "deck"} <= ts_keys
+    assert {"web_search_scraping", "charting", "skill_authoring"} <= ts_keys
     assert {"designed-html-report", "skill-creator"} <= sk_keys   # C9: the two bundled skills
     # not-yet-wired wire-candidates absent from the equip menu
-    assert {"session_search", "task_planning", "file_operations",
-            "skills_management"}.isdisjoint(ts_keys)
+    assert "file_operations" not in ts_keys
+    # C3a: retired outright, gone from the catalog
+    assert {"session_search", "task_planning", "skills_management"}.isdisjoint(ts_keys)
     # retired decoration keys gone from the catalog entirely
-    assert "spotify" not in ts_keys and "image_generation" not in ts_keys
+    assert "spotify" not in ts_keys and "image_generation" not in ts_keys and "deck" not in ts_keys
     assert "notion" not in sk_keys and "powerpoint" not in sk_keys

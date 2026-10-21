@@ -27,7 +27,7 @@ async def maker(tmp_path, monkeypatch):
                     system_prompt="You are an image artist."))
         s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
         s.add(SpawnCapability(spawn_id=7, kind="skill", ref_key="designed-html-report"))
-        s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="session_search"))
+        s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="file_operations"))
         await s.commit()
     return m
 
@@ -80,7 +80,7 @@ async def test_unequipped_spawn_gets_universal_baseline(maker, monkeypatch):
 async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
     """Spawn equipped with a registered (not wired) toolset gets '(not yet live)' label.
 
-    Spawn 9 is equipped (session_search) → has_equipment → dispatch resolves wired tools,
+    Spawn 9 is equipped (file_operations; C3a retired session_search) → has_equipment → dispatch resolves wired tools,
     which now always include the universal safe tool render_chart → the spawn runs through the
     tool loop. Stub tool_loop's adapter (not the legacy dispatcher one) so no real LLM call fires.
     """
@@ -93,7 +93,7 @@ async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
     await dispatcher.dispatch("main", spawn_id=9, task_brief="search past sessions")
     s = adapter.chat_calls[-1]["system"]
     assert "(not yet live)" in s
-    assert "Session Search" in s
+    assert "File Operations" in s
 
 
 def test_wired_toolset_renders_live_not_coming_soon():

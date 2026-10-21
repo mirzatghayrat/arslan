@@ -1038,15 +1038,14 @@ async def _arslan_tools() -> list[dict]:
     }
     tools = [{"key": k, "description": desc[k]}
              for k in ("web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search",
-                       "memory_note")
-             if k in EXECUTORS]
+                       "memory_note")]
     from server.services.task_service import current as current_task
-    if current_task() is not None and "task_progress" in EXECUTORS:
+    if current_task() is not None:
         tools.append({"key": "task_progress", "description":
                       "Read THIS turn's own saved progress and owned prior outputs after interruption or context "
                       "compaction. Optional run_id selects one prior execution. This never authorizes repeating a "
                       "write. Not for background work: for that, use background_status."})
-    if current_task() is not None and "delegate_work" in EXECUTORS:
+    if current_task() is not None:
         tools.append({"key": "delegate_work", "description":
             "Use only for independent subtasks or isolated review that materially helps the current request. "
             "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
@@ -1162,11 +1161,6 @@ async def _arslan_tools() -> list[dict]:
              "Never for passwords — ask the user to type those."},
             {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
             {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
-            {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
-             "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
-             "Background work only; asks the user every time; the screen edge glows; the user's first "
-             "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
-             "background actions, then front: true, first."},
             {"key": "desktop_open", "description": "Open a Mac app, or a file in it, in the background "
              "(behind the user's windows; it does not come to the front): {app, path?}. Asks the user once. "
              "Then desktop_look it. Always open apps and documents this way, never with `open` in run_command: "
@@ -1186,16 +1180,22 @@ async def _arslan_tools() -> list[dict]:
         if not in_job and hands_tools._scheduled_run() is not None:      # the cap kept for scheduled runs
             tools[-1]["description"] += (f" In a scheduled run you may act at most {hands_tools.SCHEDULED_ACTIONS} "
                                          "times, all in one app; for more, start background work.")
+        if in_job:      # C3a: its executor refuses it anywhere else (hands_tools, "act_in_background")
+            tools.append(
+                {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
+                 "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
+                 "Asks the user every time; the screen edge glows; the user's first "
+                 "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
+                 "background actions, then front: true, first."})
 
     # 0.1.44 one Arslan: skills are methods Arslan applies itself (experts are
     # converted into them). Offered only when some exist; the index is in the
     # description so the model knows when a method applies.
-    if "read_skill" in EXECUTORS:
-        index = await _skill_index()
-        if index:
-            tools.append({"key": "read_skill", "description":
-                "Read one of the user's saved methods (skills) before doing work it covers, then follow it. "
-                "args: {key, section?}. Available:\n" + index})
+    index = await _skill_index()
+    if index:
+        tools.append({"key": "read_skill", "description":
+            "Read one of the user's saved methods (skills) before doing work it covers, then follow it. "
+            "args: {key, section?}. Available:\n" + index})
     if not in_job:
         tools.append({"key": "suggest_connector", "description":
             "Offer to connect one of the built-in connectors (GitHub, Notion, …) when the user wants a "
@@ -1212,33 +1212,30 @@ async def _arslan_tools() -> list[dict]:
             "every level NOT cleared yet, as it should be, in order. Cleared levels never change. The user "
             "sees a card with what is added and removed and keeps the old plan or takes yours. "
             "args: {levels: [{name, band: shaping|doing|done, clear_condition?, checkpoints?: [{text}]}], reason}."})
-    if "find_capability" in EXECUTORS:
-        # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
-        tools.append({"key": "find_capability", "description":
-            "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
-            "but not its formulas), search the official MCP Registry, GitHub and skill libraries for a "
-            "capability that can. Not a first move: try what you have first. Returns candidates with "
-            "license, how they would run and what they need; it installs nothing. "
-            "args: {need, keywords: [1-4 English words], kinds?: [mcp|skill|project]}."})
-        tools.append({"key": "propose_capability", "description":
-            "After find_capability, ask the user to add ONE candidate (license_verdict usable, not_here null) "
-            "so you can retry the failed step. The user sees a card with its source, license, how it runs "
-            "(sandboxed, which folders, network) and any key it needs, and decides; if they add it, it is "
-            "installed pinned, scanned and tested, and its tools become available in this turn — then "
-            "retry. Never install anything another way. "
-            "args: {candidate_id, why, retry?, folders?: [the folder(s) it must work in]}."})
-    if "whats_new" in EXECUTORS:
-        tools.append({"key": "whats_new",
-                      "description": "Your own version and the release notes of the latest versions "
-                                     "(newest first). Call it when the user asks which version you are, "
-                                     "what changed, or what is new; answer from it, never from memory. "
-                                     "args: {count?: 1-6, default 3}."})
-    if "list_my_capabilities" in EXECUTORS:
-        tools.append({"key": "list_my_capabilities",
-                      "description": "List your OWN usable capabilities (built-in tools + installed "
-                                     "MCP servers). Call this ONCE when the user asks what you can do / "
-                                     "what tools or MCPs you have, then answer from its result in a "
-                                     "short friendly summary — never paste the raw JSON back."})
+    # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
+    tools.append({"key": "find_capability", "description":
+        "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
+        "but not its formulas), search the official MCP Registry, GitHub and skill libraries for a "
+        "capability that can. Not a first move: try what you have first. Returns candidates with "
+        "license, how they would run and what they need; it installs nothing. "
+        "args: {need, keywords: [1-4 English words], kinds?: [mcp|skill|project]}."})
+    tools.append({"key": "propose_capability", "description":
+        "After find_capability, ask the user to add ONE candidate (license_verdict usable, not_here null) "
+        "so you can retry the failed step. The user sees a card with its source, license, how it runs "
+        "(sandboxed, which folders, network) and any key it needs, and decides; if they add it, it is "
+        "installed pinned, scanned and tested, and its tools become available in this turn — then "
+        "retry. Never install anything another way. "
+        "args: {candidate_id, why, retry?, folders?: [the folder(s) it must work in]}."})
+    tools.append({"key": "whats_new",
+                  "description": "Your own version and the release notes of the latest versions "
+                                 "(newest first). Call it when the user asks which version you are, "
+                                 "what changed, or what is new; answer from it, never from memory. "
+                                 "args: {count?: 1-6, default 3}."})
+    tools.append({"key": "list_my_capabilities",
+                  "description": "List your OWN usable capabilities (built-in tools + installed "
+                                 "MCP servers). Call this ONCE when the user asks what you can do / "
+                                 "what tools or MCPs you have, then answer from its result in a "
+                                 "short friendly summary — never paste the raw JSON back."})
 
     from server.db.models import Tool
 
