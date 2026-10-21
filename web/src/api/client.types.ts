@@ -366,6 +366,7 @@ export interface AppSettings {
   first_run_seen?: boolean;
   search_provider: string;
   search_base_url: string;
+  search_provider_role?: string; // "" | "only" | "backup" (0.1.63 D5)
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   llm_strategy?: string;

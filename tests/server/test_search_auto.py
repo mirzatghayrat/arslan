@@ -7,6 +7,8 @@ import httpx
 import pytest
 
 from arslan.execution_budget import Budget, Limits, scope
+from arslan.llm.adapter import LLMAdapter
+from server.orchestrator import turn_model
 from server.registry import executors, net_pin, search_providers as sp
 
 CHALLENGE = ("<html><body><div class='anomaly-modal'>Unfortunately, bots use DuckDuckGo too. Please complete "
@@ -95,13 +97,15 @@ async def test_native_request_shape_and_budget(monkeypatch):
 
 
 def _auto(monkeypatch, endpoint=("https://api.deepseek.com", "deepseek-v4-flash", "sk-x"), name="duckduckgo"):
+    """`endpoint` is THIS turn's model (0.1.63 D5: the tool loop hands it to web_search), not the primary config."""
     async def cfg():
         return executors.SearchConfig(name=name, key="", key_state="unset")
     monkeypatch.setattr(executors, "_read_search_config", cfg)
-
-    async def primary():
-        return endpoint
-    monkeypatch.setattr("server.services.llm_factory.primary_chat_endpoint", primary)
+    adapter = None
+    if endpoint is not None:
+        base, model, key = endpoint
+        adapter = LLMAdapter("openai", model, api_key=key, base_url=base, report_provider="deepseek")
+    monkeypatch.setattr(turn_model, "current", lambda: adapter)
 
 
 async def test_auto_prefers_the_chat_providers_own_search(monkeypatch):

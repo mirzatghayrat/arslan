@@ -25,6 +25,9 @@ class SettingsIn(BaseModel):
     #: network address, and encrypting it would make the connection test and
     #: every support question harder for no confidentiality anyone wanted.
     search_base_url: str | None = None
+    #: 0.1.63 D5: how a chosen Tavily / SearXNG is used. "" (every choice saved before D5) and "only": it
+    #: is the one search. "backup": the conversation model's own search first, then it.
+    search_provider_role: Literal["", "only", "backup"] | None = None
     # 🔴 THIRD instance of the defect the comment below describes, and the only
     # one that was dead on BOTH sides: github_token is in _SECRET_KEYS (so
     # update_settings encrypts it and get_settings masks it) but was on neither
@@ -106,6 +109,7 @@ class SettingsOut(BaseModel):
     # Imported rather than repeated: the bug was two literals disagreeing.
     search_provider: str = _SEARCH_DEFAULT
     search_base_url: str = ""
+    search_provider_role: str = ""  # see SettingsIn
     search_api_key: str = ""  # masked
     github_token: str = ""  # masked — see SettingsIn
     # Honest state per secret: "unset" | "set" | "undecryptable". Read-only;

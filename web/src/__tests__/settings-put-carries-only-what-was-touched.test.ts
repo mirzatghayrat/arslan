@@ -111,6 +111,7 @@ describe("every settings field the UI can edit is mappable", () => {
     const uiNameFor: Record<string, unknown> = {
       search_provider: { searchProvider: "duckduckgo" },
       search_base_url: { searchBaseUrl: "http://x" },
+      search_provider_role: { searchProviderRole: "backup" },
       language: { language: "en" },
       llm_strategy: { llmStrategy: "single" },
       distill_on_session_end: { distillOnSessionEnd: true },

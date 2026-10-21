@@ -1172,7 +1172,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                          mcp_hint_logged: set | None = None,
                          conversation_id: str | None = None,
                          log_events: bool = True,
-                         caller: ToolCaller | None = None) -> dict:
+                         caller: ToolCaller | None = None,
+                         turn_adapter=None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
 
@@ -1527,8 +1528,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         # memory-write executor can read who is calling (host vs. spawn) and fail-closed
         # (refuse) when no caller was threaded through. Reset in finally — zero residual
         # pollution across dispatches/turns, including on the exception paths below.
-        from server.orchestrator import tool_caller
+        from server.orchestrator import tool_caller, turn_model
         _ct = tool_caller.set_caller(caller) if caller is not None else None
+        # 0.1.63 D5: the model THIS turn runs on, for web_search's choice of the provider's own search. Always set
+        # (None included) so a value from an outer context can't stand in for this turn's.
+        _mt = turn_model.set_model(turn_adapter)
         try:
             from server.services.task_service import current as current_task
             from server.services.task_repository import TaskError
@@ -1596,6 +1600,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
         finally:
+            turn_model.reset_model(_mt)
             if _ct is not None:
                 tool_caller.reset_caller(_ct)
     out = _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -2640,7 +2645,7 @@ async def _run_native(
                 confirm_workspace_write=confirm_workspace_write,
                 confirm_schedule=confirm_schedule,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events, caller=caller)
+                conversation_id=conversation_id, log_events=log_events, caller=caller, turn_adapter=a)
             policy.observe("web_search", {"query": q}, result)
 
     pending_feedback = len(convo) - unseen_start
@@ -2960,7 +2965,7 @@ async def _run_native(
                         confirm_workspace_write=confirm_workspace_write,
                         confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
                         mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                        log_events=log_events, caller=caller)
+                        log_events=log_events, caller=caller, turn_adapter=a)
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)

@@ -46,6 +46,26 @@ export interface SearchToolsSectionProps {
   searchBaseUrl?: string;
   onSearchBaseUrlChange?: (value: string) => void;
   onSearchBaseUrlBlur?: (value: string) => void;
+  /** How a chosen Tavily / SearXNG is used (0.1.63 D5). "" (saved before D5) shows and behaves as "only". */
+  searchProviderRole?: string;
+  onSearchProviderRoleChange?: (value: 'only' | 'backup') => void;
+}
+
+/** Settings values meaning "no deliberate choice": the backend's `_AUTO_SEARCH` (server/registry/executors.py). */
+const AUTO_SEARCH = new Set(['', 'duckduckgo']);
+
+export function isChosenService(provider: string): boolean {
+  return !AUTO_SEARCH.has((provider || '').trim().toLowerCase());
+}
+
+/**
+ * The role saved together with a newly picked provider (0.1.63 D5). A new choice of Tavily or SearXNG is a
+ * backup to the conversation model's own search, unless the user already said "only". A choice saved before
+ * D5 ("") is not rewritten until the user picks a provider again, so it keeps working as it did.
+ */
+export function roleForNewProvider(provider: string, role: string | undefined): { searchProviderRole?: 'only' | 'backup' } {
+  if (!isChosenService(provider)) return {};
+  return { searchProviderRole: role === 'only' ? 'only' : 'backup' };
 }
 
 export default function SearchToolsSection({
@@ -61,6 +81,8 @@ export default function SearchToolsSection({
   searchBaseUrl = '',
   onSearchBaseUrlChange,
   onSearchBaseUrlBlur,
+  searchProviderRole = '',
+  onSearchProviderRoleChange,
   cryptoHealth = null,
 }: SearchToolsSectionProps) {
   const { t } = useTranslation();
@@ -72,6 +94,10 @@ export default function SearchToolsSection({
   // The address field belongs to exactly one provider. Showing it for the others
   // would put a live-looking control on screen that nothing reads.
   const needsBaseUrl = searchProvider === 'searxng';
+  const chosen = isChosenService(searchProvider);
+  const role: 'only' | 'backup' = searchProviderRole === 'backup' ? 'backup' : 'only';
+  // The model's own search is in play unless the user chose a service as the only search.
+  const nativeFirst = !chosen || role === 'backup';
 
   const runProbe = async () => {
     if (!searchBaseUrl.trim()) {
@@ -169,6 +195,33 @@ export default function SearchToolsSection({
           </p>
         </div>
       </div>
+
+      {chosen && (
+        <div className="space-y-2">
+          <label
+            htmlFor="settings-search-provider-role"
+            className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+          >
+            {t('ui.searchRoleLabel')}
+          </label>
+          <Select
+            id="settings-search-provider-role"
+            value={role}
+            onChange={(v) => onSearchProviderRoleChange?.(v === 'backup' ? 'backup' : 'only')}
+            options={[
+              { value: 'backup', label: t('ui.searchRoleBackup') },
+              { value: 'only', label: t('ui.searchRoleOnly') },
+            ]}
+            ariaLabel={t('ui.searchRoleLabel')}
+          />
+        </div>
+      )}
+
+      {nativeFirst && (
+        <p data-testid="search-native-note" className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+          {t('ui.searchNativeNote')}
+        </p>
+      )}
 
       {needsBaseUrl && (
         <div className="space-y-2">

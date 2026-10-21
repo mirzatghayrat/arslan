@@ -81,6 +81,15 @@ class LLMAdapter:
         # Fallback for __new__-constructed doubles (tests) that bypass __init__.
         return getattr(self, "_report_provider", None) or self.provider_name
 
+    def anthropic_first_party(self) -> tuple[str, str] | None:
+        """(base_url, api_key) when this is Claude on Anthropic's own host or a listed verbatim proxy to it: the
+        one place server-side tools (context editing, 0.1.63 D5's web search) are sent. The same check as K1b's,
+        not a copy of it. The provider's base_url, which is the official one when the config leaves it empty."""
+        provider = getattr(self, "_provider", None)
+        if isinstance(provider, AnthropicProvider) and provider._clears_server_side():
+            return provider.base_url, provider.api_key
+        return None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------

@@ -192,9 +192,15 @@ class DeepSeekNativeProvider(SearchProvider):
 
     name = "deepseek"
     requires_key = False          # it uses the chat key, which the caller supplies
+    PROVIDER = "deepseek"
     MODEL = "deepseek-v4-flash"
     MAX_USES = 3
     MAX_TOKENS = 2048
+
+    @staticmethod
+    def search_fee(searches: int) -> float:
+        from arslan.llm import prices
+        return prices.deepseek_search_usd(searches)
 
     def __init__(self, base_url: str = "", api_key: str = "", **_: object) -> None:
         self.base_url = (base_url or "").rstrip("/")
@@ -207,37 +213,84 @@ class DeepSeekNativeProvider(SearchProvider):
         from arslan.llm.deepseek_search import native_search
         payload = await native_search(self.base_url, self._api_key, query, model=self.MODEL,
                                       max_uses=self.MAX_USES, max_tokens=model_request(self.MAX_TOKENS))
-        _account_usage(payload.get("usage") or {}, searches=successful_searches(payload))
+        _account_usage(payload.get("usage") or {}, searches=successful_searches(payload), native=type(self))
         return self.parse(payload, num_results)
 
     @staticmethod
     def parse(payload: dict, num_results: int = 5) -> list[dict]:
-        blocks = payload.get("content") or []
-        found = [b for b in blocks if isinstance(b, dict) and b.get("type") == "web_search_tool_result"]
-        if not found:
-            raise ValueError("DeepSeek returned no web_search_tool_result block")
-        snippets: dict[str, list[str]] = {}
-        for b in blocks:
-            for c in (b.get("citations") or []) if isinstance(b, dict) else []:
-                if c.get("url") and c.get("cited_text"):
-                    snippets.setdefault(c["url"], []).append(c["cited_text"])
-        out, seen = [], set()
-        for block in found:
-            items = block.get("content")
-            if isinstance(items, dict):       # an error object, e.g. {"type": "web_search_tool_result_error"}
-                raise ValueError(f"DeepSeek web search failed: {items.get('error_code') or items.get('type')}")
-            for item in items or []:
-                url = item.get("url") or ""
-                if item.get("type") != "web_search_result" or not url.startswith(("http://", "https://")) \
-                        or url in seen:
-                    continue
-                seen.add(url)
-                row = {"title": item.get("title") or "", "url": url,
-                       "snippet": " … ".join(snippets.get(url, []))[:600]}
-                if item.get("page_age"):
-                    row["published"] = item["page_age"]
-                out.append(row)
-        return out[:num_results]
+        return parse_server_search(payload, num_results, who="DeepSeek")
+
+
+class AnthropicNativeProvider(SearchProvider):
+    """Anthropic's server-side web search, for a turn that runs on Claude (0.1.63 D5).
+
+    The same shape as DeepSeekNativeProvider: one short Messages call with the web_search server tool, on the
+    endpoint and with the key this turn already uses, so the query goes to the party the conversation already
+    goes to. Built only when the turn's adapter passes K1b's first-party check (executors decides).
+    Cost: a short Claude Haiku 5.5 turn plus Anthropic's per-search fee ($10 per 1,000 searches), at most
+    MAX_USES searches a call; counted against the work budget like any model call.
+    Results come only from the structured web_search_tool_result blocks, never from the model's prose.
+    """
+
+    name = "anthropic"
+    requires_key = False          # it uses the turn's Claude key, which the caller supplies
+    PROVIDER = "anthropic"
+    MODEL = "claude-haiku-5-5"
+    MAX_USES = 2
+    MAX_TOKENS = 2048
+
+    @staticmethod
+    def search_fee(searches: int) -> float:
+        from arslan.llm import prices
+        return prices.anthropic_search_usd(searches)
+
+    def __init__(self, base_url: str = "", api_key: str = "", **_: object) -> None:
+        self.base_url = (base_url or "").rstrip("/")
+        self._api_key = api_key
+
+    async def search(self, query: str, num_results: int = 5) -> list[dict]:
+        from arslan.execution_budget import model_request
+        from arslan.llm.anthropic_search import native_search
+        payload = await native_search(self.base_url, self._api_key, query, model=self.MODEL,
+                                      max_uses=self.MAX_USES, max_tokens=model_request(self.MAX_TOKENS))
+        _account_usage(payload.get("usage") or {}, searches=successful_searches(payload), native=type(self))
+        return self.parse(payload, num_results)
+
+    @staticmethod
+    def parse(payload: dict, num_results: int = 5) -> list[dict]:
+        return parse_server_search(payload, num_results, who="Anthropic")
+
+
+def parse_server_search(payload: dict, num_results: int, *, who: str) -> list[dict]:
+    """Results from a Messages response's web_search_tool_result blocks (DeepSeek and Anthropic answer in the same
+    shape). No such block, or an error object inside one, fails loudly; the model's prose is never read as results.
+    Snippets come from the citations on the text blocks."""
+    blocks = payload.get("content") or []
+    found = [b for b in blocks if isinstance(b, dict) and b.get("type") == "web_search_tool_result"]
+    if not found:
+        raise ValueError(f"{who} returned no web_search_tool_result block")
+    snippets: dict[str, list[str]] = {}
+    for b in blocks:
+        for c in (b.get("citations") or []) if isinstance(b, dict) else []:
+            if c.get("url") and c.get("cited_text"):
+                snippets.setdefault(c["url"], []).append(c["cited_text"])
+    out, seen = [], set()
+    for block in found:
+        items = block.get("content")
+        if isinstance(items, dict):       # an error object, e.g. {"type": "web_search_tool_result_error"}
+            raise ValueError(f"{who} web search failed: {items.get('error_code') or items.get('type')}")
+        for item in items or []:
+            url = item.get("url") or ""
+            if item.get("type") != "web_search_result" or not url.startswith(("http://", "https://")) \
+                    or url in seen:
+                continue
+            seen.add(url)
+            row = {"title": item.get("title") or "", "url": url,
+                   "snippet": " … ".join(snippets.get(url, []))[:600]}
+            if item.get("page_age"):
+                row["published"] = item["page_age"]
+            out.append(row)
+    return out[:num_results]
 
 
 def successful_searches(payload: dict) -> int:
@@ -247,20 +300,22 @@ def successful_searches(payload: dict) -> int:
                if isinstance(b, dict) and b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list))
 
 
-def _account_usage(usage: dict, *, searches: int = 0) -> None:
-    """A native search is a model call: report it like one (budget + usage). K4a: its server-side searches are
-    priced per request from DeepSeek's billing date."""
+def _account_usage(usage: dict, *, searches: int = 0, native: type | None = None) -> None:
+    """A native search is a model call: report it like one (budget + usage), priced as the provider that made it
+    (`native`, DeepSeek's by default). K4a: its server-side searches add that provider's per-request fee (DeepSeek's
+    from its billing date; Anthropic's per search, 0.1.63 D5)."""
     from arslan.llm import usage_sink
     from arslan.llm.usage_weight import charged_tokens
+    native = native or DeepSeekNativeProvider
     tin, tout = usage.get("input_tokens"), usage.get("output_tokens")
     if isinstance(tin, int) and isinstance(tout, int):
         from arslan.llm import prices
-        usd = prices.usd_for_usage(DeepSeekNativeProvider.MODEL, usage, provider="deepseek")
+        usd = prices.usd_for_usage(native.MODEL, usage, provider=native.PROVIDER)
         if usd is not None:
-            usd += prices.deepseek_search_usd(searches)
+            usd += native.search_fee(searches)
         usage_sink.report(tin + tout, charged=charged_tokens(usage), usd=usd)
         usage_sink.report_detail(tokens_in=tin, tokens_out=tout,
-                                 model=DeepSeekNativeProvider.MODEL, provider="deepseek", usd=usd)
+                                 model=native.MODEL, provider=native.PROVIDER, usd=usd)
 
 
 def deepseek_native_base(chat_base_url: str, model: str) -> str | None:
@@ -362,6 +417,6 @@ def list_providers() -> list[str]:
 
 # net_pin carries every outbound request in this file. It was imported as a placeholder
 # for a while, which meant the module said it was hardened and the code was not.
-__all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider", "DeepSeekNativeProvider",
+__all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider", "DeepSeekNativeProvider", "AnthropicNativeProvider",
            "SearXNGProvider", "SearchBlocked", "deepseek_native_base", "get_provider",
            "list_providers", "net_pin"]
