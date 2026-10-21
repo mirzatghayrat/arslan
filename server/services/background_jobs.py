@@ -1,7 +1,7 @@
 """Background work: the conversation stays free while a job runs (0.1.42).
 
-The host starts a job with `start_background_work` and ends its turn in one
-sentence. The job runs in a CLEAN context (no inherited turn, budget or memory
+The host starts a job with `start_background_work`: the same work, continued in
+another place (0.1.63 K4b), while its turn goes on as usual. The job runs in a CLEAN context (no inherited turn, budget or memory
 binding) as a durable task with driver `background` and acceptance criteria
 drafted by the host, through the same native tool loop, validation and repair
 as a turn. Its progress is a card, not a stream: nothing it produces is typed

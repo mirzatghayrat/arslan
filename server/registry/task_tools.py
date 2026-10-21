@@ -40,7 +40,8 @@ def _conversation_id() -> str | None:
 
 
 class StartBackgroundWorkExecutor:
-    """0.1.42: hand a piece of work to a background job; the turn ends at once."""
+    """0.1.42: hand a piece of work to a background job. 0.1.63 K4b: the job is the same work in
+    another place; the turn goes on as usual (it isn't told to stop or to answer in one sentence)."""
     key = "start_background_work"
 
     async def execute(self, args: dict) -> dict:
@@ -54,9 +55,12 @@ class StartBackgroundWorkExecutor:
         waiting = background_jobs.active_count() >= background_jobs.MAX_CONCURRENT
         job = await background_jobs.start(conversation_id, goal,
                                           [c for c in criteria if isinstance(c, dict)])
+        when = ("The job is queued behind other background work and starts when one finishes"
+                if waiting else "The job has started and runs on its own")
         return {"ok": True, "external": False, "job_id": job.job_id, "queued": waiting,
                 "criteria": [c["description"] for c in job.acceptance if c["id"] != "answer-delivered"],
-                "note": "The job runs after this turn. Reply in one sentence; do not do the work here."}
+                "note": f"{when}; its result is posted to this conversation. Tell the user what you started "
+                        "and what done will look like. Don't also do the same work in this turn."}
 
 
 class BackgroundStatusExecutor:

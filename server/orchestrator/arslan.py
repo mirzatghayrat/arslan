@@ -120,8 +120,9 @@ _CAPABILITY_SELF = (
     "there as real files and say where they are.\n"
     "- Act in this reply: when something needs doing, call the tool now. Never end a turn with a "
     "promise to do it later.\n"
-    "- Work that takes several steps or minutes (research then write, organizing files, a long "
-    "comparison) goes to start_background_work, so the conversation stays free.\n"
+    "- Background work is the same work continued in another place: use start_background_work when the "
+    "user asks for it, or when the work will run long and doesn't need them meanwhile, so the "
+    "conversation stays free.\n"
     "- When a tool fails, try another route (another tool, the terminal, a skill) before giving up. If "
     "you truly cannot, say exactly what blocked you and what the user can do.\n"
     "- Ask the user only when a choice really needs them (ask_user_choice). Never type passwords: if a "
@@ -1066,17 +1067,19 @@ async def _arslan_tools() -> list[dict]:
     from server.services import background_jobs
     if current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS:
         tools.append({"key": "start_background_work", "description":
-            "Start doing a piece of WORK in the background so the conversation stays free. Use it when the "
-            "request needs tools, files, several steps or more than a minute (research then write, organize "
-            "files, draft a document, compare sources…). Do NOT do such work inline in this turn; a quick "
-            "single step (save one short note, one lookup) is fine inline. Give the "
-            "goal in the user's own words and in the reply language of this turn, plus 2-5 completion criteria written in that language too; prefer checkable ones (kind file_saved "
-            "with the full path of the file or folder the work writes to, sources_read with a minimum for "
-            "web pages or local files read, mentions with a phrase). Then reply in ONE "
-            "short sentence: you started, and what done will look like. The result is posted to this "
-            "conversation when the job ends. Not for simple questions you can answer now. Acting in the "
-            "browser (clicking, typing, submitting) or on the Mac (Shortcuts, AppleScript) also happens in "
-            "background work, where the user is asked before the first action."})
+            # 0.1.63 K4b (D4): one set of rules. A job is the same work in another place, chosen by the
+            # user or the model; the old "do NOT do such work inline" and the one-sentence reply are gone.
+            "Continue a piece of work in the background: the same work, run as a job, so the conversation "
+            "stays free. Use it when the user asks for it, or when the work will run long (many steps, or "
+            "more than about ten minutes) and doesn't need the user meanwhile; otherwise do the work in this "
+            "turn. Give the goal in the user's own words and in the reply language of this turn, and include "
+            "what is already done in this turn (files saved, findings) and what remains: the job sees the "
+            "saved conversation but not this turn's tool results. Add 2-5 completion criteria written in that "
+            "language too; prefer checkable ones (kind file_saved with the full path of the file or folder "
+            "the work writes to, sources_read with a minimum for web pages or local files read, mentions with "
+            "a phrase). The result is posted to this conversation when the job ends. Acting in the browser "
+            "(clicking, typing, submitting) or on the Mac (Shortcuts, AppleScript) happens in background "
+            "work, where the user is asked before the first action."})
         tools.append({"key": "background_status", "description":
             "Read the real state of this conversation's background jobs (running, step, outcome, which "
             "budget limit ended it). Call it FIRST whenever the user asks about work you started — "
