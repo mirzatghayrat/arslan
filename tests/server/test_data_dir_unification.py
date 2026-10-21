@@ -5,7 +5,7 @@ resolved data-dir root, never from an independent ``os.environ.get("ARSLAN_DATA_
 The bug: ``server.config`` defaults an UNSET ``ARSLAN_DATA_DIR`` to a per-platform
 app-data dir (so the SQLite "brain" is stable across launch dirs), but several
 subsystems still re-read the env with a CWD-relative ``"data"`` default. When
-``ARSLAN_DATA_DIR`` is unset (e.g. Docker prod sets ``ARSLAN_ENV=prod`` but NOT
+``ARSLAN_DATA_DIR`` is unset (e.g. a launcher sets ``ARSLAN_ENV=prod`` but NOT
 ``ARSLAN_DATA_DIR``) the brain lands in the platform dir while skill_scripts /
 artifacts / sandbox_env / the shell workspace land in CWD/``data`` — a silent split.
 

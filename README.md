@@ -129,7 +129,7 @@ The iPhone link has no Arslan server and no relay: messages travel through a Clo
 
 ## Install
 
-The desktop app is the way to use Arslan — see [Get started in a minute](#get-started-in-a-minute). Running from source or with Docker (contributors & self-hosters): see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+The desktop app is the way to use Arslan — see [Get started in a minute](#get-started-in-a-minute). Running from source (contributors): see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ### Reading text in images and scanned PDFs
 

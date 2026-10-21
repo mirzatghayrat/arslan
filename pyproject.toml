@@ -190,8 +190,8 @@ embeddings = [
 #   - official templates      arslan/templates/official/
 # Hatchling already includes these by default (they are git-tracked); naming the
 # package here makes that guarantee explicit. The top-level ``server/`` package is
-# intentionally NOT wheel-packaged — the FastAPI server is Docker-deployed (see
-# Dockerfile: it copies server/ + the built SPA and runs ``uvicorn server.main:app``).
+# intentionally NOT wheel-packaged — the desktop app bundles it (packaging/), and a
+# source checkout runs it with ``uvicorn server.main:app`` (docs/QUICKSTART.md).
 [tool.hatch.build.targets.wheel]
 packages = ["arslan"]
 

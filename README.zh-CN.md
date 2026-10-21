@@ -128,7 +128,7 @@ iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iClo
 
 ## 安装
 
-从源码或用 Docker 运行（贡献者与自托管）：见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。
+从源码运行（贡献者）：见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。
 
 图片与扫描版 PDF 的文字识别、完整的安全说明、环境变量和数据备份，请看[英文 README](README.md#install)（以英文版为准）。
 

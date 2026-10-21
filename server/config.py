@@ -90,8 +90,9 @@ class Settings:
     app_version: str = "unknown"
     attach_extract_char_limit: int = 12000
     # Deployment mode. Code default is "dev" so local zero-config still boots.
-    # Release artifacts (Dockerfile / docker-compose) pin ARSLAN_ENV=prod, which
-    # turns missing-secret from a warning into a boot-fatal refusal.
+    # ARSLAN_ENV=prod turns a missing secret from a warning into a boot-fatal refusal
+    # (C10, v0.1.63: the Docker files that pinned it are gone; prod mode itself is left
+    # for the audit, U13 item 5).
     env: str = "dev"
     # Advisory default bind host. The *true* bind is decided by the launcher's
     # `uvicorn --host`; this value only feeds launch scripts/docs and the

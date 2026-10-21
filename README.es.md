@@ -128,7 +128,7 @@ El enlace con el iPhone no tiene servidor de Arslan ni relé: los mensajes viaja
 
 ## Instalación
 
-Desde el código o con Docker (colaboradores y autoalojamiento): consulta **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+Desde el código (colaboradores): consulta **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 Reconocimiento de texto en imágenes y PDF escaneados, la postura de seguridad completa, variables de entorno y copias de seguridad: consulta el [README en inglés](README.md#install) (la versión en inglés es la de referencia).
 

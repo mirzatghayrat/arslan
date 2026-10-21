@@ -13,7 +13,7 @@ This walks you from a fresh clone to **a specialist spawn answering you in the c
 - **Toolchain:** Python 3.11+ (CI uses 3.12), [`uv`](https://docs.astral.sh/uv/), Node.js 22, and `git`.
 - **macOS is best-supported.** The kernel sandbox for generated-code execution is macOS-seatbelt-only. On Linux the app installs and the whole chat flow works; only *generated-code execution* fails closed. (Windows/Linux desktop builds come later via Tauri.)
 - **You need one BYOK LLM key.** Arslan runs against *your* provider key — nothing answers until you add one. This guide features **DeepSeek** (the first-run wizard's default), but any OpenAI-compatible / native Anthropic / Gemini key works.
-- **Dev + localhost is unauthenticated by design** — zero-friction local use. No bearer token here; tokens only apply to the Docker/prod path at the end. Don't expose this bind to an untrusted network (see [SECURITY.md](../SECURITY.md)).
+- **Dev + localhost is unauthenticated by design** — zero-friction local use. No bearer token here; tokens only apply when `ARSLAN_ENV=prod`. Don't expose this bind to an untrusted network (see [SECURITY.md](../SECURITY.md)).
 
 ---
 
@@ -27,7 +27,7 @@ cd arslan
 uv sync --extra dev --extra server
 ```
 
-> **Don't run a bare `uv sync`.** It installs only the core deps. The backend imports SQLAlchemy / aiosqlite / cryptography, which live in the optional **`server`** extra — without it, `uvicorn server.main:app` fails to import at boot. `--extra dev --extra server` matches what CI and the Dockerfile install.
+> **Don't run a bare `uv sync`.** It installs only the core deps. The backend imports SQLAlchemy / aiosqlite / cryptography, which live in the optional **`server`** extra — without it, `uvicorn server.main:app` fails to import at boot. `--extra dev --extra server` matches what CI installs.
 
 ---
 
@@ -44,7 +44,7 @@ PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
   .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
 ```
 
-**Optional — manage the secret yourself.** Pin it in `.env` instead (generated ONCE; `.env` is gitignored, and the same value also serves the Docker path below):
+**Optional — manage the secret yourself.** Pin it in `.env` instead (generated ONCE; `.env` is gitignored):
 
 ```bash
 # Seeds from the already-persisted secret when one exists (never re-mint over a
@@ -144,15 +144,6 @@ This is the self-improving half of the product. It's **optional and slow** — o
 ---
 
 ## Alternatives & troubleshooting
-
-**Run with Docker** (single terminal, but **not** the fastest path to usable):
-
-```bash
-cp .env.example .env    # set ARSLAN_SECRET_KEY
-docker compose up --build
-```
-
-Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **enforces a bearer token** and **refuses to boot without `ARSLAN_SECRET_KEY`**. With `ARSLAN_API_TOKEN` empty, it auto-mints a token on first boot and prints it **once** — grab it from `docker compose logs`. That token step is why the dev/localhost path above is the quicker way to "usable."
 
 **Common first-run issues:**
 
