@@ -207,7 +207,7 @@ class DeepSeekNativeProvider(SearchProvider):
         from arslan.llm.deepseek_search import native_search
         payload = await native_search(self.base_url, self._api_key, query, model=self.MODEL,
                                       max_uses=self.MAX_USES, max_tokens=model_request(self.MAX_TOKENS))
-        _account_usage(payload.get("usage") or {})
+        _account_usage(payload.get("usage") or {}, searches=successful_searches(payload))
         return self.parse(payload, num_results)
 
     @staticmethod
@@ -240,14 +240,24 @@ class DeepSeekNativeProvider(SearchProvider):
         return out[:num_results]
 
 
-def _account_usage(usage: dict) -> None:
-    """A native search is a model call: report it like one (budget + usage)."""
+def successful_searches(payload: dict) -> int:
+    """The server-side searches in a response that returned results (an error object is no result; an empty
+    list is a search that found nothing): what DeepSeek bills per request from 2026-11-01 (prices)."""
+    return sum(1 for b in payload.get("content") or []
+               if isinstance(b, dict) and b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list))
+
+
+def _account_usage(usage: dict, *, searches: int = 0) -> None:
+    """A native search is a model call: report it like one (budget + usage). K4a: its server-side searches are
+    priced per request from DeepSeek's billing date."""
     from arslan.llm import usage_sink
     from arslan.llm.usage_weight import charged_tokens
     tin, tout = usage.get("input_tokens"), usage.get("output_tokens")
     if isinstance(tin, int) and isinstance(tout, int):
         from arslan.llm import prices
         usd = prices.usd_for_usage(DeepSeekNativeProvider.MODEL, usage, provider="deepseek")
+        if usd is not None:
+            usd += prices.deepseek_search_usd(searches)
         usage_sink.report(tin + tout, charged=charged_tokens(usage), usd=usd)
         usage_sink.report_detail(tokens_in=tin, tokens_out=tout,
                                  model=DeepSeekNativeProvider.MODEL, provider="deepseek", usd=usd)

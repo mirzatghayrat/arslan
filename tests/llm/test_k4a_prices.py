@@ -145,3 +145,35 @@ def test_the_table_has_the_official_prices_read_on_2026_10_20(model, row):
                                    "qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"])
 def test_a_model_the_official_page_does_not_price_is_unpriced(model):
     assert prices.usd_for_usage(model, {"prompt_tokens": 10, "completion_tokens": 10}) is None
+
+
+def test_deepseek_bills_each_successful_search_from_its_start_date():
+    """DeepSeek's pricing page (read 2026-10-21): Search and Fetch "$0.75" "Per 1,000 successful requests";
+    "per-request billing starts at 00:00 Beijing time on November 1, 2026"."""
+    from datetime import datetime, timezone
+    before = datetime(2026, 10, 31, 15, 59, tzinfo=timezone.utc)                  # 23:59 Beijing, Oct 31
+    after = datetime(2026, 10, 31, 16, 0, tzinfo=timezone.utc)                    # 00:00 Beijing, Nov 1
+    assert prices.deepseek_search_usd(3, now=before) == 0.0
+    assert prices.deepseek_search_usd(3, now=after) == pytest.approx(3 * 0.00075)
+
+
+def test_a_native_search_counts_only_the_searches_that_returned_results():
+    from server.registry.search_providers import successful_searches
+    payload = {"content": [
+        {"type": "web_search_tool_result", "content": [{"type": "web_search_result", "url": "https://a.test"}]},
+        {"type": "web_search_tool_result", "content": {"type": "web_search_tool_result_error", "error_code": "x"}},
+        {"type": "web_search_tool_result", "content": []},
+        {"type": "text", "text": "done"}]}
+    assert successful_searches(payload) == 2
+
+
+def test_a_native_search_charges_its_searches_after_the_billing_date(monkeypatch):
+    from arslan import execution_budget as eb
+    from server.registry import search_providers
+    usage = {"input_tokens": 1000, "output_tokens": 100}
+    tokens = prices.usd_for_usage(search_providers.DeepSeekNativeProvider.MODEL, usage, provider="deepseek")
+    monkeypatch.setattr(prices, "DEEPSEEK_SEARCH_BILLED_FROM", (2000, 1, 1, 0))       # billing has started
+    budget = eb.run_budget()
+    with eb.scope(budget):
+        search_providers._account_usage(usage, searches=2)
+    assert budget.usd == pytest.approx(tokens + 2 * 0.00075)

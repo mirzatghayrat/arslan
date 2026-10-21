@@ -112,6 +112,20 @@ LONG_PROMPT_PRICES: dict[str, tuple[int, tuple[float, float], tuple[float | None
 # Monday through Friday, excluding Chinese public holidays." Holidays aren't modelled: inside those hours
 # they price at peak, which overstates.
 OFF_PEAK_HALF: tuple[str, ...] = ("deepseek-",)
+# DeepSeek's server-side Search / Fetch: "$0.75" "Per 1,000 successful requests"; "per-request billing starts at
+# 00:00 Beijing time on November 1, 2026" (https://api-docs.deepseek.com/quick_start/pricing, read 2026-10-21).
+DEEPSEEK_SEARCH_USD_PER_REQUEST = 0.00075
+DEEPSEEK_SEARCH_BILLED_FROM = (2026, 10, 31, 16)          # UTC: 2026-11-01 00:00 in Beijing (UTC+8)
+
+
+def deepseek_search_usd(requests: int, *, now=None) -> float:
+    """USD for DeepSeek's server-side searches in one response: free before the billing date, then per
+    successful request."""
+    from datetime import datetime, timezone
+    start = datetime(*DEEPSEEK_SEARCH_BILLED_FROM, tzinfo=timezone.utc)
+    if (now or datetime.now(timezone.utc)) < start:
+        return 0.0
+    return max(0, requests) * DEEPSEEK_SEARCH_USD_PER_REQUEST
 
 
 def _row(table: dict, model: str):
