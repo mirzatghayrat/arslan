@@ -22,7 +22,7 @@
 - **回合结束提炼：** `server/services/distill_service.py` 里回合结束那条入口、`server/services/prompts/distill.py`、设置键 `distill_on_session_end`（`settings_service.py:22`、`:218`）。分身的手动提炼（`server/api/conversations.py:171-198` 一带）是专家时代的，随 C7 第二步删。
 - **研究复核：** 只删复核本身。
   - **先把 `compact_saved_context` 原样搬出去**（②Main 审 #284 时发现）。它也在 `server/orchestrator/research_review.py` 里（main 上 `:25`），但不是复核：所有非 Claude 的供应商存了报告以后都走它（`tool_loop.py:2891-2899`），把之前的网页正文换成收据。删掉它，DeepSeek 看到的东西就变了。所以一个字不改搬到别的模块，加一条测试证明搬前搬后它给模型的上下文逐字一样，再删复核。
-  - 复核的各个出口一起删：`tool_loop.py` 里调复核的那段（`:2168-2196` 一带）；设置键 `research_review_enabled`（`settings_service.py:32`）和网页上的开关；`artifact_store` 里复核笔记的读写；`server/api/runs.py:527-538` 的接口；网页的 `ArtifactReviewNotes`（加它的测试）；`research_review` 这个帧。
+  - 复核的各个出口一起删：`tool_loop.py` 里复核的函数（`:2168-2196` 一带）和调用它的地方（`:2880-2887`）；`research_source_feedback` 留着，`compact_saved_context` 要用；设置键 `research_review_enabled`（`settings_service.py:32`）和网页上的开关；`artifact_store` 里复核笔记的读写；`server/api/runs.py:527-538` 的接口；网页的 `ArtifactReviewNotes`（加它的测试）；`research_review` 这个帧。
   - 复核今天做什么（②Main 核过）：代码里默认关，你的设置里开着（④参谋查的）。开着时它不改回答，只多出三样：一行 `note`、一条存下的复核笔记，以及每次多一个模型请求。删掉以后，这三样就没了。
   - 它要做的事改成一句工作方法：「研究类回答只引用这一轮真正读过的来源，查不到的要明说」。写进 K5 的工作方法，由 K5 的测试管。
 - 删了哪些、怎么确认没人引用：`git grep -w` 加按字符串查（注册表、翻译键、设置键），写进 PR（§11 第 4 条）。
