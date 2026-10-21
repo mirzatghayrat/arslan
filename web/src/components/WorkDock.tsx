@@ -40,14 +40,20 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     // Privacy can change without changing the conversation ID. Closing the old
     // readers releases their sessions; remove their prior restore records too.
     // Newly opened temporary tabs remain session-only and are filtered by saveDock.
-    const next = tabs.filter(tab => !(tab.kind === 'browser'
-      && tab.conversationId === conversationId && !tab.temporary));
-    if (next.length === tabs.length) return;
-    setTabs(next);
-    saveDock(next, width, false);
+    const prior = (tab: DockTab) => tab.kind === 'browser' && tab.conversationId === conversationId && !tab.temporary;
+    if (!tabs.some(prior)) return;
+    // 0.1.63: dropped from the current list, not this render's: an effect that runs late (after a tab was closed or
+    // opened) must not put this render's list back (work-dock-late-effect.test.tsx). The restore records are this
+    // render's list either way: nothing else is saved while temporary.
+    setTabs(old => old.filter(tab => !prior(tab)));
+    saveDock(tabs.filter(tab => !prior(tab)), width, false);
   }, [conversationId, temporary, tabs, width]);
+  // 0.1.63: replaces only the selection this render saw: if a tab was picked or opened before this effect ran, that
+  // one stays, though this render's list may not have it yet (work-dock-late-effect.test.tsx).
   useEffect(() => {
-    if (!tabs.some(tab => tab.id === selected)) setSelected(tabs[0]?.id ?? "");
+    if (tabs.some(tab => tab.id === selected)) return;
+    const first = tabs[0]?.id ?? "";
+    setSelected(cur => cur === selected ? first : cur);
   }, [tabs, selected]);
   useEffect(() => {
     if (embedded) return;      // the workbench's reader opens files (0.1.58)

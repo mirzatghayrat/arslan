@@ -118,13 +118,16 @@ export default function ProviderConfigList({
   // selected row moves selection to a survivor; an external refresh that drops
   // the selected id re-anchors to the primary/first). The draft owns the pane
   // while active, so leave selection untouched then.
+  // 0.1.63: replaces only the selection this render saw: a card picked (or a config added) before this effect ran
+  // stays picked (provider-list-late-effect.test.tsx).
   useEffect(() => {
     if (draft) return;
     // -1 is an intentional collapsed list, not a stale config id.
     if (selectedId === -1) return;
     if (selectedId != null && providerConfigs.some((c) => c.id === selectedId)) return;
     const primary = providerConfigs.find((c) => c.is_primary);
-    setSelectedId(primary?.id ?? providerConfigs[0]?.id ?? null);
+    const fallback = primary?.id ?? providerConfigs[0]?.id ?? null;
+    setSelectedId((cur) => (cur === selectedId ? fallback : cur));
   }, [providerConfigs, selectedId, draft]);
 
   // --- helpers ---
