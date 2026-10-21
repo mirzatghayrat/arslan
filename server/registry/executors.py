@@ -776,6 +776,17 @@ class RunCommandExecutor:
             cwd = await settings_service.workspace_dir(db)
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
             default_read = await settings_service.default_read_enabled(db)
+        # S1 (U14 b): a run with nobody to ask (a scheduled run) works in Arslan's own folder, whatever
+        # folder the user chose. Its commands always run in the sandbox (#308), so they write only there
+        # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7).
+        from server.services import permissions
+        if permissions.current_asker() is None:
+            own = settings_service.default_workspace()
+            try:
+                own.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                return {"ok": False, "error": f"Arslan's own folder, where a scheduled run works, cannot be made: {exc}"}
+            cwd = own.resolve()
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
         # 0.1.59: "Desktop, Documents, Downloads: Off" closes them to commands too (only inside the
