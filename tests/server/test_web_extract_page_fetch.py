@@ -419,16 +419,21 @@ def test_search_keeps_its_own_words_for_a_status(code, expected):
     assert net_pin.categorize(_status_error(code)) == expected
 
 
-async def test_search_still_calls_a_403_a_rejected_key(monkeypatch):
-    seen = serve(monkeypatch, _status(403))
-
+async def test_search_calls_a_401_a_rejected_key_and_a_403_a_block(monkeypatch):
+    """Search keeps its own words, not the page ones. Since 0.1.63 D5 (card, ③Hands' review item 3) a 403
+    from a search provider is the provider refusing to search (search_blocked); only a 401 is the key."""
     async def config_of_a_keyed_provider():
         return executors.SearchConfig(name="tavily", key="k", key_state="set")
 
     monkeypatch.setattr(executors, "_read_search_config", config_of_a_keyed_provider)
+    seen = serve(monkeypatch, _status(401))
     out = await executors.WebSearchExecutor().execute({"query": "anything"})
-    assert out == {"ok": False, "error": "search failed: key-rejected", "provider": "tavily"}
+    assert out == {"ok": False, "code": "search_failed", "provider": "tavily",
+                   "error": "search failed: key-rejected — the search key was rejected: re-enter it in Settings"}
     assert "Arslan-User" not in seen[0].headers["user-agent"]     # search is not a page read
+    serve(monkeypatch, _status(403))
+    out = await executors.WebSearchExecutor().execute({"query": "anything"})
+    assert out["code"] == "search_blocked" and "the site refused" not in out["error"]
 
 
 # ------------------------------------------------------------------ web_extract uses the page words

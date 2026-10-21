@@ -194,6 +194,8 @@ export interface AppSettings {
   searchProvider: string;
   /** Self-hosted SearXNG address. Plain text — an address, not a credential. */
   searchBaseUrl: string;
+  /** How a chosen Tavily / SearXNG is used (0.1.63 D5). "" (saved before D5) behaves as "only". */
+  searchProviderRole?: '' | 'only' | 'backup';
   apiKeySearch: string;
   githubToken: string;
   language: string;

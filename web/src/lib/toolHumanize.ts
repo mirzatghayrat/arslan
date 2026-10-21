@@ -46,6 +46,9 @@ function hostOf(url: string): string {
  */
 function searchFailure(summary: string | undefined, t: TranslateFn): string {
   const text = summary ?? '';
+  // 0.1.63 D5: the backend starts every `search_blocked` error with this. Nothing was searched, so the line
+  // says blocked, never a failure that reads like "no results". First: a refused 429 is blocked, not a wait.
+  if (text.startsWith('search blocked:')) return t('ui.searchBlocked');
   if (text.includes('rate-limited')) return t('activity.search_fail_rate');
   if (text.includes('quota-exhausted')) return t('activity.search_fail_quota');
   if (text.includes('key-rejected')) return t('activity.search_fail_key');

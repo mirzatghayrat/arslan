@@ -12,6 +12,7 @@ from typing import NamedTuple
 import logging
 from pathlib import Path
 
+import httpx
 
 from server import config
 from server.db.session import AsyncSessionLocal
@@ -35,8 +36,8 @@ from server.registry.task_tools import (
 # caught by identity, never substituted.
 from server.registry import net_pin
 from server.registry.net_pin import _BlockedHost
-from server.registry.search_providers import (DeepSeekNativeProvider, DuckDuckGoHtmlProvider, SearchBlocked,
-                                              deepseek_native_base, get_provider)
+from server.registry.search_providers import (AnthropicNativeProvider, DeepSeekNativeProvider, DuckDuckGoHtmlProvider,
+                                              SearchBlocked, deepseek_native_base, get_provider)
 from server.services import terminal_exec as _terminal_exec
 from server.services import chart_echarts, settings_service
 
@@ -71,6 +72,9 @@ class SearchConfig(NamedTuple):
     # constant destination genuinely has no base_url, so "" is the honest value rather
     # than a placeholder.
     base_url: str = ""      # only meaningful for a provider with a user-set address
+    # 0.1.63 D5: how a chosen Tavily / SearXNG is used. "" (every choice saved before D5) or "only": it is the
+    # one search, as before. "backup": the turn model's own search first, then it. Never DuckDuckGo either way.
+    role: str = ""
 
 
 class ResolvedProvider(NamedTuple):
@@ -83,6 +87,7 @@ class ResolvedProvider(NamedTuple):
 
     provider: object | None
     reason: str | None      # None | "no-key" | "key-undecryptable" | "unknown-provider"
+    role: str = ""          # 0.1.63 D5: SearchConfig.role, for a chosen provider
 
 
 #: Settings values meaning "no deliberate choice": search picks the provider
@@ -102,6 +107,7 @@ async def _read_search_config() -> SearchConfig:
         key=key,
         key_state=cfg.get("search_api_key_status", "unset"),
         base_url=cfg.get("search_base_url", ""),
+        role=cfg.get("search_provider_role", "") or "",
     )
 
 
@@ -130,7 +136,7 @@ async def _search_provider() -> ResolvedProvider:
         # IS stored and this process cannot open it (spec ⓪ made that knowable).
         return ResolvedProvider(
             None, "key-undecryptable" if cfg.key_state == "undecryptable" else "no-key")
-    return ResolvedProvider(provider, None)
+    return ResolvedProvider(provider, None, (cfg.role or "").strip().lower())
 
 
 #: Why there is no provider -> what the model and the user are told. Distinct strings on
@@ -172,29 +178,85 @@ async def _search_with_one_retry(provider, query: str, num_results: int):
 
 
 
+def _native_providers() -> list:
+    """The search of the model provider THIS turn runs on (0.1.63 D5), or nothing.
+
+    🔴 THIS TURN'S MODEL, NOT THE PRIMARY CONFIG. A conversation can run on another model than the primary one
+    (0.1.58 §6), and before D5 this read the primary config: a conversation on a local model sent its queries
+    (which a local model may have built from memory that stays on this Mac) to DeepSeek. The turn's adapter
+    comes from tool_loop via turn_model. None (no turn set one) and a local model both mean no provider's own
+    search: fail-closed.
+    """
+    from arslan.llm.locality import local_model
+    from server.orchestrator import turn_model
+    adapter = turn_model.current()
+    if adapter is None:
+        return []
+    base = getattr(adapter, "base_url", "") or ""
+    if local_model(getattr(adapter, "report_provider", "") or "", base):
+        return []
+    first_party = getattr(adapter, "anthropic_first_party", None)
+    claude = first_party() if callable(first_party) else None
+    if claude is not None:
+        # K1b's gate: Claude on api.anthropic.com or a listed verbatim proxy. Another Anthropic-protocol host
+        # may not run server tools, so it gets no own search.
+        claude_base, claude_key = claude
+        return [AnthropicNativeProvider(base_url=claude_base, api_key=claude_key)] if claude_key else []
+    key = getattr(adapter, "api_key", "") or ""
+    native = deepseek_native_base(base, getattr(adapter, "model", "") or "") if key else None
+    return [DeepSeekNativeProvider(base_url=native, api_key=key)] if native else []
+
+
 async def _auto_search_providers() -> list:
-    """Automatic search order, as mainstream agents do it (0.1.49): the chat
-    model provider's own search first (DeepSeek native, same key and party as
-    the conversation), the best-effort DuckDuckGo scrape last. A deliberate
-    choice in Settings (Tavily, SearXNG) never reaches this path."""
-    providers = []
-    try:
-        from server.services.llm_factory import primary_chat_endpoint
-        endpoint = await primary_chat_endpoint()
-    except Exception:  # noqa: BLE001 — no chat config yet: fall through to the scrape
-        endpoint = None
-    if endpoint:
-        base, model, key = endpoint
-        native = deepseek_native_base(base, model)
-        if native:
-            providers.append(DeepSeekNativeProvider(base_url=native, api_key=key))
-    providers.append(DuckDuckGoHtmlProvider())
-    return providers
+    """Automatic search order, as mainstream agents do it (0.1.49): the search of the model provider this turn
+    runs on first (DeepSeek's or, since 0.1.63 D5, Anthropic's: same key and party as the conversation), the
+    best-effort DuckDuckGo scrape last. A deliberate choice in Settings (Tavily, SearXNG) never reaches this
+    path: as "only" it is the one search, as "backup" it replaces the scrape (`_backup_order`)."""
+    return [*_native_providers(), DuckDuckGoHtmlProvider()]
+
+
+def _backup_order(chosen) -> list:
+    """D5: the turn model's own search, then the provider the user chose as a backup. Never DuckDuckGo: someone
+    who picked Tavily or a self-hosted SearXNG did not pick the scrape."""
+    return [*_native_providers(), chosen]
+
+
+#: An answer that means "this provider refused to search for us": an anti-bot page (SearchBlocked), 403 or 429
+#: (after the one retry). 401 is not one of them: that is the key being rejected, fixed by re-entering it.
+_BLOCKED_STATUS = frozenset({403, 429})
+
+
+def _blocked(exc: Exception) -> str | None:
+    """Why `exc` is a block, or None when it is another failure."""
+    if isinstance(exc, SearchBlocked):
+        return str(exc) or "blocked"
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(exc, httpx.HTTPStatusError) and status in _BLOCKED_STATUS:
+        return f"http {status}"
+    return None
+
+
+def _key_rejected(exc: Exception, provider) -> bool:
+    """A 401 from a provider that uses the SEARCH key. A native provider's 401 is the chat key, which
+    re-entering the search key would not fix (③Hands' review of #306)."""
+    response = getattr(exc, "response", None)
+    return (isinstance(exc, httpx.HTTPStatusError) and getattr(response, "status_code", None) == 401
+            and bool(getattr(provider, "requires_key", False)))
+
+
+def _refused_hint(exc: Exception, provider) -> str:
+    """The provider's own reading of a 403, when it has one (SearXNG's JSON-format switch)."""
+    response = getattr(exc, "response", None)
+    if isinstance(exc, httpx.HTTPStatusError) and getattr(response, "status_code", None) == 403:
+        return getattr(provider, "refused_hint", "") or ""
+    return ""
 
 
 _SEARCH_ADVICE = ("Web search needs a working provider: choose Tavily (free key) or a self-hosted "
-                  "SearXNG in Settings, or use a DeepSeek model whose built-in search Arslan uses "
-                  "automatically.")
+                  "SearXNG in Settings (as the only search, or as a backup to the model's own), or use a "
+                  "DeepSeek or Claude model, whose own search Arslan uses automatically.")
+_KEY_ADVICE = "the search key was rejected: re-enter it in Settings"
 
 
 class WebSearchExecutor:
@@ -214,6 +276,8 @@ class WebSearchExecutor:
         if resolved.provider is None:
             return {"ok": False, "error": _SEARCH_UNAVAILABLE[resolved.reason]}
         provider = resolved.provider
+        if getattr(resolved, "role", "") == "backup":
+            return await self._auto(query, num_results, providers=_backup_order(provider))
         try:
             results = await _search_with_one_retry(provider, query, num_results)
         except Exception as exc:  # noqa: BLE001
@@ -222,38 +286,56 @@ class WebSearchExecutor:
             # getattr, not provider.name: a crash while REPORTING a failure
             # replaces a legible error with an opaque one.
             logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
-            return {"ok": False, "error": f"search failed: {category}",
-                    "provider": name}
+            why = _blocked(exc)
+            if why is not None:
+                # 0.1.63 D5: any provider, not only the scrape. Nothing was searched; "no results" would be a lie.
+                hint = _refused_hint(exc, provider)
+                return {"ok": False, "code": "search_blocked", "provider": name,
+                        "error": (f"search blocked: {name} refused the query ({why}). "
+                                  + (f"{hint}. " if hint else "")
+                                  + "This is not 'no results': nothing was searched.")}
+            error = f"search failed: {category}"
+            if _key_rejected(exc, provider):
+                error += f" — {_KEY_ADVICE}"
+            return {"ok": False, "code": "search_failed", "error": error, "provider": name}
         return self._found(provider, results)
 
-    async def _auto(self, query: str, num_results: int) -> dict:
-        """Try the automatic order; a blocked or failed provider is reported, not
-        mistaken for "nothing found", and the next one is tried."""
+    async def _auto(self, query: str, num_results: int, providers: list | None = None) -> dict:
+        """Try an order of providers (the automatic one unless given); a blocked or failed provider is
+        reported, not mistaken for "nothing found", and the next one is tried."""
         failures = []
         # Counted in the branch, never read back out of the failure text: "blocked" is also a
         # word in the guard's own category ("blocked address (local network)"), and an
         # unresolvable or refused host must not be reported as an anti-bot block.
         other_failures = 0
-        for provider in await _auto_search_providers():
+        key_rejected = False
+        for provider in (providers if providers is not None else await _auto_search_providers()):
             name = getattr(provider, "name", "unknown")
             try:
                 results = await _search_with_one_retry(provider, query, num_results)
-            except SearchBlocked as exc:
-                failures.append(f"{name}: blocked ({exc})")
-                continue
             except Exception as exc:  # noqa: BLE001
+                why = _blocked(exc)
+                if why is not None:
+                    hint = _refused_hint(exc, provider)
+                    failures.append(f"{name}: blocked ({why}{'; ' + hint if hint else ''})")
+                    continue
                 logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
                 failures.append(f"{name}: {net_pin.categorize(exc)}")
                 other_failures += 1
+                key_rejected = key_rejected or _key_rejected(exc, provider)
                 continue
             found = self._found(provider, results)
             if failures:
                 found["fallback_from"] = failures
             return found
         blocked = other_failures == 0
+        advice = f"{_KEY_ADVICE}. " if key_rejected else ""
+        # "search blocked:" leads every blocked error, here and on the single-provider path: the error is the
+        # activity line's summary, and that prefix is how it shows "search blocked" rather than a failure (D5).
         return {"ok": False, "code": "search_blocked" if blocked else "search_failed",
-                "error": ("web search is unavailable right now — " + "; ".join(failures) +
-                          ". This is not 'no results': nothing was searched. " + _SEARCH_ADVICE),
+                "error": (("search blocked: " if blocked else "") + "web search is unavailable right now — " +
+                          "; ".join(failures) +
+                          ". This is not 'no results': nothing was searched. " + advice + _SEARCH_ADVICE),
                 "provider": "auto"}
 
     @staticmethod

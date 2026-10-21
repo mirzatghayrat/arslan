@@ -128,6 +128,17 @@ def deepseek_search_usd(requests: int, *, now=None) -> float:
     return max(0, requests) * DEEPSEEK_SEARCH_USD_PER_REQUEST
 
 
+# Anthropic's server-side web search: "Web search is available on the Claude API for $10 per 1,000 searches, plus
+# standard token costs for search-generated content"; "If an error occurs during web search, the web search will
+# not be billed" (https://platform.claude.com/docs/en/about-claude/pricing, read 2026-10-22). 0.1.63 D5.
+ANTHROPIC_SEARCH_USD_PER_REQUEST = 0.01
+
+
+def anthropic_search_usd(requests: int) -> float:
+    """USD for Anthropic's server-side searches in one response (a failed search is not billed)."""
+    return max(0, requests) * ANTHROPIC_SEARCH_USD_PER_REQUEST
+
+
 def _row(table: dict, model: str):
     match, match_len = None, -1
     for prefix, row in table.items():

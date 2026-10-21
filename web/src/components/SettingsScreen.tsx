@@ -13,7 +13,7 @@ import {
 import ProviderConfigList from './ProviderConfigList';
 import AccessTokenSettings from './AccessTokenSettings';
 import SettingsShell from './settings/SettingsShell';
-import SearchToolsSection from './settings/SearchToolsSection';
+import SearchToolsSection, { roleForNewProvider } from './settings/SearchToolsSection';
 import ModelRolesSection from './settings/ModelRolesSection';
 import AppearanceSection from './settings/AppearanceSection';
 import MemoryDataSection from './settings/MemoryDataSection';
@@ -317,7 +317,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         cryptoHealth={cryptoHealth}
         searchProvider={localSettings.searchProvider}
         searchProviders={searchProviders}
-        onSearchProviderChange={(v) => saveField({ searchProvider: v })}
+        onSearchProviderChange={(v) => saveField({ searchProvider: v, ...roleForNewProvider(v, localSettings.searchProviderRole) })}
         searchKey={localSettings.apiKeySearch}
         // Key-type field: onChange updates the display value only + marks dirty
         // (no save); the value persists on blur via flushField, and ONLY if the
@@ -329,6 +329,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onGithubTokenBlur={(v) => flushField({ githubToken: v })}
         searchBaseUrl={localSettings.searchBaseUrl}
         onSearchBaseUrlChange={(v) => saveField({ searchBaseUrl: v })}
+        searchProviderRole={localSettings.searchProviderRole ?? ''}
+        onSearchProviderRoleChange={(v) => saveField({ searchProviderRole: v })}
       />
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpAccess')}>

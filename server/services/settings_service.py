@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = (
     "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
+               # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
+               "search_provider_role",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "background_job_budget", "task_usd_cap", "synthesis_config_id",
                "embedding_config_id",

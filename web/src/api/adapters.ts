@@ -51,6 +51,7 @@ export function clampEndpointSilenceMs(raw: string | number | undefined): number
  * Field mapping:
  *   search_provider → searchProvider
  *   search_base_url → searchBaseUrl (plain; unlike the key it is never masked)
+ *   search_provider_role → searchProviderRole ("" | "only" | "backup")
  *   search_api_key  → apiKeySearch (may be "" or masked)
  *   language       → language
  *
@@ -70,6 +71,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
   return {
     searchProvider: backend.search_provider ?? "",
   searchBaseUrl: backend.search_base_url ?? "",
+  searchProviderRole: (backend.search_provider_role ?? "") as AppSettings["searchProviderRole"],
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
@@ -145,6 +147,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
 const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: unknown) => unknown }> = {
   searchProvider: { key: "search_provider" },
   searchBaseUrl: { key: "search_base_url", to: (v) => (v as string) ?? "" },
+  searchProviderRole: { key: "search_provider_role", to: (v) => (v as string) ?? "" },
   language: { key: "language" },
   llmStrategy: { key: "llm_strategy" },
   distillOnSessionEnd: { key: "distill_on_session_end" },
