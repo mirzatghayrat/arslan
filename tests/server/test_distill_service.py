@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Spawn, ArslanMessage, DistilledSession, Feedback
+from server.db.models import Base, Spawn, ArslanMessage, DistilledSession
 
 
 @pytest_asyncio.fixture
@@ -21,55 +21,6 @@ async def maker(tmp_path, monkeypatch):
     return m
 
 
-async def test_distill_writes_facts_and_marks(maker, monkeypatch):
-    from server.services import distill_service
-    async def fake_distill_facts(existing, signals):
-        return ["用户偏好更简短的输出"]
-    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
-    await distill_service.distill_session("c1")
-    async with maker() as s:
-        spawn = await s.get(Spawn, 3)
-        marks = (await s.execute(select(DistilledSession).where(
-            DistilledSession.conversation_id == "c1", DistilledSession.spawn_id == 3))).scalars().all()
-    facts, marks = spawn.memory_facts, marks
-    assert facts == ["用户偏好更简短的输出"] and len(marks) == 1
-
-
-async def test_distill_includes_per_conversation_feedback(maker, monkeypatch):
-    """👍/👎 Feedback rows keyed by the conversation_id must be folded into the distill
-    signals (the loop closed in this round: thumbs now feed evolution)."""
-    from server.services import distill_service
-    captured = {}
-    async def fake_distill_facts(existing, signals):
-        captured["signals"] = signals
-        return ["x"]
-    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
-    async with maker() as s:
-        s.add(Feedback(spawn_id=3, session_id="c1", user_action="thumbs_up", quality_signal=1))
-        s.add(Feedback(spawn_id=3, session_id="c1", user_action="thumbs_down", quality_signal=-1))
-        # A row from a DIFFERENT conversation must NOT leak in.
-        s.add(Feedback(spawn_id=3, session_id="other-conv", user_action="thumbs_up", quality_signal=1))
-        await s.commit()
-    await distill_service.distill_session("c1")
-    assert "👍" in captured["signals"]
-    assert "👎" in captured["signals"]
-    # exactly 1 up + 1 down from c1, the other-conv up excluded
-    assert "👍×1" in captured["signals"]
-    assert "👎×1" in captured["signals"]
-
-
-async def test_distill_idempotent(maker, monkeypatch):
-    from server.services import distill_service
-    calls = {"n": 0}
-    async def fake_distill_facts(existing, signals):
-        calls["n"] += 1
-        return ["x"]
-    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
-    await distill_service.distill_session("c1")
-    await distill_service.distill_session("c1")   # second pass: already marked
-    assert calls["n"] == 1   # distilled once
-
-
 async def test_distill_llm_failure_keeps_existing_and_no_marker(maker, monkeypatch):
     """A transient LLM failure (real path: build_adapter raises inside distill_facts) must
     leave memory_facts unchanged AND write NO DistilledSession marker, so it retries."""
@@ -84,24 +35,6 @@ async def test_distill_llm_failure_keeps_existing_and_no_marker(maker, monkeypat
             DistilledSession.conversation_id == "c1", DistilledSession.spawn_id == 3))).scalars().all()
     assert facts == []          # unchanged
     assert len(marks) == 0      # NOT marked → retryable next session
-
-
-async def test_distill_from_signals_merges_into_memory_facts(maker, monkeypatch):
-    """Ephemeral sandbox sessions distill from an in-memory signals string (no DB
-    transcript), merging into the spawn's memory_facts. No DistilledSession marker."""
-    from server.services import distill_service
-    captured = {}
-    async def fake_distill_facts(existing, signals):
-        captured["existing"] = existing
-        captured["signals"] = signals
-        return ["用户偏好更紧凑的开头"]
-    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
-
-    await distill_service.distill_from_signals(3, "用户消息:\n把开头改紧凑\n\n分身产出:\n紧凑版")
-    async with maker() as s:
-        facts = (await s.get(Spawn, 3)).memory_facts
-    assert facts == ["用户偏好更紧凑的开头"]
-    assert "把开头改紧凑" in captured["signals"]
 
 
 async def test_distill_from_signals_noop_on_llm_failure(maker, monkeypatch):
@@ -129,70 +62,6 @@ async def test_distill_from_signals_noop_on_llm_failure(maker, monkeypatch):
 
 async def _none(existing, signals):
     return None
-
-
-async def test_outcome_reasons_are_discriminated(maker, monkeypatch):
-    from server.services import distill_service
-    from server.services.distill_service import DistillOutcome
-
-    # spawn gone
-    out = await distill_service._distill_one("c1", 99999)
-    assert isinstance(out, DistillOutcome)
-    assert out.ok is False and out.reason == "no_spawn"
-
-    # nothing to distill: real spawn, conversation with no messages
-    out = await distill_service._distill_one("empty-conv", 3)
-    assert out.ok is False and out.reason == "nothing_to_distill"
-
-    # llm failure
-    monkeypatch.setattr(distill_service, "distill_facts", _none)
-    out = await distill_service._distill_one("c1", 3)
-    assert out.ok is False and out.reason == "llm_failed"
-
-    # already distilled (the marker written by the llm-failure path? no — write one)
-    async with maker() as s:
-        s.add(DistilledSession(conversation_id="c1", spawn_id=3))
-        await s.commit()
-    out = await distill_service._distill_one("c1", 3)
-    assert out.ok is False and out.reason == "already_distilled"
-
-
-async def test_llm_failure_logs_a_visible_distill_failed_event(maker, monkeypatch):
-    """The user must be able to SEE that distillation failed — not only a server log."""
-    from server.db.models import ConversationEvent
-    from server.services import distill_service
-
-    monkeypatch.setattr(distill_service, "distill_facts", _none)
-    await distill_service.distill_session("c1")
-
-    async with maker() as s:
-        kinds = (await s.execute(
-            select(ConversationEvent.kind).where(
-                ConversationEvent.conversation_id == "c1"))).scalars().all()
-    assert "distill_failed" in kinds, (
-        "a failed distillation must leave persisted evidence, not only a log line")
-
-
-async def test_distill_session_keeps_its_int_contract(maker, monkeypatch):
-    """distill_session stays `-> int`: the REST endpoint, the frontend toast
-    (App.tsx: res.distilled_spawns > 0) and three existing tests depend on it.
-    The richer report is a SEPARATE function."""
-    from server.services import distill_service
-
-    async def _one(existing, signals):
-        return ["f"]
-    monkeypatch.setattr(distill_service, "distill_facts", _one)
-    n = await distill_service.distill_session("c1")
-    assert isinstance(n, int) and n == 1
-
-
-async def test_detailed_report_exposes_per_spawn_failures(maker, monkeypatch):
-    from server.services import distill_service
-
-    monkeypatch.setattr(distill_service, "distill_facts", _none)
-    report = await distill_service.distill_session_detailed("c1")
-    assert report.distilled == 0
-    assert [o.reason for o in report.outcomes] == ["llm_failed"]
 
 
 async def test_one_spawn_exception_does_not_abort_the_others(maker, monkeypatch):
@@ -265,67 +134,21 @@ async def test_hermetic_conversation_writes_nothing_at_all(maker, monkeypatch):
     assert spawn.memory_facts == []
 
 
-async def test_upflow_provenance_carries_the_conversation(maker, monkeypatch):
-    """Upflowed profile facts were permanently untraceable to their originating
-    conversation — _distill_one had it in scope and never passed it."""
-    from server.orchestrator import memory
-    from server.services import distill_service
-
-    seen = {}
-
-    async def _save(facts, *, provenance=None, **kw):
-        seen["provenance"] = provenance
-        return []
-    monkeypatch.setattr(memory, "save_facts", _save)
-
-    async def _facts(existing, signals):
-        return ["用户偏好简短"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-
-    class _Resp:
-        content = "用户偏口语"
-
-    class _A:
-        async def chat(self, *, system, user):
-            return _Resp()
-    monkeypatch.setattr(distill_service, "build_adapter", lambda **kw: _aw(_A()))
-
-    await distill_service.distill_session("c1")
-    assert seen["provenance"]["conversation_id"] == "c1"
-    assert seen["provenance"]["source_kind"] == "upflow"
-
-
-async def test_distillation_is_ledgered_and_accounting_never_breaks_it(maker, monkeypatch):
-    """Cost visibility: distill_service was on the NOT_COVERED list, so every
-    distillation burned tokens invisibly. Accounting must be fail-open — a ledger
-    failure can never break the distillation itself."""
-    from server.db.models import UsageLedger
-    from server.services import distill_service, usage_ledger
-
-    async def _facts(existing, signals):
-        from arslan.llm import usage_sink
-        usage_sink.report(123)
-        return ["f"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-
-    await distill_service.distill_session("c1")
-    async with maker() as s:
-        scopes = (await s.execute(select(UsageLedger.scope))).scalars().all()
-    assert "distill" in scopes, "distillation spend must be ledgered"
-
-    # ... and a ledger failure must not break the distill. Clear the marker so the
-    # second run has work to do (the first run consumed it).
-    async with maker() as s:
-        for row in (await s.execute(select(DistilledSession))).scalars().all():
-            await s.delete(row)
-        await s.commit()
-
-    async def _boom(*a, **k):
-        raise RuntimeError("ledger down")
-    monkeypatch.setattr(usage_ledger, "_write", _boom)
-    n = await distill_service.distill_session("c1")
-    assert n == 1, "a broken ledger must never break distillation"
-
-
 async def _aw(v):
     return v
+
+
+async def test_both_entry_points_go_through_memory_v2(maker, monkeypatch):
+    """0.1.63 C2a-2: the session path and the signals path both reach _distill_v2, which proposes into the
+    expert's scope and never reports "learned". With no personal context (learning not bound to a turn) it
+    stops before any model call. A path that answered ok=True here would let complete_chat archive a
+    transcript nothing was learned from."""
+    from server.services import distill_service
+
+    async def no_model(*a, **k):
+        raise AssertionError("no model call without a memory context")
+    monkeypatch.setattr(distill_service, "build_adapter", no_model)
+    one = await distill_service._distill_one("c1", 3)
+    signals = await distill_service.distill_from_signals(3, "用户消息:\n把报告写短点", conversation_id="c1")
+    assert (one.ok, one.reason) == (False, "learning_disabled")
+    assert (signals.ok, signals.reason) == (False, "learning_disabled")

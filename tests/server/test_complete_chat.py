@@ -65,31 +65,6 @@ async def test_complete_chat_empty_is_noop(maker, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def test_failed_distill_does_not_archive_and_is_visible(maker, monkeypatch):
-    from server.db.models import ConversationEvent
-    from server.services import chat_lifecycle, distill_service
-
-    # Stub the LLM, NOT distill_from_signals — so the real production wiring
-    # (outcome -> failure event -> complete_chat's archive decision) is exercised.
-    async def failing_llm(existing, signals):
-        return None
-    monkeypatch.setattr(distill_service, "distill_facts", failing_llm)
-
-    n, _ok = await chat_lifecycle.complete_chat(1)
-
-    async with maker() as s:
-        active = (await s.execute(select(ChatMessage).where(
-            ChatMessage.spawn_id == 1, ChatMessage.archived == False))).scalars().all()  # noqa: E712
-        archived = (await s.execute(select(ChatMessage).where(
-            ChatMessage.spawn_id == 1, ChatMessage.archived == True))).scalars().all()  # noqa: E712
-        kinds = (await s.execute(select(ConversationEvent.kind))).scalars().all()
-
-    assert len(active) == 2, "a failed distill must leave the transcript ACTIVE (retryable)"
-    assert len(archived) == 0
-    assert n == 0, "nothing was archived, so report 0 honestly"
-    assert "distill_failed" in kinds, "the failure must be visible, not only logged"
-
-
 async def test_successful_distill_still_archives(maker, monkeypatch):
     """The A3 change must not regress the happy path."""
     from server.services import chat_lifecycle, distill_service

@@ -1,12 +1,9 @@
-"""Session-end distillation: consolidate a spawn's session signals into ≤8 behavioral
-preferences stored in Spawn.memory_facts. Best-effort, background, never raises.
+"""Session-end distillation for an expert: the session's signals become memory PROPOSALS in that expert's
+scope (unified memory store). Best-effort, background, never raises.
 
-Verdict source: deliverable 👍/👎 verdicts are persisted as DB `Feedback` rows keyed by the
-REAL `conversation_id` (see `record_deliverable_verdict` in server/orchestrator/arslan.py),
-so they ARE cleanly queryable per (conversation_id, spawn_id). We fold them into the distill
-signals alongside conversation material (user messages + the spawn's deliverables from
-ArslanMessage). The REST `/feedback` endpoint still writes a degenerate `spawn-{id}` key; those
-rows are intentionally excluded here since they aren't tied to a specific conversation.
+0.1.63 C2a-2 removed the v1 path, which replaced Spawn.memory_facts outright, bubbled one fact up into the
+user profile and filed v1 MemoryProposal rows; no boot reached it once v2 was always active. The expert
+code that still calls this goes with C7 / C8.
 """
 from __future__ import annotations
 
@@ -16,33 +13,16 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn
+from server.db.models import ArslanMessage
 from server.services.replay_safety import should_not_curate
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.distill import DISTILL_SYSTEM
 from server.services import recap_service
 
-_META_UPFLOW_SYSTEM = (
-    "你是 Arslan 的记忆整理器。只提炼 AT MOST 一条对【所有分身 / Arslan 本身】都有用的元知识——"
-    "要么是通用的用户偏好(如「用户偏口语、忌硬广」),要么是领域归属"
-    "(如「小红书类内容交给某分身」)。不要提炼只对该分身领域内部有用的细节。"
-    "如果没有值得上浮的,返回空字符串。只输出一行纯文本(那条元知识或空),不要解释、不要 JSON、不要引号。"
-)
-
 logger = logging.getLogger(__name__)
 
 _MAX_FACTS = 8
-
-#: distilled_sessions.reason written by the curation sweep when it permanently
-#: abandons a pair (see server/services/curation_loop.py).
-_GAVE_UP_REASON = "curation_gave_up"
-
-#: marker reason written when the sweep only PROPOSED (nothing reached memory yet)
-_PROPOSED_REASON = "curation_proposed"
-
-#: the Tier-2 kind whose existing acceptor writes spawn.memory_facts
-_PREFERENCE_KIND = "preference_overwrite_suspect"
 
 
 async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
@@ -65,65 +45,6 @@ async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
                        type(facts).__name__)
         return None
     return [str(f).strip() for f in facts if str(f).strip()][:_MAX_FACTS]
-
-
-async def distill_meta_upflow(spawn, new_facts: list[str],
-                             conversation_id: str | None = None) -> str | None:
-    """After per-spawn distillation, bubble ONE cross-spawn META fact up to Arslan's
-    user profile. Meta = a user preference OR a domain-ownership hint
-    ('X 内容找 <spawn>'). Domain depth stays in the spawn; only meta rises.
-
-    Routes through memory.save_facts(source='upflow', provenance={"source_kind":
-    "upflow", "spawn_id": ...}) — the SAME two-phase active-only dedup + mandatory
-    provenance + temporal discipline every other fact write gets (brain-P1 Task 3,
-    BLOCKER #1: this function used to construct UserFact directly and bypass
-    save_facts entirely, so its facts landed with provenance=NULL forever and its
-    own ad-hoc containment dedup scanned superseded rows as if they were live).
-    Because save_facts owns its own session/commit, this is no longer atomic with
-    the caller's spawn.memory_facts + DistilledSession write (a deliberate,
-    already-flagged semantic upgrade — see the P1 plan's Task 3 deviation note).
-
-    Returns the fact content actually written, or None: the LLM said nothing
-    worth upflowing, OR save_facts's exact-norm dedup merge-bumped an existing
-    active row instead of inserting a new one. Best-effort: any exception → None.
-    """
-    if not new_facts:
-        return None
-    from server.services.memory_repository import is_active
-    if await is_active():
-        return None  # No implicit widening from an expert/project into global memory.
-    try:
-        from server.orchestrator import memory
-        # Active-only existing profile for the prompt ONLY (blind-free generation:
-        # the upflow LLM must know what's already known so it doesn't re-propose it).
-        # This is STRICTLY BETTER than the old code, which fed the LLM ALL rows
-        # including superseded ones (a latent staleness bug). It is NOT a dedup scan:
-        # save_facts's active-only two-phase owns dedup — do not re-add one here.
-        existing = await memory.list_facts()  # default: active-only
-        prompt = (
-            f"分身「{spawn.name}」(领域:{spawn.domain_category})刚学到的偏好:\n"
-            + "\n".join(f"- {f}" for f in new_facts)
-            + "\n\n已有的用户画像(别重复):\n"
-            + ("\n".join(f"- {e.content}" for e in existing) if existing else "(空)")
-        )
-        adapter = await build_adapter(role="judgment")
-        resp = await adapter.chat(system=_META_UPFLOW_SYSTEM, user=prompt)
-        fact = (resp.content or "").strip().strip('"').strip("「」").strip()
-        if not fact:
-            return None
-        prov = {"source_kind": "upflow", "spawn_id": getattr(spawn, "id", None)}
-        if conversation_id:
-            # Only when there IS one: an upflowed profile fact used to be permanently
-            # untraceable to the conversation that produced it. A None-valued key would
-            # just be noise on the direct-call path, so omit it there.
-            prov["conversation_id"] = conversation_id
-        created = await memory.save_facts(
-            [{"content": fact, "source": "upflow"}], provenance=prov,
-        )
-        return created[0].content if created else None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("distill_meta_upflow(spawn=%s) failed: %s", getattr(spawn, "id", "?"), exc)
-        return None
 
 
 @dataclass(frozen=True)
@@ -252,160 +173,9 @@ async def _distill_one(
 async def _distill_one_inner(
     conversation_id: str, spawn_id: int, *, propose_only: bool = False
 ) -> DistillOutcome:
-    from server.services.memory_repository import is_active
-    if await is_active():
-        return await _distill_v2(spawn_id, conversation_id=conversation_id)
-    async with db_session.AsyncSessionLocal() as db:
-        already = (await db.execute(select(DistilledSession).where(
-            DistilledSession.conversation_id == conversation_id,
-            DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
-        # A `curation_gave_up` marker means the BACKGROUND sweep abandoned this pair.
-        # It is terminal for the sweep (that is what keeps a dead conversation from
-        # costing money forever) but it must NOT silence the user: an interactive
-        # caller ignores it and, on success, upserts the row back to a normal marker.
-        # Both background reasons are terminal for the SWEEP but invisible to an
-        # interactive caller: a give-up must not silence a manual retry, and a
-        # proposal-only marker means nothing was learned yet, so the user asking for a
-        # real distillation must get one.
-        background_only = already is not None and already.reason in (
-            _GAVE_UP_REASON, _PROPOSED_REASON)
-        if already is not None and not (background_only and not propose_only):
-            return DistillOutcome(ok=False, reason="already_distilled", spawn_id=spawn_id)
-        spawn = await db.get(Spawn, spawn_id)
-        if spawn is None:
-            return DistillOutcome(ok=False, reason="no_spawn", spawn_id=spawn_id)
-        deliverables = (await db.execute(select(ArslanMessage.display_content).where(
-            ArslanMessage.conversation_id == conversation_id,
-            ArslanMessage.role == "spawn_summary",
-            ArslanMessage.spawn_id == spawn_id))).scalars().all()
-        user_msgs = (await db.execute(select(ArslanMessage.content).where(
-            ArslanMessage.conversation_id == conversation_id,
-            ArslanMessage.role == "user"))).scalars().all()
-        verdicts = (await db.execute(select(Feedback.user_action).where(
-            Feedback.session_id == conversation_id,
-            Feedback.spawn_id == spawn_id))).scalars().all()
-        existing = list(spawn.memory_facts or [])
-
-    # Conversation material + per-conversation 👍/👎 verdict counts (now cleanly queryable).
-    ups = sum(1 for v in verdicts if v == "thumbs_up")
-    downs = sum(1 for v in verdicts if v == "thumbs_down")
-    feedback_line = f"\n\n用户反馈:👍×{ups} 👎×{downs}" if (ups or downs) else ""
-    signals = "用户消息:\n" + "\n".join(u for u in user_msgs if u) + \
-              "\n\n分身产出:\n" + "\n".join(d for d in deliverables if d) + \
-              feedback_line
-    if not deliverables and not user_msgs:
-        return DistillOutcome(ok=False, reason="nothing_to_distill", spawn_id=spawn_id)
-
-    new_facts = await distill_facts(existing, signals)
-    if new_facts is None:
-        # write nothing + no marker, so it retries next session
-        return DistillOutcome(ok=False, reason="llm_failed", spawn_id=spawn_id)
-
-    if propose_only:
-        # 整理层: the background sweep never writes memory directly. It files a Tier-2
-        # proposal a human adjudicates (the existing preference_overwrite_suspect
-        # acceptor writes spawn.memory_facts on accept).
-        #
-        # The meta-upflow is SKIPPED here, not proposed: it routes through
-        # memory.save_facts, which can auto-supersede a live profile fact with zero
-        # human approval — exactly the silent write this mode exists to prevent.
-        # Filing it as an append_suspect proposal instead is a registered follow-up,
-        # NOT part of this round; until then the sweep simply does not upflow.
-        filed = await _file_preference_proposal(conversation_id, spawn_id, new_facts,
-                                                based_on=existing)
-        if not filed:
-            return DistillOutcome(ok=False, reason="write_failed", spawn_id=spawn_id)
-        async with db_session.AsyncSessionLocal() as db:
-            # A DISTINGUISHABLE marker: nothing reached memory, only a proposal was
-            # filed. A plain marker here would be indistinguishable from "actually
-            # learned" and would permanently answer the user's manual distill with
-            # "0 spawns" while their material sat in an inbox that has no UI yet.
-            await _upsert_marker(db, conversation_id, spawn_id, reason=_PROPOSED_REASON)
-            await db.commit()
-        return DistillOutcome(ok=True, spawn_id=spawn_id)
-
-    async with db_session.AsyncSessionLocal() as db:
-        spawn = await db.get(Spawn, spawn_id)
-        if spawn is not None:
-            spawn.memory_facts = new_facts
-            # Best-effort metaknowledge upflow: bubble ONE cross-spawn meta-fact up to
-            # Arslan's user profile. A failure here must not break the per-spawn distill.
-            # NOTE: save_facts (which this now routes through) owns its own session/
-            # commit, independent of this block's — see distill_meta_upflow's docstring.
-            await distill_meta_upflow(spawn, new_facts, conversation_id)
-        await _upsert_marker(db, conversation_id, spawn_id)
-        await db.commit()
-    return DistillOutcome(ok=True, spawn_id=spawn_id)
-
-
-async def _upsert_marker(db, conversation_id: str, spawn_id: int,
-                         *, reason: str | None = None) -> None:
-    """Write the idempotency marker, UPSERTing within uq_distilled_conv_spawn.
-
-    A successful distill replaces a background `curation_gave_up` marker with a normal
-    one — a give-up must never permanently silence the interactive path.
-    """
-    existing = (await db.execute(select(DistilledSession).where(
-        DistilledSession.conversation_id == conversation_id,
-        DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
-    if existing is not None:
-        existing.reason = reason
-    else:
-        db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id,
-                                reason=reason))
-
-
-async def _file_preference_proposal(
-    conversation_id: str, spawn_id: int, new_facts: list[str],
-    *, based_on: list[str] | None = None
-) -> bool:
-    """File (or refresh) the Tier-2 proposal that carries this distillation.
-
-    Dedup key is (kind, table_name, old_id, conversation_id, status='pending'): a
-    re-sweep of the SAME conversation updates its row, while a DIFFERENT conversation
-    touching the same spawn gets its own — collapsing those would silently drop the
-    second one's material while still marking it processed.
-
-    Returns False if nothing could be filed, so the caller does NOT write a marker
-    (a marker without a proposal is material silently lost).
-    """
-    from server.db.models import MemoryProposal
-
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            existing = (await db.execute(select(MemoryProposal).where(
-                MemoryProposal.kind == _PREFERENCE_KIND,
-                MemoryProposal.table_name == "spawns",
-                MemoryProposal.old_id == spawn_id,
-                MemoryProposal.conversation_id == conversation_id,
-                MemoryProposal.status == "pending",
-            ))).scalars().first()
-            provenance = {
-                "source_kind": "curator",     # distinguishable from agentic/human origin
-                # the key `_accept_preference_overwrite` actually reads (no fallback)
-                "target_spawn_id": spawn_id,
-                "new_array": list(new_facts),
-                "conversation_id": conversation_id,
-                # memory_facts is a whole-array REPLACE, so accepting a stale proposal
-                # would silently revert anything written since. Record what it was
-                # derived from; accept refuses (409) when memory has moved on.
-                "based_on": list(based_on or []),
-            }
-            if existing is not None:
-                existing.provenance = provenance
-                existing.reason = f"后台整理:{len(new_facts)} 条偏好待确认"
-            else:
-                db.add(MemoryProposal(
-                    kind=_PREFERENCE_KIND, table_name="spawns", old_id=spawn_id,
-                    new_id=None, conversation_id=conversation_id,
-                    reason=f"后台整理:{len(new_facts)} 条偏好待确认",
-                    status="pending", provenance=provenance))
-            await db.commit()
-        return True
-    except Exception as exc:  # noqa: BLE001 — a failed filing must not be marked done
-        logger.warning("curation: filing the preference proposal for (%s, %s) failed: %s",
-                       conversation_id, spawn_id, exc)
-        return False
+    # 0.1.63 C2a-2: v2 only (every boot activates it). `propose_only` meant "file a v1 proposal instead of
+    # writing"; v2 distillation only ever proposes, so it changes nothing here.
+    return await _distill_v2(spawn_id, conversation_id=conversation_id)
 
 
 async def distill_from_signals(
@@ -437,38 +207,7 @@ async def distill_from_signals(
 async def _distill_from_signals_inner(
     spawn_id: int, signals: str, conversation_id: str | None
 ) -> DistillOutcome:
-    from server.services.memory_repository import is_active
-    if await is_active():
-        return await _distill_v2(spawn_id, signals=signals, conversation_id=conversation_id)
-    outcome: DistillOutcome
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            spawn = await db.get(Spawn, spawn_id)
-            if spawn is None:
-                return DistillOutcome(ok=False, reason="no_spawn", spawn_id=spawn_id)
-            existing = list(spawn.memory_facts or [])
-        new_facts = await distill_facts(existing, signals)
-        if new_facts is None:
-            outcome = DistillOutcome(ok=False, reason="llm_failed", spawn_id=spawn_id)
-        else:
-            async with db_session.AsyncSessionLocal() as db:
-                spawn = await db.get(Spawn, spawn_id)
-                if spawn is None:
-                    outcome = DistillOutcome(ok=False, reason="no_spawn", spawn_id=spawn_id)
-                else:
-                    spawn.memory_facts = new_facts
-                    await db.commit()
-                    outcome = DistillOutcome(ok=True, spawn_id=spawn_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("distill_from_signals(spawn=%s) failed: %s", spawn_id, exc)
-        outcome = DistillOutcome(ok=False, reason="exception", spawn_id=spawn_id)
-
-    if outcome.failed:
-        await recap_service.log_event(
-            conversation_id or f"spawn-{spawn_id}", "distill_failed",
-            {"spawn_id": spawn_id, "reason": outcome.reason},
-            f"蒸馏失败({outcome.reason})· 分身 {spawn_id}")
-    return outcome
+    return await _distill_v2(spawn_id, signals=signals, conversation_id=conversation_id)
 
 
 async def _distill_v2(spawn_id: int, *, signals: str | None = None,
