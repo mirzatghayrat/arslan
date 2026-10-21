@@ -885,6 +885,15 @@ _LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes.
                    "remains, then tell the user. Otherwise keep going here.")
 
 
+#: 0.1.63 K5 (⓪Plan's Q5/Q6): once a turn has had two steps whose calls are not only update_plan, its status
+#: block asks for four closing lines. Arslan's own turns only (never a delegated worker, which answers in
+#: JSON). "Unverified" in the reply's language, never 没查到: _CLAIMS_SEARCH_RE reads that as a claim to
+#: have searched (K8 fixes the pattern).
+_CLOSING_NOTE = ("This turn used tools in several steps. End your final reply with four short lines, in the "
+                 "reply's language: what you did; how you checked it; what you did not check (call it "
+                 "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch.")
+
+
 #: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
 #: call under the run's limits (K4a), and K4a's tool-call limit and dollar cap bound a web-heavy turn.
 #: What stays is the eval/replay allowance below. The tools it covers: capping web_extract alone
@@ -1923,6 +1932,102 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "title": {"type": "string", "maxLength": 200,
                   "description": "Optional name the user sees; the file's extension is kept."}},
         "required": ["path"], "additionalProperties": False},
+    # 0.1.63 K5: the 14 offered tools that had no schema (and fell back to _PERMISSIVE_PARAMS), matching
+    # each executor's real arguments. Built-in schemas go to every provider verbatim (F3's normaliser is for
+    # MCP tools only): no `pattern`, no top-level `anyOf`, no type arrays (tests/server/test_k5_tool_schemas.py).
+    "edit_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "minLength": 1, "description": "File path within the configured workspace."},
+            "old_string": {"type": "string", "minLength": 1,
+                           "description": "The exact text to replace; it must appear exactly once in the file."},
+            "new_string": {"type": "string", "description": "The text to put in its place."},
+        },
+        # path only: a call with the old names (old/new) still passes this check (DELETE-BY: v0.1.64).
+        "required": ["path"],
+        "additionalProperties": False,
+    },
+    "list_dir": {
+        "type": "object",
+        "properties": {"path": {"type": "string", "description": (
+            "Absolute or ~/ folder path in Desktop, Documents, Downloads or the workspace; leave it out to list "
+            "the folders you can see.")}},
+        "additionalProperties": False,
+    },
+    "search_files": {
+        "type": "object",
+        "properties": {"query": {"type": "string", "minLength": 1,
+                                 "description": "Literal text to find in the readable folders' text files."}},
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+    "whats_new": {
+        "type": "object",
+        "properties": {"count": {"type": "integer", "minimum": 1, "maximum": 6,
+                                 "description": "How many recent versions' notes (default 3)."}},
+        "additionalProperties": False,
+    },
+    "list_my_capabilities": {"type": "object", "properties": {}, "additionalProperties": False},
+    "schedule_task": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 80, "description": "A short name for the task."},
+            "prompt": {"type": "string", "minLength": 1, "description": "What to do each time it runs."},
+            "when": {"type": "string", "minLength": 1, "description": (
+                "'every: <seconds>' (at least 900) or 'cron: <expression>', e.g. 'every: 3600' or 'cron: 0 9 * * *'.")},
+        },
+        "required": ["name", "prompt", "when"],
+        "additionalProperties": False,
+    },
+    "list_my_tasks": {"type": "object", "properties": {}, "additionalProperties": False},
+    "cancel_task": {
+        "type": "object",
+        # No "type": a number and the string "3" are both accepted (⓪Plan's Q9: no type arrays).
+        "properties": {"task_id": {"description": "The task id from list_my_tasks (a number, e.g. 3)."}},
+        "required": ["task_id"],
+        "additionalProperties": False,
+    },
+    "read_skill": {
+        "type": "object",
+        "properties": {
+            "key": {"type": "string", "minLength": 1,
+                    "description": "The skill's key from the list in this tool's description."},
+            "section": {"type": "string", "description": (
+                "Optional: one part only, a '## Heading' of the skill or 'references/<file>.md' (or .txt).")},
+        },
+        "required": ["key"],
+        "additionalProperties": False,
+    },
+    "scan_local_network": {"type": "object", "properties": {}, "additionalProperties": False},
+    "ssh_probe": {
+        "type": "object",
+        "properties": {"host": {"type": "string", "minLength": 1,
+                                "description": "An IPv4 address on the local network, e.g. 192.168.1.8."}},
+        "required": ["host"],
+        "additionalProperties": False,
+    },
+    "ssh_run": {
+        "type": "object",
+        "properties": {
+            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
+            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
+            "command": {"type": "string", "minLength": 1, "description": "One whitelisted program name, e.g. 'uptime'."},
+            "argv": {"type": "array", "items": {"type": "string"}, "description": "Its arguments, one per item."},
+        },
+        "required": ["host", "user", "command"],
+        "additionalProperties": False,
+    },
+    "list_nodes": {"type": "object", "properties": {}, "additionalProperties": False},
+    "enroll_node": {
+        "type": "object",
+        "properties": {
+            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
+            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
+            "name": {"type": "string", "minLength": 1, "maxLength": 60, "description": "A name for the machine."},
+        },
+        "required": ["host", "user", "name"],
+        "additionalProperties": False,
+    },
 }
 
 # PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call
@@ -1981,17 +2086,8 @@ _ESCALATE_SCHEMA = {
 # suffered from — see spec §效率.
 # General research discipline (domain-agnostic) — converges any gather-then-answer task with any
 # single model, instead of fumbling N snippet searches on noisy results.
-_NATIVE_EFFICIENCY = (
-    "\n\nRESEARCH DISCIPLINE — be efficient and converge:\n"
-    "1. web_search returns short SNIPPETS, not full data. Use it to LOCATE the best source, not to "
-    "collect facts one query at a time.\n"
-    "2. Do at most 1–2 broad searches, then web_extract the most authoritative page you found to get "
-    "the real content — extracting one good source beats many snippet searches.\n"
-    "3. Do NOT run several similar searches for the same thing, and do NOT chase individual data "
-    "points with a separate search each. As soon as you can answer, ANSWER — stop searching.\n"
-    "4. If the data you gathered is incomplete, answer only the supported portion and state the "
-    "specific unknowns — never invent missing detail or keep searching in circles."
-)
+# 0.1.63 K5: the research rules ("RESEARCH DISCIPLINE") used to be appended to every run_native system,
+# tools or not; they now live in web_search's and web_extract's descriptions (arslan._arslan_tools).
 
 _PERMISSIVE_PARAMS = {"type": "object", "properties": {}, "additionalProperties": True}
 
@@ -2502,9 +2598,9 @@ async def _run_native(
                 "stop_reason": None, "history_compacted": compacted}
     schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
     params_by_key = {t["key"]: _tool_params(t) for t in wired}
-    # _NATIVE_EFFICIENCY = research discipline; GUARD_NOTE = injection defense (wrapped tool/web
-    # content is untrusted DATA, not instructions) — same guard the old loop carried.
-    system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD_NOTE
+    # GUARD_NOTE = injection defense (wrapped tool/web content is untrusted DATA, not instructions) — the
+    # same guard the old loop carried. (K5: the research rules moved to the web tools' descriptions.)
+    system = system + "\n\n" + GUARD_NOTE
 
     # convo is the neutral in-turn trajectory (arslan/llm/trajectory.py): one
     # assistant message per model reply that called tools, one tool record per
@@ -2582,6 +2678,7 @@ async def _run_native(
     # none), so a model that keeps reaching for research still delivers.
     wrap_refused = 0
     long_turn_told = False
+    tool_steps = 0              # K5: steps whose calls are not only update_plan
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -2654,6 +2751,8 @@ async def _run_native(
             from server.services import runtime_messages
             emit({"type": "note", "text": runtime_messages.render(
                 "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
+        if tool_steps >= 2 and _host_turn(caller, progress_lane):
+            notes.append(_CLOSING_NOTE)
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -2753,6 +2852,8 @@ async def _run_native(
             cut_off = getattr(resp, "finish_reason", None) == "length"
             if cut_off:
                 turn_state.truncated_calls += 1
+            elif any((call.get("function") or {}).get("name") != "update_plan" for call in tool_calls):
+                tool_steps += 1
             for call, neutral_call in zip(tool_calls, calls):
                 marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}

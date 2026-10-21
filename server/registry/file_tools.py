@@ -313,7 +313,7 @@ class WriteFileExecutor:
 
 
 class EditFileExecutor:
-    """Replace a UNIQUE occurrence of `old` with `new`.
+    """Replace a UNIQUE occurrence of `old_string` with `new_string` (0.1.63 K5; `old` / `new` before).
 
     Uniqueness is the whole point: a replace that silently takes the first of
     several matches is how an edit reports success while changing the wrong
@@ -322,12 +322,13 @@ class EditFileExecutor:
     key = "edit_file"
 
     async def execute(self, args: dict) -> dict:
-        old = args.get("old")
-        new = args.get("new")
+        # The old names `old` / `new` still work for one version. DELETE-BY: v0.1.64.
+        old = args.get("old_string", args.get("old"))
+        new = args.get("new_string", args.get("new"))
         if not isinstance(old, str) or not old:
-            return {"ok": False, "error": "'old' must be a non-empty string"}
+            return {"ok": False, "error": "'old_string' must be a non-empty string"}
         if not isinstance(new, str):
-            return {"ok": False, "error": "'new' must be a string"}
+            return {"ok": False, "error": "'new_string' must be a string"}
         root, path, err = await _resolved(args)
         if err:
             return err

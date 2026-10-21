@@ -54,38 +54,12 @@ def test_promise_re_does_not_hit_honest_text():
     assert promise_guard.PROMISE_RE.search("这是我直接给你的答案:第一……") is None
 
 
-def test_spawn_promise_re_high_precision():
-    rx = promise_guard.spawn_promise_re("Deck Master")
-    assert rx.search("我把这个交给 Deck Master")
-    assert rx.search("让 deck master 处理")
-    assert rx.search("派 Deck Master 去做")
-    assert rx.search("I handed it to Deck Master")
-    assert rx.search("提到 Deck Master 这个名字而已") is None  # bare mention ≠ handoff claim
-    # a DIFFERENT spawn's name doesn't hit this spawn's pattern
-    assert promise_guard.spawn_promise_re("Research Analyst").search("交给 Deck Master") is None
-
-
 def test_find_promise_returns_snippet_and_union():
     assert promise_guard.find_promise("它正在生成中") == "正在生成"
-    # PROMISE_RE misses, spawn pattern catches (union semantics)
-    text = "这事我让 Writer 跟进吧"
-    assert promise_guard.PROMISE_RE.search(text) is None
-    assert promise_guard.find_promise(text, spawn_name="Writer")
-    assert promise_guard.find_promise("平平无奇的回答", spawn_name="Writer") is None
-    assert promise_guard.find_promise("", spawn_name=None) is None
-
-
-def test_find_promise_spawn_only_gate():
-    """PA-1: the two tiers sit behind DIFFERENT exemption gates, so the caller must be
-    able to scan the spawn tier alone (check_generic=False) when the generic tier is
-    exempt (tool_trace non-empty) but the spawn tier is not (no real delegation)."""
-    # generic-only promise language is ignored when the generic tier is gated off
-    assert promise_guard.find_promise("它正在生成中,稍等", check_generic=False) is None
-    assert promise_guard.find_promise(
-        "它正在生成中,稍等", spawn_name="Deck Master", check_generic=False) is None
-    # the spawn tier stays active without the generic tier
-    assert promise_guard.find_promise(
-        "现在让 Deck Master 直接出PPT", spawn_name="Deck Master", check_generic=False)
+    # K5: the spawn tier is gone — "让 <name> 跟进" is no longer a promise by itself
+    assert promise_guard.find_promise("这事我让 Writer 跟进吧") is None
+    assert promise_guard.find_promise("平平无奇的回答") is None
+    assert promise_guard.find_promise("") is None
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +93,7 @@ async def test_correct_returns_none_without_promise(monkeypatch):
     from server.orchestrator import tool_loop
     adapter = _SeqAdapter([HONEST_FIX])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    assert await promise_guard.correct("已完成,如下", spawn_name="Deck Master") is None
+    assert await promise_guard.correct("已完成,如下") is None
     assert adapter.chat_calls == []  # no promise → zero extra LLM calls
 
 
@@ -128,7 +102,7 @@ async def test_correct_resynthesizes_once_with_truth_statement(monkeypatch):
     from server.orchestrator import tool_loop
     adapter = _SeqAdapter([HONEST_FIX])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await promise_guard.correct(PROMISING, spawn_name="Deck Master")
+    out = await promise_guard.correct(PROMISING)
     assert out is not None
     assert out["correction"] == HONEST_FIX
     assert out["corrected"] is True
@@ -136,7 +110,7 @@ async def test_correct_resynthesizes_once_with_truth_statement(monkeypatch):
     # exactly ONE bounded LLM call, and its prompt states the literal truth
     assert len(adapter.chat_calls) == 1
     sent = adapter.chat_calls[0]["system"] + adapter.chat_calls[0]["user"]
-    assert "本回合没有交办任何任务" in sent
+    assert "这一轮没有调用任何工具" in sent
 
 
 @pytest.mark.asyncio
@@ -145,11 +119,10 @@ async def test_correct_falls_back_to_template_when_resynthesis_also_promises(mon
     # correction attempt ALSO promises → deterministic template, never a second LLM loop
     adapter = _SeqAdapter(["别急,正在生成中,稍等"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await promise_guard.correct(PROMISING, spawn_name="Deck Master")
+    out = await promise_guard.correct(PROMISING)
     assert out is not None
     assert out["corrected"] is False
-    assert "Correction" in out["correction"] and "Deck Master" in out["correction"]
-    assert "was not true" in out["correction"]
+    assert "Correction" in out["correction"] and "my own" in out["correction"]
     assert len(adapter.chat_calls) == 1  # bounded: never more than one
 
 
@@ -161,34 +134,10 @@ async def test_correct_falls_back_to_template_on_llm_error(monkeypatch):
         raise RuntimeError("no adapter")
 
     monkeypatch.setattr(tool_loop, "_get_adapter", _boom)
-    out = await promise_guard.correct(PROMISING, spawn_name=None)
+    out = await promise_guard.correct(PROMISING)
     assert out is not None
     assert out["corrected"] is False
     assert "Correction" in out["correction"]
-
-
-@pytest.mark.asyncio
-async def test_correct_spawn_only_gate(monkeypatch):
-    """PA-1: with check_generic=False, generic-only promise text passes untouched (zero
-    LLM calls), while a spawn handoff claim still corrects — and the re-synthesis gate
-    keeps the FULL union (a correction must not contain ANY promise language)."""
-    from server.orchestrator import tool_loop
-    adapter = _SeqAdapter([HONEST_FIX])
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    # generic-only text + generic tier gated off → not a hit, no correction attempt
-    assert await promise_guard.correct(
-        "它正在生成中,稍等", spawn_name="Deck Master", check_generic=False) is None
-    assert adapter.chat_calls == []
-    # spawn handoff claim → still corrected
-    out = await promise_guard.correct(
-        "现在让 Deck Master 直接出PPT", spawn_name="Deck Master", check_generic=False)
-    assert out is not None and out["correction"] == HONEST_FIX and out["corrected"] is True
-    # re-synthesis validation stays full-union: a GENERIC-promising correction is rejected
-    adapter2 = _SeqAdapter(["别急,正在生成中,稍等"])
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter2)
-    out2 = await promise_guard.correct(
-        "现在让 Deck Master 直接出PPT", spawn_name="Deck Master", check_generic=False)
-    assert out2 is not None and out2["corrected"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +166,6 @@ async def maker(tmp_path, monkeypatch):
 # Long (>160 chars) so tool_loop's deferral-stub salvage doesn't consume mock replies first.
 PROMISING_LONG = PROMISING + "这份 PPT 会覆盖注册、身份认证、法币入金、现货交易、合约风险提示等章节," \
                              "每一节都配有操作截图位与要点说明,整体控制在二十页以内,风格沿用你上次喜欢的深色模板。"
-
-
 
 
 @pytest.mark.asyncio
@@ -286,7 +233,6 @@ async def test_negative_tool_using_answer_never_triggers(maker, monkeypatch):
     from arslan.models import LLMResponse
 
 
-
     class _ToolThenPromise:
         def __init__(self):
             self.chat_calls = []
@@ -344,83 +290,6 @@ async def test_interceptor_failure_is_fail_open(maker, monkeypatch):
     async with db_session.AsyncSessionLocal() as s:
         msgs = (await s.execute(select(ArslanMessage))).scalars().all()
     assert any(m.role == "arslan" and PROMISING_LONG in m.content for m in msgs)
-
-
-# ---------------------------------------------------------------------------
-# PA-1 验收③ — the five REAL corpus sentences (thread-1783523936187, verbatim).
-# Every one of these was Arslan's final text on a turn that ALSO called web_search,
-# with zero dispatch — the old global `not tool_trace` exemption skipped the guard
-# 5/5 times. Spawn-specific promises must intercept regardless of tool use; only a
-# real delegation (dispatch / propose_invite → turn_delegated=True) exempts.
-# ---------------------------------------------------------------------------
-
-
-PA1_CORPUS = [
-    # (msg id, routed spawn id, spawn name, Arslan's final text — VERBATIM from the incident)
-    ("msg480", 7, "Research Analyst",
-     "先让 **Research Analyst** 快速收集最新的半导体行业数据"),
-    ("msg482", 6, "Deck Master",
-     "好了,信息已经收集够了。我现在让 **Deck Master** 直接出PPT,按OKX那种暗色磨砂玻璃+金色点缀的风格"),
-    ("msg484", 6, "Deck Master",
-     "好的,资料已经齐了。现在让 **Deck Master** 直接生成整页可编辑的HTML"),
-    ("msg486", 6, "Deck Master",
-     "好,信息都收集齐了。现在让 **Deck Master** 直接出整页长滚动的HTML,暗色磨砂玻璃+金色点缀风格"),
-    ("msg488", 6, "Deck Master",
-     "好,资料已经全部齐了。现在让 **Deck Master** 直接出整页长滚动HTML。**Deck Master**,请按以下要求执行"),
-]
-
-
-def _tool_then_claim_adapter(claim: str):
-    """Adapter replaying the incident turn shape: call 1 = a web_search tool call
-    (tool_trace becomes NON-empty), call 2 = the delegation claim as the final text,
-    call 3 = the guard's honest re-synthesis."""
-    from arslan.models import LLMResponse
-
-    class _ToolThenClaim:
-        def __init__(self):
-            self.chat_calls = []
-            self._n = 0
-
-        async def chat(self, system, user, history=None, tools=None, temperature=0.7):
-            self.chat_calls.append({"system": system, "user": user})
-            self._n += 1
-            if self._n == 1:
-                return LLMResponse(content="", tool_calls=[{
-                    "id": "c1", "type": "function",
-                    "function": {"name": "web_search", "arguments": {"query": "半导体行业"}},
-                }], usage={})
-            if self._n == 2:
-                return LLMResponse(content=claim, tool_calls=[], usage={})
-            return LLMResponse(content=HONEST_FIX, tool_calls=[], usage={})
-
-    return _ToolThenClaim()
-
-
-
-
-@pytest.mark.asyncio
-async def test_pa1_spawn_promise_exempt_when_turn_actually_delegated(maker, monkeypatch):
-    """The honest exemption: a turn that REALLY delegated (turn_delegated=True — a
-    dispatch or propose_invite happened) may name the handoff; no interception."""
-    from server.orchestrator import arslan, tool_loop
-
-    claim = PA1_CORPUS[1][3]  # 「我现在让 **Deck Master** 直接出PPT…」
-    # long enough to dodge tool_loop's deferral-stub salvage; still spawn-promising
-    claim_long = claim + "整份会覆盖行业规模、供应链格局、先进制程竞争、AI 芯片需求与政策风险五个章节," \
-                         "每章配数据图表位与要点注释,整体控制在十五页以内。"
-    adapter = _SeqAdapter([claim_long])
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-
-    events = []
-    await arslan._handle_answer("main", "帮我做一份半导体行业的PPT", events.append,
-                                intercept_spawn_name="Deck Master", turn_delegated=True)
-
-    assert len(adapter.chat_calls) == 1  # no correction re-synthesis call
-    streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
-    assert "更正" not in streamed
-    async with db_session.AsyncSessionLocal() as s:
-        evs = (await s.execute(select(ConversationEvent))).scalars().all()
-    assert [e for e in evs if e.kind == "promise_intercept"] == []
 
 
 # ---------------------------------------------------------------------------

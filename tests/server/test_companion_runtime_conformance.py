@@ -129,7 +129,8 @@ async def test_actual_entries_propagate_outer_cancellation(entry, runtime_case, 
 
 @pytest.mark.parametrize("tool_name,callback_name,args", [
     ("write_file", "confirm_workspace_write", {"path": "fixture.txt", "content": "fixture"}),
-    ("schedule_task", "confirm_schedule", {"name": "fixture", "when": "tomorrow"}),
+    # K5: schedule_task has a schema now, so the call has to be complete to reach its confirmation.
+    ("schedule_task", "confirm_schedule", {"name": "fixture", "prompt": "fixture", "when": "every: 3600"}),
 ])
 async def test_native_loop_passes_explicit_confirmation_callbacks(tool_name, callback_name, args, monkeypatch):
     approved, executed = [], []

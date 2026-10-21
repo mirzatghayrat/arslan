@@ -6,11 +6,9 @@ self-answer, and the answer LLM fabricated "我把 PPT 交给 Deck Master 来生
 
 This module is the deterministic catch: regexes that flag "claimed-but-never-dispatched
 handoff / background work" language in a FINAL answer, plus ONE bounded correction step.
-The caller (arslan._handle_answer) gates the two tiers SEPARATELY (PA-1): the generic
-tier runs only when the turn called no tool (honest narration of real work never trips
-it), while the spawn-handoff tier runs whenever the turn did not actually delegate —
-tool use is NOT delegation (second live incident: web_search every turn while the text
-claimed 「让 Deck Master 直接出PPT」 five turns in a row, zero dispatch).
+The caller (arslan._handle_answer) runs it only when the turn called no tool and no background job of
+the conversation is running (honest narration of real work never trips it). 0.1.63 K5: the spawn-handoff
+tier ("交给/让 <spawn>") is gone with the expert era; nothing in production set its spawn name any more.
 
 Bounded by construction: at most one LLM re-synthesis attempt; if that attempt ALSO
 promises, a fixed honest template is used. Never loops. Fail-open: any error inside the
@@ -37,67 +35,44 @@ PROMISE_RE = re.compile(
 )
 
 
-def spawn_promise_re(spawn_name: str) -> re.Pattern[str]:
-    """High-precision tier-1 pattern: a handoff claim naming THIS spawn ("交给/让/派/
-    hand(ed) (it) to … <name>"). Used only on the doer-first divert branch, where the
-    inferred spawn's name is known and any handoff claim is structurally false."""
-    name = re.escape((spawn_name or "").strip())
-    return re.compile(
-        rf"(?:交给|让|派|hand(?:ed)?\s+(?:it\s+)?to).{{0,10}}?{name}",
-        re.IGNORECASE,
-    )
-
-
-def find_promise(text: str, spawn_name: str | None = None, *,
-                 check_generic: bool = True) -> str | None:
-    """The matched promise snippet in `text` (PROMISE_RE ∪ spawn_promise_re), or None.
-    check_generic=False limits the scan to the spawn tier — PA-1: the caller's two
-    exemption gates differ, so a tool-using turn (generic tier exempt) must still be
-    scannable for an undelegated spawn-handoff claim."""
-    t = text or ""
-    m = PROMISE_RE.search(t) if check_generic else None
-    if m is None and spawn_name:
-        m = spawn_promise_re(spawn_name).search(t)
+def find_promise(text: str) -> str | None:
+    """The matched promise snippet in `text` (PROMISE_RE), or None."""
+    m = PROMISE_RE.search(text or "")
     return m.group(0) if m else None
 
 
-# The literal truth statement the re-synthesis prompt MUST carry (acceptance #1: the
-# correction is grounded in the turn's real state, not a generic "be honest" nudge).
-_TRUTH_STATEMENT = "你本回合没有交办任何任务给任何分身——刚才那段话里的“交办/生成中”是不实的"
+# The literal truth statement the re-synthesis prompt MUST carry (acceptance #1: the correction is grounded
+# in the turn's real state, not a generic "be honest" nudge). 0.1.63 K5: it no longer says "the system has
+# no background execution" (there is background work) or "name the spawn with @" (there are no spawns); the
+# guard only fires on a turn with no tool call and no running job, so this holds whenever it fires.
+_TRUTH_STATEMENT = "这一轮没有调用任何工具，也没有为这件事开任何后台任务——刚才那段话里「已交给/正在生成」之类的说法是不实的"
 
 _CORRECTION_SYS = (
-    "你是 Arslan。系统没有后台执行,你上一条回复向用户虚报了进度,需要立刻更正。"
+    "你是 Arslan。你上一条回复说某件事已经交出去或正在进行,但这一轮没有任何工具或后台任务在做它,需要立刻更正。"
     "只输出一段简短(一两句)的诚实更正,用用户的语言;"
     "绝不要再出现“正在/稍等/马上/已交给/交给某某生成(处理)”这类进行中或已派发的说法。"
 )
 
 
-def _correction_user(full_text: str, spawn_name: str | None) -> str:
-    who = f"(那段话把任务说成已交给「{spawn_name}」)" if spawn_name else ""
+def _correction_user(full_text: str) -> str:
     return (
-        f"事实:{_TRUTH_STATEMENT}{who}。\n\n"
+        f"事实:{_TRUTH_STATEMENT}。\n\n"
         f"你刚才的回复原文:\n{(full_text or '')[:2000]}\n\n"
-        "请输出更正:如实说明上面的内容是你自己作答的,没有任何任务被派发、也没有任何东西"
-        "正在后台生成;如果用户确实想交给某个分身,提示他们直接点名(@分身名)即可。"
-        "只输出更正文本本身,不要解释。"
+        "请输出更正:如实说明上面的内容是你自己作答的,没有为它在后台运行任何任务;"
+        "如果用户想让你接着做,他们直接说就行。只输出更正文本本身,不要解释。"
     )
 
 
-def _fallback_template(spawn_name: str | None, locale="zh") -> str:
-    return runtime_messages.render("named_correction" if spawn_name else "correction", locale, name=spawn_name)
+def _fallback_template(locale="zh") -> str:
+    return runtime_messages.render("correction", locale)
 
 
-async def correct(full_text: str, *, spawn_name: str | None = None,
-                  check_generic: bool = True) -> dict | None:
+async def correct(full_text: str) -> dict | None:
     """Detect + bounded-correct. Returns None when `full_text` carries no promise
     language; otherwise {"correction": str, "pattern": matched snippet, "corrected":
     bool} where corrected=True means the LLM re-synthesis passed the same regex gate
-    (False = deterministic template). At most ONE extra LLM call, never loops.
-
-    check_generic=False (PA-1) restricts DETECTION to the spawn tier; the re-synthesis
-    validation below deliberately keeps the full union — a correction must not contain
-    ANY promise language, whichever tier tripped it."""
-    snippet = find_promise(full_text, spawn_name, check_generic=check_generic)
+    (False = deterministic template). At most ONE extra LLM call, never loops."""
+    snippet = find_promise(full_text)
     if snippet is None:
         return None
     locale = await runtime_messages.selected_locale()
@@ -106,14 +81,14 @@ async def correct(full_text: str, *, spawn_name: str | None = None,
         adapter = tool_loop._get_adapter()
         a = await adapter if hasattr(adapter, "__await__") else adapter
         resp = await a.chat(_CORRECTION_SYS + f"\nWrite this product notice in locale {locale}.",
-                            _correction_user(full_text, spawn_name))
+                            _correction_user(full_text))
         candidate = (getattr(resp, "content", None) or "").strip()
-        if candidate and find_promise(candidate, spawn_name) is None:
+        if candidate and find_promise(candidate) is None:
             return {"correction": candidate, "pattern": snippet, "corrected": True}
         logger.warning("promise correction re-synthesis also promised — using template")
     except Exception as exc:  # noqa: BLE001 — correction must never break the turn
         logger.warning("promise correction re-synthesis failed (using template): %s", exc)
-    return {"correction": _fallback_template(spawn_name, locale), "pattern": snippet,
+    return {"correction": _fallback_template(locale), "pattern": snippet,
             "corrected": False}
 
 
@@ -137,7 +112,7 @@ async def correct(full_text: str, *, spawn_name: str | None = None,
 def _zero_tool_fabrication(text: str, spawn_name: str | None = None) -> str | None:
     """The fabrication snippet / claim-kind in a ZERO-TOOL spawn's final answer, or None.
     Reuses promise_guard.find_promise ∪ tool_loop._claims_deck/_claims_search verbatim."""
-    snippet = find_promise(text, spawn_name, check_generic=True)
+    snippet = find_promise(text)        # K5: the spawn tier is gone (this helper goes with C7)
     if snippet:
         return snippet
     from server.orchestrator import tool_loop

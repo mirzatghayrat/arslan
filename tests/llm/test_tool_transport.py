@@ -4,7 +4,7 @@ The bug this file locks down: `chat(messages, tools=...)` is part of the
 provider contract (base.py), OpenAI serialised `tools` into its payload, and
 Anthropic and Gemini took the argument and threw it away. Since tool
 descriptions are not in the system prompt either (tool_loop.py:1142 builds
-`system + _NATIVE_EFFICIENCY + GUARD_NOTE` and nothing else), `tools=` was the
+`system + GUARD_NOTE` and nothing else; the research rules too before K5), `tools=` was the
 ONLY channel — so on those two providers the model never learned a single tool
 existed, `tool_calls` came back empty every time, and run_native took its
 "no tool_calls → this is the final answer" branch at step 0. Not a degraded
