@@ -21,8 +21,8 @@ anything else built on `distill_from_signals`) write no marker — and two of th
 no conversation_id at all — so they are structurally invisible here. Do not let any UI
 or doc imply this is a complete safety net.
 
-SPEND. MAX_PER_TICK conversations per tick × one LLM call per producing spawn (the
-meta-upflow is skipped in propose_only mode). At the default 900s interval that is at
+SPEND. MAX_PER_TICK conversations per tick × one LLM call per producing spawn. (The
+meta-upflow is gone: 0.1.63 C2a-2 removed it with distill_service's v1 path.) At the default 900s interval that is at
 most 5 × 96 = 480 conversation-sweeps/day, typically 1–2 spawns each. The retry cap and
 the terminal give-up marker bound the pathological tail; the two kill switches bound
 the whole thing at zero.
