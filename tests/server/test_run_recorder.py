@@ -9,6 +9,15 @@ from server.db.models import ArslanMessage, Base, Run, RunStep
 from server.services import run_recorder
 
 
+@pytest.fixture(autouse=True)
+def _a_learning_turn():
+    """A real turn binds its memory context (task_context). Without one a run is recorded no_learning and
+    scoring skips it, which is the only path since 0.1.63 C2a-2 (a v1 database used to skip that check)."""
+    from server.services import personal_context as pc
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c1", cloud_memory_allowed=True)):
+        yield
+
+
 @pytest.fixture
 async def memdb(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -112,3 +121,17 @@ async def test_unpaired_tool_call_is_flushed(memdb):
     assert "tool_call" in kinds
     tool = [s for s in steps if s.kind == "tool_call"][0]
     assert tool.ref["ok"] is False
+
+
+async def test_a_run_without_a_memory_context_is_no_learning(memdb):
+    """0.1.63 C2a-2: with no turn context the run is unscoped, so it is recorded no_learning and detached judges
+    never read it (it may hold local-only memory). Before, a v1 database skipped this check."""
+    from server.services import personal_context as pc
+    token = pc._current.set(None)               # this file's autouse fixture binds a learning turn
+    try:
+        rec = await run_recorder.RunRecorder.start(
+            conversation_id="c1", spawn_id=None, spawn_name="M", user_message="x", route_ms=0)
+    finally:
+        pc._current.reset(token)
+    async with memdb() as db:
+        assert (await db.get(Run, rec.run_id)).no_learning is True

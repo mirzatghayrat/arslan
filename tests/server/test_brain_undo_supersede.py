@@ -13,16 +13,16 @@ right, each of which the read-only audit flagged:
     (Depends(get_session) + app.dependency_overrides) silently does not reach the write.
   * missing_provenance is a PROGRAMMER guard, so the route supplies provenance and that
     branch is dead — it must not be reachable as a client-facing 409.
+
+Under memory v2 (0.1.63 C2a-2) every well-formed request is refused for versioned review (409): the
+v1 pointer rewrite is gone, and user_facts / learnings are read-only views, so nothing here seeds them.
+What these tests pin is the request checks that still run first.
 """
 from __future__ import annotations
 
 import pytest
 
-from server.db.models import Learning, Note, UserFact
 
-# The shared test databases stay on memory v1 in this file: the code it tests still has a v1 path,
-# which C2a-2 deletes (then this marker goes too; marker memory_v1 in pyproject.toml).
-pytestmark = pytest.mark.memory_v1
 
 AUTH: dict[str, str] = {}
 
@@ -32,14 +32,6 @@ async def seeded(client, monkeypatch):
     from server.db import session as db_session
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
-    async with client.db_maker() as s:
-        s.add(UserFact(content="新事实", source="auto", confidence=0.8))
-        s.add(UserFact(content="旧事实", source="auto", confidence=0.5, superseded_by=1))
-        s.add(Learning(content="新心得", source_kind="distill", source_ref={}, confidence=0.7))
-        s.add(Learning(content="旧心得", source_kind="distill", source_ref={},
-                       confidence=0.5, superseded_by=1))
-        s.add(Note(title="笔记", content="正文"))
-        await s.commit()
     return client
 
 
@@ -63,7 +55,7 @@ async def test_unsupportable_kinds_are_refused_before_reaching_the_service(seede
     assert kind in detail
 
 
-async def test_undoing_an_active_row_is_a_409(seeded):
+async def test_a_well_formed_request_is_a_409_for_versioned_review(seeded):
     r = await seeded.post("/api/v1/brain/undo-supersede",
                           json={"kind": "profile", "ref": "fact:1"}, headers=AUTH)
     assert r.status_code == 409, r.text
@@ -87,19 +79,12 @@ async def test_a_ref_from_the_other_kind_is_refused(seeded):
     would restore user_facts id 2 — a different entry entirely, silently, with a 200.
 
     A mutation check proved this was untested: deleting the prefix comparison left every
-    other test in this file green.
+    other test in this file green. Without the check this request now reaches the service and gets
+    its 409; with it, the caller's own words come back as a 422.
     """
-    async with seeded.db_maker() as s:
-        before = (await s.get(UserFact, 2)).superseded_by
-    assert before is not None
-
     r = await seeded.post("/api/v1/brain/undo-supersede",
                           json={"kind": "profile", "ref": "learning:2"}, headers=AUTH)
     assert r.status_code == 422, r.text
-
-    async with seeded.db_maker() as s:
-        assert (await s.get(UserFact, 2)).superseded_by == before, (
-            "the fact must be untouched — a cross-kind ref must never reach the write")
 
 
 async def test_a_unicode_digit_ref_is_a_422_not_a_500(seeded):

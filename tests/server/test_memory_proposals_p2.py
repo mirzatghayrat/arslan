@@ -30,6 +30,10 @@ session via server.db.session.AsyncSessionLocal() rather than accepting an
 injected session — so AsyncSessionLocal must be monkeypatched to the same
 engine as the FastAPI dependency override, or the two write paths would land
 in different databases.
+
+0.1.63 C2a-2: accepting a card on a v1 table (user_facts, learnings, spawns) is refused for versioned
+review (409) before any branch runs, so the cases left here are the notes path and refusals that still hold;
+tests/server/test_memory_proposals_api.py covers the v2 accept rules.
 """
 from __future__ import annotations
 
@@ -157,18 +161,8 @@ async def test_append_suspect_accept_materializes_note(client):
     assert notes[0].title == "分身提议的新笔记内容"
 
 
-async def test_append_suspect_missing_content_422(client):
-    pid = await _seed_proposal(client, kind="append_suspect", table_name="user_facts",
-                               provenance={})
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 422
 
 
-async def test_append_suspect_bad_table_422(client):
-    pid = await _seed_proposal(client, kind="append_suspect", table_name="learnings",
-                               provenance={"content": "x"})
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 422
 
 
 # --------------------------------------------------------------------- edit_high_conf_suspect
@@ -190,12 +184,6 @@ async def test_edit_high_conf_dismiss_leaves_old_unchanged(client):
     assert len(facts) == 1                       # no new fact was ever created
 
 
-async def test_edit_high_conf_missing_content_422(client):
-    old_id = await _seed_fact(client)
-    pid = await _seed_proposal(client, kind="edit_high_conf_suspect", table_name="user_facts",
-                               old_id=old_id, provenance={})
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 422
 
 
 async def test_edit_high_conf_unsupported_table_returns_422_no_stray_write(client):
@@ -219,30 +207,6 @@ async def test_edit_high_conf_unsupported_table_returns_422_no_stray_write(clien
     assert facts == []                            # no stray user_facts row
 
 
-async def test_edit_high_conf_old_hard_deleted_returns_410_no_orphan(client):
-    """Race guard (coordinator Important): old_id was hard-deleted out-of-band
-    between propose and accept. accept must 410 BEFORE materializing the new
-    fact — otherwise a re-accept would leak a fresh orphan fact each time and
-    fail identically forever. Assert: 410, fact count unchanged (no orphan),
-    proposal still pending (dismissable)."""
-    old_id = await _seed_fact(client, content="待编辑但会被删的事实")
-    pid = await _seed_proposal(
-        client, kind="edit_high_conf_suspect", table_name="user_facts", old_id=old_id,
-        provenance={"content": "编辑内容永远不该落地"})
-    async with client.db_maker() as db:
-        old = await db.get(UserFact, old_id)
-        await db.delete(old)
-        await db.commit()
-
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 410
-
-    async with client.db_maker() as db:
-        from sqlalchemy import select
-        facts = (await db.execute(select(UserFact))).scalars().all()
-        p = await db.get(MemoryProposal, pid)
-    assert facts == []                    # NO orphan fact was materialized
-    assert p.status == "pending"          # still dismissable, not stuck
 
 
 async def test_edit_high_conf_old_superseded_out_of_band_returns_409_no_orphan(client):
@@ -274,29 +238,6 @@ async def test_edit_high_conf_old_superseded_out_of_band_returns_409_no_orphan(c
 
 # --------------------------------------------------------------------- delete_suspect
 
-async def test_delete_suspect_accept_learnings_reconciles_and_removes_fts(client):
-    a_id = await _seed_learning(client, content="A心得")
-    b_id = await _seed_learning(client, content="B心得")
-    async with client.db_maker() as db:
-        a = await db.get(Learning, a_id)
-        a.superseded_by = b_id
-        await db.commit()
-        await db.execute(sa_text("INSERT INTO learnings_fts (rowid, text) VALUES (:r, :t)"),
-                         {"r": b_id, "t": "B心得"})
-        await db.commit()
-
-    pid = await _seed_proposal(client, kind="delete_suspect", table_name="learnings", old_id=b_id)
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-
-    async with client.db_maker() as db:
-        a = await db.get(Learning, a_id)
-        b = await db.get(Learning, b_id)
-        fts_rows = (await db.execute(
-            sa_text("SELECT rowid FROM learnings_fts WHERE rowid = :r"), {"r": b_id})).all()
-    assert b is None
-    assert a.superseded_by is None
-    assert fts_rows == []
 
 
 async def test_delete_suspect_accept_notes(client):
@@ -313,75 +254,18 @@ async def test_delete_suspect_accept_notes(client):
     assert fts_rows == []
 
 
-async def test_delete_suspect_accept_spawns_clears_preferences(client):
-    await _seed_spawn(client, 42, "分身42", memory_facts=["a", "b"])
-    pid = await _seed_proposal(client, kind="delete_suspect", table_name="spawns", old_id=42,
-                               provenance={"target_spawn_id": 42})
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-
-    async with client.db_maker() as db:
-        spawn = await db.get(Spawn, 42)
-    assert spawn.memory_facts == []
 
 
-async def test_delete_suspect_dangling_learnings_returns_410_but_reconcile_still_lands(client):
-    """Reconcile runs FIRST and is committed durably, even when the delete
-    itself then 410s — the predecessor fix must never depend on the delete
-    succeeding (the row may already be gone by the time a human clicks accept,
-    but any dangling predecessor pointer should still get cleaned up)."""
-    a_id = await _seed_learning(client, content="A心得")
-    async with client.db_maker() as db:
-        a = await db.get(Learning, a_id)
-        a.superseded_by = 999999
-        await db.commit()
-
-    pid = await _seed_proposal(client, kind="delete_suspect", table_name="learnings", old_id=999999)
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 410
-
-    async with client.db_maker() as db:
-        a = await db.get(Learning, a_id)
-    assert a.superseded_by is None
 
 
-async def test_delete_suspect_bad_table_returns_422(client):
-    pid = await _seed_proposal(client, kind="delete_suspect", table_name="bogus", old_id=1)
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 422
 
 
 # --------------------------------------------------------------------- preference_overwrite_suspect
 
-async def test_preference_overwrite_accept_sets_new_array(client):
-    await _seed_spawn(client, 10, "分身10", memory_facts=["旧偏好"])
-    pid = await _seed_proposal(
-        client, kind="preference_overwrite_suspect", table_name="spawns", old_id=10,
-        provenance={"target_spawn_id": 10, "new_array": ["旧偏好", "host 建议的新偏好"]})
-
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 200
-
-    async with client.db_maker() as db:
-        spawn = await db.get(Spawn, 10)
-    assert spawn.memory_facts == ["旧偏好", "host 建议的新偏好"]
 
 
-async def test_preference_overwrite_missing_target_spawn_returns_410(client):
-    pid = await _seed_proposal(
-        client, kind="preference_overwrite_suspect", table_name="spawns", old_id=999999,
-        provenance={"target_spawn_id": 999999, "new_array": ["x"]})
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 410
 
 
-async def test_preference_overwrite_missing_provenance_fields_returns_422(client):
-    await _seed_spawn(client, 11, "分身11")
-    pid = await _seed_proposal(
-        client, kind="preference_overwrite_suspect", table_name="spawns", old_id=11,
-        provenance={})
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 422
 
 
 # --------------------------------------------------------------------- generic 4xx mapping
@@ -393,10 +277,6 @@ async def test_accept_already_resolved_returns_409_for_tier2_kind(client):
     assert r.status_code == 409
 
 
-async def test_accept_unmapped_kind_returns_422(client):
-    pid = await _seed_proposal(client, kind="some_future_kind", table_name="user_facts", old_id=1)
-    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
-    assert r.status_code == 422
 
 
 # --------------------------------------------------------------------- list_proposals compat

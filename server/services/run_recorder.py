@@ -97,8 +97,7 @@ class RunRecorder:
         started = datetime.utcnow()
         from server.services.personal_context import current
         privacy = current()
-        from server.services.memory_repository import is_active
-        unscoped = privacy is None and await is_active()
+        unscoped = privacy is None
         # A local-model turn may contain local-only memory even when cloud use
         # is enabled for other eligible entries. Detached judges cannot reuse it.
         no_learning = unscoped or bool(privacy and (privacy.no_learning or privacy.temporary

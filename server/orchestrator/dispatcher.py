@@ -289,34 +289,28 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
                              system_prompt_override: str | None = None,
                              replay: bool = False,
                              ambient: dict | None = None) -> tuple[str, list[dict]]:
-    """Full spawn system prompt (base + anti-fab + facts + evolution + KB + attached +
-    equipment block + tool guidance) + the live wired tools. Shared by dispatch() and /ws/chat().
+    """Full spawn system prompt (base + anti-fab + memory + KB + attached + equipment block + tool
+    guidance) + the live wired tools. Shared by dispatch() and /ws/chat().
 
     replay=True (S2 E3 hermetic replay): retrieval records NO brain_usage, and the wired
     tool set is narrowed to the replay-safe builtins (every MCP tool dropped — the model
-    sees none). The Tier-1 evolution suffix is still appended AFTER the base override, so a
-    candidate and a baseline arm remain structurally identical to production and to each other.
+    sees none).
 
-    ambient (S2 E3): a pre-captured snapshot {facts, kb_block, kb_sources} from
-    replay_run.snapshot_ambient. When given, facts + KB are taken from the snapshot instead
-    of re-fetched, so a pair's two arms are byte-identical outside the base-prompt diff even
-    if the DB changes between them."""
-    from server.services import evolution_service
+    ambient (S2 E3): a pre-captured snapshot from replay_run.snapshot_ambient. Unused under memory
+    v2, which reauthorizes memory and knowledge on every build (a snapshot may hold entries deleted or
+    no longer permitted since). 0.1.63 C2a-2 removed the v1 branches that read it, together with the
+    v1 preference list (Spawn.memory_facts) and the Tier-1 evolution suffix, which v2 never added; C7
+    removes this module."""
     from server.services import knowledge as _knowledge
+    from server.services import personal_context
 
-    from server.services.memory_repository import is_active as memory_v2_active
-    unified_memory = await memory_v2_active()
-    if unified_memory:
-        from server.services import personal_context
-        # Replays must reauthorize current memory; cached prompt snapshots may
-        # contain entries that have since been deleted or lost permission.
-        with personal_context.for_worker(str(spawn.id)):
-            personal = await personal_context.assemble(retrieval_query)
-            facts = personal.text if personal else ""
-            if personal:
-                await personal_context.record(personal)
-    else:
-        facts = ambient["facts"] if ambient is not None else await memory.facts_text()
+    # Replays must reauthorize current memory; cached prompt snapshots may
+    # contain entries that have since been deleted or lost permission.
+    with personal_context.for_worker(str(spawn.id)):
+        personal = await personal_context.assemble(retrieval_query)
+        facts = personal.text if personal else ""
+        if personal:
+            await personal_context.record(personal)
     base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
     system = base_prompt
     system += (
@@ -344,35 +338,20 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     )
     if facts:
         system = f"{system}\n\n{facts}"
-    if not unified_memory and spawn.memory_facts:
-        prefs = "\n- ".join(str(f) for f in spawn.memory_facts if str(f).strip())
-        if prefs:
-            system += f"\n\n[关于如何为这位用户工作,你已学到的偏好]\n- {prefs}"
-    # Tier-1 evolution suffix — appended AFTER the base (override or persona) for EVERY arm,
-    # so a replay candidate and baseline both carry it exactly as production does (spec §E3).
-    suffix = "" if unified_memory else evolution_service.prompt_suffix(spawn.name)
-    if suffix:
-        system = f"{system}\n\n{suffix}"
     _kb_sources = None
-    if ambient is not None and not unified_memory:
-        # E3: inject the pre-captured KB snapshot (no retrieval, no usage write) so both arms
-        # of a pair see byte-identical knowledge.
-        system += ambient["kb_block"]
-        _kb_sources = ambient["kb_sources"]
-    else:
-        try:
-            # used_ref=None: build_spawn_system has no conversation_id in scope; usage
-            # count still accrues per material hit, the "最近用于" ref is filled by the
-            # Arslan direct-chat path which does carry conversation_id. record_usage=False
-            # in replay: retrieve identically but never touch brain_usage counters.
-            from server.services.personal_context import for_worker
-            with for_worker(str(spawn.id)):
-                _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
-                                                       used_ref=None, record_usage=not replay)
-            system += _knowledge.knowledge_block(_kb)
-            _kb_sources = [src for src, _ in _kb] or None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
+    try:
+        # used_ref=None: build_spawn_system has no conversation_id in scope; usage
+        # count still accrues per material hit, the "最近用于" ref is filled by the
+        # Arslan direct-chat path which does carry conversation_id. record_usage=False
+        # in replay: retrieve identically but never touch brain_usage counters.
+        from server.services.personal_context import for_worker
+        with for_worker(str(spawn.id)):
+            _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
+                                                   used_ref=None, record_usage=not replay)
+        system += _knowledge.knowledge_block(_kb)
+        _kb_sources = [src for src, _ in _kb] or None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
     if attached_context:
         system += f"\n\n[用户附带的临时材料]\n{attached_context}"
     equipment = await registry_service.equipment_for_spawn(spawn.id)

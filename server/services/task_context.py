@@ -9,7 +9,6 @@ from arslan.companion.content_policy import normalized_memory
 from server.db import session as db_session
 from server.db.models import ConversationContext
 from server.services import personal_context as pc
-from server.services.memory_repository import is_active
 
 
 def explicit_save_digest(user_message: str) -> str | None:
@@ -103,8 +102,6 @@ def scoped_turn(function):
                 return await execute(conversation_id, user_message, *args, **kwargs)
             from server.services.task_service import run_turn
             return await run_turn(function, conversation_id, user_message, *args, **kwargs)
-        if not await is_active():
-            return await function(conversation_id, user_message, *args, **kwargs)
         ctx = await load(conversation_id, user_message=user_message)
         with pc.bind(ctx):
             if ctx.temporary:
@@ -132,7 +129,7 @@ async def execute_entry(conversation_id, instruction, emit, body, *, driver=None
                         task_id=None, headless=False):
     """Bind non-chat entry points without deriving new consent from saved text."""
     from server.services import task_service
-    if task_service.current() is not None or not await is_active():
+    if task_service.current() is not None:
         return await body(emit)
     ctx = pc.current() or await load(conversation_id, user_message="" if headless else instruction,
                                    retrieval_query=instruction)

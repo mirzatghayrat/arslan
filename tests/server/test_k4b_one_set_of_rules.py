@@ -9,7 +9,6 @@ Before, four texts pushed multi-step work out of the chat turn:
 """
 import types
 import uuid
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -28,7 +27,6 @@ def _pushes(text: str) -> list[str]:
 
 @pytest.fixture
 def turn_context(monkeypatch):
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
 
     async def load(cid, **kwargs):
         identity = str(uuid.uuid4())

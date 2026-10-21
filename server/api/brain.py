@@ -609,16 +609,12 @@ async def brain_usage_events(
 
 
 # ---------------------------------------------------------------------------------
-# Proposal adjudication (brain-P1 Task 5): memory_proposals is the rule layer's soft
-# flag for supersede/contradiction pairs it isn't confident enough to auto-resolve
-# (see server.services.fact_dedup.fuzzy_kind + the rule-supersede call sites in
-# server/orchestrator/memory.py and server/services/learning_service.py). A human
-# accepts (deterministically executes the pointer write via the same
-# memory_temporal.execute_supersede guarded executor the rule path uses) or dismisses
-# (no-op cleanup) each one. These three endpoints use the FastAPI get_session
-# dependency (unlike the three read endpoints above) so tests can override it via
-# app.dependency_overrides, matching the rest of the proposal-shaped routers
-# (server/api/evolution.py).
+# Proposal adjudication: memory_proposals are v1 cards (the v1 rule layer and the v1 remember tool
+# filed them; 0.1.63 C2a-2 removed both). Under memory v2 only a notes card can still be accepted —
+# appending or deleting a note; every other card keeps its audit row but is refused (409), because it
+# has no target revision. These three endpoints use the FastAPI get_session dependency (unlike the
+# three read endpoints above) so tests can override it via app.dependency_overrides, matching the
+# rest of the proposal-shaped routers (server/api/evolution.py). DELETE-BY: v0.1.64, with the v1 tables.
 # ---------------------------------------------------------------------------------
 
 
@@ -696,189 +692,21 @@ def _supersede_error_response(exc: SupersedeError) -> HTTPException:
     return HTTPException(status_code=409, detail=exc.detail)
 
 
-async def _accept_edit_high_conf(session: AsyncSession, p: MemoryProposal, pid: int,
-                                 human_prov: dict) -> None:
-    """Materialize the edited content as a NEW user_facts row — new_id is
-    ALWAYS None at propose time (Task 4 never writes ahead of human
-    confirmation; the content lives in provenance JSON) — then supersede the
-    old row through the same guarded executor supersede_suspect uses.
-
-    RememberExecutor's scope-downgrade branch only ever proposes
-    edit_high_conf_suspect for kind="fact" (table_name="user_facts") — a
-    spawn attempting to supersede/mark_stale a kind="note" is refused
-    upfront by RememberExecutor itself (notes have no superseded_by column,
-    no temporal concept at all, plan's "矩阵按表能力"; see
-    test_memory_scope_isolation.py::test_spawn_supersede_note_is_a_clean_error_not_a_proposal),
-    so it never reaches a MemoryProposal row in the first place. The
-    table_name != "user_facts" guard below is defense in depth for a stale
-    row from before that fix, or a malformed/manually-inserted proposal —
-    refused cleanly (422) rather than writing an orphan fact that could
-    never actually supersede anything.
-    """
-    content = (p.provenance or {}).get("content")
-    if not content:
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: edit_high_conf_suspect missing 'content'")
-    if p.table_name != "user_facts":
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: edit_high_conf_suspect unsupported for "
-                                   f"table {p.table_name!r}")
-
-    # Validate old_id is present AND active BEFORE materializing anything. The
-    # materialize step below (save_facts) opens its OWN session and self-commits
-    # the new fact durably. If we let it run and only THEN discovered old_id was
-    # deleted or superseded out-of-band between propose and accept,
-    # execute_supersede would raise 410 (dangling_old) / 409 (already superseded
-    # by a different row) while the freshly-committed new fact stays behind AND
-    # the proposal stays pending — so every re-accept would leak ANOTHER orphan
-    # fact and fail identically. Checking up front eliminates the orphan on the
-    # common out-of-band cases. A tiny TOCTOU window remains between this check
-    # and the execute_supersede below; the idempotency guard there already covers
-    # the one way it can legitimately fire (save_facts' own extension-dedup),
-    # so the residual window is acceptable.
-    old = await session.get(UserFact, p.old_id)
-    if old is None:
-        raise HTTPException(status_code=410, detail=f"user_facts id {p.old_id} does not exist")
-    if old.superseded_by is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"user_facts id {p.old_id} already superseded by {old.superseded_by}")
-
-    from server.orchestrator import memory
-
-    # Drop "content" from the fact's own provenance blob — it would otherwise
-    # duplicate the row's `content` column inside its own audit JSON. Every
-    # edit_high_conf_suspect proposal is agentic-originated by construction
-    # (RememberExecutor is its only writer) — if stripping "content" leaves
-    # nothing behind (a minimal/degenerate provenance payload), fall back to
-    # that honest default rather than letting save_facts' mandatory-provenance
-    # guard raise an unhandled ValueError (500) here.
-    fact_provenance = {k: v for k, v in (p.provenance or {}).items() if k != "content"}
-    if not fact_provenance:
-        fact_provenance = {"source_kind": "agentic"}
-    new_rows = await memory.save_facts([{"content": content}], provenance=fact_provenance)
-    if not new_rows:
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: edit content could not be materialized "
-                                   "(merged into an existing active fact)")
-    new_id = new_rows[0].id
-
-    try:
-        await memory_temporal.execute_supersede(
-            "user_facts", new_id, p.old_id, provenance=human_prov, db=session)
-    except SupersedeError as exc:
-        if exc.code == "already_superseded":
-            # save_facts() runs its OWN exact/fuzzy dedup on every write
-            # (active-only): if the edit content is an "extension" of
-            # old_id's content, save_facts may have already auto-superseded
-            # old_id onto this very new_id before we got here. That's not a
-            # conflict — it's the same materialization via a different code
-            # path — so only re-raise if old_id ended up pointed somewhere
-            # else (a genuine out-of-band conflict).
-            old_row = await session.get(UserFact, p.old_id)
-            if old_row is not None and old_row.superseded_by == new_id:
-                return
-        raise _supersede_error_response(exc) from exc
-
-
-async def _accept_append_suspect(session: AsyncSession, p: MemoryProposal, pid: int) -> None:
+async def _accept_note_append(p: MemoryProposal, pid: int) -> None:
     content = (p.provenance or {}).get("content")
     if not content:
         raise HTTPException(status_code=422,
                             detail=f"proposal {pid}: append_suspect missing 'content'")
-    if p.table_name == "user_facts":
-        from server.orchestrator import memory
-        await memory.save_facts([{"content": content}], provenance=p.provenance)
-    elif p.table_name == "notes":
-        from server.services import note_service
-        await note_service.create(title=content[:200], content=content)
-    else:
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: append_suspect unsupported for "
-                                   f"table {p.table_name!r}")
+    from server.services import note_service
+    await note_service.create(title=content[:200], content=content)
 
 
-async def _accept_delete_suspect(session: AsyncSession, p: MemoryProposal, pid: int) -> None:
-    """🔴 Dangling-pointer guard: reconcile FIRST — any row whose
-    superseded_by points at the row we're about to delete becomes active
-    again — committed durably before the delete itself runs, so a still-live
-    predecessor's pointer never ends up dangling at a now-gone id even if the
-    delete step below then 410s. THEN delete. A target that's already gone
-    (someone deleted it out of band, or a double-accept race) -> 410, same
-    mapping as the supersede branches."""
-    if p.table_name == "user_facts":
-        await session.execute(sa_text(
-            "UPDATE user_facts SET superseded_by = NULL WHERE superseded_by = :o"),
-            {"o": p.old_id})
-        await session.commit()
-        from server.orchestrator import memory
-        ok = await memory.delete_fact(p.old_id)
-        if not ok:
-            raise HTTPException(status_code=410,
-                                detail=f"user_facts id {p.old_id} does not exist")
-    elif p.table_name == "learnings":
-        await session.execute(sa_text(
-            "UPDATE learnings SET superseded_by = NULL WHERE superseded_by = :o"),
-            {"o": p.old_id})
-        await session.commit()
-        row = await session.get(Learning, p.old_id)
-        if row is None:
-            raise HTTPException(status_code=410,
-                                detail=f"learnings id {p.old_id} does not exist")
-        await session.delete(row)
-        await session.execute(sa_text("DELETE FROM learnings_fts WHERE rowid = :r"),
-                              {"r": p.old_id})
-    elif p.table_name == "notes":
-        # No temporal concept on notes (no superseded_by column) — nothing to
-        # reconcile; note_service.delete already sweeps the FTS row.
-        from server.services import note_service
-        ok = await note_service.delete(p.old_id)
-        if not ok:
-            raise HTTPException(status_code=410, detail=f"notes id {p.old_id} does not exist")
-    elif p.table_name == "spawns":
-        # Preference delete (RememberExecutor._propose stores target_spawn_id
-        # explicitly; old_id mirrors it) — clears the whole preference array,
-        # the only granularity memory_facts (a plain string list, no per-item
-        # id) supports. No temporal concept, so no reconcile needed.
-        sid = (p.provenance or {}).get("target_spawn_id", p.old_id)
-        spawn = await session.get(Spawn, sid)
-        if spawn is None:
-            raise HTTPException(status_code=410, detail=f"spawns id {sid} does not exist")
-        spawn.memory_facts = []
-    else:
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: delete_suspect unsupported for "
-                                   f"table {p.table_name!r}")
-
-
-async def _accept_preference_overwrite(session: AsyncSession, p: MemoryProposal, pid: int) -> None:
-    prov = p.provenance or {}
-    sid, new_arr = prov.get("target_spawn_id"), prov.get("new_array")
-    if sid is None or new_arr is None:
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: preference_overwrite_suspect missing "
-                                   "target_spawn_id/new_array")
-    # Validate before overwriting: memory_facts is a whole-array REPLACE, so an empty
-    # or malformed array silently WIPES the spawn's memory. A background producer makes
-    # that a live risk rather than a theoretical one.
-    if (not isinstance(new_arr, list) or not new_arr
-            or not all(isinstance(f, str) and f.strip() for f in new_arr)):
-        raise HTTPException(status_code=422,
-                            detail=f"proposal {pid}: new_array must be a non-empty list "
-                                   "of non-blank strings")
-    spawn = await session.get(Spawn, sid)
-    if spawn is None:
-        raise HTTPException(status_code=410, detail=f"spawns id {sid} does not exist")
-    # Optimistic concurrency: memory_facts is a whole-array REPLACE, so accepting a
-    # proposal derived from an older array would silently REVERT everything written
-    # since it was filed. Curator proposals record what they were derived from.
-    based_on = prov.get("based_on")
-    if based_on is not None and list(spawn.memory_facts or []) != list(based_on):
-        raise HTTPException(
-            status_code=409,
-            detail=f"proposal {pid}: this spawn's memory changed after the proposal was "
-                   "filed; accepting it would revert that change. Dismiss and re-derive.")
-    spawn.memory_facts = new_arr
+async def _accept_note_delete(p: MemoryProposal) -> None:
+    # Notes have no temporal concept (no superseded_by column): nothing to reconcile, and
+    # note_service.delete already sweeps the FTS row.
+    from server.services import note_service
+    if not await note_service.delete(p.old_id):
+        raise HTTPException(status_code=410, detail=f"notes id {p.old_id} does not exist")
 
 
 class UndoSupersedeIn(BaseModel):
@@ -965,14 +793,10 @@ async def undo_supersede(
 async def accept_proposal(
     pid: int, session: AsyncSession = Depends(db_session.get_session)
 ) -> dict:
-    """Human confirms -> deterministic materialization, branched by kind
-    (brain-P2 Task 5). supersede_suspect keeps the original P1 behavior
-    unchanged (both rows already exist — pure pointer write). The four Tier2
-    kinds Task 4's RememberExecutor can emit each get their own branch below;
-    every one of them ends by falling through to the shared status=accepted +
-    resolved_at write so there is exactly one success path. Each branch's own
-    docstring/comments carry its specific error mapping; the common shape is
-    dangling referent -> 410, state conflict -> 409, bad/missing data -> 422."""
+    """Human confirms a v1 card. Only a notes card can still be materialized (append or delete a note);
+    any other card is refused with versioned_memory_review_required (see the section comment). The
+    shared status=accepted + resolved_at write is the one success path: a referent that is gone -> 410,
+    a card this endpoint cannot materialize -> 422."""
     p = await session.get(MemoryProposal, pid)
     if p is None:
         raise HTTPException(status_code=404, detail=f"proposal {pid} not found")
@@ -980,32 +804,20 @@ async def accept_proposal(
         raise HTTPException(status_code=409,
                             detail=f"proposal {pid} already resolved (status={p.status})")
 
-    from server.services.memory_repository import is_active
-    if await is_active(session) and p.table_name != "notes":
+    if p.table_name != "notes":
         # Old cards have no target revision and can contain whole-array replaces.
         # Keep their audit record, but never interpret a stale card as approval of
         # the current unified memory contents.
         raise HTTPException(409, detail={"code": "versioned_memory_review_required",
                                         "proposal_id": pid, "entry_id": p.target_entry_id})
 
-    human_prov = {"source_kind": "human", "via": "proposal", "proposal_id": pid}
-
-    if p.kind == "supersede_suspect":
-        try:
-            await memory_temporal.execute_supersede(
-                p.table_name, p.new_id, p.old_id, provenance=human_prov, db=session)
-        except SupersedeError as exc:
-            raise _supersede_error_response(exc) from exc
-    elif p.kind == "edit_high_conf_suspect":
-        await _accept_edit_high_conf(session, p, pid, human_prov)
-    elif p.kind == "append_suspect":
-        await _accept_append_suspect(session, p, pid)
+    if p.kind == "append_suspect":
+        await _accept_note_append(p, pid)
     elif p.kind == "delete_suspect":
-        await _accept_delete_suspect(session, p, pid)
-    elif p.kind == "preference_overwrite_suspect":
-        await _accept_preference_overwrite(session, p, pid)
+        await _accept_note_delete(p)
     else:
-        raise HTTPException(status_code=422, detail=f"proposal {pid}: unmapped kind {p.kind!r}")
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: {p.kind!r} unsupported for table 'notes'")
 
     p.status = "accepted"
     p.resolved_at = datetime.utcnow()
