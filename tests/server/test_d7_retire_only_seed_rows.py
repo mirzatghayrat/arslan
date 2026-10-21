@@ -4,11 +4,13 @@ it was written:
 
 - imported from a SKILL.md: category "imported" (skill_import);
 - installed through Capabilities: source_id set (capability_flow);
-- authored and promoted, or promoted and later retired by the curator: a SkillCandidate of that
-  key (skill_forge, expert_conversion, curator);
+- authored and promoted: a SkillCandidate of that key with promoted_at, whatever its status since
+  (skill_forge, expert_conversion; the curator retires it, reject_candidate overwrites any status);
 - made from a GitHub repo in Discover: its key starts with "gh-" (discovery_service).
 
 In each case a seed row with another retired key, in the same database, is still deleted."""
+from datetime import datetime
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -60,12 +62,30 @@ async def test_a_skill_installed_through_capabilities_survives_whatever_its_cate
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["promoted", "retired"])
+@pytest.mark.parametrize("status", ["promoted", "retired", "rejected"])
 async def test_an_authored_skill_under_a_retired_key_survives(db, status):
+    # "retired": the curator retired it; "rejected": reject_candidate ran on it after promotion
+    # (②Main's review of #293: it does not check the candidate is still open).
     candidate = SkillCandidate(key="powerpoint", name="powerpoint", category="method", description="d",
-                               body="## Trigger\nx", status=status)
+                               body="## Trigger\nx", status=status, promoted_at=datetime(2026, 10, 1))
     assert await _boot(db, candidate, _pack("powerpoint", "method", status="registered" if status ==
                                             "promoted" else "retired")) == {"powerpoint"}
+
+
+@pytest.mark.asyncio
+async def test_promoting_then_rejecting_through_the_forge_keeps_the_skill(db, monkeypatch, tmp_path):
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    import server.db.session as db_session
+    from server.services import skill_forge
+    monkeypatch.setattr(db_session, "AsyncSessionLocal",
+                        async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False))
+    cand = await skill_forge.create_candidate(key="notion", name="Notion notes", category="method",
+                                              description="How I keep notes",
+                                              body="## Trigger\nWhen the user asks to file a note.\n\n"
+                                                   "## Decision Rules\nKeep each note short, dated and in the user's words.")
+    assert (await skill_forge.promote_candidate(cand.id))["ok"]
+    assert (await skill_forge.reject_candidate(cand.id))["ok"]
+    assert await _boot(db) == {"notion"}
 
 
 @pytest.mark.asyncio

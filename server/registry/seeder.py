@@ -62,13 +62,14 @@ def _skill_body(key: str) -> str | None:
 
 # D7: a skill row the user brought in, whatever its key. Every SkillPack writer but the seeder
 # leaves one of these: skill_import "imported"; capability_flow a source_id; skill_forge (and
-# expert_conversion through it) a candidate that went live, which the curator may have retired
-# since; discovery_service a "gh-" key, which no retired key is (tested).
+# expert_conversion through it) a candidate that went live — told by promoted_at, set at
+# promotion and never cleared, because the status is not kept (the curator retires it, and
+# reject_candidate overwrites any status); discovery_service a "gh-" key, which no retired key
+# is (tested).
 _USERS_SKILL = or_(
     SkillPack.category == "imported",
     SkillPack.source_id.is_not(None),
-    exists().where(and_(SkillCandidate.key == SkillPack.key,
-                        SkillCandidate.status.in_(("promoted", "retired")))),
+    exists().where(and_(SkillCandidate.key == SkillPack.key, SkillCandidate.promoted_at.is_not(None))),
 )
 
 
