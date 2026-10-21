@@ -8,13 +8,16 @@ measured on real deltas only (reasoning, content, tool-call arguments); SSE
 comments such as ": keep-alive" and empty frames are not progress.
 
 run_native still receives one complete reply: nothing executes from a partial
-stream, so a stalled or interrupted stream is simply re-sent (and billed).
+stream. Since 0.1.63 K8a the answer's text is also handed on as it arrives
+(`on_text`, content deltas only: never reasoning or tool-call arguments), so a
+reply is shown while it is written; the loop decides what of it goes out.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -31,7 +34,8 @@ class StreamStalled(TimeoutError):
 class StreamAssembler:
     """Fold chat.completion.chunk frames into a non-streamed response dict."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_text: Callable[[str], None] | None = None) -> None:
+        self.on_text = on_text                      # K8a: each content delta, as it arrives
         self.content: list[str] = []
         self.reasoning: list[str] = []
         self.reasoning_alt: list[str] = []          # OpenRouter "reasoning"
@@ -57,6 +61,8 @@ class StreamAssembler:
                 if isinstance(piece, str) and piece:
                     sink.append(piece)
                     progress = True
+                    if key == "content" and self.on_text is not None:
+                        self.on_text(piece)
             details = delta.get("reasoning_details")
             if isinstance(details, list) and details:
                 self.reasoning_details.extend(details)
@@ -93,9 +99,9 @@ class StreamAssembler:
                 "usage": self.usage}
 
 
-async def assemble(response: httpx.Response) -> dict[str, Any]:
-    """Read an SSE body to completion under the idle watchdog."""
-    assembler = StreamAssembler()
+async def assemble(response: httpx.Response, on_text: Callable[[str], None] | None = None) -> dict[str, Any]:
+    """Read an SSE body to completion under the idle watchdog; `on_text` gets each content delta."""
+    assembler = StreamAssembler(on_text)
     lines = response.aiter_lines().__aiter__()
     last_progress = monotonic()
     while True:
