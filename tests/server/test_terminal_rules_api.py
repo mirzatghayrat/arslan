@@ -1,13 +1,16 @@
 """0.1.48 Settings: list the commands the user said not to ask about again, and forget one."""
 from server.db import session as db_session
+from server.services import permission_store
 from server.services import terminal_policy as tp
 from tests.server.test_proactive_api import client  # noqa: F401 — token-protected app client
 
 
 async def test_lists_remembered_rules_in_the_cards_words_and_forgets_one(client):  # noqa: F811
     async with db_session.AsyncSessionLocal() as db:
-        await tp.allow_always(db, "install")
-        await tp.allow_always(db, "hermes:recursive delete")
+        # S2a-2: rows stored before it (no card writes them now); listed until S6.
+        await permission_store.add_rule(db, "legacy_rule", "install", created_from="card")
+        await permission_store.add_rule(db, "legacy_rule", "hermes:recursive delete", created_from="card")
+        await db.commit()
     body = (await client.get("/api/v1/settings/terminal-rules")).json()
     assert body["rules"] == [
         {"rule": "hermes:recursive delete", "description": "recursive delete"},

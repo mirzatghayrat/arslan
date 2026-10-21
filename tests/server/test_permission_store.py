@@ -67,10 +67,12 @@ async def test_the_ledger_keeps_90_days_and_lists_policy_refusals():
 
 
 async def test_legacy_dont_ask_again_rules_live_in_the_store():
+    # S2a-2: nothing writes these any more (no command card offers "Always"); the rows from before
+    # are listed in Settings and can be forgotten there until S6.
     async with db_session.AsyncSessionLocal() as db:
-        await terminal_policy.allow_always(db, "delete")
-        await terminal_policy.allow_always(db, "hermes:recursive delete")
-        await terminal_policy.allow_always(db, "sudo")           # forbidden: never stored
+        await permission_store.add_rule(db, "legacy_rule", "delete", created_from="migration")
+        await permission_store.add_rule(db, "legacy_rule", "hermes:recursive delete", created_from="card")
+        await db.commit()
         assert await terminal_policy.always_allowed(db) == {"delete", "hermes:recursive delete"}
         rows = await permission_store.list_rules(db, "legacy_rule")
         assert {r.target for r in rows} == {"delete", "hermes:recursive delete"}
@@ -94,16 +96,6 @@ def test_migration_0067_copies_the_old_list_once(tmp_path):
 
 
 # ── What the callers (permissions.decide, the approvals API) rely on beyond the cases above ──
-
-
-async def test_a_remembered_command_rule_keeps_the_words_the_card_used():
-    async with db_session.AsyncSessionLocal() as db:
-        await terminal_policy.allow_always(db, "git-push")
-        await terminal_policy.allow_always(db, "hermes:recursive delete")
-        rows = await permission_store.list_rules(db, "legacy_rule")
-    assert {r.target: (r.label, r.created_from) for r in rows} == {
-        "git-push": ("publishes to a remote repository", "card"),
-        "hermes:recursive delete": ("recursive delete", "card")}
 
 
 async def test_a_rule_keeps_its_use_count_and_is_deleted_by_id_or_by_target():

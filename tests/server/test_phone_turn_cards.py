@@ -198,7 +198,7 @@ def test_a_phone_yes_never_leaves_a_standing_answer(app_client, monkeypatch):
     used to reach the window's "don't ask again" and store an Always rule from the phone."""
     from server.services import terminal_policy
     _enable_shell(app_client, policy="ask_risky")
-    _stub_tool_loop_adapter(monkeypatch, "rm", ["old.txt"])
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["~/old.txt"])       # S2a-2: outside the folder, a card
     shell = _stub_run_command_executor(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/main") as bridge:
         bridge.receive_json()

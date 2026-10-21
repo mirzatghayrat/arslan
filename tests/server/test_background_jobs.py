@@ -267,29 +267,31 @@ def _declining(asked: list, field: str):
     return window
 
 
-async def test_job_commands_never_reuse_session_grants_and_remote_always_asks(monkeypatch):
+async def test_a_remote_job_command_always_asks(monkeypatch):
+    # S2a-2: whether a local command needs a card is decided once, in the tool loop; the job's ladder
+    # shows one whenever it is called. A remote command is never skipped, even a read-only one.
     from server.services import settings_service
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "type"))
     confirm = approvals.JobConfirmations(CID)
-    assert await confirm.command("git", ["status"]) is True          # LOW under ask_risky, as in the foreground
     assert await confirm.command("git", ["status"], remote_host="box") is False
     assert asked == ["propose_run_command"]
 
 
-async def test_a_job_honours_the_users_standing_answer(execution_db, monkeypatch):
-    """0.1.48: "don't ask again" given in a conversation holds for jobs too. (0.1.61: a job's card
-    offers the window's choices, so a job may now add one as well — test_approvals_v2.)"""
-    from server.services import settings_service, terminal_policy
+async def test_a_job_no_longer_honours_a_stored_always(execution_db, monkeypatch):
+    """0.1.48–0.1.62: "don't ask again" given in a conversation held for jobs too. S2a-2: a rule is
+    layer ②, this time only, and a stored `legacy_rule` is not read: the job asks."""
+    from server.services import permission_store, settings_service
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    async with execution_db() as db:
+        await permission_store.add_rule(db, "legacy_rule", "git-push", created_from="card")
+        await db.commit()
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "reason"))
-    monkeypatch.setattr(terminal_policy, "always_allowed", AsyncMock(return_value={"install"}))
     confirm = approvals.JobConfirmations(CID)
-    assert await confirm.command("brew install remindctl", []) is True      # standing answer
-    assert await confirm.command("rm old.txt", []) is False                  # not covered: asks
-    assert asked == ["deletes files"]
+    assert await confirm.command("git push origin main", []) is False
+    assert asked == ["publishes to a remote repository"]
 
 
 async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(execution_db, monkeypatch):

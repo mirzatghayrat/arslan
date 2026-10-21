@@ -82,7 +82,7 @@ def _runs_bare(frame: dict) -> bool:
     # The shell line the tool loop runs (terminal_policy.as_shell, as tool_loop builds it), never the
     # card's display field: the card and the executor are judged on the same string (③Hands, #265).
     command = terminal_policy.as_shell(frame.get("command"), frame.get("argv"))
-    return bool(terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES) \
+    return bool(terminal_policy.ask_rules(command) & terminal_policy.BARE_RULES) \
         and task_service.unwrapped_once(command)
 
 
@@ -256,10 +256,11 @@ def waiters(call_id: str) -> int:
     return pending.waiters if pending is not None and not pending.future.done() else 0
 
 
-#: Terminal rules whose command deletes, sends, publishes or reaches elsewhere — and
-#: AppleScript / Shortcuts, which can do any of those from inside an app.
-_ISLAND_RISKY_RULES = {"delete", "send-mail", "send-message", "upload", "publish", "git-push",
-                       "remote-shell", "apple-events", "login-items", "install"}
+def _island_risky_rules() -> frozenset[str]:
+    """S2a-2: every layer ② rule (it sends, deletes, changes the system or reaches another app) and
+    `unreadable` — read from terminal_policy, never copied — plus the network card's kind."""
+    from server.services import terminal_policy
+    return terminal_policy.ONCE_ONLY_RULES | {"network"}
 #: The permission kinds whose `propose_action` card the island answers (0.1.61 §A4: "Once (For
 #: this task) or No for folder, app (look and act, merged), screen, MCP tool, schedule, site and
 #: Shortcut cards"). Everything else opens Arslan: money, send, delete, a risky step in an app, a
@@ -297,12 +298,12 @@ def island_may_answer(frame: dict) -> bool:
         perm_kind = frame.get("perm_kind")
         return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
     if kind == "propose_run_command":
-        if frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry"):
-            return False                   # another machine, or writing outside the sandbox
+        if (frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry") or frame.get("unsandboxed")
+                or frame.get("network")):
+            return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy
         verdict = terminal_policy.assess(str(frame.get("pretty") or ""))
-        return verdict.level != "forbid" and verdict.rule not in _ISLAND_RISKY_RULES \
-            and not verdict.rule.startswith("hermes:")
+        return verdict.level != "forbid" and verdict.rule not in _island_risky_rules()
     return False
 
 
@@ -455,11 +456,12 @@ class JobConfirmations:
         return decision.allowed
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
-                      fingerprints: list | None = None, sandbox: str | None = None, why: str = "") -> bool:
+                      fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
+                      network: bool = False) -> bool:
         from server.db import session as db_session
         from server.services import settings_service
         from server.services import terminal_policy
-        from server.ws.arslan import effective_risk, may_skip_card
+        from server.ws.arslan import effective_risk
         risk = effective_risk(remote_host, command, argv)
         verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
         if sandbox in ("outside", "retry"):
@@ -468,62 +470,61 @@ class JobConfirmations:
             # given: that grant is a session grant.
             return await self._card(protocol.propose_run_command(
                 uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-                sandbox=sandbox, why=why))
-        policy, standing = "", False
-        if not remote_host:
-            async with db_session.AsyncSessionLocal() as db:
-                policy = await settings_service.shell_confirm_policy(db)
-                standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
-                                                           await terminal_policy.always_allowed(db))
-        # The user's standing answer is taken below, where it writes its ledger row.
-        if may_skip_card(remote_host, policy=policy, risk=risk):
-            return True
+                sandbox=sandbox, why=why, network=network))
+        # S2a-2: called, a card is shown (the tool loop decided whether one is needed).
         if remote_host:
             return await self._card(protocol.propose_run_command(
                 uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
                 remote_host=remote_host, fingerprints=list(fingerprints or [])))
+        async with db_session.AsyncSessionLocal() as db:
+            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
         shell = terminal_policy.as_shell(command, argv)
         rules = sorted(terminal_policy.ask_rules(shell))
-        if standing:
-            from server.services import permissions
-            await permissions.record_standing(_command_request(shell, rules, None), self._context())
-            return True
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-            rule=verdict.rule or None)
+            rule=verdict.rule or None, network=network)
         from server.services import permissions
         with permissions.asking_with(self.asker):
-            decision = await permissions.decide(_command_request(shell, rules, frame), self._context())
+            decision = await permissions.decide(
+                _command_request(shell, rules, frame, ask_all=ask_all, network=network), self._context())
         return decision.allowed
 
 
-def _command_request(shell: str, rules: list[str], frame: dict | None):
-    """A rule card as a permission request: "In this conversation" covers this kind of command
-    (its rules) here; "Always" stores EVERY rule it matched (spec §A9 — the first rule alone
-    could never silence `rm -rf build`, which matches two), each under its own words.
+def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
+                     network: bool = False):
+    """A command card as a permission request, by the command's layer (S2a-2):
 
-    The target names which of two things a grant covers: `rules:<rule>|<rule>…` (sorted) for a
-    command that matched ask-rules — every command matching exactly those rules — and
-    `text:<command>` for one that matched none (asked under "ask for every command"), exactly that
-    text. Disjoint, so a command whose text reads like a rule set (`git-push`) never stands for
-    the commands that match it (`git push origin main`)."""
-    from server.services import permissions, terminal_policy
-    target = "rules:" + "|".join(rules) if rules else "text:" + shell
-    if set(rules) & terminal_policy.ONCE_ONLY_RULES:
-        # 0.1.62 F4a: osascript or `shortcuts run` in it: this time only, nothing to remember.
-        # S2a-1 (U11): an approved plain one runs outside the sandbox, and the card says so; a Shortcut
-        # cannot be inspected, so its card says it runs as the user (③Hands' review).
-        from server.services import task_service
+    - layer ② or `unreadable` (it matched rules): this time only; nothing is remembered and no stored
+      answer stands. The target `rules:<rule>|<rule>…` (sorted) lists every rule it matched.
+    - "ask for every command": `text:<command>`, exactly that text, this time or in this conversation.
+    - layer ③ outside the sandbox (switched off or unable to start): `unsandboxed:*`, this time or in
+      this conversation; no "Always".
+
+    Disjoint targets, so a command whose text reads like a rule set (`git-push`) never stands for the
+    commands that match it (`git push origin main`).
+
+    `network`: the card also asks for the network (after outside content), and its title says so. A
+    click on it stands for the network this time only; a grant that answers it later does not."""
+    from server.services import permissions, task_service
+    net = " It will use the network, this time." if network else ""
+    if rules:
+        # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
+        # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.
         where = ""
         if task_service.unwrapped_once(shell):
             where = (" It runs as you, outside the sandbox; Arslan cannot see what the Shortcut does."
                      if "shortcuts" in rules else " It runs outside the sandbox, this once.")
-        return permissions.Request(kind="command", target=target, title=f"Run `{shell[:80]}`?{where}", detail=shell,
+        return permissions.Request(kind="command", target="rules:" + "|".join(rules),
+                                   title=f"Run `{shell[:80]}`?{where}{net}", detail=shell,
                                    conversation_ok=False, once_only=True, frame=frame)
-    return permissions.Request(
-        kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,
-        always_label=", ".join(terminal_policy.describe(r) for r in rules),
-        remember_as=tuple(("legacy_rule", r, terminal_policy.describe(r)) for r in rules), frame=frame)
+    if ask_all:
+        return permissions.Request(kind="command", target="text:" + shell, title=f"Run `{shell[:80]}`?{net}",
+                                   detail=shell, frame=frame)
+    # Marked on the card (a key the web and the phone ignore), so the island never approves a command
+    # that would run with no sandbox around it: `rm notes.txt` there is a real delete.
+    return permissions.Request(kind="command", target="unsandboxed:*",
+                               title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
+                               frame={**frame, "unsandboxed": True} if frame else None)
 
 
 def _paused_clock():

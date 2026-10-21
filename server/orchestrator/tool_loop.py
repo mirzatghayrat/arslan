@@ -1141,13 +1141,26 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     return {"refused": decision.model_text or "the user did not allow this command to use the network"}
 
 
+def _network_card_due(command: str, args: dict) -> bool:
+    """S2a-2: whether `_network_after_outside_content` would ask for the network, known before the
+    command's own card, so that card asks for both (one card, not two). A click on it stands for the
+    network this time; a grant or rule that answers it does not, and the network card still comes."""
+    from server.orchestrator import untrusted as _untrusted
+    from server.services import task_service
+    if not _untrusted.external_seen():
+        return False
+    if task_service.unwrapped_once(command):
+        return task_service.bare_shortcut(command)       # a bare osascript is not a network command
+    return args.get("network") is True or _untrusted.reaches_network(command)
+
+
 def _bare_once(command: str, *, by_user: bool) -> tuple[bool, bool]:
     """S2a-1 piece 4, decision U11: (run with no wrapper, kept wrapped) for an approved command. Only
     a command with an Apple Events or Shortcuts rule, approved by the user's click on its card (a
     once-only card: no grant or rule ever answers it), and one plain call runs bare, this once.
     Approved but not plain (a script that acts beyond its app): kept under the sandbox's profiles."""
     from server.services import task_service, terminal_policy
-    if not (by_user and terminal_policy.ask_rules(command) & terminal_policy.ONCE_ONLY_RULES):
+    if not (by_user and terminal_policy.ask_rules(command) & terminal_policy.BARE_RULES):
         return False, False
     bare = task_service.unwrapped_once(command)
     return bare, not bare
@@ -1299,13 +1312,31 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
+        if terminal_policy.other_osa_language(command):
+            # S2a-2 (K5's gate, T1): a JXA script cannot reach an app from here, inside the sandbox or out (its
+            # Apple Events are blocked; only plain AppleScript runs bare, U11), so no card is shown for it.
+            result = {"ok": False, "error": "JXA (osascript -l JavaScript) cannot control apps from run_command: "
+                      "Apple Events are blocked in the sandbox and outside it, and only plain AppleScript runs "
+                      "outside the sandbox.",
+                      "note": "Write it as plain AppleScript (osascript -e or a heredoc) for Reminders, Calendar, "
+                              "Notes or Contacts, without outside_sandbox; or use mac_applescript."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
         sandbox_on = await _sandbox_enabled()
-        wants_out = sandbox_on and args.get("outside_sandbox") is True
+        from server.services import task_service as _task_service
+        # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
+        # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
+        wants_out = (sandbox_on and args.get("outside_sandbox") is True
+                     and not _task_service.unwrapped_once(command))
         # The conversation's "rest of this conversation" grant is a session grant: only a
         # callback that says it honours them (the chat window's) may use it. A background
         # job or an unattended turn starts inside the sandbox whatever the window said.
         run_outside = (sandbox_on and getattr(confirm_command, "honours_session_grants", False)
                        and command_sandbox.granted(conversation_id))
+        net_due = _network_card_due(command, args)
+        net_kw = {"network": True} if net_due else {}
+        net_clicked = False                # the command's own card, clicked, asked for the network too
         if wants_out and not run_outside:
             # Asked up front: always a card, even for a command that would just run,
             # and one card covers the command's own reason too.
@@ -1320,33 +1351,38 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             from server.services import approvals as _approvals
             _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
             _approvals.LAST_ANSWERED_BY.set(None)
-            if not await confirm_command(command, argv, sandbox="outside", why=why):
+            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
+            net_clicked = net_due and _approvals.LAST_OUTCOME.get() == "approved"
             # S2a-1: the plain outside card records whose click approved it (approvals.LAST_ANSWERED_BY);
             # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
             unwrapped, kept_wrapped = _bare_once(
                 command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
                 and _approvals.LAST_ANSWERED_BY.get() == "mac")
-        elif (sandbox_on and not run_outside and terminal_policy.runs_freely_in_sandbox(command)
-              and not await _asks_for_everything()):
-            pass                          # 0.1.52: a plain script inside the sandbox needs no card
+        elif (verdict.level == "run" and not await _asks_for_everything()
+              and (run_outside or (sandbox_on and command_sandbox.available()))):
+            # S2a-2 layer ③: no card, and decided here only. In the sandbox only when it can start (R4: with
+            # seatbelt unavailable the command would run unwrapped). Outside it under this conversation's
+            # grant to leave the sandbox, which is the user's yes (S4a moves that grant into decide()).
+            pass
         else:
-            if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
-                pass                      # a harmless command needs nobody to approve it
-            elif confirm_command is None:
+            if confirm_command is None:
+                # Layer ②, `unreadable`, "ask for every command", or layer ③ with no sandbox to run it in.
                 result = {"ok": False,
-                          "error": "run_command requires user confirmation, which is not "
-                                   "available in this context"}
+                          "error": ("run_command requires user confirmation, which is not available in this "
+                                    "context" if verdict.level == "ask" or await _asks_for_everything() else
+                                    "this command would run outside the sandbox here (it is switched off or "
+                                    "cannot start), which needs the user's OK, and nobody can be asked here")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             from server.services import permissions
             permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
-            approved = True if confirm_command is None else await confirm_command(command, argv)
+            approved = await confirm_command(command, argv, **net_kw)
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1359,9 +1395,10 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             unwrapped, kept_wrapped = _bare_once(
                 command, by_user=confirm_command is not None and decided is not None and decided.by == "user")
             run_outside = run_outside or unwrapped
-        network = await _network_after_outside_content(command, args, sandbox_on=sandbox_on,
-                                                       run_outside=run_outside, unwrapped=unwrapped,
-                                                       conversation_id=conversation_id)
+            net_clicked = net_due and decided is not None and decided.by == "user"
+        network = {} if net_clicked else await _network_after_outside_content(
+            command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
+            conversation_id=conversation_id)
         if network.get("refused"):
             result = {"ok": False, "error": network["refused"]}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,

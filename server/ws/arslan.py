@@ -63,19 +63,6 @@ def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
     return terminal_policy.risk_grade(terminal_policy.as_shell(command, argv))
 
 
-def may_skip_card(remote_host: str | None, *, policy: str, risk: str) -> bool:
-    """Whether a confirmation may be answered without showing a card.
-
-    Every shortcut is local-only: a remote command always gets a card, because the
-    thing being asked (which machine) is not in the command text the shortcuts key
-    on. HIGH (forbidden) never skips. (0.1.61: what a card allowed beyond once, the
-    user's standing answers included, is permissions.decide's — a remote command never
-    reaches it, so it is never remembered: P3b ruling ③.)"""
-    if remote_host or risk == "HIGH":
-        return False
-    return policy == "ask_risky" and risk == "LOW"
-
-
 async def _history(conversation_id: str) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
@@ -512,12 +499,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             permissions.Context(conversation_id=conversation_id))
         return decision.allowed
 
-    async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict) -> bool:
+    async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict,
+                            network: bool = False) -> bool:
         from server.services import command_sandbox
         call_id = uuid.uuid4().hex
         decision = await _ask(protocol.propose_run_command(
             call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-            sandbox=sandbox, why=why))
+            sandbox=sandbox, why=why, network=network))
         if decision["approved"] and decision.get("remember"):
             command_sandbox.grant(conversation_id)    # this conversation only, never saved
         return bool(decision["approved"])
@@ -525,11 +513,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def confirm_command(command: str, argv: list, *,
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
-                              sandbox: str | None = None, why: str = "") -> bool:
+                              sandbox: str | None = None, why: str = "", network: bool = False) -> bool:
         """`sandbox` (0.1.51 P3): "outside" — the model asks to run this command
         outside the workspace sandbox; "retry" — the sandbox stopped it and it would
         run again outside, from the start. Either always shows a card; its checkbox
-        means "for the rest of this conversation" (memory only), never a saved rule."""
+        means "for the rest of this conversation" (memory only), never a saved rule.
+        `network` (S2a-2): the card also asks for the network, this time (`protocol.propose_run_command`)."""
         from server.services import settings_service
         # A remote command takes NONE of the shortcuts below. Not a grant, not ask_risky,
         # not "remember this one" — because the local risk grade describes a binary on
@@ -542,36 +531,26 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             from server.services import command_sandbox
             if command_sandbox.granted(conversation_id):
                 return True
-            return await _sandbox_card(command, argv, sandbox, why, verdict)
-        policy, standing = "", False
-        if not remote_host:
-            # 'ask_risky' (the 0.1.48 default) runs harmless commands without a card.
-            async with db_session.AsyncSessionLocal() as db:
-                policy = await settings_service.shell_confirm_policy(db)
-                standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
-                                                           await terminal_policy.always_allowed(db))
-        # The user's standing answer is taken below, where it writes its ledger row.
-        if may_skip_card(remote_host, policy=policy, risk=risk):
-            return True
+            return await _sandbox_card(command, argv, sandbox, why, verdict, network)
+        # S2a-2: called, a card is shown. Which commands need none (layer ③ in the sandbox) is the tool
+        # loop's to decide, once; a stored "Always" answers no command card any more.
         if remote_host:
             # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
             decision = await _ask(protocol.propose_run_command(
                 uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
                 remote_host=remote_host, fingerprints=list(fingerprints or [])))
             return bool(decision.get("approved"))
+        async with db_session.AsyncSessionLocal() as db:
+            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
         shell = terminal_policy.as_shell(command, argv)
         rules = sorted(terminal_policy.ask_rules(shell))
         ctx = permissions.Context(conversation_id=conversation_id)
-        if standing:
-            await permissions.record_standing(approvals._command_request(shell, rules, None), ctx)
-            return True
-        # 0.1.61: a rule card is decided by permissions.decide: "In this conversation" is a grant
-        # for this kind of command here, "Always" stores every rule it matched (§A9).
         frame = protocol.propose_run_command(uuid.uuid4().hex, command, argv,
                                              reason=verdict.reason or f"risk: {risk}",
-                                             rule=verdict.rule or None)
+                                             rule=verdict.rule or None, network=network)
         # On the turn's card surface (this window's cards: permissions.current_asker()).
-        decision = await permissions.decide(approvals._command_request(shell, rules, frame), ctx)
+        decision = await permissions.decide(
+            approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network), ctx)
         return decision.allowed
 
     # This window's sandbox grant ("rest of this conversation") is its own to use; the tool

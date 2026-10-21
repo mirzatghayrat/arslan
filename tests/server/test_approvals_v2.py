@@ -174,7 +174,8 @@ async def test_a_job_command_card_offers_the_windows_choices_and_is_recorded_for
     assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm old.txt", []) is True
     [card] = windows.cards
     assert card["type"] == "propose_run_command" and card["background"] is True
-    assert card["options"] == ["once", "conversation", "always"] and card["always_label"] == "deletes files"
+    # S2a-2: `rm old.txt` is layer ③; with no sandbox around it the card is this time or this conversation.
+    assert card["options"] == ["once", "conversation"] and not card.get("always_label")
     # A job's grants are its conversation's: the next job in it is not asked again.
     assert await approvals.JobConfirmations("conv", job_id="job-2").command("rm old.txt", []) is True
     assert len(windows.cards) == 1
@@ -182,19 +183,17 @@ async def test_a_job_command_card_offers_the_windows_choices_and_is_recorded_for
         ("job-1", "command", "user", "conversation"), ("job-2", "command", "grant", "conversation")]
 
 
-async def test_always_on_a_job_card_keeps_every_rule_with_its_own_label(job_db, monkeypatch):
-    windows = Windows(("yes", "always"))
+async def test_always_on_a_job_rule_card_stores_nothing_and_the_next_job_is_asked(job_db, monkeypatch):
+    """S2a-2: a rule card is layer ②, this time only: a stray "always" (the card never offered it)
+    stores no rule, and the same command in the next job shows its card again."""
+    windows = Windows(("yes", "always"), ("yes", "once"))
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
-    assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm -rf build", []) is True
-    assert windows.cards[0]["always_label"] == "deletes files, recursive delete"
+    assert await approvals.JobConfirmations("conv", job_id="job-1").command("git push origin main", []) is True
+    assert windows.cards[0]["options"] == ["once"]
     async with job_db() as db:
-        rules = {(r.target, r.label) for r in await permission_store.list_rules(db, "legacy_rule")}
-    assert rules == {("delete", "deletes files"), ("hermes:recursive delete", "recursive delete")}
-    # The standing answer holds in another conversation and job, and still writes its ledger row.
-    assert await approvals.JobConfirmations("other", job_id="job-2").command("rm -rf build", []) is True
-    assert len(windows.cards) == 1
-    last = (await _ledger(job_db))[-1]
-    assert (last.conversation_id, last.job_id, last.decided_by, last.scope) == ("other", "job-2", "rule", "always")
+        assert await permission_store.list_rules(db, "legacy_rule") == []
+    assert await approvals.JobConfirmations("other", job_id="job-2").command("git push origin main", []) is True
+    assert len(windows.cards) == 2
 
 
 async def test_a_job_workspace_write_asks_through_decide_and_once_means_once(job_db, monkeypatch):
@@ -460,18 +459,21 @@ async def test_a_stopped_job_leaves_a_shared_card_to_the_other(monkeypatch):
     assert (await b)["approved"] is True and approvals.known_ids() == set()
 
 
-def _cmd(shell: str):
+def _cmd(shell: str, *, ask_all: bool = False):
     from server.services import terminal_policy
-    return approvals._command_request(shell, sorted(terminal_policy.ask_rules(shell)), None)
+    return approvals._command_request(shell, sorted(terminal_policy.ask_rules(shell)), None, ask_all=ask_all)
 
 
 def test_a_commands_target_says_whether_it_is_a_rule_set_or_one_text():
     """Review I3: `rules:<rules>` for a command that matched ask-rules, `text:<command>` for one
-    that matched none — two namespaces that never meet."""
-    assert _cmd("rm -rf build").target == "rules:delete|hermes:recursive delete"
+    that matched none — namespaces that never meet. S2a-2 adds `unsandboxed:*`, layer ③ with no
+    sandbox around it."""
+    assert _cmd("rm -rf ~/build").target == "rules:delete-outside"
     assert _cmd("git push origin main").target == "rules:git-push"
-    assert _cmd("git-push").target == "text:git-push"
-    assert _cmd("git status").target == "text:git status"
+    assert _cmd("rm -rf build").target == "unsandboxed:*"
+    assert _cmd("git-push").target == "unsandboxed:*"
+    assert _cmd("git-push", ask_all=True).target == "text:git-push"
+    assert _cmd("git status", ask_all=True).target == "text:git status"
 
 
 async def test_this_conversation_on_a_command_named_like_a_rule_never_covers_that_rule(job_db):
@@ -505,9 +507,9 @@ async def test_a_command_grant_is_found_again_under_its_own_target(job_db, shell
     assert targets == [_cmd(shell).target]
 
 
-async def test_a_conversation_grant_for_one_rule_never_covers_a_second_rule(job_db, monkeypatch):
-    """`rm a.txt` (delete) allowed for the conversation must not wave `rm -rf build` (delete and
-    recursive delete) through: the grant's target is every rule the command matched."""
+async def test_a_conversation_grant_outside_the_sandbox_never_covers_a_rule(job_db, monkeypatch):
+    """S2a-2: `rm a.txt` (layer ③, no sandbox) allowed for the conversation must not wave
+    `rm -rf ~/build` (delete-outside, layer ②) through: their targets never meet."""
     shown = []
 
     def window(f):
@@ -516,8 +518,8 @@ async def test_a_conversation_grant_for_one_rule_never_covers_a_second_rule(job_
             approvals.answer({"type": "confirm_run_command", "call_id": f["call_id"], "scope": "conversation"})
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
     assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm a.txt", []) is True
-    assert await approvals.JobConfirmations("conv", job_id="job-2").command("rm -rf build", []) is True
-    assert shown == ["rm a.txt", "rm -rf build"]
+    assert await approvals.JobConfirmations("conv", job_id="job-2").command("rm -rf ~/build", []) is True
+    assert shown == ["rm a.txt", "rm -rf ~/build"]
 
 
 async def test_a_declined_plain_job_card_reads_declined(monkeypatch):
@@ -740,10 +742,10 @@ async def test_a_jobs_cards_show_only_what_needs_asking_and_none_is_judged(job_d
     assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm old.txt", []) is True
     assert await approvals.JobConfirmations("conv", job_id="job-2").command("rm old.txt", []) is True
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
-    # Two rules, so the grant for `delete` alone does not cover it: a card, and nobody answers.
+    # A rule, so the grant outside the sandbox does not cover it: a card, and nobody answers.
     away = approvals.JobConfirmations("conv", job_id="job-3")
-    assert await away.command("rm -rf build", []) is False
-    assert await away.command("rm -rf dist", []) is False       # the job stopped waiting: no card
+    assert await away.command("git push origin main", []) is False
+    assert await away.command("git push origin dev", []) is False    # the job stopped waiting: no card
     assert len(windows.cards) == 2
     assert await _judgments(job_db, 0) == [] and judge == []
 

@@ -270,17 +270,18 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
     assert (t.sandbox_cards, t.declined, t.approvals) == (2, 4, 6)
     # Every other kind inside the sandbox is approved, new ones included (K2a's T5 got a heredoc-script card);
     # every outward kind is declined.
-    assert ans({"rule": "hermes:script execution via heredoc"}) == "confirm_run_command"
-    assert ans({"rule": "hermes:find -delete"}) == "confirm_run_command"
+    assert ans({"rule": "unreadable"}) == "confirm_run_command"          # S2a-2: inside the sandbox it holds them
+    assert ans({"rule": "delete-outside"}) == "confirm_run_command"
     assert ans({"rule": "some-rule-added-later"}) == "confirm_run_command"
     for rule in ("upload", "shortcuts", "send-message", "remote-shell", "git-push", "publish"):
         assert ans({"rule": rule}) == "cancel_run_command", rule
-    from server.services import task_service, terminal_policy
-    assert arslan_driver.OUTWARD == task_service._OUTBOUND_RULES      # the bench weighs what the product calls outward
+    from server.services import terminal_policy
+    assert arslan_driver.OUTWARD == terminal_policy.OUTBOUND_RULES    # the bench weighs what the product calls outward
     # Inside the seatbelt yet carried out by a system daemon (launchd, cron, cfprefsd): declined (③Hands, #242).
-    for rule in ("login-items", "sudo", "keychain-secrets", "arslan-keys", "macos-roots"):
+    for rule in ("login-items", "sudo", "keychain-secrets", "arslan-keys", "macos-roots",
+                 "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard"):
         assert ans({"rule": rule}) == "cancel_run_command", rule
-    known = {k for k, _, _ in terminal_policy._FORBID + terminal_policy._ASK}
+    known = {r[0] for r in terminal_policy._FORBID + terminal_policy._ASK}
     assert arslan_driver.ESCAPES_SANDBOX <= known                   # a renamed rule must not silently slip through
     t1 = TurnTracker("/b/runs/arslan-T1-r2")
     assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1.0)["type"] == \

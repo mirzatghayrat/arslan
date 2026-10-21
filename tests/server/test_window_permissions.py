@@ -13,7 +13,7 @@ import time
 import pytest
 from sqlalchemy import select
 
-from server.services import approvals, run_registry, turn_journal
+from server.services import approvals, command_sandbox, run_registry, turn_journal
 from tests.server.conftest import build_ws_client
 from tests.server.test_run_command_confirm_flow import (
     _collect_until,
@@ -36,6 +36,14 @@ def _clean_registry():
     for d in (run_registry._tasks, run_registry._by_conversation, run_registry._sinks, run_registry._recorders):
         d.clear()
     turn_journal._active.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_sandbox(monkeypatch):
+    # S2a-2: an `rm` inside the folder is layer ③ — it runs in the sandbox without a card. These tests
+    # use it as their example card, so the sandbox cannot start here and the card is the unsandboxed
+    # one (this time / this conversation) on every platform.
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)
 
 
 @pytest.fixture
@@ -84,8 +92,8 @@ def test_a_rule_card_offers_scopes_and_this_conversation_holds_on_a_new_socket(a
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "clean the build"})
         card = _collect_until(ws, "propose_run_command")[-1]
-        assert card["options"] == ["once", "conversation", "always"]
-        assert card["always_label"] and card["title"]
+        assert card["options"] == ["once", "conversation"]          # layer ③ is never "always"
+        assert "outside the sandbox" in card["title"]
         ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "conversation"})
         _collect_until(ws, "stream_end")
     # The scripted model calls its tool once; the next turn gets a fresh script.
@@ -186,7 +194,7 @@ def test_a_card_after_a_refused_one_is_told_its_own_answer(app_client, monkeypat
         ws.send_json({"type": "cancel_run_command", "call_id": outside["call_id"]})
         frames += _collect_until(ws, "stream_end")
     summaries = [f["summary"] for f in frames if f.get("type") == "tool_result"]
-    assert summaries == ["The user said no to: Run `rm -rf build`?. They said: keep build",
+    assert summaries == ["The user said no to: Run `rm -rf build` outside the sandbox?. They said: keep build",
                          "user declined running this command outside the sandbox"]
     assert executor.calls == []
 
@@ -393,8 +401,8 @@ def test_the_window_shows_only_the_cards_that_need_asking_and_judges_none(app_cl
         ws.send_json({"type": "user_message", "content": "delete it again"})
         assert "propose_run_command" not in [f.get("type") for f in _collect_until(ws, "stream_end")]
         monkeypatch.setattr(approvals, "TIMEOUT_S", 0.3)
-        _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])  # two rules: a card, unanswered
-        ws.send_json({"type": "user_message", "content": "clean the build"})
+        _stub_tool_loop_adapter(monkeypatch, "git", ["push"])        # a rule: a card, unanswered
+        ws.send_json({"type": "user_message", "content": "publish it"})
         frames = _collect_until(ws, "stream_end")
         unanswered = [f for f in frames if f.get("type") == "propose_run_command"][-1]
     assert shown["call_id"] != unanswered["call_id"]
@@ -606,12 +614,11 @@ def test_a_window_ask_that_joins_a_card_on_screen_shares_it_and_nothing_is_judge
 
 # ── final-review fix wave: F3 ────────────────────────────────────────────────
 
-def test_a_turns_card_that_never_opened_while_the_person_was_away_is_listed_with_always_allow(
+def test_a_turns_card_that_never_opened_while_the_person_was_away_is_listed_with_no_always(
         app_client, monkeypatch, judge):
     """F3 (final review I3, §A4): after the window's away latch, a later card of the turn does not
-    open. The model is told it expired ("NOT a refusal"); the Inbox lists it with what "Always"
-    on its card would have stored, and "Always allow" stores exactly that."""
-    from server.services import terminal_policy
+    open. The model is told it expired ("NOT a refusal"); the Inbox lists it. S2a-2: a command rule
+    is layer ②, once only, so its card never offered "Always" and the Inbox offers none either."""
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.3)
     _enable_shell(app_client, policy="ask_risky")
     monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
@@ -628,11 +635,10 @@ def test_a_turns_card_that_never_opened_while_the_person_was_away_is_listed_with
     [row] = app_client.get("/api/v1/approvals/refused").json()       # the shown card is not listed
     assert (row["kind"], row["target"], row["conversation_id"]) == ("command", "rules:git-push",
                                                                      "conv-away")
-    assert row["always"] == [{"kind": "legacy_rule", "target": "git-push",
-                              "label": terminal_policy.describe("git-push")}]
+    assert (row["always_ok"], row["always"]) == (False, [])
     allowed = app_client.post("/api/v1/permissions/rules", json={"refused_id": row["id"]})
-    assert allowed.status_code == 200
-    assert [(r["kind"], r["target"]) for r in allowed.json()["rules"]] == [("legacy_rule", "git-push")]
+    assert allowed.status_code == 409 and allowed.json()["detail"] == {"code": "no_always"}
+    assert app_client.get("/api/v1/permissions/rules").json() == []
     assert executor.calls == []
 
 

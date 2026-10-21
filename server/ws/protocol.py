@@ -85,7 +85,8 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
                         remote_host: str | None = None,
                         fingerprints: list[str] | None = None,
                         rule: str | None = None,
-                        sandbox: str | None = None, why: str = "") -> dict[str, Any]:
+                        sandbox: str | None = None, why: str = "",
+                        network: bool = False) -> dict[str, Any]:
     """Arslan proposes running ONE command. Emitting this frame runs NOTHING — the
     frontend renders a confirm card showing the full command; only the user's
     `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
@@ -95,9 +96,16 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     `remote_host` non-empty means the command runs on ANOTHER machine (P3b), and the
     card must say so. `fingerprints` are that machine's host keys.
     `sandbox` (0.1.51 P3) is "outside" (the model asks to leave the workspace sandbox,
-    `why` is its reason) or "retry" (the sandbox stopped it; running again starts over)."""
+    `why` is its reason) or "retry" (the sandbox stopped it; running again starts over).
+    `network` (S2a-2): this turn read outside content and the command would use the network, so the
+    card asks for that too, this time (one card, not two); the reason says so, and the island never
+    answers it (an extra key the web and the phone ignore)."""
+    if network:
+        reason = f"{reason}; uses the network" if reason else "uses the network"
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
              "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+    if network:
+        frame["network"] = True
     if sandbox in ("outside", "retry"):
         frame["sandbox"] = sandbox
         if why:
