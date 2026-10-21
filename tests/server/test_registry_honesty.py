@@ -70,7 +70,7 @@ async def test_hollow_skill_not_equippable(seeded_registry):
 
 
 async def test_real_skill_still_equippable(seeded_registry):
-    await assert_assignable("skill", "systematic-debugging")  # real body → no raise
+    await assert_assignable("skill", "designed-html-report")  # real body → no raise
 
 
 async def test_unwired_toolset_not_equippable(seeded_registry):
@@ -91,7 +91,7 @@ async def test_safe_menu_lists_only_functional(seeded_registry):
     sk_keys = {s["key"] for s in menu["skills"]}
     # functional ones present
     assert {"web_search_scraping", "charting", "skill_authoring", "deck"} <= ts_keys
-    assert "systematic-debugging" in sk_keys and "deck-authoring" in sk_keys
+    assert {"designed-html-report", "skill-creator"} <= sk_keys   # C9: the two bundled skills
     # not-yet-wired wire-candidates absent from the equip menu
     assert {"session_search", "task_planning", "file_operations",
             "skills_management"}.isdisjoint(ts_keys)

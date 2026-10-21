@@ -430,7 +430,7 @@ def selftest() -> int:
         # "catalog-only (no method body yet)" because the SKILL.md files were
         # not in the bundle. collect_submodules does not collect these.
         for rel, why in (
-            ("arslan/spawn/seeds", "factory spawns cannot be seeded"),
+            ("arslan/skills/bundled", "the bundled skills are missing"),
             ("arslan/spawn/scaffold", "new skill-packs cannot be scaffolded"),
             ("arslan/templates/official", "official templates are unavailable"),
         ):

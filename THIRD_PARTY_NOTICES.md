@@ -12,197 +12,31 @@ bundled until its license is verified and permits redistribution.**
 ### On the skills marked `authors: Arslan`
 
 A `SKILL.md` without a `source:` line was written for this repository. That claim is about
-**the text of the file**, nothing more. Most of these skills implement methodology that is
-public knowledge, or drive third-party tools by name — `excalidraw`, `p5js`, `arxiv`,
-Suno, and others. **The methods and the tools belong to their respective owners; this
-repository claims copyright only in the wording of its own `SKILL.md` files, and asserts
-no ownership of the underlying techniques or of any tool it names.**
-
-Provenance was audited against the upstream listings recorded in this file on 2026-07-21.
-Three skills turned out to have an upstream of the same name and were moved to attributed
-status in that pass (`systematic-debugging`, `research`, `baoyu-infographic`). If you
-recognise your work in a skill that carries no `source:` line, open an issue — the
-attribution will be added.
+**the text of the file**, nothing more: the methods and tools a skill names belong to their
+owners. If you recognise your work in a skill that carries no `source:` line, open an issue,
+and the attribution will be added.
 
 ---
 
-## Skills — `arslan/spawn/seeds/<skill>/SKILL.md`
+## Skills — `arslan/skills/bundled/<skill>/SKILL.md`
 
-### anthropics/skills — Apache License 2.0 (verified 2026-07-01)
-- Copyright 2025 Anthropic, PBC. <https://github.com/anthropics/skills>
-- The repository has **no top-level LICENSE**; each skill carries its own `LICENSE.txt`.
-  The **document skills `docx`, `pdf`, `pptx`, `xlsx` are source-available (proprietary),
-  NOT open source, and are NOT bundled here.** Only skills whose own `LICENSE.txt` is
-  Apache-2.0 are used.
-- Apache-2.0 requires: retain this notice; state significant changes (done per-file via
-  `source:` frontmatter).
-- **`doc-coauthoring` was NOT ingested**: its directory in `anthropics/skills` carries no
-  `LICENSE.txt`, so its per-skill license could not be confirmed (the repo has no top-level
-  LICENSE). Skipped pending license verification.
-- Adapted/used from this source (each verified Apache-2.0 via its own `skills/<name>/LICENSE.txt`
-  on 2026-07-01):
-  - `skill-creator` — **adapted** (Anthropic's version depends on Claude-Code-specific eval
-    tooling/scripts; only the methodology was ported to Arslan's SKILL.md format).
-  - `brand-guidelines` — **adapted** (pptx font/color post-processing tooling removed; brand
-    palette + typography methodology kept).
-  - `internal-comms` — **adapted** (bundled `examples/` guideline files removed; comms-type
-    methodology kept).
-  - `frontend-design` — **adapted** (methodology copied faithfully into Arslan's SKILL.md
-    structure; no bundled tooling in the source).
-  - `theme-factory` — **adapted** (bundled `theme-showcase.pdf` and `themes/` preset files
-    removed; theming + on-the-fly-theme methodology kept).
-  - `canvas-design` — **adapted** (bundled `.pdf`/`.png` rendering pipeline and `canvas-fonts`
-    assets removed; design-philosophy methodology kept).
-  - `algorithmic-art` — **adapted** (bundled `templates/viewer.html` + generator scaffolding
-    removed; algorithmic-philosophy + seeded-randomness methodology kept).
-  - `mcp-builder` — **adapted** (bundled `reference/` guides and `scripts/` removed; the
-    four-phase MCP design + evaluation methodology kept).
-  - `webapp-testing` — **adapted** (bundled `scripts/with_server.py` and example scripts
-    removed; the reconnaissance-then-action Playwright methodology kept — methodology only,
-    since Arslan spawns do not execute scripts).
+Since v0.1.63 (C9) Arslan ships two skills; the others it used to bundle were retired, with
+their sources' notices. A user's own and imported skills keep their own licences
+(`skill_import` checks each at install).
 
-### anthropics/financial-services — Apache License 2.0 (verified 2026-07-01)
-- Copyright 2025 Anthropic, PBC. <https://github.com/anthropics/financial-services>
-- The repository **has a top-level `LICENSE` (Apache-2.0)** covering Anthropic-built plugins
-  (partner-built vertical plugins, e.g. LSEG/S&P, carry their own separate attribution and are
-  NOT used here). Apache-2.0 requires: retain this notice; state significant changes (done
-  per-file via `source:` frontmatter).
-- Migrated the **`market-researcher`** agent-plugin into Arslan's `Financial Research Analyst`
-  default spawn, with its methodology skills (each **adapted** — the agent's CapIQ/FactSet MCP
-  data connectors, PowerPoint/Excel authoring mechanics, and Claude-Code-specific bits do not
-  exist in Arslan and were replaced with `web_search` public sourcing + `[UNSOURCED]` discipline
-  + `render_chart` output; methodology preserved):
-  - `sector-overview` — **adapted** (Word/PPT/Excel output → markdown note + charts; sourcing hierarchy kept).
-  - `competitive-analysis` — **adapted** (PowerPoint add-in/`.pptx`/slide-typography/`references/*`
-    mechanics removed; the Step 0–9 analysis framework + moat synthesis kept).
-  - `comps-analysis` — **adapted & condensed** (CapIQ/FactSet terminal data-pull + Excel spread
-    mechanics removed; peer-selection, per-industry multiple choice, EV-definition normalization,
-    outlier flagging kept, re-sourced from public filings with `[UNSOURCED]` discipline).
-  - `idea-generation` — **adapted** (screen data re-sourced via public web research; methodology kept).
-  - **`pptx-author` was NOT migrated**: it is a document/PowerPoint skill (Anthropic's `pptx`
-    family is source-available/proprietary, not open source) and Arslan does not author `.pptx`.
+- `designed-html-report`: `authors: Arslan`, written for this repository.
+- `skill-creator`: **adapted** from anthropics/skills (below).
 
-### hugohe3/ppt-master — MIT License (verified 2026-07-02, inspiration only)
-- Copyright (c) Hugo He. <https://github.com/hugohe3/ppt-master>
-- **No code was vendored.** Arslan's `render_deck` capability (`server/services/deck_pptx.py`) is an
-  original, thin renderer written directly on `python-pptx`. ppt-master (MIT) is credited as the
-  inspiration for the "native, editable shapes — not slide images" approach. This notice is courtesy
-  attribution; if any specific ppt-master code is ported later, it will be marked here as adapted.
-
-### obra/superpowers — MIT License (verified 2026-07-01)
-- Copyright (c) 2025 Jesse Vincent. <https://github.com/obra/superpowers>
-- MIT requires retaining the copyright + permission notice (reproduced below).
-- Used/adapted from this source (methodology ported to Arslan's SKILL.md format; the source
-  SKILL.md prose was rewritten/condensed into Arslan's `## Trigger` + `## 决策规则` structure,
-  so all are marked **adapted**):
-  - `brainstorming` — **adapted** (idea→design exploration; approval-gated implementation).
-  - `test-driven-development` — **adapted** (RED-GREEN-REFACTOR; iron law + rationalization
-    counters). Backfills the existing `test-driven-development` catalog entry's body.
-  - `requesting-code-review` — **adapted** (request review with clean work-product context;
-    severity-based action). Backfills the existing `requesting-code-review` catalog entry's body.
-  - `receiving-code-review` — **adapted** (verify-before-implement; no performative agreement).
-  - `verification-before-completion` — **adapted** (evidence-before-claims verification gate).
-  - `writing-skills` — **adapted** (TDD-for-skills authoring/verification method).
-  - `finishing-a-development-branch` — **adapted** (verify tests → 4 options → execute + cleanup).
-  - `systematic-debugging` — **adapted** (four-phase root-cause method: reproduce → isolate →
-    one hypothesis at a time → fix only once the root cause is known). Attribution added 2026-07-21
-    after an open-source audit found it shipping unattributed while seven sibling obra skills
-    carried `source:` — the omission was ours, not a claim of independent authorship.
-
-### JimLiu/baoyu-skills — MIT License (verified 2026-07-21)
-- Copyright (c) JimLiu. <https://github.com/JimLiu/baoyu-skills>
-- The infographic method itself is 宝玉 / @dotey's; the skill collection is published by JimLiu
-  under MIT. MIT requires retaining the copyright + permission notice (reproduced below).
-- Used/adapted from this source:
-  - `baoyu-infographic` — **adapted** (layout-by-data-shape + single visual hierarchy +
-    annotate-the-datapoint discipline, rewritten into Arslan's `## Trigger` + `## 决策规则`
-    structure; the upstream's 21-layout × 21-style catalogue and its image-generation tooling
-    are NOT bundled).
-
-```
-MIT License
-
-Copyright (c) JimLiu (JimLiu/baoyu-skills)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
-### mattpocock/skills — MIT License (verified 2026-07-02)
-- Copyright (c) Matt Pocock. <https://github.com/mattpocock/skills>
-- MIT requires retaining the copyright + permission notice (the MIT text below covers it).
-- Used/adapted from this source (methodology ported to Arslan's `## Trigger` + `## 决策规则`
-  structure; personal branding and Matt-Pocock-specific setup references removed — all **adapted**):
-  - `resolving-merge-conflicts` — **adapted** (the 5-step by-intent conflict-resolution method; no
-    bundled scripts in the source, no personalization to strip).
-  - `domain-modeling` — **adapted** (ubiquitous-language glossary + sparing-ADR discipline; the
-    source's external `ADR-FORMAT.md` / `CONTEXT-FORMAT.md` references were inlined as concise
-    formats so the skill is self-contained).
-  - `research` — **adapted** (structured multi-angle research with cross-source verification).
-    Attribution added 2026-07-21: the upstream repository carries a same-named
-    `engineering/research` skill, so this is recorded as adapted rather than independent.
-
-```
-MIT License
-
-Copyright (c) Matt Pocock (mattpocock/skills)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-```
-MIT License
-
-Copyright (c) 2025 Jesse Vincent
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+### anthropics/skills — Apache License 2.0 (re-verified 2026-10-21)
+- Copyright 2026 Anthropic, PBC. <https://github.com/anthropics/skills>
+- The repository has **no top-level LICENSE**; each skill carries its own `LICENSE.txt`, and
+  the document skills `docx`, `pdf`, `pptx`, `xlsx` are source-available, not open source
+  (the repository README). `skills/skill-creator/LICENSE.txt` is Apache-2.0, checked at commit
+  `dbd4588f9e1033efb41dad4bef2f7947c8993d44` (2026-10-21).
+- `skill-creator` is **adapted**: Anthropic's version depends on Claude Code's eval tooling
+  (`claude -p`, sub-agents, an eval viewer); only the methodology was ported to Arslan's SKILL.md
+  format, as its `source:` line says. Apache-2.0 requires retaining this notice and stating
+  significant changes (done here and in that line).
 
 ---
 
@@ -239,6 +73,12 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
 ### NousResearch/hermes-agent — MIT License
 - <https://github.com/NousResearch/hermes-agent>, Copyright (c) 2025 Nous Research. The
   MIT License text ships with the code as `arslan/vendor/hermes/LICENSE`.
+- The capability catalog (`server/registry/seed_catalog.py`) began as Hermes' toolset catalog.
+  Checked against `toolsets.py` and `website/docs/reference/toolsets-reference.md` at commit
+  `f1d62772923e06faa5fbbaf4fa0b0589dbd75577` (2026-10-21, C9): what remains is shared tool
+  names (`read_file`, `write_file`, `patch`, `search_files`, `session_search`, `skills_list`,
+  `skill_view`, `skill_manage`, `todo`, `web_search`, `web_extract`) and how some of them are
+  grouped. The toolset names and every description are Arslan's own wording.
 - Vendored: `tools/approval_detection.py` at commit
   `6b2fe92af66a95ea6a5caa309e05c5643cdd79de` (main, 2026-10-01), with one change (the
   `ansi_strip` import path), plus `ansi_strip.py`. They provide the dangerous-command

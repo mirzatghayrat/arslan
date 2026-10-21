@@ -10,15 +10,15 @@ from pathlib import Path
 from sqlalchemy import and_, delete, exists, not_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import arslan.spawn
-from arslan.spawn.skillpack import SkillPack as _SkillPackSpec
+import arslan.skills
+from arslan.skills.skillpack import SkillPack as _SkillPackSpec
 from server.db import session as db_session
 from server.db.models import SkillCandidate, SkillPack, Tool, Toolset
 from server.registry.seed_catalog import SKILLS, TOOLSETS
 
 logger = logging.getLogger(__name__)
 
-_SEEDS_DIR = Path(arslan.spawn.__file__).parent / "seeds"
+_SEEDS_DIR = Path(arslan.skills.__file__).parent / "bundled"   # C9: out of arslan/spawn (C7 deletes it)
 
 # ── Retirement lists (2026-07 open-source curation) ────────────────────────────
 # Seed keys that used to ship in the catalog and must be removed from existing
@@ -36,6 +36,20 @@ RETIRED_SKILL_KEYS: tuple[str, ...] = (
     "dogfood", "heartmula", "songsee", "popular-web-designs", "powerpoint",
     "ocr-and-documents", "codebase-inspection", "yuanbao-groups",
     "macos-computer-use", "teams-meeting-pipeline", "touchdesigner-mcp",
+    # C9 (v0.1.63, U13 item 3): every bundled skill but skill-creator and designed-html-report.
+    # D7 makes this delete only the seeder's rows; a user's skill of the same key stays.
+    "writing-skills", "brainstorming", "receiving-code-review", "resolving-merge-conflicts",
+    "domain-modeling", "sector-overview", "competitive-analysis", "comps-analysis",
+    "idea-generation", "deck-authoring", "internal-comms", "brand-guidelines", "frontend-design",
+    "theme-factory", "canvas-design", "algorithmic-art", "claude-code", "codex", "opencode",
+    "architecture-diagram", "ascii-art", "baoyu-infographic", "claude-design", "design-md",
+    "excalidraw", "humanizer", "p5js", "pretext", "sketch", "songwriting-and-ai-music",
+    "github-auth", "github-code-review", "github-issues", "github-pr-workflow",
+    "github-repo-management", "youtube-content", "arxiv", "blogwatcher", "llm-wiki",
+    "research-paper-writing", "verification-before-completion", "finishing-a-development-branch",
+    "mcp-builder", "webapp-testing", "codebase-audit", "node-inspect-debugger", "plan",
+    "python-debugpy", "requesting-code-review", "simplify-code", "spike", "systematic-debugging",
+    "test-driven-development",
 )
 RETIRED_TOOLSET_KEYS: tuple[str, ...] = (
     "discord", "discord_admin", "spotify", "x_search", "home_assistant",

@@ -20,16 +20,16 @@ When a bug or unexpected behavior appears.
 
 
 def test_skill_body_reads_file(tmp_path, monkeypatch):
-    (tmp_path / "systematic-debugging").mkdir()
-    (tmp_path / "systematic-debugging" / "SKILL.md").write_text(_SKILL_MD, encoding="utf-8")
+    (tmp_path / "skill-creator").mkdir()
+    (tmp_path / "skill-creator" / "SKILL.md").write_text(_SKILL_MD, encoding="utf-8")
     monkeypatch.setattr(seeder, "_SEEDS_DIR", tmp_path)
-    assert "## Trigger" in seeder._skill_body("systematic-debugging")
+    assert "## Trigger" in seeder._skill_body("skill-creator")
     assert seeder._skill_body("no-such-key") is None
 
 
 async def test_seed_populates_body_from_file(tmp_path, monkeypatch):
-    (tmp_path / "systematic-debugging").mkdir()
-    (tmp_path / "systematic-debugging" / "SKILL.md").write_text(_SKILL_MD, encoding="utf-8")
+    (tmp_path / "skill-creator").mkdir()
+    (tmp_path / "skill-creator" / "SKILL.md").write_text(_SKILL_MD, encoding="utf-8")
     monkeypatch.setattr(seeder, "_SEEDS_DIR", tmp_path)
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'s.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -39,15 +39,15 @@ async def test_seed_populates_body_from_file(tmp_path, monkeypatch):
     async with m() as db:
         await seeder.seed_registry_with(db)
     async with m() as db:
-        sd = (await db.execute(select(SkillPack).where(SkillPack.key == "systematic-debugging"))).scalar_one()
-        other = (await db.execute(select(SkillPack).where(SkillPack.key == "humanizer"))).scalar_one()
+        sd = (await db.execute(select(SkillPack).where(SkillPack.key == "skill-creator"))).scalar_one()
+        other = (await db.execute(select(SkillPack).where(SkillPack.key == "designed-html-report"))).scalar_one()
     body, other_body = sd.body, other.body
     assert body is not None and "## 决策规则" in body     # has a file → body set
     assert other_body is None                              # no file (this task) → body NULL
 
 
 def test_skill_body_bad_frontmatter_skips(tmp_path, monkeypatch):
-    (tmp_path / "systematic-debugging").mkdir()
-    (tmp_path / "systematic-debugging" / "SKILL.md").write_text("not valid frontmatter at all", encoding="utf-8")
+    (tmp_path / "skill-creator").mkdir()
+    (tmp_path / "skill-creator" / "SKILL.md").write_text("not valid frontmatter at all", encoding="utf-8")
     monkeypatch.setattr(seeder, "_SEEDS_DIR", tmp_path)
-    assert seeder._skill_body("systematic-debugging") is None   # parse fail → None, no raise
+    assert seeder._skill_body("skill-creator") is None   # parse fail → None, no raise

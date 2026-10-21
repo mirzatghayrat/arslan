@@ -1,4 +1,6 @@
-"""Hermes Desktop catalog → Arslan registry seed (spec §1.3).
+"""Arslan's capability catalog, seeded into the registry (spec §1.3). It began as the Hermes
+toolset catalog (NousResearch/hermes-agent, MIT); what remains from it is shared tool names and
+grouping, credited in THIRD_PARTY_NOTICES.md (checked at source, C9). Descriptions are Arslan's.
 
 Pure data. Tier principle: real-world side-effect risk — data/results in = safe;
 state changed in the world (filesystem writes, sends, execution, physical
@@ -133,7 +135,7 @@ TOOLSETS: list[dict] = [
             ("render_deck", "ONLY when the user EXPLICITLY asks for an editable PowerPoint / "
              ".pptx FILE (说要'pptx文件'/'可编辑的PPT'/'PowerPoint'). For any other presentation "
              "request the deliverable is a designed single-file HTML deck typed directly as your "
-             "reply (starts with <!DOCTYPE html — see your deck-authoring skill); do NOT call "
+             "reply (starts with <!DOCTYPE html); do NOT call "
              "this tool for those. "
              "Generate a native, editable PowerPoint (.pptx) from a deck spec. "
              "slides=[{layout, ...}]. Per-layout fields (use ONLY these): "
@@ -198,96 +200,11 @@ _S = "safe"
 _O = "orchestrator"
 _REG = "registered"
 SKILLS: list[tuple[str, str, str, str, str, str]] = [
-    # META (self-authoring — ingested/adapted from anthropics/skills, Apache-2.0; see THIRD_PARTY_NOTICES.md)
+    # C9 (v0.1.63, U13 item 3): two skills ship with Arslan; the other 53 are retired (seeder.py).
+    # META (adapted from anthropics/skills, Apache-2.0; see THIRD_PARTY_NOTICES.md)
     ("skill-creator", "skill-creator", "meta",
      "Package a reusable method into a high-quality SKILL.md; lets users/Arslan self-author skills.", _S, _REG),
-    ("writing-skills", "writing-skills", "meta",
-     "TDD-for-skills: baseline-test → write → close loopholes; how to author/verify a SKILL.md.", _S, _REG),
-    # COLLABORATION (methodology — adapted from obra/superpowers, MIT; see THIRD_PARTY_NOTICES.md)
-    ("brainstorming", "brainstorming", "collaboration",
-     "Explore an idea into a design before any implementation: one question at a time, approval-gated.", _S, _REG),
-    ("receiving-code-review", "receiving-code-review", "collaboration",
-     "Evaluate review feedback technically: verify before implementing, no performative agreement.", _S, _REG),
-    # COLLABORATION (methodology — adapted from mattpocock/skills, MIT; see THIRD_PARTY_NOTICES.md)
-    ("resolving-merge-conflicts", "resolving-merge-conflicts", "collaboration",
-     "Resolve a git merge/rebase conflict by intent: trace each side's original purpose, reconcile, verify, finish.", _S, _REG),
-    ("domain-modeling", "domain-modeling", "collaboration",
-     "Actively sharpen a project's domain model: ubiquitous-language glossary (CONTEXT.md) + sparing ADRs.", _S, _REG),
-    # FINANCE (migrated from anthropics/financial-services · market-researcher, Apache-2.0; see THIRD_PARTY_NOTICES.md)
-    ("sector-overview", "sector-overview", "finance",
-     "Board a sector/theme primer: market size & growth, structure, value chain, drivers, landscape, valuation.", _S, _REG),
-    ("competitive-analysis", "competitive-analysis", "finance",
-     "Map a competitive landscape: industry metrics, peer deep-dives, positioning, moats, strategic synthesis.", _S, _REG),
-    ("comps-analysis", "comps-analysis", "finance",
-     "Build a trading-comps spread: pick peers, per-industry multiples, consistent definitions, outlier flags.", _S, _REG),
-    ("idea-generation", "idea-generation", "finance",
-     "Source investment ideas: quant screens by style, thematic sweep, shortlist with thesis hooks and risks.", _S, _REG),
-    # CREATIVE — presentation storytelling (HTML deck by default; pairs with render_deck for .pptx)
-    ("deck-authoring", "deck-authoring", "creative",
-     "Turn content into a storytelling deck: one idea per slide, assertion-evidence titles, narrative arc; "
-     "ships a designed single-file HTML presentation by default, native editable .pptx via render_deck on explicit request.", _S, _REG),
-    # WRITING (adapted from anthropics/skills, Apache-2.0)
-    ("internal-comms", "internal-comms", "writing",
-     "Write internal comms in company formats: 3P updates, newsletters, FAQs, status/incident reports.", _S, _REG),
-    # MARKETING (adapted from anthropics/skills, Apache-2.0)
-    ("brand-guidelines", "brand-guidelines", "marketing",
-     "Apply a consistent brand palette + typography to any artifact (Anthropic brand as reference).", _S, _REG),
-    # CREATIVE (adapted from anthropics/skills, Apache-2.0)
-    ("frontend-design", "frontend-design", "creative",
-     "Distinctive, opinionated UI visual design: palette, typography, layout, one justified risk.", _S, _REG),
-    ("theme-factory", "theme-factory", "creative",
-     "Apply a consistent color+font theme to artifacts from presets, or generate one on the fly.", _S, _REG),
-    ("canvas-design", "canvas-design", "creative",
-     "Design-philosophy method for original static visual art (poster/artwork): 90% visual, 10% text.", _S, _REG),
-    ("algorithmic-art", "algorithmic-art", "creative",
-     "Algorithmic-philosophy method for p5.js generative art with seeded, reproducible randomness.", _S, _REG),
-    # AUTONOMOUS-AI-AGENTS (decision §9: registered, orchestrator-only, unwired)
-    ("claude-code", "claude-code", "autonomous-ai-agents", "Delegate coding to Claude Code CLI.", _O, _REG),
-    ("codex", "codex", "autonomous-ai-agents", "Delegate coding to OpenAI Codex CLI.", _O, _REG),
-    ("opencode", "opencode", "autonomous-ai-agents", "Delegate coding to OpenCode CLI.", _O, _REG),
-    # CREATIVE
-    ("architecture-diagram", "architecture-diagram", "creative", "SVG architecture diagrams as HTML.", _S, _REG),
-    ("ascii-art", "ascii-art", "creative", "ASCII art.", _S, _REG),
-    ("baoyu-infographic", "baoyu-infographic", "creative", "Infographics: 21 layouts x 21 styles.", _S, _REG),
-    ("claude-design", "claude-design", "creative", "One-off HTML artifacts (landing, deck).", _S, _REG),
-    ("design-md", "design-md", "creative", "Author/validate DESIGN.md token specs.", _S, _REG),
+    # CREATIVE (Arslan's own)
     ("designed-html-report", "designed-html-report", "creative",
      "设计版报告:报告/简报/方案等长篇交付物产出自带设计系统的单文件 HTML(Designed HTML Report),而非 markdown 长文。", _S, _REG),
-    ("excalidraw", "excalidraw", "creative", "Hand-drawn Excalidraw JSON diagrams.", _S, _REG),
-    ("humanizer", "humanizer", "creative", "Strip AI-isms, add real voice.", _S, _REG),
-    ("p5js", "p5js", "creative", "p5.js sketches.", _S, _REG),
-    ("pretext", "pretext", "creative", "DOM-free text layout / kinetic typography HTML demos.", _S, _REG),
-    ("sketch", "sketch", "creative", "Throwaway HTML mockups, 2-3 variants.", _S, _REG),
-    ("songwriting-and-ai-music", "songwriting-and-ai-music", "creative", "Songwriting + Suno prompts.", _S, _REG),
-    # GITHUB
-    ("github-auth", "github-auth", "github", "GitHub auth setup (credentials).", _O, _REG),
-    ("github-code-review", "github-code-review", "github", "Review PR diffs; posting comments needs orchestrator tools.", _S, _REG),
-    ("github-issues", "github-issues", "github", "Create/triage issues (repo writes).", _O, _REG),
-    ("github-pr-workflow", "github-pr-workflow", "github", "PR lifecycle (repo mutation).", _O, _REG),
-    ("github-repo-management", "github-repo-management", "github", "Clone/fork/releases (repo mutation).", _O, _REG),
-    # MEDIA
-    ("youtube-content", "youtube-content", "media", "YouTube transcripts → summaries/threads.", _S, _REG),
-    # RESEARCH
-    ("arxiv", "arxiv", "research", "Search arXiv papers.", _S, _REG),
-    ("blogwatcher", "blogwatcher", "research", "Monitor blogs/RSS feeds.", _S, _REG),
-    ("llm-wiki", "llm-wiki", "research", "Build/query interlinked markdown KB.", _S, _REG),
-    ("research-paper-writing", "research-paper-writing", "research", "Write ML papers (NeurIPS/ICML).", _S, _REG),
-    # SOFTWARE-DEVELOPMENT
-    ("verification-before-completion", "verification-before-completion", "software-development",
-     "Run verification and read output before claiming done/fixed/passing (analysis discipline).", _S, _REG),
-    ("finishing-a-development-branch", "finishing-a-development-branch", "software-development",
-     "Verify tests, then present 4 options (merge/PR/keep/discard) and execute + worktree cleanup.", _O, _REG),
-    ("mcp-builder", "mcp-builder", "software-development",
-     "Design high-quality MCP servers: tool design, naming, error messages, evaluations.", _S, _REG),
-    ("webapp-testing", "webapp-testing", "software-development",
-     "Playwright web-app testing methodology: reconnaissance-then-action, wait-for-networkidle.", _S, _REG),
-    ("codebase-audit", "codebase-audit", "software-development", "Audit + risk classify (read/plan only).", _S, _REG),
-    ("node-inspect-debugger", "node-inspect-debugger", "software-development", "Debug Node via CDP (attaches/executes).", _O, _REG),
-    ("plan", "plan", "software-development", "Plan mode: markdown plan, no execution.", _S, _REG),
-    ("python-debugpy", "python-debugpy", "software-development", "Debug Python (executes/attaches).", _O, _REG),
-    ("requesting-code-review", "requesting-code-review", "software-development", "Request a code review with clean work-product context; severity-based action (methodology).", _S, _REG),
-    ("simplify-code", "simplify-code", "software-development", "3-agent cleanup (mutates code).", _O, _REG),
-    ("spike", "spike", "software-development", "Throwaway experiments (runs code).", _O, _REG),
-    ("systematic-debugging", "systematic-debugging", "software-development", "4-phase root-cause analysis (analysis-only).", _S, _REG),
-    ("test-driven-development", "test-driven-development", "software-development", "TDD (runs tests/writes code).", _O, _REG),
 ]

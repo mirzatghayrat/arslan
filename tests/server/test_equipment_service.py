@@ -45,14 +45,14 @@ async def test_curate_validates_and_drops_bad_keys(seeded, monkeypatch):
             # model tries to sneak in execution tier + an unknown key
             return _Resp(
                 '{"toolsets": ["web_search_scraping", "code_execution", "nope"],'
-                ' "skills": ["baoyu-infographic", "claude-code"], "why": "x"}'
+                ' "skills": ["designed-html-report", "claude-code"], "why": "x"}'
             )
 
     monkeypatch.setattr(equipment_service, "_get_adapter", lambda: _A())
 
     eq = await equipment_service.curate("小红书美妆内容助手，需要查热点写笔记")
     assert eq["toolsets"] == ["web_search_scraping"]
-    assert eq["skills"] == ["baoyu-infographic"]
+    assert eq["skills"] == ["designed-html-report"]
     # Layer 1: the prompt menu itself must not contain orchestrator items
     assert "code_execution" not in captured["user"]
     assert "terminal" not in captured["user"]
@@ -101,7 +101,7 @@ async def test_curate_happy_path_valid_toolsets_and_skill(seeded, monkeypatch):
         async def chat(self, system, user, **kw):
             return _Resp(
                 '{"toolsets": ["web_search_scraping", "charting", "session_search"],'
-                ' "skills": ["baoyu-infographic"], "why": "x"}'
+                ' "skills": ["designed-html-report"], "why": "x"}'
             )
 
     monkeypatch.setattr(equipment_service, "_get_adapter", lambda: _A())
@@ -110,7 +110,7 @@ async def test_curate_happy_path_valid_toolsets_and_skill(seeded, monkeypatch):
     # Functional toolsets survive in order; catalog-only decoration (session_search has
     # no wired tools yet) is honestly dropped; skill with a real body survives.
     assert eq["toolsets"] == ["web_search_scraping", "charting"]
-    assert eq["skills"] == ["baoyu-infographic"]
+    assert eq["skills"] == ["designed-html-report"]
 
 
 @pytest.mark.asyncio
@@ -141,12 +141,12 @@ async def test_build_intro_grounded_in_equipment(seeded, maker):
         persona_role="你的小红书美妆助手",
         equipment={"toolsets": [{"key": "web_search_scraping",
                                  "name": "Web Search & Scraping", "status": "wired"}],
-                   "skills": [{"key": "baoyu-infographic",
-                               "name": "baoyu-infographic", "status": "registered"}]},
+                   "skills": [{"key": "designed-html-report",
+                               "name": "designed-html-report", "status": "registered"}]},
     )
     assert "小美" in intro
     assert "Web Search & Scraping" in intro
-    assert "baoyu-infographic" in intro
+    assert "designed-html-report" in intro
 
 
 @pytest.mark.asyncio

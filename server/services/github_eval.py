@@ -1,5 +1,5 @@
 """Read-only GitHub repo evaluation (fixed host api.github.com — NOT an SSRF surface).
-Trust tiers reuse the github-eval seed thresholds."""
+Its trust tiers began as the retired github-eval seed's thresholds; they live here now (C9)."""
 from __future__ import annotations
 
 import re
