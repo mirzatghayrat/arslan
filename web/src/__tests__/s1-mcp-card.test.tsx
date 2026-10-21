@@ -28,6 +28,14 @@ describe("S1: the MCP card's starting choice", () => {
     expect(allow("destructive", ["once"])).toBe("once");
   });
 
+  it("its 'In this conversation' says it covers any use of the tool, with any arguments (⓪Plan's review)", async () => {
+    await i18n.changeLanguage("en");
+    render(<ActionApprovalCard kind="mcp_tool" target="files/write_file" detail='{"path": "/a"}' permKind="mcp_tool"
+      options={["once", "conversation"]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByTestId("action-scope-conversation").parentElement).toHaveTextContent(
+      String(i18n.t("kit.scope.conversationFor", { label: String(i18n.t("kit.scope.anyToolUse")) })));
+  });
+
   it("other kinds still start on their narrowest choice", async () => {
     await i18n.changeLanguage("en");
     expect(allow("app", ["task", "conversation", "always"], "Notes")).toBe("task");

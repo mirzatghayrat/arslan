@@ -4,7 +4,8 @@
   1. money — always a card, in every mode, never remembered;
   2. an "Always" rule for exactly this kind and target;
   3. a grant for this task or this conversation (a background job reads the grants of the
-     conversation that started it);
+     conversation that started it). 2 and 3 are read only where a card surface is bound: a
+     scheduled run reads neither (S1, U14 a);
   4. a card on the surface bound to this turn (`asking_with`): the chat window, a job's
      broadcast — or none, for a scheduled run, which has nobody to ask: the answer is no, at
      once (silence is not consent; Hermes resolves unattended runs from policy the same way).
@@ -64,7 +65,8 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 # S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
 # time or for this conversation, never "Always": outside content can steer what it sends.
 _NEVER_ALWAYS = (_ONCE_ONLY
-                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network"}))
+                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
+                              "mcp_tool"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
 if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: "

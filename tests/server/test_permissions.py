@@ -256,7 +256,8 @@ def test_an_app_a_shortcut_or_a_site_asks_for_the_task_first(kind):
                                             else ["task", "conversation"])
 
 
-@pytest.mark.parametrize("kind", ["command", "mcp_tool", "folder"])
+# mcp_tool offers no "Always" in 0.1.63 (S1, ⓪Plan's review: _NEVER_ALWAYS until S6's page lists such rules).
+@pytest.mark.parametrize("kind", ["command", "folder"])
 def test_the_other_kinds_ask_once_first_and_offer_always_with_a_label(kind):
     assert permissions.options_for(Request(kind=kind, target="x", title="t", always_label="x")) \
         == ["once", "conversation", "always"]

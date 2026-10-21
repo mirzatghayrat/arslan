@@ -89,7 +89,8 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
           </div>)
         : detailLine}
       context={grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
-      options={<ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="action-scope" />}
+      options={<ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
+        conversationLabel={permKind === "mcp_tool" ? t("kit.scope.anyToolUse") : undefined} testId="action-scope" />}
       extra={<DeclineNote testId="action-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(note) : onCancel())} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}

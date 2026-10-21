@@ -265,6 +265,14 @@ class MCPProxyExecutor:
             await permissions.record_standing(permissions.Request(
                 kind="mcp_tool", target=self.key, title=title, detail=detail, extra=extra), ctx, by="mode")
             return None
+        if len(detail) > protocol.DETAIL_MAX:
+            # ⓪Plan's review: a card shows at most DETAIL_MAX characters, so padding could push the real
+            # target off it and the yes would cover arguments nobody saw. Refused, never cut (not even
+            # under a grant: every call that is not read-only has arguments a card can show in full).
+            return {"ok": False, "external": False, "executed": False, "code": "too_long_to_show",
+                    "error": f"Not sent: the arguments of {srv.label}\u2019s {self.external_name} are "
+                             f"{len(detail)} characters, more than a card can show the user "
+                             f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed."}
         frame = protocol.propose_action(uuid.uuid4().hex, "mcp_tool", target, detail)
         if destructive(self.annotations):     # red on the web, never from the island, "delete" on the phone
             req = permissions.Request(kind="destructive", target=self.key, title=title, detail=detail,
@@ -288,7 +296,13 @@ class MCPProxyExecutor:
             return {"ok": False, "error": f"MCP server {self.server_id} not found"}
         if srv.state != "ready":
             return not_ready_result(srv)
-        refused = await self._approve(srv, args)
+        try:
+            refused = await self._approve(srv, args)
+        except Exception:  # noqa: BLE001 — a failed check is a refusal that never reached the server
+            logger.warning("mcp approval failed for %s", self.key, exc_info=True)
+            refused = {"ok": False, "external": False, "executed": False, "code": "not_allowed",
+                       "error": f"Not sent: Arslan could not check whether {srv.label}\u2019s "
+                                f"{self.external_name} may run. Tell the user."}
         if refused is not None:
             return refused
         from server.mcp.discovery import runtime_dict

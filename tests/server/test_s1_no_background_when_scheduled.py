@@ -11,7 +11,7 @@ import sys
 from server.orchestrator import arslan
 from server.registry import hands_tools
 from server.registry.task_tools import StartBackgroundWorkExecutor
-from server.services import desktop_status, permissions, task_service
+from server.services import agent_browser, desktop_status, permissions, task_service
 from server.services import personal_context as pc
 
 
@@ -46,9 +46,12 @@ async def test_its_executor_refuses_with_nobody_to_ask(execution_db, monkeypatch
 async def test_a_scheduled_run_is_not_told_to_start_background_work(execution_db, monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(hands_tools, "desktop_available", lambda: True)
+    monkeypatch.setattr(agent_browser, "available", lambda: True)   # the browser note too, on a host without node
     monkeypatch.setattr(task_service, "current", lambda: object())
     with desktop_status.working("conv-s", title="digest", kind="scheduled"):
         tools = await arslan._arslan_tools()
-    text = " ".join(t["description"] for t in tools)
-    assert "start background work" not in text and "start_background_work" not in {t["key"] for t in tools}
-    assert "A scheduled run cannot act on this Mac" in text
+        reachable = await arslan._callable_tools()             # browser_open is on demand since K7 (C3b)
+    text = " ".join(t["description"] for t in reachable)
+    assert "start background work" not in text and "start_background_work" not in {t["key"] for t in reachable}
+    assert "A scheduled run cannot act on this Mac" in " ".join(t["description"] for t in tools)
+    assert "A scheduled run cannot act on pages" in text

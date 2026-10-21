@@ -170,6 +170,17 @@ describe("Not done while you were away", () => {
     expect(within(row(1)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.asksEachTime");
   });
 
+  it("a scheduled run's refusal says why nothing can be allowed, beside an away card for the same thing (S1)", async () => {
+    serve([mail, { ...mail, id: 29, always_ok: false, always: [], unattended: true }]);
+    render(<InboxRefused />);
+    await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();
+    expect(screen.getAllByTestId("inbox-refused-row")).toHaveLength(2);
+    expect(within(row(0)).getByTestId("inbox-refused-allow")).toBeInTheDocument();
+    expect(within(row(1)).queryByTestId("inbox-refused-allow")).toBeNull();
+    expect(within(row(1)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.scheduledNeverAsks");
+  });
+
   it("an entry whose card would not have offered Always gets no click even if a list came with it", async () => {
     serve([{ ...mail, always_ok: false }]);
     render(<InboxRefused />);

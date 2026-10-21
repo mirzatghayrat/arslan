@@ -118,12 +118,17 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     return frame
 
 
+#: The most of a card's `detail` a propose_action frame carries. S1: an MCP call whose arguments are
+#: longer is refused rather than carded, since a cut card would hide what the yes covers.
+DETAIL_MAX = 4000
+
+
 def propose_action(call_id: str, kind: str, target: str, detail: str) -> dict[str, Any]:
     """0.1.45: a background job asks before it acts — kind is browser_site (first
     click/typing on a website), mac_shortcut (run a Shortcut) or mac_script (run an
     AppleScript, shown in full). Answered by confirm_action / cancel_action."""
     return {"type": "propose_action", "call_id": call_id, "kind": kind, "target": target[:300],
-            "detail": detail[:4000]}
+            "detail": detail[:DETAIL_MAX]}
 
 
 def card_resolved(call_id: str, outcome: str, by: str | None = None) -> dict[str, Any]:

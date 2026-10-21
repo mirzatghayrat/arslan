@@ -529,3 +529,15 @@ def test_an_unattended_refusal_offers_no_always_allow(client):
     assert (row["always_ok"], row["always"]) == (False, [])
     assert _allow(client, row["id"]).status_code == 409
     assert _rules(client) == set()
+
+
+def test_a_scheduled_refusal_and_an_away_card_for_the_same_thing_are_two_entries(client):
+    """⓪Plan's review of S1a: grouped by kind and target alone, an away card's "Always allow" was offered
+    over a group whose scheduled refusals no "Always" fixes. Grouped by who refused it too; the scheduled
+    entry says why there is nothing to allow."""
+    req = _app("com.apple.Notes", "Notes")
+    _decide(client, req, asker=None)                            # a scheduled run: policy
+    _decide(client, req, asker=_away)                           # later, a card nobody saw: away
+    away, scheduled = _refused(client)
+    assert (away["unattended"], away["always_ok"]) == (False, True)
+    assert (scheduled["unattended"], scheduled["always_ok"], scheduled["always"]) == (True, False, [])

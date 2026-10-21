@@ -30,6 +30,8 @@ export interface Refusal {
   always_ok: boolean;
   /** Exactly what "Always allow" will store, each rule in the words its card used. */
   always: { kind: string; target: string; label: string }[];
+  /** S1: refused by a scheduled run, which never takes a step that needs an OK: no "Always" answers it. */
+  unattended?: boolean;
 }
 
 /** What a row says, a line to a thing: the command, the file, the cadence, each app of a many-app entry (their detail is newline-joined; their target
@@ -159,9 +161,9 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
           const lines = whatLines(row);
           const done = allowed.has(row.id);
           // Only with something listed to store: the click is never asked for without its result in front of the person.
-          const offered = row.always_ok && row.always.length > 0 && !eachTime.has(row.id);
+          const offered = !row.unattended && row.always_ok && row.always.length > 0 && !eachTime.has(row.id);
           return (
-            <li key={`${row.kind}\u0000${row.target}`} data-testid="inbox-refused-row"
+            <li key={`${row.kind}\u0000${row.target}\u0000${row.unattended ? "scheduled" : "away"}`} data-testid="inbox-refused-row"
               className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5">
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <div className="flex min-w-0 flex-col" title={lines.join(", ")}>
@@ -191,7 +193,8 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
                       className="shrink-0 rounded-lg bg-fill px-2.5 py-1 text-[12px] font-semibold hover:bg-fill-strong disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
                       {t("inbox.alwaysAllow")}
                     </button>
-                  : <span data-testid="inbox-refused-each-time" className="shrink-0 text-[12px] text-muted-foreground">{t("inbox.asksEachTime")}</span>}
+                  : <span data-testid="inbox-refused-each-time" className="shrink-0 text-[12px] text-muted-foreground">
+                      {t(row.unattended ? "inbox.scheduledNeverAsks" : "inbox.asksEachTime")}</span>}
             </li>
           );
         })}

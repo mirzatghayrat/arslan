@@ -129,16 +129,18 @@ class ServerGone(ValueError):
 
 
 def read_only(hints: dict | None) -> bool:
-    """S1: the server says this tool only reads (MCP `readOnlyHint`). Self-reported: trusted as far as
-    the user trusts a server they turned on (card S1, risks)."""
-    return bool(hints) and hints.get("readOnlyHint") is True
+    """S1: the server says this tool only reads (MCP `readOnlyHint`), and does not also say it may
+    destroy something. Self-reported: trusted as far as the user trusts a server they turned on (card
+    S1, risks)."""
+    return bool(hints) and hints.get("readOnlyHint") is True and hints.get("destructiveHint") is not True
 
 
 def destructive(hints: dict | None) -> bool:
-    """S1: the server says this tool may destroy something (`destructiveHint`), and not that it only
-    reads. A tool with no hints is not destructive here, unlike the MCP spec's default: it gets the
+    """S1: the server says this tool may destroy something (`destructiveHint`). Saying it only reads as
+    well contradicts that, and the safer reading wins (⓪Plan's review): it costs an honest server
+    nothing. A tool with no hints is not destructive here, unlike the MCP spec's default: it gets the
     ordinary card (⓪Plan, Q5). K9 and S5 reuse these two."""
-    return bool(hints) and hints.get("destructiveHint") is True and not read_only(hints)
+    return bool(hints) and hints.get("destructiveHint") is True
 
 
 def tool_hints(tool) -> dict | None:

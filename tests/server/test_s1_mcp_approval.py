@@ -28,7 +28,8 @@ from server.registry.executors import resolve_executor
 LONG = "x" * 60
 LONG_KEY = discovery.mcp_tool_key(2, LONG)
 HINTS = {"read_file": {"readOnlyHint": True}, "delete_file": {"readOnlyHint": False, "destructiveHint": True},
-         "write_file": None, LONG: {"readOnlyHint": True}, "frobnicate": {"readOnlyHint": True}}
+         "write_file": None, LONG: {"readOnlyHint": True}, "frobnicate": {"readOnlyHint": True},
+         "wipe": {"readOnlyHint": True, "destructiveHint": True}}
 
 
 class _Text:
@@ -97,7 +98,8 @@ async def _rows(maker):
 def test_the_hints_read_as_the_card_says():
     assert discovery.read_only({"readOnlyHint": True}) and not discovery.read_only(None)
     assert discovery.destructive({"destructiveHint": True}) and not discovery.destructive(None)
-    assert not discovery.destructive({"readOnlyHint": True, "destructiveHint": True})   # read-only wins
+    contradictory = {"readOnlyHint": True, "destructiveHint": True}    # the safer reading wins (⓪Plan's review)
+    assert discovery.destructive(contradictory) and not discovery.read_only(contradictory)
     assert not discovery.destructive({})                      # no hints: "other", not the spec's default (Q5)
 
 
@@ -167,6 +169,48 @@ async def test_a_long_tool_name_finds_its_own_row(mcp):
     with permissions.asking_with(Asker()):                       # read-only by its row: no card
         out = await _run(LONG_KEY)
     assert out["ok"] is True and calls == [(LONG, {"path": "/a"})]
+    [row] = await _rows(maker)
+    assert row.target == LONG_KEY                                # the ledger (and any grant) use the real key
+
+
+async def test_arguments_longer_than_a_card_shows_are_refused_never_cut(mcp):
+    """⓪Plan's review: the card carries at most protocol.DETAIL_MAX characters, so padding would push the
+    real target off it and the yes would cover arguments nobody saw."""
+    from server.ws import protocol
+    maker, calls = mcp
+    padded = {"padding": "x" * 5000, "path": "/important"}
+    asker = Asker(yes("conversation"))
+    with permissions.asking_with(asker):
+        out = await _run("mcp_2__write_file", padded)
+        granted = await _run("mcp_2__write_file", {"path": "/a"})          # a short one cards, and is granted
+        again = await _run("mcp_2__write_file", padded)                    # not even under the grant
+    assert out["executed"] is False and out["code"] == "too_long_to_show" and again["code"] == "too_long_to_show"
+    assert granted["ok"] is True and len(asker.frames) == 1 and calls == [("write_file", {"path": "/a"})]
+    assert len(json.dumps(padded)) > protocol.DETAIL_MAX >= len(asker.frames[0]["detail"])
+
+
+async def test_contradictory_hints_get_the_destructive_card(mcp):
+    maker, calls = mcp
+    asker = Asker(yes())
+    with permissions.asking_with(asker):
+        await _run("mcp_2__wipe")
+    assert asker.frames[0]["perm_kind"] == "destructive" and asker.frames[0]["options"] == ["once"]
+
+
+async def test_a_check_that_fails_is_a_refusal_that_never_reached_the_server(mcp, monkeypatch):
+    maker, calls = mcp
+
+    async def broken(*a, **k):
+        raise RuntimeError("ledger unavailable")
+    monkeypatch.setattr(permissions, "decide", broken)
+    with permissions.asking_with(Asker()):
+        out = await _run("mcp_2__write_file")
+    assert calls == [] and out["ok"] is False and out["executed"] is False
+
+
+def test_an_mcp_tool_is_never_offered_always():
+    req = permissions.Request(kind="mcp_tool", target="mcp_2__write_file", title="t", always_label="files")
+    assert "always" not in permissions.options_for(req)
 
 
 async def test_a_read_only_mcp_tool_is_a_read(mcp):
@@ -176,3 +220,15 @@ async def test_a_read_only_mcp_tool_is_a_read(mcp):
 
 def test_a_card_can_wait_its_whole_window():
     assert executor.MCPProxyExecutor.timeout_s >= approvals.TIMEOUT_S + executor.CALL_BOUND_S
+
+
+def test_a_refusal_is_not_counted_as_the_tool_failing():
+    """⓪Plan's review: two refusals told the model "this MCP tool has failed 2 times"."""
+    from server.orchestrator import tool_loop
+    counts: dict = {}
+    refused = {"ok": False, "external": False, "executed": False, "code": "declined", "error": "no"}
+    failed = {"ok": False, "error": "[MCP files · stdio] boom"}
+    for result in (refused, refused, failed, failed):
+        tool_loop._record_tool_result("mcp_2__write_file", {}, dict(result), lambda e: None, [], "", [],
+                                      mcp_fail_counts=counts)
+    assert counts == {"mcp_2__write_file": 2}
