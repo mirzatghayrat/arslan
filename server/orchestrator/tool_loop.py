@@ -885,6 +885,15 @@ _LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes.
                    "remains, then tell the user. Otherwise keep going here.")
 
 
+#: 0.1.63 K5 (⓪Plan's Q5/Q6): once a turn has had two steps whose calls are not only update_plan, its status
+#: block asks for four closing lines. Arslan's own turns only (never a delegated worker, which answers in
+#: JSON). "Unverified" in the reply's language, never 没查到: _CLAIMS_SEARCH_RE reads that as a claim to
+#: have searched (K8 fixes the pattern).
+_CLOSING_NOTE = ("This turn used tools in several steps. End your final reply with four short lines, in the "
+                 "reply's language: what you did; how you checked it; what you did not check (call it "
+                 "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch.")
+
+
 #: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
 #: call under the run's limits (K4a), and K4a's tool-call limit and dollar cap bound a web-heavy turn.
 #: What stays is the eval/replay allowance below. The tools it covers: capping web_extract alone
@@ -2582,6 +2591,7 @@ async def _run_native(
     # none), so a model that keeps reaching for research still delivers.
     wrap_refused = 0
     long_turn_told = False
+    tool_steps = 0              # K5: steps whose calls are not only update_plan
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -2654,6 +2664,8 @@ async def _run_native(
             from server.services import runtime_messages
             emit({"type": "note", "text": runtime_messages.render(
                 "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
+        if tool_steps >= 2 and _host_turn(caller, progress_lane):
+            notes.append(_CLOSING_NOTE)
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -2753,6 +2765,8 @@ async def _run_native(
             cut_off = getattr(resp, "finish_reason", None) == "length"
             if cut_off:
                 turn_state.truncated_calls += 1
+            elif any((call.get("function") or {}).get("name") != "update_plan" for call in tool_calls):
+                tool_steps += 1
             for call, neutral_call in zip(tool_calls, calls):
                 marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}
