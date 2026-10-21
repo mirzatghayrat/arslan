@@ -17,10 +17,13 @@
   - `server/services/curation_loop.py`、`server/services/curator.py`；
   - 开机时挂上的每 15 分钟一次的循环；
   - 设置键 `curation_enabled`、`curation_backfill_from` 的读取代码（`server/services/settings_service.py:21`、`:32`、`:152`、`:235` 附近）；
-  - 网页上的开关、提案箱里整理层那一类；
+  - 网页上的开关、提案箱里整理层那一类；`/skills/curator_review` 接口；
   - 对应的翻译键。
 - **回合结束提炼：** `server/services/distill_service.py` 里回合结束那条入口、`server/services/prompts/distill.py`、设置键 `distill_on_session_end`（`settings_service.py:22`、`:218`）。分身的手动提炼（`server/api/conversations.py:171-198` 一带）是专家时代的，随 C7 第二步删。
-- **研究复核：** `server/orchestrator/research_review.py`，它在回答路径上的调用，设置键 `research_review_enabled`（`settings_service.py:32`），以及网页上的开关。
+- **研究复核：** 只删复核本身。
+  - **先把 `compact_saved_context` 原样搬出去**（②Main 审 #284 时发现）。它也在 `server/orchestrator/research_review.py` 里（main 上 `:25`），但不是复核：所有非 Claude 的供应商存了报告以后都走它（`tool_loop.py:2891-2899`），把之前的网页正文换成收据。删掉它，DeepSeek 看到的东西就变了。所以一个字不改搬到别的模块，加一条测试证明搬前搬后它给模型的上下文逐字一样，再删复核。
+  - 复核的各个出口一起删：`tool_loop.py` 里调复核的那段（`:2168-2196` 一带）；设置键 `research_review_enabled`（`settings_service.py:32`）和网页上的开关；`artifact_store` 里复核笔记的读写；`server/api/runs.py:527-538` 的接口；网页的 `ArtifactReviewNotes`（加它的测试）；`research_review` 这个帧。
+  - 复核今天做什么（②Main 核过）：代码里默认关，你的设置里开着（④参谋查的）。开着时它不改回答，只多出三样：一行 `note`、一条存下的复核笔记，以及每次多一个模型请求。删掉以后，这三样就没了。
   - 它要做的事改成一句工作方法：「研究类回答只引用这一轮真正读过的来源，查不到的要明说」。写进 K5 的工作方法，由 K5 的测试管。
 - 删了哪些、怎么确认没人引用：`git grep -w` 加按字符串查（注册表、翻译键、设置键），写进 PR（§11 第 4 条）。
 
@@ -41,7 +44,10 @@
   - 开机后没有整理层的循环在跑；
   - 设置页没有这三个开关；
   - 回答路径不再调研究复核（删掉对应的测试，加一条「回答路径不 import `research_review`」）。
-- CI 全量绿（附 run id）。这几块不在模型看得到的地方（研究复核在回答之后），所以不跑 DeepSeek 门槛。PR 里写明，研究复核删掉以后，回答文字唯一的变化是不再追加复核那一段。
+- CI 全量绿（附 run id）。不跑 DeepSeek 门槛，前提有两个：
+  - 复核在回答之后跑，删掉它不改模型看到的东西；
+  - `compact_saved_context` 原样搬走，并有「搬前搬后逐字一样」的测试。
+  做不到第二条，就跑一次门槛。
 - 产品代码净行数贴在 PR 里（§11 第 6 条）。
 - 完成证据四项（`docs/sessions.md` §8）。
 

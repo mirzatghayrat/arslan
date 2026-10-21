@@ -140,7 +140,7 @@ C1 → K1 → K2 → K3 → K4a → K4b → K5 → K7 → K8a → K8b → K8c �
   - C7 第一步（剪线）→ C7 第二步；C2b 是 C7 第二步的第一个 PR；
   - C8 和 C7 第二步都动 `distill_service`，②Main 在计划里定先后；
   - 碰到热点文件（`arslan.py`、`tool_loop.py` 等，`docs/sessions.md` §3）的 PR，在 K 线 PR 之间的空档合；
-  - C7 第二步、C8 不在聊天主路径上，CI 全量绿即可，不跑 DeepSeek 门槛（用户定）；万一有一处在主路径上，那一处单独跑门槛。
+  - C7 第二步、C8 不在聊天主路径上，CI 全量绿即可，不跑 DeepSeek 门槛（用户定）。例外：C8 里的 `compact_saved_context` 在主路径上，要原样搬走、有逐字一致的测试（②Main 审 #284 时发现）；还有哪一处在主路径上，那一处单独跑门槛。
 
 **M 线：** 随时，不进 App。M1、M2 在 FR 之前合；M1B 等 M1 和 v0.1.62。
 

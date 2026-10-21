@@ -42,9 +42,16 @@
 - v0.1.64 用一次迁移把旧数据转好，再把它们连同记忆 v1 的旧表、`router_decisions` 一起删。
 - 这一步现在只写进 README §8 和代码注释，不在 v0.1.63 动。
 
+- **跟着一起变成死代码的，也在这一步删**（②Main 审 #284 时提出）：
+  - `tool_loop.py` 里只给评测、回放用的分支：评测的网页读取额度（`HERMETIC_FETCH_BUDGET`、`_check_hermetic_fetch_budget`；K4b 只留下了这一份）和 hermetic 兜底；
+  - `replay_safety`；
+  - 只测它们的两个测试文件；
+  - `promise_guard` 里零工具那一档（「去找专家」那段文字）。它要是还在 K5 手上，就由 ②Main 定归哪张卡，不重复改。
+- **`arslan/spawn` 里还活着的 `skillpack.py`**（SKILL.md 的格式定义，`seeder.py`、`skill_suggest.py` 在用）由 C9 搬走。`evolution_service`、`spawn_service` 里对 `arslan.spawn` 的引用，随这一步一起删。
+
 ## 不许碰
 
-- 聊天主路径（`tool_loop.py` 的回合循环、`arslan.py` 的工具表），除非只是去掉 import。
+- 聊天主路径（`tool_loop.py` 的回合循环、`arslan.py` 的工具表）。只有两种改法可以：去掉 import；删上面列的那几处只给评测、回放用的分支。改 `tool_loop.py` 的 PR 在 K 线 PR 之间的空档合。
 - Bridge 契约文件；Hands 的文件。
 - 旧对话的显示（第三步之前都要能看）。
 

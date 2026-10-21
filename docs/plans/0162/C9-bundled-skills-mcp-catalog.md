@@ -21,6 +21,8 @@
   - `deck-authoring` 和 `render_deck` 一起删，由 C3a 负责。C9 先合的话，C9 一并退役它。
 - **删掉不在目录里的两个文件夹**（`github-eval`、`research`）和没有正文的占位记录（④参谋数到 11 行，开工时再核）。
 - **两个留下的技能搬出 `arslan/spawn/seeds/`**（例如 `arslan/skills/bundled/`），`seeder.py` 的 `_SEEDS_DIR`（`:21`）跟着改。C7 第二步要整块删 `arslan/spawn`。
+  - **`arslan/spawn/skillpack.py` 一起搬**（②Main 审 #284 时发现）。它是 SKILL.md 的格式定义，还活着：`seeder.py:13-14` 和 `server/services/skill_suggest.py:7` 都在用。
+  - `pyproject.toml` 里打包数据的路径（`:184-190` 一带列着 `arslan/spawn/seeds/`）改成新位置。打出来的包里要有这两个技能：用干净拉取的代码打一次包核对（vendored 构建的规矩）。
 - **MCP 推荐目录全删：** `server/mcp/catalog.py` 的 `CONNECTORS`（10 条），以及网页上展示推荐的地方。
   - **你已经装好的 MCP 一律不动。**
   - 加 MCP 走 `find_capability`（它查官方 MCP Registry）和手动添加的表单。
