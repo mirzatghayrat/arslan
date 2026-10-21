@@ -12,6 +12,7 @@ Path by path, from what `finish` recorded:
 - **later runs on the same folder are undone first**, newest first;
 - refused while a run is changing the folder, for a run that has not finished, and a second time.
 """
+import asyncio
 import os
 import shutil
 import subprocess
@@ -128,6 +129,18 @@ async def test_refused_while_a_run_changes_the_folder_and_both_are_listed(ws):
         await checkpoints.restore_files(9)
     assert refused.value.code == "running" and refused.value.runs == [10]
     assert (ws / "notes.md").read_text() == "nine"
+
+
+async def test_a_first_change_waits_for_a_restore_in_progress(ws):
+    checkpoints._restoring.acquire()                             # a restore is putting files back
+    try:
+        task = asyncio.create_task(checkpoints.ensure(18, [ws]))
+        await asyncio.sleep(0.3)
+        assert not task.done() and checkpoints.manifest(18) is None
+    finally:
+        checkpoints._restoring.release()
+    await task
+    assert checkpoints.manifest(18) is not None
 
 
 async def test_refused_twice_and_when_nothing_was_saved(ws):

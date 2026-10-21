@@ -294,6 +294,11 @@ async def ensure(run_id: int | None, roots: list[Path], written: Path | None = N
 
 
 def _ensure_sync(run_id: int, roots: list[Path], written: Path | None = None) -> None:
+    with _restoring:  # a first change waits for a restore in progress; restore checks the runs under it
+        _ensure_locked(run_id, roots, written)
+
+
+def _ensure_locked(run_id: int, roots: list[Path], written: Path | None) -> None:
     _make_root()
     data = manifest(run_id) if run_id in _live else None
     if data is None:
