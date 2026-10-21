@@ -54,7 +54,7 @@ async def test_writers_refused_without_a_grant_callback(monkeypatch, key, args):
     monkeypatch.setitem(tool_loop.EXECUTORS, key, _Stub(log))
     r = await _dispatch(key, args, grant=None)
     assert r["ok"] is False
-    assert "permission" in r["error"].lower() or "confirm" in r["error"].lower()
+    assert "nobody to ask" in r["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
     assert log == []                       # the executor never ran
 
 

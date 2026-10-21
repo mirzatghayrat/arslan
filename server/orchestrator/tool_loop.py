@@ -1094,6 +1094,26 @@ async def _writing_in_own_folder() -> bool:
         return False
 
 
+async def _workspace_root_or_none():
+    """The workspace folder for a refusal's ledger row; unreadable means unnamed ("*")."""
+    from server.registry import file_tools
+    try:
+        return await file_tools._workspace_root()
+    except Exception:  # noqa: BLE001 — the row names the folder when it can; the refusal stands either way
+        return None
+
+
+async def _unattended(error: str, req, conversation_id: str | None) -> str:
+    """S1 (U14 c): a step refused for want of a card callback. With nobody to ask (a scheduled run) the
+    refusal is listed in the Inbox and the model is told what decide() tells it; a turn with someone to
+    ask (none today lacks the callback) keeps `error` and writes no row."""
+    from server.services import background_jobs, permissions
+    if permissions.current_asker() is not None:
+        return error
+    return await permissions.refuse_unattended(
+        req, permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+
+
 async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
                                          unwrapped: bool, conversation_id: str | None) -> dict:
     """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
@@ -1118,13 +1138,13 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
         # asks first, this time only; with nobody to ask, or on a no, it does not run.
         if not task_service.bare_shortcut(command):
             return {}
-        if permissions.current_asker() is None:
-            return {"refused": "this Shortcut did not run: this turn read outside content, and there was "
-                               "nobody to allow the network for it"}
-        decision = await permissions.decide(permissions.Request(
+        request = permissions.Request(
             kind="network", target="network:*", title=f"Let the Shortcut `{command[:80]}` use the network?",
-            detail=command, why=str(args.get("why") or "").strip()[:300], conversation_ok=False, once_only=True),
-            permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+            detail=command, why=str(args.get("why") or "").strip()[:300], conversation_ok=False, once_only=True)
+        if permissions.current_asker() is None:
+            return {"refused": await _unattended("", request, conversation_id)}
+        decision = await permissions.decide(request, permissions.Context(
+            conversation_id, job_id=background_jobs._inside_job.get()))
         return {} if decision.allowed else {
             "refused": decision.model_text or "the user did not allow this Shortcut to use the network"}
     wrapped = command_sandbox.available()
@@ -1290,9 +1310,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # folder holds the user's own files.
     if tool_key in _WORKSPACE_WRITE_TOOLS and not await _writing_in_own_folder():
         if confirm_workspace_write is None:
-            result = {"ok": False,
-                      "error": "writing to the workspace needs your permission, which "
-                               "is not available on this channel"}
+            from server.services import permissions
+            error = "writing to the workspace needs your permission, which is not available on this channel"
+            if permissions.current_asker() is None:
+                root = await _workspace_root_or_none()
+                error = await _unattended(error, permissions.Request(
+                    kind="workspace_write", target=str(root) if root else "*", detail=str(args.get("path") or ""),
+                    title=f"Let Arslan write in {root.name if root else 'the workspace'}?"), conversation_id)
+            result = {"ok": False, "error": error}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1309,9 +1334,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # see or undo what was created is the worse failure.
     if tool_key == "schedule_task":
         if confirm_schedule is None:
-            result = {"ok": False,
-                      "error": "scheduling needs your permission, which is not "
-                               "available on this channel"}
+            from server.services import permissions
+            name = str(args.get("name") or "")
+            result = {"ok": False, "error": await _unattended(
+                "scheduling needs your permission, which is not available on this channel",
+                permissions.Request(kind="schedule", target="*", title=f"Schedule “{name}”?",
+                                    detail=str(args.get("when") or "")), conversation_id)}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1369,8 +1397,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             # Asked up front: always a card, even for a command that would just run,
             # and one card covers the command's own reason too.
             if confirm_command is None:
-                result = {"ok": False, "error": "running a command outside the sandbox needs the user's "
-                                                "click, which is not available here",
+                from server.services import permissions
+                result = {"ok": False, "error": await _unattended(
+                              "running a command outside the sandbox needs the user's click, which is not "
+                              "available here",
+                              permissions.Request(kind="command", target="unsandboxed:*", detail=command,
+                                                  title=f"Run `{command[:80]}` outside the sandbox?"),
+                              conversation_id),
                           "note": "Run it without outside_sandbox, or tell the user what you needed."}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
@@ -1400,11 +1433,17 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         else:
             if confirm_command is None:
                 # Layer ②, `unreadable`, "ask for every command", or layer ③ with no sandbox to run it in.
-                result = {"ok": False,
-                          "error": ("run_command requires user confirmation, which is not available in this "
-                                    "context" if verdict.level == "ask" or await _asks_for_everything() else
-                                    "this command would run outside the sandbox here (it is switched off or "
-                                    "cannot start), which needs the user's OK, and nobody can be asked here")}
+                # Listed as the card would have read (approvals._command_request), U14 c.
+                from server.services import approvals as _approvals
+                ask_all = await _asks_for_everything()
+                result = {"ok": False, "error": await _unattended(
+                    "run_command requires user confirmation, which is not available in this context"
+                    if verdict.level == "ask" or ask_all else
+                    "this command would run outside the sandbox here (it is switched off or cannot start), "
+                    "which needs the user's OK, and nobody can be asked here",
+                    _approvals._command_request(command, sorted(terminal_policy.ask_rules(command)), None,
+                                                ask_all=ask_all),
+                    conversation_id)}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
@@ -1443,9 +1482,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # cannot SSH" structural rather than a rule someone has to remember.
     if tool_key == "ssh_run":
         if confirm_command is None:
-            result = {"ok": False,
-                      "error": "running a command on another machine requires your "
-                               "confirmation, which is not available in this context"}
+            from server.services import permissions
+            host, remote = str(args.get("host") or "*")[:200], str(args.get("command") or "")
+            result = {"ok": False, "error": await _unattended(
+                "running a command on another machine requires your confirmation, which is not available "
+                "in this context",
+                permissions.Request(kind="remote", target=host, title=f"Run `{remote[:80]}` on {host}?",
+                                    detail=remote), conversation_id)}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)

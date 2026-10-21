@@ -345,6 +345,16 @@ async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision
             await db.rollback()
 
 
+async def refuse_unattended(req: Request, ctx: Context) -> str:
+    """S1 (U14 c): a step the tool loop refuses because nobody can be asked (it has no card callback in a
+    scheduled run) never reaches decide(). It writes the row decide() writes there: policy, deny, no
+    "Always" set (Q2), so the Inbox lists it. Returns what the model is told, as decide() would."""
+    _check(req)
+    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+    await _record(req, _filled(ctx), await _mode(), decision)
+    return decision.model_text
+
+
 async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     asker = _ASKER.get()
     opts = options_for(req)

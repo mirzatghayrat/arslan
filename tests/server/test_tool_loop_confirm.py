@@ -28,7 +28,7 @@ async def test_run_command_refused_without_confirm_cb(monkeypatch):
         resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
         tool_trace=trace, convo=convo, confirm_command=None)
     assert r["ok"] is False
-    assert "confirm" in r["error"].lower()
+    assert "nobody to ask" in r["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
     assert calls == []
 
 

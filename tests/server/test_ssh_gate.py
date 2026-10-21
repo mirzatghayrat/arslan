@@ -85,7 +85,7 @@ async def test_refused_without_a_confirm_callback(monkeypatch, probe_succeeds):
     monkeypatch.setitem(tool_loop.EXECUTORS, "ssh_run", _Stub(log))
     r = await _dispatch(ARGS, confirm=None)
     assert r["ok"] is False
-    assert "confirmation" in r["error"]
+    assert "nobody to ask" in r["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
     assert log == []
     assert probe_succeeds == [], (
         "an unattended turn must be refused before it reaches out to the host")
