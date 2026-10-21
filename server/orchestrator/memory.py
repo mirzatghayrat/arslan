@@ -304,9 +304,9 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[SimpleNames
     fact views. Near-duplicates of something already remembered are skipped (memory_compat).
 
     `provenance` is mandatory (a programmer guard: every caller declares where its facts come from),
-    though v2 records the source from the bound task context. Callers: arslan.py's router extraction
-    ({"source_kind": "router", "conversation_id": <cid>}) and distill_service.distill_meta_upflow
-    ({"source_kind": "upflow", "spawn_id": <id>}).
+    though v2 records the source from the bound task context. Caller: arslan.py's router extraction
+    ({"source_kind": "router", "conversation_id": <cid>}). distill_service's meta-upflow was the other
+    one; it went with the v1 path in 0.1.63 C2a-2.
     """
     if not provenance:
         raise ValueError("save_facts: provenance is mandatory (programmer guard)")

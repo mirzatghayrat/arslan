@@ -10,11 +10,10 @@ Covers:
   - RecallExecutor: 🔴 BLOCKER fix — sensitive-fact fail-closed isolation. Only an
     explicit host caller sees sensitive facts; a spawn actor OR a missing caller
     (current_caller() is None) must never see them.
-  - RememberExecutor: fail-closed on caller=None. Task 3 only wired the
-    HOST-path append for kind in {fact, learning, note}; the full three-tier
-    authorization (Tier1 direct / Tier2 propose / capability errors) is
-    covered by tests/server/test_memory_write_tiers.py (host) and
-    tests/server/test_memory_scope_isolation.py (spawn scope, brain-P2 Task 4).
+  - RememberExecutor: fail-closed on caller=None. The write rules are memory v2's
+    (memory_tools_v2.remember, tests/server/test_memory_tools_v2.py); 0.1.63 C2a-2
+    removed the v1 three-tier path and its tests (test_memory_write_tiers.py and the
+    v1 cases of test_memory_scope_isolation.py), which no boot reached.
 """
 from __future__ import annotations
 
@@ -22,7 +21,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Learning, Note, UserFact
+from server.db.models import Base, UserFact
 from server.orchestrator.tool_caller import ToolCaller, reset_caller, set_caller
 
 
@@ -208,60 +207,7 @@ async def test_remember_refuses_when_caller_is_none(maker):
     assert out == {"ok": False, "error": "no caller context; refusing to write"}
 
 
-# Task 3's "every non-Task-3 combo returns not yet implemented" coverage is
-# superseded by Task 4, which completes the tiering for every (kind, action,
-# actor) combination (Tier1 direct / Tier2 propose / a clean capability error —
-# never a bare "not yet implemented" for anything in the schema's enum space).
-# See tests/server/test_memory_write_tiers.py (host Tier1/Tier2 + matrix
-# negatives) and tests/server/test_memory_scope_isolation.py (spawn scope,
-# cross-well rejection, preference ownership, fail-closed identity) for the
-# real coverage.
+# The write rules for every (kind, action, actor) are memory v2's: see
+# tests/server/test_memory_tools_v2.py. The identity refusals that run before them
+# stay in tests/server/test_memory_scope_isolation.py.
 
-
-async def test_remember_host_append_note_direct_writes(maker):
-    from sqlalchemy import select
-
-    from server.registry.memory_executors import RememberExecutor
-    token = set_caller(ToolCaller(actor="host", spawn_id=None, conversation_id="conv-2"))
-    try:
-        out = await RememberExecutor().execute(
-            {"kind": "note", "action": "append", "content": "remember to check the deploy checklist"})
-    finally:
-        reset_caller(token)
-    assert out["ok"] is True
-    assert isinstance(out.get("id"), int)
-
-    async with maker() as db:
-        rows = (await db.execute(select(Note))).scalars().all()
-    assert any("deploy checklist" in r.content for r in rows)
-
-
-async def test_remember_host_append_learning_direct_writes(maker):
-    from sqlalchemy import select
-
-    from server.registry.memory_executors import RememberExecutor
-    token = set_caller(ToolCaller(actor="host", spawn_id=None, conversation_id="conv-3"))
-    try:
-        out = await RememberExecutor().execute(
-            {"kind": "learning", "action": "append",
-             "content": "always confirm before deleting a memory row"})
-    finally:
-        reset_caller(token)
-    assert out["ok"] is True
-
-    async with maker() as db:
-        rows = (await db.execute(select(Learning))).scalars().all()
-    assert any("confirm before deleting" in r.content for r in rows)
-    assert all(r.source_kind == "agentic" for r in rows)
-
-
-async def test_remember_missing_content_is_a_clean_error(maker):
-    from server.registry.memory_executors import RememberExecutor
-    token = set_caller(ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
-    try:
-        out = await RememberExecutor().execute(
-            {"kind": "fact", "action": "append", "content": "   "})
-    finally:
-        reset_caller(token)
-    assert out["ok"] is False
-    assert "content" in out["error"].lower()

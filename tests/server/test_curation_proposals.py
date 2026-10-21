@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Base, MemoryProposal, Spawn
-from server.services import curation_loop, distill_service
+from server.services import curation_loop
 
 # The shared test databases stay on memory v1 in this file: the code it tests still has a v1 path,
 # which C2a-2 deletes (then this marker goes too; marker memory_v1 in pyproject.toml).
@@ -67,105 +67,7 @@ async def _proposals(Session):
 # --------------------------------------------------------------------------- propose_only
 
 
-async def test_propose_only_writes_nothing_to_memory(db, monkeypatch):
-    """The WRITE SET must be empty — including the meta-upflow, whose save_facts can
-    auto-supersede a live profile fact with zero human approval."""
-    from server.orchestrator import memory
-    from server.services import memory_temporal
-
-    writes = []
-    monkeypatch.setattr(memory, "save_facts",
-                        lambda *a, **k: writes.append("save_facts") or _aw([]))
-    monkeypatch.setattr(memory_temporal, "execute_supersede",
-                        lambda *a, **k: writes.append("supersede") or _aw(None))
-
-    async def _facts(existing, signals):
-        return ["新偏好"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(db)
-
-    await distill_service.distill_session_detailed("c1", propose_only=True)
-
-    assert writes == [], f"propose_only must write NOTHING to memory, got {writes}"
-    async with db() as s:
-        spawn = await s.get(Spawn, 1)
-    assert spawn.memory_facts == ["旧偏好"], "memory_facts must be untouched"
-    assert len(await _proposals(db)) == 1
-
-
-async def test_proposal_carries_the_key_accept_actually_reads(db, monkeypatch):
-    async def _facts(existing, signals):
-        return ["新偏好"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(db)
-
-    await distill_service.distill_session_detailed("c1", propose_only=True)
-
-    (p,) = await _proposals(db)
-    assert p.kind == "preference_overwrite_suspect"
-    assert p.table_name == "spawns"
-    assert p.conversation_id == "c1"
-    # `_accept_preference_overwrite` reads target_spawn_id and has NO fallback to
-    # old_id (unlike the delete branch), so emitting only spawn_id would 422 forever.
-    assert p.provenance["target_spawn_id"] == 1
-    assert p.provenance["new_array"] == ["新偏好"]
-    assert p.provenance["source_kind"] == "curator"
-
-
-async def test_interactive_path_is_unchanged(db, monkeypatch):
-    """propose_only defaults False; the interactive path still writes memory directly."""
-    async def _facts(existing, signals):
-        return ["新偏好"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(db)
-
-    await distill_service.distill_session("c1")
-
-    async with db() as s:
-        spawn = await s.get(Spawn, 1)
-    assert spawn.memory_facts == ["新偏好"]
-    assert await _proposals(db) == []
-
-
 # --------------------------------------------------------------------------- dedup
-
-
-async def test_resweeping_one_conversation_updates_its_pending_proposal(db, monkeypatch):
-    calls = {"n": 0}
-
-    async def _facts(existing, signals):
-        calls["n"] += 1
-        return [f"偏好{calls['n']}"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(db)
-
-    await distill_service.distill_session_detailed("c1", propose_only=True)
-    async with db() as s:                       # clear the marker to allow a re-sweep
-        from server.db.models import DistilledSession
-        for row in (await s.execute(select(DistilledSession))).scalars().all():
-            await s.delete(row)
-        await s.commit()
-    await distill_service.distill_session_detailed("c1", propose_only=True)
-
-    props = await _proposals(db)
-    assert len(props) == 1, "a re-sweep must UPDATE the pending row, not stack duplicates"
-    assert props[0].provenance["new_array"] == ["偏好2"]
-
-
-async def test_two_conversations_touching_one_spawn_get_two_proposals(db, monkeypatch):
-    """Deduping on the spawn alone would silently drop the second conversation's
-    material while still marking it processed."""
-    async def _facts(existing, signals):
-        return ["偏好"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(db, conversation_id="c1", spawn_id=1)
-    await _seed(db, conversation_id="c2", spawn_id=1)
-
-    await distill_service.distill_session_detailed("c1", propose_only=True)
-    await distill_service.distill_session_detailed("c2", propose_only=True)
-
-    props = await _proposals(db)
-    assert {p.conversation_id for p in props} == {"c1", "c2"}
 
 
 # --------------------------------------------------------------------------- accept

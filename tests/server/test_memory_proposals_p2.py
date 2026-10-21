@@ -57,7 +57,7 @@ async def client(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
         # FTS5 virtual tables aren't ORM models (server/db/migrations only) —
         # note_service.create/delete and the delete_suspect learnings branch
-        # touch these directly, same convention as test_memory_write_tiers.py.
+        # touch these directly.
         await conn.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(text)")
         await conn.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS learnings_fts USING fts5(text)")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

@@ -175,22 +175,6 @@ async def test_both_kill_switches_must_be_on(wdb, monkeypatch):
 # --------------------------------------------------------------------------- sweep
 
 
-async def test_sweep_distills_a_conversation_whose_session_ended_never_fired(wdb, monkeypatch):
-    async def _facts(existing, signals):
-        return ["用户偏好简短"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(wdb)
-    await _enable(wdb)
-
-    await curation_loop.tick()
-
-    async with wdb() as db:
-        marks = (await db.execute(select(DistilledSession).where(
-            DistilledSession.conversation_id == "c1"))).scalars().all()
-    # the sweep PROPOSES; nothing reached memory, so the marker says so
-    assert len(marks) == 1 and marks[0].reason == "curation_proposed"
-
-
 async def test_live_conversation_is_not_swept(wdb, monkeypatch):
     """The idle signal is the LAST MESSAGE, so a conversation still being used is not
     distilled early (which would write a marker and permanently suppress the real
@@ -240,81 +224,6 @@ async def test_every_failure_shape_writes_exactly_one_strike(wdb, monkeypatch):
         "an exception must also leave a strike, or the burn never stops")
 
 
-async def test_gives_up_after_max_attempts_and_stops_being_a_candidate(wdb, monkeypatch):
-    """The user's nail: a permanently-failing conversation must stop costing money.
-    Give-up is TERMINAL via a real marker row, so it also survives a restart and stops
-    consuming the per-tick budget."""
-    await _seed(wdb)
-    await _enable(wdb)
-    attempts = []
-
-    async def _fail(existing, signals):
-        attempts.append(1)
-        return None
-    monkeypatch.setattr(distill_service, "distill_facts", _fail)
-    # Isolate the CAP from the COOLDOWN (tested separately below): without this the
-    # 6h cooldown — correct behaviour — would block attempts 2 and 3 in this loop.
-    monkeypatch.setattr(curation_loop, "RETRY_COOLDOWN_S", 0)
-
-    for _ in range(curation_loop.MAX_ATTEMPTS + 2):
-        await curation_loop.tick()
-
-    assert len(attempts) == curation_loop.MAX_ATTEMPTS, (
-        f"expected exactly {curation_loop.MAX_ATTEMPTS} attempts, got {len(attempts)}")
-    async with wdb() as db:
-        marks = (await db.execute(select(DistilledSession).where(
-            DistilledSession.conversation_id == "c1"))).scalars().all()
-    assert [m.reason for m in marks] == ["curation_gave_up"]
-
-
-async def test_interactive_failures_do_not_consume_the_sweep_budget(wdb, monkeypatch):
-    """distill_failed (user-facing) and curation_failed (sweep budget) are different
-    kinds on purpose: a user retrying a manual distill during an outage must not
-    disqualify the conversation from ever being swept."""
-    await _seed(wdb)
-    await _enable(wdb)
-
-    async def _fail(existing, signals):
-        return None
-    monkeypatch.setattr(distill_service, "distill_facts", _fail)
-
-    for _ in range(5):                       # five interactive failures
-        await distill_service.distill_session("c1")
-
-    assert len(await _events(wdb, "c1", "curation_failed")) == 0
-    attempts = []
-    monkeypatch.setattr(distill_service, "distill_facts",
-                        lambda e, s: attempts.append(1) or _aw(None))
-    await curation_loop.tick()
-    assert attempts, "the sweep's own budget must be untouched by interactive failures"
-
-
-async def test_give_up_marker_does_not_silence_a_manual_retry(wdb, monkeypatch):
-    """A background give-up must never turn the user's manual 完结/distill into a
-    silent no-op. The interactive path ignores the marker and, on success, replaces it
-    with a normal one."""
-    await _seed(wdb)
-    await _enable(wdb)
-    async with wdb() as db:
-        db.add(DistilledSession(conversation_id="c1", spawn_id=1,
-                                reason="curation_gave_up"))
-        await db.commit()
-
-    async def _facts(existing, signals):
-        return ["用户偏好简短"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-
-    n = await distill_service.distill_session("c1")
-
-    assert n == 1, "the manual path must still work after a background give-up"
-    async with wdb() as db:
-        marks = (await db.execute(select(DistilledSession).where(
-            DistilledSession.conversation_id == "c1"))).scalars().all()
-        spawn = await db.get(Spawn, 1)
-    assert [m.reason for m in marks] == [None], "success must replace the give-up marker"
-    assert spawn.memory_facts == ["用户偏好简短"]
-
-
 async def test_sweep_respects_the_per_tick_batch_limit(wdb, monkeypatch):
     swept = []
     monkeypatch.setattr(curation_loop, "_sweep_once",
@@ -329,24 +238,6 @@ async def test_sweep_respects_the_per_tick_batch_limit(wdb, monkeypatch):
 
 async def _aw(v):
     return v
-
-
-async def test_cooldown_blocks_an_immediate_retry(wdb, monkeypatch):
-    """A failed conversation is not retried until RETRY_COOLDOWN_S has passed — three
-    strikes must mean three ATTEMPTS over time, not three ticks in one minute."""
-    await _seed(wdb)
-    await _enable(wdb)
-    attempts = []
-
-    async def _fail(existing, signals):
-        attempts.append(1)
-        return None
-    monkeypatch.setattr(distill_service, "distill_facts", _fail)
-
-    await curation_loop.tick()
-    await curation_loop.tick()
-    await curation_loop.tick()
-    assert len(attempts) == 1, "the cooldown must suppress immediate retries"
 
 
 # ---------------------------------------------------------------------------
@@ -435,29 +326,3 @@ async def test_the_sweep_is_opt_in(wdb, monkeypatch):
     await curation_loop.tick()
     assert swept == ["c1"], "and it must run once the user opts in"
 
-
-async def test_a_proposed_marker_does_not_block_the_manual_path(wdb, monkeypatch):
-    """propose_only writes a DISTINGUISHABLE marker: nothing reached memory, so the
-    user asking for a real distillation must still get one (a plain marker made the
-    manual path answer '0 spawns' forever while the material sat in an inbox with no
-    UI)."""
-    async def _facts(existing, signals):
-        return ["用户偏好简短"]
-    monkeypatch.setattr(distill_service, "distill_facts", _facts)
-    await _seed(wdb)
-    await _enable(wdb)
-
-    await curation_loop.tick()
-    async with wdb() as db:
-        marks = (await db.execute(select(DistilledSession))).scalars().all()
-        spawn = await db.get(Spawn, 1)
-    assert [m.reason for m in marks] == ["curation_proposed"]
-    assert spawn.memory_facts == [], "propose_only must not write memory"
-
-    n = await distill_service.distill_session("c1")
-    assert n == 1, "the manual path must still work after a proposal-only sweep"
-    async with wdb() as db:
-        marks = (await db.execute(select(DistilledSession))).scalars().all()
-        spawn = await db.get(Spawn, 1)
-    assert [m.reason for m in marks] == [None], "a real distill normalizes the marker"
-    assert spawn.memory_facts == ["用户偏好简短"]

@@ -111,3 +111,16 @@
   - v1 下挂、v2 下过的，搬到 v2。
   - 测通用行为的，改到 v2：facts 接口带版本号、`facts_text` 的敏感门、记忆往返、contextvar 不残留、预算不被超长首条绕过。
   - 只测 v1 的删掉，PR 里逐组写了理由和 v2 对应的测试。
+
+## 实施记录（C2a-2，⓪Plan，2026-10-22）
+
+- **再拆两个 PR**（U2 只放过「整份删除」；这里是文件内删除，算进 800 行）：
+  - **C2a-2a：** 记忆工具（`recall`、`remember`、`memory_note`）和提炼（`distill_service`），产品约 −680 行。
+  - **C2a-2b：** 其余文件（`fact_dedup`、`fact_classify`、`knowledge`、`learning_service`、`memory_temporal`、`run_recorder`、`task_context`、`api/facts.py`、`api/brain.py`、`api/spawns.py`、`dispatcher.py`、`main.py` 开机补分类），连同 5 个 `memory_v1` 标记。
+- **和 C7 / C8 的分工**（②Main 2026-10-22 核过）：这些文件 C2a-2 先删 v1 分支；C7 之后整份删 `dispatcher.py`、`api/spawns.py`，C7b、C8 合了以后 `distill_service.py` 可能整份删。
+- **C2a-2a 删了哪些测试，为什么：** 都是自己用 `create_all` 建 v1 库、只走 v1 写法的测试，产品里没有一次启动走得到：
+  - 整份：`test_memory_write_tiers.py`（10）、`test_meta_upflow.py`（3）、`test_memory_dual_track.py`（1）；
+  - 部分：`test_memory_scope_isolation.py` 19、`test_distill_service.py` 10、`test_curation_loop.py` 6、`test_curation_proposals.py` 5、`test_memory_tools_register.py` 3、`test_conversation_distill.py` 2、`test_complete_chat.py` 1。
+  - 收集到的测试名 = 删之前 − 这 60 个，逐个比对过。
+- **v2 下本来就是这样、本卡不改的：** 专家直聊的「完结」（`complete_chat`）在没有记忆上下文时，提炼返回 `learning_disabled`，不算失败，所以会归档。这条路今天产品里走不到（`EXPERTS_ENABLED = False`），C7 删它。
+- **新加的测试：** 两个提炼入口都走 v2，没有记忆上下文时不调模型、不报「学到了」。
