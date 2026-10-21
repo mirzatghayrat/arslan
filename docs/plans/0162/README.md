@@ -51,14 +51,14 @@
 | [H4](H4-app-name-forms.md) | AppleScript 里写成「.app」或完整路径的 App，也按同一个 App 认（高权限判断、never-list）；②Main 2026-10-20 复审 #267 时在 main 上发现，算恢复已有承诺的安全修复；Opus 5.5 上写和审 | ③Hands | v0.1.63 | 必须 | #267 | 已合并（#271 = `a50bcdab`；③Hands 写前半，⓪Plan 在 Opus 5.5 上写后半，②Main 在 5.5 上做了四轮安全审查和一次复查） |
 | [C1](C1-tests-test-product.md) | 让测试测产品：删打开专家的 fixture 和只在专家开启时跑的路径 | ②Main | v0.1.63 | 必须 | F5a；合并等热修合回 main | 已合并（#203 = `f28b52bc`） |
 | [C1b](C1b-expert-modules.md) | 删 9 个不可达的专家模块 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#210 = `e13318ad`） |
-| [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main（C1c-1）、⓪Plan（C1c-2，10-21 晚改） | v0.1.63 | 必须 | C1 | C1c-1 已合并（1a #257 = `2993ff93`；1b #258 = `6e17afc3`）；C1c-2 待开工 |
-| [C2a](C2a-memory-v1.md) | 删记忆 v1 死分支（超 800 行时拆两个） | ②Main（C2a-1）、⓪Plan（C2a-2，10-21 晚改） | v0.1.63 | 必须 | C1（K2 开工前合） | C2a-1 已合并（#237 = `83d8a581`；测试库开机顺序补丁 #244 = `0612813b`）；C2a-2 拆两个：C2a-2a #305（记忆工具和提炼），等 ③Hands 审；C2a-2b 在做 |
+| [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main（C1c-1）、⓪Plan（C1c-2，10-21 晚改） | v0.1.63 | 必须 | C1 | 已合并（C1c-1：1a #257 = `2993ff93`、1b #258 = `6e17afc3`；C1c-2 #312 = `f9c686d5`，网页删 14 种专家帧和 21 组翻译） |
+| [C2a](C2a-memory-v1.md) | 删记忆 v1 死分支（超 800 行时拆两个） | ②Main（C2a-1）、⓪Plan（C2a-2，10-21 晚改） | v0.1.63 | 必须 | C1（K2 开工前合） | 已合并（C2a-1 #237 = `83d8a581`、#244 = `0612813b`；C2a-2 按 800 行拆三个：2a #305 = `fa1d5329`、2b #307 = `e6320f54`、2c #309 = `f484f1e1`；产品代码里不再调用 `is_active`） |
 | [C2b](C2b-evolution-first-batch.md) | 删进化第一批；拆 C2b-1 接口、C2b-2 自动路径 | ②Main | v0.1.63 | 必须 | C1 | 待开工（卡的决定和命令更正已合并：#248 = `fc505f24`）；并入 C7 第二步，作为那一组的第一个 PR（U13） |
 | [C2c](C2c-0161-leftovers.md) | 0.1.61 遗留死代码 | ②Main | v0.1.63 | 必须 | C1 | 已合并（Hands 那半 #246 = `c40483c8`；其余 #253 = `43a1027c`，③Hands 安全审过） |
 | [C2d](C2d-legacy-cli.md) | 删旧命令行 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#238 = `aea8a2d2`） |
 | [C2e](C2e-misc-python.md) | Python 杂项死代码；拆 C2e-1 杂项、C2e-2 媒体与 MCP 探测 | ②Main | v0.1.63 | 必须 | C1 | 已合并（C2e-1 #247 = `5e25ac92`；C2e-2 #254 = `5c176990`） |
 | [C2f](C2f-misc-web-repo.md) | 网页杂项与误提交文件 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#243 = `3e0de127`） |
-| [C3](C3-tool-exposure.md) | 删 / 降级没人用的工具；拆 C3a 删除、C3b 降级 | ②Main | v0.1.63 | 必须 | C1、K5（K7 之前合；C1b 最好先合） | 待开工 |
+| [C3](C3-tool-exposure.md) | 删 / 降级没人用的工具；拆 C3a 删除、C3b 降级 | ②Main | v0.1.63 | 必须 | C1、K5（K7 之前合；C1b 最好先合） | 已合并（C3a #304 = `0a1c1092`；C3b #313 = `6f962f98`，K7 没合就在 R63 之前 revert） |
 | [C4](C4-remove-shadow-judgment.md) | 删影子评判；记录撤回决定② | ②Main | v0.1.63 | 必须 | C1、C2c | 已合并（#256 = `c2652b80`，③Hands 安全审过；`scripts/usage_report.py` 的影子评判表经 ⓪Plan 同意一起删） |
 | [C5a](C5a-process-docs-privacy.md) | 过程文档移到存档分支；从文件里删隐私段落 | ②Main | v0.1.63 | 应该 | — | 待开工 |
 | [C5b](C5b-version-source-inventory.md) | 唯一版本来源；能力清单只在发版时生成（越早合越好） | ②Main | v0.1.63 | 应该 | — | 已合并（#201 = `90fd3c11`） |
@@ -66,14 +66,14 @@
 | [C7](C7-expert-block.md) | 删专家时代的那一大块：先剪掉技能锻造「评估要选分身」，再按区域分 2–3 个 PR 整块删（含 C2b、进化第二批、dispatcher、replay、recipes、专家接口、`arslan/spawn`、`jinja2`），v0.1.64 用一次迁移收尾（用户 2026-10-21 定，U13） | ②Main | 第一、二步 v0.1.63；第三步 v0.1.64 | 应该（C2b 那部分仍是必须） | C1；删 `arslan/spawn` 的 PR 在 C9 之后 | 待开工 |
 | [C8](C8-curation-distill-research-review.md) | 删整理层、回合结束提炼和研究复核；引用要求写进 K5（用户 2026-10-21 定，U13） | ②Main | v0.1.63 | 应该 | C1；K5 写引用要求 | 待开工 |
 | [C9](C9-bundled-skills-mcp-catalog.md) | 自带技能只留 `designed-html-report` 和上游原文的 `skill-creator`，其余 44 个退役；删 MCP 推荐目录（已装的不动）（用户 2026-10-21 定，U13） | ③Hands | v0.1.63 | 应该 | D7 | C9a 已合并（#296 = `d41d6793`）；C9b 在 K5 合并后开工 |
-| [C10](C10-docker.md) | 删 Docker 这条部署路径（三个文件和 7 份文档里的段落）；`web/`、静态文件服务、prod 模式不动（用户 2026-10-21 定，U13） | ③Hands | v0.1.63 | 应该 | — | 待开工 |
+| [C10](C10-docker.md) | 删 Docker 这条部署路径（三个文件和 7 份文档里的段落）；`web/`、静态文件服务、prod 模式不动（用户 2026-10-21 定，U13） | ③Hands | v0.1.63 | 应该 | — | 已合并（#291 = `c741d3df`） |
 | [C11](C11-prod-mode.md) | 删 prod 模式：先把打包版加固（空密钥拒绝启动、`ARSLAN_PACKAGED` 强制赋值、CORS 默认空、无 Origin 的 WebSocket 拒绝、禁用测试路由、mcp-token 重新生成要出示当前 token），再删 `is_prod`（云端审计 [3]，U14） | ③Hands | v0.1.63 | 应该 | C10；#298 先合 | 待开工 |
 | [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 已合并（K1a #212 = `df18ba0e`；K1b #213 = `18d691bb`；合并后对照在 #213） |
 | [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 已合并（K2a #240 = `4f471a30`；K2b #252 = `8780fc34`，⓪Plan 的 k2b-ds 过门槛：19/27 通过，基线 18；③Hands 审过） |
 | [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 已合并（K3 #259 = `f3bda58d`，DeepSeek 门槛过；K3b #275 = `7e8c57aa`：Claude 上不改已发出的历史、清理改 100k/40k，E26） |
 | [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | K4a 已合并（#277 = `5a97ff7f`；DeepSeek 门槛过：通过 20/27、「等你」3，基线 18、4；5% 账单核对过）；K4b 已合并（#282 = `93921bf5`；DeepSeek 门槛过：通过 21/27、「等你」0，基线 18、4） |
 | [K5](K5-working-method-tool-docs.md) | 工作方法与工具说明；多步骤任务结束时给用户四行收尾 | ②Main | v0.1.63 | 必须 | K4b、F1 | 已合并（#294 = `528a05a1`）；DeepSeek 门槛过：通过 20/27、答对 20/27、「等你」1（基线 18、19、4），没有新的报错类型 |
-| [K7](K7-tools-on-demand.md) | MCP 和少用的工具按需取用 | ②Main | v0.1.63 | 必须 | K5、C3、F3 | 待开工 |
+| [K7](K7-tools-on-demand.md) | MCP 和少用的工具按需取用 | ②Main | v0.1.63 | 必须 | K5、C3、F3 | #315：DeepSeek 门槛过，**通过 23/27、答对 23/27、「等你」0**（基线 18、19、4；K5 20、20、1），没有新的报错类型；A/B（全部常驻）第一轮 3/4 对 3/4；⓪Plan 已批代码，CI 绿就合 |
 | [K8](K8-true-streaming-guards-after.md) | 真流式，守卫改为事后；按供应商拆 K8a、K8b、K8c | ②Main | v0.1.63 | 必须 | K7 | 待开工 |
 | [K9](K9-parallel-reads-steering.md) | 只读工具并行 + 回合中插话（窗口、iPhone、按住说话各一条测试；灵动岛输入挪到 v0.1.64） | ②Main | v0.1.63 | 必须 | K8c | 待开工 |
 | [K10](K10-agents-md.md) | 读 AGENTS.md | ②Main | v0.1.63 | 应该 | K9 | 待开工 |
@@ -81,14 +81,14 @@
 | [D2](D2-checks-not-run.md) | 「检查跑不了」不再把做完的事挂成「等你」：常见代码和配置文件按文本解析，没有解析器的类型记「不适用」（M1B 基线发现，⓪Plan 2026-10-19 加；不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#221 = `84d90f98`） |
 | [D3](D3-read-timeout-known.md) | 只读命令超时，不记成「结果不明」：`_reads_only` 认得 `&&`、`;`、`\|` 连起来的只读命令和丢弃输出的重定向（K1 合并后对照发现；U10 提为必须，不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#230 = `053f6b42`） |
 | [D4](D4-osascript-not-authorized.md) | osascript 报「未授权」（`-1743`，核实后加 `-10004`），只对一个 App 说话时算已知失败（K1 合并前后对照发现；U10 提为必须，不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#231 = `0d15026b`；后续 #245 = `5e33c5e5`，⓪Plan 实测 T1 2/3，K2a 时 0/3）；还有两种写法记在卡末，以后再看 |
-| [D5](D5-search-native-first.md) | 搜索：先用这个对话这一轮模型自带的搜索（Claude 用 Anthropic 服务端 web search，只在官方 host 或允许清单上；本地模型的对话不用任何云端自带搜索，DeepSeek 一起改）；Tavily / SearXNG 可以设成备选，已存的选择照旧只用它，选了服务就不再落到 DuckDuckGo；403、429、人机验证报「搜索被拦」，401 报 key 被拒（用户 2026-10-20 要求，⓪Plan 定为应该；③Hands 审卡改过；不进严格链，但**要在 R63 用 Claude 跑最后一轮之前合**，用户 2026-10-20） | ⓪Plan（10-21 晚从 ②Main 改过来；产品代码由别的会话审） | v0.1.63 | 应该 | — | #306：全量 9289 过；Claude 上 T3 2/3 → 3/3、T2 照旧 0/3，搜索全走 Anthropic、没有被拦；等 ③Hands 审 |
+| [D5](D5-search-native-first.md) | 搜索：先用这个对话这一轮模型自带的搜索（Claude 用 Anthropic 服务端 web search，只在官方 host 或允许清单上；本地模型的对话不用任何云端自带搜索，DeepSeek 一起改）；Tavily / SearXNG 可以设成备选，已存的选择照旧只用它，选了服务就不再落到 DuckDuckGo；403、429、人机验证报「搜索被拦」，401 报 key 被拒（用户 2026-10-20 要求，⓪Plan 定为应该；③Hands 审卡改过；不进严格链，但**要在 R63 用 Claude 跑最后一轮之前合**，用户 2026-10-20） | ⓪Plan（10-21 晚从 ②Main 改过来；产品代码由别的会话审） | v0.1.63 | 应该 | — | 已合并（#306 = `d9cec85f`；全量 9289 过；Claude 上 T3 2/3 → 3/3、T2 照旧 0/3，搜索全走 Anthropic、没有被拦，每次约 1.2 美分） |
 | [D6](D6-journal-false-positive.md) | 一步记不进任务记录时只拒这一步、任务继续；不在 JSON 编码后的文字上查密钥（「无验证码：」加换行被误判，K3 的 Claude 对照 T2 第 2 次因此整个后台任务停掉）；同类的 4 处一起改（用户 2026-10-20 定为应该；不进严格链，K3 之后） | ②Main | v0.1.63 | 应该 | K3 | 已合并（卡 #270 = `3783951f`；代码 #274 = `ceb4d976`） |
 | [D1](D1-deliver-files.md) | 回合做出的文件送到窗口和 iPhone：新工具 `attach_file`；来自 iPhone 的回合告诉模型路径没用（用户报告，⓪Plan 2026-10-18 加；不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#217 = `57a2218b`）；M3 第 12 条（真 Mac + iPhone 截图）待用户验 |
-| [D7](D7-retire-only-seed-rows.md) | 退役名单只删自带的技能：导入的同名技能（notion、obsidian 等）今天会在重启时被删（④参谋发现，⓪Plan 核过；不进严格链） | ③Hands | v0.1.63 | 必须 | — | 待开工 |
-| [D8](D8-titles.md) | 对话标题：只把你的第一句话发给这段对话自己的模型起标题，失败再截断；删 `title_config_id` 槽（用户 2026-10-21 定，U13；不进严格链） | ③Hands | v0.1.63 | 应该 | — | 待开工 |
+| [D7](D7-retire-only-seed-rows.md) | 退役名单只删自带的技能：导入的同名技能（notion、obsidian 等）今天会在重启时被删（④参谋发现，⓪Plan 核过；不进严格链） | ③Hands | v0.1.63 | 必须 | — | 已合并（#293 = `2f149dbd`） |
+| [D8](D8-titles.md) | 对话标题：只把你的第一句话发给这段对话自己的模型起标题，失败再截断；删 `title_config_id` 槽（用户 2026-10-21 定，U13；不进严格链） | ③Hands | v0.1.63 | 应该 | — | 已合并（#295 = `863e28f6`） |
 | [D9](D9-attachment-truncation.md) | 附件被截断时告诉模型（全文多少字、原件在哪）；上限从 12,000 字调到 40,000 字（①iOS 转来的用户报告，用户 2026-10-21 定两条都做；不进严格链） | ③Hands | v0.1.63 | 应该 | — | #302；②Main 审过一轮，③Hands 已改（`d11b7713`：`read_file` 只对纯文本附件提） |
-| [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7）；定时任务再加四项：不采信「总是允许」、只写 `~/Arslan`、拒绝写账本、卡上显示任务内容（云端审计 [2]，U14）；先单独删掉说明里「只读」那句（S1-0） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | S1-0 已合并（#301 = `eaaf84f4`，⓪Plan 在 Opus 5.5 上审）；其余待开工（心跳的三处一起改，见卡） |
-| [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main（S2a-1）、③Hands（S2a-2，10-21 晚改） | v0.1.63 | 必须 | F4a、C1、C4 | S2a-1 已合并（#265 = `0183ff88`，⓪Plan 在 Opus 5.5 上三轮安全审查；Hands 词表 #267 = `5ddc8e4a`、#276 = `893fdd55`）；S2a-1b 已合并（#272 = `0d17ee13`）；S2a-2 ③Hands 在做（JXA 在出卡前就拒，以及 U11 能直接跑的 osascript 忽略 `outside_sandbox`，两条一起） |
+| [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7）；定时任务再加四项：不采信「总是允许」、只写 `~/Arslan`、拒绝写账本、卡上显示任务内容（云端审计 [2]，U14）；先单独删掉说明里「只读」那句（S1-0） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | S1-0 已合并（#301 = `eaaf84f4`，⓪Plan 在 Opus 5.5 上审）；S1a（R6、R7、U14 a）②Main 在做，计划八问 ⓪Plan 已答；S1b（U14 b 其余、c、d、新说明）在 S2a-2 之后 |
+| [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main（S2a-1）、③Hands（S2a-2，10-21 晚改） | v0.1.63 | 必须 | F4a、C1、C4 | S2a-1 已合并（#265 = `0183ff88`，⓪Plan 在 Opus 5.5 上三轮安全审查；Hands 词表 #267 = `5ddc8e4a`、#276 = `893fdd55`）；S2a-1b 已合并（#272 = `0d17ee13`）；S2a-2 #308：②Main 在 Opus 5.5 上安全审查（一个 🔴 已修，复审过）；⓪Plan 的 M1：命令多的五题 15/15、「等你」0（K5 14/15、1），修后 T11 3/3；rebase 后 CI 绿就合 |
 | [S2b](S2b-drop-vendored-hermes.md) | 删整份引入的 Hermes 规则；拆 S2b-1 换上自有的文本处理（约 150 行）、S2b-2 按 U2 只删文件 | ③Hands（10-21 晚改） | v0.1.63 | 必须 | S2a | 待开工 |
 | [S3](S3-checkpoints.md) | 检查点：文件和命令都能撤销；每回合克隆一次；拆 S3a 检查点、S3b 撤销界面 | ②Main | v0.1.63 | 必须 | C1、F4b（最好在 S2a-2 之前合） | 待开工 |
 | [S4a](S4a-outside-remote-cards-decide.md) | 出沙箱卡、远程卡走 `decide()` 并写账本；两份确认流程合成一份 | ③Hands（10-21 晚改） | v0.1.63 | 必须 | C4、S2a | 待开工 |
@@ -316,6 +316,11 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
 - **`_WEB_TOOL_GUIDANCE` 并进网页工具的说明**（K5 计划 Q4）：`arslan.py:69-106` 的第二段网页规则在固定前缀里，和 K5 的引用要求有重叠；K5 不动它，以后一张卡把它并进 `web_search` / `web_extract` 的说明，并改掉钉住它的两个测试。
 - **iPhone 附件多时，Bridge 在文件中间截断**（③Hands，②Main 审 D9 #302 时发现）：一条 iPhone 消息里大文件多时，Bridge 的 2 MB `contextMax` 可能在 Bridge 里把最后一个文件截掉，连 D9 加的那行一起，模型就看不到这个文件的说明。单个文件总有那行，所以不挡 D9。改法：Bridge 按文件边界截，或者 Bridge 自己加一行。
 - **`ssh_run` 对没登记过的机器**（C3b 定 A 时记下，⓪Plan）：C3b 之后，一台机器都没登记时不提供 `ssh_run`，第一次连接要先登记、钉住主机公钥。但只要登记过一台，`ssh_run` 照旧可以连没登记的机器（每次的卡上有指纹）。要不要所有机器都先登记才能跑，v0.1.64 定。
+- **说「做好了文件」却没有文件**（⓪Plan 审 C3a #304 时记下）：`render_deck` 删掉以后，主循环里不再核对「已生成 PPT」这类说法，只剩零工具那一档。v0.1.64 可以改成拿保存的产物或 `attach_file` 的回执来核对。
+- **命令分类的两个盲点**（②Main 审 S2a-2 #308 时记下，main 上本来也有）：`cd` / `pushd` / 变量展开之后的路径看不出来；读过外部内容后要网络的那张卡每轮重置。
+- **开着 Hands 时工具表还有约 21k**（K7）：桌面那一组约 9.1k，v0.1.63 整组常驻（它是第二常用的一类，一个 Hands 任务是一个长回合）。v0.1.64 可以把点击、输入、按键并进 `desktop_batch`。
+- **`attach_file` 常驻还是按需**（K7 为做到总计划的「约 12k 以下」改成按需；常驻约 13.1k）：要常驻得改总计划的数字，用户定。bench 里没有「把文件发给你」的题，M3 时看。
+- **C1c-2 留下的显示代码**：三张专家介绍卡、`Message.spawnIntro` 再也没人设，`OrchestratorChat` 的 `spawns` 属性（61 处调用）没人读；随专家表一起删（C1 卡）。
 - **Aegis 试点的结论**（§9）：写在这里，v0.1.64 开工前由用户决定要不要全面换。
 - 其余见领先路线 §3、§4 的 v0.1.64 列：卡片界面与文案大合并（D1）；diff 预览；网络出口控制；子 agent 统一成一个工具；后台进程与进程工具；目标模式；ACP。
 
