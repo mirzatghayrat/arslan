@@ -678,12 +678,6 @@ async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
-    intercept_spawn_name: str | None = None,
-    # PA-1: True ONLY when the calling turn actually delegated (a dispatch happened or a
-    # propose_invite frame was emitted) — the sole honest exemption for spawn-handoff
-    # promise language. No current caller delegates before/while answering, so the
-    # default is truthfully False everywhere; PA-2's dispatch/invite paths pass True.
-    turn_delegated: bool = False,
     source: str | None = None,
 ) -> str | None:
     from server.services import host_run
@@ -693,8 +687,7 @@ async def _handle_answer(
             conversation_id, user_message, run_emit, extra_system=extra_system,
             attached_context=attached_context, images=images,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-            confirm_schedule=confirm_schedule,
-            intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated, source=source)
+            confirm_schedule=confirm_schedule, source=source)
 
     return await host_run.execute(conversation_id, user_message, emit, body,
                                   has_images=bool(images))
@@ -782,8 +775,6 @@ async def _handle_answer_body(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
-    intercept_spawn_name: str | None = None,
-    turn_delegated: bool = False,
     source: str | None = None,
 ) -> str | None:
     # K2: history by the turn model's context window (context_window), not a fixed 3000.
@@ -895,40 +886,29 @@ async def _handle_answer_body(
         emit(protocol.clarify_options(clarify["question"], clarify["options"]))
         return compact
     full = result.get("final") or ""
-    # HX-1 A2 空头支票拦截, exemptions SPLIT by PA-1 (second live incident: Arslan called
-    # web_search every turn while the final text claimed 「让 Deck Master 直接出PPT」 five
-    # turns in a row with zero dispatch — the old global `not tool_trace` gate skipped
-    # the guard 5/5 times; tool use is NOT delegation):
-    #   • spawn tier ("交给/让/派 <name>", active on the doer-first divert branch): exempt
-    #     ONLY when the turn actually delegated (turn_delegated=True — a real dispatch or
-    #     propose_invite). The divert branch self-answers by construction, so it always
-    #     passes False → a handoff claim there is structurally false and always corrected.
-    #   • generic tier (PROMISE_RE): keeps the `not tool_trace` exemption — a turn that
-    #     really searched may honestly narrate in-progress work (HX acceptance #1).
+    # HX-1 A2 空头支票拦截: PROMISE_RE on a turn that called no tool (a turn that really searched may
+    # honestly narrate in-progress work, HX acceptance #1). 0.1.63 K5: the spawn tier is gone (nothing set
+    # its spawn name; C7 deletes spawns).
     # A matched promise gets a bounded honest correction appended to the SAME message
     # (streamed live + persisted, so history stays honest) plus the audit event.
     # Fail-open: guard errors never break the answer turn.
     try:
-        check_spawn = bool(intercept_spawn_name) and not turn_delegated
         # 0.1.42: while a background job of this conversation is really running,
         # "it's being worked on in the background" is true, and the generic
         # correction ("nothing is running in the background") would be the lie.
         from server.services import background_jobs
         job_running = any(job.phase != "finished" for job in background_jobs.jobs_for(conversation_id))
         check_generic = not result.get("tool_trace") and not job_running
-        if full and (check_spawn or check_generic):
-            outcome = await promise_guard.correct(
-                full, spawn_name=intercept_spawn_name if check_spawn else None,
-                check_generic=check_generic)
+        if full and check_generic:
+            outcome = await promise_guard.correct(full)
             if outcome is not None:
                 correction = outcome["correction"]
                 emit({"type": "stream_chunk", "content": "\n\n" + correction})
                 full = f"{full}\n\n{correction}"
-                tier = "doer_first" if intercept_spawn_name else "answer"
                 from server.services import recap_service
                 await recap_service.log_event(
                     conversation_id, "promise_intercept",
-                    {"tier": tier, "pattern": outcome["pattern"],
+                    {"tier": "answer", "pattern": outcome["pattern"],
                      "corrected": outcome["corrected"]},
                     f"空头支票拦截:命中「{outcome['pattern']}」→ "
                     f"{'重合成更正' if outcome['corrected'] else '模板更正'}")

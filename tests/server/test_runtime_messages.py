@@ -18,7 +18,7 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
         for key, text in messages.items():
             assert text.strip()
             fields = {field for _, field, _, _ in Formatter().parse(text) if field}
-            allowed = {"named_correction": {"name"}, "job_interrupted": {"goal"},   # 0.1.42
+            allowed = {"job_interrupted": {"goal"},   # 0.1.42
                        "job_out_of_budget": {"goal", "what", "used", "limit", "steps"},   # 0.1.43
                        "job_out_of_budget_usd": {"goal", "used", "limit", "steps"},   # K4a
                        "proactive_goal_followup": {"goal"}, "proactive_goal_scheduled": {"name", "prompt"},   # 0.1.47
