@@ -138,6 +138,6 @@
   - `api/brain.py` 收下提案：不是 `notes` 表的卡一律 409（`versioned_memory_review_required`，v2 本来就这样）；`notes` 卡只做两件事：追加笔记、删笔记，别的种类 422。删掉 v1 的 user_facts / learnings / spawns 各分支、编辑与偏好覆盖两个助手；
   - `api/spawns.py` 专家偏好：只读写这个专家范围的记忆条目；
   - `dispatcher.py` 专家提示词：只留 v2 的记忆；**Tier-1 进化规则后缀照 v2 现状不拼进提示词**（C2a-1 记下的那条决定：专家关着、C7 整份删 dispatcher，所以不改行为）；
-  - 5 个 `memory_v1` 标记删掉，`test_memory_v1_marker_scope` 只留两个永久的。
+  - 5 个 `memory_v1` 标记删掉 4 个。`test_brain_payload_shape` 留着，只为造数据：它直接写 user_facts / learnings，v2 下这两张是只读视图；它测的 brain 接口已经没有 v1 分支。**随 brain 页一起删（v0.1.65，U13）**，`test_memory_v1_marker_scope` 和 `pyproject.toml` 里写明了。
   - `server` 和 `arslan` 里已经没有 `is_active(` 的调用；`is_active` 本身留给测试断言测试库处于激活状态（和 v1 旧表一起删）。
 - **C2a-2c 的测试：** 删 19 个只测 v1 的（v1 表上的收下分支、偏好覆盖、进化后缀、v1 偏好注入）；**改到 v2 上的**：提案接口（`test_memory_proposals_api` 重写：列表、v1 表的卡 409、笔记追加 / 删除、其他种类 422、同对话兄弟卡、old_id 0 不误伤、驳回）、撤销取代的请求检查、专家偏好、回放不写用量、三个评分相关文件（绑一个允许学习的回合上下文），并新加「没有上下文的运行不学习」。
