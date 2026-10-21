@@ -48,10 +48,10 @@
 | [F5b](F5b-delete-cua-engine.md) | 删 Cua Driver 引擎代码（③Hands 审）；文件内改动约 600 行，超出 U2 的 50 行，默认拆 F5b-1 断开接线、F5b-2 按 U2 删整文件（更正 E14） | ②Main | v0.1.63 | 必须 | F5a | F5b-1 #249：③Hands 已批代码、CI 绿（39343358885 / 39343362761），等用户在场跑 `hands_smoke.py` 再合；F5b-2 分支已备好（`claude/0162-f5b2-remove-cua-files`），#249 合后开 PR |
 | [H1](H1-hands-chat-cap-answer.md) | 书面回答：聊天里 5 步上限防什么（⓪Plan 代为提交） | ③Hands | v0.1.63 | 必须 | —（K4 开工前交） | 已合并（#188 = `d74869f5`） |
 | [H3](H3-hands-chat-cap-change.md) | 去掉聊天里 Hands 的 5 次和「一轮一个 App」，并进 K4；Stop 对聊天回合也停住（U8） | ③Hands | v0.1.63 | 应该 | H1（已同意，U8）、K4b | 待开工 |
-| [H4](H4-app-name-forms.md) | AppleScript 里写成「.app」或完整路径的 App，也按同一个 App 认（高权限判断、never-list）；②Main 2026-10-20 复审 #267 时在 main 上发现，算恢复已有承诺的安全修复；Opus 5.5 上写和审 | ③Hands | v0.1.63 | 必须 | #267 | 已合并（#271 = `a50bcdab`；③Hands 写前半，⓪Plan 在 Opus 5.5 上写后半，②Main 在 5.5 上审了三轮） |
+| [H4](H4-app-name-forms.md) | AppleScript 里写成「.app」或完整路径的 App，也按同一个 App 认（高权限判断、never-list）；②Main 2026-10-20 复审 #267 时在 main 上发现，算恢复已有承诺的安全修复；Opus 5.5 上写和审 | ③Hands | v0.1.63 | 必须 | #267 | 已合并（#271 = `a50bcdab`；③Hands 写前半，⓪Plan 在 Opus 5.5 上写后半，②Main 在 5.5 上做了四轮安全审查和一次复查） |
 | [C1](C1-tests-test-product.md) | 让测试测产品：删打开专家的 fixture 和只在专家开启时跑的路径 | ②Main | v0.1.63 | 必须 | F5a；合并等热修合回 main | 已合并（#203 = `f28b52bc`） |
 | [C1b](C1b-expert-modules.md) | 删 9 个不可达的专家模块 | ②Main | v0.1.63 | 必须 | C1 | 已合并（#210 = `e13318ad`） |
-| [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main | v0.1.63 | 必须 | C1 | C1c-1 按行数拆两个：1a 待合并 #257、1b 待合并 #258（合起来全量 8890 绿；K3 叠在先合的那个上面）；C1c-2 待开工 |
+| [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main | v0.1.63 | 必须 | C1 | C1c-1 已合并（1a #257 = `2993ff93`；1b #258 = `6e17afc3`）；C1c-2 待开工 |
 | [C2a](C2a-memory-v1.md) | 删记忆 v1 死分支（超 800 行时拆两个） | ②Main | v0.1.63 | 必须 | C1（K2 开工前合） | C2a-1 已合并（#237 = `83d8a581`；测试库开机顺序补丁 #244 = `0612813b`）；C2a-2 待开工 |
 | [C2b](C2b-evolution-first-batch.md) | 删进化第一批；拆 C2b-1 接口、C2b-2 自动路径 | ②Main | v0.1.63 | 必须 | C1 | 待开工（卡的决定和命令更正已合并：#248 = `fc505f24`） |
 | [C2c](C2c-0161-leftovers.md) | 0.1.61 遗留死代码 | ②Main | v0.1.63 | 必须 | C1 | 已合并（Hands 那半 #246 = `c40483c8`；其余 #253 = `43a1027c`，③Hands 安全审过） |
@@ -65,8 +65,8 @@
 | [C6](C6-ci-parallel-coverage.md) | CI 并行与覆盖率 | ②Main | v0.1.63 | 应该 | F5a | 待开工 |
 | [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 已合并（K1a #212 = `df18ba0e`；K1b #213 = `18d691bb`；合并后对照在 #213） |
 | [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 已合并（K2a #240 = `4f471a30`；K2b #252 = `8780fc34`，⓪Plan 的 k2b-ds 过门槛：19/27 通过，基线 18；③Hands 审过） |
-| [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 开发中（`claude/0162-k3-prompt-cache`，计划经 ⓪Plan 批；C1c-1 先合，K3 叠上去开 PR；门槛 DeepSeek + Claude sonnet-5） |
-| [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | 待开工 |
+| [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 已合并（K3 #259 = `f3bda58d`，DeepSeek 门槛过；K3b #275 = `7e8c57aa`：Claude 上不改已发出的历史、清理改 100k/40k，E26） |
+| [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | K4a #277：代码已批（⓪Plan，Opus 5.5），5% 账单核对过；DeepSeek 门槛待重跑（bench 每次上限调到 $2.50 后）；K4b 待开工 |
 | [K5](K5-working-method-tool-docs.md) | 工作方法与工具说明；多步骤任务结束时给用户四行收尾 | ②Main | v0.1.63 | 必须 | K4b、F1 | 待开工 |
 | [K7](K7-tools-on-demand.md) | MCP 和少用的工具按需取用 | ②Main | v0.1.63 | 必须 | K5、C3、F3 | 待开工 |
 | [K8](K8-true-streaming-guards-after.md) | 真流式，守卫改为事后；按供应商拆 K8a、K8b、K8c | ②Main | v0.1.63 | 必须 | K7 | 待开工 |
@@ -77,10 +77,10 @@
 | [D3](D3-read-timeout-known.md) | 只读命令超时，不记成「结果不明」：`_reads_only` 认得 `&&`、`;`、`\|` 连起来的只读命令和丢弃输出的重定向（K1 合并后对照发现；U10 提为必须，不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#230 = `053f6b42`） |
 | [D4](D4-osascript-not-authorized.md) | osascript 报「未授权」（`-1743`，核实后加 `-10004`），只对一个 App 说话时算已知失败（K1 合并前后对照发现；U10 提为必须，不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#231 = `0d15026b`；后续 #245 = `5e33c5e5`，⓪Plan 实测 T1 2/3，K2a 时 0/3）；还有两种写法记在卡末，以后再看 |
 | [D5](D5-search-native-first.md) | 搜索：先用这个对话这一轮模型自带的搜索（Claude 用 Anthropic 服务端 web search，只在官方 host 或允许清单上；本地模型的对话不用任何云端自带搜索，DeepSeek 一起改）；Tavily / SearXNG 可以设成备选，已存的选择照旧只用它，选了服务就不再落到 DuckDuckGo；403、429、人机验证报「搜索被拦」，401 报 key 被拒（用户 2026-10-20 要求，⓪Plan 定为应该；③Hands 审卡改过；不进严格链，但**要在 R63 用 Claude 跑最后一轮之前合**，用户 2026-10-20） | ②Main | v0.1.63 | 应该 | — | 待开工 |
-| [D6](D6-journal-false-positive.md) | 一步记不进任务记录时只拒这一步、任务继续；不在 JSON 编码后的文字上查密钥（「无验证码：」加换行被误判，K3 的 Claude 对照 T2 第 2 次因此整个后台任务停掉）；同类的 4 处一起改（用户 2026-10-20 定为应该；不进严格链，K3 之后） | ②Main | v0.1.63 | 应该 | K3 | 待开工 |
+| [D6](D6-journal-false-positive.md) | 一步记不进任务记录时只拒这一步、任务继续；不在 JSON 编码后的文字上查密钥（「无验证码：」加换行被误判，K3 的 Claude 对照 T2 第 2 次因此整个后台任务停掉）；同类的 4 处一起改（用户 2026-10-20 定为应该；不进严格链，K3 之后） | ②Main | v0.1.63 | 应该 | K3 | 已合并（卡 #270 = `3783951f`；代码 #274 = `ceb4d976`） |
 | [D1](D1-deliver-files.md) | 回合做出的文件送到窗口和 iPhone：新工具 `attach_file`；来自 iPhone 的回合告诉模型路径没用（用户报告，⓪Plan 2026-10-18 加；不进严格链） | ②Main | v0.1.63 | 必须 | — | 已合并（#217 = `57a2218b`）；M3 第 12 条（真 Mac + iPhone 截图）待用户验 |
 | [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | 待开工 |
-| [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main | v0.1.63 | 必须 | F4a、C1、C4 | 待开工 |
+| [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main | v0.1.63 | 必须 | F4a、C1、C4 | S2a-1 已合并（#265 = `0183ff88`，⓪Plan 在 Opus 5.5 上三轮安全审查；Hands 词表 #267 = `5ddc8e4a`、#276 = `893fdd55`）；S2a-1b 已合并（#272 = `0d17ee13`）；S2a-2 待开工 |
 | [S2b](S2b-drop-vendored-hermes.md) | 删整份引入的 Hermes 规则；拆 S2b-1 换上自有的文本处理（约 150 行）、S2b-2 按 U2 只删文件 | ②Main | v0.1.63 | 必须 | S2a | 待开工 |
 | [S3](S3-checkpoints.md) | 检查点：文件和命令都能撤销；每回合克隆一次；拆 S3a 检查点、S3b 撤销界面 | ②Main | v0.1.63 | 必须 | C1、F4b（最好在 S2a-2 之前合） | 待开工 |
 | [S4a](S4a-outside-remote-cards-decide.md) | 出沙箱卡、远程卡走 `decide()` 并写账本；两份确认流程合成一份 | ②Main | v0.1.63 | 必须 | C4、S2a | 待开工 |
