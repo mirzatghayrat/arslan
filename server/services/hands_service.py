@@ -29,6 +29,9 @@ MAX_NEVER = 200
 _lock = threading.Lock()
 _sessions: dict[str, str] = {}                 # job id → agent-desktop session (cursor)
 _stopped: set[str] = set()                     # job ids that were running at a Stop
+# H3: chat turns (and scheduled runs) in flight at a Stop, by their desktop_status work id — a chat
+# turn has no job id. A mark goes when its work ends (pruned against the work in flight).
+_stopped_turns: set[int] = set()
 _permission_asked = False
 
 
@@ -705,19 +708,48 @@ def forget_job(job_id: str) -> str | None:
 
 # ── Stop ─────────────────────────────────────────────────────────────────────
 
+def _work_in_flight() -> set[int]:
+    from server.services import desktop_status
+    with desktop_status._lock:
+        return set(desktop_status._working)
+
+
 def stop_running_jobs() -> list[str]:
-    """Every job running now refuses further Hands calls (jobs started later do not)."""
+    """Every job and every chat turn (or scheduled run) running now refuses its further Hands calls —
+    each checked before its first request and again after every card — and so does a job such a turn
+    starts afterwards (`carry_stop_to`). Work started later otherwise does not. H3: all chat turns in
+    flight, not only those that used Hands, as with jobs."""
     from server.services import background_jobs
     running = [job_id for job_id, job in background_jobs._jobs.items() if job.phase != "finished"]
+    turns = _work_in_flight()
     with _lock:
         _stopped.update(running)
         _stopped.update(_sessions)
+        _stopped_turns.intersection_update(turns)
+        _stopped_turns.update(turns)
     return running
 
 
+def carry_stop_to(job_id: str) -> None:
+    """A job started by a stopped chat turn is stopped too (②Main's review of #290, point 5): it was
+    not running at the Stop, but it is that turn's work continued elsewhere. Called right after the
+    job is made, before it can run."""
+    if stopped(None):
+        with _lock:
+            _stopped.add(job_id)
+
+
 def stopped(job_id: str | None) -> bool:
+    """A job by its id; without one (a chat turn), the work this call runs in."""
+    if job_id is not None:
+        with _lock:
+            return job_id in _stopped
+    from server.services import desktop_status
+    activity = desktop_status._current.get()
+    turns = _work_in_flight()
     with _lock:
-        return job_id is not None and job_id in _stopped
+        _stopped_turns.intersection_update(turns)
+        return activity is not None and activity["id"] in _stopped_turns
 
 
 def permission_prompt_once() -> bool:
@@ -787,5 +819,6 @@ def _reset_for_tests() -> None:
     with _lock:
         _sessions.clear()
         _stopped.clear()
+        _stopped_turns.clear()
         _permission_asked = False
 

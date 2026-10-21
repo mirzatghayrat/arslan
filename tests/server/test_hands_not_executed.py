@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from server.registry import hands_tools
-from server.services import background_jobs, hands_client, hands_contract
+from server.services import background_jobs, desktop_status, hands_client, hands_contract, hands_service
 from tests.server import test_hands_0153 as base
 
 _case = base._case
@@ -198,12 +198,13 @@ async def test_hands_switched_off_and_bad_requests_did_not_run(hands, asks, in_j
         assert result["error"] == "Arslan Hands is not available on this Mac.", "the words are unchanged"
 
 
-async def test_acting_in_a_chat_reply_past_its_limit_did_not_run(hands, asks, in_turn):
-    for _ in range(hands_tools.INLINE_ACTIONS):
-        assert (await hands_tools.DesktopClickExecutor().execute(CLICK))["ok"]
-    sixth = await hands_tools.DesktopClickExecutor().execute(CLICK)
-    assert sixth["code"] == "act_in_background" and sixth["executed"] is False
-    assert hands.ops("click") == ["click"] * hands_tools.INLINE_ACTIONS
+async def test_acting_in_a_chat_reply_after_stop_did_not_run(hands, asks, in_turn):
+    # H3: the chat reply's own limit is gone; a Stop in the turn is what refuses now.
+    with desktop_status.working("c1"):
+        hands_service.stop_running_jobs()
+        result = await hands_tools.DesktopClickExecutor().execute(CLICK)
+    assert result["code"] == "stopped_by_user" and result["executed"] is False
+    assert hands.ops("click") == []
 
 
 async def test_a_script_outside_background_work_did_not_run():

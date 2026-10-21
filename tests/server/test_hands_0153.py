@@ -34,11 +34,8 @@ def isolated(tmp_path, monkeypatch, execution_db):
     hands_service._reset_for_tests()
     from server.services import permission_store
     permission_store._reset_for_tests()
-    from server.registry import hands_tools as _tools
-    _tools._inline.clear()           # per (conversation, turn): tests share one turn id
     yield
     hands_service._reset_for_tests()
-    _tools._inline.clear()
 
 
 # ── the contract, backend side ───────────────────────────────────────────────
@@ -389,23 +386,12 @@ async def test_a_declined_look_reads_nothing(hands, asks, in_turn):
     assert hands.ops("snapshot", "find", "wait") == []
 
 
-async def test_a_chat_reply_acts_five_times_in_one_app_then_sends_the_rest_to_background_work(
-        hands, asks, in_turn):
-    seen, _ = asks
-    click = hands_tools.DesktopClickExecutor()
-    for _ in range(hands_tools.INLINE_ACTIONS):
-        assert (await click.execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"}))["ok"]
-    assert [f["kind"] for f in seen] == ["desktop_app"]          # asked once in this conversation
-    sixth = await click.execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"})
-    assert sixth["code"] == "act_in_background"
-    assert hands.ops("click") == ["click"] * hands_tools.INLINE_ACTIONS
-
-
-async def test_a_chat_reply_acts_in_one_app(hands, asks, in_turn):
+async def test_a_chat_reply_acts_in_each_app_by_its_bundle_id(hands, asks, in_turn):
+    # H3 (U8): no five actions, no one app in a chat reply (tests/server/test_hands_h3_chat.py).
     assert (await hands_tools.DesktopPressExecutor().execute({"app": "Notes", "keys": "tab"}))["ok"]
-    other = await hands_tools.DesktopPressExecutor().execute({"app": "Messages", "keys": "tab"})
-    assert other["code"] == "act_in_background" and "one app" in other["error"]
-    assert [a["app"] for op, a in hands.calls if op == "press"] == ["com.apple.Notes"]   # by bundle id (§15 A19)
+    assert (await hands_tools.DesktopPressExecutor().execute({"app": "Messages", "keys": "tab"}))["ok"]
+    assert [a["app"] for op, a in hands.calls if op == "press"] == [
+        "com.apple.Notes", "com.apple.MobileSMS"]                                  # by bundle id (§15 A19)
 
 
 async def test_acting_asks_once_per_app_per_job_and_risky_labels_every_time(hands, asks, in_job):
@@ -531,9 +517,8 @@ async def test_tools_are_offered_like_the_browser(execution_db, hands, monkeypat
     tools = await arslan._arslan_tools()
     keys = [t["key"] for t in tools]
     assert {"desktop_apps", "desktop_look"} <= set(keys)
-    # Hands v2 §5.7: a chat reply may act too (five actions, one app), and is told so.
+    # Hands v2 §5.7: a chat reply may act too, under the run's limits only (H3).
     assert {"desktop_click", "desktop_type", "desktop_press", "desktop_menu", "desktop_batch"} <= set(keys)
-    assert "at most five times, all in one app" in tools[keys.index("desktop_press")]["description"]
     token = background_jobs._inside_job.set("job-9")
     try:
         in_job_keys = {t["key"] for t in await arslan._arslan_tools()}

@@ -55,6 +55,8 @@ class StartBackgroundWorkExecutor:
         waiting = background_jobs.active_count() >= background_jobs.MAX_CONCURRENT
         job = await background_jobs.start(conversation_id, goal,
                                           [c for c in criteria if isinstance(c, dict)])
+        from server.services import hands_service
+        hands_service.carry_stop_to(job.job_id)   # H3: a stopped turn's job is stopped too (before it runs)
         when = ("The job is queued behind other background work and starts when one finishes"
                 if waiting else "The job has started and runs on its own")
         return {"ok": True, "external": False, "job_id": job.job_id, "queued": waiting,
