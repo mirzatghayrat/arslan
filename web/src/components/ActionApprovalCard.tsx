@@ -2,7 +2,7 @@ import { useState } from "react";
 import { AppWindow, CircleQuestionMark, Globe, LockKeyhole, Terminal, TriangleAlert, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AskCard, CodeBox, type AskQueuePosition } from "./kit";
-import { DeclineNote, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend, scriptRiskLine, visibleScopes } from "./kit/askParts";
+import { CONVERSATION_FIRST_KINDS, DeclineNote, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend, scriptRiskLine, visibleScopes } from "./kit/askParts";
 
 const ICONS: Record<string, typeof Globe> = { browser_site: Globe, mac_shortcut: Zap, mac_script: Terminal,
   desktop_app: AppWindow, desktop_risky: TriangleAlert };
@@ -46,8 +46,10 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   const Icon = known ? ICONS[kind] : CircleQuestionMark;
   const script = kind === "mac_script";
   const offered = offeredScopes(options, permKind);
-  // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
-  const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
+  // Starts on the narrowest choice the card shows: Always is never the default, whatever its place. An MCP
+  // tool's card starts on "In this conversation" when it offers it (S1).
+  const [scope, setScope] = useState(() => scopeToSend(
+    offered, permKind && CONVERSATION_FIRST_KINDS.has(permKind) ? "conversation" : undefined, alwaysLabel) ?? "");
   // A scope sentence ("for this task only") would contradict a choice shown below it.
   const choice = visibleScopes(offered, alwaysLabel).length > 1;
   // The kind's own line says what is granted and for how long. With a choice to pick, only the first is

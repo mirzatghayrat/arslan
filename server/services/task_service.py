@@ -528,6 +528,9 @@ async def effect_of(tool_key: str, arguments: dict) -> str:
             tool = await db.get(Tool, tool_key)          # long names are hashed in the key
             srv = await db.get(MCPServer, server_id)
         name = (tool.external_name if tool is not None else None) or tool_key.split("__", 1)[1]
+        from server.mcp.discovery import read_only
+        if tool is not None and read_only(tool.annotations):     # S1: the server says it only reads
+            return "read"
         if srv is not None and suggested_tier_for(srv, name) == "safe":
             return "read"
     return "external_write"

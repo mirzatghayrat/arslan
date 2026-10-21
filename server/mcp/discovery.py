@@ -128,6 +128,19 @@ class ServerGone(ValueError):
     """The MCP server row does not exist (any more)."""
 
 
+def read_only(hints: dict | None) -> bool:
+    """S1: the server says this tool only reads (MCP `readOnlyHint`). Self-reported: trusted as far as
+    the user trusts a server they turned on (card S1, risks)."""
+    return bool(hints) and hints.get("readOnlyHint") is True
+
+
+def destructive(hints: dict | None) -> bool:
+    """S1: the server says this tool may destroy something (`destructiveHint`), and not that it only
+    reads. A tool with no hints is not destructive here, unlike the MCP spec's default: it gets the
+    ordinary card (⓪Plan, Q5). K9 and S5 reuse these two."""
+    return bool(hints) and hints.get("destructiveHint") is True and not read_only(hints)
+
+
 def tool_hints(tool) -> dict | None:
     """The tool's declared MCP annotations (§B4): the known keys that are set — booleans for the
     hints, a title of at most 200 characters. None when it declares none. Hints are the server's

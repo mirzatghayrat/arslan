@@ -85,6 +85,11 @@ _EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is 
             "retry it in this turn. Finish what you can and tell the user what is waiting.")
 _NO_SURFACE = ("{title} needs the user's OK, and this run has nobody to ask (it runs on its "
                "own). It was not done. Tell the user, so they can allow it for next time.")
+# S1 (U14 a): what a run with nobody to ask is told when it reaches a step that needs an OK. No earlier
+# answer counts there, so it is not told an "Always" would help (⓪Plan, Q2).
+_UNATTENDED = ("{title} needs the user's OK, and a scheduled run never takes such a step: nobody can be "
+               "asked, and no earlier answer counts here. It was not done. Tell the user; they can do it "
+               "in a chat.")
 
 
 @dataclass(frozen=True)
@@ -169,6 +174,18 @@ def options_for(req: Request) -> list[str]:
     if req.always_label and req.kind not in _NEVER_ALWAYS:
         opts.append("always")
     return opts
+
+
+async def refuse_unattended(req: Request, ctx: Context) -> Decision:
+    """S1 (U14 a): the answer for a run with nobody to ask (a scheduled run binds no card surface):
+    refused by policy, with its ledger row, and no rule or grant read. No "Always" set is recorded, so
+    the Inbox never offers an "Always" that would read as fixing the scheduled run (⓪Plan, Q2)."""
+    _forget_last()
+    _check(req)
+    ctx = _filled(ctx)
+    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+    await _record(req, ctx, await _mode(), decision)
+    return _done(decision)
 
 
 async def decide(req: Request, ctx: Context) -> Decision:
