@@ -31,8 +31,10 @@ from server.db.models import (
     UserFact,
 )
 
-# The shared test databases stay on memory v1 in this file: the code it tests still has a v1 path,
-# which C2a-2 deletes (then this marker goes too; marker memory_v1 in pyproject.toml).
+# The shared test databases stay on memory v1 in this file, for its SEEDING only: it writes user_facts and
+# learnings rows directly, and under v2 those are read-only views. The brain endpoints it tests have no v1
+# branch since 0.1.63 C2a-2. Removal: with the brain page itself (v0.1.65, U13: the second brain becomes
+# memory files). Marker memory_v1 in pyproject.toml; the file list is pinned by test_memory_v1_marker_scope.
 pytestmark = pytest.mark.memory_v1
 
 AUTH: dict[str, str] = {}

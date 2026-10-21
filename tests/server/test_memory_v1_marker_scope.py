@@ -15,14 +15,9 @@ from tests.server.conftest import build_ws_client
 
 TESTS = Path(__file__).resolve().parents[1]
 
-# The code these test still has a v1 path. C2a-2 deletes it, and these entries with it.
-UNTIL_C2A_2 = {
-    "server/test_brain_payload_shape.py",
-    "server/test_brain_undo_supersede.py",
-    "server/test_curation_proposals.py",
-    "server/test_memory_proposals_api.py",
-    "server/test_spawn_preferences_api.py",
-}
+# Seeds the v1 tables directly (read-only views under v2) to test the brain page's payload shape; the
+# endpoints have no v1 branch. Goes with the brain page in v0.1.65 (U13).
+UNTIL_V0165 = {"server/test_brain_payload_shape.py"}
 # Activation and migration from v1 are what these test: kept while that code exists.
 PERMANENT = {
     "server/test_memory_activation.py",
@@ -34,7 +29,7 @@ def test_only_the_listed_files_ask_for_memory_v1():
     asking = {path.relative_to(TESTS).as_posix() for path in TESTS.rglob("*.py")
               if "memory_v1" in path.read_text(encoding="utf-8")}
     asking -= {"server/conftest.py", "server/test_memory_v1_marker_scope.py"}
-    assert asking == UNTIL_C2A_2 | PERMANENT
+    assert asking == UNTIL_V0165 | PERMANENT     # 0.1.63 C2a-2 removed the v1 code four other files tested
 
 
 async def test_the_execution_database_is_on_memory_v2(execution_db):

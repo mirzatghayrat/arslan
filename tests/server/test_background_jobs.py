@@ -36,7 +36,6 @@ def fresh():
 
 @pytest.fixture
 def active(monkeypatch):
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
 
     async def load(cid, **kwargs):
         identity = str(uuid.uuid4())
@@ -364,7 +363,6 @@ def test_the_conversation_answers_while_a_job_is_still_working(app_client, monke
         identity = str(uuid.uuid4())
         return pc.TaskMemoryContext(task_id=identity, run_id=f"turn-{identity}", conversation_id=cid,
                                     no_memory=True, no_learning=True, query=kwargs.get("user_message", ""))
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
     monkeypatch.setattr(task_context, "load", load)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: Adapter())
     _stub_answer_route(monkeypatch)

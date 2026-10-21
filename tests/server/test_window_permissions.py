@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 
-from server.services import approvals, run_registry, task_context, turn_journal
+from server.services import approvals, run_registry, turn_journal
 from tests.server.conftest import build_ws_client
 from tests.server.test_run_command_confirm_flow import (
     _collect_until,
@@ -407,7 +406,6 @@ def test_the_window_shows_only_the_cards_that_need_asking_and_judges_none(app_cl
 
 def test_a_card_answered_after_the_turns_wall_clock_still_finishes_the_turn(app_client, monkeypatch):
     # As in the app with its memory store active: the turn runs as a task, under its wall clock.
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
     monkeypatch.setenv("ARSLAN_RUN_MAX_WALL_SECONDS", "2")           # hard stop at 3 s
     _enable_shell(app_client, policy="ask_all")
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
@@ -560,7 +558,6 @@ def test_a_turns_task_grants_end_with_the_turn_and_its_conversation_grants_stay(
     """S2 (§A5): "for this task" ends with the turn, as with a job."""
     import server.registry.executors as executors_mod
     from server.db.models import PermissionGrant
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))   # the turn is a task
     tool = _AsksForApps(app_client.db_maker)
     patched = dict(executors_mod.EXECUTORS)
     patched["list_dir"] = tool
@@ -659,7 +656,6 @@ def test_a_turn_given_nothing_for_its_task_ends_without_waiting_on_the_database(
     wait 10 s."""
     import server.registry.executors as executors_mod
     from server.services import desktop_status, permission_store
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))   # the turn is a task
     patched = dict(executors_mod.EXECUTORS)
     patched["list_dir"] = _AsksForNotes()
     monkeypatch.setattr(executors_mod, "EXECUTORS", patched)
@@ -696,7 +692,6 @@ def test_a_turns_forget_that_raises_does_not_stop_the_turn_from_ending(app_clien
 
     import server.registry.executors as executors_mod
     from server.services import desktop_status, permissions
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))   # the turn is a task
     patched = dict(executors_mod.EXECUTORS)
     patched["list_dir"] = _AsksForNotes()
     monkeypatch.setattr(executors_mod, "EXECUTORS", patched)

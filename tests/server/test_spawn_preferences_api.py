@@ -1,33 +1,52 @@
+"""An expert's preferences under memory v2: its active memory entries in expert scope (0.1.63 C2a-2 removed
+the v1 list on Spawn.memory_facts). Deleting one needs its entry id and version, and only this expert's
+entries can be deleted through this route."""
 import pytest
 
+from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
 from server.db.models import Spawn
-from tests.server.conftest import build_ws_client
-
-# The shared test databases stay on memory v1 in this file: the code it tests still has a v1 path,
-# which C2a-2 deletes (then this marker goes too; marker memory_v1 in pyproject.toml). build_ws_client
-# is not a fixture, so it is told too (memory_v1=True below).
-pytestmark = pytest.mark.memory_v1
+from server.services.memory_repository import repository
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch, portal):
-    async def _seed(maker):
-        async with maker() as s:
-            s.add(Spawn(id=3, name="小美", domain_category="content", system_prompt="sp",
-                        memory_facts=["输出更简短", "标注来源"]))
-            await s.commit()
-    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="p.db",
-                           env={"ARSLAN_API_TOKEN": ""}, memory_v1=True)
+async def seeded(client, monkeypatch):
+    from server.db import session as db_session
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
+    async with client.db_maker() as s:
+        s.add(Spawn(id=3, name="Synthetic expert", domain_category="content", system_prompt="sp"))
+        s.add(Spawn(id=4, name="Another expert", domain_category="content", system_prompt="sp"))
+        await s.commit()
+    entries = {}
+    async with repository() as repo:
+        for key, text, owner in (("short", "Shorter answers", "3"), ("cite", "Cite sources", "3"),
+                                 ("other", "Another expert's habit", "4")):
+            entries[key] = await repo.create(MemoryWrite(content=text, scope=MemoryScope(kind="expert", id=owner)),
+                                             MemoryActor(origin="user"))
+    client.entries = entries
+    return client
 
 
-def test_get_preferences(client):
-    r = client.get("/api/v1/spawns/3/preferences")
-    assert r.status_code == 200 and r.json()["preferences"] == ["输出更简短", "标注来源"]
+async def test_get_preferences_lists_only_this_experts_active_entries(seeded):
+    r = await seeded.get("/api/v1/spawns/3/preferences")
+    assert r.status_code == 200
+    assert sorted(r.json()["preferences"]) == ["Cite sources", "Shorter answers"]
 
 
-def test_delete_preference(client):
-    r = client.request("DELETE", "/api/v1/spawns/3/preferences", json={"fact": "标注来源"})
-    assert r.status_code == 200 and r.json()["preferences"] == ["输出更简短"]
-    # deleting a non-existent fact is a no-op 200
-    r2 = client.request("DELETE", "/api/v1/spawns/3/preferences", json={"fact": "不存在"})
-    assert r2.status_code == 200 and r2.json()["preferences"] == ["输出更简短"]
+async def test_delete_needs_identity_and_version(seeded):
+    r = await seeded.request("DELETE", "/api/v1/spawns/3/preferences", json={"fact": "Cite sources"})
+    assert r.status_code == 428
+
+
+async def test_delete_refuses_another_experts_entry(seeded):
+    other = seeded.entries["other"]
+    r = await seeded.request("DELETE", "/api/v1/spawns/3/preferences",
+                             json={"fact": "x", "entry_id": other["id"], "expected_version": other["version"]})
+    assert r.status_code == 403
+
+
+async def test_delete_removes_the_entry(seeded):
+    cite = seeded.entries["cite"]
+    r = await seeded.request("DELETE", "/api/v1/spawns/3/preferences",
+                             json={"fact": "Cite sources", "entry_id": cite["id"], "expected_version": cite["version"]})
+    assert r.status_code == 200 and r.json()["preferences"] == ["Shorter answers"]

@@ -15,6 +15,15 @@ from server.db.models import Base, Run, RunStep, Spawn
 from server.services import run_recorder
 
 
+@pytest.fixture(autouse=True)
+def _a_learning_turn():
+    """A real turn binds its memory context (task_context). Without one a run is recorded no_learning and
+    scoring skips it, which is the only path since 0.1.63 C2a-2 (a v1 database used to skip that check)."""
+    from server.services import personal_context as pc
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c1", cloud_memory_allowed=True)):
+        yield
+
+
 @pytest.fixture
 async def memdb(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

@@ -1,5 +1,4 @@
 """Production entry wrappers against an isolated durable task database."""
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -12,7 +11,6 @@ from server.services.task_repository import TaskError, repository
 
 @pytest.fixture
 def active_context(monkeypatch):
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
     async def load(cid, **kwargs):
         return pc.TaskMemoryContext(task_id="entry-task", run_id="initial", conversation_id=cid,
                                     no_learning=True, query=kwargs.get("retrieval_query") or kwargs.get("user_message", ""))

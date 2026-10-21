@@ -7,12 +7,11 @@ background job's cards still go through `approvals.ask` (the window's read loop 
 Hands is faked (the contract fixtures); the model is a script: one `desktop_look`, then an answer.
 """
 import time
-from unittest.mock import AsyncMock
 
 import pytest
 
 import server.orchestrator.tool_loop as tool_loop_mod
-from server.services import approvals, hands_client, hands_service, run_registry, task_context, turn_journal
+from server.services import approvals, hands_client, hands_service, run_registry, turn_journal
 from tests.server.conftest import build_ws_client
 from tests.server.test_hands_0153 import FakeHands
 from tests.server.test_run_command_confirm_flow import _collect_until
@@ -67,7 +66,6 @@ def app_client(tmp_path, monkeypatch, portal):
     monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _LookThenAnswer())
     # As in the app with its memory store active: a chat turn runs as a task, bound to its
     # conversation (otherwise a look refuses before any card: no conversation to ask in).
-    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
     return client
 
 
