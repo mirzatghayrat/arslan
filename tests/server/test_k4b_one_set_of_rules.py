@@ -13,7 +13,11 @@ import uuid
 import pytest
 
 from server.registry.task_tools import StartBackgroundWorkExecutor
-from server.services import background_jobs, personal_context as pc, task_context, task_service
+from server.services import background_jobs, permissions, personal_context as pc, task_context, task_service
+
+
+async def _no_card(frame):
+    raise AssertionError("no card in this test")
 
 CID = "conv-k4b"
 PUSHES = ("do not do such work inline", "one short sentence", "reply in one sentence", "runs after this turn",
@@ -42,7 +46,7 @@ async def _description() -> str:
     async def turn(conversation_id, user_message, emit):
         seen["tools"] = {t["key"]: t["description"] for t in await _arslan_tools()}
         return "ok"
-    with pc.bind(await task_context.load(CID, user_message="x")):
+    with pc.bind(await task_context.load(CID, user_message="x")), permissions.asking_with(_no_card):   # S1 (R7)
         await task_service.run_turn(turn, CID, "x", lambda e: None)
     return seen["tools"]["start_background_work"]
 
@@ -70,7 +74,7 @@ async def test_the_result_says_whether_the_job_started_or_waits_and_asks_for_no_
                         lambda: background_jobs.MAX_CONCURRENT if queued else 0)
     ctx = pc.TaskMemoryContext(task_id="t", run_id="turn-t", conversation_id=CID, no_memory=True,
                                no_learning=True, query="")
-    with pc.bind(ctx):
+    with pc.bind(ctx), permissions.asking_with(_no_card):     # S1 (R7): a turn someone can be asked in
         result = await StartBackgroundWorkExecutor().execute({"goal": "Tidy my notes", "criteria": []})
     assert result["ok"] and result["queued"] is queued
     note = result["note"]

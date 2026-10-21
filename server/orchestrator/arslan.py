@@ -1124,7 +1124,11 @@ async def _every_tool() -> list[dict]:
     # 0.1.42 background work: offered to a host TURN only. Inside a job these are
     # absent, so a job can never start (or stop) another job.
     from server.services import background_jobs
-    if current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS:
+    # S1 (R7): only where someone can be asked. A scheduled run binds no card surface; through a job it could
+    # put a card on the window, and it cannot act on this Mac itself (decide refuses unattended, U14 a).
+    from server.services import permissions
+    if (current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS
+            and permissions.current_asker() is not None):
         tools.append({"key": "start_background_work", "description":
             # 0.1.63 K4b (D4): one set of rules. A job is the same work in another place, chosen by the
             # user or the model; the old "do NOT do such work inline" and the one-sentence reply are gone.
@@ -1148,6 +1152,7 @@ async def _every_tool() -> list[dict]:
     # background job (where its confirmation cards can wait without holding the
     # conversation). Offered only when the managed browser is set up / on macOS.
     import sys
+    from server.registry import hands_tools
     from server.services import agent_browser
     in_job = background_jobs.inside_job()
     if agent_browser.available():
@@ -1167,6 +1172,10 @@ async def _every_tool() -> list[dict]:
                  "Never for passwords: if a site needs a login, stop and tell the user."},
                 {"key": "browser_select", "description": "Choose option(s) in a dropdown (by ref)."},
                 {"key": "browser_press", "description": "Press a key, e.g. Enter, Escape, ArrowDown."}]
+        elif hands_tools._scheduled_run() is not None:   # on browser_open: browser_back is not resident (C3b)
+            # S1 (R7): a scheduled run has no background work to hand page actions to
+            next(t for t in tools if t["key"] == "browser_open")["description"] += (
+                " A scheduled run cannot act on pages: nobody is there to approve it.")
         else:   # on browser_open: browser_back is not resident (C3b)
             next(t for t in tools if t["key"] == "browser_open")["description"] += (
                 " To click, type or submit on a page, start background work: acting happens there.")
@@ -1229,9 +1238,11 @@ async def _every_tool() -> list[dict]:
              "quit and the like ask every time. Not in terminals, editors or browsers."},
             {"key": "desktop_press", "description": "Press keys in an app, e.g. return, escape, tab, cmd+n, "
              "cmd+s. Delete/send shortcuts ask every time. Not available in terminals, editors or browsers."}]
-        if not in_job and hands_tools._scheduled_run() is not None:      # the cap kept for scheduled runs
-            tools[-1]["description"] += (f" In a scheduled run you may act at most {hands_tools.SCHEDULED_ACTIONS} "
-                                         "times, all in one app; for more, start background work.")
+        if not in_job and hands_tools._scheduled_run() is not None:
+            # S1 (U14 a, R7): with nobody to approve, decide refuses every action here, and there is no background
+            # work to hand it to. Hands' five-action cap stays behind it (⓪Plan, Q3).
+            tools[-1]["description"] += (" A scheduled run cannot act on this Mac: nobody is there to approve it. "
+                                         "Tell the user what you would have done.")
         if in_job:      # C3a: its executor refuses it anywhere else (hands_tools, "act_in_background")
             tools.append(
                 {"key": "desktop_takeover", "description": "Take the screen over for long work that only "

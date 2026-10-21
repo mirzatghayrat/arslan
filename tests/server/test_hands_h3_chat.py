@@ -345,4 +345,5 @@ async def test_only_a_scheduled_run_is_told_of_the_cap(execution_db, hands, monk
     with desktop_status.working("c1"):
         assert "five" not in await described()
     with desktop_status.working("scheduled-1", kind="scheduled"):
-        assert "at most 5 times, all in one app" in await described()
+        # S1 (R7, U14 a): a scheduled run cannot act at all; the five-action cap stays behind it (⓪Plan, Q3)
+        assert "A scheduled run cannot act on this Mac" in await described()
