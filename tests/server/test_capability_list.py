@@ -19,7 +19,7 @@ from server.services import capability_list, settings_service
 SWITCHED_TOOLS = {
     "terminal": {"run_command"},
     "lan": {"scan_local_network"},
-    "ssh": {"ssh_probe", "ssh_run", "list_nodes", "enroll_node"},
+    "ssh": {"ssh_probe", "enroll_node"},   # C3b: with no machine enrolled, as in these tests
 }
 
 

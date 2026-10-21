@@ -59,7 +59,7 @@ async def test_a_turn_can_look_but_is_told_to_act_in_the_background(execution_db
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(task_service, "current", lambda: object())
     keys = [t["key"] for t in await arslan._arslan_tools()]
-    assert {"browser_open", "browser_look", "browser_back", "mac_list_shortcuts"} <= set(keys)
+    assert {"browser_open", "browser_look", "mac_list_shortcuts"} <= set(keys)   # C3b: back is not resident
     assert not {"browser_click", "browser_type", "mac_run_shortcut", "mac_applescript"} & set(keys)
     result = await hands_tools.BrowserClickExecutor().execute({"element": "Star", "ref": "e1"})
     assert result["code"] == "act_in_background" and browser["calls"] == []
@@ -69,8 +69,10 @@ async def test_inside_a_job_the_hands_are_offered(execution_db, browser, in_job,
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(task_service, "current", lambda: object())
     keys = {t["key"] for t in await arslan._arslan_tools()}
-    assert {"browser_click", "browser_type", "browser_select", "browser_press",
-            "mac_run_shortcut", "mac_applescript"} <= keys
+    assert {"mac_run_shortcut", "mac_applescript"} <= keys
+    # C3b: the browser's acting tools are not resident; K7 reaches them on demand from _every_tool
+    every = {t["key"] for t in await arslan._every_tool()}
+    assert {"browser_click", "browser_type", "browser_select", "browser_press"} <= every
 
 
 async def test_the_model_is_told_what_each_card_offers(execution_db, browser, in_job, monkeypatch):

@@ -50,6 +50,8 @@ async def _builtin_rows() -> list[dict]:
         shell = await settings_service.shell_enabled(db)
         lan = await settings_service.lan_discovery_enabled(db)
         ssh = await settings_service.ssh_enabled(db)
+        from server.services import ssh_nodes
+        enrolled = ssh and bool(await ssh_nodes.list_nodes(db))   # C3b: running needs an enrolled machine
     rows: list[dict] = []
     darwin = sys.platform == "darwin"
 
@@ -64,7 +66,7 @@ async def _builtin_rows() -> list[dict]:
     rows.append(_row("terminal", "mac", "on" if shell else "off", switch="setting",
                      tools=("run_command",) if shell else ()))
     if agent_browser.available():
-        rows.append(_row("browser", "mac", "on", tools=("browser_open", "browser_look", "browser_back"),
+        rows.append(_row("browser", "mac", "on", tools=("browser_open", "browser_look"),
                          detail="first_use_setup" if managed_browser.status()["reason"] == "setup_required" else None))
     else:
         why = managed_browser.status()["reason"]
@@ -95,7 +97,8 @@ async def _builtin_rows() -> list[dict]:
     rows.append(_row("lan", "work", "on" if lan else "off", switch="setting",
                      tools=("scan_local_network",) if lan else ()))
     rows.append(_row("ssh", "work", "on" if ssh else "off", switch="setting",
-                     tools=("ssh_probe", "ssh_run", "list_nodes", "enroll_node") if ssh else ()))
+                     tools=(("ssh_probe", "enroll_node") + (("ssh_run", "list_nodes") if enrolled else ()))
+                     if ssh else ()))
     return rows
 
 

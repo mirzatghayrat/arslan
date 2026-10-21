@@ -1002,7 +1002,21 @@ async def _skill_index(limit: int = 80) -> str:
                      for r in rows)
 
 
+# C3b (v0.1.63): tools no request carries any more. Each had 0 calls in 30 days (reduce-proposal §2).
+# `_every_tool` still defines them, and K7 makes them reachable on demand from there.
+# DELETE-BY: R63's candidate. If K7 has not merged when it is cut, revert C3b before it (⓪Plan, Q3):
+# until K7, a job cannot click, type, select or press in the browser, and list_my_capabilities
+# does not list these.
+NOT_RESIDENT = frozenset({"browser_back", "browser_click", "browser_type", "browser_select", "browser_press",
+                          "delegate_work", "propose_capability"})
+
+
 async def _arslan_tools() -> list[dict]:
+    """The tools every request carries: all of `_every_tool` except NOT_RESIDENT."""
+    return [tool for tool in await _every_tool() if tool["key"] not in NOT_RESIDENT]
+
+
+async def _every_tool() -> list[dict]:
     """Arslan's host-level safe toolset: web + chart + second-brain recall/remember
     (no spawn wiring)."""
     from server.registry.executors import EXECUTORS
@@ -1115,9 +1129,9 @@ async def _arslan_tools() -> list[dict]:
                  "Never for passwords: if a site needs a login, stop and tell the user."},
                 {"key": "browser_select", "description": "Choose option(s) in a dropdown (by ref)."},
                 {"key": "browser_press", "description": "Press a key, e.g. Enter, Escape, ArrowDown."}]
-        else:
-            tools[-1]["description"] += (" To click, type or submit on a page, start background work: acting "
-                                         "happens there.")
+        else:   # on browser_open: browser_back is not resident (C3b)
+            next(t for t in tools if t["key"] == "browser_open")["description"] += (
+                " To click, type or submit on a page, start background work: acting happens there.")
     if sys.platform == "darwin":
         tools.append({"key": "mac_list_shortcuts", "description": "List the user's macOS Shortcuts by name."})
         if in_job:
@@ -1307,29 +1321,39 @@ async def _arslan_tools() -> list[dict]:
     # believes a tool is silent will plan around a dialog that is going to appear.
     async with db_session.AsyncSessionLocal() as db:
         if await settings_service.ssh_enabled(db):
+            # C3b (⓪Plan's call A on the user's card U3): running needs an enrolled machine, so a first
+            # command goes probe → enrol (its host key pinned) → run. With one enrolled, ssh_run still
+            # reaches an unenrolled host through its fingerprint card; C3b does not change that.
+            from server.services import ssh_nodes
+            enrolled = bool(await ssh_nodes.list_nodes(db))
             tools += [
                 {"key": "ssh_probe",
                  "description": "Check whether a machine on the local network accepts SSH "
                                 "and report its host key fingerprint. READ-ONLY: it logs "
                                 "into nothing and runs nothing. args: {host} — an IPv4 "
                                 "address, e.g. 192.168.1.8 (names cannot be resolved)."},
-                {"key": "ssh_run",
-                 "description": "Run ONE whitelisted command on another machine over SSH. "
-                                "args: {host, user, command, argv}. The user is asked to "
-                                "approve EVERY call, including read-only ones — enrolling "
-                                "a machine does NOT change that — and the card shows the "
-                                "host key fingerprint. Scheduled runs cannot use this."},
-                {"key": "list_nodes",
-                 "description": "List the machines the user has enrolled (name, address, "
-                                "username). READ-ONLY. args: {}."},
                 {"key": "enroll_node",
                  "description": "ASK the user to enrol a machine so its host key is "
                                 "remembered. args: {host, user, name}. This enrols "
                                 "NOTHING by itself: it shows the user a card with the "
                                 "machine's fingerprint, which they confirm. Enrolling "
                                 "only saves re-checking the fingerprint — commands on an "
-                                "enrolled machine still need approval every time."},
+                                "enrolled machine still need approval every time. Enrol a "
+                                "machine before running commands on it: running is offered "
+                                "once one is enrolled."},
             ]
+            if enrolled:
+                tools += [
+                    {"key": "ssh_run",
+                     "description": "Run ONE whitelisted command on another machine over SSH. "
+                                    "args: {host, user, command, argv}. The user is asked to "
+                                    "approve EVERY call, including read-only ones — enrolling "
+                                    "a machine does NOT change that — and the card shows the "
+                                    "host key fingerprint. Scheduled runs cannot use this."},
+                    {"key": "list_nodes",
+                     "description": "List the machines the user has enrolled (name, address, "
+                                    "username). READ-ONLY. args: {}."},
+                ]
 
     # Self-scheduling (P2). Independent of the workspace — a recurring task
     # needs no directory. Creating one is gated by a session grant in the tool

@@ -41,7 +41,12 @@ async def keys_off(tmp_path, monkeypatch):
 
 @pytest_asyncio.fixture
 async def keys_on(tmp_path, monkeypatch):
-    engine, _ = await _wire(tmp_path, monkeypatch, ssh_enabled="true")
+    engine, m = await _wire(tmp_path, monkeypatch, ssh_enabled="true")
+    # C3b: running is offered once a machine is enrolled (test_c3b_resident_tools covers none enrolled)
+    async with m() as s:
+        from server.services import ssh_nodes
+        await ssh_nodes.enroll(s, name="box", host="192.168.1.8", username="me",
+                               host_keys=["ssh-ed25519 AAAA"], fingerprints=["SHA256:x"])
     from server.orchestrator.arslan import _arslan_tools
     yield {t["key"] for t in await _arslan_tools()}
     await engine.dispose()
