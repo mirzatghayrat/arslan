@@ -22,34 +22,45 @@
 - `server/orchestrator/arslan.py` 的系统提示
   - 「How you work」在 `_CAPABILITY_SELF`（`:196` 起），拼进 `_ANSWER_STABLE_PREFIX`（`:363-366`）。
   - 重写这一段：做完为止；先读再改；改完读回或跑一下核对；失败先读错误再换办法。
-  - 加一句（U13 第 2 条，接替 C8 删掉的研究复核）：「研究类回答只引用这一轮真正读过的来源，查不到的要明说」。要有一条测试：这句在系统提示里，研究复核的模块不再被 import。
+  - 加一句（U13 第 2 条，接替 C8 删掉的研究复核）：「研究类回答只引用这一轮真正读过的来源，查不到的要明说」。要有一条测试：这句在系统提示里。「研究复核的模块不再被 import」那半条归 C8（K5 计划 Q10）：K5 合并时 `tool_loop.py` 还在 import 它。
 - `server/orchestrator/promise_guard.py` 和 `arslan.py` 里调用它的那段（main 上 `:880-915` 一带）（U13 第 1 条，C7 的一部分）：
-  - 删掉「分身」那一档（`spawn_promise_re`、`intercept_spawn_name`、`turn_delegated` 那一支）：专家时代的东西，C7 第二步删掉分身以后它就碰不到了。零工具那一档（`correct_zero_tool`）不归 K5，随 C7 第二步删 `dispatcher.py` 的 PR 一起删。
+  - 删掉「分身」那一档（`spawn_promise_re`、`intercept_spawn_name`、`turn_delegated` 那一支）：专家时代的东西，C7 第二步删掉分身以后它就碰不到了。零工具那一档（`correct_zero_tool`）不归 K5，随 C7 第二步删 `dispatcher.py` 的 PR 一起删。K5 只改它里面的一行：`_zero_tool_fabrication`（`promise_guard.py:140`）里的 `find_promise(text, spawn_name, …)` 改成 `find_promise(text)`，因为 `find_promise` 不再收分身参数（K5 计划 Q8，PR 里写明）。
   - 改掉通用那一档的更正文字，两处都要改（②Main 审 #284 时指出）：重新生成更正时的提示词（`promise_guard.py:66-81`：`_TRUTH_STATEMENT`、`_CORRECTION_SYS`、`_correction_user`），以及兜底模板（`_fallback_template`）。今天写着「系统没有后台执行」和「直接点名（@分身名）」，两句都不对了：后台任务是有的（K4b 之后更常用），分身也没了。改成只说「这段回答是我自己写的，没有任务在后台跑」，并且只在这一轮确实没开后台任务、也没有后台任务在跑的时候出（今天的条件已经是这样，⓪Plan 在 main 上核过）。
   - 测试：更正文字里没有「后台执行」「分身」「@」；一个真的开了后台任务的回合，不出更正。
 - `server/orchestrator/tool_loop.py`
   - `:1676-1685` 的 `_NATIVE_EFFICIENCY`：「最多 1–2 次搜索，能答就停」等网页规则，从系统提示挪进网页工具的说明。
   - `:2324-2333`：「最多六行对比」规则同样处理。
+    - **更正（K5 计划核过，⓪Plan 定 Q3）：** 研究范围那条提示今天已经不在系统提示里，而且是有条件的：只在一次 `web_extract` 成功后才加进状态块（`tool_loop.py:2671-2683`）。搬进工具说明反而会让它每次请求都在，所以它留在状态块。系统提示里真正要搬的是 `_NATIVE_EFFICIENCY`（`tool_loop.py:1984-1994`，`:2507` 拼到每个 `run_native` 的系统提示后面）。
+    - `arslan.py:69-106` 的 `_WEB_TOOL_GUIDANCE` 是第二段网页规则，本卡不动（K5 计划 Q4），记进 README §8。D5 卡要的 `search_blocked` 说法写进 `web_search` 的说明。
   - `:1357` 的 `_NATIVE_PARAM_SCHEMAS`：给没有参数表的工具补上参数表。
     - 计划里的 8 个：`edit_file`、`list_dir`、`search_files`、`whats_new`、`list_my_capabilities`，和 3 个定时任务工具（`schedule_task`、`list_my_tasks`、`cancel_task`）。
     - 按 `fb6d7230` 核过，还缺 `read_skill`，以及 SSH 一组（`ssh_probe`、`enroll_node` 等；C3 去掉的不用补）。
+    - **K5 计划核过 main `93921bf5`（②Main，2026-10-21）：一共 14 个**，再加 `scan_local_network`、`ssh_run`、`list_nodes`。C3 只在没登记机器时藏起后两个，所以也要补。
+    - **参数表的限制（⓪Plan 定，K5 计划 Q9）：** 自带工具的参数表原样发给供应商，不经过 F3 的规整（`arslan/llm/tool_schema.py` 只管 MCP 工具）。所以不用 `pattern`（DeepSeek 拒）、不用顶层 `anyOf`（Anthropic 拒）、不用类型数组（`"type": ["integer", "string"]`，各家接受的不一样，F3 对 MCP 工具也是去掉 `type`、写进说明）。`cancel_task.task_id` 不写 `type`，说明里写「list_my_tasks 给的编号（数字，例如 3）」；执行器照旧数字和 "3" 都收。测试断言三样都没有。
     - 没有参数表时退到 `_PERMISSIVE_PARAMS`（`:1688`，由 `_tool_params` `:1691-1710` 决定）。
   - `:2359-2364` 的状态块：加收尾清单的提示（见下文「收尾清单」）。
 - `server/registry/file_tools.py`
   - `edit_file`（`EditFileExecutor`，`:269-307`）的参数改成 `old_string` / `new_string`。旧名 `old` / `new` 再兼容一版，v0.1.64 删。
+    - 参数表只写新名字，`required: ["path"]`，这样旧名字的调用也过得了派发前的检查（K5 计划 Q7）。
+    - 另外两处也读这两个参数名，一样两种都认，输出的键不变：界面的编辑视图（`server/services/run_process.py:92-95`）和手机上的审阅（`server/services/tool_review.py:43-45`）。手机看到的东西不变，Bridge 的帧格式不变。
+    - 代码注释写 `DELETE-BY: v0.1.64`（`docs/sessions.md` §9）。
   - `read_file` 的说明写上它支持的 `offset` / `limit`（`:121-132` 已支持）。
 - `run_command` 的说明加一句：读存下来的工具输出（`tool_outputs/` 下的文件）用 `read_file`，不用 `cat`。
   - 起因：⓪Plan 10-20 跑分里，模型用 `cat` 读，撞沙箱出卡。
   - 这里只改措辞，根本的修在 S2a-1 第 5 条。
-- 工具说明与实际一致：`run_command` 的时限（F1 之后是 120 / 600 秒）。
-- 首轮附一份环境快照：系统版本、可用的命令行工具、工作文件夹的顶层概况。
-  - 每个对话缓存一次。
+- 工具说明与实际一致：`run_command` 的时限（F1 之后默认 120 秒，可设 5–600 秒，`terminal_exec.py:36-38`），并写上 `network` 参数（今天说明里没有）。
+- 环境快照：系统版本、可用的命令行工具、工作文件夹的顶层概况。
+  - **每一轮都带，从每个对话的缓存里取，每轮字节相同**（K5 计划核过：K3 的上下文块不存进历史，只放首轮的话第二轮就没了）。
   - 放进 K3 的上下文块，不进系统提示。
+  - **工作文件夹只给数量，不给名字**（⓪Plan 定，K5 计划 Q2；隐私边界）：Arslan 自己的文件夹和你选的文件夹都一样，只写「N 个文件夹、M 个文件」，可以按扩展名分数。文件名本身可能就是隐私（例如「体检报告.pdf」），而这份快照每一轮都发给云端模型，你什么都没做。模型要名字时调 `list_dir`，那是看得见的一步。以后要放宽，由用户定。
+  - 测试：快照里没有任何文件名或文件夹名；条目有上限；第 1、2 轮字节相同。
 
 ## 收尾清单（给用户看）
 
 - **什么时候出：** 只在多步任务结束时出。
-  - 「多步」= 本回合有 2 个或更多模型步骤调用过工具。
+  - 「多步」= 本回合有 2 个或更多模型步骤调用过工具，只调 `update_plan` 的步骤不算（K5 计划 Q5）。
+  - 只在主回合出：聊天和后台任务；delegate 的 worker 不出（它们要按 JSON 约定回答）。
+  - 没核对到的写「未核对」（用回复的语言），不写「没查到」：后者会撞上 `_CLAIMS_SEARCH_RE`。
   - 在 `_run_native` 里数「带工具调用的步骤」，数到 2 才在状态块里加提示。
   - 普通聊天、只用了一步工具的请求，都不出清单，避免啰嗦。
 - **格式：** 回答最后四行，用回复的语言，用大白话：
@@ -67,6 +78,7 @@
 ## 怎么做（要点）
 
 1. 按领先路线 §6 第 6 条，一次只改一处、逐步看 M1。顺序：环境快照 → 收尾清单 → 参数表 → 搬网页规则。每一步的 M1 结果都写进 PR 描述。
+   - **怎么量（⓪Plan 定，K5 计划 Q1）：** 会改行为的三步之后（工作方法加环境快照、收尾清单、搬网页规则），各跑一次针对性的 M1（T1、T2、T3、T8 各 3 次）；最后全套跑一次，作为门槛（对 base63，K4b 的 `k4b-ds` 并列）。针对性的题退步的那一步不合。跑之前 ⓪Plan 先和用户确认 DeepSeek 余额够（按高峰价约 $8，U13 第 4 条）。
 2. 加一个测试：每个给模型的工具都有非空参数表，确实无参数的工具除外。
 3. `edit_file` 兼容旧参数名的那段代码，注释写明「v0.1.64 删」。
 
