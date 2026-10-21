@@ -5,6 +5,7 @@ import os
 from collections.abc import AsyncIterator
 from typing import Any
 
+from arslan.context_budget import estimate_tokens
 from arslan.llm import usage_sink
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.base import BaseLLMProvider
@@ -157,7 +158,7 @@ class LLMAdapter:
         if total is None and tin is not None and tout is not None:
             total = tin + tout
         if total is None:
-            total = usage_sink.estimate_tokens(system, user, resp.content)
+            total = estimate_tokens(system, user, resp.content)
         from arslan.llm.usage_weight import cache_split, charged_tokens
         usd = self._usd(u)
         usage_sink.report(total, charged=charged_tokens(u), usd=usd)
@@ -220,7 +221,7 @@ class LLMAdapter:
                     **{k: real[k] for k in ("cache_read", "cache_write", "input_total") if k in real},
                 )
             else:
-                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)), usd=None)
+                usage_sink.report(estimate_tokens(system, user, "".join(chunks)), usd=None)
                 usage_sink.report_detail(
                     tokens_in=None,
                     tokens_out=None,
