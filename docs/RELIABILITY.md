@@ -5,7 +5,7 @@
 | Path | Filesystem | Network | Approval / recovery |
 | --- | --- | --- | --- |
 | Generated Python | Runtime read-only; per-call workspace read/write; staged references read-only | Denied by macOS Seatbelt | No unsandboxed retry; unsupported platforms refuse |
-| Confirmed shell command | Host filesystem permissions, **not** a filesystem jail | Denied or restricted through the credential proxy | Existing per-command confirmation |
+| Confirmed shell command | Host filesystem permissions, **not** a filesystem jail | Allowed until the turn has read outside content, then cut (there is no credential proxy) | Existing per-command confirmation |
 | Configured MCP server | Server's own process/environment, **not** covered by Python Seatbelt | Server-specific | Install/connect only trusted servers; existing capability grants |
 | Task recipe | Same per-tool boundaries as an ordinary spawn | Same per-tool boundaries | Explicit start, optional step approvals, explicit unfinished-step retry |
 

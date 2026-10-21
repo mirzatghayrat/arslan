@@ -10,7 +10,7 @@ Arslan is a **local-first, BYOK (bring-your-own-key), multi-agent orchestrator**
 
 - **Backend** — FastAPI. A **WebSocket** channel carries the live conversation stream; **REST** (`/api/v1`) carries configuration and spawn/knowledge management. Async SQLAlchemy over a single **SQLite** file stores spawns, the roster, the knowledge base (FTS5), run records, and encrypted provider keys. (`server/`)
 - **Frontend** — an AI-Studio-style React 19 + TypeScript + Vite single-page app. (`web/src/`)
-- **The "shape" of the product** — talk → a self-evolving team of agents. A capability layer (built-in tools + an MCP client + `SKILL.md` skill packs) behind a single write gate; a kernel sandbox + credential proxy for generated code; honesty guardrails; a visible "second brain"; and a two-tier evolution loop.
+- **The "shape" of the product** — talk → a self-evolving team of agents. A capability layer (built-in tools + an MCP client + `SKILL.md` skill packs) behind a single write gate; a kernel sandbox for generated code and shell commands; honesty guardrails; a visible "second brain"; and a two-tier evolution loop.
 
 ### Subsystems at a glance
 
@@ -143,7 +143,7 @@ graph LR
     registry["Three-library registry + hard gate<br/>server/registry/service.py"]
     executors["Tool executors<br/>server/registry/executors.py"]
     mcp-client["MCP client<br/>server/services/mcp_service.py"]
-    shell-sandbox["Shell sandbox + credential proxy<br/>server/services/command_*.py"]
+    shell-sandbox["Shell sandbox<br/>server/services/command_*.py"]
 
     registry -->|"resolve_executor dispatch"| executors
     registry -->|"mcp_ prefix → proxy executor"| mcp-client
@@ -159,38 +159,33 @@ graph LR
 
 ## Sandbox, security & the command surface
 
-Generated code and shell commands are the most dangerous machinery Arslan runs, so they get their own hardened surface. Files: `server/services/command_policy.py`, `command_sandbox.py`, `command_proxy.py`, `command_ca.py`, `command_net.py`.
+Generated code and shell commands are the most dangerous machinery Arslan runs, so they get their own hardened surface. Files: `server/services/command_policy.py`, `command_sandbox.py`, `terminal_exec.py`.
 
 ```mermaid
 graph LR
     run-command["run_command tool<br/>RunCommandExecutor"]
-    policy["Policy gate<br/>command_policy validate/classify"]
-    confirm["Confirm card<br/>RunCommandCard (per command)"]
-    local-path["Local command<br/>command_sandbox network-denied tmp"]
-    net-path["Network command orchestration<br/>command_net"]
-    proxy["MITM credential proxy<br/>command_proxy + command_ca"]
-    github["GitHub<br/>external"]
+    policy["Policy gate<br/>command_policy classify"]
+    confirm["Confirm card<br/>risky kinds, or outside the sandbox"]
+    sandboxed["In the sandbox<br/>command_sandbox: writes only the working folder, temp, caches"]
+    outside["Outside the sandbox<br/>a smaller seatbelt profile, after a click"]
 
-    run-command -->|"validate + risk grade"| policy
-    policy -->|"high-risk → confirm card"| confirm
-    policy -->|"local git / ffmpeg / pandoc"| local-path
-    policy -->|"network git / gh"| net-path
-    net-path -->|"preflight + seatbelt allows only localhost:proxy"| proxy
-    proxy -->|"MITM TLS + inject real token"| github
+    run-command --> policy
+    policy -->|"harmless"| sandboxed
+    policy -->|"deleting, installing, sending, other apps"| confirm
+    confirm -->|"approved"| sandboxed
+    confirm -->|"outside_sandbox: true, approved"| outside
     classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
-    classDef external fill:#585b70,stroke:#585b70,color:#cdd6f4
     class run-command entry
-    class github external
 ```
 
 *Figure 5 — Command surface.*
 
 **Invariants (command surface; see also `SECURITY.md`):**
 
-- **Whitelist of 4 binaries** — `git`, `gh`, `ffmpeg`, `pandoc` — plus a hard-deny list (`sudo`, `rm`, shell metacharacters). `run_command` is orchestrator-only and off by default.
-- **A confirmation card per command**, risk-graded (`ask_all` / `ask_risky`).
-- **Local commands run network-denied** in an ephemeral tmp dir under the **macOS seatbelt**. **If the kernel sandbox cannot start, the command is refused — it never silently downgrades.**
-- **Network `git`/`gh` go through a local MITM credential-injecting proxy** (`command_proxy` + `command_ca`): seatbelt only allows egress to `localhost:proxy`; the proxy terminates TLS and injects the real token, so **raw credentials never enter the sandbox**. Network is restricted to GitHub + the current repo's remote host, and `git push` is limited to the current branch.
+- **Any shell command, sandboxed by default.** `run_command` runs zsh in the working folder under a macOS seatbelt profile: it writes only inside the working folder, temp and cache folders; it can't read `~/.ssh`, the keychain or Arslan's own data; it sends no Apple Events; network is allowed until the turn has read outside content, then cut. A few things (`sudo`, wiping disks, reading passwords) are never run.
+- **A card before risky kinds** (deleting, installing, sending, controlling other apps) and before any run outside the sandbox (`outside_sandbox: true`). Outside the sandbox a command still gets a smaller seatbelt profile, except an approved `osascript` aimed at Reminders, Calendar, Notes or Contacts, or an approved `shortcuts run`, which runs unwrapped (decision U11).
+- **If the seatbelt sandbox can't start,** the command still runs and its result is marked `sandbox: unavailable`. A command that has to run without network is refused instead.
+- **No credential proxy.** Earlier versions sent network `git`/`gh` through a credential-injecting proxy; it was removed in 0.1.48 and nothing replaces it.
 - **`run_python` fails closed** where the kernel sandbox is unavailable (non-macOS). The dev-only escape hatch `ARSLAN_ALLOW_UNSANDBOXED_PY=1` runs generated Python with the server's full privileges and network — runs are marked `sandboxed=false` for audit. See [SECURITY.md](../SECURITY.md).
 
 ## Services layer
@@ -255,7 +250,7 @@ graph LR
 
 ## External integrations
 
-Third-party, outside the repo: BYOK LLM providers (OpenAI-compatible / DeepSeek, native Gemini), MCP servers (GitHub / Memory / Fetch / Notion, launched as **stdio subprocesses** you configure), GitHub (via the shell credential proxy), and web-search providers.
+Third-party, outside the repo: BYOK LLM providers (OpenAI-compatible / DeepSeek, native Gemini), MCP servers (GitHub / Memory / Fetch / Notion, launched as **stdio subprocesses** you configure), GitHub (through shell commands such as `git` and `gh`), and web-search providers.
 
 ## Cross-cutting invariants
 
@@ -263,8 +258,7 @@ Reliability and safety here rest on a handful of load-bearing rules. Preserve th
 
 - **Single-throat capability gate.** All capability grants pass through `assert_assignable`; shell/MCP off by default; **orchestrator-tier is Arslan-only** (spawns can't get it).
 - **Untrusted tool output.** Every tool result goes through `wrap_external` and is treated as untrusted data.
-- **Sandbox fails closed.** No kernel sandbox → refuse to run (the macOS seatbelt is the only kernel sandbox today; other platforms are unavailable and fail closed).
-- **Credentials never enter the sandbox.** The MITM proxy injects tokens outside it.
+- **The Python sandbox fails closed.** No kernel sandbox → `run_python` refuses to run (the macOS seatbelt is the only kernel sandbox today). Shell commands still run, marked `sandbox: unavailable` (see the command surface above).
 - **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.
 - **Evolution is human-gated.** Tier-2 edits are bounded, position-bias-corrected, and only ship on an explicit human promote.
 - **Safe-by-default auth.** Dev + localhost is unauthenticated on purpose; `prod` / packaged / non-loopback binds require a bearer token (auto-minted if unset), and cross-site requests are blocked by TrustedHost + CORS + WebSocket-Origin checks. See [SECURITY.md](../SECURITY.md).
