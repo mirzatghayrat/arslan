@@ -415,45 +415,41 @@ def ref_of(text: str, label: str) -> str | None:
     return (refs_on(text, f"“{label}”") or [None])[0]
 
 
-async def borrows_while_typing(select, look, app: str) -> None:
-    """H3: several borrows in a row while "the user" types into a scratch TextEdit document this
-    script opened (System Events keystrokes, into that document only): no key is lost and TextEdit
-    is in front at the end. Skipped (not passed) when keystrokes are not allowed for this runner."""
-    folder = Path(tempfile.mkdtemp(prefix="hands-smoke-typing-"))
-    doc = folder / "typing.txt"
-    doc.write_text("")
-    subprocess.run(["open", "-a", "TextEdit", str(doc)], check=True)
-    time.sleep(2)
-    typed = "the quick brown fox jumps over the lazy dog " * 3
+async def borrows_while_typing(select, look, app: str, hands_service) -> None:
+    """H3: several borrows in a row while "the user" types, into the harness Typist only (a window
+    this script builds and launches; never a document of the user's). Every key must land in the
+    Typist exactly once and in order, the Typist must be in front at the end, and at least one of
+    the choices must really have borrowed the front (else the item proves nothing). Every way out
+    is recorded: a skip is a FAIL with its reason, not a print."""
+    from types import SimpleNamespace
+    from scripts.hands_harness.observer import _front_pid
+    from scripts.hands_harness.run import TypistDriver, build, launch
+    name = "borrows while the user types: no key lost, the front given back"
+    work = Path(tempfile.mkdtemp(prefix="hands-smoke-typist-"))
+    _, typist_bin = build(work)
+    proc = launch(typist_bin, {"TYPIST_LOG": str(work / "typist.log")})
     try:
-        if front_app() != "TextEdit":
-            print(f"  skip  borrows while typing: TextEdit did not come to the front ({front_app()})")
-            return
-        typing = await asyncio.create_subprocess_exec(
-            "osascript", "-e", 'tell application "System Events" to keystroke "' + typed + '"',
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        time.sleep(1.5)
+        typist = TypistDriver(work / "typist.log", SimpleNamespace(state=lambda: {}), proc.pid)
+
+        def borrows() -> int:
+            return sum(e.get("op") == "select" and e.get("mode_used") == "borrow" for e in hands_service.read_trace())
+        before = borrows()
+        typist.start(bursts=True)             # types only if the Typist is in front, never elsewhere
         chose = []
         with job("v2-typing", "v2-typing"):
             for value in ("Red", "Blue", "Red"):
                 seen = await look.execute({"app": app})
                 chose.append(await select.execute({"app": app, "element": "Color",
                                                    "ref": ref_of(seen.get("text", ""), "Color"), "value": value}))
-        _, err = await typing.communicate()
-        if typing.returncode != 0:
-            print(f"  skip  borrows while typing: keystrokes not allowed for this runner ({err.decode()[:120]})")
-            return
-        time.sleep(0.5)
-        text = subprocess.run(["osascript", "-e", 'tell application "TextEdit" to get text of document "typing.txt"'],
-                              capture_output=True, text=True).stdout.rstrip("\n")
-        record("borrows while the user types: no key lost, the front given back",
-               text == typed and front_app() == "TextEdit" and all(c.get("ok") for c in chose),
-               f"{len(text)}/{len(typed)} chars; front {front_app()}; "
-               f"{[c.get('code') or c.get('outcome') for c in chose]}")
+        violations = typist.stop_and_judge(0, 0, borrowed=True)
+        borrowed = borrows() - before
+        back = _front_pid() == proc.pid
+        record(name, not violations and back and borrowed > 0 and all(c.get("ok") for c in chose),
+               f"{borrowed} of 3 borrowed; Typist in front at the end: {back}; "
+               f"{violations or 'every key exactly once'}; {[c.get('code') or c.get('outcome') for c in chose]}")
     finally:
-        subprocess.run(["osascript", "-e", 'tell application "TextEdit" to close document "typing.txt" saving no'],
-                       capture_output=True)
-        doc.unlink(missing_ok=True)
-        folder.rmdir()
+        proc.terminate()
 
 
 async def v2_checks(tools, hands_service, front: str) -> None:
@@ -512,7 +508,7 @@ async def v2_checks(tools, hands_service, front: str) -> None:
                    chose.get("ok") is True and "color:Blue" in waited.get("text", "") and after == before,
                    f"{took:.2f}s in all; front {before} → {after}; {str(chose.get('text') or chose.get('error'))[:200]}")
 
-        await borrows_while_typing(select, look, app)
+        await borrows_while_typing(select, look, app, hands_service)
 
         # One card for several apps, then none for either.
         cards.clear()

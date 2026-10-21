@@ -1,8 +1,9 @@
 """0.1.45 hands: Arslan's browser and Mac automation.
 
-Looking (open a page, read it, go back, list Shortcuts) is free. Acting (click,
-type, choose, press; run a Shortcut or an AppleScript) happens only inside a
-background job, and asks first. Every card goes through `permissions.decide`
+Looking (open a page, read it, go back, list Shortcuts) is free. Acting in the
+browser and running a Shortcut or an AppleScript happen only inside a background
+job; acting in a Mac app through Hands happens in a chat reply too, under the
+run's own limits (H3, v0.1.63). Everything asks first. Every card goes through `permissions.decide`
 (0.1.61 §A11): an AppleScript is asked every time, with the whole script shown,
 and never remembered (a script runs outside the sandbox and what it does past
 its app is read from its words only, so no app's yes stands for one: release
@@ -15,9 +16,10 @@ visible browser window, and that profile keeps the session.
 
 0.1.53 adds Mac apps through Arslan Hands (agent-desktop behind a separate
 helper app that alone holds Accessibility; spec
-docs/specs/2026-10-03-0153-hands-agent-desktop.md). Acting runs only inside a
-background job; an action whose real label deletes, sends, pays, buys,
-transfers or submits asks every time. Since 0.1.61 one `app` card covers both
+docs/specs/2026-10-03-0153-hands-agent-desktop.md). Acting runs in a chat reply
+or a background job alike (H3); an action whose real label deletes, sends, pays,
+buys, transfers or submits asks every time. Stop (`POST /hands/stop`) refuses
+every Hands call of the work it stopped, checked again after each card. Since 0.1.61 one `app` card covers both
 looking and acting, for this task first (or this conversation, or always); the
 answer is remembered by the permission store (§A5).
 """
@@ -87,7 +89,7 @@ def _not_run(result: dict) -> dict:
 
 def _not_in_job() -> dict:
     return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                     "error": "Actions (clicking, typing, running Shortcuts or scripts) run as background work. "
+                     "error": "Acting in the browser and running Shortcuts or scripts happen in background work. "
                               "Call start_background_work with this goal; looking at pages is fine here."})
 
 
@@ -360,8 +362,11 @@ class MacRunShortcutExecutor:
         name = str((args or {}).get("name") or "").strip()
         if not name or len(name) > 200:
             return _bad_request("name required")
-        if _conversation_and_job()[1] is None:
+        job_id = _conversation_and_job()[1]
+        if job_id is None:
             return _not_in_job()
+        if (stop := _stopped(job_id)) is not None:
+            return stop
         text_input = (args or {}).get("input")
         decision = await _decide(
             "shortcut", name, f"Run the Shortcut “{name}”?",
@@ -369,6 +374,8 @@ class MacRunShortcutExecutor:
             "mac_shortcut", name, always_label=name, extra={"shortcut": name})
         if not decision.allowed:
             return _no(decision, f"running the Shortcut “{name}”")
+        if (stop := _stopped(job_id)) is not None:
+            return stop
         argv = ["/usr/bin/shortcuts", "run", name]
         if not text_input:
             return await _run(argv)
@@ -388,8 +395,11 @@ class MacAppleScriptExecutor:
         script = str((args or {}).get("script") or "")
         if not script.strip() or len(script) > 4000:
             return _bad_request("script required (max 4000 characters)")
-        if _conversation_and_job()[1] is None:
+        job_id = _conversation_and_job()[1]
+        if job_id is None:
             return _not_in_job()
+        if (stop := _stopped(job_id)) is not None:
+            return stop
         from server.services import hands_contract, hands_service
         # v0.1.63 H4 (⓪Plan): the never-list is a refusal, and an app chosen while the script runs can't
         # be checked against it, so such a script is refused, not asked.
@@ -420,6 +430,8 @@ class MacAppleScriptExecutor:
         refused = None if decision.allowed else decision
         if refused is not None:
             return _no(refused, "this AppleScript")
+        if (stop := _stopped(job_id)) is not None:
+            return stop
         return await _run(["/usr/bin/osascript", "-e", script])
 
 
@@ -745,6 +757,8 @@ class DesktopLookExecutor:
             return _unavailable()
         started = time.monotonic()
         conversation_id, job_id = _conversation_and_job()
+        if (stop := _stopped(job_id)) is not None:    # a look borrows the front and goes to other desktops
+            return stop
         app, failure = await _resolve_app(name, job_id)
         if app is None:
             return _failed(failure, app=name)
@@ -948,6 +962,8 @@ class DesktopTakeoverExecutor:
                                       "start_background_work."})
         if not desktop_available():
             return _unavailable()
+        if (stop := _stopped(job_id)) is not None:
+            return stop
         from server.services import permissions
         started = time.monotonic()
         away = await _user_away()
@@ -985,6 +1001,51 @@ class DesktopTakeoverExecutor:
                 "summary": f"takeover · {minutes} min"}
 
 
+# Hands v2 §5.7, kept for scheduled runs only (⓪Plan on #290, 2026-10-21): U8 lifts the cap for chat
+# replies; a scheduled run acts with nobody at the Mac, and what scheduled runs may do is with the
+# audit. At most this many actions, all in one app, per run (a batch counts its steps). Removed, if
+# ever, by the user's decision after that audit — not by H3.
+SCHEDULED_ACTIONS = 5
+_scheduled: dict[int, tuple[int, str]] = {}      # desktop_status work id → (actions, app)
+
+
+def _scheduled_run() -> int | None:
+    """The desktop_status work id of the scheduled run this call is in, or None."""
+    from server.services import desktop_status
+    activity = desktop_status._current.get()
+    return activity["id"] if activity is not None and activity.get("kind") == "scheduled" else None
+
+
+def _scheduled_refusal(why: str) -> dict:
+    return _not_run({"ok": False, "external": False, "code": "act_in_background",
+                     "error": f"{why} Call start_background_work with this goal; the work continues there."})
+
+
+def _scheduled_full(run: int | None) -> dict | None:
+    if run is None:
+        return None
+    from server.services import desktop_status
+    with desktop_status._lock:
+        live = set(desktop_status._working)
+    for gone in [r for r in _scheduled if r not in live]:
+        del _scheduled[gone]
+    if _scheduled.get(run, (0, ""))[0] >= SCHEDULED_ACTIONS:
+        return _scheduled_refusal(f"This scheduled run has already acted {SCHEDULED_ACTIONS} times, the most a "
+                                  "scheduled run may.")
+    return None
+
+
+def _scheduled_count(run: int | None, bundle: str) -> dict | None:
+    """Count one action of a scheduled run in `bundle`; a refusal when it would be a second app."""
+    if run is None:
+        return None
+    count, first = _scheduled.get(run, (0, bundle))
+    if first != bundle:
+        return _scheduled_refusal("This scheduled run already acted in another app; a scheduled run acts in one app.")
+    _scheduled[run] = (count + 1, first)
+    return None
+
+
 def _in_a_conversation() -> bool:
     from server.services import personal_context
     ctx = personal_context.current()
@@ -992,7 +1053,9 @@ def _in_a_conversation() -> bool:
 
 
 def _stopped(job_id: str | None) -> dict | None:
-    """H3: Stop stops a chat turn's Hands calls as it stops a job's — checked before anything is sent."""
+    """H3: Stop stops a chat turn's Hands calls as it stops a job's. Checked before the first request,
+    and again after every card and before every step that sends (②Main's review of #290: a card can be
+    answered after Stop; Stop does not close it)."""
     from server.services import hands_contract, hands_service
     if not hands_service.stopped(job_id):
         return None
@@ -1034,6 +1097,9 @@ class _DesktopAct:
         stop = _stopped(job_id)                     # before any request
         if stop is not None:
             return stop
+        run = _scheduled_run() if job_id is None else None
+        if (full := _scheduled_full(run)) is not None:
+            return full
         started = time.monotonic()
         target: dict = {}
         if self.op in ("press", "menu"):
@@ -1059,6 +1125,8 @@ class _DesktopAct:
         label = target.get("name") or args.get("element") or ""
         if self.op == "menu":
             label = " › ".join(_menu_path(args))
+        if (other := _scheduled_count(run, bundle)) is not None:
+            return other
         verb = _VERBS.get(self.op, self.op)
         first = f"{verb} “{label or args.get('keys', '')}”"
         decision = await _decide_app(
@@ -1082,6 +1150,9 @@ class _DesktopAct:
             if not decision.allowed:
                 _trace(self.op, app, "declined" if decision.by == "user" else decision.by, started, target=label)
                 return _no(decision, why)
+        if (stop := _stopped(job_id)) is not None:   # Stop while a card waited
+            _trace(self.op, app, "stopped_by_user", started, target=label)
+            return stop
         session = hands_service.session_for(job_id)
         if session:
             shown = await _label_verb(self.op)
@@ -1183,6 +1254,9 @@ class DesktopTypeExecutor(_DesktopAct):
                 # `type` inserts at the caret: old + new typed there would duplicate the old text.
                 return hands_contract.Result(ok=False, code="append_needs_set_value", refused=True)
             result = await _hands("type", {"app": _target(app), "ref": ref, "text": text}, job_id=job_id)
+        if result.ok and args.get("submit") and _stopped(job_id) is not None:
+            return hands_contract.Result(ok=False, code="stopped_by_user", refused=True,
+                                         message="Stopped by the user after the text was set; Return was not pressed.")
         if result.ok and args.get("submit"):
             # P0 D3: Return goes to whatever has the app's focus. Press it only when that
             # is this field, read live just before.
@@ -1311,7 +1385,7 @@ class DesktopBatchExecutor:
                 nothing_ran = done == 0 and result.get("executed") is False
                 break
             done += 1
-        look = await DesktopLookExecutor().execute({"app": name})
+        look = await DesktopLookExecutor().execute({"app": name})     # after Stop it sends nothing either (H3)
         head = (f"Batch in {name}: {done} of {len(steps)} steps went through"
                 + (f"; {stopped}" if stopped else "") + ".\n")
         out = {"ok": stopped is None, "external": True,
@@ -1358,6 +1432,9 @@ class DesktopOpenExecutor:
         stop = _stopped(job_id)
         if stop is not None:
             return stop
+        run = _scheduled_run() if job_id is None else None
+        if (full := _scheduled_full(run)) is not None:
+            return full
         if hands_service.never_touched(name):
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
         running, _ = await _resolve_app(name, job_id)
@@ -1386,6 +1463,10 @@ class DesktopOpenExecutor:
         if not decision.allowed:
             _trace("open", name, "declined" if decision.by == "user" else decision.by, started)
             return _no(decision, f"opening {name}")
+        if (stop := _stopped(job_id)) is not None:   # Stop while the card waited
+            return stop
+        if (other := _scheduled_count(run, str(identity.get("bundle_id") or name))) is not None:
+            return other
         argv = ["/usr/bin/open", "-g", "-a", name] + ([str(path)] if path is not None else [])
         process = await asyncio.create_subprocess_exec(
             *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)

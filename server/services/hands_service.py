@@ -715,8 +715,10 @@ def _work_in_flight() -> set[int]:
 
 
 def stop_running_jobs() -> list[str]:
-    """Every job and every chat turn running now refuses further Hands calls (work started later
-    does not). H3: all chat turns in flight, not only those that used Hands, as with jobs."""
+    """Every job and every chat turn (or scheduled run) running now refuses its further Hands calls —
+    each checked before its first request and again after every card — and so does a job such a turn
+    starts afterwards (`carry_stop_to`). Work started later otherwise does not. H3: all chat turns in
+    flight, not only those that used Hands, as with jobs."""
     from server.services import background_jobs
     running = [job_id for job_id, job in background_jobs._jobs.items() if job.phase != "finished"]
     turns = _work_in_flight()
@@ -726,6 +728,15 @@ def stop_running_jobs() -> list[str]:
         _stopped_turns.intersection_update(turns)
         _stopped_turns.update(turns)
     return running
+
+
+def carry_stop_to(job_id: str) -> None:
+    """A job started by a stopped chat turn is stopped too (②Main's review of #290, point 5): it was
+    not running at the Stop, but it is that turn's work continued elsewhere. Called right after the
+    job is made, before it can run."""
+    if stopped(None):
+        with _lock:
+            _stopped.add(job_id)
 
 
 def stopped(job_id: str | None) -> bool:
