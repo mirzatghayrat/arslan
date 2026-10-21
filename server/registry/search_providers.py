@@ -352,6 +352,9 @@ class SearXNGProvider(SearchProvider):
 
     name = "searxng"
     requires_key = False
+    #: 0.1.63 D5: what a 403 from it usually means (③Hands' review of #306). Said alongside "blocked".
+    refused_hint = ("SearXNG answers 403 when its JSON format is off: if this is your own instance, add "
+                    "`json` to `search.formats` in its settings.yml")
     requires_base_url = True
 
     def __init__(self, base_url: str = "", api_key: str = "", **_: object) -> None:

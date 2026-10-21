@@ -237,9 +237,20 @@ def _blocked(exc: Exception) -> str | None:
     return None
 
 
-def _key_rejected(exc: Exception) -> bool:
+def _key_rejected(exc: Exception, provider) -> bool:
+    """A 401 from a provider that uses the SEARCH key. A native provider's 401 is the chat key, which
+    re-entering the search key would not fix (③Hands' review of #306)."""
     response = getattr(exc, "response", None)
-    return isinstance(exc, httpx.HTTPStatusError) and getattr(response, "status_code", None) == 401
+    return (isinstance(exc, httpx.HTTPStatusError) and getattr(response, "status_code", None) == 401
+            and bool(getattr(provider, "requires_key", False)))
+
+
+def _refused_hint(exc: Exception, provider) -> str:
+    """The provider's own reading of a 403, when it has one (SearXNG's JSON-format switch)."""
+    response = getattr(exc, "response", None)
+    if isinstance(exc, httpx.HTTPStatusError) and getattr(response, "status_code", None) == 403:
+        return getattr(provider, "refused_hint", "") or ""
+    return ""
 
 
 _SEARCH_ADVICE = ("Web search needs a working provider: choose Tavily (free key) or a self-hosted "
@@ -278,11 +289,13 @@ class WebSearchExecutor:
             why = _blocked(exc)
             if why is not None:
                 # 0.1.63 D5: any provider, not only the scrape. Nothing was searched; "no results" would be a lie.
+                hint = _refused_hint(exc, provider)
                 return {"ok": False, "code": "search_blocked", "provider": name,
-                        "error": (f"search blocked: {name} refused the query ({why}). This is not "
-                                  "'no results': nothing was searched.")}
+                        "error": (f"search blocked: {name} refused the query ({why}). "
+                                  + (f"{hint}. " if hint else "")
+                                  + "This is not 'no results': nothing was searched.")}
             error = f"search failed: {category}"
-            if _key_rejected(exc):
+            if _key_rejected(exc, provider):
                 error += f" — {_KEY_ADVICE}"
             return {"ok": False, "code": "search_failed", "error": error, "provider": name}
         return self._found(provider, results)
@@ -303,12 +316,13 @@ class WebSearchExecutor:
             except Exception as exc:  # noqa: BLE001
                 why = _blocked(exc)
                 if why is not None:
-                    failures.append(f"{name}: blocked ({why})")
+                    hint = _refused_hint(exc, provider)
+                    failures.append(f"{name}: blocked ({why}{'; ' + hint if hint else ''})")
                     continue
                 logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
                 failures.append(f"{name}: {net_pin.categorize(exc)}")
                 other_failures += 1
-                key_rejected = key_rejected or _key_rejected(exc)
+                key_rejected = key_rejected or _key_rejected(exc, provider)
                 continue
             found = self._found(provider, results)
             if failures:

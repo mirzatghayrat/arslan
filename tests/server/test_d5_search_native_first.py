@@ -370,3 +370,27 @@ async def test_every_blocked_error_leads_with_the_marker_and_a_mixed_failure_doe
     _calls(monkeypatch, {"tavily": _status(403)})
     out = await executors.EXECUTORS["web_search"].execute({"query": "q"})
     assert out["error"].startswith("search blocked:")
+
+
+async def test_a_searxng_403_names_the_json_switch(monkeypatch):
+    """③Hands' review of #306: SearXNG answers 403 when its JSON format is off. Still blocked, with the fix."""
+    _settings(monkeypatch, name="searxng")
+    _turn(monkeypatch, None)
+    _calls(monkeypatch, {"searxng": _status(403, "http://10.0.0.5:8080/search")})
+    out = await executors.EXECUTORS["web_search"].execute({"query": "q"})
+    assert out["code"] == "search_blocked" and "search.formats" in out["error"]
+    _settings(monkeypatch, name="tavily", key="tvly-test")
+    _calls(monkeypatch, {"tavily": _status(403)})
+    out = await executors.EXECUTORS["web_search"].execute({"query": "q"})
+    assert "search.formats" not in out["error"]                     # Tavily has no such switch
+
+
+async def test_a_native_401_is_not_blamed_on_the_search_key(monkeypatch):
+    """The model's own search uses the CHAT key; "re-enter the search key" would send the user to the wrong
+    field (③Hands' review of #306)."""
+    _settings(monkeypatch, name="duckduckgo")
+    _turn(monkeypatch, LLMAdapter(**CLAUDE))
+    _calls(monkeypatch, {"anthropic": _status(401, "https://api.anthropic.com/v1/messages"),
+                         "duckduckgo": sp.SearchBlocked("challenge")})
+    out = await executors.EXECUTORS["web_search"].execute({"query": "q"})
+    assert out["ok"] is False and "re-enter it in Settings" not in out["error"]

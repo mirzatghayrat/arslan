@@ -111,7 +111,7 @@ class TestRateLimitGetsOneRetry:
 
         class _Rejected(search_providers.SearchProvider):
             name = "rejected"
-            requires_key = False
+            requires_key = True            # a keyed provider: its 401 is the search key (D5)
 
             def __init__(self, api_key: str = "", **kw): ...
 
