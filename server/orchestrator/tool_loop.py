@@ -1343,8 +1343,18 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
+        from server.ws import protocol as _protocol
+        prompt = str(args.get("prompt") or "").strip()
+        if len(prompt) > _protocol.DETAIL_MAX:
+            # S1 (U14 d): the card shows the task's text in full or not at all (as an MCP call's arguments).
+            result = {"ok": False, "code": "too_long_to_show",
+                      "error": f"Not scheduled: the task's text is {len(prompt)} characters, more than a card "
+                               f"can show the user ({_protocol.DETAIL_MAX}). Shorten it."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
         granted = await confirm_schedule(str(args.get("name") or ""),
-                                         str(args.get("when") or ""))
+                                         str(args.get("when") or ""), prompt=prompt)
         if not granted:
             result = {"ok": False, "error": _declined("user declined to schedule this task", "scheduling this task")}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,

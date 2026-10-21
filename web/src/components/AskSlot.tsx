@@ -141,7 +141,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         onConfirm={(scope) => { yes('confirm_action', a.callId, a, scope); clearPendingAction(a.callId); }}
         onCancel={(note) => { no('cancel_action', a.callId, note); clearPendingAction(a.callId); }} />) })),
     ...pendingSchedules.map((s) => ({ rank: 0, seq: s.seq ?? 0, key: `sched:${s.callId}`, render: (queue: AskQueuePosition) => (
-      <ScheduleGrantCard callId={s.callId} name={s.name} when={s.when}
+      <ScheduleGrantCard callId={s.callId} name={s.name} when={s.when} prompt={s.prompt}
         background={s.background} options={s.options} alwaysLabel={s.alwaysLabel}
         expiresAt={expires(s)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_schedule', callId, s, scope); clearPendingSchedule(s.callId); }}

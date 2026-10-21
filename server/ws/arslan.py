@@ -490,12 +490,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             permissions.Context(conversation_id=conversation_id))
         return decision.allowed
 
-    async def confirm_schedule(name: str, when: str) -> bool:
+    async def confirm_schedule(name: str, when: str, prompt: str = "") -> bool:
         """0.1.61: decided by permissions.decide (P2 裁决①'s per-connection grant is now the
-        conversation's)."""
+        conversation's). S1 (U14 d): the card shows the task's prompt."""
         decision = await permissions.decide(permissions.Request(
             kind="schedule", target="*", title=f"Schedule “{name}”?", detail=when,
-            frame=protocol.propose_schedule(uuid.uuid4().hex, name, when)),
+            frame=protocol.propose_schedule(uuid.uuid4().hex, name, when, prompt)),
             permissions.Context(conversation_id=conversation_id))
         return decision.allowed
 

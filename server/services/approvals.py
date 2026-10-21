@@ -446,12 +446,12 @@ class JobConfirmations:
                 self._context())
         return decision.allowed
 
-    async def schedule(self, name: str, when: str) -> bool:
+    async def schedule(self, name: str, when: str, prompt: str = "") -> bool:
         from server.services import permissions
         with permissions.asking_with(self.asker):
             decision = await permissions.decide(permissions.Request(
                 kind="schedule", target="*", title=f"Schedule “{name}”?", detail=when,
-                frame=protocol.propose_schedule(uuid.uuid4().hex, name, when)),
+                frame=protocol.propose_schedule(uuid.uuid4().hex, name, when, prompt)),
                 self._context())
         return decision.allowed
 

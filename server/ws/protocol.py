@@ -141,11 +141,16 @@ def card_resolved(call_id: str, outcome: str, by: str | None = None) -> dict[str
     return frame
 
 
-def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:
+def propose_schedule(call_id: str, name: str, when: str, prompt: str = "") -> dict[str, Any]:
     """Arslan asks to create a recurring task — once per session (裁决①).
     Emitting this schedules NOTHING; only `confirm_schedule {call_id}` does.
-    The card shows the CADENCE, because that is what the cost depends on."""
-    return {"type": "propose_schedule", "call_id": call_id, "name": name, "when": when}
+    The card shows the CADENCE, because that is what the cost depends on, and (S1, U14 d) the text the
+    task runs each time. The phone's Bridge reads `name` and `when` only (FrameMapper, pinned by ①iOS's
+    test in #319); the tool loop refuses a prompt longer than DETAIL_MAX rather than cut it here."""
+    frame = {"type": "propose_schedule", "call_id": call_id, "name": name, "when": when}
+    if prompt:
+        frame["prompt"] = prompt[:DETAIL_MAX]
+    return frame
 
 
 def propose_capability(call_id: str, card: dict) -> dict[str, Any]:
