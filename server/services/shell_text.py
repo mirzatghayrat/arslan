@@ -7,8 +7,8 @@ argument runs, and the spellings that hide a command word (r''m, r\\m, $IFS, `$(
 no Arslan decision reads them: folding HERMES_HOME (Hermes' own install path, never set here) and the
 interpreter -c/-e and "malformed payload" findings, which carry no payload (terminal_policy reads inline
 scripts itself). The Windows-path variant is kept: dropping it would change verdicts (it only asks more).
-Nothing else changes: a test compares this module with the vendored original command by command while
-that original exists (tests/server/test_shell_text_parity.py); arslan/vendor/hermes goes in S2b-2.
+Nothing else changed: S2b-1 compared it with the vendored original command by command (0 differences)
+before S2b-2 removed that copy; tests/server/test_shell_text_reading.py pins the readings since.
 
 Hermes Agent's MIT license, which covers the parts adapted from it, is in THIRD_PARTY_NOTICES.md
 ("Terminal command reading").

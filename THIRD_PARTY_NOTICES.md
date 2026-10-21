@@ -73,22 +73,20 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
 
 ---
 
-## Terminal command safety — `arslan/vendor/hermes/` (0.1.48+)
+## Capability catalog — `server/registry/seed_catalog.py`
 
 ### NousResearch/hermes-agent — MIT License
-- <https://github.com/NousResearch/hermes-agent>, Copyright (c) 2025 Nous Research. The
-  MIT License text ships with the code as `arslan/vendor/hermes/LICENSE`.
+- <https://github.com/NousResearch/hermes-agent>, Copyright (c) 2025 Nous Research; the license
+  text is in the next section.
 - The capability catalog (`server/registry/seed_catalog.py`) began as Hermes' toolset catalog.
   Checked against `toolsets.py` and `website/docs/reference/toolsets-reference.md` at commit
   `f1d62772923e06faa5fbbaf4fa0b0589dbd75577` (2026-10-21, C9): what remains is shared tool
   names (`read_file`, `write_file`, `patch`, `search_files`, `session_search`, `skills_list`,
   `skill_view`, `skill_manage`, `todo`, `web_search`, `web_extract`) and how some of them are
   grouped. The toolset names and every description are Arslan's own wording.
-- Vendored: `tools/approval_detection.py` at commit
-  `6b2fe92af66a95ea6a5caa309e05c5643cdd79de` (main, 2026-10-01), with one change (the
-  `ansi_strip` import path), plus `ansi_strip.py`. They provide the dangerous-command
-  detection that `server/services/terminal_policy.py` uses for its ask and forbid answers;
-  Arslan's own outward-action and credential rules live in that policy file.
+- 0.1.48–0.1.63 vendored Hermes' `tools/approval_detection.py` and `ansi_strip.py` under
+  `arslan/vendor/hermes/`. 0.1.63 replaced them with Arslan's own `shell_text.py` (S2b-1) and
+  removed the copy (S2b-2).
 
 ## Terminal command reading — `server/services/shell_text.py` (0.1.63+)
 
@@ -98,7 +96,7 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
   shell scanner, command starts and command words, `-c` and program-option payloads, quote and
   grep-pattern masks, and command-word deobfuscation. The hard floor in
   `server/services/terminal_policy.py` (layer ①) is adapted from the same file's hardline rules.
-- This notice stays when the vendored copy (`arslan/vendor/hermes/`) is removed.
+- The vendored copy (`arslan/vendor/hermes/`) was removed in 0.1.63; this notice stays.
 
 ```
 MIT License
