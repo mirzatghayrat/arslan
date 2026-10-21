@@ -79,7 +79,10 @@ def _t1_reminders_script(kind: str, target: str, detail: str) -> bool:
 ACTION_OK = {"-T1-": _t1_reminders_script,
              "-T12-": lambda kind, target, detail: kind == "desktop_app" and target.strip() == "Hands Fixture"}
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
-RUN_TIMEOUT_S = 15 * 60
+# 0.1.63 (⓪Plan, after K4b's gate): above Arslan's own hard wall clock for a run (standard tier 1800 s x
+# HARD_OVER_SOFT 1.5 = 45 min), so the product's limits end a run, never the bench. At 15 min the bench cut
+# off K4b's T2 r3, an inline turn Arslan's limits still allowed (tests/test_kernel_bench.py pins the order).
+RUN_TIMEOUT_S = 50 * 60
 
 
 @dataclass

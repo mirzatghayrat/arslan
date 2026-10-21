@@ -773,3 +773,12 @@ def test_a_reused_pid_is_not_killed(monkeypatch):
     tree = runner._descendants(10)
     assert tree == {11: "Mon Oct 19 10:00:01 2026", 12: "Mon Oct 19 10:00:02 2026"}
     assert runner._survivors(tree) == [11]          # 12 is a new process on a recycled pid
+
+
+def test_the_bench_never_ends_a_run_before_arslans_own_limits_do():
+    """0.1.63 K4b gate: a 15-minute bench cap cut off an inline T2 turn that Arslan's own limits allowed.
+    The driver's cap is above the standard tier's hard wall clock, and the process limit above the driver's."""
+    from arslan.execution_budget import DEFAULT_TIER, HARD_OVER_SOFT, TIERS
+    from scripts.kernel_bench import runner
+    assert RUN_TIMEOUT_S > TIERS[DEFAULT_TIER]["wall_seconds"] * HARD_OVER_SOFT
+    assert runner.TIMEOUT > RUN_TIMEOUT_S
