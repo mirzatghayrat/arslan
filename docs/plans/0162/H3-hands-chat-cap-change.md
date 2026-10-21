@@ -45,7 +45,7 @@ H1 列出的那些保护都要留着：每个 App 一张卡、危险步骤每次
   - 新加的测试见「验收」。
 - **`docs/specs/2026-10-08-0157-hands-v2.md`：** 在 §15「Amendments」里加一条修订，写日期、新规则和 H1 的结论。§5.7 原文不改。
   - 这份 spec 有代码引用，留在 main 上（决定 D13）。
-- **`docs/CAPABILITY_INVENTORY.md`：** rebase 后重新生成（`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`）。
+- **`docs/CAPABILITY_INVENTORY.md`：** 不在本 PR 里改。C5b（#201）之后能力清单只在发版 PR 里重新生成（R63），两次发版之间 main 上的那份本来就会过时（2026-10-21 ③Hands 提出，⓪Plan 改卡）。
 
 ## 不许碰
 
