@@ -101,7 +101,11 @@ def test_token_threshold_is_honestly_post_response():
 
 
 async def test_wall_timeout_finalizes_host_and_preserves_budget(execution_db, monkeypatch):
-    monkeypatch.setenv("ARSLAN_RUN_MAX_WALL_SECONDS", "0.1")
+    # The wall clock starts when host_run.execute is entered (@governed), before the run row is written
+    # and before the try that finalizes it. A 0.1 s wall (hard stop 0.15 s) fired before either on busy
+    # CI runners: no row (NoResultFound), or a row left "recording". 1 s (hard stop 1.5 s) leaves the
+    # writes room; the body still waits forever, so the deadline is what ends the run.
+    monkeypatch.setenv("ARSLAN_RUN_MAX_WALL_SECONDS", "1")
 
     async def body(emit):
         emit({"type": "stream_chunk", "content": "partial"})
