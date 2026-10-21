@@ -1,6 +1,7 @@
 """Completion first after a stop (0.1.50, S6 bench T2).
 
-Repeated failure or a spent fetch allowance ends research, not the deliverable:
+Repeated failure ends research, not the deliverable (0.1.63 K4b: a spent web-read allowance no longer
+does; live reads have none):
 the run gets up to two steps where only the save tools run, then answers in text.
 K3: those steps keep the whole tool table (Claude's cache); other calls are refused.
 And the synthesis fallback keeps each finding's link."""
@@ -37,7 +38,7 @@ def _write(cid="w1"):
     return golden._Resp(None, [golden._tc("write_file", {"path": "jobs.csv", "content": "a,b"}, cid)])
 
 
-async def _run(monkeypatch, replies, *, search, writers=True, fetch_cap=None):
+async def _run(monkeypatch, replies, *, search, writers=True):
     adapter = golden._Recorder(replies)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     golden._pin_workspace(monkeypatch)
@@ -45,8 +46,6 @@ async def _run(monkeypatch, replies, *, search, writers=True, fetch_cap=None):
     async def own():
         return True
     monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
-    if fetch_cap is not None:
-        monkeypatch.setattr(tool_loop, "LIVE_FETCH_BUDGET", fetch_cap)
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "web_search", search)
     monkeypatch.setitem(executors.EXECUTORS, "write_file", golden._Write())
@@ -91,24 +90,6 @@ async def test_finish_mode_keeps_the_tool_table_and_a_second_refusal_ends_resear
     assert all("Tools that still run: write_file; any other call is refused." in c["user"] for c in calls[3:5])
     refused = [r for r in result["tool_trace"] if r["result"].get("code") in ("wrap_up", "task_no_progress")]
     assert len(refused) == 2 and result["final"] == "Here is what I have."
-
-
-@pytest.mark.asyncio
-async def test_a_spent_fetch_allowance_moves_to_saving(monkeypatch):
-    replies = [_search(0), _search(1), _write(), golden._Resp("Saved jobs.csv.")]
-    result, calls = await _run(monkeypatch, replies, search=_Fresh(), fetch_cap=2)
-    assert {"web_search", "write_file"} <= set(calls[1]["tools"])
-    assert "write_file" in calls[2]["tools"] and "reading allowance" in calls[2]["user"]
-    assert calls[3]["tools"] is None
-    assert result["final"] == "Saved jobs.csv."
-
-
-@pytest.mark.asyncio
-async def test_a_spent_fetch_allowance_without_save_tools_changes_nothing(monkeypatch):
-    replies = [_search(0), _search(1), golden._Resp("done")]
-    result, calls = await _run(monkeypatch, replies, search=_Fresh(), writers=False, fetch_cap=2)
-    assert "web_search" in calls[2]["tools"] and "allowance" not in calls[2]["user"]
-    assert result["final"] == "done"
 
 
 def test_findings_keep_their_links():
