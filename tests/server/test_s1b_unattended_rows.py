@@ -57,15 +57,19 @@ async def test_a_command_asked_to_run_outside_the_sandbox_is_listed():
     assert out["ok"] is False and _policy(row, "command") and row.target == "unsandboxed:*"
 
 
-async def test_a_write_in_the_users_own_folder_is_listed(tmp_path):
+@pytest.mark.parametrize("key,args", [("write_file", {"path": "a.md", "content": "x"}),
+                                      ("edit_file", {"path": "a.md", "old_string": "old", "new_string": "x"})])
+async def test_a_write_or_an_edit_in_the_users_own_folder_is_listed(tmp_path, key, args):
+    """⓪Plan's condition: the schedule card promises any step that needs an OK is listed in the Inbox."""
     chosen = tmp_path / "chosen"
     chosen.mkdir()
+    (chosen / "a.md").write_text("old")
     async with db_session.AsyncSessionLocal() as db:
         db.add(Setting(key="workspace_dir", value=str(chosen)))
         await db.commit()
-    out = await _dispatch("write_file", {"path": "a.md", "content": "x"})
+    out = await _dispatch(key, args)
     [row] = await _rows()
-    assert out["ok"] is False and not (chosen / "a.md").exists()
+    assert out["ok"] is False and (chosen / "a.md").read_text() == "old"
     assert _policy(row, "workspace_write") and row.target == str(chosen.resolve())
 
 

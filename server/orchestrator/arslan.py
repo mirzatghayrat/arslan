@@ -1414,6 +1414,7 @@ async def _every_tool() -> list[dict]:
          "description": "Schedule a recurring task that YOU will run later. args: "
                         "{name, prompt, when} where when is 'every: 3600' (seconds) or "
                         "'cron: 0 9 * * *'. The user is asked for permission: for this one "
+                        # S1 (U14 d): this sentence's wording is pending the cloud audit (U14 [2]).
                         "task, or for any scheduled task for the rest of the conversation. A scheduled "
                         "run is unattended: it can write files or run sandboxed commands only in "
                         "Arslan's own folder (and temporary/cache folders), and any step that needs "
