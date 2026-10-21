@@ -110,7 +110,7 @@ describe("maybeAutoTitle", () => {
     vi.clearAllMocks();
   });
 
-  it("calls generate with firstMessage and firstReply and invokes onTitle with the result", async () => {
+  it("calls generate with the first message only (D8: never the reply) and invokes onTitle", async () => {
     const generate = vi.fn().mockResolvedValue({ title: "Generated Title" });
     const onTitle = vi.fn();
 
@@ -119,7 +119,7 @@ describe("maybeAutoTitle", () => {
     await maybeAutoTitle("thread-1", { history }, generate, onTitle);
 
     expect(generate).toHaveBeenCalledOnce();
-    expect(generate).toHaveBeenCalledWith("User question", "Assistant answer");
+    expect(generate).toHaveBeenCalledWith("User question");
     expect(onTitle).toHaveBeenCalledOnce();
     expect(onTitle).toHaveBeenCalledWith("thread-1", "Generated Title");
   });
@@ -156,10 +156,9 @@ describe("maybeAutoTitle", () => {
     const generate = vi.fn().mockResolvedValue({ title: "Title" });
     const onTitle = vi.fn();
 
-    // history has no assistant message — firstReply will be undefined
     await maybeAutoTitle("thread-1", { history: [userMsg("Only user msg")] }, generate, onTitle);
 
-    expect(generate).toHaveBeenCalledWith("Only user msg", undefined);
+    expect(generate).toHaveBeenCalledWith("Only user msg");
     expect(onTitle).toHaveBeenCalledWith("thread-1", "Title");
   });
 

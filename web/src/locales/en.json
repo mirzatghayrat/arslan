@@ -778,8 +778,6 @@
     "slotGoToProviders": "Add a model",
     "slotLabelCompaction": "Conversation compaction",
     "slotPurposeCompaction": "Summarises older messages when a conversation grows long, so it can keep going.",
-    "slotLabelTitle": "Conversation titles",
-    "slotPurposeTitle": "Writes the short name a conversation gets in the sidebar.",
     "slotLabelSynthesis": "Final answer",
     "slotPurposeSynthesis": "Turns the findings gathered by tools into the finished answer.",
     "slotLabelVision": "Images",

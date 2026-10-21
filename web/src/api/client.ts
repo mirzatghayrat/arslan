@@ -448,15 +448,14 @@ export const api = {
   updateFact: (id: number, body: { content?: string; sensitive?: boolean }) =>
     request<UserFact>(`/facts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteFact: (id: number) => request<void>(`/facts/${id}`, { method: "DELETE" }),
-  /** Generate a concise thread title from the first user message + optional first reply.
-   *  conversationId (S3-M3 fold-in) lets the backend usage ledger attribute the
-   *  titler call to its conversation — optional on the wire (TitleIn). */
-  generateTitle: (firstMessage: string, firstReply?: string, conversationId?: string): Promise<{ title: string }> =>
+  /** Generate a concise thread title from the first user message alone (D8: the reply never
+   *  goes to a title model). conversationId (S3-M3 fold-in) picks the conversation's own model
+   *  and lets the usage ledger attribute the call — optional on the wire (TitleIn). */
+  generateTitle: (firstMessage: string, conversationId?: string): Promise<{ title: string }> =>
     request<{ title: string }>("/orchestrator/title", {
       method: "POST",
       body: JSON.stringify({
         first_message: firstMessage,
-        first_reply: firstReply,
         ...(conversationId ? { conversation_id: conversationId } : {}),
       }),
     }),

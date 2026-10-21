@@ -778,8 +778,6 @@
     "slotGoToProviders": "Añadir un modelo",
     "slotLabelCompaction": "Compactación de la conversación",
     "slotPurposeCompaction": "Resume los mensajes antiguos cuando una conversación se alarga, para que pueda continuar.",
-    "slotLabelTitle": "Títulos de conversación",
-    "slotPurposeTitle": "Escribe el nombre corto que la conversación recibe en la barra lateral.",
     "slotLabelSynthesis": "Respuesta final",
     "slotPurposeSynthesis": "Convierte los hallazgos reunidos por las herramientas en la respuesta terminada.",
     "slotLabelVision": "Imágenes",

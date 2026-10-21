@@ -391,11 +391,9 @@ export interface AppSettings {
   synthesis_config_id?: string;
   synthesis_model?: string;
   compaction_model?: string;
-  title_model?: string;
   router_model?: string;
   vision_model?: string;
   compaction_config_id?: string;
-  title_config_id?: string;
   router_config_id?: string;
   vision_config_id?: string;
   /** Sleep-time curation sweep. Wire type is a real bool here (unlike

@@ -778,8 +778,6 @@
     "slotGoToProviders": "モデルを追加",
     "slotLabelCompaction": "会話の圧縮",
     "slotPurposeCompaction": "会話が長くなったとき、古いメッセージを要約して続けられるようにします。",
-    "slotLabelTitle": "会話のタイトル",
-    "slotPurposeTitle": "サイドバーに表示される会話の短い名前を書きます。",
     "slotLabelSynthesis": "最終的な回答",
     "slotPurposeSynthesis": "ツールが集めた材料を、仕上がった回答にまとめます。",
     "slotLabelVision": "画像",

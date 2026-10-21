@@ -75,7 +75,6 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'provider.capabilities': 'models',
   'llm.strategy': 'models',
   'slot.compaction': 'models',
-  'slot.title': 'models',
   'slot.synthesis': 'models',
   'slot.vision': 'models',
   'slot.router': 'models',
