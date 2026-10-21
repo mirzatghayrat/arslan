@@ -66,7 +66,7 @@
 | [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 已合并（K1a #212 = `df18ba0e`；K1b #213 = `18d691bb`；合并后对照在 #213） |
 | [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 已合并（K2a #240 = `4f471a30`；K2b #252 = `8780fc34`，⓪Plan 的 k2b-ds 过门槛：19/27 通过，基线 18；③Hands 审过） |
 | [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 已合并（K3 #259 = `f3bda58d`，DeepSeek 门槛过；K3b #275 = `7e8c57aa`：Claude 上不改已发出的历史、清理改 100k/40k，E26） |
-| [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | K4a #277：代码已批（⓪Plan，Opus 5.5），5% 账单核对过；DeepSeek 门槛待重跑（bench 每次上限调到 $2.50 后）；K4b 待开工 |
+| [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | K4a 已合并（#277 = `5a97ff7f`；DeepSeek 门槛过：通过 20/27、「等你」3，基线 18、4；5% 账单核对过）；K4b 待开工 |
 | [K5](K5-working-method-tool-docs.md) | 工作方法与工具说明；多步骤任务结束时给用户四行收尾 | ②Main | v0.1.63 | 必须 | K4b、F1 | 待开工 |
 | [K7](K7-tools-on-demand.md) | MCP 和少用的工具按需取用 | ②Main | v0.1.63 | 必须 | K5、C3、F3 | 待开工 |
 | [K8](K8-true-streaming-guards-after.md) | 真流式，守卫改为事后；按供应商拆 K8a、K8b、K8c | ②Main | v0.1.63 | 必须 | K7 | 待开工 |
@@ -274,6 +274,8 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
   - 改成：写这些位置先弹一张单独的卡，写明位置和后果。
   - 这一条只管「写文件」。`launchctl`、`defaults write`、`crontab` 这类命令已经有 login-items 的卡（③Hands 审 #266 时补充）。
   - 要先核对会不会挡住已批准的 `ssh-keygen`、`gh auth login`、`aws configure`、`brew` 这类正常写法。
+- **用量页和主动诊断按缓存档位算钱**（K4a #277 没覆盖到）：今天这两处只按输入、输出两种价算；要按缓存读、写分档，得先存缓存的列，要一个迁移。
+- **回合里历史的上限按模型的上下文窗口定**（K4a `ad08c68f`）：今天在服务端不清理旧工具结果的路径上（除了 Claude 原生那一条都是，经代理用的 Claude 也算），上限是固定的 64k 字符（网页抽取成功过以后是 96k），超了就裁到一半；窗口大的模型可以放宽，要在 bench 上量缓存和花费。
 - **Aegis 试点的结论**（§9）：写在这里，v0.1.64 开工前由用户决定要不要全面换。
 - 其余见领先路线 §3、§4 的 v0.1.64 列：卡片界面与文案大合并（D1）；diff 预览；网络出口控制；子 agent 统一成一个工具；后台进程与进程工具；目标模式；ACP。
 
