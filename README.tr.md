@@ -128,7 +128,7 @@ iPhone bağlantısında Arslan sunucusu ya da aktarıcı yoktur: mesajlar özel 
 
 ## Kurulum
 
-Kaynak koddan ya da Docker ile çalıştırmak için (katkıda bulunanlar ve kendi sunucusunda barındıranlar): **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+Kaynak koddan çalıştırmak için (katkıda bulunanlar): **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 Görsellerde ve taranmış PDF'lerde metin tanıma, güvenlik duruşunun tamamı, ortam değişkenleri ve veri yedekleme için [İngilizce README](README.md#install)'ye bak (esas olan İngilizce sürümdür).
 

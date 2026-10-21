@@ -37,7 +37,7 @@ CMD_DOC_IDS = DOC_IDS + ["CONTRIBUTING"]
 
 def test_readme_is_desktop_first():
     """README's install story is the desktop app (v0.1.4 rewrite, user-ordered):
-    the DMG download link plus a pointer to docs/QUICKSTART.md for source/Docker.
+    the DMG download link plus a pointer to docs/QUICKSTART.md for running from source.
     The dev walkthrough must NOT regrow here — localhost URLs and uvicorn
     commands in the README were exactly what sent app users down the dev path."""
     text = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -45,7 +45,7 @@ def test_readme_is_desktop_first():
         "README.md lost the desktop download link"
     )
     assert "docs/QUICKSTART.md" in text, (
-        "README.md must point source/Docker users at docs/QUICKSTART.md"
+        "README.md must point source users at docs/QUICKSTART.md"
     )
     for banned in ("uv sync", "uvicorn", "localhost:5173", "127.0.0.1:8741"):
         assert banned not in text, (

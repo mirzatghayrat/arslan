@@ -9,7 +9,7 @@
 # The exact same files build fully (87 KB, all utilities) in a clean directory.
 # oxide does not follow the symlinks back into the git tree, so it scans the
 # staging dir cleanly. Source of record stays in arslan/web; edits hot-reload
-# through the src symlink. In a clean context (Docker/CI) plain `vite` also works,
+# through the src symlink. In a clean context (CI) plain `vite` also works,
 # and this script is still harmless there.
 #
 # Usage: scripts/clean-vite.sh [dev|build|preview] [extra vite args...]
@@ -52,7 +52,7 @@ fi
 cd "$STAGE"
 npx vite "$@"
 
-# For builds, copy the produced dist/ back into the repo (Docker/release expect web/dist).
+# For builds, copy the produced dist/ back into the repo (release expects web/dist).
 if [ "${1:-}" = "build" ]; then
   rm -rf "$WEB_DIR/dist"
   cp -R "$STAGE/dist" "$WEB_DIR/dist"

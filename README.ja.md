@@ -128,7 +128,7 @@ iPhone との接続に Arslan のサーバーや中継はありません。メ�
 
 ## インストール
 
-ソースや Docker から動かす場合（コントリビューター・セルフホスト）：**[docs/QUICKSTART.md](docs/QUICKSTART.md)** を参照。
+ソースから動かす場合（コントリビューター）：**[docs/QUICKSTART.md](docs/QUICKSTART.md)** を参照。
 
 画像やスキャン PDF の文字認識、セキュリティの詳細、環境変数、データのバックアップは[英語版 README](README.md#install) をご覧ください（英語版が正です）。
 

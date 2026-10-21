@@ -128,7 +128,7 @@ Die iPhone-Verbindung hat keinen Arslan-Server und kein Relay: Nachrichten laufe
 
 ## Installation
 
-Aus dem Quellcode oder mit Docker (Mitwirkende & Self-Hosting): siehe **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+Aus dem Quellcode (Mitwirkende): siehe **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 Texterkennung in Bildern und gescannten PDFs, die vollständige Sicherheitslage, Umgebungsvariablen und Datensicherung: siehe [englisches README](README.md#install) (maßgeblich ist die englische Fassung).
 
