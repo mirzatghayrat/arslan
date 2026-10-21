@@ -37,6 +37,10 @@
 - **d. 定时任务的确认卡要显示任务内容（prompt）和边界。** 今天卡上只有名字和频率（`ws/protocol.py:131-135`）。
 - **说明改成这一句**（`arslan.py:1341-1342` 的 `schedule_task` 说明；`schedule_tools.py:9-11` 的文档同步）：
   > Scheduled runs are unattended: they can search, read, and write files or run sandboxed commands only in Arslan's own folder (~/Arslan). Any step that needs the user's OK is refused and listed in the Inbox.
+- **心跳也是定时任务，同一条路**（⓪Plan 审 #301 时发现）：`heartbeat.py:3-7` 写着它是「an ordinary scheduled task with target="arslan"」。所以下面三处说的「不能写、不能跑命令」也不成立，S1 和上面那句新说明一起改，文字一样先给云端审计看：
+  - 设置页 `heartbeatDesc`，6 种语言（「It can only look and report — a background run cannot write files or run commands」）；
+  - 心跳发给模型的提示 `build_prompt`：「这一轮你不能写文件、不能跑命令」。改成指示（「这一轮不要写文件、不要跑命令」），不再说能力；
+  - 开发者文档：`heartbeat.py:5-7、39-40`，以及上面的 `schedule_tools.py:9-11`。
 - **S1-0，先做：** 今天的说明写着「Scheduled runs are read-only: they cannot write files or run commands」，模型会照着告诉用户「定时任务是只读的」，而这不是真的。S1 还没开工，所以先单独删掉这一句（不换成上面那句，那句要等 a–c 做完才成立），一行的 PR，K5 合并后、在 K 线空档里合。
 - 安全相关：由 Opus 5.5 写和审；新说明和卡上的文字定稿后先发云端审计看。
 
