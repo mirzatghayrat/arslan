@@ -98,7 +98,9 @@ class TestRateLimitGetsOneRetry:
         # is how a throttle becomes a hang.
         assert calls["n"] == 2, calls
         assert out["ok"] is False
-        assert "rate-limited" in out["error"]
+        # 0.1.63 D5: a 429 that survives the retry is the provider refusing to search: blocked, not
+        # "no results" (card D5, ③Hands' review item 3).
+        assert out["code"] == "search_blocked" and "http 429" in out["error"]
 
     async def test_a_bad_key_is_NOT_retried(self, monkeypatch):
         # Retrying a rejected key just gets it rejected again, more slowly. Only the
@@ -115,7 +117,7 @@ class TestRateLimitGetsOneRetry:
 
             async def search(self, query, num_results=5):
                 calls["n"] += 1
-                raise _status(403)
+                raise _status(401)         # 0.1.63 D5: 401 is the rejected key; 403 is a block
 
         monkeypatch.setattr(search_providers, "_PROVIDERS",
                             {**search_providers._PROVIDERS, "rejected": _Rejected})
@@ -129,7 +131,7 @@ class TestRateLimitGetsOneRetry:
         out = await executors.WebSearchExecutor().execute({"query": "x"})
 
         assert calls["n"] == 1, "a rejected key was retried"
-        assert "key-rejected" in out["error"]
+        assert "key-rejected" in out["error"] and "re-enter it in Settings" in out["error"]
 
 
 async def _no_sleep(_seconds: float) -> None:
