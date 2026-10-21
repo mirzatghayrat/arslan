@@ -502,6 +502,10 @@ def test_a_remote_card_answered_with_remember_still_asks_next_time(app_client, m
     async def ssh_on():
         async with app_client.db_maker() as db:
             await settings_service.update_settings(db, {"ssh_enabled": "true"})
+            # C3b: ssh_run is offered once a machine is enrolled
+            from server.services import ssh_nodes
+            await ssh_nodes.enroll(db, name="box", host="192.168.1.9", username="me",
+                                   host_keys=["ssh-ed25519 AAAA"], fingerprints=["SHA256:x"])
     app_client.portal.call(ssh_on)
 
     async def prep(args):
