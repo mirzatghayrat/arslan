@@ -97,5 +97,17 @@ async def extract_text(
 
     limit = settings.attach_extract_char_limit
     if len(text) > limit:
-        return text[:limit], True
+        return text[:limit] + _cut_note(limit, len(text), page=data is None), True
     return text, source_truncated
+
+
+def _cut_note(kept: int, total: int, *, page: bool) -> str:
+    """D9 (v0.1.63): the model is told the attachment was cut, so it does not answer from the start
+    as if it were all. A phone attachment's original is saved, and its message says where (the
+    Bridge's "Attached from iPhone: name → path"); a window attachment is never stored."""
+    if page:
+        return (f"\n\n[Only the first {kept:,} of {total:,} characters of this page are included; tell the user "
+                "that only the beginning was read.]")
+    return (f"\n\n[Only the first {kept:,} of {total:,} characters of this file are included. If the message says "
+            "where the file was saved, read the rest from there with read_file; otherwise tell the user that only "
+            "the beginning was read.]")
