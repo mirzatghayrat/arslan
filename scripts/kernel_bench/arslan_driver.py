@@ -273,6 +273,16 @@ def provider_body(provider: str, model: str, base_url: str) -> dict:
     return {"label": "bench", "provider": provider, "model": model, "base_url": base_url, "api_key": "bench-dummy"}
 
 
+def settings_body(run_dir: str) -> dict:
+    """The test instance's settings: its workspace is the run folder, plus BENCH_ARSLAN_SETTINGS, a JSON object of
+    plain settings for an A/B cell (e.g. {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63).
+    Values must be strings, as the settings API stores them; the workspace cannot be overridden."""
+    extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
+    if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
+        raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")
+    return {**extra, "workspace_dir": run_dir}
+
+
 def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> None:
     """Point the test instance's model at the metering proxy and its workspace at the run folder."""
     import httpx
@@ -283,7 +293,7 @@ def configure(api: str, run_dir: str, base_url: str, model: str, provider: str =
         cfg = c.put(f"{api}/settings/provider-configs/{cfg['id']}", json=body).json() if cfg else \
             c.post(f"{api}/settings/provider-configs", json=body).json()
         c.patch(f"{api}/settings/provider-configs/{cfg['id']}/primary").raise_for_status()
-        c.put(f"{api}/settings", json={"workspace_dir": run_dir}).raise_for_status()
+        c.put(f"{api}/settings", json=settings_body(run_dir)).raise_for_status()
 
 
 if __name__ == "__main__":

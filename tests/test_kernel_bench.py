@@ -782,3 +782,16 @@ def test_the_bench_never_ends_a_run_before_arslans_own_limits_do():
     from scripts.kernel_bench import runner
     assert RUN_TIMEOUT_S > TIERS[DEFAULT_TIER]["wall_seconds"] * HARD_OVER_SOFT
     assert runner.TIMEOUT > RUN_TIMEOUT_S
+
+
+def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
+    import pytest
+
+    from scripts.kernel_bench.arslan_driver import settings_body
+    monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
+    assert settings_body("/run") == {"workspace_dir": "/run"}
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": "true", "workspace_dir": "/elsewhere"}')
+    assert settings_body("/run") == {"tools_all_resident": "true", "workspace_dir": "/run"}
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": true}')
+    with pytest.raises(ValueError):
+        settings_body("/run")
