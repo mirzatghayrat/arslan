@@ -93,6 +93,17 @@ describe("toUiSettings", () => {
     expect((ui as { llmStrategy: string }).llmStrategy).toBe("single");
   });
 
+  it("task_usd_cap reads as dollars: $2 by default or when unusable, at most $100 (K4a)", () => {
+    const read = (v: string | undefined) => toUiSettings({ task_usd_cap: v } as any).taskUsdCap;
+    expect(read("5")).toBe(5);
+    expect(read("7.5")).toBe(7.5);
+    expect(read("")).toBe(2);
+    expect(read(undefined)).toBe(2);
+    expect(read("abc")).toBe(2);
+    expect(read("0")).toBe(2);
+    expect(read("500")).toBe(100);
+  });
+
   it("voice_endpoint_silence_ms is clamped to 300–3000 on read, and defaults to 900 when unusable", () => {
     const read = (v: string | undefined) => toUiSettings({ voice_endpoint_silence_ms: v } as any).voiceEndpointSilenceMs;
     expect(read("50")).toBe(300);
@@ -118,9 +129,13 @@ describe("toBackendSettings", () => {
     llmStrategy: "single",
     distillOnSessionEnd: true,
     orchestratorShellEnabled: false,
-    shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
+    shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
     mcpServerEnabled: false,
   };
+
+  it("sends the dollar cap as text (K4a)", () => {
+    expect(toBackendSettings({ ...baseUi, taskUsdCap: 5 }).task_usd_cap).toBe("5");
+  });
 
   it("omits search_api_key when empty", () => {
     const body = toBackendSettings({ ...baseUi, apiKeySearch: "" });

@@ -90,7 +90,7 @@ async def test_without_time_left_the_command_never_starts(own_folder, captured):
 
 
 async def test_a_background_job_gets_the_same_rule(own_folder, captured):
-    job = execution_budget.job_budget("standard")
+    job = execution_budget.run_budget("standard")
     with execution_budget.scope(job):
         await run({"command": "true", "timeout_s": 600})
         assert captured[-1]["timeout_s"] == 600          # plenty left: the full 600

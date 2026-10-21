@@ -34,6 +34,13 @@ TOOL_TIMEOUT_S = 20.0
 # 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
 # is fixed: the command's limit first (with its output), this backstop next, the turn last.
 _RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
+# The in-turn history's bound on a provider that doesn't clear old results itself (rendered characters).
+# K4a gate (⓪Plan's DeepSeek run, T2): over the bound, the history is trimmed to half of it in one go.
+# Trimmed back under the bound one message at a time, the start of the history changed on every step,
+# and the provider's prefix cache missed everything after the system prompt (about 60k uncached tokens a
+# step); now the cache breaks once per chunk and the steps in between only append (the K3b family).
+_IN_TURN_CHARS = 64_000
+_IN_TURN_CHARS_RESEARCH = 96_000
 # Task-record refusals that end one call, never the turn or the job (_dispatch_tool): what the model is told.
 _REFUSED_STEP = {
     "task_reconciliation_required": "This exact action already ran and its outcome is unknown. Do not repeat it; "
@@ -488,7 +495,7 @@ def _schema_problem(args: dict, schema: dict | None) -> str | None:
 def _progress_note(policy) -> str:
     """Trusted host note appended to a result that made no progress, so the
     model sees the loop detector before it stops the turn."""
-    return (f"\n[Host note: no new progress — {policy.stalled} of {policy.max_stalled} steps without "
+    return (f"\n[Host note: no new progress — {policy.count} of {policy.limit} steps without "
             "progress before this turn stops. Change approach, or answer with what you have.]")
 
 
@@ -2666,8 +2673,9 @@ async def _run_native(
                 "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
                 "A shared commit URL does not date a translation's baseline or prove why texts differ. "
                 "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
+        in_turn = _IN_TURN_CHARS_RESEARCH if has_web_evidence else _IN_TURN_CHARS
         convo, compacted = (convo, False) if server_trims else bounded_history(
-            convo, max_chars=96_000 if has_web_evidence else 64_000,
+            convo, max_chars=in_turn, trim_to=in_turn // 2,
             preserve_tail=0 if oversized_feedback else pending_feedback, size_of=_rendered_size)
         pending_feedback = 0
         if oversized_feedback:
@@ -2861,7 +2869,7 @@ async def _run_native(
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)
-                if not policy.observe(name, args, result) and policy.stalled >= 2 and convo \
+                if not policy.observe(name, args, result) and policy.count >= 2 and convo \
                         and convo[-1].get("role") == "tool":
                     convo[-1]["content"] += _progress_note(policy)
                 # 0.1.50: a saved table of links gets the host link check (link_check).

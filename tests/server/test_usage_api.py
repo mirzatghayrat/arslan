@@ -23,7 +23,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from arslan.llm import usage_sink
+from arslan.llm import prices, usage_sink
 from server.db.models import Base, Run, UsageLedger
 
 AUTH = {"Authorization": "Bearer test-token"}
@@ -86,7 +86,7 @@ async def test_conversation_usage_requires_auth(client):
 async def test_conversation_usage_aggregates_runs_and_ledger(client):
     cid = "conv-u"
     async with db_session.AsyncSessionLocal() as db:
-        # priced real run: 0.1 MTok in * $3 + 0.01 MTok out * $15 = $0.45
+        # priced real run: 0.1 MTok in + 0.01 MTok out at Sonnet 5's price (K4a refresh: $2 / $10)
         db.add(_run(cid, model=SONNET, provider="anthropic",
                     tin=100_000, tout=10_000, task_tokens=110_000))
         # unknown-price run → tokens counted, unpriceable
@@ -114,13 +114,13 @@ async def test_conversation_usage_aggregates_runs_and_ledger(client):
     assert r.status_code == 200
     body = r.json()
     assert body["tokens_total"] == 110_000 + 100 + 500 + 1100 + 300
-    assert body["usd_total"] == pytest.approx(0.45 + 0.0015)
+    assert body["usd_total"] == pytest.approx(prices.usd(SONNET, 100_000, 10_000) + 0.0015)
     assert body["usd_partial"] is True   # mystery run + estimated rows carry no USD
     assert body["estimated_any"] is True
     scopes = {s["scope"]: s for s in body["by_scope"]}
     assert set(scopes) == {"spawn", "router", "judge"}
     assert scopes["spawn"]["tokens_total"] == 110_600
-    assert scopes["spawn"]["usd"] == pytest.approx(0.45)
+    assert scopes["spawn"]["usd"] == pytest.approx(prices.usd(SONNET, 100_000, 10_000))
     assert scopes["router"]["tokens_total"] == 1100
     assert scopes["router"]["usd"] == pytest.approx(0.0015)
     assert scopes["judge"]["tokens_total"] == 300
@@ -149,7 +149,7 @@ async def test_conversation_usage_clean_priced_conversation(client):
         await db.commit()
     r = await client.get(f"/api/v1/conversations/{cid}/usage", headers=AUTH)
     body = r.json()
-    assert body["usd_total"] == pytest.approx(1000 / 1e6 * 3 + 500 / 1e6 * 15)
+    assert body["usd_total"] == pytest.approx(prices.usd(SONNET, 1000, 500))
     assert body["usd_partial"] is False
     assert body["estimated_any"] is False
 
@@ -172,7 +172,7 @@ async def test_conversation_usage_counts_scheduled_runs(client):
     scopes = {s["scope"]: s for s in body["by_scope"]}
     assert set(scopes) == {"spawn", "scheduled"}
     assert scopes["scheduled"]["tokens_total"] == 110
-    assert scopes["scheduled"]["usd"] == pytest.approx(100 / 1e6 * 3 + 10 / 1e6 * 15)
+    assert scopes["scheduled"]["usd"] == pytest.approx(prices.usd(SONNET, 100, 10))
     assert scopes["spawn"]["tokens_total"] == 1500
 
 
@@ -226,11 +226,11 @@ async def test_usage_summary_24h_window(client):
     assert rows[("anthropic", SONNET, "replay")]["tokens_total"] == 18
     spawn = rows[("anthropic", SONNET, "spawn")]
     assert spawn["tokens_total"] == 1100
-    assert spawn["usd"] == pytest.approx(1000 / 1e6 * 3 + 100 / 1e6 * 15)
+    assert spawn["usd"] == pytest.approx(prices.usd(SONNET, 1000, 100))
     assert spawn["estimated_any"] is False
     router = rows[("anthropic", HAIKU, "router")]
     assert router["tokens_total"] == 550
-    assert router["usd"] == pytest.approx(500 / 1e6 * 1 + 50 / 1e6 * 5)
+    assert router["usd"] == pytest.approx(prices.usd(HAIKU, 500, 50))
     # daily series covers exactly the in-window tokens, dates ascending
     assert sum(p["tokens_total"] for p in body["daily"]) == 1100 + 550 + 18
     dates = [p["date"] for p in body["daily"]]
@@ -248,7 +248,7 @@ async def test_usage_summary_7d_and_30d_windows(client):
                           ("anthropic", SONNET, "replay")}
     spawn7 = rows7[("anthropic", SONNET, "spawn")]
     assert spawn7["tokens_total"] == 3300     # both sonnet runs
-    assert spawn7["usd"] == pytest.approx(3000 / 1e6 * 3 + 300 / 1e6 * 15)
+    assert spawn7["usd"] == pytest.approx(prices.usd(SONNET, 3000, 300))
     judge7 = rows7[("anthropic", HAIKU, "judge")]
     assert judge7["tokens_total"] == 300
     assert judge7["usd"] is None              # estimated → never priced
@@ -281,7 +281,7 @@ async def test_usage_summary_includes_scheduled_scope(client):
     rows = {(x["provider"], x["model"], x["scope"]): x for x in body["rows"]}
     sched = rows[("anthropic", SONNET, "scheduled")]
     assert sched["tokens_total"] == 2100
-    assert sched["usd"] == pytest.approx(2000 / 1e6 * 3 + 100 / 1e6 * 15)
+    assert sched["usd"] == pytest.approx(prices.usd(SONNET, 2000, 100))
     assert sum(p["tokens_total"] for p in body["daily"]) == 2100
 
 
@@ -329,8 +329,8 @@ async def test_answer_stream_end_carries_usage(memdb, monkeypatch):
     async def fake_run_native(*, system, user_content, history, emit, on_chunk,
                               resolve_tools, allow_escalation, confirm_command=None,
                               conversation_id=None, caller=None, **kw):   # **kw: the stub should not break on every new parameter
-        usage_sink.report_detail(tokens_in=1000, tokens_out=500,
-                                 model=SONNET, provider="anthropic")
+        usage_sink.report_detail(tokens_in=1000, tokens_out=500, model=SONNET, provider="anthropic",
+                                 usd=prices.usd_for_usage(SONNET, {"input_tokens": 1000, "output_tokens": 500}))
         usage_sink.report(1500)
         on_chunk("hi")
         return {"final": "hello there", "tool_trace": [{"tool": "web_search"}]}
@@ -346,7 +346,7 @@ async def test_answer_stream_end_carries_usage(memdb, monkeypatch):
     assert usage["tokens_out"] == 500
     assert usage["tokens_total"] == 1500
     assert usage["estimated"] is False
-    assert usage["usd"] == pytest.approx(1000 / 1e6 * 3 + 500 / 1e6 * 15)
+    assert usage["usd"] == pytest.approx(prices.usd(SONNET, 1000, 500))          # K4a: the response's own price
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +359,9 @@ def _frame_from(report_calls: list[dict]) -> dict:
 
     with usage_sink.collecting():
         for call in report_calls:
-            usage_sink.report_detail(**call)
+            # K4a: each response reports its price by cache tier, as the adapter does
+            usage = {"input_tokens": call["tokens_in"], "output_tokens": call["tokens_out"]}
+            usage_sink.report_detail(**call, usd=prices.usd_for_usage(call["model"], usage, provider=call["provider"]))
             usage_sink.report((call["tokens_in"] or 0) + (call["tokens_out"] or 0))
         return arslan._usage_frame(usage_sink.detail())
 
@@ -369,10 +371,10 @@ async def test_usage_frame_multi_model_usd_is_sum_of_per_bucket_prices():
         {"tokens_in": 1000, "tokens_out": 500, "model": SONNET, "provider": "anthropic"},
         {"tokens_in": 2000, "tokens_out": 100, "model": HAIKU, "provider": "anthropic"},
     ])
-    per_bucket = (1000 / 1e6 * 3 + 500 / 1e6 * 15) + (2000 / 1e6 * 1 + 100 / 1e6 * 5)
+    per_bucket = prices.usd(SONNET, 1000, 500) + prices.usd(HAIKU, 2000, 100)
     assert frame["usd"] == pytest.approx(per_bucket)
     # NOT the old bug: primary bucket's (haiku) rate applied to the summed tokens.
-    primary_rate_on_totals = 3000 / 1e6 * 1 + 600 / 1e6 * 5
+    primary_rate_on_totals = prices.usd(HAIKU, 3000, 600)
     assert frame["usd"] != pytest.approx(primary_rate_on_totals)
     assert (frame["tokens_in"], frame["tokens_out"]) == (3000, 600)  # honest sums
     assert frame["estimated"] is False

@@ -92,7 +92,7 @@ async def test_many_tools_in_one_model_reply_cannot_bypass_shared_limit(monkeypa
 
 def test_token_threshold_is_honestly_post_response():
     with budget.scope(budget.Budget(budget.Limits(tokens=10))) as shared:
-        assert budget.model_request(8192) == 10
+        assert budget.model_request(8192) == 8192        # K4a: a request keeps up to MIN_OUTPUT_TOKENS
         budget.charge_tokens(15)  # Actual usage can exceed the admission estimate.
         with pytest.raises(budget.BudgetExceeded, match="tokens"):
             budget.model_request(8192)

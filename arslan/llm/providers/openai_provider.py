@@ -413,7 +413,8 @@ class OpenAIProvider(BaseLLMProvider):
                         tin = usage.get("prompt_tokens")
                         tout = usage.get("completion_tokens")
                         if tin is not None or tout is not None:
-                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout}
+                            # K4a: the whole frame too (DeepSeek's hit/miss, OpenAI's cached_tokens).
+                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout, "usage": dict(usage)}
                     choices = obj.get("choices") or []
                     if not choices:
                         continue

@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 _PLAIN_KEYS = (
     "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
-               "shell_confirm_policy", "background_job_budget", "synthesis_config_id", "embedding_config_id",
+               "shell_confirm_policy", "background_job_budget", "task_usd_cap", "synthesis_config_id",
+               "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
                # pydantic schemas — being on only one is how github_token became
                # a settings field that looked saveable and was not.
@@ -416,11 +417,40 @@ async def shell_confirm_policy(session: AsyncSession) -> str:
 
 
 async def background_job_budget(session: AsyncSession) -> str:
-    """Budget tier for one background job (0.1.43): lean | standard | ample.
-    Anything else is the default tier."""
-    from arslan.execution_budget import DEFAULT_JOB_TIER, JOB_TIERS
+    """The work budget tier (0.1.43 for background jobs; K4a, v0.1.63: for chat turns too):
+    lean | standard | ample. Anything else is the default tier. The key keeps its 0.1.43 name."""
+    from arslan.execution_budget import DEFAULT_TIER, TIERS
     raw = str(await _get_raw(session, "background_job_budget") or "").strip().lower()
-    return raw if raw in JOB_TIERS else DEFAULT_JOB_TIER
+    return raw if raw in TIERS else DEFAULT_TIER
+
+
+async def task_usd_cap(session: AsyncSession) -> float:
+    """The per-task dollar cap (K4a): $2 by default; anything unreadable or not above zero is the default,
+    and at most MAX_USD_CAP."""
+    import math
+
+    from arslan.execution_budget import DEFAULT_USD_CAP, MAX_USD_CAP
+    try:
+        value = float(str(await _get_raw(session, "task_usd_cap") or "").strip())
+    except ValueError:
+        return DEFAULT_USD_CAP
+    if not math.isfinite(value) or value <= 0:
+        return DEFAULT_USD_CAP
+    return min(value, MAX_USD_CAP)
+
+
+async def run_budget_from_settings():
+    """The budget of a run that starts at an entry point (`execution_budget.governed`, a chat turn): the
+    tier the user picked. Registered at startup (server/main.py); the default tier if settings can't be
+    read."""
+    from arslan.execution_budget import run_budget
+    from server.db import session as db_session
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return run_budget(await background_job_budget(db), usd_cap=await task_usd_cap(db))
+    except Exception:  # noqa: BLE001 — a run must not fail to start over its budget tier
+        logger.warning("work budget tier not read; using the default", exc_info=True)
+        return run_budget()
 
 
 async def evolution_auto(session: AsyncSession) -> bool:

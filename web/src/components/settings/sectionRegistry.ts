@@ -114,6 +114,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'advanced.orchestrator_shell': 'abilities',
   'advanced.shell_confirm_policy': 'abilities',
   'advanced.background_job_budget': 'background',
+  'advanced.task_usd_cap': 'background',
   'advanced.terminal_rules': 'abilities',
   'general.voice_mode': 'general',
   'general.voice_input_locale': 'general',

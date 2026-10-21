@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   orchestratorShellEnabled: true,
   shellConfirmPolicy: 'ask_risky',
   backgroundJobBudget: 'standard',
+  taskUsdCap: 2,
   runDebugRetentionDays: 30,
   mcpServerEnabled: false
 };

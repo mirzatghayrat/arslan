@@ -4,16 +4,17 @@ twice a chat turn hit its hard budget and ended with an empty reply after 11+
 successful page reads."""
 import json
 
-from arslan.execution_budget import Budget, Limits, configured_limits, scope, turn_budget
+from arslan.execution_budget import Budget, Limits, run_budget, scope, tier_limits
 from arslan.models import LLMResponse
 from server.orchestrator import tool_loop
 
 
-def test_turn_budget_wraps_up_at_the_configured_limits():
-    b = turn_budget()
-    soft = configured_limits()
+def test_a_run_wraps_up_at_its_tier_and_stops_half_again_above_it():
+    """K4a: a chat turn's budget is a run budget like a job's (the standard tier by default)."""
+    b = run_budget()
+    soft = tier_limits()
     assert b.soft == soft
-    assert b.limits.tool_calls == 36 and b.limits.tokens == 192_000 and b.limits.model_requests == 48
+    assert b.limits.tool_calls == 120 and b.limits.tokens == 900_000 and b.limits.model_requests == 180
     assert b.limits.output_tokens_per_request == soft.output_tokens_per_request
     assert b.limits.artifact_bytes == soft.artifact_bytes
 
@@ -67,5 +68,5 @@ async def test_a_real_chat_turn_runs_on_a_turn_budget(execution_db):
             seen.update(soft=b.soft, hard=b.limits)
             return "done"
         await task_service.run_turn(function, "tb", "anything", lambda event: None)
-    assert seen["soft"] == configured_limits()
+    assert seen["soft"] == tier_limits()            # K4a: the tier in Settings (standard here)
     assert seen["hard"].tool_calls > seen["soft"].tool_calls

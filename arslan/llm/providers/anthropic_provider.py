@@ -593,6 +593,7 @@ class AnthropicProvider(BaseLLMProvider):
         self._last_stream_usage = None
         tin: int | None = None
         cache: dict[str, int | None] = {}
+        started: dict = {}                       # K4a: message_start's whole usage, for charging and pricing
         async with self._client() as client:
             async with client.stream(
                 "POST",
@@ -628,6 +629,7 @@ class AnthropicProvider(BaseLLMProvider):
                         usage = (obj.get("message") or {}).get("usage") or {}
                         if usage.get("input_tokens") is not None:
                             tin = int(usage["input_tokens"])
+                            started = dict(usage)
                             from arslan.llm.usage_weight import cache_split
                             cache = cache_split(usage) or {}       # K3: input_tokens leaves the cache out
                     elif etype == "message_delta":
@@ -639,6 +641,7 @@ class AnthropicProvider(BaseLLMProvider):
                                 "tokens_in": tin,
                                 "tokens_out": int(usage["output_tokens"]),
                                 **cache,
+                                "usage": {**started, "output_tokens": int(usage["output_tokens"])},
                             }
 
     def _parse_response(self, data: dict[str, Any]) -> LLMResponse:

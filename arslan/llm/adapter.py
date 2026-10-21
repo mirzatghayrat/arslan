@@ -132,6 +132,13 @@ class LLMAdapter:
         last = messages[-1].get("content") if messages else ""
         return await self._account(resp, system, last if isinstance(last, (str, list)) else "")
 
+    def _usd(self, usage: dict | None) -> float | None:
+        """K4a: this response's price by cache tier, or None when it can't be known honestly."""
+        from arslan.llm import prices
+        long_cache = getattr(self._provider, "_long_cache", None)
+        return prices.usd_for_usage(self.model, usage, provider=self.report_provider,
+                                    long_cache=bool(long_cache()) if callable(long_cache) else False)
+
     async def _account(self, resp: LLMResponse, system: str, user: Any) -> LLMResponse:
         u = resp.usage or {}
         # None-aware on purpose (NOT `or` chains — review S2): a REAL 0 is falsy
@@ -152,12 +159,14 @@ class LLMAdapter:
         if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
         from arslan.llm.usage_weight import cache_split, charged_tokens
-        usage_sink.report(total, charged=charged_tokens(u))
+        usd = self._usd(u)
+        usage_sink.report(total, charged=charged_tokens(u), usd=usd)
         usage_sink.report_detail(
             tokens_in=tin,
             tokens_out=tout,
             model=self.model,
             provider=self.report_provider,
+            usd=usd,
             **(cache_split(u) or {}),
         )
         from arslan.execution_checkpoint import save
@@ -196,17 +205,22 @@ class LLMAdapter:
             tokens_in = real.get("tokens_in")
             tokens_out = real.get("tokens_out")
             if tokens_in is not None and tokens_out is not None:
-                usage_sink.report(int(tokens_in) + int(tokens_out))
+                # K4a: charged as `_account` charges a non-streamed answer (cache reads at 0.1). The raw sum
+                # charged DeepSeek's cache hits in full and left out Anthropic's cache reads and writes.
+                from arslan.llm.usage_weight import charged_tokens
+                usd = self._usd(real.get("usage"))
+                usage_sink.report(int(tokens_in) + int(tokens_out), charged=charged_tokens(real.get("usage")), usd=usd)
                 usage_sink.report_detail(
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
                     model=self.model,
                     provider=self.report_provider,
+                    usd=usd,
                     # K3: a provider that saw the cache in the stream says so (Anthropic's message_start).
                     **{k: real[k] for k in ("cache_read", "cache_write", "input_total") if k in real},
                 )
             else:
-                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
+                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)), usd=None)
                 usage_sink.report_detail(
                     tokens_in=None,
                     tokens_out=None,

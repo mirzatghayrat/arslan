@@ -522,14 +522,14 @@ async def test_a_reconnecting_tab_never_replays_a_job_run_as_the_chat_turn(execu
 # ── 0.1.43: a job's own budget ─────────────────────────────────────────────
 
 
-def test_job_tiers_are_larger_than_a_turn_and_unknown_falls_back_to_standard():
-    from arslan.execution_budget import Limits, job_limits
-    turn, standard = Limits(), job_limits("standard")
+def test_one_set_of_tiers_for_turns_and_jobs_and_unknown_falls_back_to_standard():
+    from arslan.execution_budget import Limits, tier_limits
+    standard = tier_limits("standard")
     assert (standard.model_requests, standard.tool_calls, standard.tokens, standard.wall_seconds) == (
         120, 80, 600_000, 1800)
-    assert standard.tool_calls > turn.tool_calls and standard.tokens > turn.tokens
-    assert job_limits("lean").tool_calls < standard.tool_calls < job_limits("ample").tool_calls
-    assert job_limits("bogus") == standard
+    assert Limits() == standard                            # K4a: a chat turn gets the same limits
+    assert tier_limits("lean").tool_calls < standard.tool_calls < tier_limits("ample").tool_calls
+    assert tier_limits("bogus") == standard
 
 
 async def test_a_job_runs_on_the_tier_the_setting_names(execution_db, active, monkeypatch):
@@ -574,7 +574,7 @@ class ResearchAdapter:
 async def test_reaching_the_tier_wraps_up_and_delivers_instead_of_stopping(execution_db, active, frames,
                                                                            monkeypatch):
     from arslan import execution_budget
-    monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
                         dict(model_requests=50, tool_calls=3, tokens=600_000, wall_seconds=60))
     adapter = ResearchAdapter()
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -594,7 +594,7 @@ async def test_a_job_that_will_not_wrap_up_is_stopped_by_the_hard_limit_and_says
     # wrap-up starts at 4 model requests, the refusals come at 5 and 6, and the hard limit
     # (1.5 x 4 = 6) stops the job before that text-only step.
     from arslan import execution_budget
-    monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
                         dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
@@ -620,7 +620,7 @@ async def test_a_job_that_keeps_researching_after_wrap_up_is_made_to_answer(exec
     note gets two refusals and then a text-only step, instead of spending model requests on
     refusals until the hard limit."""
     from arslan import execution_budget
-    monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
                         dict(model_requests=50, tool_calls=3, tokens=600_000, wall_seconds=60))
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     adapter = ResearchAdapter(obedient=False)
@@ -643,16 +643,16 @@ def test_outcome_names_a_budget_stop_apart_from_being_stuck():
     assert background_jobs.outcome_of("waiting_user", {}, "task_validation_failed") == "blocked"
 
 
-def test_the_wrap_up_point_survives_a_snapshot_and_a_turn_never_has_one():
-    from arslan.execution_budget import Budget, job_budget
-    job = job_budget("standard")
+def test_the_wrap_up_point_survives_a_snapshot_and_a_bare_budget_has_none():
+    from arslan.execution_budget import Budget, run_budget
+    job = run_budget("standard")
     restored = Budget.from_snapshot(job.snapshot())
     assert restored.soft == job.soft and restored.limits == job.limits
     assert restored.limits.tool_calls == 120 and restored.soft.tool_calls == 80
     restored.tool_calls = 80
     assert restored.soft_reached()
     turn = Budget()
-    assert "soft_limits" not in turn.snapshot()           # chat turns: unchanged snapshot shape
+    assert "soft_limits" not in turn.snapshot()           # a bare Budget: no wrap-up point
     turn.tool_calls = turn.limits.tool_calls
     assert not Budget.from_snapshot(turn.snapshot()).soft_reached()
 
@@ -661,9 +661,9 @@ def test_settings_page_numbers_match_the_tiers():
     """The settings page states each tier's limits; they must be the real ones."""
     import re
     from pathlib import Path
-    from arslan.execution_budget import JOB_TIERS
+    from arslan.execution_budget import TIERS
     source = (Path(__file__).resolve().parents[2] / "web/src/components/settings/AdvancedSection.tsx").read_text()
-    for tier, limits in JOB_TIERS.items():
+    for tier, limits in TIERS.items():
         row = re.search(rf"{tier}: \{{ requests: (\d+), tools: (\d+), tokens: '([^']+)', minutes: (\d+) \}}", source)
         assert row, tier
         requests, tools, tokens, minutes = row.groups()
@@ -801,8 +801,8 @@ async def test_a_card_answered_after_the_jobs_wall_clock_does_not_stop_the_job(e
     from arslan import execution_budget
     from server.orchestrator import arslan as arslan_mod
     from server.services import permissions
-    monkeypatch.setattr(execution_budget, "job_budget",
-                        lambda tier: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
+    monkeypatch.setattr(execution_budget, "run_budget",
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
     seen = {}
 
     async def body(conversation_id, goal, emit, confirmations):

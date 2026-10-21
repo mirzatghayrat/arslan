@@ -191,7 +191,8 @@ async def test_openai_stream_sends_include_usage_and_captures_tail(monkeypatch):
 
     assert "".join(out) == "Hello there"
     assert calls[0]["stream_options"] == {"include_usage": True}
-    assert provider._last_stream_usage == {"tokens_in": 10, "tokens_out": 5}
+    assert {k: v for k, v in provider._last_stream_usage.items() if k != "usage"} == {"tokens_in": 10, "tokens_out": 5}
+    assert provider._last_stream_usage["usage"]["prompt_tokens"] == 10      # K4a: the whole frame rides along
 
 
 @pytest.mark.asyncio
@@ -266,8 +267,9 @@ async def test_anthropic_stream_captures_usage():
 
     assert "".join(out) == "Hello"
     # K3: the cache fields ride along (none read or written here; the whole input is 25).
-    assert p._last_stream_usage == {"tokens_in": 25, "tokens_out": 12,
-                                    "cache_read": 0, "cache_write": 0, "input_total": 25}
+    assert {k: v for k, v in p._last_stream_usage.items() if k != "usage"} == {
+        "tokens_in": 25, "tokens_out": 12, "cache_read": 0, "cache_write": 0, "input_total": 25}
+    assert p._last_stream_usage["usage"] == {"input_tokens": 25, "output_tokens": 12}   # K4a: start + delta
 
 
 @pytest.mark.asyncio
@@ -343,7 +345,8 @@ async def test_gemini_stream_captures_usage_tail():
     out = [c async for c in p.chat_stream([{"role": "user", "content": "hi"}])]
 
     assert "".join(out) == "Hello"
-    assert p._last_stream_usage == {"tokens_in": 7, "tokens_out": 3}
+    assert {k: v for k, v in p._last_stream_usage.items() if k != "usage"} == {"tokens_in": 7, "tokens_out": 3}
+    assert p._last_stream_usage["usage"]["promptTokenCount"] == 7           # K4a: the whole frame rides along
 
 
 @pytest.mark.asyncio

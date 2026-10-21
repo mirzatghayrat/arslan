@@ -39,9 +39,9 @@ def test_detail_buckets_two_models_primary_by_total_tokens():
     # per-bucket breakdown
     assert len(d["buckets"]) == 2
     assert {"model": "model-a", "provider": "openai", "tokens_in": 300, "tokens_out": 100,
-            "estimated": False} in d["buckets"]
+            "estimated": False, "usd": None} in d["buckets"]
     assert {"model": "model-b", "provider": "anthropic", "tokens_in": 50, "tokens_out": 20,
-            "estimated": False} in d["buckets"]
+            "estimated": False, "usd": None} in d["buckets"]
 
 
 def test_detail_same_model_accumulates_into_one_bucket():
@@ -51,7 +51,7 @@ def test_detail_same_model_accumulates_into_one_bucket():
         d = usage_sink.detail()
     assert d["buckets"] == [
         {"model": "gpt-x", "provider": "openai", "tokens_in": 15, "tokens_out": 27,
-         "estimated": False},
+         "estimated": False, "usd": None},
     ]
     assert d["tokens_in"] == 15 and d["tokens_out"] == 27
     assert d["model"] == "gpt-x" and d["provider"] == "openai"
@@ -91,7 +91,7 @@ def test_same_bucket_estimate_then_real_stays_estimated():
     # bucket keeps the real fields it could attribute…
     assert d["buckets"] == [
         {"model": "m", "provider": "p", "tokens_in": 100, "tokens_out": 40,
-         "estimated": True},
+         "estimated": True, "usd": None},
     ]
     # …but the totals are honest: the estimated call's tokens are unknown.
     assert d["tokens_in"] is None and d["tokens_out"] is None

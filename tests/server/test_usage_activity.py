@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from arslan.llm import prices
 import pytest
 
 import server.db.session as db_session
@@ -79,7 +80,7 @@ async def test_summary_carries_the_dashboard(client):  # noqa: F811
     assert body["duration_bands"] == [label for _, label in DURATION_BANDS]
     assert sum(b["runs"] for b in body["bins"]) == 2 and sum(b["failed"] for b in body["bins"]) == 1
     assert body["tokens_total"] == sum(r["tokens_total"] for r in body["rows"]) == 1100 + 50 + 0
-    assert body["usd_total"] == pytest.approx(1000 / 1e6 * 3 + 100 / 1e6 * 15)
+    assert body["usd_total"] == pytest.approx(prices.usd(SONNET, 1000, 100))        # K4a: the table's price
     assert body["estimated_any"] is True
 
 

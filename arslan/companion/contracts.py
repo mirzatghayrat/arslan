@@ -53,10 +53,11 @@ class ResourceRef(Contract):
 
 
 class BudgetSpec(Contract):
-    model_requests: PositiveInt = 32
-    tool_calls: PositiveInt = 24
-    tokens: PositiveInt = 128_000
-    wall_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 600
+    # K4a (v0.1.63): the standard tier's soft limits, as execution_budget.Limits.
+    model_requests: PositiveInt = 120
+    tool_calls: PositiveInt = 80
+    tokens: PositiveInt = 600_000
+    wall_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 1800
     output_tokens_per_request: PositiveInt = 131_072  # runaway guard; see execution_budget
     artifact_bytes: PositiveInt = 100 * 1024 * 1024
 

@@ -136,3 +136,25 @@ describe("AdvancedSection · background job budget (0.1.43)", () => {
     expect(onBackgroundJobBudgetChange).toHaveBeenCalledWith("ample");
   });
 });
+
+describe("AdvancedSection · per-task dollar cap (K4a)", () => {
+  it("offers $0.50 to $20, shows the stored cap, and saves a new one", () => {
+    const onTaskUsdCapChange = vi.fn();
+    setup({ backgroundJobBudget: "standard", onBackgroundJobBudgetChange: vi.fn(), taskUsdCap: 2, onTaskUsdCapChange });
+    expect(screen.getByText("jobs.usdCapLabel")).toBeInTheDocument();
+    expect(screen.getByTestId("task-usd-cap-desc")).toHaveTextContent("jobs.usdCapDesc");
+    const select = screen.getByTestId("settings-task-usd-cap") as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(
+      ["$0.50", "$1.00", "$2.00", "$5.00", "$10.00", "$20.00"]);
+    expect(select.value).toBe("2");
+    fireEvent.change(select, { target: { value: "5" } });
+    expect(onTaskUsdCapChange).toHaveBeenCalledWith(5);
+  });
+
+  it("shows a stored cap outside the list as itself", () => {
+    setup({ backgroundJobBudget: "standard", onBackgroundJobBudgetChange: vi.fn(), taskUsdCap: 7.5, onTaskUsdCapChange: vi.fn() });
+    const select = screen.getByTestId("settings-task-usd-cap") as HTMLSelectElement;
+    expect(select.value).toBe("7.5");
+    expect(Array.from(select.options).map((o) => o.textContent)).toContain("$7.50");
+  });
+});

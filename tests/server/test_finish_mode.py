@@ -28,6 +28,11 @@ def _search(i):
     return golden._Resp(None, [golden._tc("web_search", {"query": f"q{i}"}, f"s{i}")])
 
 
+def _stuck():
+    """K4a: the same failing call three times is a stuck loop (different failures don't add up)."""
+    return [golden._Resp(None, [golden._tc("web_search", {"query": "jobs"}, f"s{i}")]) for i in range(3)]
+
+
 def _write(cid="w1"):
     return golden._Resp(None, [golden._tc("write_file", {"path": "jobs.csv", "content": "a,b"}, cid)])
 
@@ -56,12 +61,12 @@ async def _run(monkeypatch, replies, *, search, writers=True, fetch_cap=None):
 
 @pytest.mark.asyncio
 async def test_a_no_progress_stop_still_lets_the_table_be_saved(monkeypatch):
-    replies = [_search(i) for i in range(4)] + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
+    replies = _stuck() + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked())
     # finish mode keeps the full list while the model complies (prompt cache)
-    assert {"web_search", "write_file"} <= set(calls[4]["tools"])
-    assert "research has stopped" in calls[4]["user"]
-    assert calls[5]["tools"] is None and "The deliverable is saved" in calls[5]["user"]
+    assert {"web_search", "write_file"} <= set(calls[3]["tools"])
+    assert "research has stopped" in calls[3]["user"]
+    assert calls[4]["tools"] is None and "The deliverable is saved" in calls[4]["user"]
     write = [r for r in result["tool_trace"] if r["tool"] == "write_file"]
     assert write and write[0]["result"]["ok"] is True          # not refused as "no progress"
     assert result["final"] == "Saved jobs.csv; 4 sites blocked."
@@ -69,9 +74,9 @@ async def test_a_no_progress_stop_still_lets_the_table_be_saved(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_without_save_tools_a_stop_answers_at_once(monkeypatch):
-    replies = [_search(i) for i in range(4)] + [golden._Resp("Blocked everywhere.")]
+    replies = _stuck() + [golden._Resp("Blocked everywhere.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked(), writers=False)
-    assert calls[4]["tools"] is None and "Repeated actions made no progress" in calls[4]["user"]
+    assert calls[3]["tools"] is None and "Repeated actions made no progress" in calls[3]["user"]
     assert result["final"] == "Blocked everywhere."
 
 
@@ -80,10 +85,10 @@ async def test_finish_mode_keeps_the_tool_table_and_a_second_refusal_ends_resear
     # K3: the table never narrows within a turn (it renders before Claude's cached system); the
     # status says what still runs, a research call is refused with its reason, and after a second
     # refused call the next step is text only (same table, no tools) instead of looping on refusals.
-    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), golden._Resp("Here is what I have.")]
+    replies = _stuck() + [_search(10), _search(11), golden._Resp("Here is what I have.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked())
-    assert [c["tools"] for c in calls[4:7]] == [["web_search", "write_file", "escalate"]] * 2 + [None]
-    assert all("Tools that still run: write_file; any other call is refused." in c["user"] for c in calls[4:6])
+    assert [c["tools"] for c in calls[3:6]] == [["web_search", "write_file", "escalate"]] * 2 + [None]
+    assert all("Tools that still run: write_file; any other call is refused." in c["user"] for c in calls[3:5])
     refused = [r for r in result["tool_trace"] if r["result"].get("code") in ("wrap_up", "task_no_progress")]
     assert len(refused) == 2 and result["final"] == "Here is what I have."
 
@@ -132,7 +137,7 @@ async def test_wrapping_up_may_process_files_but_only_offline(monkeypatch):
     """S6 rerun r1: 50 jobs sat in a downloaded file, but wrap-up allowed only write
     tools. Now run_command is allowed while finishing — under the no-network wrapper."""
     spy = _Spy()
-    adapter = golden._Recorder([_search(i) for i in range(4)] + [
+    adapter = golden._Recorder(_stuck() + [
         golden._Resp(None, [golden._tc("run_command", {"command": "python3 filter.py > jobs.csv"}, "r1")]),
         _write(), golden._Resp("Saved jobs.csv.")])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -155,7 +160,7 @@ async def test_wrapping_up_may_process_files_but_only_offline(monkeypatch):
                                         emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve,
                                         confirm_command=allow)
     assert spy.offline == [True]
-    assert "runs without network now" in adapter.calls[4]["user"]
+    assert "runs without network now" in adapter.calls[3]["user"]
     assert result["final"] == "Saved jobs.csv."
 
 

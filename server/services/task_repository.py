@@ -198,7 +198,8 @@ class TaskRepository:
         budget = Budget.from_snapshot(row.budget, limits=spec.budget.to_native())
         budget.check()
         if (budget.model_requests >= budget.limits.model_requests or budget.tokens >= budget.limits.tokens
-                or budget.tool_calls >= budget.limits.tool_calls):
+                or budget.tool_calls >= budget.limits.tool_calls
+                or (budget.usd_cap is not None and budget.usd >= budget.usd_cap)):          # K4a: the dollar cap
             raise TaskError("task_budget_exhausted")
         number = (await self.db.scalar(select(func.max(TaskAttempt.number)).where(
             TaskAttempt.task_id == row.id)) or 0) + 1
@@ -227,7 +228,10 @@ class TaskRepository:
             raise TaskError("project_not_available")
         budget = Budget.from_snapshot(row.budget)
         budget.limits = spec.budget.to_native()  # Explicit user-supplied ceiling; usage and identity stay intact.
-        if budget.stop_reason:
+        if budget.stop_reason == "usd":         # K4a: a revision sets no dollar cap; the spend stands
+            if budget.usd_cap is None or budget.usd < budget.usd_cap:
+                budget.stop_reason = None
+        elif budget.stop_reason:
             used = budget.snapshot()["used"][budget.stop_reason]
             if used < getattr(budget.limits, budget.stop_reason):
                 budget.stop_reason = None

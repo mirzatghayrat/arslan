@@ -428,7 +428,8 @@ async def test_unverified_claim_repair_is_bounded_and_never_accepts_the_lie(monk
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert "我搜索了" not in out["final"]
-    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 6
+    # K4a: the same refused answer is the same failing call; 3 of them stop the loop (was any 4 failures)
+    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 5
 
 
 async def test_forward_promise_retry_triggers_action(monkeypatch):
@@ -472,7 +473,8 @@ async def test_forward_promise_repair_is_bounded(monkeypatch):
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert "马上为您搜索" not in out["final"]
-    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 6
+    # K4a: the same refused answer is the same failing call; 3 of them stop the loop (was any 4 failures)
+    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 5
 
 
 def test_promises_action_matches_real_world_phrasings():

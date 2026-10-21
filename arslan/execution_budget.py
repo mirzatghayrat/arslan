@@ -13,6 +13,7 @@ import os
 import time
 import uuid
 from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar, copy_context
 from dataclasses import asdict, dataclass, replace
 from functools import wraps
@@ -24,10 +25,11 @@ class BudgetExceeded(RuntimeError):
 
 @dataclass(frozen=True)
 class Limits:
-    model_requests: int = 32
-    tool_calls: int = 24
-    tokens: int = 128_000
-    wall_seconds: float = 600
+    # K4a (v0.1.63): the "standard" tier's soft limits, for a chat turn and a background job alike.
+    model_requests: int = 120
+    tool_calls: int = 80
+    tokens: int = 600_000
+    wall_seconds: float = 1800
     # Runaway guard only (0.1.49 S5): the per-endpoint opening budget lives in
     # arslan/llm/output_budget.py; a flat 8192 here silently truncated thinking
     # models' work (kernel sample T5).
@@ -39,37 +41,43 @@ class Limits:
             raise ValueError("execution budget limits must be positive")
 
 
-def configured_limits() -> Limits:
-    defaults = Limits()
-    names = {"model_requests": "MODEL_REQUESTS", "tool_calls": "TOOL_CALLS",
-             "tokens": "TOKENS", "wall_seconds": "WALL_SECONDS",
-             "output_tokens_per_request": "OUTPUT_TOKENS", "artifact_bytes": "ARTIFACT_BYTES"}
-    values = {}
-    for field, suffix in names.items():
-        raw = os.environ.get(f"ARSLAN_RUN_MAX_{suffix}")
-        values[field] = float(raw) if field == "wall_seconds" and raw else (
-            int(raw) if raw else getattr(defaults, field))
-    return Limits(**values)
-
-
-# 0.1.43: background jobs get their own, larger budget. A job is work the user
-# handed off (research, drafting, organizing); the per-turn Limits above are sized
-# for one chat answer and cut such work off halfway (seen in 0.1.42 field use).
-JOB_TIERS = {
+# K4a (v0.1.63): one stop policy. A chat turn and a background job get the same limits: the tier the
+# user picked in Settings (standard by default). Before, a chat turn had its own, smaller limits
+# (32 requests / 24 tools / 128k / 600 s) and cut longer work off halfway; background jobs got these
+# tiers from 0.1.43.
+TIERS = {
     "lean": dict(model_requests=60, tool_calls=40, tokens=300_000, wall_seconds=900),
     "standard": dict(model_requests=120, tool_calls=80, tokens=600_000, wall_seconds=1800),
     "ample": dict(model_requests=240, tool_calls=160, tokens=1_200_000, wall_seconds=3600),
 }
-DEFAULT_JOB_TIER = "standard"
-# Completion first: the tier is a SOFT limit. Reaching it switches the job to
-# wrap-up (write the deliverable from what it has); the hard limit, 1.5x, only
-# stops a job that cannot stop itself.
+DEFAULT_TIER = "standard"
+# Completion first: the tier is a SOFT limit. Reaching it switches the run to wrap-up (deliver from
+# what it has); the hard limit, 1.5x, only stops a run that cannot stop itself.
 HARD_OVER_SOFT = 1.5
+# K4a: near the token limit a request still gets this many output tokens (never more than it asked
+# for). M1's T2: a turn late in its budget was granted a few hundred, a thinking model spent them on
+# reasoning, and the answer came back empty. Token accounting is post-response anyway, so this can
+# overshoot the token limit by one answer.
+MIN_OUTPUT_TOKENS = 16_384
+# K4a: a per-task dollar cap, on by default (Settings → Advanced; at most MAX_USD_CAP). A run wraps up at
+# cap / HARD_OVER_SOFT and stops at the cap. Only responses with a known price count (prices.usd_for_usage):
+# a local model or one missing from the price table spends nothing here, and the token cap still holds.
+DEFAULT_USD_CAP = 2.0
+MAX_USD_CAP = 100.0
+_ENV = {"model_requests": "MODEL_REQUESTS", "tool_calls": "TOOL_CALLS", "tokens": "TOKENS",
+        "wall_seconds": "WALL_SECONDS", "output_tokens_per_request": "OUTPUT_TOKENS",
+        "artifact_bytes": "ARTIFACT_BYTES"}
 
 
-def job_limits(tier: str) -> Limits:
-    """Soft limits for one background job. Unknown tiers fall back to the default."""
-    return Limits(**JOB_TIERS.get(tier, JOB_TIERS[DEFAULT_JOB_TIER]))
+def tier_limits(tier: str = DEFAULT_TIER) -> Limits:
+    """Soft limits for one run, a chat turn or a background job. An unknown tier is the default one;
+    an `ARSLAN_RUN_MAX_*` environment variable overrides its value (benches and tests)."""
+    base = Limits(**TIERS.get(tier, TIERS[DEFAULT_TIER]))
+    values = {}
+    for field, suffix in _ENV.items():
+        raw = os.environ.get(f"ARSLAN_RUN_MAX_{suffix}")
+        values[field] = (float(raw) if field == "wall_seconds" else int(raw)) if raw else getattr(base, field)
+    return Limits(**values)
 
 
 def _hard_over(soft: Limits) -> Limits:
@@ -80,22 +88,12 @@ def _hard_over(soft: Limits) -> Limits:
                    wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
 
 
-def job_budget(tier: str) -> "Budget":
-    soft = job_limits(tier)
-    hard = Limits(model_requests=math.ceil(soft.model_requests * HARD_OVER_SOFT),
-                  tool_calls=math.ceil(soft.tool_calls * HARD_OVER_SOFT),
-                  tokens=math.ceil(soft.tokens * HARD_OVER_SOFT),
-                  wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
-    return Budget(hard, soft=soft)
-
-
-def turn_budget() -> "Budget":
-    """A conversational turn, completion first (0.1.49): the configured limits are
-    the point where the turn stops researching and delivers from what it has;
-    1.5x stops only a turn that cannot stop itself. A turn with only a hard limit
-    aborted with an empty reply once it ran out (kernel bench T2, twice)."""
-    soft = configured_limits()
-    return Budget(_hard_over(soft), soft=soft)
+def run_budget(tier: str = DEFAULT_TIER, *, usd_cap: float | None = DEFAULT_USD_CAP) -> "Budget":
+    """The budget of one run, a chat turn or a background job (K4a): the tier is where it wraps up,
+    1.5x stops it; the dollar cap likewise. A turn with only a hard limit aborted with an empty reply once
+    it ran out (kernel bench T2, 0.1.49)."""
+    soft = tier_limits(tier)
+    return Budget(_hard_over(soft), soft=soft, usd_cap=usd_cap)
 
 
 class Budget:
@@ -103,9 +101,13 @@ class Budget:
     # asked for: a "length" cut then means "budget", not "raise the limit".
     last_output_clamped = False
 
-    def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None):
-        self.limits = limits or configured_limits()
+    def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None,
+                 usd_cap: float | None = None):
+        self.limits = limits or tier_limits()
         self.soft = soft
+        self.usd_cap = usd_cap
+        self.usd = 0.0
+        self.unpriced_requests = 0
         self.id = uuid.uuid4().hex
         self.started = time.monotonic()
         self.model_requests = 0
@@ -119,12 +121,16 @@ class Budget:
         self.history: dict | None = None
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None) -> Budget:
+    def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None,
+                      usd_cap: float | None = DEFAULT_USD_CAP) -> Budget:
         """Restore charged work, never reset it or silently widen its ceiling.
 
         Downtime is not execution time. The elapsed execution recorded before a
         crash remains charged; every new live interval starts at that offset.
         Token overrun is legal here because accounting is post-response.
+
+        K4a: the dollar spend restores with the snapshot. A snapshot from before K4a has none: it gets
+        `usd_cap` (the default cap) and spend 0 (⓪Plan's Q13).
         """
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get("used"), dict):
             raise ValueError("invalid execution budget snapshot")
@@ -161,18 +167,33 @@ class Budget:
                 setattr(budget, key, value)
         budget.started = time.monotonic() - used["wall_seconds"]
         reason = snapshot.get("stop_reason")
-        if reason is not None and reason not in {"model_requests", "tool_calls", "tokens", "artifact_bytes", "wall_seconds"}:
+        if reason is not None and reason not in {"model_requests", "tool_calls", "tokens", "artifact_bytes",
+                                                 "wall_seconds", "usd"}:
             raise ValueError("invalid execution budget stop reason")
         budget.stop_reason = reason
+        spend = snapshot.get("spend")
+        if spend is None:
+            budget.usd_cap = usd_cap
+            return budget
+        if not isinstance(spend, dict):
+            raise ValueError("invalid execution budget spend")
+        usd, cap, unpriced = spend.get("usd"), spend.get("usd_cap"), spend.get("unpriced_requests")
+        if (isinstance(usd, bool) or not isinstance(usd, (int, float)) or not math.isfinite(usd) or usd < 0
+                or (cap is not None and (isinstance(cap, bool) or not isinstance(cap, (int, float))
+                                         or not math.isfinite(cap) or cap <= 0))
+                or type(unpriced) is not int or unpriced < 0):
+            raise ValueError("invalid execution budget spend")
+        budget.usd, budget.usd_cap, budget.unpriced_requests = float(usd), cap, unpriced
         return budget
 
     def soft_reached(self) -> bool:
         """True once a soft limit (background jobs and conversational turns) is met:
         time to wrap up."""
         soft = self.soft
-        return soft is not None and (
+        return (soft is not None and (
             self.model_requests >= soft.model_requests or self.tool_calls >= soft.tool_calls
             or self.tokens >= soft.tokens or time.monotonic() - self.started >= soft.wall_seconds)
+        ) or (self.usd_cap is not None and self.usd >= self.usd_cap / HARD_OVER_SOFT)
 
     def remaining_seconds(self) -> float:
         return max(0.0, self.limits.wall_seconds - (time.monotonic() - self.started))
@@ -194,9 +215,11 @@ class Budget:
             self.stop("model_requests")
         if self.tokens >= self.limits.tokens:
             self.stop("tokens")
+        if self.usd_cap is not None and self.usd >= self.usd_cap:
+            self.stop("usd")
         self.model_requests += 1
         granted = min(requested_output, self.limits.output_tokens_per_request,
-                      max(1, self.limits.tokens - self.tokens))
+                      max(MIN_OUTPUT_TOKENS, self.limits.tokens - self.tokens))
         self.last_output_clamped = granted < requested_output
         return granted
 
@@ -211,6 +234,13 @@ class Budget:
         if self.artifact_bytes + count > self.limits.artifact_bytes:
             self.stop("artifact_bytes")
         self.artifact_bytes += count
+
+    def charge_usd(self, usd: float | None) -> None:
+        """One response's price (K4a); None: a response whose price isn't known, counted, adding nothing."""
+        if usd is None:
+            self.unpriced_requests += 1
+        else:
+            self.usd += max(0.0, float(usd))
 
     def note_context(self, kind: str, *, reason: str, count: int) -> None:
         """One provider-side change to the conversation, at this model request (counts only)."""
@@ -228,8 +258,11 @@ class Budget:
                          "tokens": self.tokens, "artifact_bytes": self.artifact_bytes,
                          "wall_seconds": round(time.monotonic() - self.started, 3)},
                 "stop_reason": self.stop_reason,
-                "token_limit_mode": "post_response_admission", "monetary_limit": False,
+                "token_limit_mode": "post_response_admission", "monetary_limit": self.usd_cap is not None,
                 **({"soft_limits": asdict(self.soft)} if self.soft is not None else {}),
+                **({"spend": {"usd": round(self.usd, 6), "usd_cap": self.usd_cap,
+                              "unpriced_requests": self.unpriced_requests}}
+                   if self.usd_cap is not None or self.usd or self.unpriced_requests else {}),
                 **({"context_events": list(self.context_events)} if self.context_events else {}),
                 **({"history": dict(self.history)} if self.history else {})}
 
@@ -290,7 +323,8 @@ def running_clock(budget: Budget, timeout: asyncio.Timeout):
 @contextmanager
 def paused():
     """Every wall clock this code runs under stands still meanwhile: the user's time is not the
-    work's (0.1.61 §A4: a card waits 30 minutes, a chat turn's clock is about 15). Nothing
+    work's (0.1.61 §A4: a card waits 30 minutes; a run's clock is 30 minutes at the standard tier, 45
+    at most). Nothing
     happens when no clock is running."""
     clocks = _clocks.get()
     for clock in clocks:
@@ -305,7 +339,7 @@ def paused():
 @contextmanager
 def scope(budget: Budget | None = None):
     """Explicit scope. Nested execution should reuse current() rather than reset it."""
-    token = _current.set(budget or turn_budget())
+    token = _current.set(budget or run_budget())
     try:
         yield _current.get()
     finally:
@@ -322,14 +356,27 @@ def detached_context():
     return context
 
 
+#: How an entry point makes its run's budget (K4a): the server registers one that reads the tier the
+#: user picked (settings_service.run_budget_from_settings); without one, the default tier.
+_budget_factory: Callable[[], Awaitable[Budget]] | None = None
+
+
+def use_budget_factory(factory: Callable[[], Awaitable[Budget]] | None) -> None:
+    global _budget_factory
+    _budget_factory = factory
+
+
 def governed(function):
-    """Bound an entry point; recursion and child tasks share the SAME mutable budget."""
+    """Bound an entry point; recursion and child tasks share the SAME mutable budget. A chat turn
+    starts here, before anything has read the settings, so the budget comes from the registered
+    factory (K4a: the user's tier for a chat turn as for a job)."""
     @wraps(function)
     async def wrapper(*args, **kwargs):
         if current() is not None:
             current().check()
             return await function(*args, **kwargs)
-        with scope() as budget:
+        made = await _budget_factory() if _budget_factory is not None else None
+        with scope(made) as budget:
             timeout = asyncio.timeout(budget.remaining_seconds())
             try:
                 async with timeout:
@@ -351,3 +398,9 @@ def charge_tokens(tokens: int):
     budget = current()
     if budget:
         budget.tokens += max(0, int(tokens))
+
+
+def charge_usd(usd: float | None):
+    budget = current()
+    if budget:
+        budget.charge_usd(usd)

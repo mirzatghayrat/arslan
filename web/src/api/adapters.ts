@@ -34,6 +34,13 @@ function looksMasked(value: string): boolean {
  * `voice_conversation_start`, so a clamp that only lived in the adapter was a
  * clamp on the path nobody took.
  */
+/** K4a: the per-task dollar cap as the server reads it (settings_service.task_usd_cap): $2 when unset or
+ * unusable, at most $100. */
+export function readTaskUsdCap(raw: string | number | undefined): number {
+  const n = typeof raw === "number" ? raw : Number.parseFloat(raw ?? "");
+  return Number.isFinite(n) && n > 0 ? Math.min(100, n) : 2;
+}
+
 export function clampEndpointSilenceMs(raw: string | number | undefined): number {
   const n = typeof raw === "number" ? Math.trunc(raw) : Number.parseInt(raw ?? "", 10);
   return Number.isNaN(n) || n <= 0 ? 900 : Math.min(3000, Math.max(300, n));
@@ -96,6 +103,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     voiceMode: (["off", "push_to_talk", "conversation"].includes(backend.voice_mode ?? "")
       ? backend.voice_mode : "push_to_talk") as AppSettings["voiceMode"],
     voiceEndpointSilenceMs: clampEndpointSilenceMs(backend.voice_endpoint_silence_ms),
+    taskUsdCap: readTaskUsdCap(backend.task_usd_cap),
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
@@ -145,6 +153,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
   shellConfirmPolicy: { key: "shell_confirm_policy" },
   backgroundJobBudget: { key: "background_job_budget" },
+  taskUsdCap: { key: "task_usd_cap", to: (v) => String(v) },
   workspaceDir: { key: "workspace_dir", to: (v) => (v as string) ?? "" },
   heartbeatEnabled: { key: "heartbeat_enabled", to: (v) => (v ? "true" : "false") },
   heartbeatChecklist: { key: "heartbeat_checklist", to: (v) => (v as string) ?? "" },

@@ -4,6 +4,7 @@ treated as plain text from a model that was shown untrusted quotes."""
 from datetime import datetime
 from types import SimpleNamespace
 
+from arslan.llm import prices
 import pytest
 from sqlalchemy import select
 
@@ -13,8 +14,8 @@ from server.services import proactive_diagnosis as diag
 
 NOW = datetime(2026, 9, 30, 12, 0)
 DAY = "2026-09-30"
-MODEL = "deepseek-v4-flash"                       # priced: 0.14 / 0.28 per Mtok
-WORST_MICRO = round((3000 / 1e6 * 0.14 + 1200 / 1e6 * 0.28) * 1_000_000)
+MODEL = "deepseek-v4-flash"                       # priced (prices.PRICES; K4a refresh: the Flash price)
+WORST_MICRO = round(prices.usd(MODEL, 3000, 1200, provider="deepseek") * 1_000_000)
 
 
 def config(cap=1.0):
@@ -74,7 +75,7 @@ async def test_a_note_is_stored_and_the_real_cost_replaces_the_reservation(execu
     item_id = await add_item(execution_db)
     assert await diag.diagnose(item_id, config=config(), now_local=NOW) is True
     note = (await item(execution_db, item_id)).diagnosis
-    actual = round((1000 / 1e6 * 0.14 + 100 / 1e6 * 0.28) * 1_000_000)
+    actual = round(prices.usd(MODEL, 1000, 100, provider="deepseek") * 1_000_000)
     assert note == {"cause": "The page layout changed.", "next_step": "Open it and compare.", "model": MODEL,
                     "usd": actual / 1_000_000}
     assert await spend(execution_db) == (actual, 1) and len(adapter.calls) == 1

@@ -31,9 +31,11 @@ def test_execution_budget_no_longer_caps_output_at_8192():
 
 def test_clamp_is_recorded_when_the_budget_grants_less_than_requested():
     from arslan.execution_budget import Budget, Limits
-    budget = Budget(Limits(tokens=10_000))
-    assert budget.model_request(32_768) == 10_000 and budget.last_output_clamped
+    budget = Budget(Limits(tokens=20_000))
+    assert budget.model_request(32_768) == 20_000 and budget.last_output_clamped
     assert budget.model_request(500) == 500 and not budget.last_output_clamped
+    budget.tokens = 19_900                                  # K4a: near the limit, still room to answer
+    assert budget.model_request(32_768) == 16_384 and budget.last_output_clamped
 
 
 @pytest.mark.parametrize("usage,expected", [

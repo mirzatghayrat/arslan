@@ -208,8 +208,8 @@ async def test_reasoning_only_cut_is_raised(monkeypatch):
 
 async def test_budget_clamped_cut_is_not_raised(monkeypatch):
     h = Harness(monkeypatch, [ok({"content": "partial"}, "length"), ok({"content": "never"})])
-    result = await h.run(budget=Budget(Limits(tokens=1_000)))
-    assert len(h.bodies) == 1 and h.bodies[0]["max_tokens"] == 1_000
+    result = await h.run(budget=Budget(Limits(tokens=20_000)))      # below the 32k asked for, above the floor
+    assert len(h.bodies) == 1 and h.bodies[0]["max_tokens"] == 20_000
     assert result["final"] == "partial"
 
 
