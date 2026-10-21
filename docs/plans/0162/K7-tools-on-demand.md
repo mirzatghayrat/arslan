@@ -53,6 +53,7 @@
 
 - MCP 按标注审批（S1）；schema 规整（F3）。
 - C3 已经决定的「哪些工具降级」，本卡只负责让它们能按需取到。
+- `start_background_work` 在聊天里要一直接上（常驻）：K4b 的长回合提示只在它接上时出现（`tool_loop.py` 里 `long_turn_told` 那段，条件是 `"start_background_work" in wired_keys`）。要是改成按需，就同时把那个条件改成「不在后台任务里」，并改 `test_k4b_long_turn`（⓪Plan 审 #282 时提出）。
 
 ## 怎么做（要点）
 
