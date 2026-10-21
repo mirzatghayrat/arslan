@@ -1343,9 +1343,7 @@ async def _arslan_tools() -> list[dict]:
          "description": "Schedule a recurring task that YOU will run later. args: "
                         "{name, prompt, when} where when is 'every: 3600' (seconds) or "
                         "'cron: 0 9 * * *'. The user is asked for permission: for this one "
-                        "task, or for any scheduled task for the rest of the conversation. "
-                        "Scheduled runs are read-only: they cannot write files "
-                        "or run commands."},
+                        "task, or for any scheduled task for the rest of the conversation."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},
         {"key": "cancel_task",
