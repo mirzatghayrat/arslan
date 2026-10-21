@@ -128,7 +128,7 @@ class ProgressPolicy:
 
 
 def bounded_history(history: list[dict], *, max_chars: int = 64_000,
-                    preserve_tail: int = 0, size_of=None) -> tuple[list[dict], bool]:
+                    preserve_tail: int = 0, size_of=None, trim_to: int | None = None) -> tuple[list[dict], bool]:
     """Drop only old complete turns, preserving native provider-content pairs.
 
     This is reference retention, not a semantic summarizer. Durable task progress
@@ -141,6 +141,10 @@ def bounded_history(history: list[dict], *, max_chars: int = 64_000,
     0.1.49: a neutral tool-call group (assistant tool_calls + its tool records,
     arslan/llm/trajectory.py) is one unit too; `size_of` measures a group as it
     will be sent (the caller's rendering), defaulting to its JSON length.
+
+    K4a: with `trim_to`, a history over `max_chars` is trimmed down to `trim_to` in one go, not just under
+    `max_chars`. A caller that keeps the trimmed history then grows it again for a while: on a provider
+    that caches the prompt's prefix, the cache breaks once per chunk instead of on every step.
     """
     from arslan.llm import trajectory
     if type(preserve_tail) is not int or not 0 <= preserve_tail <= len(history):
@@ -174,19 +178,25 @@ def bounded_history(history: list[dict], *, max_chars: int = 64_000,
     def measure(group):
         return size_of(group) if size_of else len(json.dumps(group, ensure_ascii=False, default=str))
 
-    total, kept, shrunk = 0, [], False
-    for group in reversed(groups):
-        if not kept and not preserve_tail:
-            # The newest unit is always kept. An unprotected neutral call group
-            # that alone exceeds the bound sheds its oldest results' bodies
-            # (explicit notice, pairing intact). A protected tail is delivered whole.
-            fitted = trajectory.shrink_group(group, max_chars, measure)
-            shrunk = fitted is not group
-            group = fitted
-        size = measure(group)
-        if kept and total + size > max_chars:
-            break
-        kept.append(group)
-        total += size
+    def keep(bound):
+        total, kept, shrunk = 0, [], False
+        for group in reversed(groups):
+            if not kept and not preserve_tail:
+                # The newest unit is always kept. An unprotected neutral call group
+                # that alone exceeds the bound sheds its oldest results' bodies
+                # (explicit notice, pairing intact). A protected tail is delivered whole.
+                fitted = trajectory.shrink_group(group, max_chars, measure)
+                shrunk = fitted is not group
+                group = fitted
+            size = measure(group)
+            if kept and total + size > bound:
+                break
+            kept.append(group)
+            total += size
+        return kept, shrunk
+
+    kept, shrunk = keep(max_chars)
+    if trim_to is not None and trim_to < max_chars and len(kept) < len(groups):
+        kept, shrunk = keep(trim_to)
     result = [item for group in reversed(kept) for item in group]
     return result, shrunk or len(result) != len(history)

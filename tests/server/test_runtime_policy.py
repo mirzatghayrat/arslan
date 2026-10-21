@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -219,3 +220,19 @@ def test_the_progress_note_counts_against_the_limit_that_applies():
     policy.observe("read", {"i": 2}, {"ok": True, "text": "same"})
     policy.observe("read", {"i": 3}, {"ok": True, "text": "same"})
     assert "2 of 4" in tool_loop._progress_note(policy)
+
+
+# ── K4a gate (DeepSeek T2): trim the in-turn history in chunks, not one message per step ───────
+
+def _groups(n, size=1000):
+    return [{"role": "user" if i % 2 == 0 else "assistant", "content": "x" * size} for i in range(n)]
+
+
+def test_over_the_bound_the_history_is_trimmed_down_to_the_lower_mark():
+    history = _groups(10)                                         # about 10k characters
+    kept, trimmed = bounded_history(history, max_chars=8_000, trim_to=4_000)
+    assert trimmed and len(json.dumps(kept, ensure_ascii=False)) <= 4_000
+    under, untouched = bounded_history(_groups(5), max_chars=8_000, trim_to=4_000)
+    assert not untouched and len(under) == 5                      # under the bound: nothing changes
+    old, _ = bounded_history(history, max_chars=8_000)            # without trim_to: as before
+    assert 4_000 < len(json.dumps(old, ensure_ascii=False)) <= 8_000
