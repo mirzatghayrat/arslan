@@ -101,6 +101,9 @@ def test_a_sent_confirmation_card_counts_as_awaiting_and_the_turn_reports_done(a
 
 
 def test_an_auto_approved_command_never_notifies(app_client, monkeypatch):  # noqa: F811
+    from server.services import command_sandbox
+    # S2a-2 (R4): layer ③ runs with no card only where the sandbox can start; pinned so CI's Linux runs it too.
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     _enable_shell(app_client, policy="ask_risky")        # LOW-risk read-only runs without a card
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])

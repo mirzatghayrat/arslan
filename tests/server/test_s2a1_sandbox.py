@@ -773,6 +773,7 @@ async def test_a_shortcut_with_no_click_recorded_stays_wrapped_and_offline(execu
         async def execute(self, args):
             self.offline = terminal_exec.OFFLINE.get()
             return await super().execute(args)
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)    # wrapped (and offline) needs seatbelt
     seen = untrusted.track_turn()
     untrusted.mark_external()
     ex, asker = _Offline(), _NetAsker(False)

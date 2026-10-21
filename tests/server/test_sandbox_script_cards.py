@@ -112,6 +112,9 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(monkeypa
     async def on():
         return True
     monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
+    # Seatbelt starts here, as on a Mac: outside it the command is wrapped in the minimal profile, which
+    # takes the network away after outside content instead of asking (with no sandbox, it would ask).
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     command_sandbox.grant("c2")                              # this conversation runs outside
     ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
     assert len(asked) == 1 and ex.outside == [True]          # S2a-2: that grant is the user's yes for layer ③

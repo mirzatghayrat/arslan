@@ -218,6 +218,9 @@ def test_cancel_run_command_declines(app_client, monkeypatch):
 
 
 def test_ask_risky_auto_runs_low_no_card(app_client, monkeypatch):
+    from server.services import command_sandbox
+    # S2a-2 (R4): layer ③ runs with no card only where the sandbox can start; pinned so CI's Linux runs it too.
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     _enable_shell(app_client, policy="ask_risky")
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])  # LOW risk
