@@ -1295,9 +1295,10 @@ async def _arslan_tools() -> list[dict]:
                                 "The user is asked for write permission: for this write, or for "
                                 "any file in the folder for the rest of the conversation.")},
             {"key": "edit_file",
-             "description": "Replace a UNIQUE occurrence of `old` with `new` in a WORKSPACE "
-                            "file. args: {path, old, new}. An ambiguous `old` is refused with "
-                            "its match count — give a longer snippet instead."},
+             "description": "Replace a UNIQUE occurrence of `old_string` with `new_string` in a "
+                            "WORKSPACE file. args: {path, old_string, new_string}. Read the file "
+                            "first. An ambiguous `old_string` is refused with its match count — "
+                            "give a longer snippet instead."},
         ]
 
     # LAN discovery (P3a): offered only when the user turned it on. Read-only —

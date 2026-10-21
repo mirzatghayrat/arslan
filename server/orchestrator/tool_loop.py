@@ -1932,6 +1932,102 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "title": {"type": "string", "maxLength": 200,
                   "description": "Optional name the user sees; the file's extension is kept."}},
         "required": ["path"], "additionalProperties": False},
+    # 0.1.63 K5: the 14 offered tools that had no schema (and fell back to _PERMISSIVE_PARAMS), matching
+    # each executor's real arguments. Built-in schemas go to every provider verbatim (F3's normaliser is for
+    # MCP tools only): no `pattern`, no top-level `anyOf`, no type arrays (tests/server/test_k5_tool_schemas.py).
+    "edit_file": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "minLength": 1, "description": "File path within the configured workspace."},
+            "old_string": {"type": "string", "minLength": 1,
+                           "description": "The exact text to replace; it must appear exactly once in the file."},
+            "new_string": {"type": "string", "description": "The text to put in its place."},
+        },
+        # path only: a call with the old names (old/new) still passes this check (DELETE-BY: v0.1.64).
+        "required": ["path"],
+        "additionalProperties": False,
+    },
+    "list_dir": {
+        "type": "object",
+        "properties": {"path": {"type": "string", "description": (
+            "Absolute or ~/ folder path in Desktop, Documents, Downloads or the workspace; leave it out to list "
+            "the folders you can see.")}},
+        "additionalProperties": False,
+    },
+    "search_files": {
+        "type": "object",
+        "properties": {"query": {"type": "string", "minLength": 1,
+                                 "description": "Literal text to find in the readable folders' text files."}},
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+    "whats_new": {
+        "type": "object",
+        "properties": {"count": {"type": "integer", "minimum": 1, "maximum": 6,
+                                 "description": "How many recent versions' notes (default 3)."}},
+        "additionalProperties": False,
+    },
+    "list_my_capabilities": {"type": "object", "properties": {}, "additionalProperties": False},
+    "schedule_task": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 80, "description": "A short name for the task."},
+            "prompt": {"type": "string", "minLength": 1, "description": "What to do each time it runs."},
+            "when": {"type": "string", "minLength": 1, "description": (
+                "'every: <seconds>' (at least 900) or 'cron: <expression>', e.g. 'every: 3600' or 'cron: 0 9 * * *'.")},
+        },
+        "required": ["name", "prompt", "when"],
+        "additionalProperties": False,
+    },
+    "list_my_tasks": {"type": "object", "properties": {}, "additionalProperties": False},
+    "cancel_task": {
+        "type": "object",
+        # No "type": a number and the string "3" are both accepted (⓪Plan's Q9: no type arrays).
+        "properties": {"task_id": {"description": "The task id from list_my_tasks (a number, e.g. 3)."}},
+        "required": ["task_id"],
+        "additionalProperties": False,
+    },
+    "read_skill": {
+        "type": "object",
+        "properties": {
+            "key": {"type": "string", "minLength": 1,
+                    "description": "The skill's key from the list in this tool's description."},
+            "section": {"type": "string", "description": (
+                "Optional: one part only, a '## Heading' of the skill or 'references/<file>.md' (or .txt).")},
+        },
+        "required": ["key"],
+        "additionalProperties": False,
+    },
+    "scan_local_network": {"type": "object", "properties": {}, "additionalProperties": False},
+    "ssh_probe": {
+        "type": "object",
+        "properties": {"host": {"type": "string", "minLength": 1,
+                                "description": "An IPv4 address on the local network, e.g. 192.168.1.8."}},
+        "required": ["host"],
+        "additionalProperties": False,
+    },
+    "ssh_run": {
+        "type": "object",
+        "properties": {
+            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
+            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
+            "command": {"type": "string", "minLength": 1, "description": "One whitelisted program name, e.g. 'uptime'."},
+            "argv": {"type": "array", "items": {"type": "string"}, "description": "Its arguments, one per item."},
+        },
+        "required": ["host", "user", "command"],
+        "additionalProperties": False,
+    },
+    "list_nodes": {"type": "object", "properties": {}, "additionalProperties": False},
+    "enroll_node": {
+        "type": "object",
+        "properties": {
+            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
+            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
+            "name": {"type": "string", "minLength": 1, "maxLength": 60, "description": "A name for the machine."},
+        },
+        "required": ["host", "user", "name"],
+        "additionalProperties": False,
+    },
 }
 
 # PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call

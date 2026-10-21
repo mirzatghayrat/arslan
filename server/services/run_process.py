@@ -90,8 +90,10 @@ def plain(tool: str, args: dict, result: dict, *, ok: bool, summary: str = "") -
         out = {"view": "write", "path": result.get("path") or args.get("path") or "", "bytes": result.get("bytes"),
                "artifact": result.get("artifact")}
     elif tool == "edit_file":
+        # K5: old_string / new_string, or the old names until v0.1.64 (DELETE-BY: v0.1.64); same keys out.
         out = {"view": "edit", "path": result.get("path") or args.get("path") or "",
-               "old": _short(args.get("old") or "", TEXT_CAP), "new": _short(args.get("new") or "", TEXT_CAP),
+               "old": _short(args.get("old_string", args.get("old")) or "", TEXT_CAP),
+               "new": _short(args.get("new_string", args.get("new")) or "", TEXT_CAP),
                "artifact": result.get("artifact")}
     elif tool == "search_files":
         out = {"view": "find", "query": _short(args.get("query") or "", 200), "count": len(result.get("matches") or [])}
