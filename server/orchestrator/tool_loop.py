@@ -2086,17 +2086,8 @@ _ESCALATE_SCHEMA = {
 # suffered from — see spec §效率.
 # General research discipline (domain-agnostic) — converges any gather-then-answer task with any
 # single model, instead of fumbling N snippet searches on noisy results.
-_NATIVE_EFFICIENCY = (
-    "\n\nRESEARCH DISCIPLINE — be efficient and converge:\n"
-    "1. web_search returns short SNIPPETS, not full data. Use it to LOCATE the best source, not to "
-    "collect facts one query at a time.\n"
-    "2. Do at most 1–2 broad searches, then web_extract the most authoritative page you found to get "
-    "the real content — extracting one good source beats many snippet searches.\n"
-    "3. Do NOT run several similar searches for the same thing, and do NOT chase individual data "
-    "points with a separate search each. As soon as you can answer, ANSWER — stop searching.\n"
-    "4. If the data you gathered is incomplete, answer only the supported portion and state the "
-    "specific unknowns — never invent missing detail or keep searching in circles."
-)
+# 0.1.63 K5: the research rules ("RESEARCH DISCIPLINE") used to be appended to every run_native system,
+# tools or not; they now live in web_search's and web_extract's descriptions (arslan._arslan_tools).
 
 _PERMISSIVE_PARAMS = {"type": "object", "properties": {}, "additionalProperties": True}
 
@@ -2607,9 +2598,9 @@ async def _run_native(
                 "stop_reason": None, "history_compacted": compacted}
     schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
     params_by_key = {t["key"]: _tool_params(t) for t in wired}
-    # _NATIVE_EFFICIENCY = research discipline; GUARD_NOTE = injection defense (wrapped tool/web
-    # content is untrusted DATA, not instructions) — same guard the old loop carried.
-    system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD_NOTE
+    # GUARD_NOTE = injection defense (wrapped tool/web content is untrusted DATA, not instructions) — the
+    # same guard the old loop carried. (K5: the research rules moved to the web tools' descriptions.)
+    system = system + "\n\n" + GUARD_NOTE
 
     # convo is the neutral in-turn trajectory (arslan/llm/trajectory.py): one
     # assistant message per model reply that called tools, one tool record per

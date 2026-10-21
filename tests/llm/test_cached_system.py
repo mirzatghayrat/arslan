@@ -33,7 +33,7 @@ def test_empty_volatile_value_is_exactly_stable():
 
 
 def test_concatenation_appends_to_volatile_and_preserves_split():
-    # tool_loop.run_native does `system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD`.
+    # tool_loop.run_native does `system = system + "\n\n" + GUARD` (before 0.1.63 K5, plus the research rules).
     # Those trailing STATIC guards must land in the volatile block (uncached) so the
     # stable prefix stays byte-identical across turns.
     cs = build_cached_system("STABLE", "VOL")
