@@ -518,6 +518,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
             ctx["timer"].cancel()
         reply = reply_text(who, run)
         ctx["declined"] = driver_out(who, run).get("declined", 0)
+        timing = driver_out(who, run).get("timing")             # Arslan only: per turn, K8's M1
         try:
             verdict = CHECKS[task](str(run), reply, ctx)
         finally:
@@ -529,6 +530,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               "entrant_version": entrant_version(who), "end": end,
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
+              "timing": timing,
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = judge(verdict, end, who)
