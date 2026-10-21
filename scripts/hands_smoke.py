@@ -463,7 +463,9 @@ async def v2_checks(tools, hands_service, front: str) -> None:
         from server.services import desktop_status
         with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-1", conversation_id="v2-chat")), \
                 desktop_status.working("v2-chat"):
-            codes = [(await press.execute({"app": app, "keys": "tab"})).get("code") for _ in range(7)]
+            # An arrow key, never Tab: Tab walks the fixture's focus into its Password field, and there
+            # Hands refuses every key (#251, measured on the first H3 run: 1 press, then password_field).
+            codes = [(await press.execute({"app": app, "keys": "right"})).get("code") for _ in range(7)]
         record("a chat reply acts 7 times in one app", codes == [None] * 7, str(codes))
         with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-2", conversation_id="v2-chat")), \
                 desktop_status.working("v2-chat"):
@@ -475,12 +477,12 @@ async def v2_checks(tools, hands_service, front: str) -> None:
             await hands_client.call("stop", {}, start=False)
             await task
             ended = time.monotonic() - stop_at
-            after = await press.execute({"app": app, "keys": "tab"})
+            after = await press.execute({"app": app, "keys": "right"})
         record("Stop in a chat reply ends the step in flight within 1 s and refuses the reply's next call",
                ended < 1.0 and after.get("code") == "stopped_by_user", f"{ended:.2f}s; next: {after.get('code')}")
         with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-3", conversation_id="v2-chat")), \
                 desktop_status.working("v2-chat"):
-            fresh = await press.execute({"app": app, "keys": "tab"})
+            fresh = await press.execute({"app": app, "keys": "right"})
         record("a chat reply after the Stop acts as usual", fresh.get("code") is None, str(fresh.get("code")))
 
         # A batch: type and click in one call, ending with one look that shows the effect.
