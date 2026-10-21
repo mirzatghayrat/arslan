@@ -25,7 +25,8 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "proactive_goal_web": {"url"}, "proactive_goal_folder": {"path", "count"},
                        "model_retried": {"attempts", "seconds"},   # 0.1.49
                        "budget_closing_saved": {"reason", "files", "sources"},   # 0.1.50
-                       "budget_closing_unsaved": {"reason", "sources"}}
+                       "budget_closing_unsaved": {"reason", "sources"},
+                       "turn_long": {"minutes"}}   # K4b
             assert fields == allowed.get(key, set())
             if locale != "en":
                 assert text != copy.MESSAGES["en"][key]

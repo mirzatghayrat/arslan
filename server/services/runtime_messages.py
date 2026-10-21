@@ -17,6 +17,7 @@ MESSAGES = {
         "limit_wall_seconds": "time",
         "limit_artifact_bytes": "file size",
         "limit_usd": "dollar limit",                          # K4a
+        "turn_long": "This turn has been working for {minutes} minutes; if what is left is long, Arslan may continue it in the background.",  # K4b
         "model_retried": "(Arslan tried {attempts} times over {seconds}s before stopping.)",
         "image_refused": "The model you configured could not read the image. It may not support image input. Choose a model with image support, or describe the picture in words.",
         "proposal_handled": "This proposal has already been handled, or there is no pending proposal. Tell me what you would like to do next.",
@@ -50,6 +51,7 @@ MESSAGES = {
         "limit_wall_seconds": "时间",
         "limit_artifact_bytes": "文件大小",
         "limit_usd": "美元上限",                          # K4a
+        "turn_long": "这一轮已经做了 {minutes} 分钟；剩下的如果很长，Arslan 可能转到后台继续。",  # K4b
         "model_retried": "(Arslan 已尝试 {attempts} 次、历时 {seconds} 秒后停止。)",
         "image_refused": "当前模型无法读取这张图片，可能不支持图片输入。请选择支持图片的模型，或用文字描述图片。",
         "proposal_handled": "这个提案已经处理过了，或目前没有待处理的提案。直接告诉我接下来要做什么就好。",
@@ -83,6 +85,7 @@ MESSAGES = {
         "limit_wall_seconds": "時間",
         "limit_artifact_bytes": "ファイルサイズ",
         "limit_usd": "ドル上限",                          # K4a
+        "turn_long": "このターンは {minutes} 分続いています。残りが長ければ、Arslan はバックグラウンドで続けることがあります。",  # K4b
         "model_retried": "(Arslan は {seconds} 秒間に {attempts} 回試してから停止しました。)",
         "image_refused": "設定したモデルは画像を読み取れませんでした。画像入力に対応していない可能性があります。画像対応モデルを選ぶか、画像の内容を文章で説明してください。",
         "proposal_handled": "この提案はすでに処理済みか、現在保留中の提案はありません。次に行いたいことを教えてください。",
@@ -116,6 +119,7 @@ MESSAGES = {
         "limit_wall_seconds": "tiempo",
         "limit_artifact_bytes": "tamaño de archivo",
         "limit_usd": "límite en dólares",                          # K4a
+        "turn_long": "Este turno lleva {minutes} minutos trabajando; si lo que queda es largo, Arslan puede continuarlo en segundo plano.",  # K4b
         "model_retried": "(Arslan lo intentó {attempts} veces durante {seconds} s antes de detenerse.)",
         "image_refused": "El modelo configurado no pudo leer la imagen. Es posible que no admita imágenes. Elige un modelo compatible o describe la imagen con palabras.",
         "proposal_handled": "Esta propuesta ya se ha gestionado o no hay ninguna pendiente. Dime qué quieres hacer a continuación.",
@@ -149,6 +153,7 @@ MESSAGES = {
         "limit_wall_seconds": "Zeit",
         "limit_artifact_bytes": "Dateigröße",
         "limit_usd": "Dollar-Limit",                          # K4a
+        "turn_long": "Dieser Durchgang läuft seit {minutes} Minuten; wenn noch viel übrig ist, kann Arslan im Hintergrund weitermachen.",  # K4b
         "model_retried": "(Arslan hat es {attempts}-mal über {seconds} s versucht und dann aufgehört.)",
         "image_refused": "Das konfigurierte Modell konnte das Bild nicht lesen. Möglicherweise unterstützt es keine Bildeingaben. Wähle ein Modell mit Bildunterstützung oder beschreibe das Bild mit Worten.",
         "proposal_handled": "Dieser Vorschlag wurde bereits bearbeitet, oder es gibt keinen ausstehenden Vorschlag. Sag mir, was du als Nächstes tun möchtest.",
@@ -182,6 +187,7 @@ MESSAGES = {
         "limit_wall_seconds": "temps",
         "limit_artifact_bytes": "taille de fichier",
         "limit_usd": "plafond en dollars",                          # K4a
+        "turn_long": "Ce tour travaille depuis {minutes} minutes ; s'il reste beaucoup à faire, Arslan peut continuer en arrière-plan.",  # K4b
         "model_retried": "(Arslan a essayé {attempts} fois pendant {seconds} s avant de s'arrêter.)",
         "image_refused": "Le modèle configuré n’a pas pu lire l’image. Il ne prend peut-être pas en charge les images. Choisis un modèle compatible ou décris l’image avec des mots.",
         "proposal_handled": "Cette proposition a déjà été traitée, ou aucune proposition n’est en attente. Dis-moi ce que tu souhaites faire ensuite.",

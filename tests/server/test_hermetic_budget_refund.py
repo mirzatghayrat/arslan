@@ -35,12 +35,12 @@ from server.services.replay_run import REPLAY_CONVERSATION_ID
 pytestmark = pytest.mark.asyncio
 
 
-async def _spend(n: int, *, budget: dict) -> int:
+async def _spend(n: int) -> int:
     """Make n fetch attempts; return how many were allowed."""
     allowed = 0
     for _ in range(n):
         refusal = await tool_loop._check_fetch_budget(
-            "web_search", conversation_id=REPLAY_CONVERSATION_ID, budget=budget,
+            "web_search", conversation_id=REPLAY_CONVERSATION_ID,
         )
         if refusal is not None:
             break
@@ -60,25 +60,24 @@ def _clean_counter():
 async def test_the_probe_can_see_spend_at_all():
     """⓪ Before asserting anything about the cap, prove the counter moves."""
     assert tool_loop.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == 0
-    await _spend(3, budget={})
+    await _spend(3)
     assert tool_loop.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == 3
 
 
 async def test_the_cap_binds_when_nothing_else_is_running():
     """The baseline the concurrent case is compared against."""
-    allowed = await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 10, budget={})
+    allowed = await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 10)
     assert allowed == tool_loop.HERMETIC_FETCH_BUDGET
 
 
 async def test_a_second_attempt_starting_does_not_refund_the_first():
     tool_loop.begin_hermetic_attempt()            # attempt A
-    budget: dict = {}
-    spent = await _spend(40, budget=budget)
+    spent = await _spend(40)
     assert spent == 40, "the fixture no longer reaches the interesting state"
 
     tool_loop.begin_hermetic_attempt()            # attempt B, a DIFFERENT spawn
 
-    extra = await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 10, budget=budget)
+    extra = await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 10)
 
     total = spent + extra
     assert total <= tool_loop.HERMETIC_FETCH_BUDGET, (
@@ -92,11 +91,11 @@ async def test_a_serial_attempt_still_gets_its_own_allowance():
     counter that never refreshes is the process-lifetime failure the original
     reset existed to prevent, and it would satisfy the test above."""
     tool_loop.begin_hermetic_attempt()
-    assert await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 5, budget={}) == tool_loop.HERMETIC_FETCH_BUDGET
+    assert await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 5) == tool_loop.HERMETIC_FETCH_BUDGET
     tool_loop.end_hermetic_attempt()
 
     tool_loop.begin_hermetic_attempt()            # A has finished; B is new
-    assert await _spend(5, budget={}) == 5, "a serial attempt inherited a spent allowance"
+    assert await _spend(5) == 5, "a serial attempt inherited a spent allowance"
     tool_loop.end_hermetic_attempt()
 
 
@@ -121,11 +120,11 @@ async def test_a_reset_still_starts_a_fresh_allowance_for_a_new_attempt():
     attempt after a restart gets the budget and every later one is refused,
     which reads as a broken feature rather than a limit.
     """
-    await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 5, budget={})
+    await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 5)
     assert tool_loop.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == tool_loop.HERMETIC_FETCH_BUDGET
 
     tool_loop.reset_hermetic_fetch_budget(REPLAY_CONVERSATION_ID)
-    assert await _spend(5, budget={}) == 5, "a genuinely new attempt got no allowance"
+    assert await _spend(5) == 5, "a genuinely new attempt got no allowance"
 
 
 async def test_the_watcher_claims_rather_than_clears():

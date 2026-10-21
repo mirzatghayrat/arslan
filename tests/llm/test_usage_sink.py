@@ -16,10 +16,11 @@ def test_collecting_accumulates_and_isolates():
 
 
 def test_estimate_tokens_cjk_aware():
-    # 4 CJK chars ≈ 4 tokens; 8 ascii chars ≈ 2 tokens
-    assert usage_sink.estimate_tokens("帮我写个") == 4
-    assert usage_sink.estimate_tokens("abcdefgh") == 2
-    assert usage_sink.estimate_tokens("", None) == 0
+    # K4b: the one estimator is context_budget's. 4 CJK chars ≈ 4 tokens; 8 ascii chars ≈ 2 tokens
+    from arslan.context_budget import estimate_tokens
+    assert estimate_tokens("帮我写个") == 4
+    assert estimate_tokens("abcdefgh") == 2
+    assert estimate_tokens("", None) == 0
 
 
 # --- S3-M3 Task 1: per-(model, provider) buckets, primary-bucket attribution ---

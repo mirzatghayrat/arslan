@@ -260,8 +260,7 @@ async def test_each_attempt_starts_with_a_fresh_fetch_allowance(wdb, monkeypatch
     # Spend the whole allowance, as a previous attempt would have.
     tool_loop.reset_hermetic_fetch_budget("evolution-eval")
     for _ in range(tool_loop.HERMETIC_FETCH_BUDGET):
-        await tool_loop._check_fetch_budget(
-            "web_search", conversation_id="evolution-eval", budget={})
+        await tool_loop._check_fetch_budget("web_search", conversation_id="evolution-eval")
     assert tool_loop.hermetic_fetches_used("evolution-eval") == tool_loop.HERMETIC_FETCH_BUDGET
 
     sid = await _spawn(Session)

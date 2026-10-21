@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from arslan.execution_budget import BudgetExceeded, governed
-from arslan.llm import trajectory
+from arslan.llm import trajectory, usage_sink
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
@@ -828,6 +828,30 @@ async def _recover_truncation(a, resp, request, state, remaining):
                      tool_calls=[], continuation=None)
 
 
+def _context_parts(system: str, schemas: list[dict] | None, convo: list[dict], current_request: dict,
+                   status: str) -> dict[str, int]:
+    """0.1.63 K4b: what the request about to be sent is made of, estimated with the one estimator, for
+    the composer's ring breakdown (its total stays the provider's last_input): the system text, the
+    tools, the turn's reference block (memory and context), earlier turns, and this turn (the user's
+    words, tool calls and results, kept and current status blocks)."""
+    from arslan.context_budget import IMAGE_TOKEN_GUESS, estimate_tokens
+
+    def size(messages: list[dict]) -> int:
+        rendered = json.dumps(trajectory.to_legacy(messages, images=False), ensure_ascii=False, default=str)
+        kept = "".join(m.get("content") or "" for m in messages if m.get("_status"))
+        return (estimate_tokens(rendered) + estimate_tokens(kept)
+                + IMAGE_TOKEN_GUESS * trajectory.image_count(messages))
+    at = next((i for i, m in enumerate(convo) if m is current_request), None)
+    history, after = (convo[:at], convo[at + 1:]) if at is not None else ([], convo)
+    content = current_request.get("content")
+    words = estimate_tokens(turn_context.users_words(content))
+    return {"system": estimate_tokens(system),
+            "tools": estimate_tokens(json.dumps(schemas, ensure_ascii=False)) if schemas else 0,
+            "context": max(0, estimate_tokens(content) - words),
+            "history": size(history),
+            "turn": words + size(after) + estimate_tokens(status)}
+
+
 def _rendered_size(messages: list[dict]) -> int:
     """Context size of what is actually sent, not of local bookkeeping. Kept status blocks
     (trajectory.status, K1) are sent natively though the legacy rendering leaves them out."""
@@ -850,15 +874,21 @@ async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
         pass
 
 
-#: Outbound fetches one LIVE run may make. Chosen to be far above ordinary research
-#: behaviour (a few lookups per answer) and far below a loop; it is a circuit breaker,
-#: not a quota. NOT derived from a real distribution — nothing measures fetch counts yet,
-#: so this is an explicit judgement call, the same honesty caveat as any other default we
-#: have not earned with data.
-LIVE_FETCH_BUDGET = 25
+#: 0.1.63 K4b (decision D4, ⓪Plan Q1 = A): a chat turn this long (its own time: a card's wait doesn't
+#: count) is told once, in its status block, that it may continue the rest as background work, and the
+#: user's reply gets one `note` line. A suggestion, never forced. No setting: nothing interrupts the user,
+#: so the card's "can be switched off" was dropped with that decision.
+LONG_TURN_S = 600
+_LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes. If what remains is long and "
+                   "doesn't need the user meanwhile, you may continue it as background work: call "
+                   "start_background_work with a goal that says what is already done in this turn and what "
+                   "remains, then tell the user. Otherwise keep going here.")
 
-#: The tools it covers. Capping web_extract alone would be bypassed by alternating with
-#: web_search, so they share ONE allowance.
+
+#: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
+#: call under the run's limits (K4a), and K4a's tool-call limit and dollar cap bound a web-heavy turn.
+#: What stays is the eval/replay allowance below. The tools it covers: capping web_extract alone
+#: would be bypassed by alternating with web_search, so they share ONE allowance.
 _FETCH_TOOLS = frozenset({"web_search", "web_extract"})
 
 
@@ -963,22 +993,16 @@ def _check_hermetic_fetch_budget(conversation_id: str | None) -> dict | None:
     return None
 
 
-async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
-                              budget: dict) -> dict | None:
-    """None to proceed, or an explicit refusal dict once a run has spent its allowance.
+async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None) -> dict | None:
+    """None to proceed, or an explicit refusal dict once an eval/replay attempt has spent its allowance.
 
-    🔴 SCOPE — BOTH HALVES ARE NOW COVERED, BY TWO DIFFERENT ALLOWANCES.
-    A live run gets LIVE_FETCH_BUDGET per run. A hermetic eval/replay gets
-    HERMETIC_FETCH_BUDGET for the WHOLE ATTEMPT, which is the only shape that
+    🔴 SCOPE. A live run has no fetch allowance since 0.1.63 K4b: its reads count as tool calls.
+    A hermetic eval/replay gets HERMETIC_FETCH_BUDGET for the WHOLE ATTEMPT, which is the only shape that
     bounds anything there: `web_search` and `web_extract` are both in
     REPLAY_SAFE_BUILTINS (sealing keeps read-only web and drops WRITE tools plus
     anything non-allowlisted), and the gate dispatches roughly
     `pairs x 2 arms x (epochs*lr_budget + 1)` times — so a per-dispatch cap would
     multiply rather than limit. This was registered as FU-2b and is now in.
-
-    The honest statement changes with it: it was "live fetches are capped, never
-    network use is capped". test_live_fetch_budget pinned that wording to a test
-    precisely so the claim and the code would move together, and they now have.
 
     The refusal is EXPLICIT rather than a silent drop: a swallowed fetch looks to the
     model like a page with no content, and it will simply try the next URL.
@@ -987,13 +1011,6 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
         return None
     if replay_safety.is_hermetic_context(conversation_id):
         return _check_hermetic_fetch_budget(conversation_id)
-    used = budget.get("fetches", 0)
-    if used >= LIVE_FETCH_BUDGET:
-        return {"ok": False,
-                "error": f"fetch budget reached for this run ({LIVE_FETCH_BUDGET} "
-                         "web_search/web_extract calls) — answer with what you have "
-                         "instead of fetching more"}
-    budget["fetches"] = used + 1
     return None
 
 
@@ -1160,7 +1177,6 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                          mcp_hint_logged: set | None = None,
                          conversation_id: str | None = None,
                          log_events: bool = True,
-                         fetch_budget: dict | None = None,
                          caller: ToolCaller | None = None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
@@ -1207,16 +1223,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
           "target": desktop_status.step_target(tool_key, args)})
     desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
 
-    # FU-2 (live runs only — see _check_fetch_budget for why eval is out of scope).
-    # `fetch_budget` is the per-run dict the caller threads through; absent it, no cap
-    # applies, which keeps every existing caller and test working unchanged.
-    if fetch_budget is not None:
-        refusal = await _check_fetch_budget(
-            tool_key, conversation_id=conversation_id, budget=fetch_budget)
-        if refusal is not None:
-            return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
-                                       assistant_content, convo,
-                                       mcp_fail_counts=mcp_fail_counts)
+    # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
+    refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
+    if refusal is not None:
+        return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
+                                   assistant_content, convo,
+                                   mcp_fail_counts=mcp_fail_counts)
 
     # Missing model arguments are not a user's refusal. Validate their shape
     # before requesting permission or performing any file I/O; path scope and
@@ -2522,13 +2534,6 @@ async def _run_native(
     # row to once per turn per tool.
     mcp_fail_counts: dict[str, int] = {}
     mcp_hint_logged: set[str] = set()
-    # FU-2: the per-run outbound-fetch allowance. A LOCAL of this invocation for exactly
-    # the reason spelled out above — one run_native call is one turn, so the allowance
-    # resets by construction and cannot leak between turns or between spawns. Created
-    # here, BEFORE the force_tools block below, so the proactive web_search counts too;
-    # creating it any deeper (inside the step loop, or inside _dispatch_tool) would reset
-    # it per tool call and the cap would never bind.
-    fetch_budget: dict[str, int] = {}
     call_ids: set[str] = set()
     from server.orchestrator import agent_status
     from server.orchestrator.model_call import TurnRecovery
@@ -2558,16 +2563,15 @@ async def _run_native(
                 confirm_workspace_write=confirm_workspace_write,
                 confirm_schedule=confirm_schedule,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events,
-                fetch_budget=fetch_budget, caller=caller)
+                conversation_id=conversation_id, log_events=log_events, caller=caller)
             policy.observe("web_search", {"query": q}, result)
 
     pending_feedback = len(convo) - unseen_start
-    # 0.1.50 completion first after a stop (S6 bench, T2): repeated failure or a
-    # spent fetch allowance ends RESEARCH, not the deliverable. The run enters
-    # finish mode once (sticky): up to two steps where only the save tools run (K3: the
-    # table stays, other calls are refused), then text only. Without save tools a no-progress stop forces an answer at
-    # once, as before; a spent fetch allowance then changes nothing.
+    # 0.1.50 completion first after a stop (S6 bench, T2): repeated failure ends RESEARCH, not the
+    # deliverable. The run enters finish mode once (sticky): up to two steps where only the save tools
+    # run (K3: the table stays, other calls are refused), then text only. Without save tools a
+    # no-progress stop forces an answer at once, as before. (0.1.63 K4b: a spent web-read allowance
+    # no longer starts it; live reads have none.)
     finish_reason: str | None = None
     finish_from = 0
     finish_steps = 0
@@ -2577,6 +2581,7 @@ async def _run_native(
     # the second refused call the next step is text only (the same table, tool_choice
     # none), so a model that keeps reaching for research still delivers.
     wrap_refused = 0
+    long_turn_told = False
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -2592,12 +2597,10 @@ async def _run_native(
         if finish_reason is None and not truncation_stop:
             if policy.stopped:
                 finish_reason, finish_from = "no_progress", len(tool_trace)
-            elif fetch_budget.get("fetches", 0) >= LIVE_FETCH_BUDGET:
-                finish_reason, finish_from = "fetch_budget", len(tool_trace)
         saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
                     for item in tool_trace[finish_from:]) if finish_reason else False
         finishing = finish_reason is not None and can_save and finish_steps < 3 and not saved
-        finish_done = finish_reason is not None and not finishing and (can_save or finish_reason == "no_progress")
+        finish_done = finish_reason is not None and not finishing
         forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
                   or budget.tool_calls >= budget.limits.tool_calls
                   or (max_tool_calls is not None and step >= max_tool_calls)
@@ -2617,8 +2620,6 @@ async def _run_native(
                          if no_progress else
                          "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
                          "was verified and what remains. Text only." if truncation_stop else
-                         "The web reading allowance for this run is used up: report the verified results and "
-                         "remaining work. Text only." if finish_reason == "fetch_budget" else
                          "Research is over and the calls outside wrapping up were refused: give the final answer "
                          "now from what you have, marking what is unverified. Text only."
                          if wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT else
@@ -2635,10 +2636,8 @@ async def _run_native(
                         if still_run else " No tool runs any more: answer in text.") if wrap_up else ""
         if finishing:
             finish_steps += 1
-            notes.append(("Repeated actions made no progress, so research has stopped."
-                          if finish_reason == "no_progress" else
-                          "The web reading allowance for this run is used up, so research has stopped.")
-                         + " Using only what you already have, save the deliverable now if one was asked for "
+            notes.append("Repeated actions made no progress, so research has stopped."
+                         " Using only what you already have, save the deliverable now if one was asked for "
                            "(write_file), marking anything missing or unverified; then give the final answer: "
                            "what was done, what is blocked." + allowed_note + offline_note)
         elif wrap_up:
@@ -2646,6 +2645,15 @@ async def _run_native(
                          "produce the complete deliverable the user asked for (save it if a file was asked for), "
                          "clearly marking anything you could not verify. Then give the final answer."
                          + allowed_note + offline_note)
+        # K4b: once a turn, only where start_background_work is offered (never inside a job), and only in
+        # the status block, so the system text and the tools (K3's cached prefix) stay as they are.
+        if (not long_turn_told and not forced and not wrap_up and "start_background_work" in wired_keys
+                and budget.elapsed() >= LONG_TURN_S):
+            long_turn_told = True
+            notes.append(_LONG_TURN_NOTE)
+            from server.services import runtime_messages
+            emit({"type": "note", "text": runtime_messages.render(
+                "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -2710,6 +2718,11 @@ async def _run_native(
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
             wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
             notes=lesson_notes + turn_lines + notes)
+        try:
+            usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
+        except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
+            logger.warning("context parts not measured", exc_info=True)
+            usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                  schemas=schemas, forced=forced, state=turn_state, status=status,
                                  drops=drops, conversation_id=conversation_id)
@@ -2865,7 +2878,7 @@ async def _run_native(
                         confirm_workspace_write=confirm_workspace_write,
                         confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
                         mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                        log_events=log_events, fetch_budget=fetch_budget, caller=caller)
+                        log_events=log_events, caller=caller)
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)
