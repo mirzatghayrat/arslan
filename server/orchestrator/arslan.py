@@ -15,6 +15,7 @@ from server.orchestrator import llm_errors
 from server.services import ocr_fallback
 from server.db import session as db_session
 from server.orchestrator import (
+    env_snapshot,
     memory,
     promise_guard,
     run_trace,
@@ -304,15 +305,15 @@ def _build_answer_system(*, route: str = ""):
 
 
 def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
-                  language: str = "") -> str:
+                  environment: str = "", language: str = "") -> str:
     """This turn's reference block (server/orchestrator/turn_context.py: built once per turn, never
     saved), in the order the system prompt carried it before K3: a resumed
-    task's notes → facts → summary → knowledge → the MCP status line → the reply language → the time
-    (floored to the UTC hour, still enough for timezone conversion)."""
+    task's notes → facts → summary → knowledge → the MCP status line → (K5) the environment snapshot →
+    the reply language → the time (floored to the UTC hour, still enough for timezone conversion)."""
     body = (f"\n\n{addendum}" if addendum else "") + (f"\n\n{facts}" if facts else "")
     if summary:
         body += f"\n\nConversation summary so far:\n{summary}"
-    body += kb_block + mcp_line + language + _now_line()
+    body += kb_block + mcp_line + environment + language + _now_line()
     return turn_context.wrap(body)
 
 
@@ -759,7 +760,8 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     system = _build_answer_system(route=BACKGROUND_SYSTEM)
     context = _turn_context(facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(asked if isinstance(asked, str) else goal),
-                            mcp_line=await _mcp_status_line())
+                            mcp_line=await _mcp_status_line(),
+                            environment=await env_snapshot.for_turn(conversation_id))
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
     pieces: list[str] = []
     # K3: nobody is waiting on a background job, so its cache entries keep the default five minutes,
@@ -806,7 +808,8 @@ async def _handle_answer_body(
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
     system = _build_answer_system()
     context = _turn_context(addendum=extra_system.strip(), facts=facts, summary=ctx["summary"], kb_block=kb_block,
-                            language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line())
+                            language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line(),
+                            environment=await env_snapshot.for_turn(conversation_id))
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
 
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
