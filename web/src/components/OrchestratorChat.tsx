@@ -47,7 +47,6 @@ import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded } from './ComposerAttach';
 import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
-import MentionText from './MentionText';
 
 /** S3-M1: muted "interrupted" line under a bubble whose run was cancelled
  *  mid-stream — same look as the stall indicator (⏸ + working.stalled, which
@@ -70,6 +69,8 @@ interface OrchestratorChatProps {
    *  `display` echoes ALL attachments into the sent bubble (session-only); `context`/`names`
    *  carry only the text-bearing ones to the backend. */
   onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => void;
+  /** Not read since C1c-2: its last use was the routing brief's @-mention chips. Dropping it touches every
+   *  caller (App and the tests), so that is left to a follow-up. */
   spawns: Spawn[];
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
@@ -99,7 +100,6 @@ export default function OrchestratorChat({
   chatHistory,
   setChatHistory,
   onSendMessage,
-  spawns,
   currentStyle,
   setCurrentStyle,
   activeThread,
@@ -178,14 +178,6 @@ export default function OrchestratorChat({
   const capabilityLabel = useCapabilityLabel();
   // Client-side user display name for the greeting + own-message sender label.
   const displayName = useProfileStore((s) => s.displayName);
-  const pendingRoute = useArslanStore((s) => s.pendingRoute);
-  // Known spawn names (ledger prop + names learned from frames) — grounds the
-  // @-mention chips in routing announcements; unknown @text stays plain.
-  const spawnNameMap = useArslanStore((s) => s.spawnNames);
-  const mentionNames = React.useMemo(
-    () => [...new Set([...spawns.map((s) => s.name), ...Object.values(spawnNameMap)])].filter(Boolean),
-    [spawns, spawnNameMap],
-  );
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
   const liveSteps = useArslanStore((s) => (s as any).activitySteps as import('../api/client.types').ToolStep[]);
   // 0.1.58 §1: the latest finished Arslan reply keeps its footer row visible; older ones on hover.
@@ -217,7 +209,7 @@ export default function OrchestratorChat({
       setStopPending(false);
     });
   };
-  const turnActive = thinking || liveStreaming || pendingSend || pendingRoute != null;
+  const turnActive = thinking || liveStreaming || pendingSend;
   useEffect(() => {
     if (!turnActive) return;
     const iv = setInterval(() => useArslanStore.getState().checkStall(), 5_000);
@@ -542,17 +534,6 @@ export default function OrchestratorChat({
             if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status} />;
             if (msg.remembered) return <RememberedLine key={msg.id} facts={msg.remembered} />;
 
-            // Roster notice (0.1.42): experts are not a standing cast in the chat.
-            // One quiet line says who was asked to help; leaving says nothing.
-            if (msg.rosterAction) {
-              if (msg.rosterAction === 'left') return null;
-              return (
-                <p key={msg.id} className="py-0.5 text-center text-[10px] text-subtle-foreground select-none">
-                  {t('chat.expert_involved', { name: msg.rosterSpawnName ?? '' })}
-                </p>
-              );
-            }
-
             // PA-3 structured clarification card: Arslan needs the user to pick ONE of
             // 2-4 directions. Picking sends the option's LABEL as a normal user_message
             // over the same send path the composer uses, then flips the card to its
@@ -574,75 +555,6 @@ export default function OrchestratorChat({
                       onSendMessage?.(label, undefined, { fromClarify: true });
                     }}
                   />
-                </div>
-              );
-            }
-
-            // Routing announcement: need restatement + @spawn duty lines. Rendered as a
-            // FULL Arslan message bubble (avatar + name header + arslan-bubble styling per
-            // layout variant) — user feedback: the old quiet inline line above the
-            // "X joined" divider read as an anonymous system line, not Arslan speaking.
-            // MentionText keeps the @-mention chips inside the bubble.
-            if (msg.isRouteAnnouncement) {
-              if (currentStyle === 'brutalist') {
-                return (
-                  <div key={msg.id} className="border-2 border-primary/60 p-4 font-mono text-[12px] bg-background shadow-[4px_4px_0px_var(--color-primary)] relative">
-                    <div className="flex items-center justify-between pb-2 border-b border-dashed border-border select-none mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-primary font-bold flex items-center gap-1.5">
-                          [<SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5 inline-block" />] {msg.senderName.toUpperCase()}
-                        </span>
-                        <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
-                          {t(msg.sender === 'user' ? 'common.you' : msg.sender === 'arslan' ? 'app.name' : 'ui.expert')}
-                        </span>
-                      </div>
-                    </div>
-                    <MentionText
-                      text={msg.text}
-                      knownNames={mentionNames}
-                      className="text-muted-foreground font-sans leading-relaxed text-[12px]"
-                    />
-                  </div>
-                );
-              }
-              if (currentStyle === 'linear') {
-                return (
-                  <div key={msg.id} data-reply className="group/reply text-[12px] space-y-2">
-                    <div className="flex items-center gap-2 select-none text-[11px]">
-                      <BrandMark alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
-                      <span className="font-bold text-foreground">{msg.senderName}</span>
-                    </div>
-                    <div className="pl-5">
-                      <MentionText
-                        text={msg.text}
-                        knownNames={mentionNames}
-                        className="text-foreground font-sans leading-relaxed text-[12.5px]"
-                      />
-                    </div>
-                  </div>
-                );
-              }
-              // quartz (default)
-              return (
-                <div key={msg.id} className="flex gap-4">
-                  <div className="flex flex-col items-center select-none">
-                    <div className="relative">
-                      <BrandMark alt="Arslan" className="w-9 h-9 object-contain select-none" draggable={false} />
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background bg-success" />
-                    </div>
-                  </div>
-                  <div className="space-y-3 max-w-2xl">
-                    <div className="flex items-center gap-1.5 select-none">
-                      <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
-                    </div>
-                    <div className="px-4 py-3 text-[12.5px] leading-relaxed relative bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40">
-                      <MentionText
-                        text={msg.text}
-                        knownNames={mentionNames}
-                        className="text-[12.5px] leading-relaxed font-sans"
-                      />
-                    </div>
-                  </div>
                 </div>
               );
             }
@@ -677,9 +589,6 @@ export default function OrchestratorChat({
                     {!isUser && (
                       <div className="flex items-center gap-1.5 select-none">
                         <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
-                        {msg.refinedFrom != null && (
-                          <span className="text-[9px] bg-success/10 text-success px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">{t('orchestrator.refined_badge')}</span>
-                        )}
                         {!isArslan && (
                           <div className="flex items-center gap-1">
                             <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">
@@ -704,7 +613,7 @@ export default function OrchestratorChat({
                             <SentAttachments attachments={msg.attachments} />
                             <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
                           </>
-                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
                       {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
@@ -785,11 +694,8 @@ export default function OrchestratorChat({
                                    truncated={!msg.artifactHtml.complete} />
                     )}
 
-                    {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}
-                    {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
-
                     {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
-                    {isSpawn && !msg.isProposal && msg.spawnId && (
+                    {isSpawn && msg.spawnId && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
                         <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />
@@ -836,16 +742,13 @@ export default function OrchestratorChat({
                       <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
                         {t(msg.sender === 'user' ? 'common.you' : msg.sender === 'arslan' ? 'app.name' : 'ui.expert')}
                       </span>
-                      {msg.refinedFrom != null && (
-                        <span className="text-[10px] px-2 py-0.5 bg-success/20 text-success">{t('orchestrator.refined_badge')}</span>
-                      )}
                     </div>
                     <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                   </div>
 
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
-                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
                   {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
@@ -895,11 +798,8 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Brutalist Escalation Panel */}
-                  {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
-
                   {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
-                  {isSpawn && !msg.isProposal && msg.spawnId && (
+                  {isSpawn && msg.spawnId && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
                       <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />
@@ -940,9 +840,6 @@ export default function OrchestratorChat({
                       ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
                       : <SpawnAvatar seed={msg.senderName} size={18} />}
                     <span className="font-bold text-foreground">{msg.senderName}</span>
-                    {msg.refinedFrom != null && (
-                      <span className="text-[9px] bg-success/10 text-success px-2 py-0.5 rounded font-mono uppercase">{t('orchestrator.refined_badge')}</span>
-                    )}
                     <span className="text-subtle-foreground font-mono">•</span>
                     <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
                     {!isArslan && !isUser && (
@@ -953,7 +850,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
-                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
                   {msg.resultOfJob && <div className="pl-5"><JobResultLabel outcome={msg.jobOutcome} /></div>}
                   {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
@@ -1006,11 +903,8 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Linear Minimal Escalation status */}
-                  {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
-
                   {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
-                  {isSpawn && !msg.isProposal && msg.spawnId && (
+                  {isSpawn && msg.spawnId && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
                       <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />
@@ -1169,22 +1063,5 @@ function RemoteChip({ label }: { label: string }) {
     <span data-testid="from-phone" className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
       <RadioTower size={11} aria-hidden />{t('sidebar.remote')} · {label}
     </span>
-  );
-}
-
-
-/** 0.1.55: a legacy expert's escalation as one kit Notice (it was three hand-styled banners). */
-function EscalationNotice({ escalation }: { escalation: NonNullable<Message['escalation']> }) {
-  const { t } = useTranslation();
-  const status = escalation.status;
-  const tone = status === 'refused' ? 'error' : status === 'need_raised' ? 'warn' : 'info';
-  const title = t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving',
-    resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[status] ?? 'ui.escalation');
-  return (
-    <Notice tone={tone} testId="escalation-notice" attrs={{ 'data-status': status }}
-      title={<>{title} <span className="font-normal text-subtle-foreground">· {t('ui.from')} {escalation.spawnName}</span></>}>
-      {escalation.issue}
-      {escalation.resolutionMessage ? <span className="mt-1 block">{t('ui.resolution')} {escalation.resolutionMessage}</span> : null}
-    </Notice>
   );
 }

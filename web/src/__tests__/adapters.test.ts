@@ -245,22 +245,6 @@ describe("toUiMessages", () => {
     ],
   };
 
-  const escalationItem: ArslanThreadItem = {
-    id: 4,
-    kind: "escalation",
-    role: "spawn",
-    content: "",
-    escalation: {
-      spawnId: 10,
-      spawnName: "Aletheia",
-      kind: "capability",
-      need: "Need file access",
-      status: "resolving",
-      how: undefined,
-      why: undefined,
-    },
-  };
-
   it("maps user message correctly", () => {
     const [msg] = toUiMessages([userItem]);
     expect(msg.sender).toBe("user");
@@ -323,54 +307,17 @@ describe("toUiMessages", () => {
     expect(msg.toolActivity?.artifactPptx?.slides).toBe(13);
   });
 
-  it("maps escalation item to spawn message with escalation card", () => {
-    const [msg] = toUiMessages([escalationItem]);
-    expect(msg.sender).toBe("spawn");
-    expect(msg.text).toBe("");
-    expect(msg.escalation).toBeDefined();
-    expect(msg.escalation?.spawnName).toBe("Aletheia");
-    expect(msg.escalation?.issue).toBe("Need file access");
-    expect(msg.escalation?.status).toBe("arslan_resolving");
-  });
-
-  it("maps escalation with resolved status", () => {
-    const item: ArslanThreadItem = {
-      ...escalationItem,
-      escalation: { ...escalationItem.escalation!, status: "resolved", how: "Granted" },
-    };
-    const [msg] = toUiMessages([item]);
-    expect(msg.escalation?.status).toBe("resolved");
-    expect(msg.escalation?.resolutionMessage).toBe("Granted");
-  });
-
-  it("maps escalation with refused status", () => {
-    const item: ArslanThreadItem = {
-      ...escalationItem,
-      escalation: { ...escalationItem.escalation!, status: "refused", why: "Not allowed" },
-    };
-    const [msg] = toUiMessages([item]);
-    expect(msg.escalation?.status).toBe("refused");
-    expect(msg.escalation?.resolutionMessage).toBe("Not allowed");
-  });
-
-  it("maps system spawn_created item", () => {
+  it("maps a system item to a plain Arslan line", () => {
     const sysItem: ArslanThreadItem = {
       id: 5,
       kind: "system",
       role: "arslan",
-      content: "__SPAWN_CREATED__:Aletheia",
-      equipment: {
-        toolsets: [{ key: "web_search", name: "Web Search", status: "active", grant: "permanent" }],
-        skills: [],
-      },
-      intro: "Meet Aletheia, your finance spawn.",
+      content: "Connected — 3 ready",
     };
     const [msg] = toUiMessages([sysItem]);
     expect(msg.sender).toBe("arslan");
-    expect(msg.spawnIntro).toBeDefined();
-    expect(msg.spawnIntro?.name).toBe("Aletheia");
-    expect(msg.spawnIntro?.tools).toContain("web_search");
-    expect(msg.text).toBe("Meet Aletheia, your finance spawn.");
+    expect(msg.senderName).toBe("Arslan");
+    expect(msg.text).toBe("Connected — 3 ready");
   });
 
   it("handles fact item", () => {

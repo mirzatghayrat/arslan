@@ -33,16 +33,6 @@ describe("stream_end usage lands on the created item (S3-M3)", () => {
     expect(items[0].usage).toBeUndefined();
   });
 
-  it("spawn-turn usage rides the spawn deliverable item", () => {
-    const s = useArslanStore.getState();
-    s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 3, run_id: 9 } as never);
-    useArslanStore.getState().handleFrame({ type: "stream_chunk", content: "deliverable" } as never);
-    useArslanStore.getState().handleFrame({ type: "stream_end", message_id: 9, usage: USAGE } as never);
-    const items = useArslanStore.getState().items;
-    expect(items[0].role).toBe("spawn");
-    expect(items[0].usage).toEqual(USAGE);
-  });
-
   it("run_cancelled items carry no usage", () => {
     const s = useArslanStore.getState();
     s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 3, run_id: 12 } as never);

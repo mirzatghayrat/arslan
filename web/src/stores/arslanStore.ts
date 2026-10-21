@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { request } from "../api/client";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ApplyConnectMcpResult, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
+import type { ActionKind, ApplyConnectMcpResult, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 let _cardSeq = 0;
@@ -50,27 +50,14 @@ interface ArslanState {
   items: ArslanThreadItem[];
   streaming: boolean;
   streamingText: string;
-  streamSource: "arslan" | "spawn" | null;
-  streamSpawnId: number | null;
-  streamSpawnName: string | null;
-  pendingRoute: { spawnId: number; spawnName: string | null } | null;
-  spawnNames: Record<number, string>;
+  streamSource: "arslan" | null;
   error: string | null;
   errorTranslations: RuntimeErrorTranslations | null;
   lastMessageId: number;
   pending: boolean;
-  // spawn_meta frames can arrive BEFORE the stream_end that creates the item
-  // (production order). Stash them here keyed by arslan_message_id and apply on
-  // stream_end. Cleared per-key once applied.
-  pendingSpawnMeta: Record<number, { assistant_message_id: number; task_brief: string; run_id?: number }>;
-  // Live tool-loop steps for the in-flight spawn turn, paired from
+  // Live tool-loop steps for the in-flight turn, paired from
   // tool_call/tool_result frames; folded into the reply item on stream_end.
   activitySteps: ToolStep[];
-  // Pending proposal: when a `proposal` frame arrives, the next spawn deliverable
-  // created at stream_end for that spawn_id should be flagged isProposal: true.
-  pendingProposalSpawnId: number | null;
-  // Active conversation roster: spawns currently joined to this conversation thread.
-  roster: RosterMember[];
   // Pending shell commands: one is added when a `propose_run_command` frame arrives (the same call id again replaces
   // it, a new one waits behind); a card leaves once the user confirms (sends confirm_run_command) or cancels. Every
   // kind below is such a list (0.1.61 §A4), oldest first: nothing a second card could hide stays unanswerable.
@@ -135,11 +122,9 @@ interface ArslanState {
   // mode mutes the microphone while this is true.
   speaking: boolean;
 
-  setSpawnNames: (map: Record<number, string>) => void;
   setThinking: (v: boolean) => void;
   addUserMessage: (content: string, attachments?: MessageAttachment[]) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
-  markProposalConfirmed: (spawnId: number) => void;
   // PA-3: flip a clarify card to its answered (disabled) state once the user picked
   // an option — a stale re-click can never send a second user_message.
   markClarifyAnswered: (itemId: number) => void;
@@ -368,19 +353,12 @@ function initialData() {
     items: [] as ArslanThreadItem[],
     streaming: false,
     streamingText: "",
-    streamSource: null as "arslan" | "spawn" | null,
-    streamSpawnId: null as number | null,
-    streamSpawnName: null as string | null,
-    pendingRoute: null as { spawnId: number; spawnName: string | null } | null,
-    spawnNames: {} as Record<number, string>,
+    streamSource: null as "arslan" | null,
     error: null as string | null,
     errorTranslations: null as RuntimeErrorTranslations | null,
     lastMessageId: 0,
     pending: false,
-    pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string; run_id?: number }>,
     activitySteps: [] as ToolStep[],
-    pendingProposalSpawnId: null as number | null,
-    roster: [] as RosterMember[],
     pendingCommands: [] as PendingCommand[],
     jobs: {} as Record<string, JobCard>,
     jobNotice: null as { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null,
@@ -419,9 +397,6 @@ function makeActions(set: SetState, get: GetState) {
       set(v ? { thinking: true, workStartedAt: runningSince(get()), lastFrameAt: Date.now(), lastStepAt: Date.now(),
         stalled: false } : { thinking: false }),
 
-    setSpawnNames: (map: Record<number, string>) =>
-      set({ spawnNames: { ...get().spawnNames, ...map } }),
-
     // attachments = session-only display echo (image thumbnails via object-URL, doc chips);
     // never persisted — history-restored items simply won't carry them.
     addUserMessage: (content: string, attachments?: MessageAttachment[]) =>
@@ -436,13 +411,6 @@ function makeActions(set: SetState, get: GetState) {
         stalled: false,
       }),
 
-    // One-shot confirm (doom-loop guard, frontend half): flipping isProposal off disables the
-    // confirm button immediately so a stale re-click can never re-fire execute_confirmed.
-    markProposalConfirmed: (spawnId: number) =>
-      set({
-        items: get().items.map((it) =>
-          it.isProposal && Number(it.spawnId) === spawnId ? { ...it, isProposal: false } : it),
-      }),
     markClarifyAnswered: (itemId: number) =>
       set({
         items: get().items.map((it) =>
@@ -509,7 +477,7 @@ function makeActions(set: SetState, get: GetState) {
       const s = get();
       // "Active" = any runtime-frame-driven working flag. Message text NEVER
       // counts (A1 invariant) — an idle store can never stall.
-      const active = s.thinking || s.streaming || s.pending || s.pendingRoute != null;
+      const active = s.thinking || s.streaming || s.pending;
       if (!active) {
         if (s.stalled) set({ stalled: false });
         return;
@@ -532,23 +500,19 @@ function makeActions(set: SetState, get: GetState) {
         ? { lastFrameAt: now, stalled: false }
         : { lastFrameAt: now, lastStepAt: now, stalled: false });
       // Clear thinking on the first frame that signals Arslan is responding with
-      // real content or a card. Intermediate dispatch frames ("routing",
-      // "roster_event", "spawn_meta") are NOT included here — they fire during
-      // the Arslan→spawn handoff before the spawn has streamed anything, so
-      // clearing thinking on them creates a dead-air gap. Instead, thinking
-      // persists through routing/dispatch and clears in stream_chunk (first real
-      // token) or on card frames below.
+      // real content or a card. Otherwise thinking persists and clears in
+      // stream_chunk (first real token) or on card frames below.
       // NOTE: "stream_start" is intentionally excluded — it starts streaming but
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
       // K2b: fact_saved is not here: facts are looked for after the turn and may arrive during the next one.
-      const RESPONDING_TYPES = new Set(["message", "error", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["message", "error", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
       // Maps a server row (history row or `message` frame — same field names,
-      // `spawn_id` optional) to a renderable thread item, resolving spawn names.
+      // `spawn_id` optional) to a renderable thread item.
       const rowToItem = (row: {
         message_id: number;
         role: string;
@@ -561,19 +525,17 @@ function makeActions(set: SetState, get: GetState) {
         files?: StoredArtifact[];
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
-          // Resolve the spawn name ONLY from an explicit spawn_id. History rows
-          // always carry one; the resume `message` frame does not (server
-          // contract), in which case spawnId/spawnName degrade to null and the
-          // bubble falls back to the conversation title. Never guess from the
-          // roster.
-          const spawnId = row.spawn_id ?? null;
+          // An old expert's answer, kept so old conversations still show it. Delete this branch in
+          // the same change that drops the expert tables (C1 card): before that, turn the stored
+          // answers into plain replies, or confirm none are left. No frame names an expert any
+          // more (C1c-2), so the bubble shows the neutral label (adapters: "Spawn").
           return {
             id: row.message_id,
             kind: "message",
             role: "spawn",
             content: row.content,
-            spawnId,
-            spawnName: spawnId != null ? state.spawnNames[spawnId] ?? null : null,
+            spawnId: row.spawn_id ?? null,
+            spawnName: null,
             // S3-M2: run linkage from the history row — the RunReplay entry
             // point survives a reload. null/absent degrades to undefined.
             runId: row.run_id ?? undefined,
@@ -611,7 +573,7 @@ function makeActions(set: SetState, get: GetState) {
           set({
             items, lastMessageId: lastId, activitySteps: [], activeRunId: null,
             streaming: false, streamingText: "", thinking: false, workStartedAt: null, queued: false,
-            streamSource: null, streamSpawnId: null, streamSpawnName: null,
+            streamSource: null,
           });
           _beginReplay(get, set);
           break;
@@ -642,42 +604,6 @@ function makeActions(set: SetState, get: GetState) {
           set({ jobNotice: { seq: (state.jobNotice?.seq ?? 0) + 1, jobId: frame.job_id,
                              kind: "finished", outcome: frame.outcome, goal: frame.goal } });
           break;
-        case "proposal":
-          // Mark the spawn's next deliverable as a proposal. Cleared in stream_end.
-          set({ pendingProposalSpawnId: frame.spawn_id });
-          break;
-        case "routing":
-          set({
-            pendingRoute: { spawnId: frame.spawn_id, spawnName: frame.spawn_name },
-            spawnNames: frame.spawn_name
-              ? { ...state.spawnNames, [frame.spawn_id]: frame.spawn_name }
-              : state.spawnNames,
-            // Routing brief (need restatement + @-mention duty lines): render as its
-            // own thread line. Only the first round of a turn carries an announcement.
-            ...(frame.announcement
-              ? {
-                  items: [
-                    ...state.items,
-                    {
-                      id: nextClientId(),
-                      kind: "system" as const,
-                      role: "arslan" as const,
-                      content: frame.announcement,
-                      isRouteAnnouncement: true,
-                      spawnId: frame.spawn_id,
-                      spawnName: frame.spawn_name,
-                    },
-                  ],
-                }
-              : {}),
-          });
-          break;
-        case "auto_continue":
-          // Bridge frame between an exhausted (digest) round and its automatic
-          // follow-up dispatch: keep the thinking indicator alive so the activity
-          // pulse continues seamlessly into the next round's frames.
-          set({ thinking: true, workStartedAt: state.workStartedAt ?? Date.now() });
-          break;
         case "run_in_progress":
           // S3-M2 reattach: the server announces an in-flight run right after the
           // history push, before replaying its journaled frames. Arm the stop
@@ -698,12 +624,8 @@ function makeActions(set: SetState, get: GetState) {
             streamingText: "",
             // 0.1.58 §1: a turn the window did not start (a fire, a reconnect) still gets its length.
             workStartedAt: state.workStartedAt ?? Date.now(),
-            streamSource: frame.source,
-            streamSpawnId:
-              frame.source === "spawn"
-                ? state.pendingRoute?.spawnId ?? frame.spawn_id ?? null
-                : null,
-            streamSpawnName: frame.source === "spawn" ? state.pendingRoute?.spawnName ?? null : null,
+            // C1c-2: every live stream is Arslan's own; no expert streams to the chat any more.
+            streamSource: "arslan",
             // S3-M1: recorded runs carry their run id — the cancel target.
             activeRunId: frame.run_id ?? null,
           });
@@ -718,10 +640,10 @@ function makeActions(set: SetState, get: GetState) {
         case "stream_end": {
           if (!state.streaming) break;
           _voiceEnd();
-          // A refused escalation ends the stream without persisting a message:
-          // the server sends message_id: null and no reply text. With nothing
-          // to show, just reset the streaming state — appending an item would
-          // create a ghost entry with a null id (duplicate React keys).
+          // A stream can end without persisting a message: the server sends
+          // message_id: null and no reply text. With nothing to show, just reset
+          // the streaming state — appending an item would create a ghost entry
+          // with a null id (duplicate React keys).
           const hasContent = state.streamingText.length > 0;
           const hasSteps = state.activitySteps.length > 0;
           if (frame.message_id == null && !hasContent && !hasSteps) {
@@ -730,36 +652,19 @@ function makeActions(set: SetState, get: GetState) {
               streaming: false,
               streamingText: "",
               streamSource: null,
-              streamSpawnId: null,
-              streamSpawnName: null,
-              pendingRoute: null,
               activitySteps: [],
-              pendingProposalSpawnId: null,
               activeRunId: null,
             });
             break;
           }
-          // A spawn_meta for this message may have arrived earlier (production
-          // order). Apply it now and drop the stashed entry.
-          const meta = frame.message_id != null ? state.pendingSpawnMeta[frame.message_id] : undefined;
-          // If a proposal was pending for this spawn, mark the item as a proposal.
-          const isProposal =
-            state.streamSource === "spawn" &&
-            state.pendingProposalSpawnId != null &&
-            state.pendingProposalSpawnId === state.streamSpawnId;
           const item: ArslanThreadItem = {
             id: frame.message_id ?? nextClientId(),
             kind: "message",
-            role: state.streamSource === "spawn" ? "spawn" : "arslan",
+            role: "arslan",
             content: state.streamingText,
-            spawnId: state.streamSpawnId,
-            spawnName: state.streamSpawnName,
-            spawnMessageId: meta?.assistant_message_id ?? null,
-            runId: frame.temporary ? null : frame.run_id ?? meta?.run_id ?? state.activeRunId ?? null,
-            taskBrief: meta?.task_brief ?? null,
+            runId: frame.temporary ? null : frame.run_id ?? state.activeRunId ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(state.workStartedAt ? { elapsedMs: Date.now() - state.workStartedAt } : {}),
-            ...(isProposal ? { isProposal: true } : {}),
             // S3-M3: the turn's usage rides the terminal stream_end frame — land it
             // on the created item so the bubble can render its usage chip.
             // (run_cancelled finalization deliberately never sets this.)
@@ -782,8 +687,6 @@ function makeActions(set: SetState, get: GetState) {
                 }
               : {}),
           };
-          const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
-          if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];
           // 0.1.59: a replayed stream_end for a message already shown adds no second copy.
           const shown = frame.message_id != null
             && state.items.some((it) => it.kind === "message" && it.id === frame.message_id);
@@ -794,16 +697,10 @@ function makeActions(set: SetState, get: GetState) {
             streaming: false,
             streamingText: "",
             streamSource: null,
-            streamSpawnId: null,
-            streamSpawnName: null,
-            pendingRoute: null,
-            pendingSpawnMeta: nextPendingSpawnMeta,
             lastMessageId:
               frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
             activitySteps: [],
             activeRunId: null,
-            // Clear the proposal flag once consumed
-            pendingProposalSpawnId: isProposal ? null : state.pendingProposalSpawnId,
           });
           break;
         }
@@ -818,10 +715,8 @@ function makeActions(set: SetState, get: GetState) {
             ? {
                 id: frame.message_id ?? nextClientId(),
                 kind: "message",
-                role: state.streamSource === "spawn" ? "spawn" : "arslan",
+                role: "arslan",
                 content: state.streamingText,
-                spawnId: state.streamSpawnId,
-                spawnName: state.streamSpawnName,
                 toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
                 cancelled: true,
               }
@@ -832,9 +727,6 @@ function makeActions(set: SetState, get: GetState) {
             streaming: false,
             streamingText: "",
             streamSource: null,
-            streamSpawnId: null,
-            streamSpawnName: null,
-            pendingRoute: null,
             activitySteps: [],
             activeRunId: null,
             ...(item
@@ -897,33 +789,6 @@ function makeActions(set: SetState, get: GetState) {
           set({ activitySteps: shown, thinking: true });
           break;
         }
-        case "spawn_meta": {
-          // Production order is spawn_meta BEFORE stream_end, so the target item
-          // usually doesn't exist yet — stash it for stream_end to apply. If the
-          // item already exists (defensive / reverse order), attach directly.
-          const exists = state.items.some((it) => it.id === frame.arslan_message_id);
-          if (exists) {
-            set({
-              items: state.items.map((it) =>
-                it.id === frame.arslan_message_id
-                  ? { ...it, spawnMessageId: frame.assistant_message_id, taskBrief: frame.task_brief, runId: frame.run_id ?? null }
-                  : it,
-              ),
-            });
-          } else {
-            set({
-              pendingSpawnMeta: {
-                ...state.pendingSpawnMeta,
-                [frame.arslan_message_id]: {
-                  assistant_message_id: frame.assistant_message_id,
-                  task_brief: frame.task_brief,
-                  run_id: frame.run_id,
-                },
-              },
-            });
-          }
-          break;
-        }
         case "plan_proposed":
           set({
             items: [...state.items, { id: nextClientId(), kind: "plan", role: "arslan", content: frame.reason,
@@ -968,122 +833,6 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
-        case "spawn_updated":
-          set({
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "system",
-                role: "arslan",
-                content: `__SPAWN_UPDATED__:${frame.spawn_name}`,
-                equipment: frame.equipment ?? null,
-              },
-            ],
-          });
-          break;
-        case "spawn_created":
-          set({
-            spawnNames: { ...state.spawnNames, [frame.spawn_id]: frame.spawn_name },
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "system",
-                role: "arslan",
-                content: `__SPAWN_CREATED__:${frame.spawn_name}`,
-                equipment: frame.equipment ?? null,
-                intro: frame.intro ?? null,
-              },
-            ],
-          });
-          break;
-        case "escalation":
-          set({
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "escalation",
-                role: "spawn",
-                content: "",
-                spawnId: frame.spawn_id,
-                spawnName: frame.spawn_name,
-                escalation: {
-                  spawnId: frame.spawn_id,
-                  spawnName: frame.spawn_name,
-                  kind: frame.kind,
-                  need: frame.need,
-                  status: "resolving",
-                },
-              },
-            ],
-          });
-          break;
-        case "escalation_resolved":
-        case "escalation_refused": {
-          // Update the most recent still-resolving escalation for this spawn.
-          const items = [...state.items];
-          for (let i = items.length - 1; i >= 0; i--) {
-            const esc = items[i].escalation;
-            if (esc && esc.spawnId === frame.spawn_id && esc.status === "resolving") {
-              items[i] = {
-                ...items[i],
-                escalation:
-                  frame.type === "escalation_resolved"
-                    ? { ...esc, status: "resolved", how: frame.how, detail: frame.detail }
-                    : { ...esc, status: "refused", why: frame.why },
-              };
-              break;
-            }
-          }
-          set({ items });
-          break;
-        }
-        case "verdict_recorded": {
-          // Mark the most recent spawn deliverable (role==='spawn', !isProposal) for
-          // this spawn_id with the verdict action so the UI can show confirmed state.
-          const items = [...state.items];
-          for (let i = items.length - 1; i >= 0; i--) {
-            const it = items[i];
-            if (it.role === "spawn" && !it.isProposal && it.spawnId === frame.spawn_id) {
-              items[i] = { ...it, verdict: frame.action };
-              break;
-            }
-          }
-          set({ items });
-          break;
-        }
-        case "deliverable_finalized": {
-          // A refined spawn deliverable, posted back from the side chat into the
-          // main thread. Append as a spawn item; the verdict_recorded that follows
-          // marks it accepted via the existing case.
-          const item: ArslanThreadItem = {
-            id: frame.message_id ?? nextClientId(),
-            kind: "message",
-            role: "spawn",
-            content: frame.content,
-            spawnId: frame.spawn_id,
-            spawnName: frame.spawn_name ?? state.spawnNames[frame.spawn_id] ?? null,
-            refinedFrom: frame.refined_from ?? null,
-          };
-          set({
-            items: [...state.items, item],
-            lastMessageId:
-              frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
-          });
-          break;
-        }
-        case "roster_update":
-          set({
-            roster: frame.members.map((m) => ({
-              spawnId: m.spawn_id,
-              spawnName: m.spawn_name,
-              joinedVia: m.joined_via,
-              status: m.status,
-            })),
-          });
-          break;
         case "clarify_options":
           // PA-3 structured clarification card: rendered as a thread ITEM (question +
           // one-click option buttons). A pick sends the label as a normal user_message
@@ -1191,7 +940,7 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "mcp_connect_followup": {
           // Honest, tier-aware result recomputed server-side from the DB (Task 3) —
-          // appends a plain chat note, same idiom as attachment_stored below.
+          // appends a plain chat note.
           // assignable=false means connected but nothing is safe+wired yet, so the note
           // points at Settings instead of implying it's ready to equip.
           //
@@ -1218,41 +967,6 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         }
-        case "roster_event":
-          set({
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "system",
-                role: "arslan",
-                content: "",
-                spawnId: frame.spawn_id,
-                spawnName: frame.spawn_name,
-                rosterAction: frame.action,
-              },
-            ],
-          });
-          break;
-        case "attachment_stored":
-          set({
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "system",
-                role: "arslan",
-                // Sentinel kept — App translates it at render time
-                // (chat.attachment_stored / chat.attachment_stored_generic).
-                // Stores stay i18n-free: importing the i18n singleton breaks
-                // every test that mocks react-i18next. Same precedent as
-                // __SPAWN_UPDATED__.
-                content: `__ATTACHMENT_STORED__:${JSON.stringify({ name: frame.spawn_name ?? null, chunks: frame.chunks })}`,
-                spawnName: frame.spawn_name,
-              },
-            ],
-          });
-          break;
         case "error":
           set({
             error: frame.message,
@@ -1261,9 +975,6 @@ function makeActions(set: SetState, get: GetState) {
             streaming: false,
             streamingText: "",
             streamSource: null,
-            streamSpawnId: null,
-            streamSpawnName: null,
-            pendingRoute: null,
             activitySteps: [],
             activeRunId: null,
           });

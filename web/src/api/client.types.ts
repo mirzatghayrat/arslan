@@ -302,17 +302,6 @@ export interface ArtifactReview {
   artifact_sha256?: string;
 }
 
-export interface EscalationInfo {
-  spawnId: number;
-  spawnName: string | null;
-  kind: string; // "data" | "capability"
-  need: string;
-  status: "resolving" | "resolved" | "refused";
-  how?: string;
-  detail?: string;
-  why?: string;
-}
-
 export interface SpawnSummary {
   id: number;
   name: string;
@@ -618,7 +607,7 @@ export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: st
 
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson" | "plan" | "capability";
+  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
   /** kind === "capability" (0.1.57): how an install the user approved ended. */
   capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
@@ -644,20 +633,11 @@ export interface ArslanThreadItem {
   fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string };
-  spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
-  runId?: number | null; // trace+eval replay id, from spawn_meta
-  taskBrief?: string | null; // the task this spawn turn ran, for redo/refine
-  equipment?: Equipment | null; // kind === "system" (spawn_created)
-  intro?: string | null; // kind === "system" (spawn_created)
-  toolSteps?: ToolStep[]; // spawn replies: folded tool activity
+  runId?: number | null; // trace+eval replay id (stream_end / history row)
+  toolSteps?: ToolStep[]; // replies: folded tool activity
   /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
    *  🔒 Populated ONLY from the backend frame, NEVER from LLM message text. */
   artifactHtml?: HtmlArtifact;
-  escalation?: EscalationInfo; // kind === "escalation"
-  /** True when this deliverable is a pending direction proposal (requires confirm_direction). */
-  isProposal?: boolean;
-  /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
-  verdict?: string;
   /** S3-M1: true when this item is the partial output of a cancelled run
    *  (finalized from the live bubble by a run_cancelled frame). */
   cancelled?: boolean;
@@ -670,13 +650,6 @@ export interface ArslanThreadItem {
   processSummary?: ProcessSummary;
   /** 0.1.58 §2: the files the turn produced, from a history row. */
   files?: StoredArtifact[];
-  /** Original deliverable message id this item was refined from (deliverable_finalized). */
-  refinedFrom?: number | null;
-  /** kind === "system" roster notice: "joined" | "left" */
-  rosterAction?: string;
-  /** kind === "system": routing brief (need restatement + @-mention duty lines)
-   *  from a routing frame's `announcement`. Rendered with mention chips. */
-  isRouteAnnouncement?: boolean;
   /** role === "user": attachments sent with this message (session-only display echo —
    *  set client-side on send, never present on history-restored items). */
   attachments?: MessageAttachment[];
@@ -716,9 +689,6 @@ export type ArslanServerMessage =
   /** 0.1.59: this window's message waits for the conversation's current turn; then it starts. */
   | { type: "queued" }
   | { type: "dequeued" }
-  | { type: "proposal"; spawn_id: number; spawn_name: string | null }
-  | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
-  | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
   // run_id (S3-M1): present only on recorded (spawn) runs — the cancel target for
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
@@ -769,7 +739,6 @@ export type ArslanServerMessage =
   // window on the conversation. An older server sends none, and the follow-up names only the server.
   | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
       restricted_count: number; assignable: boolean; call_id?: string }
-  | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
@@ -784,7 +753,6 @@ export type ArslanServerMessage =
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
       detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }
   | { type: "job_spoken"; job_id: string; outcome: JobOutcome | null; goal: string }
-  | { type: "spawn_created"; spawn_id: number; spawn_name: string; equipment?: Equipment; intro?: string | null }
   | { type: "tool_call"; tool: string; args_summary: string }
   | {
       type: "tool_result";
@@ -798,28 +766,11 @@ export type ArslanServerMessage =
       artifact?: { kind: string; content?: string; spec?: Record<string, unknown>;
                    filename?: string; bytes_b64?: string; slides?: number };
     }
-  | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
-  | { type: "escalation_refused"; spawn_id: number; why: string }
-  | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
-  | { type: "verdict_recorded"; spawn_id: number; action: string }
-  | { type: "deliverable_finalized"; spawn_id: number; message_id: number; content: string; refined_from: number | null; spawn_name?: string }
-  | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
-  | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null }
-| { type: "attachment_stored"; spawn_name: string | null; chunks: number }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
-      current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string }
-  | { type: "spawn_updated"; spawn_id: number; spawn_name: string;
-      applied: SpawnUpdateChanges; equipment?: Equipment };
-
-export interface RosterMember {
-  spawnId: number;
-  spawnName: string | null;
-  joinedVia: string;
-  status: string;
-}
+      current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string };
 
 export interface SuggestPrimaryResult {
   id: number;
