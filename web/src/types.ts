@@ -29,14 +29,6 @@ export interface HtmlArtifact {
   bytes: number;
 }
 
-export interface Escalation {
-  id: string;
-  spawnName: string;
-  issue: string;
-  status: 'need_raised' | 'arslan_resolving' | 'resolved' | 'refused';
-  resolutionMessage?: string;
-}
-
 /** Display info for an attachment echoed inside a SENT user bubble.
  *  previewUrl is a session-only object-URL (never persisted); when it is absent —
  *  e.g. a history-restored message — the UI falls back to a compact file chip. */
@@ -74,20 +66,10 @@ export interface Message {
   /** 0.1.42: this Arslan message is the result of that background job. */
   resultOfJob?: string;
   jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | 'interrupted' | 'out_of_budget' | null;
-  /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
-  isProposal?: boolean;
-  /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
-  verdict?: string;
-  /** Backend message id for verdict frames (spawnMessageId from the store item). */
-  messageId?: number;
   /** Run id for the trace+eval replay of this spawn deliverable. */
   runId?: number | null;
-  /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */
-  taskBrief?: string | null;
   /** The spawn's display name for this deliverable — used to seed the refine side chat. */
   spawnName?: string;
-  /** Original deliverable message id this was refined from (deliverable_finalized) — drives the 定稿 badge. */
-  refinedFrom?: number | null;
   /** S3-M1: true when this bubble is the partial output of a run the user cancelled
    *  mid-stream — renders the muted interrupted marker under the body. */
   cancelled?: boolean;
@@ -104,13 +86,9 @@ export interface Message {
     spawnId: string;
     spawnName: string;
   };
-  /** Routing brief (need + @-mention duty lines) — rendered with mention chips. */
-  isRouteAnnouncement?: boolean;
-  /** Roster notice: "joined" | "left" | "recruited" | "joined_no_pending" — present on
-   *  system messages from roster_event frames (see server/ws/protocol.py::roster_event). */
-  rosterAction?: string;
-  /** The spawn name for a roster notice item. */
-  rosterSpawnName?: string | null;
+  /** Unreachable since C1c-2: only the spawn_created / spawn_updated frames set it, and their handling is gone.
+   *  Delete it with the three intro cards in OrchestratorChat (and the ui.* / orchestrator.* words only they use)
+   *  in a follow-up; they were left out of C1c-2 to keep it under the 800-line rule. */
   spawnIntro?: {
     name: string;
     domain: string;
@@ -125,7 +103,6 @@ export interface Message {
   files?: import('./api/client.types').StoredArtifact[];
   /** HTML deliverable card data (kind:"html" stream_end artifact). 🔒 Backend frames only. */
   artifactHtml?: HtmlArtifact;
-  escalation?: Escalation;
   /** PA-3 structured clarification card: question + 2-4 one-click options.
    *  🔒 Backend clarify_options frames only — never parsed from LLM message text. */
   clarifyOptions?: { question: string; options: { label: string; hint?: string }[]; answered?: boolean };

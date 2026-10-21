@@ -288,20 +288,14 @@ export function toUiSpawn(s: SpawnSummary & {
  *   text: content
  *   routedTo: undefined (routing is a separate item kind, not folded here)
  *
- * kind === "message", role === "spawn"
+ * kind === "message", role === "spawn" (an old expert's answer from a history row)
  *   sender: "spawn", senderName: spawnName ?? "Spawn", senderAvatar: "🤖"
  *   text: content
  *   toolActivity: first ToolStep mapped if present (folded into the reply)
  *
- * kind === "escalation"
- *   sender: "spawn", senderName: spawnName ?? "Spawn", senderAvatar: "🤖"
- *   text: "" (the escalation card is the content)
- *   escalation: mapped from item.escalation (EscalationInfo → UI Escalation)
- *
- * kind === "system" (spawn_created)
+ * kind === "system" (e.g. the MCP connect follow-up note)
  *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
- *   text: content (the "__SPAWN_CREATED__:Name" sentinel or intro)
- *   spawnIntro: populated from equipment + intro if available
+ *   text: content
  *
  * kind === "fact"
  *   remembered: the turn's facts (D1) — rendered as one quiet line, never a bubble
@@ -320,101 +314,14 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: "", timestamp, jobId: item.jobId };
     }
 
-    if (item.kind === "escalation" && item.escalation) {
-      const esc = item.escalation;
-      // Map EscalationInfo.status → UI Escalation.status
-      const uiStatus =
-        esc.status === "resolving" ? ("arslan_resolving" as const)
-        : esc.status === "resolved" ? ("resolved" as const)
-        : esc.status === "refused"  ? ("refused" as const)
-        : ("need_raised" as const);
-      return {
-        id,
-        sender: "spawn",
-        senderName: esc.spawnName ?? "Spawn",
-        senderAvatar: "🤖",
-        text: "",
-        timestamp,
-        escalation: {
-          id,
-          spawnName: esc.spawnName ?? "Spawn",
-          issue: esc.need,
-          status: uiStatus,
-          resolutionMessage: esc.how ?? esc.why,
-        },
-      };
-    }
-
     if (item.kind === "system") {
-      // Routing brief: need restatement + @-mention duty lines (mention chips in UI).
-      if (item.isRouteAnnouncement) {
-        return {
-          id,
-          sender: "arslan",
-          senderName: "Arslan",
-          senderAvatar: "🦁",
-          text: item.content,
-          timestamp,
-          isRouteAnnouncement: true,
-        };
-      }
-      // Roster notice: rosterAction is "joined" | "left" | "recruited" | "joined_no_pending"
-      if (item.rosterAction) {
-        return {
-          id,
-          sender: "arslan",
-          senderName: "Arslan",
-          senderAvatar: "🦁",
-          text: "",
-          timestamp,
-          rosterAction: item.rosterAction,
-          rosterSpawnName: item.spawnName ?? null,
-        };
-      }
-      // spawn_updated (P2): render a readable notice + the fresh equipment chips.
-      if (item.content.startsWith("__SPAWN_UPDATED__:")) {
-        const updatedName = item.content.slice("__SPAWN_UPDATED__:".length);
-        return {
-          id,
-          sender: "arslan",
-          senderName: "Arslan",
-          senderAvatar: "🦁",
-          // Sentinel kept — App translates it (adapters must stay i18n-free:
-          // importing the i18n singleton breaks every test that mocks react-i18next).
-          text: item.content,
-          timestamp,
-          spawnIntro: item.equipment
-            ? {
-                name: updatedName,
-                domain: "",
-                avatarEmoji: "🤖",
-                tools: item.equipment.toolsets.map((x) => x.key),
-                skills: item.equipment.skills.map((x) => x.key),
-              }
-            : undefined,
-        };
-      }
-      // spawn_created: content is "__SPAWN_CREATED__:Name" or intro text
-      const spawnNameFromContent = item.content.startsWith("__SPAWN_CREATED__:")
-        ? item.content.slice("__SPAWN_CREATED__:".length)
-        : null;
-      const spawnIntro = spawnNameFromContent
-        ? {
-            name: spawnNameFromContent,
-            domain: "",
-            avatarEmoji: "🤖",
-            tools: item.equipment?.toolsets.map((t) => t.key) ?? [],
-            skills: item.equipment?.skills.map((s) => s.key) ?? [],
-          }
-        : undefined;
       return {
         id,
         sender: "arslan",
         senderName: "Arslan",
         senderAvatar: "🦁",
-        text: item.intro ?? item.content,
+        text: item.content,
         timestamp,
-        spawnIntro,
       };
     }
 
@@ -513,13 +420,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         // 🔒 HTML deliverable card — set in arslanStore from the stream_end frame's
         // kind:"html" artifact (HX-2 channel), NEVER from LLM message text.
         artifactHtml: item.artifactHtml,
-        // Pass through staged orchestration fields
         spawnId: item.spawnId != null ? String(item.spawnId) : undefined,
-        isProposal: item.isProposal ?? undefined,
-        messageId: item.spawnMessageId ?? undefined,
-        taskBrief: item.taskBrief ?? undefined,
         runId: item.runId ?? undefined,
-        refinedFrom: item.refinedFrom ?? undefined,
         // S3-M1: partial output of a cancelled run → interrupted marker in the bubble.
         cancelled: item.cancelled ?? undefined,
         // S3-M3: the turn's usage from the stream_end frame → bubble usage chip.
@@ -539,7 +441,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       timestamp,
       toolActivity,
       runId: item.runId ?? undefined,
-      // 🔒 stream_end html artifact can also ride an arslan-role turn (escalation path).
+      // 🔒 the stream_end html artifact (backend frame only).
       artifactHtml: item.artifactHtml,
       // PA-3 structured clarification card (🔒 backend clarify_options frames only).
       clarifyOptions: item.clarifyOptions,

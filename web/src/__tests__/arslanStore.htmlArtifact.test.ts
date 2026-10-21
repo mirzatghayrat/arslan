@@ -58,13 +58,13 @@ describe("stream_end html artifact (HX-3)", () => {
 
   it("toUiMessages passes artifactHtml through to the UI Message", () => {
     const store = () => useArslanStore.getState();
-    store().handleFrame({ type: "stream_start", source: "spawn", spawn_id: 6 } as any);
+    store().handleFrame({ type: "stream_start", source: "arslan" } as any);
     store().handleFrame({ type: "stream_chunk", content: "已生成" } as any);
     store().handleFrame({ type: "stream_end", message_id: 465, artifact: HTML_ARTIFACT } as any);
 
     const ui = toUiMessages(store().items);
     const msg = ui[ui.length - 1];
-    expect(msg.sender).toBe("spawn");
+    expect(msg.sender).toBe("arslan");
     expect(msg.artifactHtml?.title).toBe("OKX 演示");
     expect(msg.artifactHtml?.complete).toBe(false);
     expect(msg.artifactHtml?.filename).toBe("run_68_okx-deck.html");

@@ -42,9 +42,7 @@ describe('OrchestratorChat working indicators (HX-4 / A1)', () => {
       thinking: true,
       workStartedAt: Date.now(),
       stalled: true,
-      roster: [{ spawnId: 3, spawnName: 'Deck Master', joinedVia: 'invite', status: 'idle' }],
-      pendingRoute: { spawnId: 3, spawnName: 'Deck Master' },
-    } as never);
+    });
     const { container } = render(<OrchestratorChat {...base} />);
     const marker = screen.getByTestId('stalled-indicator');
     expect(marker.textContent).toContain('working.stalled');

@@ -228,23 +228,7 @@ export default function App() {
   const { send: wsSend } = useWebSocket(`/ws/arslan/${activeThreadId}`, handleArslanFrame);
 
   // Derived UI messages from the live store
-  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems).map((m) => {
-    // attachment_stored sentinel from arslanStore (stores stay i18n-free).
-    if (m.text.startsWith('__ATTACHMENT_STORED__:')) {
-      try {
-        const p = JSON.parse(m.text.slice('__ATTACHMENT_STORED__:'.length)) as { name?: string | null; chunks?: number };
-        return {
-          ...m,
-          text: p.name
-            ? t('chat.attachment_stored', { name: p.name, chunks: p.chunks ?? 0 })
-            : t('chat.attachment_stored_generic', { chunks: p.chunks ?? 0 }),
-        };
-      } catch {
-        return m;
-      }
-    }
-    return m;
-  });
+  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
 
   // Append an optimistic streaming bubble while a reply is streaming
   const orchestratorChatHistory: Message[] = arslanStreaming && arslanStreamingText

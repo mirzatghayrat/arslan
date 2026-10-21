@@ -33,7 +33,7 @@ describe("run cancel wiring (S3-M1)", () => {
   });
 
   it("run_cancelled finalizes the streaming bubble with the cancelled marker", () => {
-    useArslanStore.getState().handleFrame({ type: "stream_start", source: "spawn", spawn_id: 1, run_id: 43 } as never);
+    useArslanStore.getState().handleFrame({ type: "stream_start", source: "arslan", run_id: 43 } as never);
     useArslanStore.getState().handleFrame({ type: "stream_chunk", content: "partial " } as never);
     useArslanStore.getState().handleFrame({ type: "run_cancelled", run_id: 43 } as never);
     const st = useArslanStore.getState();
@@ -44,8 +44,7 @@ describe("run cancel wiring (S3-M1)", () => {
     const last = st.items[st.items.length - 1];
     expect(last.content).toContain("partial ");
     expect(last.cancelled).toBe(true);
-    expect(last.role).toBe("spawn");
-    expect(last.spawnId).toBe(1);
+    expect(last.role).toBe("arslan");
   });
 
   it("run_cancelled with message_id uses it as the item id (server persisted copy)", () => {
