@@ -48,46 +48,14 @@ TOOLSETS: list[dict] = [
     {
         "key": "file_operations",
         "name": "File Operations",
-        "description": "Read & search files (write/patch is orchestrator-tier).",
+        "description": "Read & search files (write is orchestrator-tier).",
         "tier": "safe",
         "status": "registered",
         "tools": [
             ("read_file", "Read a file.", "safe", "registered"),
             ("search_files", "Search files.", "safe", "registered"),
             ("write_file", "Write a file.", "orchestrator", "registered"),
-            ("patch", "Patch a file.", "orchestrator", "registered"),
         ],
-    },
-    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
-    {
-        "key": "session_search",
-        "name": "Session Search",
-        "description": "Search past conversations.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("session_search", "Search past sessions.", "safe", "registered")],
-    },
-    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
-    {
-        "key": "skills_management",
-        "name": "Skills",
-        "description": "List/view skills (managing them is orchestrator-tier).",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [
-            ("skills_list", "List skills.", "safe", "registered"),
-            ("skill_view", "View a skill.", "safe", "registered"),
-            ("skill_manage", "Install/modify skills (capability mutation).", "orchestrator", "registered"),
-        ],
-    },
-    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
-    {
-        "key": "task_planning",
-        "name": "Task Planning",
-        "description": "todo lists.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("todo", "Maintain a todo list.", "safe", "registered")],
     },
     {
         "key": "charting",
