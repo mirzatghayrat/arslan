@@ -1,19 +1,19 @@
 """Idempotent registry seeding: insert-or-update by key; deletes ONLY explicitly
-retired seed keys (never user-created rows — MCP toolsets use mcp_* keys and
-imported/promoted skills carry their own keys, none of which appear in the
-retirement lists; the literal key match IS the safety)."""
+retired seed keys, and of skills only the rows the seeder planted (D7, v0.1.63):
+a user's skill can carry a retired key — import, Capabilities and skill_forge take
+any name — so the key alone is not the safety. MCP toolsets use mcp_* keys."""
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
-from sqlalchemy import delete
+from sqlalchemy import and_, delete, exists, not_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import arslan.spawn
 from arslan.spawn.skillpack import SkillPack as _SkillPackSpec
 from server.db import session as db_session
-from server.db.models import SkillPack, Tool, Toolset
+from server.db.models import SkillCandidate, SkillPack, Tool, Toolset
 from server.registry.seed_catalog import SKILLS, TOOLSETS
 
 logger = logging.getLogger(__name__)
@@ -60,13 +60,24 @@ def _skill_body(key: str) -> str | None:
         return None
 
 
+# D7: a skill row the user brought in, whatever its key. Every SkillPack writer but the seeder
+# leaves one of these: skill_import "imported"; capability_flow a source_id; skill_forge (and
+# expert_conversion through it) a candidate that went live, which the curator may have retired
+# since; discovery_service a "gh-" key, which no retired key is (tested).
+_USERS_SKILL = or_(
+    SkillPack.category == "imported",
+    SkillPack.source_id.is_not(None),
+    exists().where(and_(SkillCandidate.key == SkillPack.key,
+                        SkillCandidate.status.in_(("promoted", "retired")))),
+)
+
+
 async def _retire_removed_seeds(db: AsyncSession) -> None:
     """Delete retired seed rows (and the retired toolsets' tools). Idempotent;
-    touches ONLY the literal keys above — user rows (mcp_* toolsets, imported
-    or promoted skills) are never in these lists."""
+    touches ONLY the literal keys above, and of skills only the seeder's own rows."""
     await db.execute(delete(Tool).where(Tool.toolset_key.in_(RETIRED_TOOLSET_KEYS)))
     await db.execute(delete(Toolset).where(Toolset.key.in_(RETIRED_TOOLSET_KEYS)))
-    await db.execute(delete(SkillPack).where(SkillPack.key.in_(RETIRED_SKILL_KEYS)))
+    await db.execute(delete(SkillPack).where(SkillPack.key.in_(RETIRED_SKILL_KEYS), not_(_USERS_SKILL)))
 
 
 async def seed_registry_with(db: AsyncSession) -> None:
