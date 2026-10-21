@@ -50,4 +50,16 @@ AppleScript 认 `tell application "System Events.app"`，也认完整路径（`t
 
 ## 量级
 
-产品代码约 +40 行，测试另算。
+- 卡上估的是约 +40 行。
+- 实际（#271）：产品代码 +335 / −27 行（`hands_service.py` +324 / −24，`hands_tools.py` +11 / −3），测试另算。
+- 多出来的原因：审查中又找到几种写法，都在 H4 里一起修了：
+  - 不加空格的 `application"X"` 和 `¬` 续行；
+  - HFS 路径；
+  - App 名字写成变量，或者 `process` / `files` 被当变量用；
+  - 区分大小写的磁盘上，名字的大小写。
+
+## 剩下的（不硬拒，但脚本是 app_risky：每次给你看整段脚本，灵动岛不能批）
+
+1. 过滤条件里只写了半个名字：`first process whose name contains "1Pass"`。
+2. 写明了 System Events，又用了上面没列到的绑定写法（比如 `script process … end script`），值是拼出来的。
+3. 通过别的解释器的文字碰到 App：`do shell script "open -a …"`、`run script "…"`。
