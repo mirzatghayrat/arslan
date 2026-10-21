@@ -116,7 +116,8 @@
 
 - **再拆两个 PR**（U2 只放过「整份删除」；这里是文件内删除，算进 800 行）：
   - **C2a-2a：** 记忆工具（`recall`、`remember`、`memory_note`）和提炼（`distill_service`），产品约 −680 行。
-  - **C2a-2b：** 其余文件（`fact_dedup`、`fact_classify`、`knowledge`、`learning_service`、`memory_temporal`、`run_recorder`、`task_context`、`api/facts.py`、`api/brain.py`、`api/spawns.py`、`dispatcher.py`、`main.py` 开机补分类），连同 5 个 `memory_v1` 标记。
+  - **C2a-2b：** 记忆服务（`fact_dedup`、`fact_classify`、`knowledge`、`learning_service`、`memory_temporal`、`api/facts.py`、`main.py` 开机补分类）。产品约 −690 行，又超了一半，所以再拆：
+  - **C2a-2c：** `run_recorder`、`task_context`、`api/brain.py`、`api/spawns.py`、`dispatcher.py`，连同 5 个 `memory_v1` 标记。
 - **和 C7 / C8 的分工**（②Main 2026-10-22 核过）：这些文件 C2a-2 先删 v1 分支；C7 之后整份删 `dispatcher.py`、`api/spawns.py`，C7b、C8 合了以后 `distill_service.py` 可能整份删。
 - **C2a-2a 删了哪些测试，为什么：** 都是自己用 `create_all` 建 v1 库、只走 v1 写法的测试，产品里没有一次启动走得到：
   - 整份：`test_memory_write_tiers.py`（10）、`test_meta_upflow.py`（3）、`test_memory_dual_track.py`（1）；
@@ -124,3 +125,11 @@
   - 收集到的测试名 = 删之前 − 这 60 个，逐个比对过。
 - **v2 下本来就是这样、本卡不改的：** 专家直聊的「完结」（`complete_chat`）在没有记忆上下文时，提炼返回 `learning_disabled`，不算失败，所以会归档。这条路今天产品里走不到（`EXPERTS_ENABLED = False`），C7 删它。
 - **新加的测试：** 两个提炼入口都走 v2，没有记忆上下文时不调模型、不报「学到了」。
+- **C2a-2b 做了什么：**
+  - 整份删掉 `fact_classify.py`（v1 后台分类，v2 下从不启动）和 `learning_service.py`（C2a-2a 删掉 v1 的 `remember` 以后没有调用者）；
+  - `fact_dedup` 只留 `memory_compat` 用的 `similar` / `norm`；
+  - `knowledge.retrieve_scoped` 只留 v2 的范围（这一轮项目的资料库），删掉 v1 的分身深井、「主脑看全部共享库」和心得 / 笔记两路；
+  - `memory_temporal` 只留调用方的检查和 v2 的拒绝（`versioned_review_required`）；
+  - `POST /facts/dedup`、`POST /facts/classify` 保留接口形状，直接返回 v2 下本来的结果，**DELETE-BY: v0.1.64**（和 v1 旧表一起）；
+  - `server/main.py` 删开机补分类；`usage.py` 的未计入清单去掉 `fact_classify`。
+- **C2a-2b 的测试：** 删 54 个只测 v1 的（整份：`test_fact_classify` 12、`test_rule_supersede` 11、`test_notes_retrieval` 1、`test_learning_service` 2、`test_fact_dedup_merge` 2；其余见 PR），收集到的测试名逐个比对过；**改到 v2 上的**：`test_retrieve_scoped`（项目范围、没有上下文就什么都不读、向量路、只有 FTS、空向量范围不付 embedding、没有云端同意不调 API embedding）、`test_retrieval_quality`、`test_retrieve_usage`、`test_active_only_retrieval` 的 `record_usage=False` 回归（原来在 v2 下变成空过）。

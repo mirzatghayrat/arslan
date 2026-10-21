@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base
 from server.services import brain_usage, knowledge
+from server.services import personal_context as pc
+
+from .v2_retrieval import context, project
 
 
 @pytest_asyncio.fixture
@@ -36,9 +39,11 @@ async def test_retrieve_records_material_usage(maker):
         rid = (await db.execute(sa_text("SELECT id FROM knowledge_chunks WHERE source='okx.pdf'"))).scalar_one()
         await db.execute(sa_text("INSERT INTO knowledge_chunks_fts (rowid, text) VALUES (:r, :t)"),
                          {"r": rid, "t": "OKX 永续合约 保证金 杠杆"})
+        db.add(project([1]))                    # memory v2 reads the turn project's collections
         await db.commit()
 
-    out = await knowledge.retrieve_scoped("OKX", spawn_id=None, k=5, used_ref="conv-x")
+    with pc.bind(context()):
+        out = await knowledge.retrieve_scoped("OKX", spawn_id=None, k=5, used_ref="conv-x")
     assert any("OKX" in txt for _, txt in out)
     mp = await brain_usage.usage_map([("material", "material:coll:1:okx.pdf")])
     row = mp[("material", "material:coll:1:okx.pdf")]

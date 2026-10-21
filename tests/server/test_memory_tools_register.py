@@ -32,8 +32,8 @@ async def maker(tmp_path, monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # FTS5 virtual tables aren't ORM models (created by migrations, not
-        # create_all) — note_service.create/learning_service._write insert into
-        # them directly. Same convention as test_note_service.py/test_learning_service.py.
+        # create_all) — note_service.create inserts into them directly. Same
+        # convention as test_note_service.py.
         await conn.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(text)")
         await conn.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS learnings_fts USING fts5(text)")
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)

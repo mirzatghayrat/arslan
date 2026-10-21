@@ -1,4 +1,4 @@
-"""retrieve_scoped: the ONLY retrieval gate. Partition invariants + RRF hybrid."""
+"""retrieve_scoped: the ONLY retrieval gate. Memory v2 scope (the turn project's collections) + RRF hybrid."""
 import pytest_asyncio
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base, Collection, KnowledgeChunk, Spawn, SpawnCollection
 from server.services import embedding_service
+from server.services import personal_context as pc
+
+from .v2_retrieval import context, project
 
 
 class FakeProvider:
@@ -42,6 +45,7 @@ async def maker(tmp_path, monkeypatch):
         s.add(Collection(id=10, name="绑定库"))
         s.add(Collection(id=11, name="别人的库"))
         s.add(SpawnCollection(spawn_id=1, collection_id=10))
+        s.add(project([10]))                          # the turn's project holds collection 10 only
         # spawn-1 well / bound collection-10 / unbound collection-11 / spawn-2 well
         await _add_chunk(s, 100, spawn_id=1, source="well.txt", text="猫粮 深井资料", vec=[1, 0])
         await _add_chunk(s, 101, collection_id=10, source="shared.pdf", text="猫粮 共享资料", vec=[1, 0])
@@ -55,44 +59,66 @@ def _texts(chunks):
     return [t for _, t in chunks]
 
 
-async def test_partition_spawn_sees_well_and_bound_only(maker):
+async def _retrieve(query, *, ctx=None, spawn_id=None, k=10):
     from server.services import knowledge
-    out = await knowledge.retrieve_scoped("猫粮", spawn_id=1, k=10)
-    texts = _texts(out)
-    assert any("深井资料" in t for t in texts)
-    assert any("共享资料" in t for t in texts)
-    assert not any("未绑定" in t for t in texts)      # 未绑定 collection 不可见
-    assert not any("别的分身" in t for t in texts)     # 他人深井不可见
+    with pc.bind(ctx or context()):
+        return await knowledge.retrieve_scoped(query, spawn_id=spawn_id, k=k)
 
 
-async def test_partition_arslan_sees_all_collections_never_wells(maker):
+async def test_a_turn_sees_its_projects_collections_only_never_wells(maker):
+    texts = _texts(await _retrieve("猫粮"))
+    assert any("共享资料" in t for t in texts)          # collection 10, in the project
+    assert not any("未绑定" in t for t in texts)        # collection 11, not in it
+    assert not any("深井" in t for t in texts)          # an expert's own well: never
+
+
+async def test_no_context_no_project_or_another_expert_retrieves_nothing(maker):
     from server.services import knowledge
-    out = await knowledge.retrieve_scoped("猫粮", spawn_id=None, k=10)
-    texts = _texts(out)
-    assert any("共享资料" in t for t in texts)
-    assert any("未绑定资料" in t for t in texts)       # 主脑看全部共享库
-    assert not any("深井" in t for t in texts)         # 永不碰深井
+    assert await knowledge.retrieve_scoped("猫粮", spawn_id=None, k=10) == []          # no context bound
+    assert await _retrieve("猫粮", ctx=context(project_id=None)) == []                 # no project
+    assert await _retrieve("猫粮", spawn_id=1) == []                                   # not this turn's expert
+    assert await _retrieve("猫粮", ctx=context(model_is_local=False, cloud_memory_allowed=False)) == []
 
 
 async def test_vector_route_merges_semantic_hit(maker, monkeypatch):
     """FTS 完全不命中(查询词不同)时,向量路仍召回语义近邻。"""
-    from server.services import knowledge
     async def _fake_active():
         return FakeProvider()
     monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
-    out = await knowledge.retrieve_scoped("猫咪吃什么", spawn_id=1, k=5)
-    assert any("猫粮" in t for t in _texts(out))
+    texts = _texts(await _retrieve("猫咪吃什么", k=5))
+    assert any("共享资料" in t for t in texts)
 
 
 async def test_fts_only_without_provider(maker):
-    from server.services import knowledge
-    out = await knowledge.retrieve_scoped("猫粮", spawn_id=1, k=5)
-    assert len(out) == 2  # FTS 照常工作 = 今天的行为
+    assert _texts(await _retrieve("猫粮", k=5)) == ["猫粮 共享资料"]   # FTS alone, inside the scope
 
 
 async def test_empty_vector_scope_skips_query_embedding(maker, monkeypatch):
     """Scope 内没有一条(当前模型的)向量 ⇒ 不得为查询白付一次 embedding 调用。"""
-    from server.services import knowledge
+    class CountingProvider(FakeProvider):
+        calls = 0
+        async def embed(self, texts):
+            CountingProvider.calls += 1
+            return await super().embed(texts)
+
+    async def _fake_active():
+        return CountingProvider()
+    monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
+    async with maker() as s:
+        s.add(Collection(id=12, name="新库"))
+        s.add(project([12], project_id="p-new"))
+        await s.flush()
+        await _add_chunk(s, 200, collection_id=12, source="new.txt", text="猫粮 新库无向量")
+        await s.commit()
+    out = await _retrieve("猫粮", ctx=context(project_id="p-new"), k=5)
+    assert CountingProvider.calls == 0          # 没白付 embedding 网络调用
+    assert any("新库无向量" in t for t in _texts(out))   # FTS 路照常召回
+
+
+async def test_without_cloud_consent_the_query_is_never_embedded_by_an_api(maker, monkeypatch):
+    """A local turn without cloud-memory consent may use only an installed local embedder. Resolving the
+    default API provider would send the query out without consent."""
+    from server.services import local_embedding
 
     class CountingProvider(FakeProvider):
         calls = 0
@@ -103,16 +129,9 @@ async def test_empty_vector_scope_skips_query_embedding(maker, monkeypatch):
     async def _fake_active():
         return CountingProvider()
     monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
-
-    # 新分身 3:井里只有一条无向量 chunk —— 向量 scope 为空,FTS 照常。
-    async with maker() as s:
-        s.add(Spawn(id=3, name="丙", domain_category="c", system_prompt="p"))
-        await s.flush()
-        await _add_chunk(s, 200, spawn_id=3, source="new.txt", text="猫粮 新分身无向量")
-        await s.commit()
-    out = await knowledge.retrieve_scoped("猫粮", spawn_id=3, k=5)
-    assert CountingProvider.calls == 0          # 没白付 embedding 网络调用
-    assert any("新分身无向量" in t for t in _texts(out))  # FTS 路照常召回
+    monkeypatch.setattr(local_embedding, "provider_if_ready", lambda: None)
+    out = await _retrieve("猫咪吃什么", ctx=context(cloud_memory_allowed=False), k=5)
+    assert CountingProvider.calls == 0 and out == []      # FTS misses this query; no API embedding
 
 
 def test_rrf_merge_dedups_and_ranks():

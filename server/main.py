@@ -234,16 +234,6 @@ async def lifespan(app: FastAPI):
 
     # 0.1.48: the built-in example experts are no longer seeded — one Arslan does the work.
 
-    # Non-blocking boot backfill for any fact left with category=NULL (write-time
-    # classify failed / process died mid-flight / pre-existing rows). Fire-and-forget;
-    # wrapped defensively so nothing here can ever abort startup before `yield`.
-    try:
-        from server.services import fact_classify
-
-        fact_classify.schedule(fact_classify.classify_missing())
-    except Exception:  # noqa: BLE001 — boot backfill must never block/break startup
-        pass
-
     # Privacy retention sweep: redact sensitive/bulky run debug detail
     # (system_prompt, injected_kb, per-step args_full/result_raw) for runs older
     # than the configured retention window (default 30 days). Best-effort — a

@@ -68,22 +68,6 @@ def rerank(query: str, candidates: list[tuple[str, str]]) -> list[tuple[str, str
     return sorted(candidates, key=lambda c: -_overlap(c))
 
 
-def _scope_clause(spawn_id: int | None, coll_ids: list[int]) -> tuple[str, dict]:
-    """The partition rule, expressed as SQL. NEVER widened by callers."""
-    if spawn_id is None:
-        return "kc.collection_id IS NOT NULL", {}
-    if coll_ids:
-        return "(kc.spawn_id = :sid OR kc.collection_id IN :cids)", {"sid": spawn_id, "cids": coll_ids}
-    return "kc.spawn_id = :sid", {"sid": spawn_id}
-
-
-async def _bound_collection_ids(db, spawn_id: int) -> list[int]:
-    rows = await db.execute(
-        sa_text("SELECT collection_id FROM spawn_collections WHERE spawn_id = :sid"),
-        {"sid": spawn_id})
-    return [r[0] for r in rows.all()]
-
-
 def _bind(stmt, params: dict):
     if "cids" in params:
         stmt = stmt.bindparams(bindparam("cids", expanding=True))
@@ -102,67 +86,20 @@ async def _fts_route(db, query: str, where: str, params: dict) -> tuple[list[int
     return [r[0] for r in rows], {r[0]: (r[1], r[2], r[3], r[4]) for r in rows}
 
 
-async def _learnings_route(db, query: str, spawn_id: int | None) -> dict[int, str]:
-    """FTS over 心得 (learnings). Partition parity with knowledge scoping: Arslan
-    (spawn_id=None) sees global learnings (spawn_id IS NULL); a spawn sees its own
-    + global. Any failure → {} (never fatal)."""
-    from server.services.memory_repository import is_active
-    if await is_active(db):
-        return {}  # Unified experiences are admitted only through personal_context.
-    match = _safe_match_query(query)
-    if not match:
-        return {}
-    try:
-        scope = "l.spawn_id IS NULL" if spawn_id is None else "(l.spawn_id IS NULL OR l.spawn_id = :sid)"
-        rows = (await db.execute(sa_text(
-            "SELECT l.id, l.content FROM learnings_fts f JOIN learnings l ON l.id = f.rowid "
-            f"WHERE f.text MATCH :q AND l.superseded_by IS NULL AND {scope} "
-            "ORDER BY rank LIMIT :lim"),
-            {"q": match, "sid": spawn_id, "lim": CANDIDATES})).all()
-        return {r[0]: r[1] for r in rows}
-    except Exception as exc:  # noqa: BLE001 — learnings route never fatal
-        logger.warning("learnings route failed (non-fatal): %s", exc)
-        return {}
-
-
-async def _notes_route(db, query: str) -> dict[int, str]:
-    """FTS over hand-written notes. Notes are global — visible to Arslan AND every
-    spawn (human + agent shared). Any failure → {} (never fatal)."""
-    from server.services.memory_repository import is_active
-    if await is_active(db):
-        return {}  # Legacy notes have no project/owner permission metadata.
-    match = _safe_match_query(query)
-    if not match:
-        return {}
-    try:
-        rows = (await db.execute(sa_text(
-            "SELECT n.id, n.title, n.content FROM notes_fts f JOIN notes n ON n.id = f.rowid "
-            "WHERE f.text MATCH :q ORDER BY rank LIMIT :lim"),
-            {"q": match, "lim": CANDIDATES})).all()
-        return {r[0]: f"{r[1]}: {r[2]}" for r in rows}
-    except Exception as exc:  # noqa: BLE001 — notes route never fatal
-        logger.warning("notes route failed (non-fatal): %s", exc)
-        return {}
-
-
 async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[int], dict]:
     """Cosine top-CANDIDATES over the scope's vectors (active model only).
     Any failure or absence of provider/vectors → empty route (non-fatal)."""
     if not (query or "").strip():
         return [], {}
-    from server.services.memory_repository import is_active
     from server.services.personal_context import current
-    if await is_active(db):
-        ctx = current()
-        if ctx is None or not ctx.cloud_memory_allowed:
-            # Use already-installed local embeddings only. Resolving a default
-            # API provider must not silently authorize query externalization.
-            from server.services import local_embedding
-            local_provider = local_embedding.provider_if_ready()
-            if local_provider is None:
-                return [], {}
-        else:
-            local_provider = None
+    ctx = current()
+    if ctx is None or not ctx.cloud_memory_allowed:
+        # Use already-installed local embeddings only. Resolving a default
+        # API provider must not silently authorize query externalization.
+        from server.services import local_embedding
+        local_provider = local_embedding.provider_if_ready()
+        if local_provider is None:
+            return [], {}
     else:
         local_provider = None
     try:
@@ -220,27 +157,22 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
     record_usage=False (S2 E3 hermetic replay): retrieve identically but write NO
     brain_usage rows — a replay must not mutate the Second Brain's usage counters."""
     async with db_session.AsyncSessionLocal() as db:
-        from server.services.memory_repository import is_active
+        from server.db.models import Project
         from server.services.personal_context import current
-        if await is_active(db):
-            from server.db.models import Project
-            ctx = current()
-            if ctx is None or ctx.no_memory or ctx.temporary:
-                return []
-            if not ctx.model_is_local and not ctx.cloud_memory_allowed:
-                return []
-            if spawn_id is not None and str(spawn_id) != ctx.expert_id:
-                return []
-            project = await db.get(Project, ctx.project_id) if ctx.project_id else None
-            coll_ids = list(project.collection_ids or []) if (
-                project and project.owner_id == ctx.owner_id and project.status == "active") else []
-            if not coll_ids:
-                return []
-            # No ambient "all shared collections" access in a project task.
-            where, params = "kc.collection_id IN :cids", {"cids": coll_ids}
-        else:
-            coll_ids = await _bound_collection_ids(db, spawn_id) if spawn_id is not None else []
-            where, params = _scope_clause(spawn_id, coll_ids)
+        ctx = current()
+        if ctx is None or ctx.no_memory or ctx.temporary:
+            return []
+        if not ctx.model_is_local and not ctx.cloud_memory_allowed:
+            return []
+        if spawn_id is not None and str(spawn_id) != ctx.expert_id:
+            return []
+        project = await db.get(Project, ctx.project_id) if ctx.project_id else None
+        coll_ids = list(project.collection_ids or []) if (
+            project and project.owner_id == ctx.owner_id and project.status == "active") else []
+        if not coll_ids:
+            return []
+        # No ambient "all shared collections" access in a project task.
+        where, params = "kc.collection_id IN :cids", {"cids": coll_ids}
         fts_ids, meta = await _fts_route(db, query, where, params)
         vec_ids, vmeta = await _vector_route(db, query, where, params)
     meta.update(vmeta)
@@ -258,22 +190,9 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
         seen_refs.add(ref_key)
         if record_usage:
             await brain_usage.record("material", ref_key, used_ref=used_ref)
-    # Fold in 心得 (top 2) — distilled know-how retrieved alongside material.
-    async with db_session.AsyncSessionLocal() as db:
-        learn = await _learnings_route(db, query, spawn_id)
-        note_hits = await _notes_route(db, query)
-    learn_items = list(learn.items())[:2]
-    if record_usage:
-        for lid, _lt in learn_items:
-            await brain_usage.record("learning", f"learning:{lid}", used_ref=used_ref)
-    learn_chunks = [(f"心得#{lid}", ltext) for lid, ltext in learn_items]
-    # Fold in 笔记 (top 2) — hand-written notes are global (no spawn partition).
-    note_items = list(note_hits.items())[:2]
-    if record_usage:
-        for nid, _nt in note_items:
-            await brain_usage.record("note", f"note:{nid}", used_ref=used_ref)
-    note_chunks = [(f"笔记:{txt.split(': ', 1)[0]}", txt.split(': ', 1)[-1]) for nid, txt in note_items]
-    return rerank(query, [(src, txt) for src, txt, _c, _s in hits] + learn_chunks + note_chunks)
+    # 0.1.63 C2a-2: the v1 心得 / 笔记 routes are gone; under memory v2 experiences and notes come in only
+    # through personal_context, so those routes always returned nothing.
+    return rerank(query, [(src, txt) for src, txt, _c, _s in hits])
 
 
 def knowledge_block(chunks: list[tuple[str, str]]) -> str:

@@ -1,7 +1,7 @@
 /** Display labels for the stable fact-category keys (S4.2-d).
  *
  * The backend persists and ships MACHINE KEYS ("identity", … — see
- * server/services/fact_classify.py FACT_CATEGORIES and migration 0037); the UI
+ * migration 0037; the v1 classifier that wrote them went in 0.1.63 C2a-2); the UI
  * translates them here. Anything that is not a known key (note tags, legacy
  * values that predate a boot with 0037 applied) passes through untranslated —
  * that fallback is deliberate: showing a raw string beats showing a missing-key

@@ -302,7 +302,8 @@ async def test_usage_summary_not_covered_footnote(client):
     assert "distill_service" not in nc
     # learning_service LEFT it in 0.1.63 (C1c-1): its only LLM call (the distill) was deleted.
     assert "learning_service" not in nc
-    assert len(nc) == 11
+    # fact_classify LEFT it in 0.1.63 (C2a-2): the v1 classifier was deleted.
+    assert len(nc) == 10
 
 
 # ---------------------------------------------------------------------------

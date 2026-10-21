@@ -5,9 +5,12 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, KnowledgeChunk, Spawn
+from server.db.models import Base, Collection, KnowledgeChunk
 from server.services import embedding_service, knowledge
+from server.services import personal_context as pc
 from server.services.knowledge import rerank
+
+from .v2_retrieval import context, project
 
 
 def test_rerank_orders_by_token_overlap():
@@ -45,17 +48,18 @@ async def min_cosine_db(tmp_path, monkeypatch):
             "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(text)")
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(Spawn(id=1, name="甲", domain_category="c", system_prompt="p"))
+        s.add(Collection(id=20, name="库"))
+        s.add(project([20]))                    # memory v2 reads the turn project's collections
         await s.flush()
         # kept: cosine(query, vec) = 1.0 (>= _MIN_COSINE=0.15) — must survive.
         s.add(KnowledgeChunk(
-            id=500, spawn_id=1, source="aligned.txt", chunk_index=0,
+            id=500, collection_id=20, source="aligned.txt", chunk_index=0,
             text="aligned relevant chunk",
             embedding=embedding_service.vec_to_blob([1.0, 0.0, 0.0]),
             embedding_model="fake-embed-ortho"))
         # dropped: cosine(query, vec) = -1.0 (< _MIN_COSINE) — must be filtered.
         s.add(KnowledgeChunk(
-            id=501, spawn_id=1, source="opposite.txt", chunk_index=0,
+            id=501, collection_id=20, source="opposite.txt", chunk_index=0,
             text="opposite irrelevant chunk",
             embedding=embedding_service.vec_to_blob([-1.0, 0.0, 0.0]),
             embedding_model="fake-embed-ortho"))
@@ -75,7 +79,8 @@ async def test_min_cosine_filters_and_logs(min_cosine_db, monkeypatch, caplog):
     monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
     caplog.set_level(logging.DEBUG, logger="server.services.knowledge")
 
-    out = await knowledge.retrieve_scoped("probe query text", spawn_id=1, k=10)
+    with pc.bind(context()):
+        out = await knowledge.retrieve_scoped("probe query text", spawn_id=None, k=10)
     texts = [t for _, t in out]
 
     assert any("aligned relevant chunk" in t for t in texts)          # cos=1.0 kept

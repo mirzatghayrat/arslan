@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
-from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -71,18 +69,3 @@ async def test_save_facts_guard_fires_before_any_write(maker, monkeypatch):
 # provenance for this table — no separate provenance column, per the P1 spec)
 # ---------------------------------------------------------------------------
 
-async def test_learning_write_sets_valid_from(maker):
-    from server.db.models import Learning
-    from server.services.learning_service import _write
-
-    async with maker() as s:
-        await s.execute(
-            sa_text("CREATE VIRTUAL TABLE IF NOT EXISTS learnings_fts USING fts5(text)")
-        )
-        await s.commit()
-
-    n = await _write("总结要先给结论", "l1", "session", {"x": 1}, None)
-    assert n > 0                                        # P2: n is now a real id, not a 1/0 flag
-    async with maker() as s:
-        row = (await s.execute(select(Learning).where(Learning.content == "总结要先给结论"))).scalar_one()
-    assert row.valid_from is not None

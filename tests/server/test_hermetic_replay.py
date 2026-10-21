@@ -34,6 +34,9 @@ from server.db.models import (
 from server.orchestrator import dispatcher, tool_loop
 from server.services import replay_run, run_recorder
 from server.services.replay_safety import REPLAY_SAFE_BUILTINS, filter_replay_tools
+from server.services import personal_context as pc
+
+from .v2_retrieval import context, project
 
 
 # ---------------------------------------------------------------------------
@@ -96,10 +99,14 @@ async def _spawn(maker, name="SpawnA", prompt="You are a helpful agent.") -> int
         return row.id
 
 
-async def _seed_kb(maker, spawn_id: int, source: str, text: str) -> None:
-    """Insert a knowledge chunk + its FTS row so retrieval hits it and records usage."""
+async def _seed_kb(maker, source: str, text: str) -> None:
+    """Insert a knowledge chunk + its FTS row in a collection of the turn's project (memory v2's retrieval
+    scope), so retrieval hits it and records usage."""
+    from server.db.models import Collection
     async with maker() as s:
-        chunk = KnowledgeChunk(spawn_id=spawn_id, source=source, chunk_index=0, text=text)
+        s.add(Collection(id=1, name="kb"))
+        s.add(project([1]))
+        chunk = KnowledgeChunk(collection_id=1, source=source, chunk_index=0, text=text)
         s.add(chunk)
         await s.commit()
         await s.refresh(chunk)
@@ -121,17 +128,20 @@ async def _count(maker, model) -> int:
 # ---------------------------------------------------------------------------
 async def test_replay_no_brain_usage(maker, monkeypatch):
     sid = await _spawn(maker)
-    await _seed_kb(maker, sid, "policy.txt", "Refund policy is 30 days for all orders.")
+    await _seed_kb(maker, "policy.txt", "Refund policy is 30 days for all orders.")
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _StreamAdapter(["ok"]))
 
-    # LIVE dispatch: retrieval records material usage.
-    await dispatcher.dispatch("c-live", spawn_id=sid, task_brief="refund policy", persist=False)
+    # LIVE dispatch: retrieval records material usage. Bound like a real turn: memory v2 retrieves
+    # only inside a turn's memory context, from its project's collections (0.1.63 C2a-2).
+    with pc.bind(context()):
+        await dispatcher.dispatch("c-live", spawn_id=sid, task_brief="refund policy", persist=False)
     live = await _count(maker, BrainUsage)
     assert live >= 1, "live dispatch must record brain_usage for a retrieved material"
 
     # REPLAY dispatch: retrieval identical, but NO brain_usage write.
-    out = await dispatcher.dispatch("c-replay", spawn_id=sid, task_brief="refund policy",
-                                    replay=True)
+    with pc.bind(context()):
+        out = await dispatcher.dispatch("c-replay", spawn_id=sid, task_brief="refund policy",
+                                        replay=True)
     assert out["run_id"] is not None
     assert await _count(maker, BrainUsage) == live, "replay must not touch brain_usage"
 
