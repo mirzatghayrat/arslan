@@ -1162,11 +1162,6 @@ async def _arslan_tools() -> list[dict]:
              "Never for passwords — ask the user to type those."},
             {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
             {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
-            {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
-             "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
-             "Background work only; asks the user every time; the screen edge glows; the user's first "
-             "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
-             "background actions, then front: true, first."},
             {"key": "desktop_open", "description": "Open a Mac app, or a file in it, in the background "
              "(behind the user's windows; it does not come to the front): {app, path?}. Asks the user once. "
              "Then desktop_look it. Always open apps and documents this way, never with `open` in run_command: "
@@ -1186,6 +1181,13 @@ async def _arslan_tools() -> list[dict]:
         if not in_job and hands_tools._scheduled_run() is not None:      # the cap kept for scheduled runs
             tools[-1]["description"] += (f" In a scheduled run you may act at most {hands_tools.SCHEDULED_ACTIONS} "
                                          "times, all in one app; for more, start background work.")
+        if in_job:      # C3a: its executor refuses it anywhere else (hands_tools, "act_in_background")
+            tools.append(
+                {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
+                 "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
+                 "Asks the user every time; the screen edge glows; the user's first "
+                 "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
+                 "background actions, then front: true, first."})
 
     # 0.1.44 one Arslan: skills are methods Arslan applies itself (experts are
     # converted into them). Offered only when some exist; the index is in the
