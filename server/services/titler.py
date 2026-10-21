@@ -18,7 +18,6 @@ _SYSTEM = (
 
 _MAX_TITLE_LEN = 48
 _FALLBACK_LEN = 24
-_TURN_CONTEXT = re.compile(r"<turn_context>.*?</turn_context>", re.DOTALL)
 
 
 def _clean(raw: str) -> str:
@@ -61,11 +60,16 @@ async def _adapter(conversation_id: str | None):
 
 async def generate_title(first_message: str, conversation_id: str | None = None) -> str:
     """Generate a short conversation title from the user's first message only (D8): never the
-    reply, which may carry local-only memory, and never the turn context.
+    reply, which may carry local-only memory, and never the host's turn-context block.
+
+    The text goes to the model the chat turn uses for text. A first message that carried an image
+    went to the vision slot's model when one is set (tool_loop._adapter_for_turn), so its words reach
+    that turn's text model here for the first time — the words only, never the image.
 
     Returns a cleaned string — never raises.
     """
-    first_message = _TURN_CONTEXT.sub("", first_message).strip()
+    from server.orchestrator.turn_context import users_words
+    first_message = str(users_words(first_message)).strip()
     if conversation_id:
         from server.services import task_context
         try:

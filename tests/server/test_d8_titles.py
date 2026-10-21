@@ -59,9 +59,11 @@ async def test_without_a_chosen_model_the_title_uses_the_model_the_chat_turn_use
 
 
 async def test_turn_context_never_goes_out_with_the_title_request(models):
+    from server.orchestrator import turn_context
     own, _, _ = models
-    await titler.generate_title("<turn_context>memory: hates crowds</turn_context>\nPlan a trip to Kyoto",
-                                conversation_id="chosen")
+    request = turn_context.prepend(turn_context.wrap("memory: hates crowds"), "Plan a trip to Kyoto")
+    assert turn_context.OPEN in request                              # the block exactly as a turn sends it
+    await titler.generate_title(request, conversation_id="chosen")
     assert own.prompts == ["Plan a trip to Kyoto"]
 
 
