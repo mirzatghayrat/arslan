@@ -22,9 +22,9 @@
 - `server/orchestrator/arslan.py` 的系统提示
   - 「How you work」在 `_CAPABILITY_SELF`（`:196` 起），拼进 `_ANSWER_STABLE_PREFIX`（`:363-366`）。
   - 重写这一段：做完为止；先读再改；改完读回或跑一下核对；失败先读错误再换办法。
-  - 加一句（U13 第 2 条，接替 C8 删掉的研究复核）：「研究类回答只引用这一轮真正读过的来源，查不到的要明说」。要有一条测试：这句在系统提示里，研究复核的模块不再被 import。
+  - 加一句（U13 第 2 条，接替 C8 删掉的研究复核）：「研究类回答只引用这一轮真正读过的来源，查不到的要明说」。要有一条测试：这句在系统提示里。「研究复核的模块不再被 import」那半条归 C8（K5 计划 Q10）：K5 合并时 `tool_loop.py` 还在 import 它。
 - `server/orchestrator/promise_guard.py` 和 `arslan.py` 里调用它的那段（main 上 `:880-915` 一带）（U13 第 1 条，C7 的一部分）：
-  - 删掉「分身」那一档（`spawn_promise_re`、`intercept_spawn_name`、`turn_delegated` 那一支）：专家时代的东西，C7 第二步删掉分身以后它就碰不到了。零工具那一档（`correct_zero_tool`）不归 K5，随 C7 第二步删 `dispatcher.py` 的 PR 一起删。
+  - 删掉「分身」那一档（`spawn_promise_re`、`intercept_spawn_name`、`turn_delegated` 那一支）：专家时代的东西，C7 第二步删掉分身以后它就碰不到了。零工具那一档（`correct_zero_tool`）不归 K5，随 C7 第二步删 `dispatcher.py` 的 PR 一起删。K5 只改它里面的一行：`_zero_tool_fabrication`（`promise_guard.py:140`）里的 `find_promise(text, spawn_name, …)` 改成 `find_promise(text)`，因为 `find_promise` 不再收分身参数（K5 计划 Q8，PR 里写明）。
   - 改掉通用那一档的更正文字，两处都要改（②Main 审 #284 时指出）：重新生成更正时的提示词（`promise_guard.py:66-81`：`_TRUTH_STATEMENT`、`_CORRECTION_SYS`、`_correction_user`），以及兜底模板（`_fallback_template`）。今天写着「系统没有后台执行」和「直接点名（@分身名）」，两句都不对了：后台任务是有的（K4b 之后更常用），分身也没了。改成只说「这段回答是我自己写的，没有任务在后台跑」，并且只在这一轮确实没开后台任务、也没有后台任务在跑的时候出（今天的条件已经是这样，⓪Plan 在 main 上核过）。
   - 测试：更正文字里没有「后台执行」「分身」「@」；一个真的开了后台任务的回合，不出更正。
 - `server/orchestrator/tool_loop.py`
