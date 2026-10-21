@@ -151,7 +151,7 @@ _ASK = [
     # `rsync a host:/b` too (0.1.48's `\S+:)\b` wanted a word character after the colon).
     # A raw socket (nc, telnet…) sends whatever it is given: `nc mail.example.com 25` is an email. A
     # port check (`nc -z`, `-zv`) sends nothing.
-    ("remote-shell", _CMD + r"(?:ssh|ssh-copy-id|sshpass|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))"
+    ("remote-shell", _CMD + r"(?:ssh|ssh-copy-id|sshpass|autossh|mosh|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))"
      + _END
      + r"|" + _CMD
      + r"rsync\b[^\n]*\S:", "connects to another machine"),
@@ -246,13 +246,29 @@ class Assessment:
 # Programs that run the shell command they are given as one quoted argument, like `sh -c` (which
 # Hermes' variants already read): `watch 'rm -rf ~'`, `script -q /dev/null -c '…'`, `tmux new '…'`.
 # Their argument is read as a command too (②Main's review of S2a-2).
-_LAUNCHER_ARG = re.compile(
-    r"(?:^|[\n;&|(]\s*)(?:watch|script|tmux\s+(?:new(?:-session|-window)?|split-window|send-keys|respawn-pane)"
-    r"|screen)\b[^\n;&|'\"]*?\s(['\"])(.+?)(?<!\\)\1", re.S)
+_LAUNCHER = re.compile(
+    r"(?:^|[\n;&|(]\s*)(?:(?:npx|bunx|pnpm\s+dlx|yarn\s+dlx)\s+(?:-\S+\s+)*)?"
+    r"(?:watch|script|concurrently|parallel|tmux\s+(?:new(?:-session|-window)?|split-window|send-keys|respawn-pane)"
+    r"|screen)(?=\s)")
+_ARG_END = frozenset({";", "&&", "||", "|", "&", "|&", ";;"})
 
 
 def _launcher_args(text: str) -> tuple[str, ...]:
-    return tuple(match.group(2) for match in _LAUNCHER_ARG.finditer(text))
+    """Every quoted argument of a launcher, up to the end of its command (`concurrently 'a' 'b'` runs both)."""
+    out: list[str] = []
+    for match in _LAUNCHER.finditer(text):
+        rest = text[match.end():].split("\n", 1)[0]
+        lexer = shlex.shlex(rest, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        try:
+            for token in lexer:
+                if token in _ARG_END:
+                    break
+                if any(ch.isspace() for ch in token):
+                    out.append(token)          # it was quoted: a command line, not one word
+        except ValueError:
+            continue                           # unclosed quotes are `unreadable` already
+    return tuple(out)
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:
@@ -333,6 +349,8 @@ def _outside_target(word: str) -> bool:
         return False
     if word.startswith(("/", "~", "$")) or "$(" in word or "`" in word or "${" in word:
         return True
+    if "{" in word and "}" in word:
+        return True                     # a placeholder (`parallel 'rm {}'`): filled in from what it reads
     return ".." in word.replace("\\", "/").split("/")
 
 

