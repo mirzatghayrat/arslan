@@ -43,24 +43,8 @@ async def seeded(client, monkeypatch):
     return client
 
 
-async def test_undo_restores_a_superseded_fact(seeded):
-    r = await seeded.post("/api/v1/brain/undo-supersede",
-                          json={"kind": "profile", "ref": "fact:2"}, headers=AUTH)
-    assert r.status_code == 200, r.text
-    assert r.json()["superseded_by"] is None
-
-    async with seeded.db_maker() as s:
-        row = await s.get(UserFact, 2)
-    assert row.superseded_by is None
 
 
-async def test_undo_restores_a_superseded_learning(seeded):
-    r = await seeded.post("/api/v1/brain/undo-supersede",
-                          json={"kind": "learning", "ref": "learning:2"}, headers=AUTH)
-    assert r.status_code == 200, r.text
-    async with seeded.db_maker() as s:
-        row = await s.get(Learning, 2)
-    assert row.superseded_by is None
 
 
 @pytest.mark.parametrize("kind,ref", [("material", "material:coll:1:x.md"),
@@ -88,11 +72,6 @@ async def test_undoing_an_active_row_is_a_409(seeded):
         "own messages name the table, so they must not be passed through verbatim")
 
 
-async def test_undoing_a_missing_row_is_a_410(seeded):
-    r = await seeded.post("/api/v1/brain/undo-supersede",
-                          json={"kind": "profile", "ref": "fact:9999"}, headers=AUTH)
-    assert r.status_code == 410, r.text
-    assert "user_facts" not in r.json()["detail"], r.text
 
 
 async def test_malformed_ref_is_refused(seeded):

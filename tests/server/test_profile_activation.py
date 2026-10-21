@@ -350,7 +350,7 @@ def _restricted_app(profiles, monkeypatch):
 def test_restricted_trial_runs_storage_boot_but_exposes_only_authenticated_health(profiles, monkeypatch):
     from fastapi.testclient import TestClient
     import server.main as main
-    from server.services import scheduler, evolution_watcher, curation_loop, fact_classify
+    from server.services import scheduler, evolution_watcher, curation_loop
 
     app, active, operation = _restricted_app(profiles, monkeypatch)
     def forbidden(*args, **kwargs):
@@ -358,7 +358,6 @@ def test_restricted_trial_runs_storage_boot_but_exposes_only_authenticated_healt
     monkeypatch.setattr(main, "lifespan", forbidden)
     for module in (scheduler, evolution_watcher, curation_loop):
         monkeypatch.setattr(module, "start", forbidden)
-    monkeypatch.setattr(fact_classify, "schedule", forbidden)
     with TestClient(app) as client:
         path = "/api/v1/activation-trial/health"
         assert client.get(path).status_code == 401

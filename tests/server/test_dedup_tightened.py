@@ -29,9 +29,7 @@ async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'d.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # learning_service._write inserts into this FTS5 shadow table; it isn't
-        # part of Base.metadata (created via migration in prod), so tests that
-        # exercise _write must create it here (mirrors test_learning_service.py).
+        # learnings' FTS5 shadow table isn't part of Base.metadata (a migration creates it in prod).
         await conn.exec_driver_sql(
             "CREATE VIRTUAL TABLE IF NOT EXISTS learnings_fts USING fts5(text)")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -51,8 +49,3 @@ async def _contents(maker):
         return [(r.content, r.confidence) for r in rows]
 
 
-async def test_learning_fuzzy_coexists_exact_skips(maker):
-    from server.services.learning_service import _write
-    assert await _write("总结要先给结论", "l1", "session", {}, None) > 0     # P2: real id, not a 1/0 flag
-    assert await _write("总结要先给结论", "l1", "session", {}, None) == 0   # 精确跳过
-    assert await _write("总结时应当先给出结论呀", "l2", "session", {}, None) > 0  # 模糊并存

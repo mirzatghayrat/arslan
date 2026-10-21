@@ -69,23 +69,14 @@ async def remove_fact(fact_id: int, expected_version: int | None = None) -> Resp
 
 @router.post("/facts/dedup")
 async def dedup() -> dict:
-    """Explicit, destructive exact-normalized dedup backfill. Only reachable here —
-    never called on boot, on the write path, or from a timer."""
-    from server.services import fact_dedup
-
-    return {"deleted": await fact_dedup.dedup_facts()}
+    """Kept for the API's shape. Memory v2 never bulk-deletes history (it proposes conflicts), so nothing is
+    deleted. 0.1.63 C2a-2 removed the v1 backfill. DELETE-BY: v0.1.64, with the v1 tables (C7's third step)."""
+    return {"deleted": 0}
 
 
 @router.post("/facts/classify")
 async def classify() -> dict:
-    """Kick off a fire-and-forget backfill of category for all facts where it's
-    NULL. Single-flight (a second call while running is a no-op). Not wired into
-    any write path yet."""
-    from server.services import fact_classify
-    from server.services.memory_repository import is_active
-
-    if await is_active():
-        return {"started": False, "reason": "legacy_classification_disabled", "status": fact_classify.classify_status()}
-
-    fact_classify.schedule(fact_classify.classify_missing())
-    return {"started": True, "status": fact_classify.classify_status()}
+    """Kept for the API's shape. Background classification was v1-only (it had no cloud-memory consent), so it
+    never starts. 0.1.63 C2a-2 removed the classifier. DELETE-BY: v0.1.64, with the v1 tables (C7's third step)."""
+    return {"started": False, "reason": "legacy_classification_disabled",
+            "status": {"running": False, "done": 0, "total": 0, "error": None}}

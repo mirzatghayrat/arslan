@@ -45,7 +45,6 @@ NOT_COVERED = [
     "synthetic_corpus",
     "spawn_drafter",
     "equipment_service",
-    "fact_classify",
     "ingest",
     "tool_intent",
     "mcp_suggest",
