@@ -50,7 +50,9 @@ ARSLAN_API = os.environ.get("ARSLAN_API", "http://127.0.0.1:8762/api/v1")
 ARSLAN_LEGACY_API = os.environ.get("ARSLAN_LEGACY_API", "http://127.0.0.1:8763/api/v1")
 HERMES = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))
 BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
-TIMEOUT = 15 * 60
+# The process limit sits a little above the driver's own (arslan_driver.RUN_TIMEOUT_S), so the driver records
+# "timeout" itself instead of being killed first.
+TIMEOUT = 52 * 60
 CHECKS = {
     "T1": lambda run, reply, ctx: check_t1.check(ctx["list"], reply,
                                                  started=datetime.datetime.fromtimestamp(ctx["started"])),
