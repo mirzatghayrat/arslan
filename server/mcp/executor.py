@@ -272,10 +272,7 @@ class MCPProxyExecutor:
         else:
             req = permissions.Request(kind="mcp_tool", target=self.key, title=title, detail=detail,
                                       extra=extra, frame=frame)
-        if permissions.current_asker() is None:
-            decision = await permissions.refuse_unattended(req, ctx)
-        else:
-            decision = await permissions.decide(req, ctx)
+        decision = await permissions.decide(req, ctx)        # with nobody to ask: refused by policy (U14 a)
         if decision.allowed:
             return None
         code = {"user": "declined", "expired": "no_answer", "policy": "no_one_to_ask"}.get(decision.by, "not_allowed")

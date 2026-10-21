@@ -83,13 +83,11 @@ ALWAYS_KEY = "always"
 
 _EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is NOT a refusal. Don't "
             "retry it in this turn. Finish what you can and tell the user what is waiting.")
-_NO_SURFACE = ("{title} needs the user's OK, and this run has nobody to ask (it runs on its "
-               "own). It was not done. Tell the user, so they can allow it for next time.")
-# S1 (U14 a): what a run with nobody to ask is told when it reaches a step that needs an OK. No earlier
-# answer counts there, so it is not told an "Always" would help (⓪Plan, Q2).
-_UNATTENDED = ("{title} needs the user's OK, and a scheduled run never takes such a step: nobody can be "
-               "asked, and no earlier answer counts here. It was not done. Tell the user; they can do it "
-               "in a chat.")
+# S1 (U14 a): what a run with nobody to ask (a scheduled run) is told when it reaches a step that needs an
+# OK. No earlier answer counts there, so it is not told that an "Always" would help (⓪Plan, Q2).
+_UNATTENDED = ("{title} needs the user's OK, and this run has nobody to ask: a scheduled run never takes "
+               "such a step, and no earlier answer counts here. It was not done. Tell the user; they can do "
+               "it in a chat.")
 
 
 @dataclass(frozen=True)
@@ -176,24 +174,14 @@ def options_for(req: Request) -> list[str]:
     return opts
 
 
-async def refuse_unattended(req: Request, ctx: Context) -> Decision:
-    """S1 (U14 a): the answer for a run with nobody to ask (a scheduled run binds no card surface):
-    refused by policy, with its ledger row, and no rule or grant read. No "Always" set is recorded, so
-    the Inbox never offers an "Always" that would read as fixing the scheduled run (⓪Plan, Q2)."""
-    _forget_last()
-    _check(req)
-    ctx = _filled(ctx)
-    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
-    await _record(req, ctx, await _mode(), decision)
-    return _done(decision)
-
-
 async def decide(req: Request, ctx: Context) -> Decision:
     _forget_last()
     _check(req)
     ctx = _filled(ctx)
     mode = await _mode()
-    standing = await _standing(req, ctx, mode)
+    # S1 (U14 a): with nobody to ask (a scheduled run), nothing standing answers: an "Always" rule or a
+    # grant let a scheduled run act with nobody there. `_ask` then refuses by policy.
+    standing = await _standing(req, ctx, mode) if _ASKER.get() is not None else None
     if standing is not None:
         return _done(standing)
     return _done(await _ask(req, ctx, mode))
@@ -215,7 +203,9 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
         raise ValueError("decide_many needs one kind")
     ctx = _filled(ctx)
     mode = await _mode()
-    out: list[Decision | None] = [await _standing(r, ctx, mode) for r in reqs]
+    # S1 (U14 a): as in `decide`, nothing standing answers when nobody can be asked.
+    unattended = _ASKER.get() is None
+    out: list[Decision | None] = [None if unattended else await _standing(r, ctx, mode) for r in reqs]
     shown = [r for r, d in zip(reqs, out) if d is None]
     decided = None
     if shown:
@@ -357,11 +347,10 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     asker = _ASKER.get()
     opts = options_for(req)
     if asker is None:
-        decision = Decision(False, "policy", model_text=_NO_SURFACE.format(title=req.title))
-        # What "Always" on this card would have stored, for the Inbox's "Always allow" (§A4);
-        # nothing when the card would not have offered it.
-        await _record(req, ctx, mode, decision,
-                      always=_always_set(req) if "always" in opts else None)
+        # S1 (U14 a, ⓪Plan Q2): refused by policy, and no "Always" set is recorded: the Inbox never offers
+        # an "Always" that would read as fixing the scheduled run, which reads no rule.
+        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+        await _record(req, ctx, mode, decision)
         return decision
     base = dict(req.frame) if req.frame else _generic_frame(req)
     call_id = base.get("call_id") or uuid.uuid4().hex

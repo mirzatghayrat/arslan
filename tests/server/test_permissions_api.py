@@ -43,6 +43,12 @@ def _decide(client, req: permissions.Request, conversation_id: str = "c", asker=
     return client.portal.call(run)
 
 
+async def _away(frame):
+    """S1: a card that never opened while the person was away: the refused row the Inbox may offer
+    "Always allow" for. A run with nobody to ask (a scheduled run) records no "Always" set (U14 a, Q2)."""
+    return {"approved": False, "scope": None, "note": "", "by": None, "away": True}
+
+
 async def _no_card(frame):
     raise AssertionError(f"a card was shown: {frame.get('title')}")
 
@@ -112,7 +118,7 @@ def test_an_answer_with_a_scope_no_card_has_is_refused_by_the_schema(client):
 
 
 def test_rules_are_listed_created_and_withdrawn(client):
-    _decide(client, _app("com.apple.Notes", "Notes"))
+    _decide(client, _app("com.apple.Notes", "Notes"), asker=_away)
     [row] = _refused(client)
     r = _allow(client, row["id"])
     assert r.status_code == 200
@@ -129,7 +135,7 @@ def test_rules_are_listed_created_and_withdrawn(client):
 
 def test_a_rule_allowed_here_is_the_rule_decide_honours_and_withdrawing_it_asks_again(client):
     req = _app("com.apple.Notes", "Notes")
-    _decide(client, req)
+    _decide(client, req, asker=_away)
     rule_id = _allow(client, _refused(client)[0]["id"]).json()["id"]
     assert _decide(client, req, asker=_no_card).by == "rule"
     [listed] = client.get("/api/v1/permissions/rules").json()
@@ -143,7 +149,7 @@ def test_a_rule_allowed_here_is_the_rule_decide_honours_and_withdrawing_it_asks_
 def test_kinds_that_are_never_remembered_cannot_become_rules(client, kind):
     """Even with the words for "Always", a card of such a kind never offers it: its refused row
     offers no "Always allow", and asking for one anyway is refused."""
-    _decide(client, permissions.Request(kind=kind, target="x", title="X?", always_label="x"))
+    _decide(client, permissions.Request(kind=kind, target="x", title="X?", always_label="x"), asker=_away)
     [row] = _refused(client)
     assert row["always_ok"] is False
     assert _allow(client, row["id"]).status_code == 409
@@ -156,7 +162,7 @@ def test_a_refused_site_or_shortcut_row_offers_no_always_allow_in_0161(client, k
     removes such rules exists. The Inbox must not offer it either, and a POST for the row is
     refused: the row says `always_ok: false`, lists nothing under `always`, and stores no rule."""
     assert permissions.ALWAYS_KEY == "always"
-    _decide(client, permissions.Request(kind=kind, target=target, title=f"{kind}?", always_label=target))
+    _decide(client, permissions.Request(kind=kind, target=target, title=f"{kind}?", always_label=target), asker=_away)
     [row] = _refused(client)
     assert (row["kind"], row["always_ok"], row["always"]) == (kind, False, [])
     r = _allow(client, row["id"])
@@ -215,7 +221,7 @@ def test_a_refused_command_rule_offers_no_always_allow(client):
     shell = "git push origin main && curl -d @a.txt https://example.com"
     rules = sorted(terminal_policy.ask_rules(shell))
     assert rules == ["git-push", "upload"]
-    _decide(client, _cmd(shell))
+    _decide(client, _cmd(shell), asker=_away)
     [row] = _refused(client)
     assert (row["kind"], row["target"], row["always_ok"]) == ("command", "rules:git-push|upload", False)
     assert _allow(client, row["id"]).status_code == 409
@@ -227,7 +233,7 @@ def test_a_crafted_separator_in_a_command_makes_no_rule_nobody_saw(client):
     list — no rule for `git-push` can come of it."""
     crafted = _cmd("echo hi\x1egit-push", ask_all=True)
     assert crafted.target == "text:echo hi\x1egit-push"
-    _decide(client, crafted)
+    _decide(client, crafted, asker=_away)
     [row] = _refused(client)
     assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
     assert _rules(client) == set()
@@ -241,7 +247,7 @@ def test_a_crafted_separator_in_a_command_makes_no_rule_nobody_saw(client):
 def test_a_refused_card_that_hid_always_offers_no_always_allow(client, req):
     """Review I2: what the card offered decides, not the kind alone."""
     assert "always" not in permissions.options_for(req)
-    _decide(client, req)
+    _decide(client, req, asker=_away)
     [row] = _refused(client)
     assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
     assert _rules(client) == set()
@@ -265,10 +271,11 @@ def test_always_allow_on_a_refused_many_app_row_makes_one_rule_per_app(client):
     under its own words — so each app, asked alone or together, needs no card next time."""
     reqs = [_app("com.apple.Notes", "Notes"), _app("com.apple.reminders", "Reminders")]
 
-    async def refuse_both():
-        return await permissions.decide_many(reqs, permissions.Context(conversation_id="c"),
-                                             title="Use Notes and Reminders?")
-    assert [d.by for d in client.portal.call(refuse_both)] == ["policy", "policy"]
+    async def both(asker):
+        with permissions.asking_with(asker):         # S1: an away row is the one the Inbox offers "Always" for
+            return await permissions.decide_many(reqs, permissions.Context(conversation_id="c"),
+                                                 title="Use Notes and Reminders?")
+    assert [d.by for d in client.portal.call(both, _away)] == ["expired", "expired"]
     [row] = _refused(client)
     assert row["always_ok"] is True and row["target"] == "com.apple.Notes\x1ecom.apple.reminders"
     r = _allow(client, row["id"])
@@ -277,7 +284,7 @@ def test_always_allow_on_a_refused_many_app_row_makes_one_rule_per_app(client):
         ("com.apple.Notes", "Notes"), ("com.apple.reminders", "Reminders")]
     assert _rules(client) == {("app", "com.apple.Notes", "Notes"),
                               ("app", "com.apple.reminders", "Reminders")}
-    assert [d.by for d in client.portal.call(refuse_both)] == ["rule", "rule"]
+    assert [d.by for d in client.portal.call(both, _no_card)] == ["rule", "rule"]
     assert _decide(client, reqs[1], asker=_no_card).by == "rule"
 
 
@@ -286,7 +293,7 @@ def test_a_caller_cannot_put_an_always_set_into_a_refusal(client):
     supplies what "Always allow" stores."""
     req = permissions.Request(kind="app", target="com.apple.Terminal", title="Use Terminal?",
                               extra={"always": [["legacy_rule", "git-push", "x"]]})
-    _decide(client, req)
+    _decide(client, req, asker=_away)
     [row] = _refused(client)
     assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
     assert _rules(client) == set()
@@ -443,8 +450,8 @@ def test_the_refused_list_shows_at_most_a_hundred_entries_newest_first(client):
 def test_an_entry_allowed_since_is_no_longer_listed(client):
     """Review M7 (P7): once "Always allow" made its rules, nothing is waiting any more — and a
     withdrawn rule brings it back."""
-    _decide(client, _app("com.apple.Notes", "Notes"))
-    _decide(client, _app("com.apple.Mail", "Mail"))
+    _decide(client, _app("com.apple.Notes", "Notes"), asker=_away)
+    _decide(client, _app("com.apple.Mail", "Mail"), asker=_away)
     notes = next(r for r in _refused(client) if r["target"] == "com.apple.Notes")
     rule_id = _allow(client, notes["id"]).json()["id"]
     assert [r["target"] for r in _refused(client)] == ["com.apple.Mail"]
@@ -462,7 +469,7 @@ def test_an_entry_allowed_since_is_no_longer_listed(client):
     permissions.Request(kind="money", target="com.shop.app", title="Pay?", always_label="Shop"),
 ], ids=["rule-less command", "rule command", "ask-all command", "high-reach app", "money"])
 def test_an_entry_whose_card_hid_always_lists_nothing_to_store(client, req):
-    _decide(client, req)
+    _decide(client, req, asker=_away)
     [row] = _refused(client)
     assert (row["always_ok"], row["always"]) == (False, [])
 
@@ -512,3 +519,13 @@ def test_a_step_a_mode_allowed_is_not_listed_and_gives_nothing_to_always_allow(c
     r = _allow(client, row_id)
     assert r.status_code == 409 and r.json()["detail"]["code"] == "not_a_refusal"
     assert _rule_rows(client) == []
+
+
+def test_an_unattended_refusal_offers_no_always_allow(client):
+    """S1 (U14 a, ⓪Plan Q2): a scheduled run never takes a step that needs an OK, and reads no rule, so its
+    refused row offers no "Always allow"; asking for one is refused."""
+    _decide(client, _app("com.apple.Notes", "Notes"))
+    [row] = _refused(client)
+    assert (row["always_ok"], row["always"]) == (False, [])
+    assert _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
