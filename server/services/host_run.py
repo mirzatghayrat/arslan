@@ -13,7 +13,7 @@ from dataclasses import replace
 from arslan.llm import usage_sink
 from arslan.execution_budget import governed
 from server.orchestrator import run_trace
-from server.services import execution_context, run_recorder, run_registry
+from server.services import checkpoints, execution_context, run_recorder, run_registry
 
 
 @governed
@@ -78,6 +78,9 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
                 error = str(exc)
                 await finalize("".join(chunks))
                 raise
+            finally:
+                # 0.1.63 S3: how the run left its folder, however it ended, while its id is bound.
+                await checkpoints.finish(recorder.run_id)
 
     task = asyncio.create_task(run())
     # A background job (announce=False) is not the chat's turn: never replayed on reconnect.

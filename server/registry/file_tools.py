@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 
 from server.db import session as db_session
-from server.services import settings_service
+from server.services import checkpoints, execution_context, settings_service
 from server.services.workspace_paths import (
     PathEscape,
     SecretFile,
@@ -297,6 +297,8 @@ class WriteFileExecutor:
         root, path, err = await _resolved(args, for_write=True, make_parents=True)
         if err:
             return err
+        # 0.1.63 S3: the run's first change saves the folder first, before any folder is made.
+        await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -346,6 +348,8 @@ class EditFileExecutor:
                     "error": f"'old' appears {hits} times in {_rel(path, root)}; "
                              "give a longer, unique snippet so the right one is edited"}
         updated = text.replace(old, new, 1)
+        # 0.1.63 S3: saved once the edit is accepted; a refused one changed nothing.
+        await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         artifact = _snapshot_write(root, path, updated)
         try:
             _write_inside(root, path, updated)
