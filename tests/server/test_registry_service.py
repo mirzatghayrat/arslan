@@ -51,13 +51,13 @@ async def test_assert_assignable_rejects_orchestrator_and_unknown(seeded):
     from server.registry import service
 
     await service.assert_assignable("toolset", "web_search_scraping")  # ok
-    await service.assert_assignable("skill", "baoyu-infographic")      # ok
+    await service.assert_assignable("skill", "designed-html-report")   # ok
     with pytest.raises(service.NotAssignableError):
         await service.assert_assignable("toolset", "code_execution")
     with pytest.raises(service.NotAssignableError):
         await service.assert_assignable("toolset", "terminal_processes")
     with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("skill", "claude-code")
+        await service.assert_assignable("skill", "claude-code")   # retired (C9): unknown now
     with pytest.raises(service.NotAssignableError):
         await service.assert_assignable("toolset", "no-such-key")
     with pytest.raises(service.NotAssignableError):

@@ -17,7 +17,7 @@ async def test_seeded_skill_body_reaches_spawn(tmp_path, monkeypatch):
     async with m() as db:
         await seed_registry_with(db)
         db.add(Spawn(id=5, name="Debugger", domain_category="software-development", system_prompt="sp"))
-        db.add(SpawnCapability(spawn_id=5, kind="skill", ref_key="systematic-debugging"))
+        db.add(SpawnCapability(spawn_id=5, kind="skill", ref_key="designed-html-report"))
         await db.commit()
         spawn = await db.get(Spawn, 5)
     system, _ = await build_spawn_system(spawn, retrieval_query="bug", current_turn=1)

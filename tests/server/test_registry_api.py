@@ -17,12 +17,10 @@ async def test_registry_lists_catalog_with_assignable_flags(client):
     assert toolsets["web_search_scraping"]["description_key"] == "catalogUI.web_search_scraping.description"
     assert toolsets["session_search"]["assignable"] is False        # no wired tool yet
     assert toolsets["session_search"]["tier"] == "safe"             # listed, transparent
-    assert skills["claude-code"]["assignable"] is False             # orchestrator tier
-    assert skills["claude-code"]["tier"] == "orchestrator"          # listed, transparent
-    assert skills["baoyu-infographic"]["assignable"] is True
-    assert skills["baoyu-infographic"]["name"] == "baoyu-infographic"
-    assert skills["baoyu-infographic"]["name_key"] == "catalogUI.skills.baoyu-infographic.name"
-    assert skills["baoyu-infographic"]["description_key"] == "catalogUI.skills.baoyu-infographic.description"
+    assert skills["designed-html-report"]["assignable"] is True
+    assert skills["designed-html-report"]["name"] == "designed-html-report"
+    assert skills["designed-html-report"]["name_key"] == "catalogUI.skills.designed-html-report.name"
+    assert skills["designed-html-report"]["description_key"] == "catalogUI.skills.designed-html-report.description"
     ws_tools = {t["key"]: t for t in toolsets["file_operations"]["tools"]}
     assert ws_tools["read_file"]["tier"] == "safe"
     assert ws_tools["write_file"]["tier"] == "orchestrator"

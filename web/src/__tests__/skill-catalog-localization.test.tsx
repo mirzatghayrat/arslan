@@ -30,26 +30,26 @@ it.each(SUPPORTED_LANGUAGES)("renders and searches every builtin in %s without c
   expect(screen.getByText("My unchanged title")).toBeInTheDocument();
   expect(screen.getByText("My unchanged explanation")).toBeInTheDocument();
   expect(screen.getByText("My category (1)")).toBeInTheDocument();
-  expect(screen.getByText(`${skillCategoryMessages[language].creative} (55)`)).toBeInTheDocument();
+  expect(screen.getByText(`${skillCategoryMessages[language].creative} (2)`)).toBeInTheDocument();
   const search = screen.getByRole("textbox");
-  fireEvent.change(search, { target: { value: copy["domain-modeling"].description } });
-  expect(screen.getByText(copy["domain-modeling"].name)).toBeInTheDocument();
+  fireEvent.change(search, { target: { value: copy["designed-html-report"].description } });
+  expect(screen.getByText(copy["designed-html-report"].name)).toBeInTheDocument();
   expect(screen.queryByText(copy["skill-creator"].name)).not.toBeInTheDocument();
-  fireEvent.change(search, { target: { value: "domain-modeling" } });
-  expect(screen.getByText(copy["domain-modeling"].name)).toBeInTheDocument();
+  fireEvent.change(search, { target: { value: "designed-html-report" } });
+  expect(screen.getByText(copy["designed-html-report"].name)).toBeInTheDocument();
 });
 
 function EquippedLabel() {
   const label = useCapabilityLabel();
-  return <span>{label("domain-modeling")}</span>;
+  return <span>{label("designed-html-report")}</span>;
 }
 
 it("equipped labels update in place after a language change", async () => {
   await i18n.changeLanguage("en");
   await useRegistryStore.getState().loadRegistry();
   render(<EquippedLabel />);
-  expect(screen.getByText(skillCatalogMessages.en["domain-modeling"].name)).toBeInTheDocument();
+  expect(screen.getByText(skillCatalogMessages.en["designed-html-report"].name)).toBeInTheDocument();
   await act(async () => { await i18n.changeLanguage("zh"); });
-  expect(screen.getByText(skillCatalogMessages.zh["domain-modeling"].name)).toBeInTheDocument();
+  expect(screen.getByText(skillCatalogMessages.zh["designed-html-report"].name)).toBeInTheDocument();
   expect(api.getRegistry).toHaveBeenCalledTimes(1);
 });

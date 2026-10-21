@@ -10,7 +10,8 @@ from arslan.models import (
     ToolSpec,
 )
 from arslan.spawn.manager import SpawnManager
-from arslan.spawn.skillpack import SkillPack, validate_skillpack
+from arslan.skills.skillpack import SkillPack
+from arslan.spawn.skillpack import validate_skillpack
 
 
 @pytest.fixture

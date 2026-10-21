@@ -184,7 +184,7 @@ embeddings = [
 # The wheel content is pinned explicitly so the bundled non-.py package data can
 # never be silently dropped by a future default change. The ``arslan`` package
 # carries data files loaded at runtime via ``Path(__file__).parent``:
-#   - seed skill-packs        arslan/spawn/seeds/        (SKILL.md + scripts/)
+#   - bundled skills          arslan/skills/bundled/     (SKILL.md + scripts/)
 #   - scaffold templates      arslan/spawn/scaffold/     (incl. skillpack/*.j2)
 #   - LLM capability profiles arslan/llm/profiles/*.yaml
 #   - official templates      arslan/templates/official/

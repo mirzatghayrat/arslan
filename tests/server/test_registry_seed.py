@@ -33,7 +33,7 @@ async def test_seed_counts_and_exclusions(maker):
         tools = (await s.execute(select(Tool))).scalars().all()
 
     assert len(toolsets) == 12  # Includes host-only recovery and temporary collaboration.
-    assert len(skills) == 55
+    assert len(skills) == 2   # C9: designed-html-report and skill-creator
     assert EXCLUDED.isdisjoint({t.key for t in toolsets})
     assert EXCLUDED.isdisjoint({sk.key for sk in skills})
     assert all(t.tier in ("safe", "orchestrator") for t in toolsets + tools)
@@ -55,10 +55,9 @@ async def test_seed_core_wiring_and_splits(maker):
         assert (await s.get(Tool, "read_file")).tier == "safe"
         assert (await s.get(Tool, "write_file")).tier == "orchestrator"
         assert (await s.get(Tool, "patch")).tier == "orchestrator"
-        # coding-delegation skills: registered, orchestrator-only (decision §9)
+        # the coding-delegation catalog entries are retired with the other bundled skills (C9)
         for key in ("claude-code", "codex", "opencode"):
-            sk = await s.get(SkillPack, key)
-            assert sk is not None and sk.tier == "orchestrator"
+            assert await s.get(SkillPack, key) is None
 
 
 @pytest.mark.asyncio

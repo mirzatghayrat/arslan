@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from arslan.spawn.skillpack import REQUIRED_SECTIONS, has_body_section
+from arslan.skills.skillpack import REQUIRED_SECTIONS, has_body_section
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.skill_suggest import SKILL_SUGGEST_SYSTEM

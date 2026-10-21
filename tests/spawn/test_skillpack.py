@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from arslan.spawn.skillpack import CredentialSpec, SkillPack
+from arslan.skills.skillpack import CredentialSpec, SkillPack
 
 
 VALID_SKILL_MD = """\

@@ -26,7 +26,7 @@ async def maker(tmp_path, monkeypatch):
         s.add(Spawn(id=9, name="artist", domain_category="creative",
                     system_prompt="You are an image artist."))
         s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
-        s.add(SpawnCapability(spawn_id=7, kind="skill", ref_key="baoyu-infographic"))
+        s.add(SpawnCapability(spawn_id=7, kind="skill", ref_key="designed-html-report"))
         s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="session_search"))
         await s.commit()
     return m
@@ -56,7 +56,7 @@ async def test_equipped_spawn_system_lists_equipment(maker, monkeypatch):
     await dispatcher.dispatch("main", spawn_id=7, task_brief="do X")
     s = captured["system"]
     assert "web_search" in s and "web_extract" in s
-    assert "baoyu-infographic" in s
+    assert "designed-html-report" in s
     assert "NO other tools" in s
     assert "escalate" in s.lower()
 

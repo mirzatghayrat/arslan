@@ -1,7 +1,7 @@
 """The English UI must not require Chinese syntax; old packs stay readable."""
 import pytest
 
-from arslan.spawn.skillpack import REQUIRED_SECTIONS, SkillPack, has_body_section
+from arslan.skills.skillpack import REQUIRED_SECTIONS, SkillPack, has_body_section
 from server.services.skill_suggest import has_required_sections
 
 

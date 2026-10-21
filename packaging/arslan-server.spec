@@ -90,16 +90,15 @@ if sys.platform == "darwin":
 for pkg in ("arslan", "server"):
     datas += collect_data_files(pkg, include_py_files=False)
 
-# The seed skill-packs again, this time WITH their .py files. A skill-pack's
-# scripts/ directory is DATA that a skill executes as a subprocess, not code
-# this program imports — collect_data_files(include_py_files=False) drops it,
-# and collect_submodules does not pick it up either because it is not an
-# importable module. pyproject.toml:114 spells out that a seed is "SKILL.md +
-# scripts/". Staging the tree wholesale is the only way to get both.
-SEEDS = os.path.join(ROOT, "arslan", "spawn", "seeds")
+# The bundled skills again, this time WITH any .py files. A skill's scripts/ directory
+# is DATA that a skill executes as a subprocess, not code this program imports —
+# collect_data_files(include_py_files=False) drops it, and collect_submodules does not
+# pick it up either because it is not an importable module. Staging the tree wholesale
+# is the only way to get both. C9 (v0.1.63): moved from arslan/spawn/seeds.
+SEEDS = os.path.join(ROOT, "arslan", "skills", "bundled")
 if not os.path.isdir(SEEDS):
-    raise SystemExit(f"seed skill-packs missing at {SEEDS} — the app would seed no spawns")
-datas += [(SEEDS, "arslan/spawn/seeds")]
+    raise SystemExit(f"bundled skills missing at {SEEDS} — the app would ship no skills")
+datas += [(SEEDS, "arslan/skills/bundled")]
 
 # Dynamically-resolved packages that static analysis cannot see:
 #   uvicorn      — loads its protocol/lifespan implementations by name
