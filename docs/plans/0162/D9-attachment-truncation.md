@@ -20,7 +20,7 @@
   - 网页（`web/src/components/ComposerAttach.tsx`）也一样。
 - `server/orchestrator/arslan.py:366-367` 把它拼成「[Attached material]」交给模型，没有任何截断说明。模型以为前 12,000 字就是全文。
 - 手机的原件其实已经存了（`/api/v1/phone/inbox` → `<工作文件夹>/Inbox/iPhone/<日期>/<文件名>`，`server/api/phone.py:235-237`）。Bridge 也在消息里写了一行「Attached from iPhone: 名字 → 路径」（`ConversationLinks.swift:330`）。所以写 notes.md 时，模型自己用文件工具打开原件，读到了全文。
-- 附件文字只放进这一轮的请求，不存进对话历史（`arslan.py` 存的是 `persisted_user_text(user_message, images)`，不含附件文字）。所以调高上限，只多花这一轮的钱。
+- 附件文字不存进对话历史：存的用户消息是 `persisted_user_text(user_message, images)`（`arslan.py:382-393`、`:412-413`），只有你打的话和图片的占位名；存的回答是回答加工具摘要（`:939`）。但在这一轮里，它是当前请求的一部分，**这一轮的每一步请求都带着它**（第二步起走提示缓存）。
 
 ## 改哪些文件（只改服务端，不改 Bridge）
 
@@ -54,5 +54,5 @@
 
 ## 风险与回退
 
-- **风险：** 40,000 字的中文大约是 40,000 token，这一轮的请求会变大。K4a 的美元和 token 上限照管；附件文字不进历史，所以只影响这一轮。
+- **成本（PR 里写明，②Main 审 #299 时提出）：** 40,000 字的中文大约是 40,000 token，英文大约 10,000 token。这一轮每一步都带着它：第一步按未命中算，之后的步骤走缓存（DeepSeek、Claude 缓存读约是原价的 1/10）。下一轮起不再带，因为它不进历史。K4a 的美元和 token 上限照管。PR 里用一个 25 页的 PDF 估一次多花多少。
 - **回退：** revert；或者用环境变量把上限调回 12,000。
