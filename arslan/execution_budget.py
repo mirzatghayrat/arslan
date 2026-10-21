@@ -196,7 +196,11 @@ class Budget:
         ) or (self.usd_cap is not None and self.usd >= self.usd_cap / HARD_OVER_SOFT)
 
     def remaining_seconds(self) -> float:
-        return max(0.0, self.limits.wall_seconds - (time.monotonic() - self.started))
+        return max(0.0, self.limits.wall_seconds - self.elapsed())
+
+    def elapsed(self) -> float:
+        """Seconds of the run's own time: a card's wait (`paused`) moves `started` forward."""
+        return time.monotonic() - self.started
 
     def stop(self, reason: str):
         self.stop_reason = self.stop_reason or reason

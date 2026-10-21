@@ -850,6 +850,17 @@ async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
         pass
 
 
+#: 0.1.63 K4b (decision D4, ⓪Plan Q1 = A): a chat turn this long (its own time: a card's wait doesn't
+#: count) is told once, in its status block, that it may continue the rest as background work, and the
+#: user's reply gets one `note` line. A suggestion, never forced. No setting: nothing interrupts the user,
+#: so the card's "can be switched off" was dropped with that decision.
+LONG_TURN_S = 600
+_LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes. If what remains is long and "
+                   "doesn't need the user meanwhile, you may continue it as background work: call "
+                   "start_background_work with a goal that says what is already done in this turn and what "
+                   "remains, then tell the user. Otherwise keep going here.")
+
+
 #: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
 #: call under the run's limits (K4a), and K4a's tool-call limit and dollar cap bound a web-heavy turn.
 #: What stays is the eval/replay allowance below. The tools it covers: capping web_extract alone
@@ -2546,6 +2557,7 @@ async def _run_native(
     # the second refused call the next step is text only (the same table, tool_choice
     # none), so a model that keeps reaching for research still delivers.
     wrap_refused = 0
+    long_turn_told = False
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -2609,6 +2621,15 @@ async def _run_native(
                          "produce the complete deliverable the user asked for (save it if a file was asked for), "
                          "clearly marking anything you could not verify. Then give the final answer."
                          + allowed_note + offline_note)
+        # K4b: once a turn, only where start_background_work is offered (never inside a job), and only in
+        # the status block, so the system text and the tools (K3's cached prefix) stay as they are.
+        if (not long_turn_told and not forced and not wrap_up and "start_background_work" in wired_keys
+                and budget.elapsed() >= LONG_TURN_S):
+            long_turn_told = True
+            notes.append(_LONG_TURN_NOTE)
+            from server.services import runtime_messages
+            emit({"type": "note", "text": runtime_messages.render(
+                "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
