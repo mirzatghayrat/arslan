@@ -30,6 +30,9 @@ saves the working folder first, once; the earliest copy is the one an undo goes 
   not at all. Later runs on the same folder are undone first, newest first. Refused while a run is
   changing the folder, for a run that never finished, and a second time. Nested repositories
   (`sub/.git`) go back file by file, like any folder.
+- **How much, how long:** what all checkpoints hold apart from the originals, measured when each run
+  ends, stays under QUOTA_BYTES (oldest out first); older than KEEP_S goes (checked at most hourly).
+  Never a run still going, nor the one that just ended. `summary` is what the API shows.
 """
 from __future__ import annotations
 
@@ -48,6 +51,7 @@ import stat
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -61,6 +65,11 @@ MIN_FREE = 5 * 1024 ** 3
 #: Without clonefile (Linux CI, a non-APFS volume) a file is copied only up to this size. DELETE-BY: when
 #: CI no longer runs these tests on Linux and Arslan no longer supports non-APFS volumes (card S3).
 COPY_MAX = 50 * 1024 ** 2
+#: What all checkpoints hold apart from the originals stays under this; the oldest go first.
+QUOTA_BYTES = 10 * 1024 ** 3
+KEEP_S = 7 * 24 * 3600                 # a checkpoint older than this goes ...
+TIDY_EVERY_S = 3600                    # ... checked at most this often (permission_store._prune's way)
+_last_tidy = {"at": 0.0}
 _CLONE_NOFOLLOW = 0x0001
 _TM_EXCLUDE = b"com.apple.metadata:com_apple_backup_excludeItem"
 
@@ -114,6 +123,7 @@ def _reset_for_tests() -> None:
     _locks.clear()
     _touching.clear()
     _live.clear()
+    _last_tidy["at"] = 0.0
 
 
 def _make_root() -> None:
@@ -285,9 +295,9 @@ def _ensure_sync(run_id: int, roots: list[Path], written: Path | None = None) ->
     if data is None:
         from server.services import personal_context
         ctx = personal_context.current()
+        _live.add(run_id)  # first: _tidy never removes a run that is going
         shutil.rmtree(_run_dir(run_id), ignore_errors=True)  # an earlier run's, if any: not this one's
         _run_dir(run_id).mkdir(parents=True, exist_ok=True)
-        _live.add(run_id)
         data = {"run_id": run_id, "created_at": time.time(), "roots": [], "overlap": [],
                 "conversation_id": ctx.conversation_id if ctx else None,
                 # The turn's user message (its row has no run id): S3b's conversation restore starts there.
@@ -407,13 +417,81 @@ async def finish(run_id: int | None) -> None:
         for entry in data["roots"]:
             if entry["skipped"] is None:
                 _finish_root(int(run_id), entry)
+        data["own_bytes"] = _own_bytes(int(run_id), data)
         _save(int(run_id), data)
+        _tidy(int(run_id))
     try:
         await asyncio.to_thread(work)
     except Exception:  # noqa: BLE001 — a checkpoint never fails the run it belongs to
         logger.warning("checkpoints: finishing run %s failed", run_id, exc_info=True)
     _locks.pop(int(run_id), None)
 
+
+
+def _own_bytes(run_id: int, data: dict) -> int:
+    """What a checkpoint holds apart from the originals, when its run ends: a plain copy all of it; a
+    clone the files whose original the run changed or deleted (they no longer share blocks). Changes
+    made after the run are not counted."""
+    total = 0
+    for entry in data["roots"]:
+        if entry["skipped"] is not None:
+            continue
+        clone = _run_dir(run_id) / entry["clone"]
+        if entry["method"] == "copy":
+            rels = [rel for rel, _, _ in _walk(clone, [], set(), [])] + entry["written"]
+        else:
+            rels = [rel for rel, left in entry["finished"].items() if left["saved"] is not None]
+        for rel in rels:
+            with contextlib.suppress(OSError):
+                total += os.lstat(clone / rel).st_size
+    return total
+
+
+def _tidy(newest: int) -> None:
+    """Older than KEEP_S out (at most every TIDY_EVERY_S), then the oldest out while over QUOTA_BYTES.
+    Never a run still going, nor `newest`: the turn that just ended can always be undone."""
+    ids = sorted(int(p.name) for p in root_dir().iterdir() if p.name.isdigit())
+    keep = _live | {newest}
+    now = time.time()
+    if now - _last_tidy["at"] >= TIDY_EVERY_S:
+        _last_tidy["at"] = now
+        for rid in ids:
+            data = manifest(rid)
+            if rid not in keep and (data is None or data["created_at"] < now - KEEP_S):
+                shutil.rmtree(_run_dir(rid), ignore_errors=True)
+    sizes = {rid: data.get("own_bytes", 0) for rid in ids if (data := manifest(rid)) is not None}
+    total = sum(sizes.values())
+    for rid in sorted(sizes):
+        if total <= QUOTA_BYTES:
+            break
+        if rid not in keep:
+            shutil.rmtree(_run_dir(rid), ignore_errors=True)
+            total -= sizes[rid]
+
+
+def summary(run_id: int, not_before: float) -> dict:
+    """What GET /runs/{id}/checkpoint answers. A copy made before `not_before` (the run's start) is an
+    earlier run's under the same id, so it is not this run's."""
+    data = manifest(run_id)
+    if data is None or data["created_at"] < not_before:
+        return {"exists": False}
+    roots = data["roots"]
+    left = [one for entry in roots for one in (entry["finished"] or {}).values()]
+    saved = {entry["path"] for entry in roots if entry["skipped"] is None}
+    return {
+        "exists": True,
+        "changed": sum(1 for one in left if one["saved"] is not None),
+        "created": sum(1 for one in left if one["saved"] is None),
+        "skipped": [{"path": entry["path"], "reason": entry["skipped"]} for entry in roots if entry["skipped"]],
+        "excluded": sorted({name for entry in roots for name in entry["excluded"]}),
+        "overlap": data["overlap"],
+        "later": [] if data.get("restored_at") else [rid for rid, _ in _later(run_id, saved)],
+        "running": run_id in _live,
+        "conversation": False,  # S3b: whether the turn's messages and facts can be taken back too
+        "restored_at": data.get("restored_at"),
+        "expires_at": datetime.fromtimestamp(data["created_at"] + KEEP_S, timezone.utc)
+                      .replace(tzinfo=None).isoformat(),
+    }
 
 # ── Putting files back (C2) ───────────────────────────────────────────────────────────────────────
 
