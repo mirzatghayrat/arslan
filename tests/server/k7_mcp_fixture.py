@@ -10,7 +10,7 @@ import server.db.session as db_session
 from server.db.models import Base, MCPServer, Setting, Tool, Toolset
 from server.mcp import session
 from server.registry import hands_tools
-from server.services import agent_browser, task_service
+from server.services import agent_browser, permissions, task_service
 
 SERVERS = {
     1: ("files", ["read_text_file", "read_media_file", "read_multiple_files", "write_file", "edit_file",
@@ -72,5 +72,11 @@ async def mac_with_mcp(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_browser, "available", lambda: True)
     monkeypatch.setattr(hands_tools, "desktop_available", lambda: False)
     monkeypatch.setattr(task_service, "current", lambda: object())
-    yield maker
+    # A chat turn has a card surface (S1a: start_background_work is offered only where someone can be asked).
+    with permissions.asking_with(_no_card):
+        yield maker
     await engine.dispose()
+
+
+async def _no_card(frame):
+    raise AssertionError("no card in the K7 tests")

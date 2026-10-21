@@ -27,6 +27,18 @@ from server.services import mcp_service
 from server.services.task_service import known_local_failure
 
 
+@pytest.fixture(autouse=True)
+def _a_yes_to_every_card():
+    """S1: these tests are about the call itself, so every MCP card is answered yes here
+    (test_s1_mcp_approval.py covers the cards)."""
+    from server.services import permissions
+
+    async def yes(frame):
+        return {"approved": True, "scope": "once", "note": "", "by": "mac"}
+    with permissions.asking_with(yes):
+        yield
+
+
 @pytest.fixture
 async def db(execution_db, monkeypatch):
     monkeypatch.setattr(session.manager, "_sessions", {})      # no live session left by another test
@@ -173,7 +185,9 @@ async def test_a_call_timeout_says_so_with_its_duration(db, monkeypatch):
 
 
 def test_the_executor_bounds_a_call_just_past_the_sdk_read_timeout_and_the_loop_waits_longer():
-    assert executor.MCPProxyExecutor.timeout_s == 130 > executor.CALL_BOUND_S > session.CALL_TIMEOUT_S
+    # S1: the card's window first, then 130 s, which CALL_BOUND_S ends first for a stuck call
+    assert executor.MCPProxyExecutor.timeout_s == executor.CARD_S + 130
+    assert 130 > executor.CALL_BOUND_S > session.CALL_TIMEOUT_S
 
 
 async def test_a_starting_server_says_what_it_is_doing_and_an_off_one_gives_no_old_cause(db, monkeypatch):

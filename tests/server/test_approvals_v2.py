@@ -500,7 +500,9 @@ async def test_a_command_grant_is_found_again_under_its_own_target(job_db, shell
     ctx = permissions.Context(conversation_id="conv")
     with permissions.asking_with(conversation):
         await permissions.decide(_cmd(shell), ctx)
-    with permissions.asking_with(None):
+    async def no_card(frame):
+        raise AssertionError("the grant must answer: no card")
+    with permissions.asking_with(no_card):     # S1 (U14 a): a grant answers only where someone could be asked
         assert (await permissions.decide(_cmd(shell), ctx)).by == "grant"
     async with job_db() as db:
         targets = [g.target for g in (await db.scalars(select(PermissionGrant))).all()]

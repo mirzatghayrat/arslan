@@ -172,7 +172,8 @@ async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():
     assert [d.by for d in out] == ["rule", "user", "user"]
     assert len(asker.frames) == 1 and "com.apple.Notes" not in asker.frames[0]["detail"]
     # The conversation's grant now decides Mail; Safari, never asked about, has none.
-    assert (await permissions.decide(app("com.apple.mail"), CTX)).by == "grant"
+    with permissions.asking_with(Asker()):       # S1 (U14 a): standing answers need a surface; none is shown
+        assert (await permissions.decide(app("com.apple.mail"), CTX)).by == "grant"
     asker = Asker(no())
     with permissions.asking_with(asker):
         assert (await permissions.decide(app("com.apple.Safari"), CTX)).by == "user"
@@ -255,7 +256,8 @@ def test_an_app_a_shortcut_or_a_site_asks_for_the_task_first(kind):
                                             else ["task", "conversation"])
 
 
-@pytest.mark.parametrize("kind", ["command", "mcp_tool", "folder"])
+# mcp_tool offers no "Always" in 0.1.63 (S1, ⓪Plan's review: _NEVER_ALWAYS until S6's page lists such rules).
+@pytest.mark.parametrize("kind", ["command", "folder"])
 def test_the_other_kinds_ask_once_first_and_offer_always_with_a_label(kind):
     assert permissions.options_for(Request(kind=kind, target="x", title="t", always_label="x")) \
         == ["once", "conversation", "always"]
@@ -333,7 +335,8 @@ async def test_a_rule_is_read_before_a_grant():
     async with db_session.AsyncSessionLocal() as db:
         await permission_store.add_rule(db, "app", "com.apple.Notes")
         await db.commit()
-    d = await permissions.decide(app(), CTX)
+    with permissions.asking_with(Asker()):       # S1 (U14 a): standing answers need a surface; none is shown
+        d = await permissions.decide(app(), CTX)
     assert (d.by, d.scope) == ("rule", "always")
 
 
@@ -343,7 +346,8 @@ async def test_a_rule_that_decides_is_counted():
     async with db_session.AsyncSessionLocal() as db:
         rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
         assert (rule.use_count, rule.last_used_at) == (0, None)         # stored by the answer, not used yet
-    await permissions.decide(app(), CTX)                                # deciding counts a use and writes a row
+    with permissions.asking_with(Asker()):       # S1 (U14 a): standing answers need a surface; none is shown
+        await permissions.decide(app(), CTX)                            # deciding counts a use and writes a row
     async with db_session.AsyncSessionLocal() as db:
         rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
         assert (rule.use_count, rule.last_used_at is not None) == (1, True)
@@ -503,7 +507,8 @@ async def test_a_standing_answer_sets_the_outcome_too():
     with permissions.asking_with(Asker(yes("always"))):
         await permissions.decide(app(), CTX)
     approvals.LAST_OUTCOME.set("declined")
-    d = await permissions.decide(app(), CTX)
+    with permissions.asking_with(Asker()):       # S1 (U14 a): standing answers need a surface; none is shown
+        d = await permissions.decide(app(), CTX)
     assert (approvals.LAST_OUTCOME.get(), permissions.LAST_DECISION.get()) == ("approved", d)
 
 
@@ -730,7 +735,7 @@ async def test_a_ledger_that_cannot_be_written_does_not_take_back_a_standing_yes
     async def broken(db, **fields):
         raise RuntimeError("database is locked")
 
-    with monkeypatch.context() as patched, caplog.at_level(logging.WARNING):
+    with monkeypatch.context() as patched, caplog.at_level(logging.WARNING), permissions.asking_with(Asker()):
         patched.setattr(permission_store, "record", broken)
         by_rule = await permissions.decide(app("com.apple.Notes"), CTX)
         by_grant = await permissions.decide(app("com.apple.mail"), CTX)
@@ -742,7 +747,8 @@ async def test_a_ledger_that_cannot_be_written_does_not_take_back_a_standing_yes
     async with db_session.AsyncSessionLocal() as db:                  # rolled back: the use is not counted
         rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
         assert (rule.use_count, rule.last_used_at) == (0, None)
-    await permissions.decide(app("com.apple.Notes"), CTX)             # the ledger is healthy again
+    with permissions.asking_with(Asker()):     # S1 (U14 a): standing answers need a surface; none is shown
+        await permissions.decide(app("com.apple.Notes"), CTX)         # the ledger is healthy again
     async with db_session.AsyncSessionLocal() as db:
         rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
         assert rule.use_count == 1
@@ -772,7 +778,7 @@ async def test_a_decision_that_raises_leaves_no_stale_outcome(monkeypatch, call)
         raise RuntimeError("store unreadable")
 
     monkeypatch.setattr(permission_store, "find_rule", unreadable)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError), permissions.asking_with(Asker()):     # S1: the store is read with a surface
         if call == "decide":
             await permissions.decide(app(), CTX)
         else:

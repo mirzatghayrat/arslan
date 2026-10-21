@@ -1,12 +1,25 @@
 """PB-2: MCP executor failures persist to mcp_servers.last_error, returned errors
 carry trusted [MCP label · transport] context, and the external-content framing
 (条件1) still applies to the error field."""
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 import server.db.session as db_session
 from server.db.models import Base, MCPServer, Tool, Toolset
+
+
+@pytest.fixture(autouse=True)
+def _a_yes_to_every_card():
+    """S1: these tests are about the call itself, so every MCP card is answered yes here
+    (test_s1_mcp_approval.py covers the cards)."""
+    from server.services import permissions
+
+    async def yes(frame):
+        return {"approved": True, "scope": "once", "note": "", "by": "mac"}
+    with permissions.asking_with(yes):
+        yield
 
 
 @pytest_asyncio.fixture
@@ -111,6 +124,11 @@ async def test_persistence_failure_does_not_mask_error(maker, monkeypatch):
     from server.mcp import session
     async def fake_call(server, name, args): raise RuntimeError("upstream down")
     monkeypatch.setattr(session.manager, "call_tool", fake_call)
+    from server.mcp import executor as executor_mod
+
+    async def approved(self, srv, args):       # S1: this test is about persistence, not the card
+        return None
+    monkeypatch.setattr(executor_mod.MCPProxyExecutor, "_approve", approved)
 
     # First AsyncSessionLocal() call (srv load) works; later ones (persistence) raise.
     real = db_session.AsyncSessionLocal

@@ -4,7 +4,8 @@
   1. money — always a card, in every mode, never remembered;
   2. an "Always" rule for exactly this kind and target;
   3. a grant for this task or this conversation (a background job reads the grants of the
-     conversation that started it);
+     conversation that started it). 2 and 3 are read only where a card surface is bound: a
+     scheduled run reads neither (S1, U14 a);
   4. a card on the surface bound to this turn (`asking_with`): the chat window, a job's
      broadcast — or none, for a scheduled run, which has nobody to ask: the answer is no, at
      once (silence is not consent; Hermes resolves unattended runs from policy the same way).
@@ -64,7 +65,8 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 # S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
 # time or for this conversation, never "Always": outside content can steer what it sends.
 _NEVER_ALWAYS = (_ONCE_ONLY
-                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network"}))
+                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
+                              "mcp_tool"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
 if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: "
@@ -83,8 +85,11 @@ ALWAYS_KEY = "always"
 
 _EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is NOT a refusal. Don't "
             "retry it in this turn. Finish what you can and tell the user what is waiting.")
-_NO_SURFACE = ("{title} needs the user's OK, and this run has nobody to ask (it runs on its "
-               "own). It was not done. Tell the user, so they can allow it for next time.")
+# S1 (U14 a): what a run with nobody to ask (a scheduled run) is told when it reaches a step that needs an
+# OK. No earlier answer counts there, so it is not told that an "Always" would help (⓪Plan, Q2).
+_UNATTENDED = ("{title} needs the user's OK, and this run has nobody to ask: a scheduled run never takes "
+               "such a step, and no earlier answer counts here. It was not done. Tell the user; they can do "
+               "it in a chat.")
 
 
 @dataclass(frozen=True)
@@ -176,7 +181,9 @@ async def decide(req: Request, ctx: Context) -> Decision:
     _check(req)
     ctx = _filled(ctx)
     mode = await _mode()
-    standing = await _standing(req, ctx, mode)
+    # S1 (U14 a): with nobody to ask (a scheduled run), nothing standing answers: an "Always" rule or a
+    # grant let a scheduled run act with nobody there. `_ask` then refuses by policy.
+    standing = await _standing(req, ctx, mode) if _ASKER.get() is not None else None
     if standing is not None:
         return _done(standing)
     return _done(await _ask(req, ctx, mode))
@@ -198,7 +205,9 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
         raise ValueError("decide_many needs one kind")
     ctx = _filled(ctx)
     mode = await _mode()
-    out: list[Decision | None] = [await _standing(r, ctx, mode) for r in reqs]
+    # S1 (U14 a): as in `decide`, nothing standing answers when nobody can be asked.
+    unattended = _ASKER.get() is None
+    out: list[Decision | None] = [None if unattended else await _standing(r, ctx, mode) for r in reqs]
     shown = [r for r, d in zip(reqs, out) if d is None]
     decided = None
     if shown:
@@ -340,11 +349,10 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     asker = _ASKER.get()
     opts = options_for(req)
     if asker is None:
-        decision = Decision(False, "policy", model_text=_NO_SURFACE.format(title=req.title))
-        # What "Always" on this card would have stored, for the Inbox's "Always allow" (§A4);
-        # nothing when the card would not have offered it.
-        await _record(req, ctx, mode, decision,
-                      always=_always_set(req) if "always" in opts else None)
+        # S1 (U14 a, ⓪Plan Q2): refused by policy, and no "Always" set is recorded: the Inbox never offers
+        # an "Always" that would read as fixing the scheduled run, which reads no rule.
+        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+        await _record(req, ctx, mode, decision)
         return decision
     base = dict(req.frame) if req.frame else _generic_frame(req)
     call_id = base.get("call_id") or uuid.uuid4().hex

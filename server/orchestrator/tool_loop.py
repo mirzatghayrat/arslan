@@ -381,7 +381,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     if mcp_fail_counts is not None:
         if result.get("ok"):
             mcp_fail_counts.pop(tool_key, None)          # success resets the streak
-        elif tool_key.startswith("mcp_"):
+        elif tool_key.startswith("mcp_") and result.get("executed") is not False:
+            # S1: a refusal (a card's no, nobody to ask) never reached the server: not a failure of the tool.
             n = mcp_fail_counts[tool_key] = mcp_fail_counts.get(tool_key, 0) + 1
             if n >= _MCP_FAIL_HINT_AT:
                 hint = "\n" + _mcp_degrade_hint(n)

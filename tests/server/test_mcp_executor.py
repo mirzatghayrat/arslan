@@ -1,8 +1,21 @@
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
 from server.db.models import Base, MCPServer, Tool, Toolset
+
+
+@pytest.fixture(autouse=True)
+def _a_yes_to_every_card():
+    """S1: these tests are about the call itself, so every MCP card is answered yes here
+    (test_s1_mcp_approval.py covers the cards)."""
+    from server.services import permissions
+
+    async def yes(frame):
+        return {"approved": True, "scope": "once", "note": "", "by": "mac"}
+    with permissions.asking_with(yes):
+        yield
 
 
 @pytest_asyncio.fixture

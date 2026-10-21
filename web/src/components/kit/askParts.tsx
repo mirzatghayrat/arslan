@@ -82,6 +82,12 @@ export const ONCE_ONLY_KINDS = new Set(["money", "app_risky", "capability", "oth
  *  (tests/server/test_card_kinds.py). */
 export const WINDOW_ONLY_KINDS = new Set(["capability"]);
 
+/** S1: the kinds whose card starts on "In this conversation" in the window: an MCP tool is usually used again
+ *  in the same conversation. Only the window's starting choice: the options' order is the server's, and the island
+ *  and the phone still answer the first ("this time"). Checked against the server's kinds by
+ *  tests/server/test_card_kinds.py. */
+export const CONVERSATION_FIRST_KINDS = new Set(["mcp_tool"]);
+
 /** The choices a card is willing to offer. For a once-only kind that is the frame's first alone,
  *  whatever else it lists: the server already clamps, so this only keeps a mistaken frame from
  *  drawing — or sending — a longer yes than the kind allows. */
