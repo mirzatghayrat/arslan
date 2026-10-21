@@ -10,7 +10,8 @@ saves the working folder first, once; the earliest copy is the one an undo goes 
   checks it before writing back (Q3); a change made inside the same run before `finish` is not caught.
 - **How:** a walk that never follows links, cloning each regular file with `clonefile(2)` on APFS (almost
   no space: the copy shares blocks until the original changes), else copying it (≤ 50 MB). Folders that
-  can be rebuilt are left out and listed; so are Arslan's own paths and the user's secrets. FIFOs,
+  can be rebuilt are left out and listed; so are Arslan's own paths, and secret-shaped files (`.env`, keys:
+  never copied into checkpoints, so never undone, ⓪Plan's review). FIFOs,
   sockets, devices and symlinks are never opened or copied, only listed (a FIFO froze the backend once).
   Every folder kept is recreated, empty ones too: a folder missing from the copy is one the run made.
 - **A file write_file or edit_file writes under a left-out folder** is cloned on its own just before
@@ -22,11 +23,15 @@ saves the working folder first, once; the earliest copy is the one an undo goes 
   disk, or a folder on another volume than the data folder.
 - **When the run ends** (`finish`, from host_run, whatever way it ended): for every path the run changed,
   how it left it (size, mtime, sha256; None when deleted) and the saved copy's sha256 (None when the run
-  created it). Paths the run did not change are not hashed: a copy keeps size and mtime. Also the
+  created it). "Made by the run" means absent when the folder was saved: what existed but is not in the
+  copy (a copy that failed, a secret-shaped file, an unreadable folder) is listed as not saved instead,
+  never trashed (⓪Plan's review, 🔴2). Paths the run did not change are not hashed: a copy keeps size and
+  mtime. Also the
   folders it made or removed, and for `.git` the saved one's files but objects, by hash.
 - **Putting back** (`restore_files`), path by path, only what is still as its run left it: the saved
   copy (bytes, mode, mtime) after checking its hash, or the Trash for what the run made; anything changed
-  since is kept and listed. No folder of a path is followed through a link. `.git` goes back whole or
+  since is kept and listed. Every path read from the manifest must stay inside its folder (🔴1, 🟠3: commands
+  outside the sandbox can write the manifest). A try with failures can be tried again for what failed. No folder of a path is followed through a link. `.git` goes back whole or
   not at all. Later runs on the same folder are undone first, newest first. Refused while a run is
   changing the folder, for a run that never finished, and a second time. Nested repositories
   (`sub/.git`) go back file by file, like any folder.
@@ -45,6 +50,7 @@ import json
 import logging
 import os
 import plistlib
+import re
 import secrets
 import shutil
 import stat
@@ -72,6 +78,7 @@ KEEP_S = 7 * 24 * 3600                 # a checkpoint older than this goes ...
 TIDY_EVERY_S = 3600                    # ... checked at most this often (permission_store._prune's way)
 _last_tidy = {"at": 0.0}
 _CLONE_NOFOLLOW = 0x0001
+_CLONE_NAME = re.compile(r"copy-\d+")   # a folder copy's own name in the manifest; nothing else is read
 _TM_EXCLUDE = b"com.apple.metadata:com_apple_backup_excludeItem"
 
 _locks: dict[int, asyncio.Lock] = {}
@@ -129,18 +136,30 @@ def _reset_for_tests() -> None:
 
 def _make_root() -> None:
     root = root_dir()
-    if root.exists():
-        return
     root.mkdir(parents=True, exist_ok=True)
-    if sys.platform == "darwin":
-        # Kept out of Time Machine: these are copies of the user's own files, a week at most. The attribute
-        # `tmutil addexclusion` writes, set directly: tmutil itself takes ~11 s (measured 2026-10-22).
-        value = plistlib.dumps("com.apple.backupd", fmt=plistlib.FMT_BINARY)
-        libc = _libc()
-        libc.setxattr.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
-                                  ctypes.c_uint32, ctypes.c_int]
-        if libc.setxattr(os.fsencode(root), _TM_EXCLUDE, value, len(value), 0, 0) != 0:
-            logger.warning("checkpoints: could not exclude %s from Time Machine", root)
+    if not _tm_excluded(root):        # put back when it went missing, not only at creation (⓪Plan's review)
+        _tm_exclude(root)
+
+
+def _tm_excluded(path: Path) -> bool:
+    if sys.platform != "darwin":
+        return True
+    libc = _libc()
+    libc.getxattr.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t,
+                              ctypes.c_uint32, ctypes.c_int]
+    libc.getxattr.restype = ctypes.c_ssize_t
+    return libc.getxattr(os.fsencode(path), _TM_EXCLUDE, None, 0, 0, 0) >= 0
+
+
+def _tm_exclude(path: Path) -> None:
+    # Kept out of Time Machine: these are copies of the user's own files, a week at most. The attribute
+    # `tmutil addexclusion` writes, set directly: tmutil itself takes ~11 s (measured 2026-10-22).
+    value = plistlib.dumps("com.apple.backupd", fmt=plistlib.FMT_BINARY)
+    libc = _libc()
+    libc.setxattr.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
+                              ctypes.c_uint32, ctypes.c_int]
+    if libc.setxattr(os.fsencode(path), _TM_EXCLUDE, value, len(value), 0, 0) != 0:
+        logger.warning("checkpoints: could not exclude %s from Time Machine", path)
 
 
 def _same_volume(a: Path, b: Path) -> bool:
@@ -175,12 +194,29 @@ def _in_git(rel: str) -> bool:
     return rel == ".git" or rel.startswith(".git/")
 
 
+def _contained(rel: str) -> bool:
+    """A relative path that stays inside its folder: not absolute, no `.`/`..` part, not empty. Every path
+    a restore reads from the manifest is checked (⓪Plan's review, 🔴1/🟠3: a command outside the sandbox can
+    write the manifest, and `root/".build/.."` is the root itself)."""
+    path = Path(rel)
+    return bool(rel) and "\x00" not in rel and not path.is_absolute() \
+        and not any(part in ("", ".", "..") for part in rel.split("/"))
+
+
+def _under(rel: str, folders: list[str]) -> bool:
+    return any(folder == "." or rel == folder or rel.startswith(folder + "/") for folder in folders)
+
+
 def _walk(root: Path, protected: list[Path], excluded: set[str], not_regular: list[str],
-          folders: list[str] | None = None, git: bool = False):
+          folders: list[str] | None = None, git: bool = False, unreadable: list[str] | None = None):
     """(relative path, absolute path, lstat) for each regular file under `root`, never following a link.
     Skipped directories go into `excluded`, everything that is not a regular file into `not_regular`,
-    and every directory kept into `folders` when given. `git`: `root` is a `.git`."""
-    for top, dirs, files in os.walk(root, followlinks=False):
+    every directory kept into `folders`, and what could not be read into `unreadable`, when given.
+    `git`: `root` is a `.git`."""
+    def cannot_read(exc: OSError) -> None:
+        if unreadable is not None and exc.filename:
+            unreadable.append(str(Path(exc.filename).relative_to(root)))
+    for top, dirs, files in os.walk(root, followlinks=False, onerror=cannot_read):
         here = Path(top)
         in_git = git or ".git" in here.relative_to(root).parts
         keep = []
@@ -200,6 +236,8 @@ def _walk(root: Path, protected: list[Path], excluded: set[str], not_regular: li
             try:
                 st = os.lstat(path)
             except OSError:
+                if unreadable is not None:
+                    unreadable.append(str(path.relative_to(root)))
                 continue
             if stat.S_ISREG(st.st_mode):
                 yield str(path.relative_to(root)), path, st
@@ -239,29 +277,43 @@ def _count(root: Path, protected: list[Path]) -> str | None:
 
 def _copy_tree(root: Path, dest: Path, protected: list[Path]) -> dict:
     excluded: set[str] = set()
+    from server.services.workspace_paths import is_secret_name
     not_regular: list[str] = []
     failed: list[str] = []
+    secret: list[str] = []
     folders: list[str] = []
+    unreadable: list[str] = []
+    # What existed but is not in the copy, by size and mtime only (never its content): a file that could
+    # not be copied, or a secret-shaped one, which is never copied (⓪Plan's review). Undo never treats
+    # either as made by the run (🔴2), and lists it as not saved when the run changed it.
+    unsaved: dict[str, list[int]] = {}
     methods: set[str] = set()
     started = time.monotonic()
     dest.mkdir(parents=True)
-    for rel, path, st in _walk(root, protected, excluded, not_regular, folders):
+    for rel, path, st in _walk(root, protected, excluded, not_regular, folders, unreadable=unreadable):
+        if is_secret_name(path.name):
+            secret.append(rel)
+            unsaved[rel] = [st.st_size, st.st_mtime_ns]
+            continue
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             methods.add(_clone_file(path, target, st.st_size))
         except OSError:
             failed.append(rel)
+            unsaved[rel] = [st.st_size, st.st_mtime_ns]
     for rel in folders:  # empty ones too: a folder missing from the copy is one the run made
         (dest / rel).mkdir(parents=True, exist_ok=True)
     return {"excluded": sorted(excluded), "not_regular": sorted(not_regular), "failed": sorted(failed),
+            "secret": sorted(secret), "unreadable": sorted(unreadable), "unsaved": unsaved,
             "method": "clonefile" if "clonefile" in methods else ("copy" if methods else None),
             "seconds": round(time.monotonic() - started, 3)}
 
 
 def _save_root(run_id: int, root: Path, index: int) -> dict:
     entry = {"path": str(root), "clone": f"copy-{index}", "skipped": None, "excluded": [], "not_regular": [],
-             "failed": [], "written": [], "method": None, "seconds": 0.0, "slow": False, "finished": None}
+             "failed": [], "secret": [], "unreadable": [], "unsaved": {}, "written": [], "method": None,
+             "seconds": 0.0, "slow": False, "finished": None}
     protected = _protected()
     if not _same_volume(root, root_dir()):
         entry["skipped"] = "other_volume"
@@ -336,7 +388,7 @@ def _save_written(run_id: int, data: dict, path: Path) -> bool:
         if entry["skipped"] is not None or not path.is_relative_to(root):
             continue
         rel = path.relative_to(root)
-        if not _left_out(rel.parts[:-1]) or str(rel) in entry["written"]:
+        if not _contained(str(rel)) or not _left_out(rel.parts[:-1]) or str(rel) in entry["written"]:
             return False
         entry["written"].append(str(rel))
         try:
@@ -350,6 +402,7 @@ def _save_written(run_id: int, data: dict, path: Path) -> bool:
                 _clone_file(path, target, st.st_size)
             except OSError:
                 entry["failed"].append(str(rel))
+                entry["unsaved"][str(rel)] = [st.st_size, st.st_mtime_ns]
         return True
     return False
 
@@ -388,20 +441,31 @@ def _finish_root(run_id: int, entry: dict) -> None:
     saved = {rel: st for rel, _, st in _walk(clone, [], set(), [], saved_folders)}
     now = {rel: st for rel, _, st in _walk(root, protected, set(), [], now_folders)}
     for rel in entry["written"]:  # under left-out folders, which neither walk enters
+        if not _contained(rel):
+            continue
         for side, base in ((saved, clone), (now, root)):
             try:
                 side[rel] = os.lstat(base / rel)
             except FileNotFoundError:
                 pass
-    finished = {}
+    finished, not_saved = {}, []
     for rel in sorted(set(saved) | set(now)):
         before, after = saved.get(rel), now.get(rel)
         if before is not None and after is not None and before.st_size == after.st_size \
                 and before.st_mtime_ns == after.st_mtime_ns:
             continue
+        # 🔴2: "made by the run" means absent when the folder was saved. What existed but is not in the copy
+        # is never that: unchanged, it is nothing; changed or deleted, it is listed as not saved.
+        if before is None and rel in entry["unsaved"]:
+            if after is None or [after.st_size, after.st_mtime_ns] != entry["unsaved"][rel]:
+                not_saved.append(rel)
+            continue
+        if before is None and _under(rel, entry["unreadable"]):
+            not_saved.append(rel)              # it could not be read at save: whether it existed is unknown
+            continue
         finished[rel] = {"now": _fingerprint(root / rel) if after is not None else None,
                          "saved": _sha256(clone / rel) if before is not None else None}
-    entry["finished"] = finished
+    entry["finished"], entry["not_saved"] = finished, not_saved
     saved_folders = [rel for rel in saved_folders if not _in_git(rel)]
     now_folders = [rel for rel in now_folders if not _in_git(rel)]
     entry["folders_made"] = sorted(set(now_folders) - set(saved_folders))
@@ -458,7 +522,13 @@ def _own_bytes(run_id: int, data: dict) -> int:
 
 def _tidy(newest: int) -> None:
     """Older than KEEP_S out (at most every TIDY_EVERY_S), then the oldest out while over QUOTA_BYTES.
-    Never a run still going, nor `newest`: the turn that just ended can always be undone."""
+    Never a run still going, nor `newest`: the turn that just ended can always be undone. Never while a
+    restore is reading copies (⓪Plan's review)."""
+    with _restoring:
+        _tidy_locked(newest)
+
+
+def _tidy_locked(newest: int) -> None:
     ids = sorted(int(p.name) for p in root_dir().iterdir() if p.name.isdigit())
     keep = _live | {newest}
     now = time.time()
@@ -557,22 +627,44 @@ def _later(run_id: int, roots: set[str]) -> list[tuple[int, dict]]:
 
 
 def _restore_run(run_id: int, data: dict) -> dict:
-    out = {"run_id": run_id, "restored": [], "trashed": [], "user_changed": [], "failed": [], "git": None}
+    out = {"run_id": run_id, "restored": [], "trashed": [], "user_changed": [], "failed": [], "not_saved": [],
+           "git": None}
+    done = set(data.get("restored_paths", []))       # put back by an earlier try that had failures
     for entry in data["roots"]:
         if entry["skipped"] is None:
-            _restore_root(run_id, entry, out)
-    data["restored_at"], data["restore"] = time.time(), out
+            _restore_root(run_id, entry, out, done)
+    done |= set(out["restored"]) | set(out["trashed"]) | ({".git"} if out["git"] in ("restored", "trashed") else set())
+    data["restored_paths"], data["restore"] = sorted(done), out
+    # A try with failures can be tried again for what failed (⓪Plan's review); a whole one cannot.
+    data["restore_failed_at" if out["failed"] else "restored_at"] = time.time()
     _save(run_id, data)
     return out
 
 
-def _restore_root(run_id: int, entry: dict, out: dict) -> None:
-    root, clone, finished = Path(entry["path"]), _run_dir(run_id) / entry["clone"], entry["finished"]
+def _root_ok(root: Path) -> bool:
+    """A folder the manifest names: absolute, not Arslan's data folder, not a protected path."""
+    from server import config
+    data = config.data_dir().resolve()
+    return root.is_absolute() and not (root == data or data in root.parents) \
+        and not any(root == p or p in root.parents for p in _protected())
+
+
+def _restore_root(run_id: int, entry: dict, out: dict, done: set[str]) -> None:
+    root, finished = Path(entry["path"]), entry["finished"]
+    out["not_saved"].extend(entry.get("not_saved", []))
+    if not _CLONE_NAME.fullmatch(str(entry.get("clone"))) or not _root_ok(root):
+        out["failed"].extend(rel for rel in finished if rel not in done)     # a manifest not as saved
+        return
+    clone = _run_dir(run_id) / entry["clone"]
     for rel in entry["folders_removed"]:
-        with contextlib.suppress(OSError):
-            os.close(_open_folder(root, Path(rel).parts))
+        if _contained(rel):
+            with contextlib.suppress(OSError):
+                os.close(_open_folder(root, Path(rel).parts))
     for rel, left in finished.items():
-        if _in_git(rel):
+        if rel in done or _in_git(rel):
+            continue
+        if not _contained(rel):
+            out["failed"].append(rel)
             continue
         if _fingerprint(root / rel) != left["now"]:
             out["user_changed"].append(rel)
@@ -587,13 +679,17 @@ def _restore_root(run_id: int, entry: dict, out: dict) -> None:
         except (OSError, ValueError):
             out["failed"].append(rel)
     for rel in sorted(entry["folders_made"], reverse=True):  # deepest first, and only when empty
+        if not _contained(rel):
+            continue
         with contextlib.suppress(OSError):
             fd = _open_folder(root, Path(rel).parts[:-1], create=False)
             try:
                 os.rmdir(Path(rel).name, dir_fd=fd)
             finally:
                 os.close(fd)
-    if any(_in_git(rel) for rel in finished):
+    if os.path.isfile(root / ".git") and not os.path.islink(root / ".git"):
+        out["git"] = "outside"     # a worktree's or submodule's pointer: its repository, commits too, is elsewhere
+    elif ".git" not in done and any(_in_git(rel) for rel in finished):
         try:
             out["git"] = _restore_git(root, clone, entry)
         except OSError:
@@ -621,6 +717,8 @@ def _put_back(root: Path, rel: str, src: Path, saved: str) -> None:
     """The saved copy back at `rel`: its bytes, mode and mtime, into a temp file in the opened folder,
     then os.replace (a link there is replaced, not followed; a hard link's other name keeps its content,
     as F4b). Raises ValueError when the copy no longer has the hash `finish` recorded (Q3)."""
+    if not _contained(rel):
+        raise ValueError(f"not a path inside the folder: {rel}")
     parts = Path(rel).parts
     folder = _open_folder(root, parts[:-1])
     tmp = f".{parts[-1].encode()[:200].decode(errors='ignore')}.{secrets.token_hex(4)}.undo"
@@ -651,6 +749,8 @@ def _put_back(root: Path, rel: str, src: Path, saved: str) -> None:
 def _trash_inside(root: Path, rel: str) -> None:
     """To the Trash (moved, never deleted), only when no folder of the path is a link."""
     from server.services import capability_install
+    if not _contained(rel):
+        raise ValueError(f"not a path inside the folder: {rel}")
     parent = (root / rel).parent
     if os.path.realpath(parent) != str(parent):
         raise OSError(errno.ELOOP, "a folder of the path is a link", rel)
@@ -673,6 +773,8 @@ def _git_as_left(root: Path, clone: Path, finished: dict) -> bool:
     saved = {f".git/{rel}": st for rel, _, st in _walk(clone / ".git", [], set(), [], git=True)
              if not rel.startswith("objects/")}
     listed = {rel for rel in finished if _in_git(rel) and not rel.startswith(".git/objects/")}
+    if not all(_contained(rel) for rel in listed):
+        return False
     for rel in set(now) | set(saved) | listed:
         if rel in listed:
             if _fingerprint(root / rel) != finished[rel]["now"]:
