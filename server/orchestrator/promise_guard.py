@@ -95,8 +95,27 @@ async def correct(full_text: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # S0 hemostasis — zero-tool (persona-only) final-answer honesty pass
 # ---------------------------------------------------------------------------
+# 0.1.63 C3a: render_deck is gone, so tool_loop no longer checks deck claims against it, and the
+# deck regex moved here, to its only user. A zero-tool turn that says it made a PPT is still a
+# fabrication. It goes with this helper in C7's zero-tool tier.
+# Widened after two live evasions ("PPT 已正式生成并交付", "共10页…可直接下载"): allow filler
+# between the deck-noun, the 已/成功/正式 marker, and the delivery verb — in either order.
+_CLAIMS_DECK_RE = re.compile(
+    r"(PPTX?|pptx|deck|幻灯片?|演示文稿)[^\n。;]{0,12}(已|成功|正式)[^\n。;]{0,8}(生成|交付|完成|创建|做好|输出)"
+    r"|已[^\n。;]{0,6}生成[^\n。;]{0,8}(PPTX?|pptx|deck|幻灯|演示)"
+    r"|已生成并交付"
+    r"|(可|供)(直接)?下载[^\n。;]{0,10}(PPTX?|pptx|\.pptx|deck|幻灯|演示文稿)"
+    r"|(PPTX?|pptx|deck|幻灯片?|演示文稿)[^\n。;]{0,16}可(直接)?下载"
+    r"|(deck|pptx|presentation)[^\n.;]{0,24}(generated|created|ready|done|delivered)",
+    re.IGNORECASE)
+
+
+def _claims_deck(text: str) -> bool:
+    return bool(_CLAIMS_DECK_RE.search(text or ""))
+
+
 # A zero-tool spawn has NO tools, so ANY final-answer claim of a produced deliverable —
-# a deck "已生成PPT并交付" (tool_loop._claims_deck), a search result "我搜索了/查到了"
+# a deck "已生成PPT并交付" (_claims_deck above), a search result "我搜索了/查到了"
 # (tool_loop._claims_search), OR a forward-promise / background handoff "正在生成中,稍等"
 # / "交给 X 来生成" (find_promise) — is structurally false: no tool ran and none can. The
 # dispatcher's zero-tool branch used to stream such output RAW, bypassing every honesty
@@ -111,13 +130,13 @@ async def correct(full_text: str) -> dict | None:
 # fabrications for a spawn with zero tools, and low false-positive.
 def _zero_tool_fabrication(text: str, spawn_name: str | None = None) -> str | None:
     """The fabrication snippet / claim-kind in a ZERO-TOOL spawn's final answer, or None.
-    Reuses promise_guard.find_promise ∪ tool_loop._claims_deck/_claims_search verbatim."""
+    Reuses find_promise ∪ _claims_deck ∪ tool_loop._claims_search verbatim."""
     snippet = find_promise(text)        # K5: the spawn tier is gone (this helper goes with C7)
     if snippet:
         return snippet
     from server.orchestrator import tool_loop
     t = text or ""
-    if tool_loop._claims_deck(t):
+    if _claims_deck(t):
         return "claims:deck"
     if tool_loop._claims_search(t):
         return "claims:search"

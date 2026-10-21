@@ -154,9 +154,10 @@ a = Analysis(  # noqa: F821 — injected by PyInstaller
     # PIL is deliberately NOT excluded. It looks OCR-only — ingest.py:39,61
     # are our only direct imports — but python-pptx (a CORE dependency) imports
     # it internally (pptx/parts/image.py, pptx/text/layout.py), so excluding it
-    # makes `import server.services.deck_pptx` raise ModuleNotFoundError and
-    # takes the whole PPTX deck feature down in the packaged app. Measured, not
-    # assumed: an earlier revision of this spec excluded it and did exactly that.
+    # makes `import pptx` raise ModuleNotFoundError and takes reading .pptx
+    # attachments (artifact_inspector) down in the packaged app. Measured, not
+    # assumed: an earlier revision of this spec excluded it and took the deck
+    # feature (removed in 0.1.63, C3a) down exactly that way.
     # tkinter/matplotlib are dead weight PyInstaller otherwise drags in.
     excludes=[
         "mcp.cli",

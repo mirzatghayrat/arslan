@@ -521,7 +521,7 @@ def test_selftest_names_every_module_that_fails_not_just_the_first(entry, monkey
     real = builtins.__import__
 
     def _blocked(name, *a, **kw):
-        if name in ("server.services.deck_pptx", "server.services.ingest"):
+        if name in ("pptx", "server.services.ingest"):
             raise ModuleNotFoundError(f"No module named '{name}'")
         return real(name, *a, **kw)
 
@@ -531,22 +531,29 @@ def test_selftest_names_every_module_that_fails_not_just_the_first(entry, monkey
 
     assert entry.selftest() == 1
     joined = "\n".join(errs)
-    assert "deck_pptx" in joined and "ingest" in joined, (
+    assert "pptx" in joined and "ingest" in joined, (
         f"both failures must be reported, got: {joined}"
     )
 
 
 def test_selftest_covers_the_module_that_a_bad_excludes_entry_broke(entry):
-    """deck_pptx must stay in the required list — it is the regression case.
+    """python-pptx must stay in the required list — it is the regression case.
 
     PIL looks OCR-only (ingest.py:39,61 are our only direct imports) but
     python-pptx imports it internally; excluding PIL shipped a bundle whose
     /health returned 200 while the deck feature raised ModuleNotFoundError.
+    The deck renderer is gone (0.1.63 C3a), so the probe imports python-pptx
+    itself; importing it must still pull PIL in, or the probe proves nothing.
     """
     import inspect
 
     src = inspect.getsource(entry.selftest)
-    assert "server.services.deck_pptx" in src
+    assert '"pptx",' in src and "deck_pptx" not in src
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, "-I", "-c", "import sys, pptx; print('PIL' in sys.modules)"],
+                         capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "True"
 
 
 def test_webpage_resource_probe_extracts_without_network(entry):

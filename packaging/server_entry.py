@@ -314,7 +314,9 @@ def selftest() -> int:
     Not hypothetical. An earlier revision of arslan-server.spec excluded PIL
     on the (true for our code, false for the dependency graph) basis that it
     was OCR-only. python-pptx imports it internally, so the whole deck feature
-    was ModuleNotFoundError in a bundle whose /health returned 200.
+    was ModuleNotFoundError in a bundle whose /health returned 200. The deck
+    renderer is gone (0.1.63 C3a); the probe imports python-pptx itself, which
+    reading .pptx attachments still needs and which still imports PIL.
 
     Every import here must be a module the app genuinely needs, so that this
     list cannot rot into a formality that passes while the app is broken.
@@ -325,7 +327,7 @@ def selftest() -> int:
         "server.db.session",
         "server.db.migrations.runner",
         "server.services.ingest",       # attachment ingestion
-        "server.services.deck_pptx",    # the PIL casualty
+        "pptx",                         # the PIL casualty: python-pptx imports PIL
         "server.services.extract",
         "arslan.llm.adapter",
         "arslan.spawn",

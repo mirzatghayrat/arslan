@@ -128,16 +128,6 @@ _CLAIMS_CHART_RE = re.compile(
 _CLAIMS_SEARCH_RE = re.compile(
     r"我搜索|搜索了|查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
     re.IGNORECASE)
-# Widened after two live evasions ("PPT 已正式生成并交付", "共10页…可直接下载"): allow filler
-# between the deck-noun, the 已/成功/正式 marker, and the delivery verb — in either order.
-_CLAIMS_DECK_RE = re.compile(
-    r"(PPTX?|pptx|deck|幻灯片?|演示文稿)[^\n。;]{0,12}(已|成功|正式)[^\n。;]{0,8}(生成|交付|完成|创建|做好|输出)"
-    r"|已[^\n。;]{0,6}生成[^\n。;]{0,8}(PPTX?|pptx|deck|幻灯|演示)"
-    r"|已生成并交付"
-    r"|(可|供)(直接)?下载[^\n。;]{0,10}(PPTX?|pptx|\.pptx|deck|幻灯|演示文稿)"
-    r"|(PPTX?|pptx|deck|幻灯片?|演示文稿)[^\n。;]{0,16}可(直接)?下载"
-    r"|(deck|pptx|presentation)[^\n.;]{0,24}(generated|created|ready|done|delivered)",
-    re.IGNORECASE)
 
 
 def _claims_chart(text: str) -> bool:
@@ -146,10 +136,6 @@ def _claims_chart(text: str) -> bool:
 
 def _claims_search(text: str) -> bool:
     return bool(_CLAIMS_SEARCH_RE.search(text or ""))
-
-
-def _claims_deck(text: str) -> bool:
-    return bool(_CLAIMS_DECK_RE.search(text or ""))
 
 
 # Chart-as-code-fence: instead of calling render_chart, the model draws a DATA chart by writing a
@@ -193,7 +179,7 @@ _PROMISES_ACTION_RE = re.compile(
     r"|STEP\s*\S{0,4}\s*(调用|调取|搜索|抓取|获取|查询|绘制|生成|call|search|fetch|generate)"
     r"|第\s*[一二三四五六七八九十\d]+\s*步\s*[:：]?\s*(调用|调取|搜索|抓取|获取)"
     r"|(下一步|接下来)\s*[，,：:]?\s*(我|让我)\s*(会|要|将|就|继续)?\s*(搜索|查询|抓取|获取|绘制|生成|调用)"
-    r"|调用\s*(web_search|web_extract|render_chart|render_deck)"
+    r"|调用\s*(web_search|web_extract|render_chart)"
     r"|(生成|制作|输出|导出)\s*[^。\n]{0,6}(deck|pptx|\.pptx|幻灯|演示|ppt)"
     r"|let me (search|look this up|fetch|pull|grab|draw|generate|chart|get the data)"
     r"|i(?:'ll| will| am going to|'m going to)\s+(?:now\s+|quickly\s+|go\s+)?"
@@ -1816,9 +1802,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                     "x": {"type": "array"},
                                     "series": {"type": "array"},
                                     "title": {"type": "string"}}},
-    "render_deck": {"type": "object",
-                    "properties": {"title": {"type": "string"},
-                                   "slides": {"type": "array"}}},
     "run_command": {"type": "object",
                     "properties": {"command": {"type": "string",
                                                "description": "The full shell command line, e.g. "
@@ -2210,8 +2193,6 @@ def _unverified_claim(text: str, tool_trace: list, wired_keys: set[str]) -> str 
     if "<!doctype html" in text.lower() and "</html>" in text.lower():
         return None
     succeeded = {step.get("tool") for step in tool_trace if (step.get("result") or {}).get("ok")}
-    if _claims_deck(text) and "render_deck" not in succeeded:
-        return "render_deck"
     if (_claims_chart(text) or (_draws_chart_fence(text) and "render_chart" in wired_keys)) and "render_chart" not in succeeded:
         return "render_chart"
     if _claims_search(text) and "web_search" not in succeeded:

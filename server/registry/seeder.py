@@ -58,6 +58,8 @@ RETIRED_TOOLSET_KEYS: tuple[str, ...] = (
     "mixture_of_agents", "task_delegation", "memory", "clarifying_questions",
     "browser_automation", "terminal_processes", "cron_jobs", "computer_use",
     "context_engine", "yuanbao",
+    # C3a (v0.1.63): render_deck had no caller (the deck skill went with C9).
+    "deck",
 )
 
 

@@ -32,7 +32,7 @@ async def test_seed_counts_and_exclusions(maker):
         skills = (await s.execute(select(SkillPack))).scalars().all()
         tools = (await s.execute(select(Tool))).scalars().all()
 
-    assert len(toolsets) == 12  # Includes host-only recovery and temporary collaboration.
+    assert len(toolsets) == 11  # Includes host-only recovery and temporary collaboration. C3a: deck retired.
     assert len(skills) == 2   # C9: designed-html-report and skill-creator
     assert EXCLUDED.isdisjoint({t.key for t in toolsets})
     assert EXCLUDED.isdisjoint({sk.key for sk in skills})
@@ -75,7 +75,7 @@ async def test_seed_idempotent_and_updates(maker):
         assert (await s.get(Toolset, "web_search_scraping")).tier == "safe"
         from sqlalchemy import func
         n = (await s.execute(select(func.count()).select_from(Toolset))).scalar_one()
-    assert n == 12
+    assert n == 11
 
 
 @pytest.mark.asyncio

@@ -6,8 +6,8 @@ reply RAW — no deck/chart/search-claim guard, no forward-promise nudge, no sal
 tool-less spawn could fabricate "已生成PPT并交付" / "正在生成中,稍等" completely unchecked,
 the exact fabrication class the HX/PA rounds killed on the equipped path.
 
-The fix reuses the REAL guard functions (promise_guard.find_promise ∪ tool_loop._claims_deck
-/ _claims_search) + the same bounded correction, so the zero-tool path is corrected the same
+The fix reuses the REAL guard functions (promise_guard.find_promise ∪ promise_guard._claims_deck
+∪ tool_loop._claims_search; C3a moved the deck check) + the same bounded correction, so the zero-tool path is corrected the same
 way — never a weaker parallel copy. These tests pin:
   - the unit: promise_guard.correct_zero_tool detects deck/promise fabrication, corrects once,
     templates on re-fabrication, and leaves honest text untouched (no LLM call);
@@ -99,7 +99,7 @@ async def test_correct_zero_tool_templates_when_resynthesis_refabricates(monkeyp
     assert promise_guard.correct_zero_tool  # sanity
     from server.orchestrator import tool_loop as tl
     assert promise_guard.find_promise(out["correction"]) is None
-    assert not tl._claims_deck(out["correction"])
+    assert not promise_guard._claims_deck(out["correction"])
     assert not tl._claims_search(out["correction"])
     assert len(adapter.chat_calls) == 1  # bounded: exactly one
 
