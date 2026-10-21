@@ -15,9 +15,11 @@ export function AskQueue({ items }: { items: QueuedAsk[] }) {
   const host = useRef<HTMLDivElement>(null);
   const refocus = useRef<string | null>(null);
   const index = Math.max(0, items.findIndex((i) => i.key === shown));
+  // 0.1.63: from the current value, not this render's: an effect that runs late (after a page turn) must not
+  // see the old `shown` and put the first card back (askqueue-late-effect.test.tsx).
   useEffect(() => {
-    if (items.length && !items.some((i) => i.key === shown)) setShown(items[0].key);
-  }, [items, shown]);
+    if (items.length) setShown((cur) => (items.some((i) => i.key === cur) ? cur : items[0].key));
+  }, [items]);
   // The re-mount below replaces the ‹ › that was just pressed: if it had focus, the same button on the new
   // card gets it before paint, so paging from the keyboard does not fall back to <body>.
   useLayoutEffect(() => {
