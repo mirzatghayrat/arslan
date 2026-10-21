@@ -9,7 +9,7 @@
  * controls in one place is the entire reason that section exists.
  *
  * The empty-slot sentence is computed by `slotFallback`, not written per slot here:
- * the five slots have three different empty meanings, and duplicating that judgement
+ * the four slots have three different empty meanings, and duplicating that judgement
  * in the view is how one of them would quietly drift into a false line on screen.
  */
 import React from 'react';

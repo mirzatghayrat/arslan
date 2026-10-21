@@ -25,7 +25,7 @@ import server.db.session as db_session
 from server.db.models import Base, ProviderConfig
 from server.services import llm_factory, settings_service
 
-SLOTS = ("compaction_config_id", "title_config_id", "router_config_id", "vision_config_id")
+SLOTS = ("compaction_config_id", "router_config_id", "vision_config_id")   # D8: no title slot
 
 
 @pytest_asyncio.fixture
@@ -90,10 +90,10 @@ class TestSetSlotIsUsed:
         # Setting one must not turn the others on — the failure mode of a single
         # shared key pretending to be four.
         sid = await _slot_id(db)
-        await settings_service.update_settings(db, {"title_config_id": str(sid)})
+        await settings_service.update_settings(db, {"router_config_id": str(sid)})
 
-        assert await llm_factory.build_slot_adapter("title_config_id") is not None
-        for other in ("compaction_config_id", "router_config_id", "vision_config_id"):
+        assert await llm_factory.build_slot_adapter("router_config_id") is not None
+        for other in ("compaction_config_id", "vision_config_id"):
             assert await llm_factory.build_slot_adapter(other) is None, other
 
     async def test_only_registered_slots_are_accepted(self, db):

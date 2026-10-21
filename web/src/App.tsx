@@ -284,7 +284,7 @@ export default function App() {
         { history: liveOrchestratorHistory },
         // S3-M3 fold-in: pass the conversation id so the titler's tokens are
         // ledgered against this conversation (TitleIn.conversation_id).
-        (msg, reply) => api.generateTitle(msg, reply, capturedThreadId),
+        (msg) => api.generateTitle(msg, capturedThreadId),
         (tid, title) => {
           setThreads((prev) =>
             prev.map((t) => (t.id === tid ? { ...t, title, defaultTitle: undefined } : t)),

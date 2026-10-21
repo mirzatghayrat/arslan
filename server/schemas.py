@@ -63,13 +63,11 @@ class SettingsIn(BaseModel):
     # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
     synthesis_config_id: str | None = None
     compaction_model: str | None = None
-    title_model: str | None = None
     synthesis_model: str | None = None
     router_model: str | None = None
     vision_model: str | None = None
     embedding_config_id: str | None = None
     compaction_config_id: str | None = None
-    title_config_id: str | None = None
     router_config_id: str | None = None
     vision_config_id: str | None = None
     evolution_max_dispatches: int | None = None
@@ -136,13 +134,11 @@ class SettingsOut(BaseModel):
     evolution_auto: str = "off"
     synthesis_config_id: str = ""
     compaction_model: str = ""
-    title_model: str = ""
     synthesis_model: str = ""
     router_model: str = ""
     vision_model: str = ""
     embedding_config_id: str = ""
     compaction_config_id: str = ""
-    title_config_id: str = ""
     router_config_id: str = ""
     vision_config_id: str = ""
     evolution_max_dispatches: int | None = None
@@ -514,7 +510,7 @@ class TitleIn(BaseModel):
     """Request body for POST /orchestrator/title."""
 
     first_message: str
-    first_reply: str | None = None
+    # D8: no first_reply — the reply never goes to a title model. An older client's is ignored.
     # S3-M3: optional — lets the usage ledger attribute the title call to its conversation.
     conversation_id: str | None = None
 

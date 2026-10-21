@@ -216,16 +216,16 @@ describe("模型分工", () => {
   it("a slot saves its config and, when it is not the config's own, the model", async () => {
     const onChange = vi.fn();
     render(<ModelRolesSection values={{}} onChange={onChange} providerConfigs={configs} strategy="single" />);
-    fireEvent.click(screen.getByTestId("settings-slot-title"));
+    fireEvent.click(screen.getByTestId("settings-slot-compaction"));
     fireEvent.click(screen.getByTestId("model-all-2"));
     const row = await screen.findByTestId("model-row-2-meta/llama-free");
     fireEvent.click(within(row).getAllByRole("button")[0]);
-    expect(onChange).toHaveBeenCalledWith("titleConfigId", "2");
-    expect(onChange).toHaveBeenCalledWith("titleModel", "meta/llama-free");
+    expect(onChange).toHaveBeenCalledWith("compactionConfigId", "2");
+    expect(onChange).toHaveBeenCalledWith("compactionModel", "meta/llama-free");
     onChange.mockClear();
-    fireEvent.click(screen.getByTestId("settings-slot-title"));
+    fireEvent.click(screen.getByTestId("settings-slot-compaction"));
     fireEvent.click(within(screen.getByTestId("model-row-2-openai/gpt-4o-mini")).getAllByRole("button")[0]);
-    expect(onChange).toHaveBeenCalledWith("titleModel", "");                       // the config's own model
+    expect(onChange).toHaveBeenCalledWith("compactionModel", "");                       // the config's own model
   });
 
   it("a slot shows the model it names, and 不单独设 clears both", () => {

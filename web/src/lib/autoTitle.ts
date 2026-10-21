@@ -78,7 +78,7 @@ export function shouldAutoTitle(thread: {
 }
 
 /**
- * Fire-and-forget: calls `generate` with the first user + first assistant texts,
+ * Fire-and-forget: calls `generate` with the first user message only (D8: the reply never goes out),
  * then calls `onTitle(threadId, generatedTitle)` with the result.
  *
  * On error, does NOT call `onTitle` — the existing placeholder title is kept.
@@ -86,17 +86,14 @@ export function shouldAutoTitle(thread: {
 export async function maybeAutoTitle(
   threadId: string,
   thread: { history: Message[] },
-  generate: (firstMessage: string, firstReply?: string) => Promise<{ title: string }>,
+  generate: (firstMessage: string) => Promise<{ title: string }>,
   onTitle: (threadId: string, title: string) => void,
 ): Promise<void> {
   const firstUser = thread.history.find((m) => m.sender === "user");
-  const firstAssistant = thread.history.find(
-    (m) => m.sender === "arslan" || m.sender === "spawn",
-  );
   if (!firstUser) return;
 
   try {
-    const result = await generate(firstUser.text, firstAssistant?.text);
+    const result = await generate(firstUser.text);
     if (result.title) {
       onTitle(threadId, result.title);
     }

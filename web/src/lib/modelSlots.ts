@@ -1,8 +1,8 @@
 /**
  * Which task uses which model — and, when a slot is empty, what ACTUALLY happens.
  *
- * 🔴 THE FIVE SLOTS DO NOT SHARE ONE EMPTY-STATE MEANING, and this file exists so
- * that fact is decided once instead of in five copies of an if-statement:
+ * 🔴 THE SLOTS DO NOT SHARE ONE EMPTY-STATE MEANING, and this file exists so
+ * that fact is decided once instead of in a copy of an if-statement per slot:
  *
  *   router      the "router" role is in JUDGMENT_ROLES (arslan/llm/routing.py), so it
  *               is pinned to the primary config and never drifts to a cheaper model.
@@ -14,21 +14,20 @@
  *   the rest    fall through to build_adapter(role=…) -> routing.select(), which can
  *               genuinely land on a different config.
  *
- * Saying "follows your main model" on all five would be false in two of them, and a
+ * Saying "follows your main model" on all of them would be false in two, and a
  * false line in the UI is the same defect as a comment describing something that does
  * not happen.
  */
 
-export type SlotId = "synthesis" | "compaction" | "title" | "router" | "vision";
+export type SlotId = "synthesis" | "compaction" | "router" | "vision";
 
 /** 0.1.58 §6: the slot's model override key (settingsKey with ConfigId → Model). */
 export const modelKeyOf = (key: SlotSettingsKey) => key.replace("ConfigId", "Model") as
-  "synthesisModel" | "compactionModel" | "titleModel" | "routerModel" | "visionModel";
+  "synthesisModel" | "compactionModel" | "routerModel" | "visionModel";
 
 export type SlotSettingsKey =
   | "synthesisConfigId"
   | "compactionConfigId"
-  | "titleConfigId"
   | "routerConfigId"
   | "visionConfigId";
 
@@ -48,12 +47,6 @@ export const MODEL_SLOTS: ModelSlot[] = [
     settingsKey: "compactionConfigId",
     labelKey: "settings.slotLabelCompaction",
     purposeKey: "settings.slotPurposeCompaction",
-  },
-  {
-    id: "title",
-    settingsKey: "titleConfigId",
-    labelKey: "settings.slotLabelTitle",
-    purposeKey: "settings.slotPurposeTitle",
   },
   {
     id: "synthesis",

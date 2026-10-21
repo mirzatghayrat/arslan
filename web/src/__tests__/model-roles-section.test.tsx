@@ -65,14 +65,14 @@ describe("the five dropdowns", () => {
     }
   });
 
-  it("gives the five purposes five DIFFERENT texts", () => {
+  it("gives the four purposes four DIFFERENT texts", () => {
     // One sentence reused five times is not an explanation; it would pass a
     // non-empty check while telling the user nothing.
     render(<ModelRolesSection {...base} />);
     const texts = MODEL_SLOTS.map((s) =>
       (screen.getByTestId(`slot-purpose-${s.id}`).textContent ?? "").trim(),
     );
-    expect(new Set(texts).size).toBe(5);
+    expect(new Set(texts).size).toBe(4);
   });
 });
 
@@ -91,12 +91,12 @@ describe("the empty-slot sentence is true", () => {
     );
   });
 
-  it("gives router and synthesis different sentences from the routable three", () => {
+  it("gives router and synthesis different sentences from the routable two", () => {
     render(<ModelRolesSection {...base} />);
     const text = (id: string) =>
       (screen.getByTestId(`slot-fallback-${id}`).textContent ?? "").trim();
-    expect(text("router")).not.toBe(text("title"));
-    expect(text("synthesis")).not.toBe(text("title"));
+    expect(text("router")).not.toBe(text("compaction"));
+    expect(text("synthesis")).not.toBe(text("compaction"));
     expect(text("router")).not.toBe(text("synthesis"));
   });
 
@@ -112,7 +112,7 @@ describe("the empty-slot sentence is true", () => {
     // Naming the primary here re-implies "the primary is doing the work", which is
     // exactly what this wording exists to stop implying.
     render(<ModelRolesSection {...base} strategy="balanced" />);
-    const el = screen.getByTestId("slot-fallback-title");
+    const el = screen.getByTestId("slot-fallback-compaction");
     expect(el.dataset.kind).toBe("routed");
     expect(el.textContent).not.toMatch(/Main/);
   });
@@ -121,7 +121,7 @@ describe("the empty-slot sentence is true", () => {
     render(
       <ModelRolesSection {...base} strategy="balanced" providerConfigs={[cfg(1, "Main", true)]} />,
     );
-    const el = screen.getByTestId("slot-fallback-title");
+    const el = screen.getByTestId("slot-fallback-compaction");
     expect(el.dataset.kind).toBe("follows-primary");
     expect(el.textContent).toMatch(/Main/);
   });
@@ -130,7 +130,7 @@ describe("the empty-slot sentence is true", () => {
 describe("nothing configured yet", () => {
   it("points at the provider section instead of rendering empty brackets", () => {
     render(<ModelRolesSection {...base} providerConfigs={[]} />);
-    const el = screen.getByTestId("slot-fallback-title");
+    const el = screen.getByTestId("slot-fallback-compaction");
     expect(el.dataset.kind).toBe("no-configs");
     expect(el.textContent).not.toMatch(/\(\s*\)/);
   });
@@ -229,10 +229,10 @@ describe("the section is wired into Settings", () => {
   it("gives every slot a home in FIELD_HOMES", async () => {
     // A section with no fields behind it is exactly what the deleted `scheduled`
     // and `usage` placeholder tabs were, and the existing field-homes guard fails
-    // on one. Five entries, one per slot, all on the Models page.
+    // on one. Four entries, one per slot, all on the Models page (D8: no title slot).
     const { FIELD_HOMES } = await import("../components/settings/sectionRegistry");
     const homed = Object.entries(FIELD_HOMES).filter(([k, v]) => k.startsWith("slot.") && v === "models");
-    expect(homed).toHaveLength(5);
+    expect(homed).toHaveLength(4);
   });
 
   it("is rendered by SettingsScreen with values, a handler, configs and the strategy", async () => {

@@ -778,8 +778,6 @@
     "slotGoToProviders": "Modell hinzufügen",
     "slotLabelCompaction": "Gesprächsverdichtung",
     "slotPurposeCompaction": "Fasst ältere Nachrichten zusammen, wenn ein Gespräch lang wird, damit es weitergehen kann.",
-    "slotLabelTitle": "Gesprächstitel",
-    "slotPurposeTitle": "Schreibt den kurzen Namen, den ein Gespräch in der Seitenleiste bekommt.",
     "slotLabelSynthesis": "Endgültige Antwort",
     "slotPurposeSynthesis": "Macht aus den von Werkzeugen gesammelten Ergebnissen die fertige Antwort.",
     "slotLabelVision": "Bilder",

@@ -25,9 +25,9 @@ const cfg = (id: number, label: string, primary = false) => ({
 const ONE = [cfg(1, "Main", true)];
 const TWO = [cfg(1, "Main", true), cfg(2, "Cheap")];
 
-describe("the five slots", () => {
-  it("declares exactly five, each with a label AND a purpose key", () => {
-    expect(MODEL_SLOTS).toHaveLength(5);
+describe("the four slots (D8: the title slot is gone)", () => {
+  it("declares exactly four, each with a label AND a purpose key", () => {
+    expect(MODEL_SLOTS).toHaveLength(4);
     for (const s of MODEL_SLOTS) {
       expect(s.purposeKey, s.id).toBeTruthy();
       expect(s.labelKey, s.id).toBeTruthy();
@@ -36,7 +36,7 @@ describe("the five slots", () => {
 
   it("gives every slot a distinct settings key", () => {
     const keys = MODEL_SLOTS.map((s) => s.settingsKey);
-    expect(new Set(keys).size).toBe(5);
+    expect(new Set(keys).size).toBe(4);
   });
 });
 
@@ -63,8 +63,8 @@ describe("synthesis follows the conversation, not the primary", () => {
   });
 });
 
-describe("the routable three", () => {
-  it.each(["compaction", "title", "vision"] as const)(
+describe("the routable two (D8: no title slot)", () => {
+  it.each(["compaction", "vision"] as const)(
     "%s follows the primary under the single strategy",
     (slot) => {
       const f = slotFallback(slot, { strategy: "single", configs: TWO });
@@ -73,7 +73,7 @@ describe("the routable three", () => {
     },
   );
 
-  it.each(["compaction", "title", "vision"] as const)(
+  it.each(["compaction", "vision"] as const)(
     "%s is routed under a routing strategy with two configs",
     (slot) => {
       expect(slotFallback(slot, { strategy: "balanced", configs: TWO }).kind).toBe(
@@ -82,7 +82,7 @@ describe("the routable three", () => {
     },
   );
 
-  it.each(["compaction", "title", "vision"] as const)(
+  it.each(["compaction", "vision"] as const)(
     "%s still follows the primary when only ONE config exists",
     (slot) => {
       // 🔴 The discriminating fixture. routing.select returns the primary when
@@ -97,7 +97,7 @@ describe("the routable three", () => {
 });
 
 describe("nothing configured", () => {
-  it.each(["synthesis", "compaction", "title", "router", "vision"] as const)(
+  it.each(["synthesis", "compaction", "router", "vision"] as const)(
     "%s reports no-configs rather than an empty label",
     (slot) => {
       const f = slotFallback(slot, { strategy: "single", configs: [] });
@@ -109,12 +109,12 @@ describe("nothing configured", () => {
 
 describe("the primary label", () => {
   it("falls back to the first config when none is flagged primary", () => {
-    const f = slotFallback("title", { strategy: "single", configs: [cfg(1, "Only")] });
+    const f = slotFallback("compaction", { strategy: "single", configs: [cfg(1, "Only")] });
     expect((f as { modelLabel: string }).modelLabel).toBe("Only");
   });
 
   it("uses provider and model when a config has no label", () => {
-    const f = slotFallback("title", {
+    const f = slotFallback("compaction", {
       strategy: "single",
       configs: [{ id: 1, provider: "openai", model: "gpt-4o", is_primary: true }],
     });
@@ -122,7 +122,7 @@ describe("the primary label", () => {
   });
 
   it("uses provider and model when the label is only whitespace", () => {
-    const f = slotFallback("title", {
+    const f = slotFallback("compaction", {
       strategy: "single",
       configs: [{ id: 1, label: "   ", provider: "openai", model: "gpt-4o", is_primary: true }],
     });

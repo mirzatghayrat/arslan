@@ -74,7 +74,7 @@ async def test_a_deleted_config_falls_back_to_the_default(db):
     assert await llm_factory.build_conversation_adapter("c1") is None
 
 
-@pytest.mark.parametrize("slot", ["title", "compaction", "router", "vision", "synthesis"])
+@pytest.mark.parametrize("slot", ["compaction", "router", "vision", "synthesis"])   # D8: no title slot
 async def test_a_role_can_name_one_model_of_its_config(db, slot):
     cid = await _router_id(db)
     await settings_service.update_settings(db, {f"{slot}_config_id": str(cid)})

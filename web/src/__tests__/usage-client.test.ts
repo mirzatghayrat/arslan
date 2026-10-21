@@ -23,14 +23,11 @@ describe("usage client (S3-M3)", () => {
   });
 
   it("generateTitle sends conversation_id so the titler's tokens are attributable (S2 fold-in)", async () => {
-    await api.generateTitle("hello", "reply", "conv-7");
+    await api.generateTitle("hello", "conv-7");
     const [url, opts] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toContain("/orchestrator/title");
-    expect(JSON.parse(opts.body)).toMatchObject({
-      first_message: "hello",
-      first_reply: "reply",
-      conversation_id: "conv-7",
-    });
+    // D8: the first message and the conversation, nothing else — no reply goes out.
+    expect(JSON.parse(opts.body)).toEqual({ first_message: "hello", conversation_id: "conv-7" });
   });
 
   it("generateTitle without a conversation id omits the field (optional on the wire)", async () => {

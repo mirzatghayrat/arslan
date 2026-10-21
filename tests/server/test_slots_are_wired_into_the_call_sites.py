@@ -79,33 +79,6 @@ class TestTheThreeOneLineHooks:
         )
 
 
-class TestTitler:
-    """titler.py builds its adapter inline rather than via a _get_adapter hook."""
-
-    async def test_the_slot_is_used_when_set(self, db, monkeypatch):
-        from server.services import titler
-
-        await settings_service.update_settings(db, {"title_config_id": await _slot_config_id(db)})
-        seen = {}
-
-        class _Fake:
-            model = "gpt-4o-mini"
-
-            async def chat(self, *a, **kw):
-                seen["model"] = self.model
-                raise RuntimeError("stop here — the adapter choice is what is under test")
-
-        adapter = await titler._adapter()
-        assert adapter.model == "gpt-4o-mini"
-
-    async def test_unset_keeps_the_summarize_role(self, db):
-        from server.services import titler
-
-        adapter = await titler._adapter()
-
-        assert adapter.model == "deepseek-chat"
-
-
 class TestVisionAppliesOnlyToTurnsWithImages:
     """The ruling's extra condition, and the reason it exists.
 

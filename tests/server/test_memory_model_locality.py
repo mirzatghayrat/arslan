@@ -47,11 +47,22 @@ async def test_model_change_cannot_externalize_already_bound_local_memory(execut
             await llm_factory.build_adapter(role="execute")
 
 
-async def test_active_memory_title_does_not_make_an_auxiliary_cloud_call(execution_db, monkeypatch):
+async def test_active_memory_title_sends_only_the_first_message_to_the_conversations_model(
+        execution_db, monkeypatch):
+    # D8: with memory on, the title still comes from the model this conversation talks to, asked
+    # with the user's first message alone (tests/server/test_d8_titles.py); no reply reaches it.
     async with execution_db.kw["bind"].begin() as db:
         await db.run_sync(migrate_legacy_sync)
         await db.run_sync(activate_sync)
-    async def no_adapter():
-        raise AssertionError("Reply-derived private content must not reach a title model")
-    monkeypatch.setattr(titler, "_adapter", no_adapter)
-    assert await titler.generate_title("A brief report", "private remembered answer", "c") == "A brief report"
+    sent = []
+
+    class _Own:
+        async def chat(self, system, user, **kwargs):  # noqa: ARG002
+            sent.append(user)
+            raise RuntimeError("the prompt is what is under test")
+
+    async def own(conversation_id=None):  # noqa: ARG001
+        return _Own()
+    monkeypatch.setattr(titler, "_adapter", own)
+    assert await titler.generate_title("A brief report", "c") == "A brief report"
+    assert sent == ["A brief report"]

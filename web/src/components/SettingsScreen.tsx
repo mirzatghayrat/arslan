@@ -228,12 +228,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         values={{
           synthesisConfigId: localSettings.synthesisConfigId ?? '',
           compactionConfigId: localSettings.compactionConfigId ?? '',
-          titleConfigId: localSettings.titleConfigId ?? '',
           routerConfigId: localSettings.routerConfigId ?? '',
           visionConfigId: localSettings.visionConfigId ?? '',
           synthesisModel: localSettings.synthesisModel ?? '',
           compactionModel: localSettings.compactionModel ?? '',
-          titleModel: localSettings.titleModel ?? '',
           routerModel: localSettings.routerModel ?? '',
           visionModel: localSettings.visionModel ?? '',
         }}

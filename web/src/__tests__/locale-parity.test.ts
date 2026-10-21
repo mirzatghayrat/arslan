@@ -299,7 +299,9 @@ describe("locale parity", () => {
     // (the server answers it only where its whole card is shown): "Open in Arslan", in the island's words, and the line that says why.
     // 1771 → 1769 (C2c, v0.1.63): wswrite.scope, schedgrant.scope — only the old write and schedule cards (before
     // 0.1.61) said them; every card now comes with its options, which say how long a yes lasts.
-    expect(enKeys).toHaveLength(1769);
+    // 1769 → 1767 (D8, v0.1.63): settings.slotLabelTitle, settings.slotPurposeTitle — the title slot is gone; a title
+    // comes from the conversation's own model.
+    expect(enKeys).toHaveLength(1767);
   });
 
   // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.

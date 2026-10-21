@@ -92,8 +92,7 @@ async def primary_chat_endpoint() -> tuple[str, str, str] | None:
 #: name list is also what the completeness tests derive their expectations from, so a
 #: fifth slot cannot be added to one place and forgotten in another — which is exactly
 #: how github_token ended up on neither pydantic schema while the frontend sent it.
-SLOT_KEYS = ("compaction_config_id", "title_config_id",
-             "router_config_id", "vision_config_id")
+SLOT_KEYS = ("compaction_config_id", "router_config_id", "vision_config_id")  # D8: no title slot
 
 
 async def build_slot_adapter(slot: str) -> LLMAdapter | None:
