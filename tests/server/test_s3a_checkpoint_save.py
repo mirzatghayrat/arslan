@@ -81,6 +81,14 @@ async def test_finish_leaves_a_copy_this_process_did_not_make_alone(ws):
     assert checkpoints.manifest(18) == before
 
 
+async def test_a_copy_that_took_long_says_so(ws, monkeypatch):
+    await checkpoints.ensure(19, [ws])
+    assert checkpoints.manifest(19)["roots"][0]["slow"] is False
+    monkeypatch.setattr(checkpoints, "SLOW_S", -1.0)             # the card: over about 2 s, noted
+    await checkpoints.ensure(20, [ws])
+    assert checkpoints.manifest(20)["roots"][0]["slow"] is True
+
+
 async def test_no_run_saves_nothing(ws):
     await checkpoints.ensure(None, [ws])
     assert checkpoints.manifest(None) is None and not checkpoints.root_dir().exists()

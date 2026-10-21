@@ -65,6 +65,7 @@ MIN_FREE = 5 * 1024 ** 3
 #: Without clonefile (Linux CI, a non-APFS volume) a file is copied only up to this size. DELETE-BY: when
 #: CI no longer runs these tests on Linux and Arslan no longer supports non-APFS volumes (card S3).
 COPY_MAX = 50 * 1024 ** 2
+SLOW_S = 2.0                           # a folder copy that took longer is noted (the card's cost watch)
 #: What all checkpoints hold apart from the originals stays under this; the oldest go first.
 QUOTA_BYTES = 10 * 1024 ** 3
 KEEP_S = 7 * 24 * 3600                 # a checkpoint older than this goes ...
@@ -260,7 +261,7 @@ def _copy_tree(root: Path, dest: Path, protected: list[Path]) -> dict:
 
 def _save_root(run_id: int, root: Path, index: int) -> dict:
     entry = {"path": str(root), "clone": f"copy-{index}", "skipped": None, "excluded": [], "not_regular": [],
-             "failed": [], "written": [], "method": None, "seconds": 0.0, "finished": None}
+             "failed": [], "written": [], "method": None, "seconds": 0.0, "slow": False, "finished": None}
     protected = _protected()
     if not _same_volume(root, root_dir()):
         entry["skipped"] = "other_volume"
@@ -270,6 +271,9 @@ def _save_root(run_id: int, root: Path, index: int) -> dict:
         entry["skipped"] = _count(root, protected)
     if entry["skipped"] is None:
         entry.update(_copy_tree(root, _run_dir(run_id) / entry["clone"], protected))
+        entry["slow"] = entry["seconds"] > SLOW_S
+        if entry["slow"]:
+            logger.info("checkpoints: saving a folder for run %s took %.1f s", run_id, entry["seconds"])
     return entry
 
 
