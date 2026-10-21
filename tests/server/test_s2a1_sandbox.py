@@ -327,11 +327,17 @@ class _OutsideCard(_Cards):
         return answer
 
 
-@pytest.mark.parametrize("by, bare", [("mac", True), (None, False), ("phone", False)])
-async def test_the_outside_card_unwraps_only_on_the_asking_windows_click(monkeypatch, by, bare):
-    ex = _Exec()
-    await _dispatch(monkeypatch, PLAIN_OSA, ex, _OutsideCard(by), outside_sandbox=True, why="needs Reminders")
-    assert ex.runs == [(True, bare)]
+@pytest.mark.parametrize("by", ["mac", None, "phone"])
+async def test_the_outside_card_never_unwraps(monkeypatch, by):
+    """S2a-2 (⓪Plan): a plain osascript U11 can run bare ignores `outside_sandbox` and takes its own card
+    (the one way it works); anything else the outside card lets out runs under the minimal profile, never
+    bare, whoever clicked."""
+    ex, cards = _Exec(), _OutsideCard(by)
+    await _dispatch(monkeypatch, SHELL_OSA, ex, cards, outside_sandbox=True, why="needs a shell")
+    assert cards.calls[0].get("sandbox") == "outside" and ex.runs == [(True, False)]
+    plain = _OutsideCard(by)
+    await _dispatch(monkeypatch, PLAIN_OSA, _Exec(), plain, outside_sandbox=True, why="needs Reminders")
+    assert "sandbox" not in plain.calls[0]
 
 
 async def test_an_approved_script_that_acts_elsewhere_is_kept_wrapped(monkeypatch):
@@ -741,20 +747,42 @@ class _NetAsker:
 async def test_after_outside_content_a_bare_shortcut_asks_for_the_network_this_time_only(
         execution_db, monkeypatch, approve):
     """🟠4: a Shortcut can do anything, the network included, and a bare run has no offline rule. After
-    the turn read outside content it asks first, this time only; a no runs nothing."""
+    the turn read outside content it asks first, this time only; a no runs nothing. S2a-2: on its own
+    card (one card, not two), so a click on that card stands for the network this time."""
     from server.orchestrator import untrusted
     from server.services import permissions
     seen = untrusted.track_turn()
     untrusted.mark_external()
-    ex, asker = _Exec(), _NetAsker(approve)
+    ex, asker, cards = _Exec(), _NetAsker(True), _UserClick(approve)
     try:
         with permissions.asking_with(asker):
-            await _dispatch(monkeypatch, 'shortcuts run "Morning"', ex, _UserClick(True))
+            await _dispatch(monkeypatch, 'shortcuts run "Morning"', ex, cards)
     finally:
         untrusted.end_turn(seen)
-    [frame] = asker.frames
-    assert frame["perm_kind"] == "network" and frame["options"] == ["once"]
+    assert cards.calls == [{"network": True}] and asker.frames == []      # no second, network-only card
     assert ex.runs == ([(True, True)] if approve else [])
+
+
+async def test_a_shortcut_with_no_click_recorded_stays_wrapped_and_offline(execution_db, monkeypatch):
+    """With no click recorded on its card it never runs bare (U11), so it runs wrapped and offline after
+    outside content: no network card, and no network."""
+    from server.orchestrator import untrusted
+    from server.services import permissions
+
+    class _Offline(_Exec):
+        async def execute(self, args):
+            self.offline = terminal_exec.OFFLINE.get()
+            return await super().execute(args)
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)    # wrapped (and offline) needs seatbelt
+    seen = untrusted.track_turn()
+    untrusted.mark_external()
+    ex, asker = _Offline(), _NetAsker(False)
+    try:
+        with permissions.asking_with(asker):
+            await _dispatch(monkeypatch, 'shortcuts run "Morning"', ex, _Cards(True))
+    finally:
+        untrusted.end_turn(seen)
+    assert asker.frames == [] and ex.runs == [(False, False)] and ex.offline
 
 
 async def test_after_outside_content_a_bare_reminders_script_needs_no_network_card(execution_db, monkeypatch):
@@ -855,16 +883,11 @@ def test_the_window_only_check_reads_the_command_as_the_loop_runs_it():
 
 
 async def test_an_earlier_cards_click_never_unwraps_a_later_command(monkeypatch):
-    """A click recorded for an earlier card of the turn must not count for this one: here the outside
-    confirm records an approval but not whose (as permissions.decide does), so nothing was clicked."""
-    from server.services import approvals
-
-    class _ApprovedNoClicker(_Cards):
-        async def __call__(self, command, argv, **kw):
-            answer = await super().__call__(command, argv, **kw)
-            approvals.LAST_OUTCOME.set("approved")
-            return answer
-    approvals.LAST_ANSWERED_BY.set("mac")                      # left over from an earlier card
+    """A click recorded for an earlier card of the turn must not count for this one: here the card says
+    yes but records nothing, so nothing was clicked. (Since S2a-2 a plain osascript takes its own card
+    even when the model asks to leave the sandbox, so the record that counts is decide's.)"""
+    from server.services import permissions
+    permissions.LAST_DECISION.set(permissions.Decision(True, "user", "once"))    # left over from an earlier card
     ex = _Exec()
-    await _dispatch(monkeypatch, PLAIN_OSA, ex, _ApprovedNoClicker(True), outside_sandbox=True, why="x")
-    assert ex.runs == [(True, False)]
+    await _dispatch(monkeypatch, PLAIN_OSA, ex, _Cards(True), outside_sandbox=True, why="x")
+    assert ex.runs == [(False, False)]

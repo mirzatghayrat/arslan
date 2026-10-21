@@ -48,7 +48,7 @@ CARDS = os.environ.get("BENCH_CARDS", "")
 # 8 such cards were approved in the first option-A rounds and ran as the user on the real disk).
 if os.environ.get("BENCH_SANDBOX") == "none":
     CARDS = "sandboxed"
-# Outward kinds a user should weigh on every card, mirroring task_service._OUTBOUND_RULES (a test keeps them
+# Outward kinds a user should weigh on every card, mirroring terminal_policy.OUTBOUND_RULES (a test keeps them
 # equal). Inside the sandbox everything else is approved: the sandbox contains it. The first version approved
 # only "", delete and install, and that list went stale as rules were added: "hermes:script execution via
 # heredoc" inside the sandbox was declined (K2a's T5, 2026-10-20), so a run failed on the bench's own policy.
@@ -58,7 +58,14 @@ OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "
 # launchctl/crontab hand a job to launchd/cron, which run it unsandboxed and after the turn; `defaults write`
 # goes through cfprefsd; sudo, the macOS roots, keychain secrets and Arslan's keys are never the bench's to
 # approve. Declined like outward kinds; a test pins each name to a terminal_policy rule (rename guard).
-ESCAPES_SANDBOX = frozenset({"login-items", "macos-roots", "keychain-secrets", "arslan-keys", "sudo"})
+# S2a-2 (a straight rename, ⓪Plan): the layer ② rules that act through the system on the real Mac — the
+# keychain (securityd), system settings (their daemons), an app or link `open` starts (LaunchServices), other
+# programs killed, the screen or clipboard read — are declined like the daemon kinds, and so is a write into
+# the user's startup, SSH, credential or agent files (`protected-write`, ②Main's review): it lands outside. `delete-outside` and
+# `unreadable` stay approved inside the sandbox, as `delete` and Hermes' script findings were: it holds them.
+ESCAPES_SANDBOX = frozenset({"login-items", "macos-roots", "keychain-secrets", "arslan-keys", "sudo",
+                             "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard",
+                             "protected-write"})
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
 # everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).

@@ -187,14 +187,9 @@ def test_a_read_only_command_is_LOW_here_and_HIGH_over_there():
     assert ws_arslan.effective_risk("me@192.168.1.8", "git", ["status"]) == "HIGH"
 
 
-def test_ask_risky_does_not_exempt_a_remote_read_only_command():
-    local = dict(policy="ask_risky", risk="LOW")
-    assert ws_arslan.may_skip_card(None, **local) is True
-    assert ws_arslan.may_skip_card("me@192.168.1.8", **local) is False
-
-
-def test_ask_all_still_shows_a_card_locally():
-    assert ws_arslan.may_skip_card(None, policy="ask_all", risk="LOW") is False
+# `may_skip_card` went in S2a-2: the window's ladder shows a card whenever it is called (whether a
+# command needs one is decided once, in the tool loop), so no remote command skips it. The window
+# test `test_a_remote_card_answered_with_remember_still_asks_next_time` holds that end to end.
 
 
 def test_the_card_frame_says_which_machine_and_which_key():

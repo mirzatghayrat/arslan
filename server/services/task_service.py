@@ -49,38 +49,13 @@ _READ_TOOLS = _READ_TOOLS | {"background_status", "browser_open", "browser_look"
 _READ_TOOLS = _READ_TOOLS | {"desktop_apps", "desktop_look"}       # 0.1.53: Hands reads; desktop_* acts
 
 
-# 0.1.59: terminal-policy rules whose commands reach beyond this Mac. A failure there can still have
-# left something behind elsewhere (an upload that broke after the server took it), so it stays a
-# reason to ask the user to check.
-_OUTBOUND_RULES = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "upload",
-                             "remote-shell", "git-push", "publish"})
-
-
-# 0.1.62 F2 ②a: outbound spellings the terminal rules do not match yet (they run without a card
-# today): curl --request=POST (quoted too) or -sXDELETE, gh api with fields or a non-GET method, HTTPie and xh sending.
-# Only this file reads them: a failure of one may have left something behind elsewhere. Delete
-# when S2a adds them to terminal_policy's outbound group, in that same PR (v0.1.63).
-def _outbound_extra_rules():
-    from server.services import terminal_policy
-    pos = terminal_policy._POS
-    return [re.compile(pos + pattern, re.I) for pattern in (
-        r"curl\b[^\n]*(?:--request(?:=|\s+)[\"']?|\s-[a-zA-Z]*X\s*[\"']?)(?:POST|PUT|PATCH|DELETE)\b",
-        r"gh\s+api\b[^\n]*(?:\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$)|\s--method[\s=](?!GET\b)\w)",
-        r"(?:https?|xhs?)\s+(?:-\S+\s+)*(?:POST|PUT|PATCH|DELETE)\b",
-        r"(?:https?|xhs?)\s+[^\n]*\s[A-Za-z_][\w.\-\[\]]*:?=(?!=)",
-    )]
-
-
-_OUTBOUND_EXTRA: list = []
-
-
 def _outbound(command: str) -> bool:
+    """0.1.59: a command whose failure may still have left something behind elsewhere (an upload that
+    broke after the server took it), so it stays a reason to ask the user to check. The rules are
+    terminal_policy's "sends something out" group and the two that drive other apps (S2a-2: F2's extra
+    spellings now live in that group)."""
     from server.services import terminal_policy
-    if terminal_policy.ask_rules(command) & _OUTBOUND_RULES:
-        return True
-    if not _OUTBOUND_EXTRA:
-        _OUTBOUND_EXTRA.extend(_outbound_extra_rules())
-    return any(terminal_policy._matches(rule, terminal_policy._detection_texts(command)) for rule in _OUTBOUND_EXTRA)
+    return bool(terminal_policy.ask_rules(command) & terminal_policy.OUTBOUND_RULES)
 
 
 def known_local_failure(tool_key: str, arguments: dict, result) -> bool:

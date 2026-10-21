@@ -1,6 +1,7 @@
-"""0.1.52: inside the workspace sandbox a plain data script runs without a card; a script
-that reaches out, starts programs, drives other apps or hides its code still asks, and
-so does anything with another reason to ask, outside the sandbox, or under "ask for all"."""
+"""0.1.52, S2a-2 layer ③: inside the workspace sandbox a plain data script runs without a card — any
+command does, unless layer ② or `unreadable` says otherwise. A script that reaches out, starts
+programs, drives other apps or hides its code asks (`unreadable`), and so does every command when the
+sandbox is off or cannot start (R4) or under "ask for all"."""
 import pytest
 
 from server.orchestrator import tool_loop
@@ -22,25 +23,24 @@ PY'''
     "node -e \"require('fs').writeFileSync('a.txt','https://x')\"",
 ])
 def test_plain_scripts_run_freely(command):
-    assert terminal_policy.assess(command).rule.startswith("hermes:script execution")
-    assert terminal_policy.runs_freely_in_sandbox(command) is True
+    assert terminal_policy.assess(command) == terminal_policy.Assessment("run")
 
 
-@pytest.mark.parametrize("command", [
-    "python3 -c \"import requests; requests.post('https://x', data=open('a').read())\"",
-    "python3 -c \"import urllib.request as u; u.urlopen('https://x')\"",
-    "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['ls'])\nPY",
-    "python3 -c \"__import__('os').system('ls')\"",
-    "python3 -c \"exec('print(1)')\"",
-    "python3 -c \"import base64; print(base64.b64decode('eA=='))\"",
-    "node -e \"fetch('https://x')\"",
-    "node -e \"require('https').get('https://x')\"",
-    "python3 -c \"print(1)\"; osascript -e 'tell app \"Mail\" to quit'",
-    "rm a.txt && python3 -c 'print(1)'",
-    "ls -la",
+@pytest.mark.parametrize("command,rule", [
+    ("python3 -c \"import requests; requests.post('https://x', data=open('a').read())\"", "unreadable"),
+    ("python3 -c \"import urllib.request as u; u.urlopen('https://x')\"", "unreadable"),
+    ("python3 - <<'PY'\nimport subprocess\nsubprocess.run(['ls'])\nPY", "unreadable"),
+    ("python3 -c \"__import__('os').system('ls')\"", "unreadable"),
+    ("python3 -c \"exec('print(1)')\"", "unreadable"),
+    ("python3 -c \"import base64; print(base64.b64decode('eA=='))\"", "unreadable"),
+    ("node -e \"fetch('https://x')\"", "unreadable"),
+    ("node -e \"require('https').get('https://x')\"", "unreadable"),
+    ("python3 -c \"print(1)\"; osascript -e 'tell app \"Mail\" to quit'", "apple-events"),
+    ("rm a.txt && python3 -c 'print(1)'", ""),           # S2a-2: inside the working folder, layer ③
+    ("ls -la", ""),
 ])
-def test_scripts_that_reach_out_or_carry_another_reason_still_ask(command):
-    assert terminal_policy.runs_freely_in_sandbox(command) is False
+def test_scripts_that_reach_out_or_carry_another_reason_still_ask(command, rule):
+    assert terminal_policy.assess(command).rule == rule
 
 
 @pytest.fixture(autouse=True)
@@ -112,12 +112,33 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(monkeypa
     async def on():
         return True
     monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
+    # Seatbelt starts here, as on a Mac: outside it the command is wrapped in the minimal profile, which
+    # takes the network away after outside content instead of asking (with no sandbox, it would ask).
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     command_sandbox.grant("c2")                              # this conversation runs outside
-    await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
-    assert len(asked) == 2
+    ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
+    assert len(asked) == 1 and ex.outside == [True]          # S2a-2: that grant is the user's yes for layer ③
 
     async def ask_all():
         return True
     monkeypatch.setattr(tool_loop, "_asks_for_everything", ask_all)
     await _dispatch(monkeypatch, T2_SCRIPT, cards)
-    assert len(asked) == 3                                   # the user chose to be asked for everything
+    assert len(asked) == 2                                   # the user chose to be asked for everything
+
+
+async def test_where_seatbelt_cannot_start_layer_three_asks_and_nobody_to_ask_refuses(monkeypatch):
+    """R4: no card in the sandbox only when the sandbox can start; otherwise the command would run unwrapped."""
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)
+    asked = []
+
+    async def cards(command, argv, **kw):
+        asked.append(kw)
+        return True
+    ex = await _dispatch(monkeypatch, "ls -la", cards)
+    assert len(asked) == 1 and ex.outside == [False]
+    ex = await _dispatch(monkeypatch, "ls -la", None)        # a scheduled run: nobody to ask
+    assert ex.outside == []
+
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    ex = await _dispatch(monkeypatch, "ls -la", None)        # with the sandbox, layer ③ needs nobody
+    assert ex.outside == [False]

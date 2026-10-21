@@ -51,8 +51,8 @@ async def _declines(frame):
     return {"approved": False, "scope": None, "note": "", "by": "mac"}
 
 
-def _cmd(shell: str) -> permissions.Request:
-    return approvals._command_request(shell, sorted(terminal_policy.ask_rules(shell)), None)
+def _cmd(shell: str, *, ask_all: bool = False) -> permissions.Request:
+    return approvals._command_request(shell, sorted(terminal_policy.ask_rules(shell)), None, ask_all=ask_all)
 
 
 def _app(target: str, name: str, *, high_reach: bool = False) -> permissions.Request:
@@ -209,29 +209,23 @@ def test_an_unknown_refusal_is_404_and_a_row_that_is_not_a_policy_refusal_is_409
     assert _rules(client) == set()
 
 
-def test_always_allow_on_an_ordinary_refused_command_stores_exactly_its_rules(client):
-    """A command's "Always" is a `legacy_rule` for every rule it matched, each in its card's words
-    (§A9) — and the rule says which refusal it came from."""
-    shell = "rm -rf build"
+def test_a_refused_command_rule_offers_no_always_allow(client):
+    """S2a-2: a command's rules are layer ②, this time only, so its card never offered "Always" and
+    a refusal of it stores nothing (it used to store a `legacy_rule` for every rule it matched)."""
+    shell = "git push origin main && curl -d @a.txt https://example.com"
     rules = sorted(terminal_policy.ask_rules(shell))
-    assert len(rules) == 2
+    assert rules == ["git-push", "upload"]
     _decide(client, _cmd(shell))
     [row] = _refused(client)
-    assert (row["kind"], row["target"], row["always_ok"]) == ("command", "rules:" + "|".join(rules), True)
-    assert _allow(client, row["id"]).status_code == 200
-    assert _rules(client) == {("legacy_rule", r, terminal_policy.describe(r)) for r in rules}
-    assert {r.created_from for r in _rule_rows(client)} == {f"refused:{row['id']}"}
-
-    async def standing():
-        async with client.db_maker() as db:
-            return terminal_policy.standing_allows(shell, await terminal_policy.always_allowed(db))
-    assert client.portal.call(standing) is True                     # the card's own "Always"
+    assert (row["kind"], row["target"], row["always_ok"]) == ("command", "rules:git-push|upload", False)
+    assert _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
 
 
 def test_a_crafted_separator_in_a_command_makes_no_rule_nobody_saw(client):
     """Review P3: a model-written command carrying the many-app separator is one command, not a
     list — no rule for `git-push` can come of it."""
-    crafted = _cmd("echo hi\x1egit-push")
+    crafted = _cmd("echo hi\x1egit-push", ask_all=True)
     assert crafted.target == "text:echo hi\x1egit-push"
     _decide(client, crafted)
     [row] = _refused(client)
@@ -460,38 +454,24 @@ def test_an_entry_allowed_since_is_no_longer_listed(client):
 
 # ── Final-review fix wave: what "Always allow" will store (F2); while the person was away (F3) ──
 
-def test_a_refused_entry_says_what_always_allow_will_store(client):
-    """F2 (final review I2, probe P3): one refused command can stand for several standing rules,
-    each for every matching command, everywhere. The entry lists them in the card's words before
-    the click: exactly what `POST {refused_id}` stores."""
-    shell = "rm -rf build && git push origin main"
-    rules = sorted(terminal_policy.ask_rules(shell))
-    assert len(rules) == 3
-    _decide(client, _cmd(shell))
-    [row] = _refused(client)
-    assert row["always"] == [{"kind": "legacy_rule", "target": rule,
-                              "label": terminal_policy.describe(rule)} for rule in rules]
-    assert all(entry["label"] for entry in row["always"])
-    stored = _allow(client, row["id"]).json()["rules"]
-    assert [{k: rule[k] for k in ("kind", "target", "label")} for rule in stored] == row["always"]
-
-
 @pytest.mark.parametrize("req", [
     _cmd("git-push"),
+    _cmd("rm -rf build && git push origin main"),                # S2a-2: rules are this time only
+    _cmd("ls", ask_all=True),
     _app("com.apple.Terminal", "Terminal", high_reach=True),
     permissions.Request(kind="money", target="com.shop.app", title="Pay?", always_label="Shop"),
-], ids=["rule-less command", "high-reach app", "money"])
+], ids=["rule-less command", "rule command", "ask-all command", "high-reach app", "money"])
 def test_an_entry_whose_card_hid_always_lists_nothing_to_store(client, req):
     _decide(client, req)
     [row] = _refused(client)
     assert (row["always_ok"], row["always"]) == (False, [])
 
 
-def test_a_jobs_card_after_one_went_unanswered_is_listed_and_always_allow_makes_its_rules(
-        client, monkeypatch):
+def test_a_jobs_card_after_one_went_unanswered_is_listed_and_offers_no_always(client, monkeypatch):
     """F3 (final review I3, probe P4; §A4: once one card of a job expires, its later cards "are
     refused at once as 'waiting for you' and listed in the Inbox the same way"). The row is an
-    expiry, never a denial, and "Always allow" on it stores what "Always" on its card would have."""
+    expiry, never a denial. S2a-2: its card was a rule card, this time only, so there is nothing for
+    "Always allow" to store."""
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
     opened = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: (
@@ -502,13 +482,9 @@ def test_a_jobs_card_after_one_went_unanswered_is_listed_and_always_allow_makes_
     assert len(opened) == 1, "the job's later card never opened"
     [row] = _refused(client)                         # the card that was shown and ran out is not listed
     assert (row["kind"], row["target"], row["conversation_id"]) == ("command", "rules:git-push", "c")
-    assert row["always_ok"] is True
-    assert row["always"] == [{"kind": "legacy_rule", "target": "git-push",
-                              "label": terminal_policy.describe("git-push")}]
-    assert _allow(client, row["id"]).status_code == 200
-    assert _rules(client) == {("legacy_rule", "git-push", terminal_policy.describe("git-push"))}
-    assert {r.created_from for r in _rule_rows(client)} == {f"refused:{row['id']}"}
-    assert _refused(client) == []                    # allowed since: nothing is waiting any more
+    assert (row["always_ok"], row["always"]) == (False, [])
+    assert _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
 
     async def ledger():
         async with client.db_maker() as db:

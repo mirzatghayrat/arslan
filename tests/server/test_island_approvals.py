@@ -47,13 +47,16 @@ def cmd(text: str, **kw) -> dict:
     (protocol.propose_action("a", "mac_script", "Finder", 'tell application "Finder" to delete file "a.txt"'), False),
     (protocol.propose_action("a", "mac_script", "Mail", 'tell application "Mail" to send theMessage'), False),
     (protocol.propose_action("a", "mac_script", "Finder", 'do shell script "ls"'), False),
-    (cmd("rm notes.txt"), False),
-    (cmd("ls && rm -r build"), False),                         # the second command decides
+    # S2a-2: inside the working folder a delete is layer ③ (no card in the sandbox); its card, shown with the
+    # sandbox off, is marked `unsandboxed` and the island never approves it. Outside the folder: layer ②.
+    (cmd("rm notes.txt") | {"unsandboxed": True}, False),
+    (cmd("ls && rm -r ~/build"), False),                       # the second command decides
     (cmd("git push origin main"), False),
     (cmd("curl -X POST https://example.test/api"), False),
     (cmd("mail -s hi someone@example.test"), False),
     (cmd("osascript -e 'tell app \"Finder\" to get name'"), False),   # could send/delete; read it in Arslan
-    (cmd("brew install wget"), False),
+    (cmd("brew install wget") | {"unsandboxed": True}, False),
+    (cmd("pbpaste"), False),                                   # S2a-2: the screen or clipboard
     (cmd("ls", remote_host="192.168.1.8"), False),
     (cmd("mv a.txt ~/Desktop/", sandbox="outside", why="move it"), False),
     ({"type": "propose_something_new", "call_id": "n"}, False),
@@ -73,7 +76,7 @@ async def api(monkeypatch):
 
 
 async def test_a_risky_card_is_refused_from_the_island_but_declinable_and_approvable_in_arslan(api):
-    risky = approvals.open_card("c", protocol.propose_run_command("r1", "rm old.txt", []), broadcast=False)
+    risky = approvals.open_card("c", protocol.propose_run_command("r1", "rm ~/old.txt", []), broadcast=False)
     safe = approvals.open_card("c", protocol.propose_schedule("s1", "Brief", "every: 3600"), broadcast=False)
     listed = {row["call_id"]: row for row in (await api.get("/api/v1/approvals/pending")).json()}
     assert listed["r1"]["island_ok"] is False and listed["s1"]["island_ok"] is True
@@ -103,7 +106,7 @@ async def test_a_takeover_frame_with_no_permission_kind_is_still_answered_in_ars
 
 
 async def test_the_inbox_inside_arslan_may_approve_a_risky_card(api):
-    risky = approvals.open_card("c", protocol.propose_run_command("r2", "rm old.txt", []), broadcast=False)
+    risky = approvals.open_card("c", protocol.propose_run_command("r2", "rm ~/old.txt", []), broadcast=False)
     assert (await api.post("/api/v1/approvals/r2/answer", json={"approve": True, "source": "inbox"})).status_code == 200
     assert risky.future.result() == {"approved": True, "remember": False, "scope": None, "note": "",
                                      "by": "inbox"}
@@ -199,7 +202,7 @@ def test_whatever_legacy_kind_a_decide_card_keeps_its_permission_kind_alone_deci
     (protocol.propose_workspace_write("w", "~/Arslan", "write", "notes.md") | {"perm_kind": "workspace_write"}, True),
     (protocol.propose_schedule("s", "Morning brief", "cron: 0 9 * * *") | {"perm_kind": "schedule"}, True),
     (cmd("git status") | {"perm_kind": "command"}, True),
-    (cmd("rm notes.txt") | {"perm_kind": "command"}, False),
+    (cmd("rm ~/notes.txt") | {"perm_kind": "command"}, False),
     # A permission kind that is not a kind's name: never answerable, never an error.
     (protocol.propose_action("a", "desktop_app", "Notes", "") | {"perm_kind": ["app"]}, False),
     (protocol.propose_action("a", "desktop_app", "Notes", "") | {"perm_kind": None}, False),
@@ -258,7 +261,7 @@ def test_a_permission_kind_that_is_no_kinds_name_is_never_answerable_on_any_card
 
 @pytest.mark.parametrize("kind", sorted(ISLAND_KINDS | CARD_OWN_KINDS))
 @pytest.mark.parametrize("frame", [
-    cmd("rm notes.txt"),
+    cmd("rm ~/notes.txt"),
     cmd("git push origin main"),
     cmd("ls", remote_host="192.168.1.8"),
     cmd("mv a.txt ~/Desktop/", sandbox="outside", why="move it"),

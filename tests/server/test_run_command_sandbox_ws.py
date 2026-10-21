@@ -38,6 +38,8 @@ class _StopsInside:
 
 
 def test_retry_card_runs_it_outside_and_the_checkbox_grants_this_conversation(app_client, monkeypatch):
+    # S2a-2 (R4): layer ③ runs with no card only where the sandbox can start; pinned so CI's Linux runs it too.
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "mv", ["~/Downloads/a.png", "~/Pictures/"])
     fake = _stub_run_command_executor(monkeypatch)

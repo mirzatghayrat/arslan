@@ -18,6 +18,9 @@ def setup(monkeypatch):
         return True
     monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
     monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
+    # S2a-2 (R4): layer ③ runs with no card only where the sandbox can start; these tests are about
+    # what happens after it starts, on every platform.
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     yield
     command_sandbox._reset_for_tests()
 
@@ -63,12 +66,12 @@ async def _dispatch(monkeypatch, args, *, executor, cards=None, cid="c1"):
 
 
 async def test_a_stopped_command_is_offered_one_rerun_outside(monkeypatch):
-    # The ordinary card callback is always consulted (the window decides whether to
-    # show it); then the retry card.
-    ex, cards = _Exec(), _Cards(True, True)
+    # S2a-2: layer ③ runs in the sandbox with no card (the tool loop decides that, once); a stop
+    # offers the retry card.
+    ex, cards = _Exec(), _Cards(True)
     r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=cards)
     assert ex.outside == [False, True]
-    assert [c.get("sandbox") for c in cards.calls] == [None, "retry"]
+    assert [c.get("sandbox") for c in cards.calls] == ["retry"]
     assert r["ok"] is True and r["ran_outside_sandbox"] is True
 
 
@@ -120,7 +123,7 @@ async def test_a_conversation_grant_runs_outside_from_the_start_there_only(monke
     assert ex.outside == [True] and r["ran_outside_sandbox"] is True
     assert all(c.get("sandbox") is None for c in cards.calls)       # no sandbox card
     other = _Exec()
-    other_cards = _Cards(True, False)
+    other_cards = _Cards(False)
     await _dispatch(monkeypatch, {"command": "ls"}, executor=other, cards=other_cards, cid="c2")
     assert other.outside == [False] and other_cards.calls[-1]["sandbox"] == "retry"
 

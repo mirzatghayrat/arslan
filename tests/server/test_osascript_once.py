@@ -54,9 +54,9 @@ def test_the_card_is_for_this_time_only(command, rule):
 
 
 def test_a_remembered_rule_no_longer_lets_it_through():
-    assert not tp.standing_allows(f"osascript {OSA}", {"apple-events"})
-    assert not tp.standing_allows('shortcuts run "x"', {"shortcuts"})
-    assert tp.standing_allows("brew install x", {"install"})          # other rules keep their "Always"
+    # S2a-2: no stored "Always" is read for any rule now; these two were the first (F4a).
+    assert {"apple-events", "shortcuts"} <= tp.ONCE_ONLY_RULES
+    assert tp.assess("brew install x").level == "run"                  # `install` is gone: the sandbox holds it
 
 
 def test_a_once_only_ask_never_shares_a_card_with_one_that_is_not():
@@ -82,7 +82,7 @@ def test_the_windows_card_offers_only_this_time_despite_a_rule_and_a_grant(app_c
 
     async def remember():
         async with app_client.db_maker() as db:
-            await tp.allow_always(db, "apple-events")
+            await permission_store.add_rule(db, "legacy_rule", "apple-events", created_from="card")
             await permission_store.add_grant(db, "osa", "", "command", "rules:apple-events")
             await db.commit()
     app_client.portal.call(remember)
