@@ -336,16 +336,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             raise WebSocketDisconnect(1000)
         return data
 
-    async def _ask(frame: dict) -> dict:
-        """Show one card and wait for its answer (`_ask_everywhere`'s: approved, scope, note, by).
-
-        0.1.55: every card is registered in `approvals`, so the Inbox and the island
-        can answer it too (by call_id, through the same reply rule). A window's own
-        turn still sends the card to THIS socket only — other windows do not paint a
-        copy — and it is never journaled, so a reattaching socket cannot replay a dead
-        card. A turn the iPhone started shows it everywhere (`_ask_everywhere`)."""
-        return await _ask_everywhere(frame, broadcast=phone_turn["on"])
-
     async def _ask_everywhere(frame: dict, broadcast: bool = True) -> dict:
         """Wait for a registered card. A turn the iPhone started (`broadcast`) shows it
         on the phone (through this socket, the Bridge's) and in every Mac window open
@@ -472,88 +462,27 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         except Exception:  # noqa: BLE001 — closed under us
             _window_gone(pending)
 
+    # The one ladder (S4a), on the card surface this turn bound (`_window_asker`): the three callbacks the tool
+    # loop expects are shells over it. The window's "rest of this conversation" sandbox grant is its own.
+    from server.services import command_confirm
+    ladder = command_confirm.Confirmations(conversation_id, session_grants=True)
+
     async def confirm_workspace_write(action: str, path: str) -> bool:
-        """0.1.61: decided by permissions.decide on this turn's card surface. "In this
-        conversation" is a conversation grant for the folder: it holds across sockets and
-        reloads (it replaces the per-connection grant)."""
-        from server.services import settings_service
-        async with db_session.AsyncSessionLocal() as db:
-            ws_root = await settings_service.workspace_dir(db)
-        if ws_root is None:
-            permissions.LAST_DECISION.set(None)       # no card: the refusal is no earlier answer
-            approvals.LAST_OUTCOME.set(None)
-            return False                     # nothing to grant access to
-        # Decided with that session closed: decide opens its own, and a card may wait 30 minutes.
-        decision = await permissions.decide(permissions.Request(
-            kind="workspace_write", target=str(ws_root), title=f"Let Arslan write in {ws_root.name}?",
-            detail=path, frame=protocol.propose_workspace_write(uuid.uuid4().hex, str(ws_root), action, path)),
-            permissions.Context(conversation_id=conversation_id))
-        return decision.allowed
+        """0.1.61: "In this conversation" is a conversation grant for the folder: it holds across sockets
+        and reloads."""
+        return await ladder.workspace_write(action, path)
 
     async def confirm_schedule(name: str, when: str, prompt: str = "") -> bool:
-        """0.1.61: decided by permissions.decide (P2 裁决①'s per-connection grant is now the
-        conversation's). S1 (U14 d): the card shows the task's prompt."""
-        decision = await permissions.decide(permissions.Request(
-            kind="schedule", target="*", title=f"Schedule “{name}”?", detail=when,
-            frame=protocol.propose_schedule(uuid.uuid4().hex, name, when, prompt)),
-            permissions.Context(conversation_id=conversation_id))
-        return decision.allowed
-
-    async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict,
-                            network: bool = False) -> bool:
-        from server.services import command_sandbox
-        call_id = uuid.uuid4().hex
-        decision = await _ask(protocol.propose_run_command(
-            call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-            sandbox=sandbox, why=why, network=network))
-        if decision["approved"] and decision.get("remember"):
-            command_sandbox.grant(conversation_id)    # this conversation only, never saved
-        return bool(decision["approved"])
+        return await ladder.schedule(name, when, prompt)
 
     async def confirm_command(command: str, argv: list, *,
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
                               sandbox: str | None = None, why: str = "", network: bool = False) -> bool:
-        """`sandbox` (0.1.51 P3): "outside" — the model asks to run this command
-        outside the workspace sandbox; "retry" — the sandbox stopped it and it would
-        run again outside, from the start. Either always shows a card; its checkbox
-        means "for the rest of this conversation" (memory only), never a saved rule.
-        `network` (S2a-2): the card also asks for the network, this time (`protocol.propose_run_command`)."""
-        from server.services import settings_service
-        # A remote command takes NONE of the shortcuts below. Not a grant, not ask_risky,
-        # not "remember this one" — because the local risk grade describes a binary on
-        # THIS machine, and `git` over there is not the same program (P3b 裁决③). Remote
-        # is HIGH, always, and its card is a plain one: nothing is ever remembered.
-        from server.services import terminal_policy
-        risk = effective_risk(remote_host, command, argv)
-        verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
-        if sandbox in ("outside", "retry"):
-            from server.services import command_sandbox
-            if command_sandbox.granted(conversation_id):
-                return True
-            return await _sandbox_card(command, argv, sandbox, why, verdict, network)
-        # S2a-2: called, a card is shown. Which commands need none (layer ③ in the sandbox) is the tool
-        # loop's to decide, once; a stored "Always" answers no command card any more.
-        if remote_host:
-            # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
-            decision = await _ask(protocol.propose_run_command(
-                uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                remote_host=remote_host, fingerprints=list(fingerprints or [])))
-            return bool(decision.get("approved"))
-        async with db_session.AsyncSessionLocal() as db:
-            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
-        shell = terminal_policy.as_shell(command, argv)
-        rules = sorted(terminal_policy.ask_rules(shell))
-        ctx = permissions.Context(conversation_id=conversation_id)
-        frame = protocol.propose_run_command(uuid.uuid4().hex, command, argv,
-                                             reason=verdict.reason or f"risk: {risk}",
-                                             rule=verdict.rule or None, network=network)
-        # On the turn's card surface (this window's cards: permissions.current_asker()).
-        decision = await permissions.decide(
-            approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                       unsandboxed=ask_all and await approvals.runs_unsandboxed(conversation_id)),
-            ctx)
-        return decision.allowed
+        """See `command_confirm.Confirmations.command`. Leaving the sandbox shows a card whose checkbox
+        means "for the rest of this conversation" (memory only), never a saved rule."""
+        return await ladder.command(command, argv, remote_host=remote_host, fingerprints=fingerprints,
+                                    sandbox=sandbox, why=why, network=network)
 
     # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
     # loop honours it only for a callback that says so (never a job's, never no callback).

@@ -27,12 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-import uuid
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 from server.services import desktop_status, run_registry
+from server.services.command_confirm import Confirmations
 from server.ws import protocol
 
 TIMEOUT_S = 1800                   # 30 minutes (0.1.61 §A4); hands_tools.CARD_S follows it
@@ -407,88 +407,16 @@ class BroadcastAsker:
         return {**decision, "call_id": pending.call_id}
 
 
-class JobConfirmations:
-    """The three confirmation callbacks the tool loop expects, for one job. Its cards are its
-    `BroadcastAsker`'s. Rule cards, the workspace write and the schedule are decided by
-    `permissions.decide` (0.1.61): the window's choices, and the grants and rules of the job's
-    conversation — a job's grants are its conversation's. Leaving the sandbox and another
-    machine stay plain cards: one answer, nothing remembered."""
+class JobConfirmations(Confirmations):
+    """The three confirmation callbacks the tool loop expects, for one job: the one ladder
+    (`command_confirm.Confirmations`) on its `BroadcastAsker`, its ledger rows carrying the job id (§A8).
+    Rule cards, the workspace write and the schedule are decided by `permissions.decide` (0.1.61): the
+    window's choices, and the grants and rules of the job's conversation — a job's grants are its
+    conversation's. Leaving the sandbox and another machine stay plain cards: one answer, nothing
+    remembered."""
 
     def __init__(self, conversation_id: str, job_id: str | None = None):
-        self.conversation_id = conversation_id
-        self.job_id = job_id
-        self.asker = BroadcastAsker(conversation_id)
-
-    def _context(self):
-        """Where a decision of this job is made: its ledger rows carry the job id (§A8)."""
-        from server.services import permissions
-        return permissions.Context(conversation_id=self.conversation_id, job_id=self.job_id,
-                                   surface="job")
-
-    async def _card(self, frame: dict) -> bool:
-        return bool((await self.asker(frame))["approved"])
-
-    async def workspace_write(self, action: str, path: str) -> bool:
-        from server.db import session as db_session
-        from server.services import permissions, settings_service
-        async with db_session.AsyncSessionLocal() as db:
-            root = await settings_service.workspace_dir(db)
-        if root is None:
-            _forget_decision()                 # no card: the refusal is not an earlier answer
-            LAST_OUTCOME.set(None)
-            return False
-        # Decided with that session closed: decide opens its own, and a card may wait 30 minutes.
-        with permissions.asking_with(self.asker):
-            decision = await permissions.decide(permissions.Request(
-                kind="workspace_write", target=str(root), title=f"Let Arslan write in {root.name}?",
-                detail=path, frame=protocol.propose_workspace_write(uuid.uuid4().hex, str(root),
-                                                                    action, path)),
-                self._context())
-        return decision.allowed
-
-    async def schedule(self, name: str, when: str, prompt: str = "") -> bool:
-        from server.services import permissions
-        with permissions.asking_with(self.asker):
-            decision = await permissions.decide(permissions.Request(
-                kind="schedule", target="*", title=f"Schedule “{name}”?", detail=when,
-                frame=protocol.propose_schedule(uuid.uuid4().hex, name, when, prompt)),
-                self._context())
-        return decision.allowed
-
-    async def command(self, command: str, argv: list, *, remote_host: str | None = None,
-                      fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False) -> bool:
-        from server.db import session as db_session
-        from server.services import settings_service
-        from server.services import terminal_policy
-        from server.ws.arslan import effective_risk
-        risk = effective_risk(remote_host, command, argv)
-        verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
-        if sandbox in ("outside", "retry"):
-            # 0.1.51 P3: leaving the sandbox is always a card; a job's card offers no
-            # "rest of the conversation", and a job never uses one the chat window was
-            # given: that grant is a session grant.
-            return await self._card(protocol.propose_run_command(
-                uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-                sandbox=sandbox, why=why, network=network))
-        # S2a-2: called, a card is shown (the tool loop decided whether one is needed).
-        if remote_host:
-            return await self._card(protocol.propose_run_command(
-                uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                remote_host=remote_host, fingerprints=list(fingerprints or [])))
-        async with db_session.AsyncSessionLocal() as db:
-            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
-        shell = terminal_policy.as_shell(command, argv)
-        rules = sorted(terminal_policy.ask_rules(shell))
-        frame = protocol.propose_run_command(
-            uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-            rule=verdict.rule or None, network=network)
-        from server.services import permissions
-        with permissions.asking_with(self.asker):
-            decision = await permissions.decide(
-                _command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                 unsandboxed=ask_all and await runs_unsandboxed()), self._context())
-        return decision.allowed
+        super().__init__(conversation_id, job_id=job_id, surface="job", asker=BroadcastAsker(conversation_id))
 
 
 async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
