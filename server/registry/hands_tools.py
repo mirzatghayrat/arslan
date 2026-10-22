@@ -32,6 +32,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
+from arslan.aio import within
 from server.services import approvals
 
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
@@ -353,7 +354,7 @@ async def _run(argv: list[str], *, timeout: float = 120) -> dict:
     process = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE,
                                                    stderr=asyncio.subprocess.PIPE)
     try:
-        out, err = await asyncio.wait_for(process.communicate(), timeout)
+        out, err = await within(process.communicate(), timeout)
     except TimeoutError:
         process.kill()
         return {"ok": False, "external": False, "error": "timed out"}
