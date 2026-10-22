@@ -347,3 +347,44 @@ async def test_only_a_scheduled_run_is_told_of_the_cap(execution_db, hands, monk
     with desktop_status.working("scheduled-1", kind="scheduled"):
         # S1 (R7, U14 a): a scheduled run cannot act at all; the five-action cap stays behind it (⓪Plan, Q3)
         assert "A scheduled run cannot act on this Mac" in await described()
+
+
+# ── S1a (U14 a): a scheduled run is told to tell the user, not to start background work ─────────────
+
+def _scheduled():
+    return desktop_status.working("scheduled-1", kind="scheduled")
+
+
+async def _refusals() -> dict:
+    with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-1", conversation_id="scheduled-1")):
+        return {
+            "browser": await hands_tools.BrowserClickExecutor().execute({"element": "Buy"}),
+            "shortcut": await hands_tools.MacRunShortcutExecutor().execute({"name": "Morning"}),
+            "takeover": await hands_tools.DesktopTakeoverExecutor().execute({"why": "tidy", "minutes": 5}),
+        }
+
+
+async def test_a_scheduled_runs_refusals_never_send_it_to_background_work(hands, asks):
+    """R7 takes start_background_work out of a scheduled run; its refusals say what it can do instead."""
+    with _scheduled():
+        results = await _refusals()
+    for name, result in results.items():
+        assert result["code"] == "act_in_background" and result["executed"] is False, name
+        assert "start_background_work" not in result["error"] and "Tell the user" in result["error"], name
+        assert "background work" not in result["error"], name           # it has none (R7)
+    assert hands.ops("press") == []
+
+
+async def test_a_chat_turns_refusals_still_name_background_work(hands, asks):
+    with desktop_status.working("c1"):
+        results = await _refusals()
+    assert all("start_background_work" in r["error"] for r in results.values()), results
+
+
+async def test_the_scheduled_cap_says_tell_the_user(hands, asks):
+    press = hands_tools.DesktopPressExecutor()
+    with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-9", conversation_id="scheduled-1")), _scheduled():
+        results = [await press.execute({"app": "Notes", "keys": "tab"}) for _ in range(hands_tools.SCHEDULED_ACTIONS + 1)]
+    last = results[-1]
+    assert last["code"] == "act_in_background" and "Tell the user" in last["error"]
+    assert "start_background_work" not in last["error"]
