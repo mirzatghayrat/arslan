@@ -52,3 +52,21 @@ async def test_with_someone_to_ask_the_chosen_folder_stays(folders):
     with permissions.asking_with(_ask):
         await RunCommandExecutor().execute({"command": "ls"})
     assert ran == [(str(chosen.resolve()), True)]
+
+
+async def test_a_scheduled_runs_checkpoint_is_of_arslans_own_folder(folders, tmp_path, monkeypatch):
+    """With S3a's checkpoints: the run's first command saves the folder it works in, ~/Arslan, never the
+    user's chosen folder it no longer touches."""
+    from server import config
+    from server.services import checkpoints, execution_context
+    own, chosen, ran = folders
+    await _choose(chosen)
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(config, "data_dir", lambda: data)
+    checkpoints._reset_for_tests()
+    with execution_context.bind_run(51):
+        await RunCommandExecutor().execute({"command": "ls"})
+    [root] = checkpoints.manifest(51)["roots"]
+    assert root["path"] == str(own.resolve())
+    checkpoints._reset_for_tests()
