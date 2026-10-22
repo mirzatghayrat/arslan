@@ -17,7 +17,7 @@
   - `server/services/curation_loop.py`、`server/services/curator.py`；
   - 开机时挂上的每 15 分钟一次的循环；
   - 设置键 `curation_enabled`、`curation_backfill_from` 的读取代码（`server/services/settings_service.py:21`、`:32`、`:152`、`:235` 附近）；
-  - 网页上的开关、提案箱里整理层那一类；`/skills/curator_review` 接口；
+  - 网页上的开关、提案箱里整理层那一类；`/skills/curator/review` 接口（见下面「施工中定下的偏离」：先留着）；
   - 对应的翻译键。
 - **回合结束提炼：** `server/services/distill_service.py` 里回合结束那条入口、`server/services/prompts/distill.py`、设置键 `distill_on_session_end`（`settings_service.py:22`、`:218`）。分身的手动提炼（`server/api/conversations.py:171-198` 一带）是专家时代的，随 C7 第二步删。
 - **研究复核：** 只删复核本身。
@@ -32,6 +32,14 @@
 - 数据库表：`_0013_distilled_sessions`、`_0034_curation_layer` 建的表。读写代码删掉以后，表里的数据没人读。
 - 代码注释和 README §8 写 `DELETE-BY: v0.1.65`：v0.1.65 的「每 N 轮后台回顾一次」用一次迁移收掉这些表（§11 第 1 条，那张卡写明删它们）。
 - 库里已存的设置值：不删、不迁移。读的代码没了，也就没人读了。
+
+## 施工中定下的偏离（2026-10-22，⑥C7 清点、⓪Plan 定）
+
+- **技能锻造的 `/skills/curator/review`、`/skills/curator/retire` 先留着**，连同 `curator.py`（里面只剩这两个接口用的函数），写 `DELETE-BY: v0.1.64`，随 v0.1.64 换掉整个技能锻造时删。上面「删什么」列了这个接口，但没写它背后是页面上还在用的「使用和质量标记」和「停用」按钮；删还在用的东西归用户（`docs/sessions.md` §11 第 4 条），默认顺延。
+- **用量表的清理搬出来，不跟整理层一起删。** `curation_loop` 每次都会跑 `brain_usage.prune_events`（D5 给 `brain_usage_events` 定的保留期限），整理层关着也跑；它是唯一的调用方，而回合里的检索每次都往这张表里写（`server/orchestrator/arslan.py` 调 `knowledge.retrieve_scoped`，默认 `record_usage=True`；浏览记忆和记忆工具不写）。所以 C8-3 先把这一段原样搬到 `server/services/usage_retention.py`（同样的间隔、同样的设置、出错不影响别的），再整份删 `curation_loop.py`。测试：默认安装、整理层关着，清理照样跑。v0.1.65 记忆文件化时一起看这张表还要不要。
+- **「提案箱里整理层那一类」不归本卡。** 网页上标着 `curation` 的提案来自 `memory_proposals`（记忆的待确认项），不是整理层循环写的；它属于记忆（本卡「不许碰」），已经写了 `DELETE-BY: v0.1.64`，随记忆 v1 的旧表一起删。另外：整理层循环里的提炼会写 `memory_v2` 待确认项（收件箱里显示为「记忆」）；C8-3 删掉循环以后，这类新待确认项就不再出现，是预期内的。
+- **手动「提炼」菜单由 C8-5 删**，单独一个 PR，可以单独 revert。上面「删什么」原写随 C7 第二步删；C7 卡已把它顺延给 C8（C7 卡第三步的顺延清单），以这里为准。C1 以后它只对以前有分身的旧对话起作用。
+- **分 5 个 PR：** C8-1 原样搬 `compact_saved_context`（#355，已合）；C8-2 删研究复核；C8-3 删整理层；C8-4 删回合结束提炼；C8-5 删手动提炼。改 `tool_loop.py`、`server/ws/arslan.py` 的（C8-2、C8-4）在 K 线 PR 之间的空档合。
 
 ## 不许碰
 
@@ -53,7 +61,7 @@
 
 ## 量级
 
-产品代码约 −1.2k 行（整理层约 1.0k，研究复核约 0.2k），加翻译和测试。超过 800 行就按区域拆，整份删除照 U2 的例外。
+产品代码约 −1.2k 行（整理层约 1.0k，研究复核约 0.2k；`curator.py` 留到 v0.1.64，实际会少一些），加翻译和测试。超过 800 行就按区域拆，整份删除照 U2 的例外。
 
 ## 风险与回退
 
