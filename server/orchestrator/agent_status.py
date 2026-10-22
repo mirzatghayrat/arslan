@@ -150,12 +150,13 @@ def now() -> float:
 # Also the history's turn-tool summary (turn_tools, K2): a reply copying one from an earlier
 # turn must not show the user that bookkeeping either.
 # K3: the turn's reference block (<turn_context>) is host bookkeeping too.
-_ECHO = re.compile(r"<agent_status\b[^>]*>.*?</agent_status>\s*|<turn_tools>.*?</turn_tools>\s*"
-                   r"|<turn_context\b[^>]*>.*?</turn_context>\s*", re.S)
+ECHO_BLOCK = re.compile(r"<agent_status\b[^>]*>.*?</agent_status>\s*|<turn_tools>.*?</turn_tools>\s*"
+                        r"|<turn_context\b[^>]*>.*?</turn_context>\s*", re.S)
+#: How each of those blocks opens. K8a's streaming holds a reply back from one of these until it closes.
+ECHO_TAGS = ("<agent_status", "<turn_tools>", "<turn_context")
 
 
 def strip_echo(text: str) -> str:
     """A model that copies the block into its reply must not show the user host
     bookkeeping; the rest of the reply is kept."""
-    return _ECHO.sub("", text).strip() if text and any(
-        tag in text for tag in ("<agent_status", "<turn_tools>", "<turn_context")) else text
+    return ECHO_BLOCK.sub("", text).strip() if text and any(tag in text for tag in ECHO_TAGS) else text
