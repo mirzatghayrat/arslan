@@ -54,7 +54,8 @@ def _sanitize_env() -> None:
     """
     # ARSLAN_ENV too (C11): the removed prod mode makes the server refuse to start when it is set,
     # and it means nothing to the desktop app, so a value inherited from a shell must not stop it.
-    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_ENV"):
+    # ARSLAN_SPAWNS_DIR for the same reason as the data dir (0.1.63, after #364).
+    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_ENV", "ARSLAN_SPAWNS_DIR"):
         os.environ.pop(var, None)
 
     if getattr(sys, "frozen", False):
@@ -79,6 +80,13 @@ def _sanitize_env() -> None:
         # ignores these two when packaged, and they are dropped here too so nothing it starts sees them.
         for var in ("ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS"):
             os.environ.pop(var, None)
+        # Developer and test overrides an inherited environment could use to move the desktop app
+        # (⓪Plan, after #364): another Python, run outside the sandbox and trusted for its read roots;
+        # another home folder for the file tools; other run budgets. The code that reads each one
+        # ignores it when packaged too.
+        for var in ("ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE",
+                    *[key for key in os.environ if key.startswith("ARSLAN_RUN_MAX_")]):
+            os.environ.pop(var, None)
 
     _point_static_dir_into_the_bundle()
 
@@ -97,12 +105,15 @@ def _point_static_dir_into_the_bundle() -> None:
 
     arslan-server.spec stages web/dist at ``_internal/arslan_web``; point at it
     explicitly rather than relying on __file__ arithmetic, which does not
-    survive freezing. A user-supplied ARSLAN_STATIC_DIR still wins.
+    survive freezing.
+
+    Always the bundle's own (0.1.63, after #364): an inherited ARSLAN_STATIC_DIR
+    used to win, and what is served from here is the desktop app's own origin,
+    the page the shell hands the access token to.
     """
     if not getattr(sys, "frozen", False):
         return
-    if os.environ.get("ARSLAN_STATIC_DIR"):
-        return
+    os.environ.pop("ARSLAN_STATIC_DIR", None)
     bundled = pathlib.Path(getattr(sys, "_MEIPASS", "")) / "arslan_web"
     if bundled.is_dir():
         os.environ["ARSLAN_STATIC_DIR"] = str(bundled)

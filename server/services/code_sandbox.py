@@ -74,12 +74,12 @@ def _host_python() -> str:
     """A frozen sidecar is NOT a Python CLI; never re-launch the server as one."""
     if not getattr(sys, "frozen", False):
         return sys.executable
-    configured = os.environ.get("ARSLAN_SANDBOX_PYTHON", "").strip()
+    # Only the bundle's own runtime (0.1.63, after #364): ARSLAN_SANDBOX_PYTHON used to name another one,
+    # which the probe below ran outside the sandbox and whose folders the sandbox then trusted for reading.
     bundled = Path(sys.executable).parent / "python_runtime" / "bin" / "python3"
-    python = configured or (str(bundled) if bundled.is_file() else None)
-    if not python or not Path(python).is_absolute() or not Path(python).is_file():
-        raise RuntimeError("Packaged Python execution requires Python 3.11+ in the app bundle; "
-                           "reinstall Arslan or explicitly set ARSLAN_SANDBOX_PYTHON")
+    python = str(bundled) if bundled.is_file() else None
+    if not python:
+        raise RuntimeError("Packaged Python execution requires Python 3.11+ in the app bundle; reinstall Arslan")
     if Path(python).resolve() == Path(sys.executable).resolve():
         raise RuntimeError("The packaged server cannot be used as the sandbox interpreter")
     probe = subprocess.run(

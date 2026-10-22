@@ -192,6 +192,20 @@ fn startup_error(line: &str, locale: &str) -> Option<String> {
 /// Blocking is deliberate. Doing this asynchronously would let the window
 /// appear before there is anything to show and require a second code path for
 /// "port arrived late"; the splash screen already covers the wait.
+/// The sidecar's command, before the proxy and pipes are set.
+///
+/// The sidecar reports THIS bundle's version (/api/v1/health, the system prompt,
+/// "what's new"); before 0.1.55 it said a hard-coded 0.1.0. And it never takes an
+/// inherited ARSLAN_PORT (0.1.63, after #364): the sidecar would announce a port of
+/// someone else's choosing, and this shell accepts any 200 there and hands that page
+/// the access token. The sidecar picks a free port itself.
+fn sidecar_command(exe: &std::path::Path, version: &str) -> Command {
+    let mut cmd = Command::new(exe);
+    cmd.env_remove("ARSLAN_PORT");
+    cmd.env("ARSLAN_APP_VERSION", version);
+    cmd
+}
+
 fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFailure> {
     let exe = app
         .path()
@@ -211,10 +225,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFa
         .into());
     }
 
-    let mut cmd = Command::new(&exe);
-    // The sidecar reports THIS bundle's version (/api/v1/health, the system
-    // prompt, "what's new"); before 0.1.55 it said a hard-coded 0.1.0.
-    cmd.env("ARSLAN_APP_VERSION", app.package_info().version.to_string());
+    let mut cmd = sidecar_command(&exe, &app.package_info().version.to_string());
     // Hand the sidecar the proxy this process had to go looking for. httpx
     // reads these variables and nothing else, and a Finder-launched app has
     // none of them, so without this every outbound call from the sidecar —
@@ -1163,6 +1174,19 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_sidecar_never_takes_an_inherited_port() {
+        let cmd = super::sidecar_command(std::path::Path::new("/usr/bin/true"), "9.9.9");
+        let envs: Vec<_> = cmd.get_envs().collect();
+        assert!(
+            envs.iter().any(|(k, v)| *k == "ARSLAN_PORT" && v.is_none()),
+            "ARSLAN_PORT is not removed from the sidecar's environment: {envs:?}"
+        );
+        assert!(envs
+            .iter()
+            .any(|(k, v)| *k == "ARSLAN_APP_VERSION" && v.map(|v| v == "9.9.9").unwrap_or(false)));
+    }
+
     use super::*;
 
     #[test]

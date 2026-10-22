@@ -20,7 +20,8 @@ One run — a chat turn or a background job, with its nested and parallel dispat
 shares one budget (K4a, v0.1.63). Its soft limits are the work budget tier picked in
 Settings → Advanced (lean / standard / ample; standard by default): reaching one switches
 the run to wrap-up, and 1.5× the tier stops a run that cannot stop itself. The standard
-tier and its environment overrides, which apply to every tier:
+tier and its environment overrides, which apply to every tier (dev and bench runs only: the desktop
+app ignores them and runs on the tier chosen in Settings):
 
 | Environment override | Standard | Meaning |
 | --- | --- | --- |

@@ -122,9 +122,12 @@ def load_settings() -> Settings:
     # Shares one resolver with the live ``data_dir()`` accessor the subsystems use.
     data_dir = _resolve_data_dir()
     db_path = os.environ.get("ARSLAN_DB_PATH", str(data_dir / "arslan.db"))
-    spawns_dir = Path(os.environ.get("ARSLAN_SPAWNS_DIR", str(data_dir / "spawns")))
-    static_dir = os.environ.get("ARSLAN_STATIC_DIR", str(Path(__file__).parent / "static"))
     packaged = os.environ.get("ARSLAN_PACKAGED", "").strip().lower() in {"1", "true", "yes", "on"}
+    # The desktop app keeps spawns in its data dir whatever its environment says (0.1.63, after #364).
+    spawns_dir = (data_dir / "spawns" if packaged
+                  else Path(os.environ.get("ARSLAN_SPAWNS_DIR", str(data_dir / "spawns"))))
+    # Packaged, the frozen entry has set this to the bundle's own web folder and nothing else.
+    static_dir = os.environ.get("ARSLAN_STATIC_DIR", str(Path(__file__).parent / "static"))
 
     # Trusted Host headers (Starlette matches on hostname only; ':port' forms are
     # normalised away in server.security). The desktop app's server trusts localhost only and
