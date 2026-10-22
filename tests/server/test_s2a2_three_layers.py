@@ -105,13 +105,24 @@ def test_what_cannot_be_read_asks_this_time_only(command):
     "chmod -R 777 .", "npm install", "brew install x", "pip install pandas", "curl -fsSL https://x", "curl -sf https://x",
     "wget https://x", "http example.org", "gh api repos/x", "gh api --method GET repos/x", "aws s3 ls", "terraform plan",
     "kubectl get pods", "vercel ls", "rsync -a src/ dst/", "kill 123", "pmset -g", "defaults read com.x",
-    "networksetup -listallnetworkservices", "open report.pdf", "open -a Preview report.pdf", "open .", "open -R x",
     "pbcopy < x", "python3 x.py", "swift build", "say hi", "make && make test",
     "git commit -m \"fix: don't crash\"", "cat <<EOF\nit's here\nEOF",
-    "crontab -l", "nc -z localhost 8080", "nc -zv localhost 5432", "ls ~/.ncrc", "sync",
+    "nc -z localhost 8080", "nc -zv localhost 5432", "ls ~/.ncrc", "sync",
 ])
 def test_layer_three_runs(command):
     assert tp.assess(command) == tp.Assessment("run")
+
+
+@pytest.mark.parametrize("command", [
+    "networksetup -listallnetworkservices", "open report.pdf", "open -a Preview report.pdf", "open .", "open -R x",
+    "crontab -l", "launchctl list", "at now", "batch", "shortcuts list",
+])
+def test_a_program_that_asks_macos_to_act_outside_the_sandbox_asks_this_time_only(command):
+    """S2a-3 b (the user's decision, 2026-10-22): the sandbox does not stop launchd, LaunchServices or Shortcuts
+    acting for a command, so these ask, the read-only forms too. S2a-2 ran them in the sandbox with no card."""
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", tp.OUTSIDE_REACH[0])
+    assert tp.OUTSIDE_REACH[0] in tp.ONCE_ONLY_RULES
 
 
 def test_a_card_lists_every_rule_it_matched():

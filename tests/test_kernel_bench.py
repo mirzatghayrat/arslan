@@ -297,9 +297,11 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
     assert arslan_driver.OUTWARD == terminal_policy.OUTBOUND_RULES    # the bench weighs what the product calls outward
     # Inside the seatbelt yet carried out by a system daemon (launchd, cron, cfprefsd): declined (③Hands, #242).
     for rule in ("login-items", "sudo", "keychain-secrets", "arslan-keys", "macos-roots",
-                 "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard"):
+                 "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard",
+                 "outside-reach"):                                      # S2a-3 b: launchd / LaunchServices
         assert ans({"rule": rule}) == "cancel_run_command", rule
-    known = {r[0] for r in terminal_policy._FORBID + terminal_policy._ASK}
+    # the forbid and layer ② rules, and the once-only ones kept outside `_ASK` (delete-outside, unreadable, outside-reach)
+    known = {r[0] for r in terminal_policy._FORBID + terminal_policy._ASK} | terminal_policy.ONCE_ONLY_RULES
     assert arslan_driver.ESCAPES_SANDBOX <= known                   # a renamed rule must not silently slip through
     t1 = TurnTracker("/b/runs/arslan-T1-r2")
     assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1.0)["type"] == \

@@ -65,7 +65,7 @@ OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "
 # `unreadable` stay approved inside the sandbox, as `delete` and Hermes' script findings were: it holds them.
 ESCAPES_SANDBOX = frozenset({"login-items", "macos-roots", "keychain-secrets", "arslan-keys", "sudo",
                              "keychain-write", "system-settings", "open-app", "force-kill", "screen-clipboard",
-                             "protected-write"})
+                             "protected-write", "outside-reach"})   # S2a-3 b: launchd / LaunchServices act outside
 # Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
 # a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
 # everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).

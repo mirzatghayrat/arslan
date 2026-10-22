@@ -42,7 +42,12 @@ def test_inside_a_shell_string_too():
 @pytest.mark.parametrize("command", ['echo "use osascript"', "grep -r osascript .", "cat shortcuts.txt",
                                      "command -v osascript"])
 def test_a_mention_is_not_a_run(command):
-    assert tp.assess(command).level == "run"
+    """Not an osascript run (no `apple-events`, so U11 never runs it bare). Since S2a-3 b (the user's decision)
+    a mention of osascript still asks once, as anything naming a program that acts outside the sandbox does;
+    a file named after one does not."""
+    verdict = tp.assess(command)
+    assert verdict.rule != "apple-events" and "apple-events" not in tp.ask_rules(command)
+    assert verdict.level == ("run" if command == "cat shortcuts.txt" else "ask")
 
 
 @pytest.mark.parametrize("command,rule", SPELLINGS)
