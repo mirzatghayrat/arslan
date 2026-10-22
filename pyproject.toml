@@ -186,7 +186,6 @@ embeddings = [
 # carries data files loaded at runtime via ``Path(__file__).parent``:
 #   - bundled skills          arslan/skills/bundled/     (SKILL.md + scripts/)
 #   - LLM capability profiles arslan/llm/profiles/*.yaml
-#   - official templates      arslan/templates/official/
 # Hatchling already includes these by default (they are git-tracked); naming the
 # package here makes that guarantee explicit. The top-level ``server/`` package is
 # intentionally NOT wheel-packaged — the desktop app bundles it (packaging/), and a

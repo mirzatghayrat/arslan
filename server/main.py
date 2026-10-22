@@ -472,10 +472,6 @@ def create_app() -> FastAPI:
     ):
         _register_test_routes(app)
 
-    from server.api import templates as templates_api
-
-    app.include_router(templates_api.router, prefix="/api/v1")
-
     from server.api import facts as facts_api
 
     app.include_router(facts_api.router, prefix="/api/v1")
@@ -487,10 +483,6 @@ def create_app() -> FastAPI:
     from server.api import orchestrator as orchestrator_api
 
     app.include_router(orchestrator_api.router, prefix="/api/v1")
-
-    from server.api import seeds as seeds_api
-
-    app.include_router(seeds_api.router, prefix="/api/v1")
 
     from server.api import runs as runs_api
 

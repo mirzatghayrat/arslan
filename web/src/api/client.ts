@@ -31,13 +31,11 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   ScheduledTaskDto,
   ScheduledTaskRunDto,
   ScheduledTaskUpdateBody,
-  SeedsResponse,
   SkillCandidate,
   SkillPromoteResult,
   SpawnDetail,
   SpawnSummary,
   SuggestPrimaryResult,
-  TemplateInfo,
   UsageSummary,
   UserFact,
   SshAuditEntry,
@@ -318,14 +316,6 @@ export const api = {
   generateNotes: (topic: string) =>
     request<{ created: NoteDto[] }>("/brain/notes/generate", { method: "POST", body: JSON.stringify({ topic }) }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
-  /** Browse / search the 249 persona seed identities. */
-  getSeeds: (query?: string, limit = 40, offset = 0) => {
-    const qs = new URLSearchParams();
-    if (query) qs.set("query", query);
-    qs.set("limit", String(limit));
-    qs.set("offset", String(offset));
-    return request<SeedsResponse>(`/seeds?${qs.toString()}`);
-  },
   getSpawn: (id: number) => request<SpawnDetail>(`/spawns/${id}`),
   deleteSpawn: (id: number) => request<void>(`/spawns/${id}`, { method: "DELETE" }),
   updateConfig: (id: number, body: Partial<SpawnDetail>) =>
@@ -333,7 +323,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  listTemplates: () => request<TemplateInfo[]>("/templates"),
   getSettings: () => request<AppSettings>("/settings"),
   /** Why stored secrets cannot be read. Verdict key + counts; never plaintext. */
   getCryptoHealth: () => request<CryptoHealth>("/settings/crypto-health"),

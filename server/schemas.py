@@ -307,13 +307,6 @@ class ConfigUpdateIn(BaseModel):
     config: dict[str, Any] | None = None
 
 
-class TemplateOut(BaseModel):
-    name: str
-    domain: str
-    description: str = ""
-    tags: list[str] = []
-
-
 class FactIn(BaseModel):
     content: str
     sensitive: bool = False
