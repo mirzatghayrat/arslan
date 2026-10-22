@@ -30,6 +30,16 @@ fn optional_env(name: &str) -> Result<Option<String>, ()> {
     }
 }
 
+/// ARSLAN_ENV as the server reads it since C11 (`.strip().lower()`, empty = dev): recovery is offered
+/// where the server would run, and an explicit other value (which it refuses to boot with) stays
+/// refused here too (C11 review F8).
+fn environment(raw: Option<String>) -> String {
+    match raw.map(|value| value.trim().to_lowercase()) {
+        Some(value) if !value.is_empty() => value,
+        _ => "dev".into(),
+    }
+}
+
 impl LaunchInputs {
     fn read() -> Result<Self, ()> {
         let home = PathBuf::from(std::env::var_os("HOME").ok_or(())?);
@@ -38,9 +48,7 @@ impl LaunchInputs {
         }
         Ok(Self {
             home,
-            environment: optional_env("ARSLAN_ENV")?
-                .unwrap_or_else(|| "dev".into())
-                .to_lowercase(),
+            environment: environment(optional_env("ARSLAN_ENV")?),
             explicit: optional_env("ARSLAN_SECRET_KEY")?,
             file_override: optional_env("ARSLAN_SECRET_KEY_FILE")?,
         })
@@ -617,6 +625,15 @@ pub(crate) fn begin(app: AppHandle) {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn arslan_env_is_read_as_the_server_reads_it() {
+        assert_eq!(environment(None), "dev");
+        assert_eq!(environment(Some(String::new())), "dev");
+        assert_eq!(environment(Some("  ".into())), "dev");
+        assert_eq!(environment(Some(" Dev\n".into())), "dev");
+        assert_eq!(environment(Some("prod".into())), "prod"); // the server refuses it; so does recovery
+    }
 
     #[test]
     fn selected_backup_tracks_only_verified_original_after_profile_switch() {
