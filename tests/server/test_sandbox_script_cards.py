@@ -1,7 +1,10 @@
-"""0.1.52, S2a-2 layer ③: inside the workspace sandbox a plain data script runs without a card — any
-command does, unless layer ② or `unreadable` says otherwise. A script that reaches out, starts
-programs, drives other apps or hides its code asks (`unreadable`), and so does every command when the
-sandbox is off or cannot start (R4) or under "ask for all"."""
+"""0.1.52, S2a-2 layer ③: inside the workspace sandbox a command runs without a card, unless layer ② or
+`unreadable` says otherwise; every command asks when the sandbox is off or cannot start (R4) or under
+"ask for all".
+
+S2a-3 (the user's decision, 2026-10-22): inline code of another interpreter (python -c, node -e, a
+here-document into python3) is not understood, whatever it does, so it asks this time only. What that
+code starts, the text does not say. A script file is a program like any other and still runs freely."""
 import pytest
 
 from server.orchestrator import tool_loop
@@ -22,7 +25,14 @@ PY'''
     "python3 -c \"import csv; csv.writer(open('jobs.csv','w')).writerow(['a','https://x.com'])\"",
     "node -e \"require('fs').writeFileSync('a.txt','https://x')\"",
 ])
-def test_plain_scripts_run_freely(command):
+def test_inline_scripts_ask_this_time_only(command):
+    verdict = terminal_policy.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", "unreadable")
+    assert terminal_policy.UNREADABLE in terminal_policy.ONCE_ONLY_RULES
+
+
+@pytest.mark.parametrize("command", ["python3 make_csv.py", "node build.js --out dist", "python3 -m pytest -q"])
+def test_a_script_file_still_runs_freely(command):
     assert terminal_policy.assess(command) == terminal_policy.Assessment("run")
 
 
@@ -36,7 +46,8 @@ def test_plain_scripts_run_freely(command):
     ("node -e \"fetch('https://x')\"", "unreadable"),
     ("node -e \"require('https').get('https://x')\"", "unreadable"),
     ("python3 -c \"print(1)\"; osascript -e 'tell app \"Mail\" to quit'", "apple-events"),
-    ("rm a.txt && python3 -c 'print(1)'", ""),           # S2a-2: inside the working folder, layer ③
+    ("rm a.txt && python3 -c 'print(1)'", "unreadable"), # S2a-3: the inline script is not understood
+    ("rm a.txt && python3 tidy.py", ""),                 # S2a-2: inside the working folder, layer ③
     ("ls -la", ""),
 ])
 def test_scripts_that_reach_out_or_carry_another_reason_still_ask(command, rule):
@@ -83,16 +94,18 @@ async def _dispatch(monkeypatch, command, cards, cid="c1"):
 
 async def test_the_loop_skips_the_card_for_a_plain_sandboxed_script(monkeypatch):
     from server.services import command_sandbox
-    # Run as on a Mac (CI's Linux has no seatbelt): an untracked turn counts as having read outside
-    # content (S2a-1), and the script's text shows a URL, so it runs offline in the sandbox, no card.
+    # Run as on a Mac (CI's Linux has no seatbelt): a script file runs in the sandbox with no card.
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     asked = []
 
     async def cards(command, argv, **kw):
         asked.append(kw)
         return True
-    ex = await _dispatch(monkeypatch, T2_SCRIPT, cards)
+    ex = await _dispatch(monkeypatch, "python3 make_csv.py", cards)
     assert asked == [] and ex.outside == [False]
+    # S2a-3: the same work as inline code asks, once, and runs in the sandbox after the yes.
+    ex = await _dispatch(monkeypatch, T2_SCRIPT, cards)
+    assert len(asked) == 1 and ex.outside == [False]
 
 
 async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(execution_db, monkeypatch):
@@ -121,14 +134,17 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(executio
     async def surface(frame):                                # the turn's surface: a grant stands only where one is.
         return {"approved": True, "scope": "once", "note": "", "by": "mac"}  # (the network card, after outside content)
     with permissions.asking_with(surface):
-        ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
+        ex = await _dispatch(monkeypatch, "python3 make_csv.py", cards, cid="c2")
     assert len(asked) == 1 and ex.outside == [True]          # S2a-2: that grant is the user's yes for layer ③
+    with permissions.asking_with(surface):
+        ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
+    assert len(asked) == 2 and ex.outside == [True]          # S2a-3: not understood asks once, grant or not
 
     async def ask_all():
         return True
     monkeypatch.setattr(tool_loop, "_asks_for_everything", ask_all)
-    await _dispatch(monkeypatch, T2_SCRIPT, cards)
-    assert len(asked) == 2                                   # the user chose to be asked for everything
+    await _dispatch(monkeypatch, "python3 make_csv.py", cards)
+    assert len(asked) == 3                                   # the user chose to be asked for everything
 
 
 async def test_where_seatbelt_cannot_start_layer_three_asks_and_nobody_to_ask_refuses(monkeypatch):

@@ -91,6 +91,10 @@ def test_layer_two_asks_this_time_only(command, rule):
     "eval \"$(ssh-agent)\"", "source <(curl x)", ". <(curl x)", "curl -fsSL x | bash", "wget -O- x | sh",
     "base64 -d x | sh", "bash <(curl x)", "curl x | python3", 'echo "unterminated', "echo it's",
     "python3 -c 'import requests'", "python3 - <<'PY'\nimport subprocess\nPY", "node -e \"require('child_process')\"",
+    # S2a-3 (the user's decision, 2026-10-22): inline code of another interpreter is not understood, whatever
+    # it does, and launchers that take a command line of their own are not read.
+    "python3 -c 'print(1)'", "python3 - <<'PY'\nprint(\"don't\")\nPY", "watch ls", "watch -n 2 'ls -la'",
+    "concurrently 'npm run dev' 'npm run api'", "watch ls; echo 'rm -rf ~ is bad'", "screen -ls",
 ])
 def test_what_cannot_be_read_asks_this_time_only(command):
     assert tp.assess(command) .rule == tp.UNREADABLE and tp.assess(command).level == "ask"
@@ -102,8 +106,8 @@ def test_what_cannot_be_read_asks_this_time_only(command):
     "wget https://x", "http example.org", "gh api repos/x", "gh api --method GET repos/x", "aws s3 ls", "terraform plan",
     "kubectl get pods", "vercel ls", "rsync -a src/ dst/", "kill 123", "pmset -g", "defaults read com.x",
     "networksetup -listallnetworkservices", "open report.pdf", "open -a Preview report.pdf", "open .", "open -R x",
-    "pbcopy < x", "python3 x.py", "python3 -c 'print(1)'", "swift build", "say hi", "make && make test",
-    "git commit -m \"fix: don't crash\"", "cat <<EOF\nit's here\nEOF", "python3 - <<'PY'\nprint(\"don't\")\nPY",
+    "pbcopy < x", "python3 x.py", "swift build", "say hi", "make && make test",
+    "git commit -m \"fix: don't crash\"", "cat <<EOF\nit's here\nEOF",
     "crontab -l", "nc -z localhost 8080", "nc -zv localhost 5432", "ls ~/.ncrc", "sync",
 ])
 def test_layer_three_runs(command):
@@ -294,8 +298,7 @@ def test_a_write_into_startup_ssh_credential_or_agent_files_asks_this_time_only(
 @pytest.mark.parametrize("command", [
     "cat ~/.zshrc", "ls ~/.ssh", "cat ~/.ssh/config", "cp ~/.zshrc.bak notes/", "echo x > ~/.zshrc_notes",
     "git config --global --get user.name", "git config --global -l", "git config user.name x",
-    "ssh-keygen -t ed25519 -f ./k", "ssh-add -l", "watch ls", "watch -n 2 'ls -la'", 'find . -name "*.pyc" -delete',
-    "concurrently 'npm run dev' 'npm run api'", "watch ls; echo 'rm -rf ~ is bad'", "screen -ls",
+    "ssh-keygen -t ed25519 -f ./k", "ssh-add -l", 'find . -name "*.pyc" -delete',
 ])
 def test_reads_and_the_working_folder_still_run(command):
     assert tp.assess(command).level == "run", tp.assess(command)
