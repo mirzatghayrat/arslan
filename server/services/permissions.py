@@ -304,6 +304,18 @@ async def record_standing(req: Request, ctx: Context, *, by: str = "rule") -> No
     await _record(req, _filled(ctx), await _mode(), Decision(True, by, _STANDING_BY[by]))
 
 
+async def record_card_outcome(req: Request, ctx: Context, *, approved: bool, expired: bool = False) -> None:
+    """S7: the ledger row of a card that does not ask through `decide` — the install-a-capability card,
+    which carries back the key the user typed and the folders they picked (0.1.57 §3.1), what `decide`
+    does not pass on. Decided by the user (allow, this time; or deny) or expired (nobody answered, never
+    a refusal). The row holds the request, never what the answer carried: no key goes in. A kind outside
+    `KINDS` raises ValueError and writes nothing; a row that cannot be written is logged."""
+    _check(req)
+    decision = (Decision(False, "expired") if expired
+                else Decision(True, "user", "once") if approved else Decision(False, "user"))
+    await _record(req, _filled(ctx), await _mode(), decision)
+
+
 async def forget_task(task_id: str | None) -> int:
     """A task's grants end with it (0.1.61 §A5): a job that is done, failed, stopped or cancelled
     leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went.

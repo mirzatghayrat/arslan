@@ -182,6 +182,15 @@ async def install_skill(c: dict, owner_id: str = "local") -> dict:
     return {"state": "on", "source_id": source_id, "skill": key, "scan": scan}
 
 
+def _ledger_request(cand: dict, why: str):
+    """S7: what the install card asks, as the ledger records it: the capability by name, where it comes
+    from, and the model's reason. Built from the search result only; the card's answer adds nothing."""
+    from server.services import permissions
+    return permissions.Request(kind="capability", target=f"capability:{cand['name']}"[:200],
+                               title=f"Add {cand['name']}?", detail=why[:500],
+                               extra={"source_url": cand.get("source_url"), "version": cand.get("version")})
+
+
 async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict:
     """The model's `propose_capability`. Returns the tool result (and `refresh: True` when
     a new capability is on, so the loop re-reads its tools)."""
@@ -195,20 +204,25 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     retry = str(args.get("retry") or "").strip()
     folders = _folders(args.get("folders"))
     card = card_for(cand, why=why, retry=retry, folders=folders)
+    from server.services import background_jobs, permissions
+    request = _ledger_request(cand, why)
+    context = permissions.Context(conversation_id, job_id=background_jobs._inside_job.get())
     if ask is None:
         await record_find(cand, need=why, why="job", conversation_id=conversation_id)
-        from server.services import background_jobs, permissions
         if permissions.current_asker() is None:
             # S1 (U14 c, ⓪Plan): a scheduled run: listed in the Inbox too, the one list a user checks after one.
-            await permissions.refuse_unattended(permissions.Request(
-                kind="capability", target=f"capability:{cand['name']}"[:200], title=f"Add {cand['name']}?",
-                detail=why[:500]), permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+            # A background job only records the find: it has a card surface, so it is not "nobody to ask", and
+            # no card was shown (⓪Plan, S7).
+            await permissions.refuse_unattended(request, context)
         return {"ok": False, "recorded": True,
                 "note": "Nobody to ask here (a background job or a scheduled run). Saved on the Capabilities "
                         "page under 'Arslan found' for the user; say so in your answer."}
     decision = await ask(card)
+    from server.services import approvals
+    # S7: the card's answer in the ledger (§5.4) — never the key or the folders it carried back.
+    await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
+                                          expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
-        from server.services import approvals
         await record_find(cand, need=why, why="declined", conversation_id=conversation_id)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
