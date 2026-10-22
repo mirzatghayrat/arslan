@@ -7,6 +7,7 @@ helper. With `within` the stop wins and the connection that opened in that same 
 from __future__ import annotations
 
 import asyncio
+import signal
 
 import pytest
 
@@ -85,13 +86,45 @@ def _shortened(limit):
     return short
 
 
-async def test_a_mac_automation_command_past_its_limit_is_stopped_and_says_so():
+@pytest.fixture
+def spawned(monkeypatch):
+    """The processes `_run` starts, so a test can see whether each one is still running."""
+    processes = []
+    real = asyncio.create_subprocess_exec
+
+    async def spawn(*args, **kwargs):
+        process = await real(*args, **kwargs)
+        processes.append(process)
+        return process
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    return processes
+
+
+async def _killed(process) -> bool:
+    async with asyncio.timeout(3):
+        return await process.wait() == -signal.SIGKILL
+
+
+async def test_a_mac_automation_command_past_its_limit_is_stopped_and_says_so(spawned):
     started = asyncio.get_running_loop().time()
-    out = await hands_tools._run(["/bin/sleep", "5"], timeout=0.2)
+    out = await hands_tools._run(["/bin/sleep", "30"], timeout=0.2)
     assert out == {"ok": False, "external": False, "error": "timed out"}
     assert asyncio.get_running_loop().time() - started < 3
+    assert await _killed(spawned[0])
 
 
-async def test_a_mac_automation_command_that_finishes_answers_as_before():
+async def test_a_mac_automation_command_whose_turn_is_stopped_is_killed(spawned):
+    run = asyncio.create_task(hands_tools._run(["/bin/sleep", "30"], timeout=60))
+    async with asyncio.timeout(3):
+        while not spawned:
+            await asyncio.sleep(0.01)
+    run.cancel()                                   # the turn is stopped well inside the command's limit
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    assert await _killed(spawned[0])
+
+
+async def test_a_mac_automation_command_that_finishes_answers_as_before(spawned):
     out = await hands_tools._run(["/bin/echo", "done"], timeout=5)
     assert out["ok"] is True and out["text"].strip() == "done"
+    assert spawned[0].returncode == 0

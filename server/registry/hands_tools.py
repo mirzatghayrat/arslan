@@ -356,8 +356,11 @@ async def _run(argv: list[str], *, timeout: float = 120) -> dict:
     try:
         out, err = await within(process.communicate(), timeout)
     except TimeoutError:
-        process.kill()
         return {"ok": False, "external": False, "error": "timed out"}
+    finally:
+        # Past its limit, or its turn stopped: the command does not go on running after the turn has ended.
+        if process.returncode is None:
+            process.kill()
     text = out.decode(errors="replace")[:_OUTPUT_LIMIT]
     if process.returncode != 0:
         return {"ok": False, "external": False, "error": err.decode(errors="replace")[:1000] or "failed"}
