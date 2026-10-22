@@ -72,10 +72,6 @@ class LLMAdapter:
                 raise ValueError("max_tokens override is only supported for OpenAI-compatible providers")
             self._provider.max_tokens = max_tokens
 
-    def supports_bounded_critique(self) -> bool:
-        provider = getattr(self, "_provider", None)
-        return bool(provider is not None and provider.supports_bounded_critique())
-
     @property
     def report_provider(self) -> str:
         # Fallback for __new__-constructed doubles (tests) that bypass __init__.

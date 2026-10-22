@@ -203,9 +203,9 @@ def shrink_group(group: list[dict], max_chars: int, size_of) -> list[dict]:
 
 def _legacy_result(message: dict) -> str:
     # _legacy_raw: the record's content already replaced the whole old user turn
-    # (research_review receipts). _legacy_suffix: text the old format appended
-    # after the trailer (research_review draft); native rendering drops it
-    # because the draft already travels in the call's own arguments.
+    # (saved_context's web-read receipts). _legacy_suffix: text the old format
+    # appended after the trailer (saved_context's DRAFT SUBMITTED note); native
+    # rendering drops it because the draft already travels in the call's own arguments.
     if message.get("_legacy_raw"):
         return message["content"] + message.get("_legacy_suffix", "")
     return (f"TOOL RESULT for {message['name']}:\n{message['content']}{LEGACY_TRAILER}"

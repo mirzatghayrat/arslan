@@ -217,11 +217,6 @@ class OpenAIProvider(BaseLLMProvider):
         return (self.base_url.rstrip("/") in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}
                 and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"})
 
-    def supports_bounded_critique(self) -> bool:
-        # Other OpenAI-compatible models may reason by default (o-series,
-        # *-reasoner, hybrid thinking models) with no portable way to turn it off.
-        return self._official_deepseek()
-
     async def chat(
         self,
         messages: list[dict[str, Any]],

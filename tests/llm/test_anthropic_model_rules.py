@@ -124,7 +124,6 @@ async def test_a_normal_request_never_carries_a_thinking_setting():
 async def test_critique_turns_thinking_off_where_the_model_can(model, switch):
     sent: list = []
     p = _provider(model, sent)
-    assert p.supports_bounded_critique()
     with critique_request():
         assert (await p.chat(_PING)).content == "ok"
     body = sent[-1]
@@ -136,7 +135,6 @@ async def test_critique_turns_thinking_off_where_the_model_can(model, switch):
 async def test_critique_on_models_that_do_not_think_unless_asked(model):
     sent: list = []
     p = _provider(model, sent)
-    assert p.supports_bounded_critique()
     with critique_request():
         await p.chat(_PING)
     assert "thinking" not in sent[-1] and "temperature" not in sent[-1]
@@ -146,7 +144,6 @@ async def test_critique_on_models_that_do_not_think_unless_asked(model):
 async def test_critique_on_older_models_is_deterministic_and_short():
     sent: list = []
     p = _provider("claude-sonnet-4-6", sent)
-    assert p.supports_bounded_critique()
     with critique_request():
         await p.chat(_PING)
     assert sent[-1]["temperature"] == 0 and sent[-1]["max_tokens"] == 2048
@@ -155,14 +152,14 @@ async def test_critique_on_older_models_is_deterministic_and_short():
 
 @pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-fable-5-1", "claude-fable-5",
                                    "claude-sonnet-6", "kimi-k2"])
-async def test_critique_where_thinking_cannot_be_turned_off_is_not_claimed(model):
+async def test_critique_where_thinking_cannot_be_turned_off_keeps_the_normal_budget(model):
     """Opus 5.5 / Fable refuse every off switch; an unknown model gives no proof.
-    Claiming support would cap a thinking model at 2048 tokens — the 0.1.40
-    failure (the cap spent on reasoning, nothing returned). So: not supported,
-    and a critique there keeps the normal output budget."""
+    Capping a thinking model at 2048 tokens is the 0.1.40 failure (the cap spent on
+    reasoning, nothing returned). So a critique there keeps the normal output budget.
+    (A separate supports_bounded_critique() flag said the same; its only caller,
+    research review, went in C8-2, and the flag with it.)"""
     sent: list = []
     p = _provider(model, sent)
-    assert not p.supports_bounded_critique()
     with critique_request():
         await p.chat(_PING)
     assert "thinking" not in sent[-1]
