@@ -38,6 +38,7 @@ from urllib.parse import unquote, urlsplit
 
 from server.registry import net_pin
 from server.registry.net_pin import _BlockedHost, _resolve_pinned
+from arslan.aio import close_connection, within
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ class PublicTunnel:
                 if chain is not None:
                     # The proxy resolves and connects; we still refuse a local name or a real
                     # private answer first (fake-IP answers pass: via_proxy).
-                    await asyncio.wait_for(
+                    await within(
                         asyncio.to_thread(_resolve_pinned, url, via_proxy=True), 5)
                     # Keyed by the proxy, never the destination: a page can mint a fresh name
                     # for every tunnel, and each would be a WARNING. The name goes to DEBUG.
@@ -226,11 +227,11 @@ class PublicTunnel:
                                "resolves each name; rebinding protection is delegated there "
                                "(each name is logged at DEBUG)", chain.host, chain.port)
                     try:
-                        remote, upstream = await asyncio.wait_for(
-                            asyncio.open_connection(chain.host, chain.port), 8)
+                        remote, upstream = await within(
+                            asyncio.open_connection(chain.host, chain.port), 8, dispose=close_connection)
                         upstream.write(_connect_request(host, chain))
                         await upstream.drain()
-                        head = await asyncio.wait_for(remote.readuntil(b"\r\n\r\n"), 8)
+                        head = await within(remote.readuntil(b"\r\n\r\n"), 8)
                     except (OSError, TimeoutError, asyncio.IncompleteReadError,
                             asyncio.LimitOverrunError) as exc:
                         _warn_once(("unreachable", chain.host, chain.port),
@@ -249,8 +250,9 @@ class PublicTunnel:
                         raise ValueError("The upstream proxy refused the tunnel")
                 else:
                     # Resolver rejects EVERY non-public answer. Connect by IP, never resolve twice.
-                    ip, _, port = await asyncio.wait_for(asyncio.to_thread(_resolve_pinned, url), 5)
-                    remote, upstream = await asyncio.wait_for(asyncio.open_connection(ip, port), 8)
+                    ip, _, port = await within(asyncio.to_thread(_resolve_pinned, url), 5)
+                    remote, upstream = await within(asyncio.open_connection(ip, port), 8,
+                                                    dispose=close_connection)
                 writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 await writer.drain()
                 established = True
@@ -274,5 +276,5 @@ class PublicTunnel:
                 if stream is not None:
                     stream.close()
                     with suppress(OSError, asyncio.CancelledError, TimeoutError):
-                        await asyncio.wait_for(stream.wait_closed(), 1)
+                        await within(stream.wait_closed(), 1)
             self.tasks.discard(task)

@@ -22,6 +22,7 @@ from server.schemas import AccessTokenOut, CatalogEntryOut, McpTokenOut, ModelLi
 from server.services import model_catalog, provider_config_service, searxng_probe, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +422,7 @@ async def openrouter_oauth_start():
 
     asyncio.create_task(run())
     try:
-        auth_url = await asyncio.wait_for(asyncio.shield(url_ready), timeout=15.0)
+        auth_url = await within(asyncio.shield(url_ready), timeout=15.0)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="no authorization URL was produced")
     except Exception as exc:  # noqa: BLE001

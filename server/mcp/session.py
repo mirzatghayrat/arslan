@@ -39,6 +39,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 
 from server.mcp import proxy_resolve
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -440,15 +441,11 @@ class MCPSessionManager:
                     server.get("start_budget_s") or DEFAULT_START_BUDGET_S)
                 self._non_json.pop(sid, None)
                 generation = self._generation(sid)
-                entry = await asyncio.wait_for(self._open_session(server), timeout=budget)
-                current = asyncio.current_task()
-                if current is not None and current.cancelling():
-                    # CPython 3.11's wait_for returns the open's result when the cancel is delivered
-                    # in the loop iteration in which the open finishes (bpo-42130, gh-86296; 3.12
-                    # rewrote it on asyncio.timeout()): the cancel is lost and a start that was
-                    # replaced would cache its session. Close what was opened and cancel.
-                    await self._close_uncut(sid, entry)
-                    raise asyncio.CancelledError()
+                # A cancel delivered in the loop iteration in which the open finishes is never lost
+                # (arslan.aio.within; wait_for returned the session and lost it, gh-86296): what was
+                # opened is closed, nothing is cached, and the cancel goes on.
+                entry = await within(self._open_session(server), timeout=budget,
+                                     dispose=lambda opened: self._close_uncut(sid, opened))
                 if self._generation(sid) != generation or sid in self._sessions:
                     # Dropped or forgotten while it opened (set_folders, a delete, shutdown), or
                     # cached by someone else: never undo that, never overwrite an entry.
@@ -493,7 +490,7 @@ class MCPSessionManager:
             else:
                 request = entry[0].list_tools(params=types.PaginatedRequestParams(cursor=cursor))
             try:
-                return await self._until_dropped(sid, entry, asyncio.wait_for(request, LIST_TIMEOUT_S))
+                return await self._until_dropped(sid, entry, within(request, LIST_TIMEOUT_S))
             except TimeoutError as exc:
                 raise ListTimeout(f"tools/list did not answer within {LIST_TIMEOUT_S:g} s") from exc
         except BaseException:

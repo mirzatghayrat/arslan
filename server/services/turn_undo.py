@@ -42,6 +42,7 @@ from sqlalchemy import delete, func, select, text
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ArslanSummary, CompanionTask, ConversationEvent, PermissionGrant
+from arslan.aio import within
 
 FINISH_WAIT_S = 5.0
 UNDONE = "turn_undone"                      # the event that records an undo
@@ -171,7 +172,7 @@ async def undo(run_id: int, *, last: int | None = None, first=None) -> dict:
     job = _post_turn_job(turn.conversation_id)
     if job is not None:
         try:
-            await asyncio.wait_for(asyncio.shield(job), FINISH_WAIT_S)
+            await within(asyncio.shield(job), FINISH_WAIT_S)
         except TimeoutError:
             raise Refused("finishing") from None
         except Exception:  # noqa: BLE001 — the job's own failure is logged where it happens

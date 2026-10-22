@@ -22,6 +22,7 @@ from server.registry.service import (
 from server.schemas import RegistryOut, SkillPackOut, ToolOut, ToolsetOut
 from server.services import code_sandbox
 from server.registry.display import skill_display_keys, toolset_display_keys
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ async def check_skill_health(key: str, session: AsyncSession = Depends(get_sessi
         # Bounded, mirroring PB-4. skill_health is sync + cheap; run it off-loop so the timeout
         # is real. wait_for cancels with CancelledError (BaseException) — NOT caught by
         # `except Exception` — so we handle TimeoutError explicitly and never leak a 500.
-        return await asyncio.wait_for(
+        return await within(
             asyncio.to_thread(skill_health, key, body),
             timeout=_SKILL_HEALTH_TIMEOUT,
         )

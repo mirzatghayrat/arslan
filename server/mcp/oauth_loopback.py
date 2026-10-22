@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
+from arslan.aio import within
 
 _CLOSE_PAGE = (
     "<!doctype html><meta charset='utf-8'><title>Arslan</title>"
@@ -58,7 +59,7 @@ async def catch_authorization_code(*, timeout: float = 180.0) -> CodeCatcher:
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            request_line = (await asyncio.wait_for(reader.readline(), 5.0)).decode(
+            request_line = (await within(reader.readline(), 5.0)).decode(
                 "latin-1", "replace"
             )
             parts = request_line.split(" ")

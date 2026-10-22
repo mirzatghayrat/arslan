@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from server.db import session as db_session
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ async def detour_candidates(found: list[dict], user_request: str, conversation_i
         facts = {"user_request": (user_request or "")[:300], "failed": detour["failed"], "worked": detour["worked"]}
         try:
             async with usage_ledger.scope("lessons", conversation_id):
-                response = await asyncio.wait_for((await _detour_adapter()).chat(
+                response = await within((await _detour_adapter()).chat(
                     system=build_cached_system(_DETOUR_SYSTEM, ""),
                     user="Facts (JSON):\n" + json.dumps(facts, ensure_ascii=False)), timeout=15)
         except Exception as exc:  # noqa: BLE001 — learning is a bonus, never a failure

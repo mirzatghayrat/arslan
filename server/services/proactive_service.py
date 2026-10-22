@@ -25,6 +25,7 @@ from arslan.proactive_policy import Candidate, ProactiveConfig
 from server.db import session as db_session
 from server.db.models import (ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ProviderConfig, ScheduledTask,
                               Setting)
+from arslan.aio import within
 from server.services import desktop_status, proactive_detectors as detectors, runtime_messages, settings_service
 
 logger = logging.getLogger(__name__)
@@ -518,7 +519,7 @@ _stop_event: asyncio.Event | None = None
 async def _loop(interval: float, first_delay: float) -> None:
     assert _stop_event is not None
     try:
-        await asyncio.wait_for(_stop_event.wait(), timeout=first_delay)
+        await within(_stop_event.wait(), timeout=first_delay)
         return
     except TimeoutError:
         pass
@@ -535,7 +536,7 @@ async def _loop(interval: float, first_delay: float) -> None:
         except Exception as exc:  # noqa: BLE001
             logger.warning("project scan failed: %s %s", type(exc).__name__, exc)
         try:
-            await asyncio.wait_for(_stop_event.wait(), timeout=interval)
+            await within(_stop_event.wait(), timeout=interval)
         except TimeoutError:
             pass
 
@@ -555,6 +556,6 @@ async def stop() -> None:
     task, _loop_task = _loop_task, None
     if task is not None:
         try:
-            await asyncio.wait_for(task, timeout=5)
+            await within(task, timeout=5)
         except (TimeoutError, asyncio.CancelledError):
             task.cancel()

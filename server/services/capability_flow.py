@@ -22,6 +22,7 @@ from datetime import datetime
 from server.db import session as db_session
 from server.db.models import CapabilityFind, CapabilitySource, MCPServer, SkillPack
 from server.services import capability_install, capability_runtime, capability_scan, capability_search
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ async def test_mcp(source_id: str) -> dict:
     row = await _source(source_id)
     at = datetime.utcnow().isoformat() + "Z"
     try:
-        result = await asyncio.wait_for(mcp_service.start_now(row.mcp_server_id), TEST_TIMEOUT_S)
+        result = await within(mcp_service.start_now(row.mcp_server_id), TEST_TIMEOUT_S)
     except Exception as exc:  # noqa: BLE001 — a failed start is the test's answer
         await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)

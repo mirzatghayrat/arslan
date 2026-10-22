@@ -23,6 +23,7 @@ import ipaddress
 import logging
 import re
 import subprocess
+from arslan.aio import close_connection, within
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ async def _probe(host, port: int, timeout: float) -> bool:
     """Open a TCP connection and close it. Nothing is sent."""
     try:
         fut = asyncio.open_connection(str(host), port)
-        reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+        reader, writer = await within(fut, timeout=timeout, dispose=close_connection)
         writer.close()
         try:
             await writer.wait_closed()

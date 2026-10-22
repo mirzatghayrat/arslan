@@ -40,6 +40,7 @@ from pathlib import Path
 
 from server.services import ssh_keys
 from server.services.code_sandbox import _seatbelt_wrapper
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ async def _sandboxed(argv: list[str], *, timeout_s: float, home: Path) -> dict:
     except OSError as exc:
         return {"ok": False, "exit_code": None, "error": f"could not start ssh: {exc}"}
     try:
-        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        out_b, err_b = await within(proc.communicate(), timeout=timeout_s)
     except TimeoutError:
         proc.kill()
         await proc.wait()

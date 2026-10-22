@@ -8,13 +8,13 @@ never an Inbox item, never an install. No model configured → nothing happens.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 
 from sqlalchemy import select
 
 from server.db import session as db_session
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ async def check_level(project: dict, level: dict) -> str | None:
     try:
         async with usage_ledger.scope("capability_lookahead", None):
             adapter = await _adapter()
-            response = await asyncio.wait_for(
+            response = await within(
                 adapter.chat(system=_SYSTEM, user=json.dumps(state, ensure_ascii=False)[:CARD_CHARS * 4]), TIMEOUT_S)
         from server.orchestrator.json_protocol import parse_json_object
         verdict = parse_json_object(response.content or "") or {}

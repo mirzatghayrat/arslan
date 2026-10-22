@@ -27,6 +27,7 @@ import logging
 
 from server.db import session as db_session
 from server.services import brain_usage, settings_service
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ async def watch_loop(*, interval: float, initial_delay: float,
             await asyncio.sleep(initial_delay)
         else:
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=initial_delay)
+                await within(stop_event.wait(), timeout=initial_delay)
                 return          # stopped during the delay: never prune at all
             except asyncio.TimeoutError:
                 pass
@@ -69,7 +70,7 @@ async def watch_loop(*, interval: float, initial_delay: float,
             await asyncio.sleep(interval)
         else:
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval)
+                await within(stop_event.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 pass
 
@@ -102,7 +103,7 @@ async def stop() -> None:
         _stop_event.set()
     if _loop_task is not None:
         try:
-            await asyncio.wait_for(asyncio.shield(_loop_task), timeout=5.0)
+            await within(asyncio.shield(_loop_task), timeout=5.0)
         except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
         _loop_task = None

@@ -11,6 +11,7 @@ import signal
 import tempfile
 
 from server.services import artifact_store, code_sandbox
+from arslan.aio import within
 
 
 _INSPECTOR = Path(__file__).resolve().parent.parent / "resources" / "artifact_inspector.py"
@@ -65,7 +66,7 @@ async def _inspect_isolated(data: bytes, suffix: str) -> dict:
             from arslan.execution_budget import current
             budget = current()
             timeout = min(8, budget.remaining_seconds()) if budget is not None else 8
-            output, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            output, _ = await within(process.communicate(), timeout=timeout)
         except (asyncio.CancelledError, TimeoutError) as exc:
             try:
                 os.killpg(process.pid, signal.SIGKILL)

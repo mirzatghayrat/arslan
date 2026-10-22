@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from server.auth import require_auth
 from server.services import mcp_service
+from arslan.aio import within
 
 # PB-4 条件3: the health probe must sit behind require_auth. The MCP router historically
 # carried NO auth dependency at all (unlike facts/create/skills/…), so we close the gap
@@ -98,7 +99,7 @@ async def start_oauth(server_id: int):
     task = asyncio.create_task(run())
     _oauth_flows[server_id]["task"] = task
     try:
-        auth_url = await asyncio.wait_for(asyncio.shield(url_ready), timeout=15.0)
+        auth_url = await within(asyncio.shield(url_ready), timeout=15.0)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="the provider never produced an authorization URL")
     except Exception as exc:  # noqa: BLE001

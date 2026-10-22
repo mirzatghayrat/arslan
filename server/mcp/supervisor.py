@@ -50,6 +50,7 @@ from server.db import session as db_session
 from server.db.models import MCPServer, Tool
 from server.mcp import discovery, oauth_flow, spawn_env
 from server.mcp import session as mcp_session
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -731,7 +732,7 @@ class Supervisor:
         self._notes[sid] = (f"downloading {'Node' if runtime == 'node' else 'uv'} {pin.version} "
                             f"({pin.size_mb} MB)")
         try:
-            await asyncio.wait_for(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
+            await within(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
             return True
         except Exception as exc:  # noqa: BLE001 — RuntimeFailure, TimeoutError, anything (ruling 8)
             current = asyncio.current_task()
@@ -745,7 +746,7 @@ class Supervisor:
         from server.services import capability_runtime
 
         try:
-            await asyncio.wait_for(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
+            await within(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
         except Exception as exc:  # noqa: BLE001 — next time, from the user's PATH again
             logger.info("mcp: background fetch of %s failed: %s", runtime, exc)
 

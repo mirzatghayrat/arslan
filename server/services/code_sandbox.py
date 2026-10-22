@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +404,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
 
         proc = await _spawn(argv)
         try:
-            out_b, err_b = await asyncio.wait_for(_bounded_communicate(proc), timeout=timeout_s)
+            out_b, err_b = await within(_bounded_communicate(proc), timeout=timeout_s)
         except asyncio.CancelledError:
             # Run cancel (S3-M1): the child must not outlive the cancelled task.
             try:
