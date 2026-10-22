@@ -962,19 +962,23 @@ fn token_script(port: u16, token: &str) -> String {
     )
 }
 
-/// Whether the main window may go to `url` (0.1.63, C11 review F9). Only the sidecar's own origin
-/// over http: a remote page in this window would run beside the app's own pages and the token. The
-/// page already sends links to the system browser (web MarkdownLink); this is the backstop, and what
-/// it refuses simply does not load. Schemes with no network origin (blob: downloads, data:, about:)
-/// stay allowed: they get no token (token_script checks the origin) and the app uses them.
+/// Whether the main window, or a frame in it, may go to `url` (0.1.63, C11 review F9). An allowlist:
+/// the sidecar's own origin over http; a blob: of that origin (the reader's PDF frame); about:blank
+/// and about:srcdoc (the sandboxed HTML previews). wry asks this for every navigation, frames
+/// included; downloads never reach it. Anything else is refused and does not load: a remote page
+/// (and any other localhost port: the window's capability covers http://127.0.0.1:*), and data:,
+/// file: or a custom scheme, which get no token or IPC but could still pose as Arslan in this window
+/// (the model writes HTML into the workspace). The page sends links to the system browser itself
+/// (web MarkdownLink); this is the backstop.
 fn main_navigation_allowed(url: &tauri::Url, port: u16) -> bool {
+    let sidecar = |u: &tauri::Url| {
+        u.scheme() == "http" && u.host_str() == Some("127.0.0.1") && u.port() == Some(port)
+    };
     match url.scheme() {
-        "http" | "https" => {
-            url.scheme() == "http"
-                && url.host_str() == Some("127.0.0.1")
-                && url.port() == Some(port)
-        }
-        _ => true,
+        "http" => sidecar(url),
+        "blob" => tauri::Url::parse(url.path()).is_ok_and(|inner| sidecar(&inner)),
+        "about" => matches!(url.path(), "blank" | "srcdoc"),
+        _ => false,
     }
 }
 
@@ -1192,13 +1196,26 @@ mod tests {
         ] {
             assert!(!ok(remote), "{remote}");
         }
-        // no network origin, no token (the script checks the origin): downloads and previews keep working
-        for local in [
+        // what the app itself loads in the window and its frames
+        for own in [
             "blob:http://127.0.0.1:54321/0b0d",
             "about:blank",
-            "data:text/html,hi",
+            "about:srcdoc",
         ] {
-            assert!(ok(local), "{local}");
+            assert!(ok(own), "{own}");
+        }
+        // an allowlist (⓪Plan's review): pages that could pose as Arslan in this window are refused
+        for other in [
+            "data:text/html,<h1>Re-enter your API key</h1>",
+            "file:///Users/someone/Arslan/report.html",
+            "arslan://anything",
+            "tauri://localhost/index.html",
+            "blob:https://evil.example/0b0d",
+            "blob:http://127.0.0.1:9999/0b0d",
+            "about:config",
+            "javascript:alert(1)",
+        ] {
+            assert!(!ok(other), "{other}");
         }
     }
 
