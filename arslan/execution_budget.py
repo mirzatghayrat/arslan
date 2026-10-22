@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import math
 import os
+import sys
 import time
 import uuid
 from contextlib import contextmanager
@@ -71,11 +72,14 @@ _ENV = {"model_requests": "MODEL_REQUESTS", "tool_calls": "TOOL_CALLS", "tokens"
 
 def tier_limits(tier: str = DEFAULT_TIER) -> Limits:
     """Soft limits for one run, a chat turn or a background job. An unknown tier is the default one;
-    an `ARSLAN_RUN_MAX_*` environment variable overrides its value (benches and tests)."""
+    an `ARSLAN_RUN_MAX_*` environment variable overrides its value (benches and tests), except in the
+    desktop app's frozen server, which runs on its own budgets whatever its environment says (0.1.63,
+    after #364)."""
     base = Limits(**TIERS.get(tier, TIERS[DEFAULT_TIER]))
+    frozen = getattr(sys, "frozen", False)
     values = {}
     for field, suffix in _ENV.items():
-        raw = os.environ.get(f"ARSLAN_RUN_MAX_{suffix}")
+        raw = None if frozen else os.environ.get(f"ARSLAN_RUN_MAX_{suffix}")
         values[field] = (float(raw) if field == "wall_seconds" else int(raw)) if raw else getattr(base, field)
     return Limits(**values)
 

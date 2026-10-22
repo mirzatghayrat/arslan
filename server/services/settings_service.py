@@ -332,11 +332,14 @@ async def heartbeat_interval_s(session: AsyncSession) -> int:
 
 def default_workspace():
     """Arslan's own folder: ~/Arslan (0.1.48). Tests point it elsewhere through
-    ARSLAN_DEFAULT_WORKSPACE so a test run never touches the user's home."""
+    ARSLAN_DEFAULT_WORKSPACE so a test run never touches the user's home; the desktop
+    app's frozen server ignores it (0.1.63, after #364). Frozen, not `packaged`: a test that
+    runs with the packaged configuration must still stay out of the real home folder."""
     import os
+    import sys
     from pathlib import Path
 
-    override = os.environ.get("ARSLAN_DEFAULT_WORKSPACE", "").strip()
+    override = "" if getattr(sys, "frozen", False) else os.environ.get("ARSLAN_DEFAULT_WORKSPACE", "").strip()
     return Path(override).expanduser() if override else Path.home() / "Arslan"
 
 
