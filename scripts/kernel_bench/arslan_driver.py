@@ -113,6 +113,15 @@ class TurnTracker:
     decline_rules: frozenset = frozenset()
     decline_note: str = ""
     idle_after_s: float = IDLE_AFTER_TURN_S
+    # K8's M1 (first-token latency): per turn, seconds from sending it to its first stream_chunk and
+    # to its first stream_end; None when the turn never got one.
+    timings: list = field(default_factory=list)
+    turn_started: float = 0.0
+    first_chunk_at: float | None = None
+    stream_end_at: float | None = None
+
+    def start_turn(self, now: float) -> None:
+        self.turn_started, self.first_chunk_at, self.stream_end_at = now, None, None
 
     def inside(self, path: str) -> bool:
         return bool(path) and (path.startswith(self.run_dir) or not path.startswith("/"))
@@ -125,8 +134,12 @@ class TurnTracker:
         self.last_activity = now
         if t == "stream_chunk":
             self.final_text.append(frame.get("content") or "")
+            if self.first_chunk_at is None and frame.get("content"):     # an empty chunk shows nothing yet
+                self.first_chunk_at = now
         elif t == "stream_end":
             self.turn_done = True
+            if self.stream_end_at is None:
+                self.stream_end_at = now
         elif t == "task_state" and frame.get("phase") in TERMINAL_TASK_PHASES:
             self.turn_done, self.task_open = True, False
             if frame.get("phase") != "succeeded":
@@ -207,6 +220,8 @@ class TurnTracker:
     def next_turn(self, now: float) -> str:
         """Close this turn and start the next; returns this turn's answer."""
         answer = "".join(self.final_text)
+        self.timings.append({key: None if at is None else round(at - self.turn_started, 2)
+                             for key, at in (("first_chunk_s", self.first_chunk_at), ("stream_end_s", self.stream_end_at))})
         self.final_text, self.turn_done, self.last_activity = [], False, now
         return answer
 
@@ -252,6 +267,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
             await ws.recv()                                     # history
             for n, prompt in enumerate(prompts, 1):
                 turn_started = time.monotonic()
+                tracker.start_turn(turn_started)
                 await ws.send(json.dumps({"type": "user_message", "content": prompt}))
                 while not tracker.finished(time.monotonic(), turn_started):
                     try:
@@ -270,7 +286,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
             "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
             "actions_declined": tracker.actions_declined,
-            "end": tracker.end_reason, "turns": len(replies),
+            "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
 
 
