@@ -74,11 +74,15 @@ _NEVER_ALWAYS = (_ONCE_ONLY
 # conversation's cards, a background job's too: a click there must not let every later command of a conversation
 # the user is not looking at out of the sandbox, past a restart. Elsewhere such a yes is this time.
 _WINDOW_SCOPE_ONLY = frozenset({"outside"})
+# S4a (⓪Plan review, fix 3 and follow-up C): kinds that `decide` and `decide_many` always ask with a card, even where a
+# stored grant would answer: the caller reads the grant itself (`standing`) and writes its row when its step runs (the
+# tool loop's outside grant). Keyed on the kind, so no caller can forget it. The card's own choices are unchanged.
+_ALWAYS_ASKS = frozenset({"outside"})
 # S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
 # card, as before S4a. One click must not run the same remote command for two jobs.
 _NEVER_JOINED = frozenset({"outside", "remote"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
-_SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _NEVER_JOINED
+_SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
 if not _SCOPE_SETS <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
 _EXTRA_MAX = 1024
@@ -120,10 +124,6 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
-    #: S4a (⓪Plan review, fix 3): `decide` shows the card even where a stored rule or grant would answer:
-    #: the caller reads them itself (`standing`) and writes their row when its step runs. The card's own
-    #: choices are unchanged.
-    always_asks: bool = False
 
 
 @dataclass(frozen=True)
@@ -198,7 +198,7 @@ async def decide(req: Request, ctx: Context) -> Decision:
     # S1 (U14 a): with nobody to ask (a scheduled run), nothing standing answers: an "Always" rule or a
     # grant let a scheduled run act with nobody there. `_ask` then refuses by policy.
     standing = (await _standing(req, ctx, mode)
-                if _ASKER.get() is not None and not req.always_asks else None)
+                if _ASKER.get() is not None and req.kind not in _ALWAYS_ASKS else None)
     if standing is not None:
         return _done(standing)
     return _done(await _ask(req, ctx, mode))
@@ -222,7 +222,8 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     mode = await _mode()
     # S1 (U14 a): as in `decide`, nothing standing answers when nobody can be asked.
     unattended = _ASKER.get() is None
-    out: list[Decision | None] = [None if unattended else await _standing(r, ctx, mode) for r in reqs]
+    out: list[Decision | None] = [None if unattended or r.kind in _ALWAYS_ASKS else await _standing(r, ctx, mode)
+                                  for r in reqs]
     shown = [r for r, d in zip(reqs, out) if d is None]
     decided = None
     if shown:

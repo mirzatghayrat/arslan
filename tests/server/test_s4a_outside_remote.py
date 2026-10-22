@@ -5,6 +5,7 @@ conversation grant (it was a set in memory): it survives a restart, and a backgr
 conversation honours it — a scheduled run does not (S1)."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 
 import pytest
@@ -512,6 +513,11 @@ async def test_review_2_with_no_sandbox_to_fall_back_to_a_taken_back_grant_runs_
         r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=_Cards(True), cid="c1")
     assert ex.outside == [] and r["ok"] is False and "taken back" in r["error"]
     assert await _rows() == []
+    # Follow-up A: it never ran, and the task runtime knows it — even for an outbound command, whose failure is
+    # otherwise "uncertain" (a retry would then be refused as already run).
+    from server.services import task_service
+    assert r["executed"] is False
+    assert task_service.known_local_failure("run_command", {"command": "git push origin main"}, r) is True
 
 
 async def test_review_2_only_the_users_click_on_the_outside_card_answers_the_network(execution_db, monkeypatch):
@@ -532,7 +538,7 @@ async def test_review_2_only_the_users_click_on_the_outside_card_answers_the_net
 
 
 async def test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row(execution_db):
-    """Fix 3: decide never answers the outside card from a stored grant (`always_asks`): every grant row comes
+    """Fix 3: decide never answers the outside card from a stored grant (`_ALWAYS_ASKS`): every grant row comes
     from the tool loop, written when the command runs — not from the retry card, before its network check."""
     await _give_outside_grant("c1")
     asker = _Asker(scope="once")
@@ -595,3 +601,131 @@ async def test_review_5_two_identical_asks_get_two_cards(execution_db, monkeypat
     for f in shown:
         approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
     assert await first is False and await second is False
+
+
+
+# ── ⓪Plan's re-review follow-ups (A–D) ───────────────────────────────────────
+
+class _Runtime:
+    """The task runtime, played by the test: its admission fence, then the tool (task_service.execute_tool)."""
+
+    def __init__(self, log):
+        self.log = log
+
+    async def execute_tool(self, tool_key, arguments, execute):
+        self.log.append("admit")
+        return await execute(arguments)
+
+
+async def _traced(monkeypatch, log, *, cancel_on_read=None):
+    from server.services import task_service
+    reads = {"n": 0}
+    real_read, real_note = tool_loop._outside_grant, permissions.note_standing
+
+    async def read(*a, **kw):
+        reads["n"] += 1
+        log.append("read")
+        if reads["n"] == cancel_on_read:
+            raise asyncio.CancelledError
+        return await real_read(*a, **kw)
+
+    async def note(*a, **kw):
+        log.append("row")
+        return await real_note(*a, **kw)
+    monkeypatch.setattr(tool_loop, "_outside_grant", read)
+    monkeypatch.setattr(permissions, "note_standing", note)
+    monkeypatch.setattr(task_service, "current", lambda: _Runtime(log))
+
+
+class _LoggedExec(_Exec):
+    def __init__(self, log):
+        super().__init__(stop=False)
+        self.log = log
+
+    async def execute(self, args):
+        self.log.append("exec")
+        return await super().execute(args)
+
+
+async def test_followup_b_the_grant_is_read_before_admission_and_its_row_written_after_the_executor(
+        execution_db, monkeypatch):
+    await _give_outside_grant("c1")
+    log = []
+    await _traced(monkeypatch, log)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=_LoggedExec(log), cards=_Cards(True), cid="c1")
+    assert r["ok"] is True and log == ["read", "read", "admit", "exec", "row"]
+    assert [(x.kind, x.decided_by) for x in await _rows()] == [("outside", "grant")]
+
+
+async def test_followup_b_a_stop_during_the_reread_admits_nothing(execution_db, monkeypatch):
+    """Nothing is awaited inside the admission fence: a stop while the grant is read again leaves no action
+    admitted (so none marked uncertain), nothing run and no row."""
+    await _give_outside_grant("c1")
+    log = []
+    await _traced(monkeypatch, log, cancel_on_read=2)
+    with permissions.asking_with(_Asker()), pytest.raises(asyncio.CancelledError):
+        await _dispatch(monkeypatch, {"command": "ls"}, executor=_LoggedExec(log), cards=_Cards(True), cid="c1")
+    assert log == ["read", "read"]
+    assert await _rows() == []
+
+
+async def test_followup_b_a_fall_back_into_the_sandbox_tells_the_model(execution_db, monkeypatch):
+    await _give_outside_grant("c1")
+
+    async def take_back_then_yes(command, argv, **kw):
+        async with db_session.AsyncSessionLocal() as db:
+            [grant] = await permission_store.list_conversation_grants(db, "outside")
+            await permission_store.delete_conversation_grant(db, grant.id)
+            await db.commit()
+        return True
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "git push origin main"}, executor=_Exec(stop=False),
+                            cards=take_back_then_yes, cid="c1")
+    assert "taken back" in r["grant_note"] and "ran in the sandbox" in r["grant_note"]
+
+
+async def test_followup_c_decide_many_never_answers_the_outside_kind_from_a_grant(execution_db):
+    await _give_outside_grant("c1")
+    asker = _Asker(scope="once")
+    reqs = [permissions.Request(kind="outside", target="*", title="t", detail="ls"),
+            permissions.Request(kind="outside", target="*", title="t", detail="pwd")]
+    with permissions.asking_with(asker):
+        decisions = await permissions.decide_many(reqs, permissions.Context("c1"), title="Run outside?")
+    assert len(asker.frames) == 1 and [d.by for d in decisions] == ["user", "user"]
+    assert [x.decided_by for x in await _rows()] == ["user"]
+
+
+async def test_followup_d_a_bare_run_the_user_clicked_is_not_a_use_of_the_grant(execution_db, monkeypatch):
+    """U11: an approved plain osascript runs with no wrapper because the user clicked its card, not because of the
+    grant: no `outside` grant row for it."""
+    await _give_outside_grant("c1")
+    seen = []
+
+    class _Bare(_Exec):
+        async def execute(self, args):
+            seen.append((terminal_exec.OUTSIDE_SANDBOX.get(), terminal_exec.UNWRAPPED.get()))
+            return {"ok": True, "exit_code": 0, "stdout": "3", "stderr": ""}
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "osascript -e 'tell application \"Reminders\" to count lists'"},
+                            executor=_Bare(stop=False), cards=command_confirm.Confirmations("c1").command, cid="c1")
+    assert r["ok"] is True and seen == [(True, True)]
+    assert [(x.kind, x.decided_by) for x in await _rows()] == [("command", "user")]
+
+
+async def test_followup_b_no_grant_row_when_the_runtime_refuses_to_admit_the_command(execution_db, monkeypatch):
+    """The runtime refuses the step before invoking it (here: it already ran, outcome unknown): the grant let
+    nothing out, so no row says it did."""
+    from server.services import task_service
+    from server.services.task_repository import TaskError
+    await _give_outside_grant("c1")
+
+    class _Refuses:
+        async def execute_tool(self, tool_key, arguments, execute):
+            raise TaskError("task_reconciliation_required")
+    monkeypatch.setattr(task_service, "current", lambda: _Refuses())
+    ex = _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=_Cards(True), cid="c1")
+    assert r["code"] == "task_reconciliation_required" and ex.outside == []
+    assert await _rows() == []

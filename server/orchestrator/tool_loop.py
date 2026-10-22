@@ -1699,32 +1699,25 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         try:
             from server.services.task_service import current as current_task
             from server.services.task_repository import TaskError
-            grant_due = {"yes": by_grant, "fell_back": False}
+            # S4a (⓪Plan review, fixes 2 and 3, follow-up B): the grant was read before any card and may have been taken
+            # back since. Read it again now — after every card, and before the task runtime's admission fence, inside
+            # which nothing is awaited (task_service.execute_tool). Gone: the command runs in the sandbox, or, where none
+            # can start (switched off, seatbelt unavailable), not at all. Its ledger row is written only once the
+            # executor was invoked: never for a command that did not run.
+            grant_use = {"found": None, "invoked": False}
+            ran_outside, result = run_outside, None
+            if by_grant:
+                grant_use["found"] = await _outside_grant(conversation_id, command)
+                if grant_use["found"] is None:
+                    ran_outside = False
+                    if not (sandbox_on and command_sandbox.available()):
+                        result = {"ok": False, "executed": False,
+                                  "error": "this conversation's permission to run commands outside the sandbox was "
+                                           "taken back while this one waited; it did not run",
+                                  "note": "Ask the user again if it is still needed."}
 
             async def execute(admitted_args):
-                if grant_due["yes"]:
-                    # S4a (⓪Plan review, fixes 2 and 3): the grant was read before any card; it may have been taken
-                    # back since. Read it again here, right before the executor, and only now write its row: never
-                    # for a command that did not run. Gone: the command runs in the sandbox, or, where none can
-                    # start (switched off, seatbelt unavailable), it does not run at all.
-                    grant_due["yes"] = False
-                    from server.services import command_sandbox as _sandbox
-                    from server.services import terminal_exec as _exec
-                    found = await _outside_grant(conversation_id, command)
-                    if found is None:
-                        if not (sandbox_on and _sandbox.available()):
-                            return {"ok": False, "error": "this conversation's permission to run commands outside "
-                                    "the sandbox was taken back while this one waited; it did not run",
-                                    "note": "Ask the user again if it is still needed."}
-                        grant_due["fell_back"] = True     # in the sandbox after all: say so, offer the retry
-                        inside = _exec.OUTSIDE_SANDBOX.set(False)
-                        try:
-                            return await execute(admitted_args)
-                        finally:
-                            _exec.OUTSIDE_SANDBOX.reset(inside)
-                    from server.services import background_jobs, permissions
-                    await permissions.note_standing(_outside_request(command), permissions.Context(
-                        conversation_id, job_id=background_jobs._inside_job.get()), found)
+                grant_use["invoked"] = True            # the executor is invoked now (no await before this line)
                 # A tool that waits for the user's card or a slow app declares its own limit
                 # (`timeout_s`): the default cut a Notes look mid-card on a real Mac (0.1.53).
                 own = getattr(executor, "timeout_s", None)
@@ -1751,8 +1744,21 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                         terminal_exec.OFFLINE.reset(cut)
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
-            result = await run_once(run_outside)
-            ran_outside = run_outside and not grant_due["fell_back"]
+            if result is None:
+                try:
+                    result = await run_once(ran_outside)
+                except asyncio.CancelledError:
+                    grant_use["found"] = None          # a stop: no row written while the task is being cancelled
+                    raise
+                finally:
+                    found, grant_use["found"] = grant_use["found"], None
+                    if found is not None and grant_use["invoked"]:
+                        from server.services import background_jobs, permissions
+                        await permissions.note_standing(_outside_request(command), permissions.Context(
+                            conversation_id, job_id=background_jobs._inside_job.get()), found)
+                if by_grant and not ran_outside and isinstance(result, dict):
+                    result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
+                                            "taken back; it ran in the sandbox")
             if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
                     and isinstance(result, dict) and result.get("sandbox_denied")):
                 # Stopped by the sandbox: offer ONE re-run outside it, from the start.
