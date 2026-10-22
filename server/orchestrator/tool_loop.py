@@ -1549,8 +1549,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         from server.ws import protocol as _protocol
         conn = _catalog.find_connector(str(args.get("name") or ""))
         if confirm_command is None:
-            result = {"ok": False, "error": "a connector has to be offered to the user directly; "
-                                            "there is nobody on this channel"}
+            from server.services import permissions
+            name = str(args.get("name") or "")[:100]
+            result = {"ok": False, "error": await _unattended(
+                "a connector has to be offered to the user directly; there is nobody on this channel",
+                permissions.Request(kind="capability", target=f"connector:{name}",
+                                    title=f"Connect {name or 'a connector'}?"), conversation_id)}
         elif conn is None:
             result = {"ok": False, "error": "no built-in connector by that name",
                       "available": [c["label"] for c in _catalog.list_connectors()],
@@ -1569,9 +1573,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     if tool_key == "enroll_node":
         if confirm_command is None:
-            result = {"ok": False,
-                      "error": "enrolling a machine has to be proposed to you directly, "
-                               "and there is nobody on this channel to propose it to"}
+            from server.services import permissions
+            host = str(args.get("host") or "*")[:200]
+            result = {"ok": False, "error": await _unattended(
+                "enrolling a machine has to be proposed to you directly, and there is nobody on this "
+                "channel to propose it to",
+                permissions.Request(kind="remote", target=host, title=f"Enrol {host}?"), conversation_id)}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)

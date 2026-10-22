@@ -93,3 +93,13 @@ async def test_with_someone_to_ask_a_missing_callback_writes_no_row():
     with permissions.asking_with(_ask):
         out = await _dispatch("run_command", {"command": "git push origin main"})
     assert out["ok"] is False and await _rows() == []
+
+
+async def test_a_connector_and_a_machine_offered_with_nobody_there_are_listed():
+    """⓪Plan's review: the schedule card promises every step that needs an OK is listed; offering a
+    connector or enrolling a machine needs the user too."""
+    await _dispatch("suggest_connector", {"name": "GitHub"})
+    await _dispatch("enroll_node", {"host": "studio.local", "user": "me"})
+    first, second = await _rows()
+    assert _policy(first, "capability") and first.target == "connector:GitHub"
+    assert _policy(second, "remote") and second.target == "studio.local"
