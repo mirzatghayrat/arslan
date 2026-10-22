@@ -145,6 +145,14 @@ def test_ws_origin_packaged_fail_closed(monkeypatch):
     )
 
 
+def test_ws_origin_dev_allowlist_from_env(monkeypatch):
+    # The configured allowlist's own branch (security.ws_origin_allowed): in dev, an origin named in
+    # ARSLAN_ALLOWED_ORIGINS gets through, and one it does not name is still refused (#364 review).
+    _config, security = _reload(monkeypatch, ARSLAN_ALLOWED_ORIGINS="https://app.example.com")
+    assert security.ws_origin_allowed("https://app.example.com") is True
+    assert security.ws_origin_allowed("https://other.example.com") is False
+
+
 # --- WS handshake integration: a foreign Origin is refused before accept ------
 
 

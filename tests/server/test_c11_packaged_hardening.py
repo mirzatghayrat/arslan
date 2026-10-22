@@ -83,8 +83,11 @@ def test_the_frozen_entry_assigns_packaged_whatever_was_inherited(monkeypatch):
     monkeypatch.setenv("ARSLAN_ALLOWED_HOSTS", "a.example")
     monkeypatch.setattr(server_entry, "_point_static_dir_into_the_bundle", lambda: None)
     server_entry._sanitize_env()
-    assert os.environ["ARSLAN_PACKAGED"] == "1" and "ARSLAN_ENV" not in os.environ
-    assert "ARSLAN_ALLOWED_ORIGINS" not in os.environ and "ARSLAN_ALLOWED_HOSTS" not in os.environ
+    # one key at a time: an assertion on os.environ itself prints the whole environment, keys included
+    assert os.environ.get("ARSLAN_PACKAGED") == "1"
+    assert os.environ.get("ARSLAN_ENV") is None
+    assert os.environ.get("ARSLAN_ALLOWED_ORIGINS") is None
+    assert os.environ.get("ARSLAN_ALLOWED_HOSTS") is None
 
 
 # 3 ── no cross-origin by default ─────────────────────────────────────────────────────────────────────
