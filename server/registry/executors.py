@@ -788,6 +788,10 @@ class RunCommandExecutor:
             readable = await _project_folders()
         # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
         # the loop says they clicked to let THIS command out (never the model's args).
+        # 0.1.63 S3: the run's first change saves the working folder first (only that folder: a
+        # command let out of the sandbox can change others, and those are not saved).
+        from server.services import checkpoints, execution_context
+        await checkpoints.ensure(execution_context.current_run_id(), [cwd])
         # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
         from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,

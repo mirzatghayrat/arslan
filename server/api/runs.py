@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -550,6 +552,42 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
     summary = (await rp.summaries(db, [run_id])).get(run_id, {})
     return {"run_id": run_id, "status": run.status, **summary, "entries": rp.entries(list(steps), raw=raw)}
+
+
+class CheckpointRestoreIn(BaseModel):
+    what: Literal["files", "conversation", "both"]
+
+
+def _started(run: Run) -> float:
+    return run.started_at.replace(tzinfo=timezone.utc).timestamp() - 1
+
+
+@router.get("/runs/{run_id}/checkpoint")
+async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """0.1.63 S3: whether this run's file changes can be undone, and what an undo covers and does not."""
+    from server.services import checkpoints
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(404, detail={"code": "run_not_found"})
+    return checkpoints.summary(run_id, _started(run))
+
+
+@router.post("/runs/{run_id}/checkpoint/restore")
+async def restore_run_checkpoint(run_id: int, body: CheckpointRestoreIn,
+                                 db: AsyncSession = Depends(get_session)) -> dict:
+    """0.1.63 S3: put the run's files back. The conversation ("conversation", "both") arrives in S3b."""
+    from server.services import checkpoints
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(404, detail={"code": "run_not_found"})
+    if body.what != "files":
+        raise HTTPException(409, detail={"code": "not_yet"})
+    if not checkpoints.summary(run_id, _started(run))["exists"]:
+        raise HTTPException(404, detail={"code": "none"})
+    try:
+        return await checkpoints.restore_files(run_id)
+    except checkpoints.Refused as exc:
+        raise HTTPException(404 if exc.code == "none" else 409, detail={"code": exc.code, "runs": exc.runs})
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

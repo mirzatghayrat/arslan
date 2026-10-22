@@ -66,6 +66,10 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
     root = Path(ws_root).resolve()
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
+    if for_write and candidate.name in ("", ".", ".."):
+        # 0.1.63 S3a (⓪Plan's review): `x/..` names a folder, never a file to write (`root/".build/.."` is
+        # the root itself), and only the parent is judged below.
+        raise PathEscape(f"not a file name: {user_path}")
 
     if for_write:
         probe, missing = candidate.parent, []
