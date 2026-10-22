@@ -1,13 +1,10 @@
 """S2b-1: server/services/shell_text.py reads commands exactly as the vendored Hermes code it was adapted
-from, function by function, so swapping one for the other changes no decision. Goes with the vendored copy
-in S2b-2 (v0.1.63): after that there is nothing to compare with.
-
-The one deliberate difference: Hermes adds a Windows-path variant (backslashes as `/`) when a command has a
-`C:\\`-style or `\\\\` path; Arslan runs on macOS and leaves it out. Every other variant is the same, in the
-same order."""
+from, function by function and variant by variant, so swapping one for the other changes no decision. Goes
+with the vendored copy in S2b-2 (v0.1.63): after that there is nothing to compare with. What stays is
+test_shell_text_reading.py, which pins the readings by their verdicts."""
+import ast
 import itertools
 import os
-import re
 from pathlib import Path
 
 import pytest
@@ -38,15 +35,23 @@ def _spellings(c: str):
                 f"if true; then {c}; fi", f"while true; do {c}; done", f"env FOO=1 {c}", f"nohup {c}", f"command {c}",
                 f"echo '{c}'", f'echo "{c}"', f"grep -P '{c}' f", f"cat <<EOF\n{c}\nEOF", f"\x1b[31m{c}\x1b[0m",
                 c.replace("r", "\uff52", 1), c + "\x00", f"x=$({c})", f'cat "f\\"n"; {c}',
-                c.replace("~", os.path.expanduser("~")))           # the home path spelled out (folded back to ~)
+                c.replace("~", os.path.expanduser("~")),           # the home path spelled out (folded back to ~)
+                f"echo C:\\x\n{c}", f"printf 'Error:\\n'\n{c}", c.replace("/", "\\"), f"{c} # C:\\",   # backslash paths
+                f'git commit -m "fix\n{c}"', f"echo 'a\n{c}'", f'echo "$(ls\n{c})"')             # quoted newlines
+
+
+def _literals(path: Path) -> set[str]:
+    """Every string literal in a test file, decoded (all quote styles, escapes resolved)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and 1 < len(n.value) <= 2000}
 
 
 def _corpus() -> list[str]:
     here = Path(__file__).parent
     texts = set()
-    for name in _POLICY_TESTS:
-        source = (here / name).read_text(encoding="utf-8")
-        texts.update(re.findall(r"\"((?:[^\"\\\n]|\\.){2,300})\"", source))
+    for name in _POLICY_TESTS + ("test_shell_text_reading.py",):
+        texts |= _literals(here / name)
     for c in _BASE:
         for v in _spellings(c):
             texts.update(itertools.islice(_spellings(v), 0, 8))
@@ -54,13 +59,6 @@ def _corpus() -> list[str]:
 
 
 _CORPUS = _corpus()
-
-
-def _without_windows_variant(command: str) -> list[str]:
-    found = list(hermes._command_detection_variants(command))
-    windows = hermes._normalize_command_for_detection(hermes._mask_quoted_newlines(command.replace("\\", "/")))
-    gated = re.search(r"(?:[A-Za-z]:|\\\\)[\\\\]", command) or re.search(r"[A-Za-z]:\\", command)
-    return [v for v in found if not (gated and v == windows)] if gated else found
 
 
 def test_the_corpus_is_large_and_reaches_every_layer():
@@ -80,8 +78,8 @@ def test_each_reading_matches_hermes(ours, theirs):
     assert [c for c in _CORPUS if ours(c) != theirs(c)] == []
 
 
-def test_the_variants_match_hermes_but_the_windows_path_one():
-    assert [c for c in _CORPUS if list(shell_text.variants(c)) != _without_windows_variant(c)] == []
+def test_the_variants_match_hermes_in_order():
+    assert [c for c in _CORPUS if list(shell_text.variants(c)) != list(hermes._command_detection_variants(c))] == []
 
 
 def test_the_command_position_is_hermes():

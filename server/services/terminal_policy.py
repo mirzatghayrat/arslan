@@ -22,7 +22,7 @@ The rules are Arslan's own; the hard floor (layer ①) is adapted from Hermes Ag
 NousResearch/hermes-agent), keeping what applies to macOS. Commands are read through
 server/services/shell_text.py (S2b-1), Arslan's copy of Hermes' text handling: the command-start
 pass, the variants with a newline at every real command start, and the quote masks. Hermes'
-license is in that module's header.
+MIT license is in THIRD_PARTY_NOTICES.md ("Terminal command reading").
 
 Everything here is a pure function of the command text. It is a guard against mistakes and
 against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what

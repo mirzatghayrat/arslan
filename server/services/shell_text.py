@@ -4,11 +4,11 @@ argument runs, and the spellings that hide a command word (r''m, r\\m, $IFS, `$(
 0.1.63 S2b-1: Arslan's own copy, adapted from Hermes Agent's command detection
 (NousResearch/hermes-agent, tools/approval_detection.py and tools/ansi_strip.py at commit
 6b2fe92af66a95ea6a5caa309e05c5643cdd79de), trimmed to what Arslan's decisions read. Left out, because
-no Arslan decision can reach them: the Windows-path variant (Arslan runs on macOS), folding HERMES_HOME
-(Hermes' own install path), and the interpreter -c/-e and "malformed payload" findings, which carry no
-payload to read (terminal_policy reads inline scripts itself). Matching changes nothing else: a test
-compares this module with the vendored original command by command while that original exists
-(tests/server/test_shell_text_parity.py); arslan/vendor/hermes goes in S2b-2 (v0.1.63).
+no Arslan decision reads them: folding HERMES_HOME (Hermes' own install path, never set here) and the
+interpreter -c/-e and "malformed payload" findings, which carry no payload (terminal_policy reads inline
+scripts itself). The Windows-path variant is kept: dropping it would change verdicts (it only asks more).
+Nothing else changes: a test compares this module with the vendored original command by command while
+that original exists (tests/server/test_shell_text_parity.py); arslan/vendor/hermes goes in S2b-2.
 
 Hermes Agent's MIT license, which covers the parts adapted from it, is in THIRD_PARTY_NOTICES.md
 ("Terminal command reading").
@@ -740,6 +740,12 @@ def _command_detection_variants(command: str):
         seen.add(variant)
         return True
 
+    # A backslash path (`C:\x`, `\\x`): also read it with `/` for `\`. zsh strips an unquoted backslash, so on macOS
+    # this only ever asks more (②Main's review of #320); kept so S2b-1 changes no verdict. Dropping it is its own change.
+    if re.search(r"(?:[A-Za-z]:|\\\\)[\\\\]", command) or re.search(r"[A-Za-z]:\\", command):
+        win_variant = _normalize_command_for_detection(_mask_quoted_newlines(command.replace("\\", "/")))
+        if fresh(win_variant):
+            yield win_variant
     # Program-bearing options are parsed in their owning command's context; surfacing only the payload lets the
     # hardline floor inspect what will actually run without promoting similar flags or quoted prose.
     pending = [normalized]
