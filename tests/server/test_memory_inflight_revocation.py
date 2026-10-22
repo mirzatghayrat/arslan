@@ -12,6 +12,7 @@ from server.services.memory_repository import repository
 from arslan.llm.adapter import LLMAdapter
 from tests.server.test_context_request_evidence import selected as _selected_fixture
 from server.services.task_repository import TaskError
+from tests.server.conftest import worker_scope
 
 selected = _selected_fixture
 
@@ -146,7 +147,7 @@ async def test_worker_selections_are_shared_with_root_guard(selected, execution_
     async def body(conversation, message, emit):
         runtime = task_service.current()
         async def worker():
-            with pc.for_worker("worker"):
+            with worker_scope("worker"):
                 if recall:
                     result = await memory_tools_v2.recall({"query": "report"}, ToolCaller(actor="spawn", spawn_id=1, conversation_id=conversation))
                     assert result["hits"]

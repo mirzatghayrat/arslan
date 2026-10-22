@@ -12,6 +12,7 @@ from server.db.models import CompanionTask, Run, TaskAction, TaskAttempt, TaskCh
 from server.orchestrator import arslan, tool_loop
 from server.services import host_run, personal_context as pc, run_registry, task_service
 from server.services.task_repository import TaskError, TaskRepository, repository
+from tests.server.conftest import worker_scope
 
 
 class Crash(BaseException):
@@ -254,7 +255,7 @@ async def test_recovery_tool_finds_saved_output_without_chat_history_and_rejects
         denied = await executor.execute({"run_id": foreign_id})
         assert denied["error_code"] == "task_run_scope_denied" and "Private" not in str(denied)
         assert not (await executor.execute({"task_id": "another-task"}))["ok"]
-        with pc.for_worker("specialist"):
+        with worker_scope("specialist"):
             assert (await executor.execute({}))["error_code"] == "task_context_unavailable"
         return "continued"
     monkeypatch.setattr(arslan, "_handle_answer", answer)

@@ -19,11 +19,8 @@ Two paths, each measured against its real source (never a copy-pasted literal):
   (a) HOST — arslan._arslan_tools() → _native_tool_schemas → the tools= wire form.
       recall + remember together = the full JSON the host model receives each turn.
 
-  (b) SPAWN — a spawn equipped with second_brain, on a native provider, pays BOTH:
-      the same tools= JSON schema (built from wired_tools_for_spawn's dicts, which
-      carry the fuller catalog Tool.description) AND the prose "- TOOL <key> (live):"
-      lines injected into its system prompt by dispatcher._equipment_block_from.
-      Both are counted — that double cost is the honest reality.
+  (b) SPAWN — measured until the dispatcher went (C7b-4/6, v0.1.63); its tests went
+      with it. The numbers below are kept as the historical record.
 
 Measured 2026-07-18 (estimate_tokens, CJK-aware — recorded for the reviewer):
   HOST  full schema: recall=86, remember=121, combined=207 tok

@@ -1,8 +1,9 @@
 """SAFETY-CRITICAL: the orchestrator-only run_command tool can NEVER reach a spawn.
 
-run_command is an orchestrator-tier tool (whitelisted shell). Spawns operate under
-the layer-3 safe-tier gate (wired_tools_for_spawn), and every spawn capability write
-goes through the layer-2 gate (assert_assignable). Neither must ever let run_command in.
+run_command is an orchestrator-tier tool (whitelisted shell). Every spawn capability
+write goes through the layer-2 gate (assert_assignable), which must never let it in.
+(The layer-3 gate, wired_tools_for_spawn, went with the dispatcher in C7b-4/6, v0.1.63:
+no spawn turn calls tools any more.)
 """
 import pytest
 import pytest_asyncio
@@ -37,14 +38,6 @@ async def spawn(maker):
         s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="run_command"))
         await s.commit()
     return 1
-
-
-@pytest.mark.asyncio
-async def test_spawn_wired_tools_never_include_run_command(spawn):
-    from server.registry import service
-
-    tools = await service.wired_tools_for_spawn(spawn, current_turn=1)
-    assert not any(t["key"] == "run_command" for t in tools)
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,9 @@
-"""Shared JSON rescue-parser used by security-relevant dispatch paths.
+"""Shared JSON rescue-parser for model output.
 
-Both the router (stage-1 action dispatch) and the spawn_loop (tool/escalate
-dispatch) rely on this helper.  Centralised here so that any change to the
-fence-stripping or rescue heuristic is visible in one place and tested
-directly.
+tool_loop (`first_json_object`, `parse_json_object`) and every service that asks a
+model for a JSON answer rely on this helper. (The router and the spawn_loop it was
+written for are gone: 0.1.48 and C7b-4.) Centralised here so that any change to the
+fence-stripping or rescue heuristic is visible in one place and tested directly.
 """
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ def parse_json_object(content: str) -> dict | None:
 
     Returns None for non-dict JSON (arrays, scalars) and for unparseable input.
 
-    Security note: this function is on the critical dispatch path for both
-    the router (action selection) and the spawn_loop (tool/escalate gating).
-    Any loosening of the rescue heuristic must be reviewed for injection risk.
+    Security note: this function parses model output that drives decisions
+    (tool_loop's JSON tool calls, model judgements in services). Any loosening
+    of the rescue heuristic must be reviewed for injection risk.
     """
     text = (content or "").strip()
     if text.startswith("```"):

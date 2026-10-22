@@ -112,19 +112,6 @@ def scoped_turn(function):
     return wrapped
 
 
-def scoped_worker(function):
-    @wraps(function)
-    async def wrapped(*args, **kwargs):
-        with pc.for_worker(str(kwargs["spawn_id"])):
-            if pc.current() is not None:
-                pc._current.set(replace(pc.current(), query=kwargs.get("task_brief") or ""))
-            if pc.current() is not None and kwargs.get("run_id") is not None:
-                pc._current.set(replace(pc.current(), run_id=f"run:{kwargs['run_id']}",
-                                        source_run_id=kwargs["run_id"]))
-            return await function(*args, **kwargs)
-    return wrapped
-
-
 async def execute_entry(conversation_id, instruction, emit, body, *, driver=None,
                         task_id=None, headless=False):
     """Bind non-chat entry points without deriving new consent from saved text."""
