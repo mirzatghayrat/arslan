@@ -3367,8 +3367,8 @@ async def _run_native(
                         # K3b: never on a provider that clears old results itself (Claude's native path):
                         # editing what was sent sends the prompt cache back to the system prompt, and the
                         # request rewrites the whole history (45k tokens in K3's Claude run, T2 r1).
-                        from server.orchestrator import research_review
-                        history_compacted = research_review.compact_saved_context(
+                        from server.orchestrator import saved_context
+                        history_compacted = saved_context.compact_saved_context(
                             convo, research_source_feedback, args.get("content")) or history_compacted
                 if runtime:
                     runtime.progress = runtime.progress.model_copy(update={

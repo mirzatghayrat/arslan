@@ -1,6 +1,6 @@
 """K3b: on Claude's native path, what was sent is never edited again, not even to compact saved web reads.
 
-K3's Claude run (T2 r1): after a background job saved progress_notes.md, `research_review.compact_saved_context`
+K3's Claude run (T2 r1): after a background job saved progress_notes.md, `saved_context.compact_saved_context` (then in research_review)
 swapped three earlier `web_extract` bodies for receipts. An edit in the middle of the history sends the prompt
 cache back to the system prompt (a prefix is looked up only at the breakpoints), and that request rewrote 45k
 tokens. On that path the server clears old tool results itself (K1b's `_SENT_IS_FINAL`), so the compaction only
