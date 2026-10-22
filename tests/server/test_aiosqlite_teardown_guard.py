@@ -27,7 +27,6 @@ with the count. Any other exception from that thread propagates untouched.
 """
 import asyncio
 import threading
-import time
 
 import pytest
 from sqlalchemy import text
@@ -47,6 +46,7 @@ def _provoke(tmp_path, name: str) -> None:
     was never reproducible from ordinary test code.
     """
     loop = asyncio.new_event_loop()
+    already = set(threading.enumerate())
 
     async def body():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/name}")
@@ -60,7 +60,13 @@ def _provoke(tmp_path, name: str) -> None:
 
     loop.run_until_complete(body())
     loop.close()
-    time.sleep(1.0)          # let the worker get to its delivery
+    # Wait for the delivery itself, not for a guess at how long the query takes (a fixed 1 s sleep went
+    # red under the parallel suite: the count was read before the reply came). Both of the worker's
+    # deliveries into the closed loop raise, the exception leaves its function, and the guard counts it
+    # and returns; so the worker thread ending is the delivery having been counted.
+    for worker in set(threading.enumerate()) - already:
+        worker.join(timeout=60)
+        assert not worker.is_alive(), "the aiosqlite worker never delivered its reply"
 
 
 def test_the_guard_catches_a_delivery_into_a_closed_loop(tmp_path):
