@@ -205,8 +205,24 @@ OUTBOUND_RULES = SEND_OUT_RULES | {"apple-events", "shortcuts"}
 #: The two whose approved plain call may run with no sandbox at all (U11, task_service.unwrapped_once).
 BARE_RULES = frozenset({"apple-events", "shortcuts"})
 UNREADABLE = "unreadable"
+
+# S2a-3 b (the user's decision, 2026-10-22): programs that ask macOS to act for them outside the sandbox,
+# which the sandbox does not stop (launchd runs a job, LaunchServices opens an app, Shortcuts runs a
+# shortcut, the at daemon runs a command later …). Two tiers. The distinctive names ask wherever they
+# appear in the text, and wherever the reader found them as a command (quotes removed). The common words
+# ask only where the reader found a command: anything it could not read asks already (`unreadable`). A
+# command that matches a named rule keeps that name (U11 and the Inbox go by it); this one names the rest.
+# DELETE-BY: revise when v0.1.64's default-deny sandbox stops these services from the sandbox itself.
+OUTSIDE_REACH = ("outside-reach", "asks macOS to act for it outside the sandbox")
+_OUTSIDE_NAMES = frozenset({"launchctl", "crontab", "shortcuts", "tccutil", "networksetup", "osascript", "killall"})
+_OUTSIDE_COMMANDS = frozenset({"open", "at", "batch"})
+_SECURITY_WRITES = r"(?:add-[\w-]+|delete-[\w-]+|import|set-[\w-]+|create-[\w-]+|unlock-[\w-]+|export)"
+# Not a file named after one (shortcuts.txt, osascript.log): the word, not a name with an extension.
+_OUTSIDE_ANYWHERE = re.compile(r"(?<![\w.-])(?:" + "|".join(sorted(_OUTSIDE_NAMES)) + r")(?![\w-]|\.\w)"
+                               r"|(?<![\w.-])security\s+" + _SECURITY_WRITES + r"(?![\w-])", re.I)
+
 #: Rules a card answers for this one time only: nothing to remember, and no stored answer stands.
-ONCE_ONLY_RULES = frozenset({key for key, _, _ in _ASK}) | {"delete-outside", UNREADABLE}
+ONCE_ONLY_RULES = frozenset({key for key, _, _ in _ASK}) | {"delete-outside", UNREADABLE, OUTSIDE_REACH[0]}
 
 # An inline script (python -c, node -e, a heredoc …) that reaches out, starts programs, drives
 # apps or hides its code: the text alone cannot say what it does (0.1.52's `_SCRIPT_REACH`). Not
@@ -412,6 +428,19 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _inline_scripts(split))
 
 
+def _reaches_outside(texts: tuple[str, ...], reading: shell_grammar.Reading) -> bool:
+    """S2a-3 b: a program that asks macOS to act for it outside the sandbox (see OUTSIDE_REACH)."""
+    if _matches(_OUTSIDE_ANYWHERE, texts):
+        return True
+    for command in reading.commands:
+        name = command[0].rsplit("/", 1)[-1]
+        if name in _OUTSIDE_NAMES or name in _OUTSIDE_COMMANDS:
+            return True
+        if name == "security" and len(command) > 1 and re.fullmatch(_SECURITY_WRITES, command[1]):
+            return True
+    return False
+
+
 def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
     found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
     if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
@@ -451,6 +480,8 @@ def _analyse(text: str) -> _Analysis:
     if unparseable:
         return _Analysis(Assessment("ask", UNREADABLE, unparseable), frozenset({UNREADABLE}))
     found = _layer_two(texts)
+    if not found and _reaches_outside(texts, reading):
+        found = [OUTSIDE_REACH]
     hidden = _hidden_code(texts) or (reading.why if not reading.understood else "")
     rules = frozenset(key for key, _why in found) | ({UNREADABLE} if hidden else frozenset())
     if found:
@@ -571,6 +602,8 @@ def describe(rule: str) -> str:
             return why
     if rule == _DELETE_OUTSIDE[0]:
         return _DELETE_OUTSIDE[1]
+    if rule == OUTSIDE_REACH[0]:
+        return OUTSIDE_REACH[1]
     if rule in _RETIRED:
         return _RETIRED[rule]
     return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule

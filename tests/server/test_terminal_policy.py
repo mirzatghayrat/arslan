@@ -11,7 +11,7 @@ from server.services import terminal_policy as tp
     'remindctl add "Buy milk" --due tomorrow', "ls -la ~/Downloads | head", "python3 report.py",
     "pandoc notes.md -o notes.docx", "ffmpeg -i in.mov out.mp4", "git status", "git log --oneline -5",
     "curl -s https://example.com", "cat report.md", "mkdir -p out && cp a.txt out/", "echo shutdown later",
-    'echo "use sudo later"', "ls /System", "open -a Preview report.pdf",
+    'echo "use sudo later"', "ls /System",
 ])
 def test_everyday_commands_just_run(command):
     assert tp.assess(command).level == "run"
