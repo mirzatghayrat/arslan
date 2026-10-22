@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 from urllib.parse import urlparse
@@ -99,7 +100,10 @@ _OFFICIAL_HOST = "api.anthropic.com"
 
 
 def _first_party_hosts(env: Mapping[str, str] | None = None) -> frozenset[str]:
-    """host:port entries of ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS (comma-separated, lower-cased)."""
+    """host:port entries of ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS (comma-separated, lower-cased). A bench knob:
+    the desktop app's frozen server never takes it from its environment (0.1.63, after #364)."""
+    if env is None and getattr(sys, "frozen", False):
+        return frozenset()
     raw = (os.environ if env is None else env).get("ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS", "")
     return frozenset(item.strip().lower() for item in raw.split(",") if item.strip())
 

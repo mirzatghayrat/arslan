@@ -47,17 +47,16 @@ def _keep(monkeypatch, *names):
 # ── the frozen entry drops them ─────────────────────────────────────────────
 
 def test_the_frozen_entry_drops_every_inherited_override(server_entry, frozen, monkeypatch):
+    dropped = ("ARSLAN_SPAWNS_DIR", "ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE", "ARSLAN_RUN_MAX_TOKENS",
+               "ARSLAN_RUN_MAX_WALL_SECONDS", "ARSLAN_MCP_SUPERVISOR", "ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS")
     names = ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_API_TOKEN", "ARSLAN_ENV", "ARSLAN_PACKAGED",
-             "ARSLAN_SPAWNS_DIR", "ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE",
-             "ARSLAN_RUN_MAX_TOKENS", "ARSLAN_RUN_MAX_WALL_SECONDS", "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS")
+             "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS", *dropped)
     _keep(monkeypatch, *names)
-    for name in ("ARSLAN_SPAWNS_DIR", "ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE",
-                 "ARSLAN_RUN_MAX_TOKENS", "ARSLAN_RUN_MAX_WALL_SECONDS"):
+    for name in dropped:
         monkeypatch.setenv(name, "/inherited")
     monkeypatch.setattr(server_entry, "_point_static_dir_into_the_bundle", lambda: None)
     server_entry._sanitize_env()
-    for name in ("ARSLAN_SPAWNS_DIR", "ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE",
-                 "ARSLAN_RUN_MAX_TOKENS", "ARSLAN_RUN_MAX_WALL_SECONDS"):
+    for name in dropped:
         assert os.environ.get(name) is None, name           # one key at a time: never print the environment
 
 
@@ -163,3 +162,29 @@ def test_a_packaged_server_keeps_spawns_in_its_data_dir(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         importlib.reload(config)
+
+
+# ── ARSLAN_MCP_SUPERVISOR and ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS: test and bench knobs (#379 review) ─
+
+def test_the_frozen_app_always_runs_the_mcp_supervisor(frozen, monkeypatch):
+    from server.mcp import supervisor
+    monkeypatch.setenv("ARSLAN_MCP_SUPERVISOR", "0")
+    assert supervisor.switched_on() is True
+
+
+def test_a_dev_run_can_still_switch_the_supervisor_off(monkeypatch):
+    from server.mcp import supervisor
+    monkeypatch.setenv("ARSLAN_MCP_SUPERVISOR", "0")
+    assert supervisor.switched_on() is False
+
+
+def test_the_frozen_app_takes_no_first_party_host_from_its_environment(frozen, monkeypatch):
+    from arslan.llm.providers import anthropic_provider
+    monkeypatch.setenv("ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS", "127.0.0.1:8901")
+    assert anthropic_provider._first_party_hosts() == frozenset()
+
+
+def test_a_dev_run_still_takes_the_bench_s_first_party_host(monkeypatch):
+    from arslan.llm.providers import anthropic_provider
+    monkeypatch.setenv("ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS", "127.0.0.1:8901")
+    assert anthropic_provider._first_party_hosts() == frozenset({"127.0.0.1:8901"})

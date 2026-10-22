@@ -34,6 +34,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -116,7 +117,10 @@ def ready_now(server_id: int, state: str | None) -> bool:
 
 
 def switched_on() -> bool:
-    """False when ARSLAN_MCP_SUPERVISOR is "0" (the test suite); on by default."""
+    """False when ARSLAN_MCP_SUPERVISOR is "0" (the test suite); on by default, and always in the desktop
+    app's frozen server, whatever its environment says (0.1.63, after #364)."""
+    if getattr(sys, "frozen", False):
+        return True
     return os.environ.get(SWITCH_ENV, "1") != "0"
 
 

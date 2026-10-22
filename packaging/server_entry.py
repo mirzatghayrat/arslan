@@ -84,7 +84,8 @@ def _sanitize_env() -> None:
         # (⓪Plan, after #364): another Python, run outside the sandbox and trusted for its read roots;
         # another home folder for the file tools; other run budgets. The code that reads each one
         # ignores it when packaged too.
-        for var in ("ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE",
+        for var in ("ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE", "ARSLAN_MCP_SUPERVISOR",
+                    "ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS",
                     *[key for key in os.environ if key.startswith("ARSLAN_RUN_MAX_")]):
             os.environ.pop(var, None)
 
