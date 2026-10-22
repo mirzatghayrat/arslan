@@ -74,8 +74,14 @@ v0.1.63 发出去之前，用数字确认「真的变好了」，并让发布说
   - `fresh_install_check`：`THIRD_PARTY_NOTICES.md` 和 `LICENSE` 在 `Arslan.app/Contents/Resources` 里，和当次检出逐字节一致（A5 加的检查；候选版是第一次真正证明打包里有它们）。
   - 要过云端审计的安全文案都已回复并定稿：S1b 里 `schedule_task` 的说明（含审计要加的「只调用服务器标注为只读的 MCP 工具」）；C11 的 SECURITY.md 改写（#339）；#298b（按三层模型重写命令那几段，等 S2a-3）。
   - 命令分类的洞（S2a-3）：用户 2026-10-22 定了做法和门槛（S2a 卡的 S2a-3 节），按那里的验收合并后才打 tag。
-  - C11 审出的后续加固（C11b：WebSocket 握手把令牌写进日志等五项）：用户已决定怎么处理——修完合并，或者用户同意的顺延。
-  - #339（SECURITY.md）按云端审计改完：打包版忽略 `ARSLAN_ALLOWED_ORIGINS` / `ARSLAN_ALLOWED_HOSTS`（单独一个小的代码 PR）；`ARSLAN_ENV` 那句改成只对源码里跑的服务成立；补 BYOK 密钥位置和入站 MCP 令牌两句。
+  - C11 审出的后续加固（C11b：WebSocket 握手把令牌写进日志等五项）：打 tag 前用户要在两者中选一——修完合并，或者同意顺延（写明原因和新的期限）。
+  - #339（SECURITY.md）按云端审计（2026-10-22）改完：
+    - 先 rebase 到 main，PR 只改 SECURITY.md；
+    - 打包版忽略 `ARSLAN_ALLOWED_ORIGINS` / `ARSLAN_ALLOWED_HOSTS`（单独一个小的代码 PR），之后 Cross-site 段改成「桌面版的服务不接受任何跨源调用方（忽略这两个变量），拒绝没有 Origin 的 WebSocket；开发时绑定非 localhost 地址要自己配这两个变量」；
+    - `ARSLAN_ENV` 那句改成只对源码里跑的开发服务成立，桌面版会忽略它；
+    - 「Child output cannot weaken policy」第一句说过头（沙箱拦下的命令会弹「出沙箱重跑」卡）：在 #339 里改，否则记进 #298b，不能漏；
+    - Known boundaries 补 BYOK 一句：密钥是 `~/.arslan/secret_key`，放在数据文件夹外，以你身份运行的程序都能读（沙箱里的命令不能），所以加密保护的是拷走的数据文件夹和备份；
+    - Auth 段补两句：铸造或停用入站 MCP 令牌要出示当前访问令牌，光是本机连接不够；桌面窗口只把令牌交给自己的服务页面，也不能导航离开（#343）。
   - 删除期限清单（U12 第 2 条）：代码注释和任务卡里写着 v0.1.63 或更早删、但还在的旧路径，逐条列出；每条要么已删，要么有用户同意的顺延（原因和新的期限）。没有这样的条目，或每条都有顺延，才打 tag。
 - 发布说明每一句都有测试名或 M3 条目号。
 - 用户看过判定、点头之后才打 tag。
