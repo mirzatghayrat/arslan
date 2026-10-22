@@ -8,6 +8,7 @@ batching, fail-open) is tested in test_brain_usage_events.py.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime, timedelta
 
 import pytest
@@ -136,8 +137,10 @@ async def test_a_default_boot_prunes_old_usage_events(tmp_path, monkeypatch):
     monkeypatch.setattr(usage_retention, "INITIAL_DELAY", 0.0)
     monkeypatch.setattr(usage_retention, "DEFAULT_INTERVAL", 0.05)
 
+    app = FastAPI()
+    exited = False
     try:
-        async with main.lifespan(FastAPI()):
+        async with main.lifespan(app):
             running = _running_loop_modules()
             assert "server.services.usage_retention" in running
             assert "server.services.curation_loop" not in running
@@ -147,6 +150,14 @@ async def test_a_default_boot_prunes_old_usage_events(tmp_path, monkeypatch):
             while await _count(maker) and asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(0.05)
             assert await _count(maker) == 0, "a default boot never pruned brain_usage_events"
+        exited = True
     finally:
+        if not exited:
+            # main.lifespan runs _shutdown_services after its yield, not in a finally, so a
+            # failing assertion above skips it and the scheduler and proactive loops would
+            # leak into the next test. Shut down here; a cleanup error must not hide the
+            # assertion that got us here.
+            with contextlib.suppress(Exception):
+                await main._shutdown_services(app)
         await usage_retention.stop()
         await eng.dispose()

@@ -8,11 +8,11 @@ that ARE in _PLAIN_KEYS. Forgetting the key there entirely is silent — the swe
 nothing to iterate over — so that half is asserted here.
 
 🔴 An earlier draft of this file added its own sweep asserting that EVERY plain key
-must be on both schemas. That premise is wrong: `curation_backfill_from` is written
-by the curation loop, and putting it on the request schema would let a client move
-the backfill boundary backwards and trigger a paid sweep over every conversation.
-The guard would have forced a real defect. Deleted rather than exempted — the
-existing test already states that hazard, with the reason attached.
+must be on both schemas. That premise was wrong: an internal key can be harmful to
+accept from a client (the case then was `curation_backfill_from`, written by the
+curation loop until C8-3 deleted both in v0.1.63). The guard would have forced a real
+defect. Deleted rather than exempted: test_settings_plain_keys keeps a closed list of
+such keys, each with its reason attached.
 """
 from __future__ import annotations
 

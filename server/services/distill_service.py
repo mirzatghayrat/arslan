@@ -65,7 +65,7 @@ class DistillOutcome:
     #: reasons that mean "we tried and it broke" (vs. a benign skip)
     #: "we tried and it broke" — each of these must produce a visible event.
     #: write_failed included: a proposal that could not be filed is material LOST, not
-    #: a benign skip, and the sweep must count it as a strike.
+    #: a benign skip.
     FAILURE_REASONS = ("llm_failed", "exception", "write_failed")
 
     @property
@@ -100,9 +100,10 @@ async def distill_session_detailed(
 ) -> DistillReport:
     """distill_session + per-spawn outcomes. Never raises.
 
-    ``usage_scope`` names the ledger bucket: the background sweep passes
-    ``curation_distill`` so its spend is distinguishable from interactive distillation
-    in the usage summary (they are very different things to a user looking at a bill).
+    ``usage_scope`` names the ledger bucket. Its only non-default caller was the
+    curation sweep (``curation_distill``), deleted in C8-3 (v0.1.63), so every caller
+    now passes the defaults for both ``usage_scope`` and ``propose_only``.
+    DELETE-BY: C8-4, which removes both parameters.
 
     A failed spawn logs a ``distill_failed`` growth event so the failure is VISIBLE on
     the recap timeline instead of dying in a server log. Each spawn is attempted inside

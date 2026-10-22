@@ -11,9 +11,9 @@ response entirely, and `SettingsOut(**data)`'s pydantic default is what the API 
 That makes TWO independent definitions of every bool default — the accessor and the
 schema — with nothing asserting they agree.
 
-Concretely, this is what the F2 round has to touch: flipping `curation_enabled` means
-changing the accessor AND the schema in lockstep, in two different files, with no test
-today that would notice if only one moved.
+Concretely: flipping any bool's default means changing the accessor AND the schema in
+lockstep, in two different files. (The case that prompted this was `curation_enabled`,
+removed with the curation loop in C8-3, v0.1.63.)
 """
 from __future__ import annotations
 
@@ -66,9 +66,8 @@ async def test_get_settings_EMITS_every_bool_key_on_a_fresh_install(client):
     The property that actually differs is PRESENCE: without the registry these keys ride
     `_PLAIN_KEYS`, which skips them entirely when nothing is stored, and the schema
     default silently answers instead. With it, the service's own answer is always in the
-    payload — so the day a default is changed in one place and not the other (which is
-    exactly what flipping curation_enabled will be), the API reports the service's truth
-    rather than the schema's stale copy.
+    payload — so the day a default is changed in one place and not the other, the API
+    reports the service's truth rather than the schema's stale copy.
     """
     async with client.db_maker() as s:
         out = await settings_service.get_settings(s)
