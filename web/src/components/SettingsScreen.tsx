@@ -135,6 +135,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         taskUsdCap={localSettings.taskUsdCap ?? 2}
         onTaskUsdCapChange={(v) => saveField({ taskUsdCap: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
+        workspaceOtherVolume={localSettings.workspaceOtherVolume}
         onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}
         lanDiscoveryEnabled={localSettings.lanDiscoveryEnabled ?? false}
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}

@@ -624,6 +624,7 @@
     "labelWorkspaceDir": "Workspace directory",
     "workspaceDirPlaceholder": "~/Arslan",
     "workspaceDirHint": "Where Arslan saves what it makes. Leave empty to use Arslan's own folder (~/Arslan), where it writes without asking. A folder you choose asks once per conversation before the first write. Credential files (.env, keys, certificates) are never read.",
+    "workspaceOtherVolume": "This folder is on another disk than Arslan's data, so changes in it can't be undone.",
     "labelHeartbeat": "Periodic checklist",
     "heartbeatDesc": "A list you write; Arslan re-reads it every few hours and tells you if anything on it needs doing. It can only look and report — a background run cannot write files or run commands.",
     "heartbeatSpendNote": "Each check costs tokens on your key. Off by default; an empty list means no checks run.",

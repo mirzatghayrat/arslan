@@ -76,6 +76,8 @@ async def test_undo_the_conversation_then_a_second_time_is_refused(client, ws):
     second = await _turn(client, "two")
     resp = await _restore(client, second, "conversation")
     assert resp.status_code == 200 and resp.json()["conversation"]["messages"] == 2
+    history = resp.json()["conversation"]["history"]                 # the window shows it at once
+    assert [(m["role"], m["content"]) for m in history] == [("user", "one"), ("arslan", "reply to one")]
     assert await _left(client) == ["one", "reply to one"]
     again = await _restore(client, second, "conversation")
     assert again.status_code == 409 and again.json()["detail"]["code"] == "already"
@@ -91,6 +93,7 @@ async def test_both_puts_the_files_back_and_takes_the_conversation_back(client, 
     assert resp.status_code == 200
     body = resp.json()
     assert body["files"]["runs"][0]["restored"] == ["notes.md"] and body["conversation"]["messages"] == 2
+    assert [m["content"] for m in body["conversation"]["history"]] == ["one", "reply to one"]
     assert (ws / "notes.md").read_text() == "before" and await _left(client) == ["one", "reply to one"]
 
 

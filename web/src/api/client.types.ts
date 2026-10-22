@@ -105,6 +105,31 @@ export interface ContextParts {
 }
 
 /** 0.1.58 §1: GET /runs/{id}/process. */
+/** 0.1.63 S3: what undoing a turn covers (GET /runs/{id}/checkpoint); S3b adds the conversation. */
+export interface RunCheckpoint {
+  exists: boolean;
+  changed?: number;
+  created?: number;
+  skipped?: { path: string; reason: string }[];
+  excluded?: string[];
+  later?: number[];
+  running?: boolean;
+  restored_at?: number | null;
+  conversation: boolean;
+  /** Why the conversation can't be undone: none | already | summarised | running | finishing. */
+  reason: string | null;
+  messages_after?: number;
+  later_turns?: number;
+  facts?: number;
+}
+
+/** POST /runs/{id}/checkpoint/restore {what: "conversation" | "both"}: `history` is the conversation now. */
+export interface TurnUndone {
+  conversation?: { conversation_id: string; messages: number; later_turns: number; facts: number;
+    history: ArslanHistoryRow[] };
+  files?: { later: number[] };
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
@@ -365,6 +390,7 @@ export interface AppSettings {
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
   workspace_dir?: string;   // "" = unset = file tools not offered
+  workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
   projects_auto_advance?: string; // "true" | "false" (0.1.56)

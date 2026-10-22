@@ -39,6 +39,7 @@ import LegacyExperts from './components/companion/LegacyExperts';
 import { companionApi, type Project } from './api/companion';
 import { useActivityStore } from './stores/activityStore';
 import { OPEN_ACTIVITY_RUN_EVENT } from './components/reply/ReplyFooter';
+import { TURN_UNDONE_EVENT, showUndone, type TurnUndoneDetail } from './components/reply/UndoTurnSheet';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import Workbench from './components/workbench/Workbench';
@@ -468,6 +469,12 @@ export default function App() {
     window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
     return () => window.removeEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
   }, []);
+  // 0.1.63 S3b: an undone turn's conversation, as the server now has it, replaces the open one's messages.
+  useEffect(() => {
+    const undone = (e: Event) => { showUndone((e as CustomEvent<TurnUndoneDetail>).detail, activeThreadId); };
+    window.addEventListener(TURN_UNDONE_EVENT, undone);
+    return () => window.removeEventListener(TURN_UNDONE_EVENT, undone);
+  }, [activeThreadId]);
 
   /** 移到项目… / 移出项目: the conversation's context carries the project (refused while it runs). */
   const handleMoveToProject = async (threadId: string, projectId: string | null) => {

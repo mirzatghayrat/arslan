@@ -624,6 +624,7 @@
     "labelWorkspaceDir": "ワークスペースディレクトリ",
     "workspaceDirPlaceholder": "~/Arslan",
     "workspaceDirHint": "Arslan が作ったものを保存する場所。空欄なら Arslan 専用のフォルダ（~/Arslan）を使い、そこでは確認なしで書き込みます。自分で選んだフォルダでは会話ごとに最初の書き込み前に一度確認します。認証情報ファイル（.env、鍵、証明書）は読みません。",
+    "workspaceOtherVolume": "このフォルダは Arslan のデータと別のディスクにあるため、ここでの変更は取り消せません。",
     "labelHeartbeat": "定期チェックリスト",
     "heartbeatDesc": "あなたが書いたリストを Arslan が数時間ごとに読み返し、対応が必要なものがあれば知らせます。確認と報告のみ——バックグラウンド実行ではファイルの書き込みもコマンドの実行もできません。",
     "heartbeatSpendNote": "チェックのたびにあなたのキーのトークンを消費します。既定はオフ。リストが空なら実行されません。",

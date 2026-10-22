@@ -213,6 +213,8 @@ export interface AppSettings {
   taskUsdCap: number;
   /** Directory Arslan's file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
+  /** S3b: the workspace is on another volume than Arslan's data, so its changes can't be undone (read only). */
+  workspaceOtherVolume?: boolean;
   /** Periodic checklist turn. Default OFF; an empty checklist means no task. */
   heartbeatEnabled: boolean;
   heartbeatChecklist: string;

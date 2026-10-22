@@ -1,13 +1,16 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
-import type { ProcessSummary } from "../../api/client.types";
+import { api } from "../../api/client";
+import type { ProcessSummary, RunCheckpoint } from "../../api/client.types";
 import { useDismissable } from "../../hooks/useDismissable";
 import { fmtTok, fmtUsd } from "../../lib/usageFormat";
 import { fmtDuration, type ProcessEntry } from "../../lib/process";
 import CopyButton from "../CopyButton";
 import { buildStandaloneHtml, exportMarkdown, triggerDownload } from "../MessageBody";
+import { toast } from "../kit";
 import ProcessList from "./ProcessList";
+import UndoTurnSheet from "./UndoTurnSheet";
 
 /** 0.1.58 §1: opens Activity with this turn in its drawer (App listens). */
 export const OPEN_ACTIVITY_RUN_EVENT = "arslan:open-activity-run";
@@ -79,6 +82,7 @@ export default function ReplyFooter({ text, process, latest, onReplay }: {
   const [menu, setMenu] = useState(false);
   const [menuUp, setMenuUp] = useState(true);
   const rowRef = useRef<HTMLDivElement>(null);
+  const [undo, setUndo] = useState<RunCheckpoint | null>(null);
   const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(menu, () => setMenu(false));
   const { summary, runId } = process;
   const quiet = latest ? "" : "opacity-0 group-hover/reply:opacity-100 focus-within:opacity-100";
@@ -87,6 +91,15 @@ export default function ReplyFooter({ text, process, latest, onReplay }: {
     triggerDownload(`message-${Date.now()}.html`, buildStandaloneHtml(root?.innerHTML ?? "", "Arslan export"), "text/html;charset=utf-8");
   };
   const item = "block w-full rounded px-2 py-1.5 text-left text-[12px] hover:bg-foreground/5";
+  // 0.1.63 S3b: what an undo would cover is read when asked, so the sheet says what is true now.
+  const askUndo = async (id: number) => {
+    setMenu(false);
+    try {
+      setUndo(await api.runCheckpoint(id));
+    } catch {
+      toast(t("process.undoFailed"));
+    }
+  };
   return (
     <div className="pl-5" data-testid="reply-footer">
       <div ref={rowRef} className="flex min-h-[26px] items-center gap-2">
@@ -121,11 +134,14 @@ export default function ReplyFooter({ text, process, latest, onReplay }: {
                 {t("process.downloadMd")}</button>
               <button type="button" role="menuitem" className={item} onClick={() => { setMenu(false); downloadHtml(); }}>
                 {t("process.downloadHtml")}</button>
+              {runId && <button type="button" role="menuitem" className={item} data-testid="reply-undo"
+                onClick={() => askUndo(runId)}>{t("process.undoTurn")}</button>}
             </div>}
           </span>
         </span>
       </div>
       {open && <ProcessList runId={runId} live={process.entries} onReplay={onReplay} />}
+      {undo && runId && <UndoTurnSheet runId={runId} info={undo} onClose={() => setUndo(null)} />}
     </div>
   );
 }

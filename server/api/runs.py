@@ -574,6 +574,12 @@ async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -
     return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
 
 
+async def _with_history(undone: dict) -> dict:
+    """The conversation as it is now, in the rows the window's socket sends, so the window shows it at once."""
+    from server.ws.arslan import _history
+    return {**undone, "history": await _history(undone["conversation_id"])}
+
+
 def _refused(exc) -> HTTPException:
     return HTTPException(404 if exc.code == "none" else 409,
                          detail={"code": exc.code, "runs": getattr(exc, "runs", [])})
@@ -596,12 +602,13 @@ async def restore_run_checkpoint(run_id: int, body: CheckpointRestoreIn,
         if body.what == "files":
             return await checkpoints.restore_files(run_id)
         if body.what == "conversation":
-            return {"conversation": await turn_undo.undo(run_id)}
+            return {"conversation": await _with_history(await turn_undo.undo(run_id))}
         await checkpoints.check_restore(run_id)          # the files' checks first, then the conversation's
         both = await turn_undo.undo(run_id, first=lambda: checkpoints.restore_files(run_id))
     except (checkpoints.Refused, turn_undo.Refused) as exc:
         raise _refused(exc) from None
-    return {"files": both.pop("files"), "conversation": both}
+    files_out = both.pop("files")
+    return {"files": files_out, "conversation": await _with_history(both)}
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
