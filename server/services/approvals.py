@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from server.services import desktop_status, run_registry
 from server.services.command_confirm import Confirmations
 from server.ws import protocol
+from arslan.aio import within
 
 TIMEOUT_S = 1800                   # 30 minutes (0.1.61 §A4); hands_tools.CARD_S follows it
 #: Where an answer may come from, besides a Mac window ("mac").
@@ -390,7 +391,7 @@ class BroadcastAsker:
         pending = open_card(self.conversation_id, frame | {"background": True})
         try:
             with _paused_clock(), desktop_status.awaiting_approval(self.conversation_id):
-                await asyncio.wait_for(asyncio.shield(pending.future), timeout=remaining(pending))
+                await within(asyncio.shield(pending.future), timeout=remaining(pending))
         except TimeoutError:
             pass
         finally:

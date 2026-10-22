@@ -22,6 +22,7 @@ from typing import Literal
 from server.mcp import spawn_env
 from server.services import managed_browser
 from server.services.browser_proxy import PublicTunnel, validate_url
+from arslan.aio import within
 
 
 class ReaderError(ValueError):
@@ -84,7 +85,7 @@ class ReaderSession:
                 env={"PATH": "/usr/bin:/bin", "HOME": self.temp.name, "TMPDIR": self.temp.name},
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                 limit=4_000_000, start_new_session=True)
-            line = await asyncio.wait_for(self.process.stdout.readline(), 20)
+            line = await within(self.process.stdout.readline(), 20)
             if json.loads(line) != {"ready": True}:
                 raise ReaderError("browser.runtime_failed")
             async def expire():
@@ -107,7 +108,7 @@ class ReaderSession:
             try:
                 self.process.stdin.write(action.model_dump_json(exclude_none=True).encode() + b"\n")
                 await self.process.stdin.drain()
-                output = await asyncio.wait_for(self.process.stdout.readline(), 25)
+                output = await within(self.process.stdout.readline(), 25)
                 if not output or len(output) > 4_000_000:
                     raise ReaderError("browser.runtime_failed")
                 result = json.loads(output)
@@ -144,7 +145,7 @@ class ReaderSession:
                 except ProcessLookupError:
                     pass
                 try:
-                    await asyncio.wait_for(self.process.wait(), 3)
+                    await within(self.process.wait(), 3)
                 except TimeoutError:
                     # Playwright launches Chromium in its own process group.
                     # Kill the captured descendants too, not merely Node's group.
@@ -176,7 +177,7 @@ async def _descendants(parent: int) -> list[int]:
     try:
         process = await asyncio.create_subprocess_exec("/bin/ps", "-axo", "pid=,ppid=",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-        output, _ = await asyncio.wait_for(process.communicate(), 2)
+        output, _ = await within(process.communicate(), 2)
         pairs = [tuple(map(int, line.split())) for line in output.splitlines() if len(line.split()) == 2]
         found, frontier = [], {parent}
         for _ in range(20):

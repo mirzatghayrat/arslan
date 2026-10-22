@@ -654,12 +654,34 @@ async def test_a_close_left_running_by_a_cancelled_caller_is_held_and_waited_for
 
 # ── a replaced start never caches a session (race b) ────────────────────────────────────────────
 
-async def test_a_cancel_wait_for_swallowed_as_the_open_finished_still_cancels_and_caches_nothing(
-        data, monkeypatch):
-    """CPython 3.11's wait_for returns the open's result when the cancel is delivered in the loop
-    iteration in which the open finishes (bpo-42130, gh-86296; 3.12 rewrote wait_for on
-    asyncio.timeout()). The cancel is lost and the start runs on: it caches a session behind a plan
-    that was replaced. `_entry` closes what it opened and cancels."""
+async def test_a_cancel_as_the_open_finishes_cancels_the_open_and_caches_nothing(data, monkeypatch):
+    """A cancel delivered in the loop iteration in which the open finishes (where CPython 3.11's wait_for
+    returned the session and lost the cancel, gh-86296) cancels the open itself: it closes its own stack, as
+    _open_session does on any exception, and nothing is cached."""
+    mgr = sess.MCPSessionManager()
+    opening, gate, stack = asyncio.Event(), asyncio.Event(), _Stack()
+
+    async def open_(server):
+        try:
+            opening.set()
+            await gate.wait()
+            return _Session(), stack
+        except BaseException:
+            await stack.aclose()
+            raise
+    monkeypatch.setattr(mgr, "_open_session", open_)
+    start = asyncio.create_task(mgr.get_session(_server()))
+    await asyncio.wait_for(opening.wait(), 5)
+    gate.set()                                 # the open finishes in the next iteration …
+    start.cancel()                             # … and the cancel is delivered in that same one
+    with pytest.raises(asyncio.CancelledError):
+        await start
+    assert mgr.cached(1) is None and stack.closed
+
+
+async def test_a_cancel_after_the_open_finished_closes_what_it_opened_and_caches_nothing(data, monkeypatch):
+    """The open has returned its session, and the cancel lands before the start goes on: the session is
+    closed (arslan.aio.within's dispose), nothing is cached, and the cancel goes on."""
     mgr = sess.MCPSessionManager()
     opening, gate, stack = asyncio.Event(), asyncio.Event(), _Stack()
 
@@ -670,8 +692,9 @@ async def test_a_cancel_wait_for_swallowed_as_the_open_finished_still_cancels_an
     monkeypatch.setattr(mgr, "_open_session", open_)
     start = asyncio.create_task(mgr.get_session(_server()))
     await asyncio.wait_for(opening.wait(), 5)
-    gate.set()                                 # the open finishes in the next iteration …
-    start.cancel()                             # … and the cancel is delivered in that same one
+    gate.set()
+    await asyncio.sleep(0)                     # the open runs and returns its session
+    start.cancel()                             # before the start has taken it
     with pytest.raises(asyncio.CancelledError):
         await start
     assert mgr.cached(1) is None and stack.closed

@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from server.services.workspace_paths import _contained, is_secret_name, read_roots
+from arslan.aio import within
 
 MAX_BYTES = 50 * 1024 * 1024        # the reader's cap (as the artifact preview's)
 LIST_LIMIT = 500                    # entries per folder, then "显示更多"
@@ -228,7 +229,7 @@ async def as_html(path: Path) -> str:
         "/usr/bin/textutil", "-convert", "html", "-stdout", str(path),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
     try:
-        out, _ = await asyncio.wait_for(proc.communicate(), 20)
+        out, _ = await within(proc.communicate(), 20)
     except asyncio.TimeoutError:
         proc.kill()
         raise NotReadable("unreadable") from None

@@ -16,6 +16,7 @@ from server.db.models import Run
 from server.services import host_run, managed_browser, artifact_store
 from server.services import browser_reader
 from server.services.browser_proxy import validate_url
+from arslan.aio import within
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 _tasks: set[asyncio.Task] = set()
@@ -90,7 +91,7 @@ async def start_visit(body: Visit):
         _tasks.add(task)
         task.add_done_callback(_tasks.discard)
         try:
-            run_id = await asyncio.wait_for(asyncio.shield(started), 10)
+            run_id = await within(asyncio.shield(started), 10)
         except BaseException:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)

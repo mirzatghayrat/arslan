@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ class BridgeHub:
         self._code_waiters.append(waiter)
         await self._send({"type": "pairing.new"})
         try:
-            return await asyncio.wait_for(waiter, timeout=CODE_TIMEOUT_S)
+            return await within(waiter, timeout=CODE_TIMEOUT_S)
         except TimeoutError:
             raise BridgeUnavailable() from None
 

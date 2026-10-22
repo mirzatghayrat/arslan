@@ -25,6 +25,7 @@ from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import replay_safety
 from server.services.llm_factory import build_adapter
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -1713,7 +1714,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 else:
                     timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
                                else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
-                return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
+                return await within(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
 
             async def run_once(outside: bool) -> dict:
@@ -2456,7 +2457,7 @@ async def _with_retry(request):
     from arslan.execution_budget import BudgetExceeded
     for attempt in range(2):
         try:
-            return await asyncio.wait_for(request(), timeout=_CHAT_TIMEOUT_S)
+            return await within(request(), timeout=_CHAT_TIMEOUT_S)
         except BudgetExceeded:
             from server.services.task_service import current as current_task
             if current_task():
