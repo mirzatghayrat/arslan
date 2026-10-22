@@ -41,6 +41,12 @@
   - 旧对话里 `spawn_summary` 的显示。
 - v0.1.64 用一次迁移把旧数据转好，再把它们连同记忆 v1 的旧表、`router_decisions` 一起删。
 - 这一步现在只写进 README §8 和代码注释，不在 v0.1.63 动。
+- **第二步清点时发现还在用、顺延到这一步的接口**（2026-10-22，⑥C7 清点、⓪Plan 定；删还在用的东西会改行为，按 §11 第 4 条归用户，默认顺延）：
+  - `GET /spawns`：装备弹窗和常驻的仓库卡在用；**`packaging/fresh_install_check.py` 还拿它当发版时的登录探针，删之前必须先换一个探针**，否则发版检查会失败；
+  - `PUT /spawns/{id}/equipment`：装备弹窗在用；
+  - `/experts/legacy`：旧专家页在用。
+  - 另外顺延：建分身 / 模板 / 种子和 `arslan/core/evolution.py`（等 C9b 搬走 `arslan/spawn` 里还活着的部分）；手动「提炼」菜单（随 C8）。
+- 第二步里 `evolution_max_dispatches()` 读取函数曾暂留给手动进化路径，C7b-1（#342）删手动路径时一起删了。
 
 - **跟着一起变成死代码的，也在这一步删**（②Main 审 #284 时提出）：
   - `tool_loop.py` 里只给评测、回放用的分支：评测的网页读取额度（`HERMETIC_FETCH_BUDGET`、`_check_hermetic_fetch_budget`；K4b 只留下了这一份）和 hermetic 兜底；

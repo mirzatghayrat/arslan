@@ -70,6 +70,10 @@ v0.1.63 发出去之前，用数字确认「真的变好了」，并让发布说
   - §5.3：M3 记录表；
   - §5.4：CI run id 和结论；R1、R2、R6、R7 和「所有卡片都写账本」的测试名；
   - 对外文档里会变错的句子已经改掉（U13 第 6 条的例外）：H3 之后，docs-site 6 种语言的 `08-tools.html`、`09-security.html` 和生成的 `docs/docs/*/index.html` 不能再说聊天回复「最多五步、只在一个 App 里」（③Hands 在 H3 之后用一个小 PR 改；定时任务照旧保留这个上限）。
+  - S2b-2（#322）删掉 `arslan/vendor/hermes` 之后变错的句子（docs-site 6 种语言的 `02-development.html`、`docs/docs/**/index.html`、`docs/index.html` 里「MIT 许可随代码放在 `arslan/vendor/hermes/LICENSE`」和 `detection: arslan/vendor/hermes`）已由 A5（#347）改掉。
+  - `fresh_install_check`：`THIRD_PARTY_NOTICES.md` 和 `LICENSE` 在 `Arslan.app/Contents/Resources` 里，和当次检出逐字节一致（A5 加的检查；候选版是第一次真正证明打包里有它们）。
+  - 要过云端审计的安全文案都已回复并定稿：S1b 里 `schedule_task` 的说明（含审计要加的「只调用服务器标注为只读的 MCP 工具」）；C11 的 SECURITY.md 改写（#339）；#298b（按三层模型重写命令那几段，等 S2a-3）。
+  - 命令分类的洞（S2a-3）和 C11 审出的后续加固（C11b：WebSocket 握手把令牌写进日志等五项）：用户已决定怎么处理——修完合并，或者用户同意的顺延（「默认每条命令都问」顶着，放到之后的小版本）。
   - 删除期限清单（U12 第 2 条）：代码注释和任务卡里写着 v0.1.63 或更早删、但还在的旧路径，逐条列出；每条要么已删，要么有用户同意的顺延（原因和新的期限）。没有这样的条目，或每条都有顺延，才打 tag。
 - 发布说明每一句都有测试名或 M3 条目号。
 - 用户看过判定、点头之后才打 tag。
