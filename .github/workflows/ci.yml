@@ -1,7 +1,16 @@
 name: CI
 
 on:
+  # A commit on a branch with an open PR used to run this whole suite TWICE —
+  # once for `push` (unqualified: every branch) and once for `pull_request`.
+  # They never deduplicate: push and pull_request carry different `github.ref`,
+  # so the concurrency group below cancels neither against the other. Scoping
+  # push to `main` keeps direct pushes and merges to main covered, while a PR
+  # branch now runs the suite exactly once, via pull_request. A branch with no
+  # open PR, and a tag push, no longer trigger this workflow — tags are built
+  # by release.yml, and a branch gets CI the moment its PR against main opens.
   push:
+    branches: [main]
   pull_request:
     branches: [main]
 
