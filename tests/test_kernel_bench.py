@@ -150,6 +150,7 @@ def test_each_turn_records_when_its_first_answer_text_and_its_end_arrived():
     t = TurnTracker("/r")
     t.start_turn(now=100)
     t.on_frame({"type": "note", "content": "looking"}, now=101)          # narration is not the answer
+    t.on_frame({"type": "stream_chunk", "content": ""}, now=102)         # nor is an empty chunk (②Main's 🟡)
     t.on_frame({"type": "stream_chunk", "content": "Hel"}, now=103.5)
     t.on_frame({"type": "stream_chunk", "content": "lo"}, now=104)
     t.on_frame({"type": "stream_end"}, now=108)

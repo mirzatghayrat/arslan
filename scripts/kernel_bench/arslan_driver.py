@@ -134,7 +134,7 @@ class TurnTracker:
         self.last_activity = now
         if t == "stream_chunk":
             self.final_text.append(frame.get("content") or "")
-            if self.first_chunk_at is None:
+            if self.first_chunk_at is None and frame.get("content"):     # an empty chunk shows nothing yet
                 self.first_chunk_at = now
         elif t == "stream_end":
             self.turn_done = True
