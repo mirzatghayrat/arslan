@@ -4,6 +4,7 @@ Undoing a turn deletes the newest messages; without AUTOINCREMENT the next messa
 one's id, which the phone's seenUpTo, the window's resume and a summary's up_to_message_id would
 read as already seen. The table is rebuilt with its rows, ids, foreign keys, index and search.
 """
+import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from server.db.migrations.versions._0059_messages_fts import upgrade_sync as fts_0059
@@ -171,5 +172,104 @@ async def test_a_fresh_database_never_hands_a_deleted_id_out_again_and_0069_leav
             before = await _schema(conn)
             await conn.run_sync(upgrade_sync)
             assert await _schema(conn) == before
+    finally:
+        await engine.dispose()
+
+
+# ── ⓪Plan's review of #329 (🟡6, 🟡8): ids memory still remembers; a failure part-way; the real boot ────
+
+async def test_0069_starts_past_any_message_id_memory_still_remembers(tmp_path):
+    """A source or a suppression naming a message deleted before 0069: a new message with that id would be
+    left out of context, and an undo would take back an unrelated fact (the reviewer's probe 4)."""
+    engine = await _legacy_db(tmp_path / "m.db")
+    try:
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql("CREATE TABLE memory_sources (id VARCHAR(36) PRIMARY KEY, source_ref JSON)")
+            await conn.exec_driver_sql("CREATE TABLE memory_suppressions (source_kind VARCHAR(30), "
+                                       "source_id VARCHAR(100), entry_id VARCHAR(36))")
+            await conn.exec_driver_sql("""INSERT INTO memory_sources VALUES ('s1', '{"message_id": 11}')""")
+            await conn.exec_driver_sql("INSERT INTO memory_suppressions VALUES ('message_id', '14', 'e1'), "
+                                       "('run_id', '99', 'e1')")
+            await conn.run_sync(upgrade_sync)
+        async with engine.begin() as conn:
+            assert await _add(conn) == 15
+    finally:
+        await engine.dispose()
+
+
+def _failing_at(marker):
+    def run(connection):
+        original = connection.exec_driver_sql
+
+        def exec_driver_sql(sql, *args, **kwargs):
+            if sql.startswith(marker):
+                raise RuntimeError(f"simulated failure at {marker}")
+            return original(sql, *args, **kwargs)
+        connection.exec_driver_sql = exec_driver_sql
+        try:
+            upgrade_sync(connection)
+        finally:
+            connection.exec_driver_sql = original
+    return run
+
+
+@pytest.mark.parametrize("marker", ["INSERT INTO arslan_messages_0069", "DROP TABLE IF EXISTS arslan_messages_fts",
+                                    "DROP TABLE arslan_messages", "ALTER TABLE arslan_messages_0069",
+                                    "INSERT INTO arslan_messages_fts"])
+async def test_a_failure_part_way_leaves_the_table_and_its_search_as_they_were(tmp_path, marker):
+    """The driver opens the transaction at the first data statement; DDL before it commits on its own. So
+    0069 copies first: a failure anywhere leaves the old table, its rows and its search, and the next boot
+    finishes the job (the reviewer's crash probe)."""
+    engine = await _legacy_db(tmp_path / "m.db")
+    try:
+        with pytest.raises(RuntimeError):
+            async with engine.begin() as conn:
+                await conn.run_sync(_failing_at(marker))
+        async with engine.connect() as conn:
+            assert await _rows(conn) == [tuple(r) for r in _ROWS]
+            assert await _found(conn, "tomatoes") == [2]
+            names = {r[0] for r in await _schema(conn)}
+            assert {"arslan_messages_fts_ai", "arslan_messages_fts_ad", "arslan_messages_fts_au"} <= names | {
+                r[0] for r in (await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='trigger'")).all()}
+        async with engine.begin() as conn:
+            await conn.run_sync(upgrade_sync)
+        async with engine.connect() as conn:
+            assert "AUTOINCREMENT" in dict(await _schema(conn))["arslan_messages"].upper()
+            assert await _rows(conn) == [tuple(r) for r in _ROWS] and await _found(conn, "tomatoes") == [2]
+    finally:
+        await engine.dispose()
+
+
+async def test_0069_through_the_real_boot_on_an_activated_database(tmp_path):
+    """storage_boot on a database with memory v2's views and guard triggers, turned back to the pre-0069 table
+    (the reviewer's boot probe)."""
+    from server.db.migrations.versions._0059_messages_fts import _STATEMENTS
+    from server.services import storage_boot
+    engine = build_engine(f"sqlite+aiosqlite:///{tmp_path / 'arslan.db'}")
+    kinds = "SELECT type, COUNT(*) FROM sqlite_master WHERE type IN ('view', 'trigger') GROUP BY type"
+    try:
+        await storage_boot.initialize(engine)
+        async with engine.begin() as conn:
+            fresh = (await conn.exec_driver_sql(kinds)).all()
+            await conn.exec_driver_sql("INSERT INTO arslan_messages (conversation_id, role, content) "
+                                       "VALUES ('c', 'user', 'hello garden')")
+            for name in ("arslan_messages_fts_ai", "arslan_messages_fts_ad", "arslan_messages_fts_au"):
+                await conn.exec_driver_sql(f"DROP TRIGGER {name}")
+            await conn.exec_driver_sql("DROP TABLE arslan_messages_fts")
+            await conn.exec_driver_sql("ALTER TABLE arslan_messages RENAME TO old_messages")
+            await conn.exec_driver_sql(_PRE_0069[3])
+            await conn.exec_driver_sql(f"INSERT INTO arslan_messages ({_COLUMNS}) SELECT {_COLUMNS} FROM old_messages")
+            await conn.exec_driver_sql("DROP TABLE old_messages")
+            await conn.exec_driver_sql(_PRE_0069[4])
+            for statement in _STATEMENTS:
+                await conn.exec_driver_sql(statement)
+            await conn.exec_driver_sql("INSERT INTO arslan_messages_fts(arslan_messages_fts) VALUES ('rebuild')")
+            await conn.exec_driver_sql("DELETE FROM schema_version WHERE version = '0069'")
+        await storage_boot.initialize(engine)                       # the upgrade boot
+        async with engine.connect() as conn:
+            assert "AUTOINCREMENT" in dict(await _schema(conn))["arslan_messages"].upper()
+            assert await _found(conn, "garden") == [1]
+            assert (await conn.exec_driver_sql("SELECT COUNT(*) FROM schema_version WHERE version='0069'")).scalar() == 1
+            assert (await conn.exec_driver_sql(kinds)).all() == fresh
     finally:
         await engine.dispose()

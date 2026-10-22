@@ -6,10 +6,14 @@ would misread it: the phone's seenUpTo and the window's resume (`last_message_id
 summary's `up_to_message_id` as already folded in. AUTOINCREMENT needs the table rebuilt (SQLite
 cannot change a primary key in place):
 
-- 0059's full-text index and its three triggers go first, so nothing fires during the copy;
-- the rows are copied with their ids into the new table (every column, the run_id foreign key with
-  ON DELETE SET NULL), which takes the old name and its conversation_id index;
-- the sequence starts past the highest id a row or a summary has used;
+- the rows are copied first, with their ids, into the new table (every column, the run_id foreign key with
+  ON DELETE SET NULL). The driver opens the transaction at the first data statement and commits DDL before
+  it on its own, so nothing is dropped before the copy: a failure anywhere leaves the old table, its rows
+  and its search, and the next boot starts again (⓪Plan's review, 🟡8);
+- then 0059's full-text index and its three triggers go, and the new table takes the old name and its
+  conversation_id index (renamed with legacy_alter_table, so a broken view elsewhere cannot stop the boot);
+- the sequence starts past the highest message id anything remembers: a row, a summary, a memory source
+  or a suppression (🟡6);
 - the index and triggers come back as 0059 made them, and the index is rebuilt.
 
 A run or spawn id that points at nothing is copied as NULL: the new table's foreign keys would refuse
@@ -45,10 +49,7 @@ def upgrade_sync(connection) -> None:
     if row is None or "AUTOINCREMENT" in (row[0] or "").upper():
         return
     tables = _tables(connection)
-    for trigger in ("arslan_messages_fts_ai", "arslan_messages_fts_ad", "arslan_messages_fts_au"):
-        connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {trigger}")
-    connection.exec_driver_sql("DROP TABLE IF EXISTS arslan_messages_fts")
-    connection.exec_driver_sql("DROP TABLE IF EXISTS arslan_messages_0069")
+    connection.exec_driver_sql("DROP TABLE IF EXISTS arslan_messages_0069")   # an earlier try's, never filled
     connection.exec_driver_sql(_NEW)
     have = {r[1] for r in connection.exec_driver_sql("PRAGMA table_info(arslan_messages)").fetchall()}
     picked = []
@@ -62,13 +63,25 @@ def upgrade_sync(connection) -> None:
             picked.append(column)
     connection.exec_driver_sql(f"INSERT INTO arslan_messages_0069 ({', '.join(_COLUMNS)}) "
                                f"SELECT {', '.join(picked)} FROM arslan_messages")
+    for trigger in ("arslan_messages_fts_ai", "arslan_messages_fts_ad", "arslan_messages_fts_au"):
+        connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {trigger}")
+    connection.exec_driver_sql("DROP TABLE IF EXISTS arslan_messages_fts")
     connection.exec_driver_sql("DROP TABLE arslan_messages")
-    connection.exec_driver_sql("ALTER TABLE arslan_messages_0069 RENAME TO arslan_messages")
+    connection.exec_driver_sql("PRAGMA legacy_alter_table = ON")
+    try:
+        connection.exec_driver_sql("ALTER TABLE arslan_messages_0069 RENAME TO arslan_messages")
+    finally:
+        connection.exec_driver_sql("PRAGMA legacy_alter_table = OFF")
     connection.exec_driver_sql(
         "CREATE INDEX IF NOT EXISTS ix_arslan_messages_conversation_id ON arslan_messages (conversation_id)")
     top = connection.exec_driver_sql("SELECT MAX(id) FROM arslan_messages").scalar() or 0
-    if "arslan_summaries" in tables:
-        top = max(top, connection.exec_driver_sql("SELECT MAX(up_to_message_id) FROM arslan_summaries").scalar() or 0)
+    for table, query in (
+            ("arslan_summaries", "SELECT MAX(up_to_message_id) FROM arslan_summaries"),
+            ("memory_sources", "SELECT MAX(CAST(json_extract(source_ref, '$.message_id') AS INTEGER)) FROM memory_sources"),
+            ("memory_suppressions", "SELECT MAX(CAST(source_id AS INTEGER)) FROM memory_suppressions "
+                                    "WHERE source_kind = 'message_id'")):
+        if table in tables:
+            top = max(top, connection.exec_driver_sql(query).scalar() or 0)
     connection.exec_driver_sql("DELETE FROM sqlite_sequence WHERE name IN ('arslan_messages', 'arslan_messages_0069')")
     connection.exec_driver_sql("INSERT INTO sqlite_sequence (name, seq) VALUES ('arslan_messages', ?)", (top,))
     for statement in _SEARCH:
