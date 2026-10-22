@@ -16,6 +16,8 @@ Layers, wired from tests/conftest.py and tests/server/conftest.py:
   ``server.config`` pointing into the real dir, so the culprit is named.
 * :func:`snapshot` / :func:`created` — the session fails if the real dir gained an
   entry it did not have when the run started, whatever the route.
+* :func:`workspace_snapshot` — the same for the user's ``~/Arslan`` folder
+  (:data:`REAL_WORKSPACE_DIR`), watched in full.
 
 The snapshot does not walk the whole dir. The packaged app may be running during a
 test run and writes ``tool_outputs/``, ``artifacts/``, ``backups/`` and its SQLite
@@ -37,6 +39,15 @@ from server.profile_paths import default_data_dir
 # Resolved when the root conftest imports this module: before any test can patch
 # HOME, sys.platform, XDG_DATA_HOME or APPDATA.
 REAL_DATA_DIR = default_data_dir().resolve()
+
+# The user's own Arslan folder: what settings_service.default_workspace() falls back to
+# when ARSLAN_DEFAULT_WORKSPACE is unset. tests/conftest.py points that variable at a temp
+# dir for every test, but the packaged app ignores it (sys.frozen), so a test that fakes
+# sys.frozen without also pointing HOME elsewhere lands here. Watched in full: the leak
+# would go into the folders the user already has.
+REAL_WORKSPACE_DIR = (Path.home() / "Arslan").resolve()
+# Finder writes it whenever the user opens the folder; nothing a test does.
+_FINDER_FILES = frozenset({".DS_Store"})
 
 SUITE_DATA_DIR_PREFIX = "arslan-pytest-data-"
 
@@ -97,6 +108,21 @@ def snapshot(root: Path = REAL_DATA_DIR) -> frozenset[str] | None:
     for tree in _WATCHED_TREES:
         for dirpath, dirnames, filenames in os.walk(root / tree):
             for name in (*dirnames, *filenames):
+                entries.add((Path(dirpath) / name).relative_to(root).as_posix())
+    return frozenset(entries)
+
+
+def workspace_snapshot(root: Path = REAL_WORKSPACE_DIR) -> frozenset[str] | None:
+    """Every entry under ``root`` as relative paths (Finder's files aside); None if absent.
+
+    The whole tree, unlike :func:`snapshot`: a leak into the user's folder would land in
+    the folders already there. It is a working folder, small enough to walk twice a run."""
+    if not root.is_dir():
+        return None
+    entries = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in (*dirnames, *filenames):
+            if name not in _FINDER_FILES:
                 entries.add((Path(dirpath) / name).relative_to(root).as_posix())
     return frozenset(entries)
 

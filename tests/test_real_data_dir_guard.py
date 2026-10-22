@@ -7,10 +7,15 @@ the cases it must ignore.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from tests import real_data_dir_guard as guard
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def _leak(root, *relative):
@@ -108,3 +113,71 @@ def test_a_pinned_key_changed_outside_monkeypatch_is_put_back(key):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = before
+
+
+# ── The user's ~/Arslan folder (REAL_WORKSPACE_DIR) ──────────────────────────────
+
+def test_a_file_written_deep_in_the_users_folder_is_reported(tmp_path):
+    _leak(tmp_path, "reports/2026", "notes")
+    (tmp_path / "notes" / "todo.md").write_text("mine")
+    before = guard.workspace_snapshot(tmp_path)
+    (tmp_path / "reports" / "2026" / "leaked.md").write_text("from a test")
+    (tmp_path / "notes" / ".DS_Store").write_bytes(b"")          # Finder, not a test
+    assert guard.created(before, guard.workspace_snapshot(tmp_path)) == ["reports/2026/leaked.md"]
+
+
+def test_a_users_folder_that_appears_is_reported(tmp_path):
+    root = tmp_path / "Arslan"
+    before = guard.workspace_snapshot(root)
+    assert before is None
+    _leak(root, "outputs")
+    assert guard.created(before, guard.workspace_snapshot(root)) == [".", "outputs"]
+
+
+def test_the_watched_folder_is_the_default_workspaces_fallback(monkeypatch):
+    """What default_workspace() returns when the override is ignored or unset, so the two
+    cannot drift apart."""
+    from server.services import settings_service
+
+    monkeypatch.delenv("ARSLAN_DEFAULT_WORKSPACE", raising=False)
+    assert settings_service.default_workspace().resolve() == guard.REAL_WORKSPACE_DIR
+
+
+_INNER = '''from pathlib import Path
+
+
+def test_writes(tmp_path):
+    target = Path.home() / "Arslan" if {into_users_folder} else tmp_path
+    (target / "reports").mkdir(parents=True, exist_ok=True)
+    (target / "reports" / "leaked.md").write_text("from a test")
+'''
+
+
+def _inner_run(tmp_path, *, into_users_folder: bool) -> subprocess.CompletedProcess:
+    """A real pytest session under the suite's root conftest, with HOME pointed at a temp
+    dir: the guard watches <temp>/Arslan, and the user's own folder is never touched."""
+    home = tmp_path / "home"
+    (home / "Arslan" / "reports").mkdir(parents=True)
+    (home / "Arslan" / "reports" / "mine.md").write_text("the user's")
+    test_file = tmp_path / "test_inner.py"
+    test_file.write_text(_INNER.format(into_users_folder=into_users_folder))
+    env = {**os.environ, "HOME": str(home)}
+    env.pop("PYTEST_XDIST_WORKER", None)
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", str(test_file), "-p", "tests.conftest", "-q",
+         "-p", "no:cacheprovider", "--rootdir", str(REPO), "-c", str(REPO / "pyproject.toml")],
+        cwd=REPO, env=env, capture_output=True, text=True, timeout=180)
+
+
+def test_a_write_into_the_users_arslan_folder_fails_the_run(tmp_path):
+    run = _inner_run(tmp_path, into_users_folder=True)
+    out = run.stdout + run.stderr
+    assert run.returncode != 0, out
+    assert "1 passed" in out and "in the user's Arslan folder" in out, out
+    assert "reports/leaked.md" in out and "mine.md" not in out, out
+    assert (tmp_path / "home" / "Arslan" / "reports" / "leaked.md").exists()   # reported, not removed
+
+
+def test_a_run_that_writes_elsewhere_passes(tmp_path):
+    run = _inner_run(tmp_path, into_users_folder=False)
+    assert run.returncode == 0, run.stdout + run.stderr

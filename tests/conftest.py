@@ -34,6 +34,7 @@ from tests import real_data_dir_guard
 # made while test modules are collected are caught as well.
 _SUITE_DATA_DIR = real_data_dir_guard.pin_suite_data_dir()
 _REAL_DATA_DIR_AT_START = real_data_dir_guard.snapshot()
+_REAL_WORKSPACE_AT_START = real_data_dir_guard.workspace_snapshot()
 
 
 @pytest.fixture
@@ -387,6 +388,30 @@ def _real_data_dir_untouched():
             + "\n".join(f"  {root / rel}" for rel in leaked)
             + "\nA test resolved the platform data dir instead of a temp one. Run with "
             "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
+            pytrace=False,
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_workspace_untouched():
+    """Fail the run if the user's ~/Arslan gained an entry while it ran.
+
+    `_default_workspace_in_tmp` points every test elsewhere, but only through
+    ARSLAN_DEFAULT_WORKSPACE, which the packaged app ignores (sys.frozen): a test that
+    fakes sys.frozen and not HOME resolves the real folder. Reports and never deletes,
+    as above; the running app writing there mid-run would be a false positive."""
+    yield
+    leaked = real_data_dir_guard.created(_REAL_WORKSPACE_AT_START,
+                                         real_data_dir_guard.workspace_snapshot())
+    if leaked:
+        root = real_data_dir_guard.REAL_WORKSPACE_DIR
+        pytest.fail(
+            f"this test run created {len(leaked)} entr{'y' if len(leaked) == 1 else 'ies'} "
+            f"in the user's Arslan folder {root}:\n"
+            + "\n".join(f"  {root / rel}" for rel in leaked)
+            + "\nA test resolved the default workspace to the real one (faking sys.frozen "
+            "without pointing HOME elsewhere?). Run with HOME pointed at a temp dir to "
+            "reproduce safely. Nothing was removed.",
             pytrace=False,
         )
 
