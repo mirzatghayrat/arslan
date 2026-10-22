@@ -1,4 +1,6 @@
 import asyncio
+import gc
+import warnings
 from contextvars import copy_context
 
 import httpx
@@ -8,7 +10,7 @@ from sqlalchemy import select
 from arslan import execution_checkpoint
 from arslan.execution_budget import current as current_budget
 from arslan.llm.adapter import LLMAdapter
-from server.db.models import CompanionTask, Run, TaskAction, TaskAttempt, TaskCheckpoint
+from server.db.models import CompanionTask, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent
 from server.orchestrator import arslan, tool_loop
 from server.services import host_run, personal_context as pc, run_registry, task_service
 from server.services.task_repository import TaskError, TaskRepository, repository
@@ -180,6 +182,71 @@ async def test_double_cancel_stops_parent_children_and_preserves_socket_caller(e
         assert row.phase == "cancelled" and row.cancel_requested
         assert await repo.recover_interrupted() == 0
     assert not run_registry.active_for("live")
+
+
+async def test_a_cancelled_task_still_writes_its_stop_checkpoint(execution_db):
+    # Pins the call site in _run's finally: it must hand _after a working factory. A coroutine
+    # there fails inside the kept step, which only logs, so the stop checkpoint would vanish quietly.
+    entered = asyncio.Event()
+    async def function(conversation, message, emit):
+        entered.set()
+        await asyncio.Event().wait()
+    outer = asyncio.create_task(run(function))
+    await asyncio.wait_for(entered.wait(), 2)
+    await task_service.cancel("live-task")
+    assert await asyncio.wait_for(outer, 2) is None
+    await asyncio.wait_for(asyncio.gather(*list(task_service._KEPT), return_exceptions=True), 2)
+    async with execution_db() as db:
+        kinds = (await db.execute(select(TaskEvent.kind).where(TaskEvent.task_id == "live-task")
+                                  .order_by(TaskEvent.sequence))).scalars().all()
+    assert kinds[-1] == "attempt_stopped", kinds
+
+
+@pytest.mark.parametrize("where", ["waiting_on_the_record", "before_it_starts"])
+async def test_a_stop_step_cancelled_before_its_turn_builds_no_checkpoint(where):
+    # Loop shutdown cancels the kept stop step. The checkpoint coroutine used to be built eagerly,
+    # so it was left never awaited, a RuntimeWarning, and the stop checkpoint silently unwritten.
+    built = []
+    async def checkpoint():
+        pass
+    def factory():
+        built.append(checkpoint())                                # every coroutine it ever makes
+        return built[-1]
+    first = asyncio.ensure_future(asyncio.Event().wait()) if where == "waiting_on_the_record" else None
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        step = asyncio.ensure_future(task_service._after(first, factory))
+        if first is not None:
+            await asyncio.sleep(0)                                # the step now waits on the record
+        step.cancel()
+        cancelled = False
+        try:
+            await step
+        except asyncio.CancelledError:
+            cancelled = True
+        if first is not None:
+            first.cancel()
+        # The cancelled task's traceback keeps the step's frame alive; drop it so anything left
+        # never awaited is finalized (and warns) inside this block, not after it.
+        del step, first
+        gc.collect()
+    assert cancelled
+    leaked = len(built)
+    for coroutine in built:
+        coroutine.close()                                         # keep a failure from warning later too
+    assert leaked == 0, "the stop step built a checkpoint it never awaited"
+    assert [str(w.message) for w in caught if "never awaited" in str(w.message)] == []
+
+
+async def test_a_stop_step_builds_and_runs_the_checkpoint_once_the_record_is_done():
+    built = []
+    async def checkpoint():
+        built.append(True)
+        return "stopped"
+    record = asyncio.ensure_future(asyncio.sleep(0, "recorded"))
+    assert await task_service._after(record, checkpoint) == "stopped"
+    assert await task_service._after(None, checkpoint) == "stopped"
+    assert built == [True, True]
 
 
 async def test_resume_uses_same_goal_and_budget_without_regranting_privacy(execution_db, monkeypatch):

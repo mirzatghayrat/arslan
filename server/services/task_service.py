@@ -860,7 +860,7 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             # The same re-delivered cancel (③Hands' review): the stop checkpoint is kept and shielded, and
             # the bookkeeping below runs whatever the await raised. The runtime closes when that
             # checkpoint is done, since a closed runtime refuses it.
-            stopping = _kept(_after(recording, runtime.checkpoint("attempt_stopped", retain_stopped=True)),
+            stopping = _kept(_after(recording, lambda: runtime.checkpoint("attempt_stopped", retain_stopped=True)),
                              "Task final checkpoint failed")
             try:
                 await asyncio.shield(stopping)
@@ -897,7 +897,11 @@ def _kept(coroutine, failure: str) -> asyncio.Task:
 
 
 async def _after(first: asyncio.Task | None, then):
-    """`then` once `first` (the cancel record) is done: both advance the task's version, so they run in turn."""
+    """`then()` once `first` (the cancel record) is done: both advance the task's version, so they run in turn.
+
+    `then` is a factory, not a coroutine: if this step is cancelled before it gets there (while
+    waiting on `first`, or before it starts at all), nothing was built, so no checkpoint coroutine
+    is left never awaited."""
     if first is not None:
         try:
             await first
@@ -906,7 +910,7 @@ async def _after(first: asyncio.Task | None, then):
                 raise                  # this step itself is cancelled (loop shutdown), not the record
         except Exception:  # noqa: BLE001 — its failure is logged by _kept; the checkpoint still runs
             pass
-    return await then
+    return await then()
 
 
 async def _record_cancel(task_id: str) -> dict:
