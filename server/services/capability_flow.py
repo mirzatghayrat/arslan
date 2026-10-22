@@ -182,6 +182,42 @@ async def install_skill(c: dict, owner_id: str = "local") -> dict:
     return {"state": "on", "source_id": source_id, "skill": key, "scan": scan}
 
 
+def _ledger_request(cand: dict, why: str):
+    """S7: what the install card asks, as the ledger records it: the capability by name, where it comes
+    from, the version the card shows (the pinned package's), and the model's reason. Built from the
+    search result only; the card's answer (a key, folders) adds nothing."""
+    from server.services import permissions
+    name = _plain(str(cand.get("name") or ""))
+    version = (cand.get("package") or {}).get("version") or cand.get("version")
+    return permissions.Request(kind="capability", target=f"capability:{name}"[:200],
+                               title=f"Add {name}?", detail=why[:500],
+                               extra={"source_url": _ledger_url(cand.get("source_url")),
+                                      "version": _plain(str(version))[:100] if version else None})
+
+
+def _plain(text: str) -> str:
+    """Without control, format (bidi, zero-width) or unassigned characters: a ledger row reads as it is."""
+    import unicodedata
+    return "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
+
+
+def _ledger_url(url) -> str | None:
+    """S7 review F1: where a capability comes from, as the ledger keeps it for 90 days: an http(s) URL's
+    scheme, host (and port) and path only, at most 300 characters. A user, password, query or fragment —
+    where a token can ride — never goes in; any other scheme stores nothing."""
+    from urllib.parse import urlsplit
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(url.strip())
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ("http", "https") or not host:
+        return None
+    return _plain(f"{parts.scheme.lower()}://{host}{f':{port}' if port else ''}{parts.path}")[:300]
+
+
 async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict:
     """The model's `propose_capability`. Returns the tool result (and `refresh: True` when
     a new capability is on, so the loop re-reads its tools)."""
@@ -195,20 +231,26 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     retry = str(args.get("retry") or "").strip()
     folders = _folders(args.get("folders"))
     card = card_for(cand, why=why, retry=retry, folders=folders)
+    from server.services import background_jobs, permissions
+    request = _ledger_request(cand, why)
+    context = permissions.Context(conversation_id, job_id=background_jobs._inside_job.get())
     if ask is None:
         await record_find(cand, need=why, why="job", conversation_id=conversation_id)
-        from server.services import background_jobs, permissions
         if permissions.current_asker() is None:
             # S1 (U14 c, ⓪Plan): a scheduled run: listed in the Inbox too, the one list a user checks after one.
-            await permissions.refuse_unattended(permissions.Request(
-                kind="capability", target=f"capability:{cand['name']}"[:200], title=f"Add {cand['name']}?",
-                detail=why[:500]), permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+            # A background job only records the find: it has a card surface, so it is not "nobody to ask", and
+            # no card was shown (⓪Plan, S7).
+            await permissions.refuse_unattended(request, context)
         return {"ok": False, "recorded": True,
                 "note": "Nobody to ask here (a background job or a scheduled run). Saved on the Capabilities "
                         "page under 'Arslan found' for the user; say so in your answer."}
+    from server.services import approvals
+    approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     decision = await ask(card)
+    # S7: the card's answer in the ledger (§5.4) — never the key or the folders it carried back.
+    await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
+                                          expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
-        from server.services import approvals
         await record_find(cand, need=why, why="declined", conversation_id=conversation_id)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
