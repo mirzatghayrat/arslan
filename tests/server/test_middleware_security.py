@@ -74,7 +74,16 @@ def test_testserver_host_allowed(monkeypatch):
     assert resp.status_code == 200
 
 
-def test_packaged_allowed_hosts_from_env(monkeypatch):
+def test_dev_allowed_hosts_from_env(monkeypatch):
+    client = TestClient(_dev_app(monkeypatch, ARSLAN_ALLOWED_HOSTS="app.example.com,localhost"))
+    assert client.get("http://app.example.com/api/v1/health").status_code == 200
+    assert client.get("http://localhost/api/v1/health").status_code == 200
+    # testserver is NOT in the configured allowlist → rejected.
+    assert client.get("http://testserver/api/v1/health").status_code == 400
+
+
+def test_packaged_ignores_allowed_hosts_from_env(monkeypatch):
+    # Cloud audit on C11: the desktop app inherits its launcher's environment; a host left there must not be trusted.
     client = TestClient(
         _dev_app(
             monkeypatch,
@@ -84,9 +93,8 @@ def test_packaged_allowed_hosts_from_env(monkeypatch):
             ARSLAN_ALLOWED_HOSTS="app.example.com,localhost",
         )
     )
-    assert client.get("http://app.example.com/api/v1/health").status_code == 200
+    assert client.get("http://app.example.com/api/v1/health").status_code == 400
     assert client.get("http://localhost/api/v1/health").status_code == 200
-    # testserver is NOT in the configured allowlist → rejected.
     assert client.get("http://testserver/api/v1/health").status_code == 400
 
 
@@ -129,12 +137,20 @@ def test_ws_origin_packaged_fail_closed(monkeypatch):
     # packaged requires an Origin (no implicit no-Origin pass, no implicit localhost; C11).
     assert security.ws_origin_allowed(None) is False
     assert security.ws_origin_allowed("http://localhost:5173") is False
-    # only the configured allowlist + genuine same-origin get through.
-    assert security.ws_origin_allowed("https://app.example.com") is True
+    # only genuine same-origin gets through: ARSLAN_ALLOWED_ORIGINS is ignored when packaged (cloud audit on C11).
+    assert security.ws_origin_allowed("https://app.example.com") is False
     assert (
         security.ws_origin_allowed("https://packaged.local", host="packaged.local")
         is True
     )
+
+
+def test_ws_origin_dev_allowlist_from_env(monkeypatch):
+    # The configured allowlist's own branch (security.ws_origin_allowed): in dev, an origin named in
+    # ARSLAN_ALLOWED_ORIGINS gets through, and one it does not name is still refused (#364 review).
+    _config, security = _reload(monkeypatch, ARSLAN_ALLOWED_ORIGINS="https://app.example.com")
+    assert security.ws_origin_allowed("https://app.example.com") is True
+    assert security.ws_origin_allowed("https://other.example.com") is False
 
 
 # --- WS handshake integration: a foreign Origin is refused before accept ------

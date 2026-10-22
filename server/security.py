@@ -101,7 +101,7 @@ def ws_origin_allowed(origin: str | None, host: str | None = None) -> bool:
         is always allowed: a page can only send that ``Origin`` if it was itself
         served from this exact host (keeps a same-origin packaged app working).
       * An origin in the configured allowlist (dev default = the vite dev server;
-        ``ARSLAN_ALLOWED_ORIGINS`` replaces it; none when packaged) → allowed.
+        ``ARSLAN_ALLOWED_ORIGINS`` replaces it in dev; none when packaged, whatever it says) → allowed.
       * Dev only: any loopback origin (localhost / 127.0.0.1 / ::1, any scheme/port)
         → allowed, so ``http://localhost:5173`` etc. pass without enumerating ports.
       * Everything else (e.g. ``http://evil.com``) → refused.

@@ -13,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 
 from tests.server.test_token_bootstrap import _app_after_bootstrap, _reset_bootstrap_token  # noqa: F401
 
-_ENV = ("ARSLAN_ENV", "ARSLAN_SECRET_KEY", "ARSLAN_API_TOKEN", "ARSLAN_PACKAGED", "ARSLAN_ALLOWED_ORIGINS",
+_ENV = ("ARSLAN_ENV", "ARSLAN_SECRET_KEY", "ARSLAN_API_TOKEN", "ARSLAN_PACKAGED", "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS",
         "ARSLAN_ALLOW_INSECURE_SECRETS", "ARSLAN_TEST_ROUTES")
 
 
@@ -70,7 +70,8 @@ def test_the_frozen_entry_assigns_packaged_whatever_was_inherited(monkeypatch):
     finally:
         sys.path.remove("packaging")
     import os
-    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_API_TOKEN", "ARSLAN_ENV"):   # _sanitize_env pops these
+    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_API_TOKEN", "ARSLAN_ENV",   # _sanitize_env pops these
+                "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS"):
         if var in os.environ:
             monkeypatch.setenv(var, os.environ[var])                       # so undo() puts them back
         else:
@@ -78,9 +79,15 @@ def test_the_frozen_entry_assigns_packaged_whatever_was_inherited(monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setenv("ARSLAN_PACKAGED", "0")
     monkeypatch.setenv("ARSLAN_ENV", "prod")                   # inherited from a shell: dropped, not fatal
+    monkeypatch.setenv("ARSLAN_ALLOWED_ORIGINS", "https://a.example")
+    monkeypatch.setenv("ARSLAN_ALLOWED_HOSTS", "a.example")
     monkeypatch.setattr(server_entry, "_point_static_dir_into_the_bundle", lambda: None)
     server_entry._sanitize_env()
-    assert os.environ["ARSLAN_PACKAGED"] == "1" and "ARSLAN_ENV" not in os.environ
+    # one key at a time: an assertion on os.environ itself prints the whole environment, keys included
+    assert os.environ.get("ARSLAN_PACKAGED") == "1"
+    assert os.environ.get("ARSLAN_ENV") is None
+    assert os.environ.get("ARSLAN_ALLOWED_ORIGINS") is None
+    assert os.environ.get("ARSLAN_ALLOWED_HOSTS") is None
 
 
 # 3 ── no cross-origin by default ─────────────────────────────────────────────────────────────────────
@@ -88,8 +95,39 @@ def test_the_frozen_entry_assigns_packaged_whatever_was_inherited(monkeypatch):
 def test_a_packaged_server_allows_no_other_origin_by_default(monkeypatch):
     assert _config(monkeypatch, ARSLAN_PACKAGED="1").settings.allowed_origins == ()
     assert _config(monkeypatch).settings.allowed_origins                # dev: the vite dev server
-    explicit = _config(monkeypatch, ARSLAN_PACKAGED="1", ARSLAN_ALLOWED_ORIGINS="https://a.example")
-    assert explicit.settings.allowed_origins == ("https://a.example",)
+    explicit = _config(monkeypatch, ARSLAN_ALLOWED_ORIGINS="https://a.example")
+    assert explicit.settings.allowed_origins == ("https://a.example",)  # a dev bind may name its own
+
+
+def test_a_packaged_server_ignores_the_override_variables(monkeypatch):
+    # Cloud audit on C11: they were read before `packaged`, so a value inherited from a shell replaced the packaged defaults.
+    inherited = _config(monkeypatch, ARSLAN_PACKAGED="1", ARSLAN_ALLOWED_ORIGINS="https://a.example",
+                        ARSLAN_ALLOWED_HOSTS="a.example").settings
+    assert inherited.allowed_origins == ()
+    assert inherited.allowed_hosts == ("localhost", "127.0.0.1")
+
+
+def test_a_packaged_app_with_both_overrides_set_still_answers_no_cross_origin_caller(monkeypatch):
+    """The whole app, not the settings: CORS, the Host check and the WebSocket Origin check."""
+    from fastapi.testclient import TestClient
+    _config(monkeypatch, ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32, ARSLAN_API_TOKEN="tok",
+            ARSLAN_ALLOWED_ORIGINS="https://a.example", ARSLAN_ALLOWED_HOSTS="a.example")
+    import server.security as security
+    importlib.reload(security)
+    import server.main as main
+    client = TestClient(main.create_app(), base_url="http://localhost")
+    preflight = client.options("/api/v1/health", headers={"Origin": "https://a.example",
+                                                         "Access-Control-Request-Method": "GET"})
+    assert "access-control-allow-origin" not in preflight.headers
+    simple = client.get("/api/v1/health", headers={"Origin": "https://a.example"})
+    assert simple.status_code == 200 and "access-control-allow-origin" not in simple.headers
+    assert client.get("http://a.example/api/v1/health").status_code == 400          # its Host is not trusted
+    assert security.ws_origin_allowed("https://a.example", "127.0.0.1:8000") is False
+    _config(monkeypatch, ARSLAN_ALLOWED_ORIGINS="https://a.example")                 # the same origin in dev is allowed:
+    importlib.reload(security)                                                       # the test can tell the two apart
+    dev = TestClient(main.create_app(), base_url="http://localhost")
+    assert dev.get("/api/v1/health", headers={"Origin": "https://a.example"}).headers.get(
+        "access-control-allow-origin") == "https://a.example"
 
 
 def test_a_packaged_server_trusts_only_localhost_hosts(monkeypatch):

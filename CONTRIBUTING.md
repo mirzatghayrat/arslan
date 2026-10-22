@@ -69,8 +69,8 @@ Mirrors [README.md](README.md#environment-variables); every var below is read in
 | `ARSLAN_SECRET_KEY` | `dev-secret-key` (any non-empty value) | Derives the Fernet key (PBKDF2-HMAC-SHA256 over a per-install salt) that encrypts stored BYOK secrets. Unset in dev → auto-generated once and persisted to `~/.arslan/secret_key` (see the README env table). An explicit value always wins — don't flip-flop between explicit and auto-generated, or previously-stored keys become undecryptable. The desktop app refuses to start if it cannot create or read its secret. |
 | `ARSLAN_API_TOKEN` | *(empty)* | API/WS bearer token. Empty + dev + localhost = no auth. For the desktop app and non-loopback binds a token is auto-generated on first run. |
 | `ARSLAN_DATA_DIR` | `data` | Where the SQLite DB, notes, spawns, and encrypted secrets live. **This directory plus your secret are the backup unit** (the secret lives outside it — your env value or `~/.arslan/secret_key`). Unset → platform app-data dir. |
-| `ARSLAN_ALLOWED_HOSTS` | *(unset)* | Comma-separated TrustedHost allowlist for non-localhost binds. Dev defaults to localhost + test hosts. |
-| `ARSLAN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated CORS + WS-Origin allowlist for non-localhost binds. Dev defaults to the Vite origin `http://localhost:5173`. |
+| `ARSLAN_ALLOWED_HOSTS` | *(unset)* | Comma-separated TrustedHost allowlist for a non-localhost dev bind. Dev defaults to localhost + test hosts; the desktop app ignores it. |
+| `ARSLAN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated CORS + WS-Origin allowlist for a non-localhost dev bind. Dev defaults to the Vite origin `http://localhost:5173`; the desktop app ignores it. |
 | `ARSLAN_ALLOW_INSECURE_SECRETS` | *(off)* | Dev-only escape hatch: permits writing secrets under the public default key. Never use for real keys. |
 | `ARSLAN_ALLOW_UNSANDBOXED_PY` | *(off)* | Dev-only escape hatch: lets generated Python run **without** a sandbox where none is available (non-macOS). Runs then have the server's full privileges + network; marked `sandboxed=false`. Only enable on a machine you fully trust. |
 

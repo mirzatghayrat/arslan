@@ -102,7 +102,8 @@ class Settings:
     # TrustedHostMiddleware (rejects foreign `Host:` headers → DNS-rebinding);
     # `allowed_origins` feeds CORSMiddleware + the WS Origin check. Defaults are
     # localhost-only (+ test-harness hosts / the vite :5173 dev origin; no origin when packaged);
-    # ARSLAN_ALLOWED_HOSTS / ARSLAN_ALLOWED_ORIGINS replace them. See load_settings + server.security.
+    # in dev, ARSLAN_ALLOWED_HOSTS / ARSLAN_ALLOWED_ORIGINS replace them, and the desktop app ignores
+    # both. See load_settings + server.security.
     allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")
     allowed_origins: tuple[str, ...] = ()
 
@@ -126,26 +127,28 @@ def load_settings() -> Settings:
     packaged = os.environ.get("ARSLAN_PACKAGED", "").strip().lower() in {"1", "true", "yes", "on"}
 
     # Trusted Host headers (Starlette matches on hostname only; ':port' forms are
-    # normalised away in server.security). ARSLAN_ALLOWED_HOSTS (comma-separated) replaces
-    # the default: localhost, plus the test harness hosts (the Starlette TestClient uses
-    # 'testserver'; the httpx ASGI suites use 'test' / 't'). None of these are publicly
-    # registrable, so they add no DNS-rebinding surface; a foreign Host is rejected.
+    # normalised away in server.security). The desktop app's server trusts localhost only and
+    # ignores ARSLAN_ALLOWED_HOSTS: it inherits whatever environment launched it, and a value
+    # left in a shell must not widen it (cloud audit on C11). In dev, ARSLAN_ALLOWED_HOSTS
+    # (comma-separated) replaces the default: localhost, plus the test harness hosts (the
+    # Starlette TestClient uses 'testserver'; the httpx ASGI suites use 'test' / 't'). None of
+    # these are publicly registrable, so they add no DNS-rebinding surface; a foreign Host is rejected.
     hosts_raw = os.environ.get("ARSLAN_ALLOWED_HOSTS", "").strip()
-    if hosts_raw:
-        allowed_hosts: tuple[str, ...] = tuple(h.strip() for h in hosts_raw.split(",") if h.strip())
-    elif packaged:
-        allowed_hosts = ("localhost", "127.0.0.1")     # no test-harness host in the desktop app (C11 review F1)
+    if packaged:
+        allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")   # no test-harness host either (C11 review F1)
+    elif hosts_raw:
+        allowed_hosts = tuple(h.strip() for h in hosts_raw.split(",") if h.strip())
     else:
         allowed_hosts = ("localhost", "127.0.0.1", "testserver", "test", "t")
 
-    # Cross-origin allowlist for CORS + the WS Origin check. ARSLAN_ALLOWED_ORIGINS
-    # (comma-separated) replaces the default. The desktop app's server allows none (only
-    # genuine same-origin gets through: its own page). Dev allows the vite dev server.
+    # Cross-origin allowlist for CORS + the WS Origin check. The desktop app's server allows
+    # none and ignores ARSLAN_ALLOWED_ORIGINS (only genuine same-origin gets through: its own
+    # page). In dev, ARSLAN_ALLOWED_ORIGINS (comma-separated) replaces the default, the vite dev server.
     origins_raw = os.environ.get("ARSLAN_ALLOWED_ORIGINS", "").strip()
-    if origins_raw:
-        allowed_origins: tuple[str, ...] = tuple(o.strip() for o in origins_raw.split(",") if o.strip())
-    elif packaged:
-        allowed_origins = ()     # the app's own page is same-origin; nothing else may call it
+    if packaged:
+        allowed_origins: tuple[str, ...] = ()     # the app's own page is same-origin; nothing else may call it
+    elif origins_raw:
+        allowed_origins = tuple(o.strip() for o in origins_raw.split(",") if o.strip())
     else:
         allowed_origins = ("http://localhost:5173", "http://127.0.0.1:5173")
 
