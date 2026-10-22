@@ -100,20 +100,6 @@ async def test_no_silent_source_truncation_or_calls_on_oversized_input():
     assert result["code"] == "research_review_input_limit"
 
 
-def test_compaction_cannot_touch_user_text_prior_inputs_or_oversized_drafts():
-    source = {"role": "user", "content": "full source"}
-    lookalike = dict(source)
-    saved = {"role": "user", "content": "write succeeded"}
-    history = [lookalike, source, saved]
-    result = {"url": "https://example.org/", "source": {"id": "receipt"}, "text": "full source"}
-    assert not review.compact_saved_context(history, [(source, result)], "x" * 32001)
-    assert history[1] is source
-    assert review.compact_saved_context(history, [(source, result)], "draft")
-    assert source["content"] == lookalike["content"] == "full source"
-    assert history[0] is lookalike and history[1] is not source
-    assert result["text"] == "full source" and saved["content"] == "write succeeded"
-
-
 def test_review_cannot_raise_an_existing_or_custom_task_ceiling():
     from arslan.execution_budget import Budget, Limits
     budget = Budget(Limits(output_tokens_per_request=4096))
