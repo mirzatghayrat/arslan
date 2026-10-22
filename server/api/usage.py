@@ -41,7 +41,6 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 # ledger scope or deleted.
 NOT_COVERED = [
     "compare_judge",
-    "optimizer",
     "synthetic_corpus",
     "spawn_drafter",
     "equipment_service",
