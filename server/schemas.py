@@ -36,7 +36,6 @@ class SettingsIn(BaseModel):
     # in isolation with nothing testing the seam.
     github_token: str | None = None
     llm_strategy: str | None = None
-    # Advisory after-save source review of research reports. Opt-in: it spends.
     # Desktop shell while its window is hidden (0.1.41). Default ON.
     keep_awake_enabled: bool | None = None
     desktop_notifications_enabled: bool | None = None
