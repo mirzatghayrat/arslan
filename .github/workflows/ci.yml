@@ -119,7 +119,16 @@ jobs:
         # fail-closed path works. Measured: it is 1 of exactly 1 Linux-only test.
         # Never set ARSLAN_RELEASE_CHECK here: the capability inventory is compared in the release
         # workflow only (C5b); comparing it on every PR brings back the daily regenerate-and-conflict.
-        run: .venv/bin/pytest tests/ -q -rfEs
+        #
+        # -n auto --dist loadfile (C6): one pytest-xdist worker per core, each test FILE kept
+        # whole on one worker. Same tests, same results: a per-test-id diff of serial vs
+        # parallel showed 9748 ids and 0 different outcomes. Every worker is its own process,
+        # so tests/conftest.py pins each one to its own ARSLAN_DATA_DIR (a fresh mkdtemp).
+        # Parallel runs saturate the runner's cores, where serial used one, so a test that
+        # times itself against the wall clock has less slack here than it used to.
+        # No --cov on this step: under coverage, test_osascript_once's 2 s alarm goes flaky,
+        # and coverage's fast core needs Python >= 3.12 (deferred to v0.1.64).
+        run: .venv/bin/pytest tests/ -q -rfEs -n auto --dist loadfile
 
       # ── 0.1.53 Arslan Hands: the contract and the supply chain, on Linux ────
       # The helper's Rust tests read the same fixtures pytest just read
