@@ -30,7 +30,9 @@ from __future__ import annotations
 import pytest
 
 from server.orchestrator import tool_loop
-from server.services.replay_run import REPLAY_CONVERSATION_ID
+
+# The replay sentinel replay_safety still seals (replay_run, which defined it, went in C7b-2).
+REPLAY_CONVERSATION_ID = "evolution-replay"
 
 pytestmark = pytest.mark.asyncio
 

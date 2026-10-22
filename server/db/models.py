@@ -253,8 +253,8 @@ class SkillPack(Base):
 class SkillCandidate(Base):
     """An authored-but-not-yet-live skill draft awaiting human confirm.
 
-    Slice 1 lifecycle: observing -> promoted | rejected (Slice 2 adds an eval
-    gate before "proposed"; observing -> proposed -> promoted/rejected/retired).
+    Lifecycle: authored ("observing") -> human confirm -> promoted | rejected (| retired).
+    "proposed" exists only on legacy rows (the eval gate that set it was removed in C7a).
     On promote we INSERT a live SkillPack row (tier=safe, status=registered) which
     is what makes the skill listed + equippable via the registry choke point.
     """
