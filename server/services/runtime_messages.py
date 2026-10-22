@@ -28,7 +28,6 @@ MESSAGES = {
         "findings_header": "[Findings so far] (gathered this round, not yet written up)",
         "chat_miss": "Sorry, I didn't quite catch that — could you say it another way?",
         "correction": "Correction: the answer above is my own; nothing is running in the background for it.",  # K5
-        "no_tools_correction": "Correction: I do not have the tools needed to produce that file or data. My earlier completion claim was not true: I produced no such result and delegated no task. Please use an expert with the required capabilities.",
         "job_interrupted": "Background work was interrupted when Arslan restarted, before it finished: {goal}. Nothing more was done. Ask me to start it again if you still want it.",
         "job_out_of_budget": "Background work ran out of budget before finishing: {goal}. It used all of its {what} ({used}/{limit}) after {steps} steps, and nothing was written up. Ask me to start it again with a narrower scope, or raise the background work budget in Settings → Advanced.",
         "job_out_of_budget_usd": "Background work reached its dollar limit before finishing: {goal}. It spent {used} of its {limit} limit after {steps} steps, and nothing was written up. Ask me to start it again with a narrower scope, or raise the per-task dollar limit in Settings → Advanced.",
@@ -64,7 +63,6 @@ MESSAGES = {
         "findings_header": "【阶段性发现】(本轮已查到的资料,尚未成稿)",
         "chat_miss": "抱歉,我刚没接住你的意思——能再说一次或换个说法吗?",
         "correction": "更正:上面的内容是我自己作答的,没有为它在后台运行任何任务。",  # K5
-        "no_tools_correction": "更正:我没有配备相应工具,无法自己产出这个文件或数据。刚才那段“已完成/已交付”的说法并不属实——本回合没有真正做出任何东西,也没有把任务交给谁。需要真的做出来,请改用配备相应能力的专家。",
         "job_interrupted": "后台作业在 Arslan 重启时中断，没有做完：{goal}。之后没有再继续。如果还需要，跟我说一声，我重新开始。",
         "job_out_of_budget": "后台作业在做完之前用完了预算：{goal}。它用满了{what}（{used}/{limit}），共做了 {steps} 步，还没有整理成结果。可以让我缩小范围重新开始，或在「设置 → 高级」里调大后台作业预算。",
         "job_out_of_budget_usd": "后台作业在做完之前到了美元上限：{goal}。它花了 {used}（上限 {limit}），共做了 {steps} 步，还没有整理成结果。可以让我缩小范围重新开始，或在「设置 → 高级」里调大每个任务的美元上限。",
@@ -100,7 +98,6 @@ MESSAGES = {
         "findings_header": "【これまでの調査結果】（今回収集した資料。最終回答は未作成）",
         "chat_miss": "すみません、意図を十分に理解できませんでした。別の言い方でもう一度教えていただけますか？",
         "correction": "訂正：上の回答は私自身のものです。これのためにバックグラウンドで動いている処理はありません。",  # K5
-        "no_tools_correction": "訂正：そのファイルやデータを作成するためのツールがありません。先ほどの完了という説明は事実ではなく、成果物の作成もタスクの委任も行っていません。必要な機能を備えた専門家をご利用ください。",
         "job_interrupted": "Arslan の再起動でバックグラウンド作業が完了前に中断されました：{goal}。その後は何も行っていません。必要なら、もう一度始めるよう伝えてください。",
         "job_out_of_budget": "バックグラウンド作業が完了前に予算を使い切りました：{goal}。{what}を上限まで使いました（{used}/{limit}、{steps} ステップ）。結果はまだまとめていません。範囲を絞って再開するか、「設定 → 詳細」でバックグラウンド作業の予算を増やしてください。",
         "job_out_of_budget_usd": "バックグラウンド作業が完了前にドル上限に達しました：{goal}。{steps} ステップで {used} を使いました（上限 {limit}）。結果はまだまとめていません。範囲を絞って再開するか、「設定 → 詳細」でタスクごとのドル上限を増やしてください。",
@@ -136,7 +133,6 @@ MESSAGES = {
         "findings_header": "[Hallazgos hasta ahora] (recopilados en este turno, aún sin redactar)",
         "chat_miss": "Lo siento, no he entendido bien lo que querías decir. ¿Puedes expresarlo de otra forma?",
         "correction": "Corrección: la respuesta anterior es mía; no hay nada ejecutándose en segundo plano para ella.",  # K5
-        "no_tools_correction": "Corrección: no tengo las herramientas necesarias para producir ese archivo o esos datos. Mi afirmación anterior de haber terminado no era cierta: no he producido ese resultado ni delegado ninguna tarea. Usa un experto con las capacidades necesarias.",
         "job_interrupted": "El trabajo en segundo plano se interrumpió al reiniciarse Arslan, antes de terminar: {goal}. No se hizo nada más. Pídeme que lo empiece de nuevo si todavía lo necesitas.",
         "job_out_of_budget": "El trabajo en segundo plano agotó su presupuesto antes de terminar: {goal}. Usó todo su límite de {what} ({used}/{limit}) tras {steps} pasos y no se redactó nada. Pídeme que lo empiece de nuevo con un alcance menor, o sube el presupuesto en Ajustes → Avanzado.",
         "job_out_of_budget_usd": "El trabajo en segundo plano llegó a su límite en dólares antes de terminar: {goal}. Gastó {used} de su límite de {limit} tras {steps} pasos y no dejó nada redactado. Pídeme que lo empiece de nuevo con un alcance más acotado, o sube el límite en dólares por tarea en Ajustes → Avanzado.",
@@ -172,7 +168,6 @@ MESSAGES = {
         "findings_header": "[Bisherige Erkenntnisse] (in dieser Runde gesammelt, noch nicht ausgearbeitet)",
         "chat_miss": "Entschuldigung, ich habe dich nicht ganz verstanden. Kannst du es anders formulieren?",
         "correction": "Korrektur: Die Antwort oben ist meine eigene; dafür läuft nichts im Hintergrund.",  # K5
-        "no_tools_correction": "Korrektur: Mir fehlen die Werkzeuge, um diese Datei oder Daten zu erstellen. Meine vorherige Aussage, fertig zu sein, war nicht richtig: Ich habe dieses Ergebnis weder erstellt noch eine Aufgabe delegiert. Bitte nutze einen Experten mit den nötigen Fähigkeiten.",
         "job_interrupted": "Die Hintergrundarbeit wurde beim Neustart von Arslan unterbrochen, bevor sie fertig war: {goal}. Seitdem ist nichts weiter passiert. Sag mir, wenn ich neu anfangen soll.",
         "job_out_of_budget": "Die Hintergrundarbeit hat ihr Budget aufgebraucht, bevor sie fertig war: {goal}. Sie hat ihr Limit an {what} ausgeschöpft ({used}/{limit}) nach {steps} Schritten; nichts wurde ausgearbeitet. Lass mich mit engerem Umfang neu beginnen oder erhöhe das Budget unter Einstellungen → Erweitert.",
         "job_out_of_budget_usd": "Die Hintergrundarbeit hat ihr Dollar-Limit erreicht, bevor sie fertig war: {goal}. Sie hat nach {steps} Schritten {used} von {limit} ausgegeben und noch nichts zusammengefasst. Bitte mich, sie mit engerem Umfang neu zu starten, oder erhöhe das Dollar-Limit pro Aufgabe unter Einstellungen → Erweitert.",
@@ -208,7 +203,6 @@ MESSAGES = {
         "findings_header": "[Résultats recueillis] (rassemblés pendant ce tour, pas encore rédigés)",
         "chat_miss": "Désolé, je n’ai pas bien compris. Peux-tu le reformuler ?",
         "correction": "Correction : la réponse ci-dessus est la mienne ; rien ne tourne en arrière-plan pour elle.",  # K5
-        "no_tools_correction": "Correction : je ne dispose pas des outils nécessaires pour produire ce fichier ou ces données. Mon affirmation précédente d’avoir terminé était fausse : je n’ai produit aucun résultat de ce type ni délégué de tâche. Utilise un expert doté des capacités nécessaires.",
         "job_interrupted": "Le travail en arrière-plan a été interrompu au redémarrage d’Arslan, avant la fin : {goal}. Rien d’autre n’a été fait. Demandez-moi de le relancer si vous en avez encore besoin.",
         "job_out_of_budget": "Le travail en arrière-plan a épuisé son budget avant la fin : {goal}. Il a utilisé toute sa limite de {what} ({used}/{limit}) en {steps} étapes, et rien n’a été rédigé. Demandez-moi de le relancer avec un périmètre plus étroit, ou augmentez le budget dans Réglages → Avancé.",
         "job_out_of_budget_usd": "Le travail en arrière-plan a atteint son plafond en dollars avant la fin : {goal}. Il a dépensé {used} sur {limit} en {steps} étapes, sans rien rédiger. Demande-moi de le relancer avec un périmètre plus étroit, ou relève le plafond en dollars par tâche dans Réglages → Avancé.",
