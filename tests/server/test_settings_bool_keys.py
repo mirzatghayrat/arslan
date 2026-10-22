@@ -9,8 +9,7 @@ Bool keys still have the same split, and worse. They ride `_PLAIN_KEYS`, which e
 RAW STRING and only `if val is not None`. So on a fresh install the key is absent from the
 response entirely, and `SettingsOut(**data)`'s pydantic default is what the API reports.
 That makes TWO independent definitions of every bool default — the accessor and the
-schema — with nothing asserting they agree. `evolution_auto` escapes only because someone
-hand-wrote a line for it.
+schema — with nothing asserting they agree.
 
 Concretely, this is what the F2 round has to touch: flipping `curation_enabled` means
 changing the accessor AND the schema in lockstep, in two different files, with no test

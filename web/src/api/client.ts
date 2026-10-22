@@ -8,17 +8,8 @@ import type { RunProcessOut, PhoneCode, PhoneStatus,
   AppSettings,
   CatalogEntry,
   CollectionOut,
-  ConfirmResult,
   ConversationUsage,
   EmbeddingStatus,
-  EvolutionStats,
-  EvolveEstimate,
-  EvolveEnqueued,
-  ProposalListItem,
-  ProposalDetail,
-  SpawnDiagnosis,
-  RefreshResult,
-  RollbackResult,
   IngestResult,
   KnowledgeSource,
   ModelListResult,
@@ -357,15 +348,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  getEvolution: (id: number) => request<EvolutionStats>(`/spawns/${id}/evolution`),
-  sendFeedback: (
-    id: number,
-    body: { message_id?: number; user_action: string; edits?: Record<string, unknown> },
-  ) =>
-    request<void>(`/spawns/${id}/feedback`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
   listTemplates: () => request<TemplateInfo[]>("/templates"),
   getSettings: () => request<AppSettings>("/settings"),
   /** Why stored secrets cannot be read. Verdict key + counts; never plaintext. */
@@ -585,34 +567,6 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ fact, ...identity }),
     }),
-  // S2 evolution (spec §E7). The old sync propose was replaced by a background job:
-  // GET the estimate, POST to enqueue (202), then review the resulting proposal in the inbox.
-  getEvolveEstimate: (spawnId: number) =>
-    request<EvolveEstimate>(`/spawns/${spawnId}/evolve/estimate`),
-  /** POST the manual trigger. The server gates a click that would re-run a corpus which
-   * already failed: it answers 409 with a structured detail, and only `force` proceeds.
-   * The gate is fail-closed, so omitting force is the safe default, not a shortcut. */
-  runEvolve: (spawnId: number, opts?: { force?: boolean }) =>
-    request<EvolveEnqueued>(`/spawns/${spawnId}/evolve`, {
-      method: "POST",
-      body: JSON.stringify({ force: opts?.force ?? false }),
-    }),
-  getEvolutionProposals: (status?: string) =>
-    request<ProposalListItem[]>(
-      `/evolution/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`,
-    ),
-  getProposalDetail: (proposalId: number) =>
-    request<ProposalDetail>(`/evolution/proposals/${proposalId}`),
-  getEvolutionDiagnosis: (spawnId: number) =>
-    request<SpawnDiagnosis>(`/spawns/${spawnId}/evolution/diagnosis`),
-  refreshProposal: (proposalId: number) =>
-    request<RefreshResult>(`/evolution/proposals/${proposalId}/refresh`, { method: "POST" }),
-  confirmProposal: (proposalId: number) =>
-    request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
-  rejectProposal: (proposalId: number) =>
-    request<ConfirmResult>(`/evolution/proposals/${proposalId}/reject`, { method: "POST" }),
-  rollbackProposal: (proposalId: number) =>
-    request<RollbackResult>(`/evolution/proposals/${proposalId}/rollback`, { method: "POST" }),
   listMcpServers: () =>
     request<
       Array<{

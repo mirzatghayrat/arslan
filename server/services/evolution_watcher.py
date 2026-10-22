@@ -1,28 +1,19 @@
-"""Background evolution job (S2 E5, audit CRITICAL-4).
+"""Evolution attempt runner (S2 E5) — the manual path only.
 
-There is no scheduler in this codebase, so this is a small SUPERVISED watcher built by hand:
+C2b-2 (v0.1.63) removed the automatic path: the 5-minute watch loop, the run-recorder
+ping and the eligibility trigger. What is left is `enqueue_attempt` and the supervised
+attempt runner behind it, plus the backoff helpers (`_threshold`, `_consecutive_fails`,
+…). Since C2b-1 removed the REST surface nothing in the product calls `enqueue_attempt`.
 
-- Every attempt runs as an `asyncio.create_task` that is kept in a module-level set with a
+DELETE-BY: when the manual evolve path is deleted — the whole module goes in C7 step 2's
+"evolution second batch" PR (planned for v0.1.63; tangled with replay_*, see
+docs/plans/0162/C7-expert-block.md).
+
+- Every attempt runs as an `asyncio.create_task` kept in a module-level set with a
   done-callback that LOGS any exception and discards the task — never a bare
   fire-and-forget that would silently swallow a crash.
-- `watch_loop()` wakes every `interval` seconds (300s in prod, injectable + driven manually
-  in tests) and, for each spawn, checks the trigger. `notify_spawn()` is an in-process ping
-  from the run recorder so a freshly scored run doesn't wait up to 5 min; the loop is the
-  backstop.
-
-Trigger + deterministic backoff (the thing the sync button could never do):
-- A spawn is eligible when the number of NEW replayable epoch>=1 live+scored runs created
-  since its LAST EvolutionAttempt reaches a threshold. "Since the last attempt" (not the
-  last proposal — audit CRITICAL-4) is what makes a failing gate back off instead of
-  retrying every 5 minutes forever: the moment an attempt is recorded, those runs are behind
-  it and no longer count.
-- Threshold starts at BASE_THRESHOLD (10). After N consecutive failed/error attempts it is
-  BASE * 2**N, capped at BASE * MAX_BACKOFF_MULT — i.e. 10 → 20 → 40 → 80. A passed attempt
-  resets the streak (back to 10).
-
-Safety rails (spec §4): evolution_auto=on is standing consent, but an attempt still (a)
-records a `skipped_budget` attempt instead of running if its lower-bound estimate exceeds
-`evolution_max_dispatches`, and (b) runs at most one attempt per spawn concurrently.
+- An attempt records a `skipped_budget` row instead of running if its projected
+  dispatches exceed `evolution_max_dispatches`, and at most one attempt runs per spawn.
 """
 from __future__ import annotations
 
@@ -34,7 +25,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from arslan.llm import usage_sink
-from server.db.models import EvolutionAttempt, EvolutionProposal, Run, Spawn
+from server.db.models import EvolutionAttempt, Run
 from server.services import (
     evolution_estimate,
     evolution_loop,
@@ -47,29 +38,6 @@ logger = logging.getLogger(__name__)
 
 BASE_THRESHOLD = 10
 MAX_BACKOFF_MULT = 8            # 10 → 20 → 40 → 80 then flat
-DEFAULT_INTERVAL = 300.0       # 5 minutes; injectable (short in tests)
-
-# 0036 companion to the cursor change. Because `skipped_budget` no longer advances the
-# cursor (it consumed nothing, so it must not strand the banked runs), an over-budget
-# spawn would otherwise stay eligible forever and write one refusal row every tick —
-# zero LLM cost, but unbounded row growth.
-#
-# The wall is a COOLDOWN and deliberately NOT a term in the eligibility gate. Refusing
-# inside the gate would create no attempt row at all, and `_verdict_code`'s
-# skipped_budget branch keys on a row existing — the eligibility panel would fall through
-# to "eligible_looking" ("Nothing blocks") while auto evolution was permanently dead.
-# Writing the row and rate-limiting it keeps the refusal VISIBLE, which is the whole
-# point of recording an attempt for a skip.
-#
-# 6 HOURS, chosen so the derived daily ceiling is legible rather than incidental:
-#   86400 / BUDGET_REFUSAL_COOLDOWN_S = at most 4 refusal rows per spawn per day.
-# That is the number to reason about when changing this constant — it is the actual
-# bound on the growth this cooldown exists to cap, and it is pinned by
-# test_over_budget_spawn_cannot_exceed_the_daily_refusal_ceiling.
-BUDGET_REFUSAL_COOLDOWN_S = 6 * 3600
-
-#: The bound the cooldown actually buys, stated once so tests and humans agree on it.
-MAX_BUDGET_REFUSALS_PER_DAY = 86_400 // BUDGET_REFUSAL_COOLDOWN_S
 
 # E9-b: gate/pre-gate reasons that are CONSTRUCTION/precondition failures, not quality
 # verdicts — they say nothing about the spawn's prompt, so they must NOT drive the
@@ -87,8 +55,6 @@ def _is_structural(reason: str) -> bool:
 # ── supervised task bookkeeping ──────────────────────────────────────────────────────
 _tasks: set[asyncio.Task] = set()
 _running_spawns: set[int] = set()   # concurrency = 1 per spawn
-_loop_task: asyncio.Task | None = None
-_started = False                    # notify_spawn is a no-op until the loop is running
 
 
 def _on_task_done(task: asyncio.Task) -> None:
@@ -204,13 +170,6 @@ async def _new_replayable_run_count(db, spawn_id: int, since) -> int:
         if await replay_run.is_replayable(db, run.id):
             count += 1
     return count
-
-
-async def _is_eligible(db, spawn_id: int) -> bool:
-    since = await _last_attempt_started_at(db, spawn_id)
-    fails = await _consecutive_fails(db, spawn_id)
-    count = await _new_replayable_run_count(db, spawn_id, since)
-    return count >= _threshold(fails)
 
 
 # ── one attempt ──────────────────────────────────────────────────────────────────────
@@ -409,9 +368,8 @@ async def _run_and_release(attempt_id: int, spawn_id: int) -> None:
 
 async def enqueue_attempt(spawn_id: int, *, manual: bool = False) -> int | None:
     """Create an attempt row and supervise its runner. Returns the attempt_id, or None when
-    an attempt is already running for this spawn (concurrency = 1). This is the ONE entry the
-    manual API and the auto trigger share — both respect concurrency + the budget cap; only
-    the auto trigger additionally gates on the run-count threshold (see `trigger_spawn`)."""
+    an attempt is already running for this spawn (concurrency = 1). Respects concurrency +
+    the budget cap. No product caller since C2b-1 removed the REST surface."""
     if spawn_id in _running_spawns:
         return None
     _running_spawns.add(spawn_id)
@@ -425,116 +383,3 @@ async def enqueue_attempt(spawn_id: int, *, manual: bool = False) -> int | None:
     _supervise(_run_and_release(attempt_id, spawn_id))
     return attempt_id
 
-
-async def _in_budget_refusal_cooldown(db, spawn_id: int) -> bool:
-    """True when the newest attempt is a budget refusal younger than the cooldown.
-
-    Only the AUTO path consults this: a human who clicks Evolve is entitled to a fresh,
-    visible refusal on demand.
-    """
-    row = (await db.execute(
-        select(EvolutionAttempt.outcome, EvolutionAttempt.started_at)
-        .where(EvolutionAttempt.spawn_id == spawn_id)
-        .order_by(EvolutionAttempt.id.desc())
-        .limit(1)
-    )).first()
-    if row is None or row[0] != "skipped_budget" or row[1] is None:
-        return False
-    return (datetime.utcnow() - row[1]).total_seconds() < BUDGET_REFUSAL_COOLDOWN_S
-
-
-async def trigger_spawn(spawn_id: int) -> int | None:
-    """Auto path. Always None since 0.1.44 (one Arslan): experts are not a runtime
-    path, so rewriting an expert's prompt in the background would spend on
-    something nothing reads, and a user who had evolution_auto on must not keep
-    paying for it. C2b deletes the whole automatic path (this function, tick's
-    loop over spawns, _is_eligible and _in_budget_refusal_cooldown)."""
-    return None
-
-
-# ── living-proposal refresh (wired into the loop) ─────────────────────────────────────
-
-async def _refresh_open_proposals() -> None:
-    async with db_session.AsyncSessionLocal() as db:
-        open_ids = (await db.execute(
-            select(EvolutionProposal.id).where(EvolutionProposal.status == "open")
-        )).scalars().all()
-    for pid in open_ids:
-        try:
-            async with db_session.AsyncSessionLocal() as db:
-                await evolution_loop.refresh_proposal(db, pid)
-        except Exception as exc:  # noqa: BLE001 — one bad proposal must not stall the loop
-            logger.warning("refresh_proposal(%s) failed (non-fatal): %s", pid, exc)
-
-
-# ── the loop ─────────────────────────────────────────────────────────────────────────
-
-async def tick() -> None:
-    """One watcher pass: refresh open proposals, then check every spawn's trigger."""
-    await _refresh_open_proposals()
-    async with db_session.AsyncSessionLocal() as db:
-        spawn_ids = (await db.execute(select(Spawn.id))).scalars().all()
-    for sid in spawn_ids:
-        try:
-            await trigger_spawn(sid)
-        except Exception as exc:  # noqa: BLE001 — a bad spawn must not stall the loop
-            logger.warning("trigger_spawn(%s) failed (non-fatal): %s", sid, exc)
-
-
-async def watch_loop(*, interval: float = DEFAULT_INTERVAL,
-                     stop_event: asyncio.Event | None = None) -> None:
-    """Run ticks forever (until `stop_event`), sleeping `interval` between them."""
-    while stop_event is None or not stop_event.is_set():
-        try:
-            await tick()
-        except Exception as exc:  # noqa: BLE001 — a tick failure must not kill the loop
-            logger.warning("evolution watch tick failed (non-fatal): %s", exc)
-        if stop_event is None:
-            await asyncio.sleep(interval)
-        else:
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                pass
-
-
-_stop_event: asyncio.Event | None = None
-
-
-def start(*, interval: float = DEFAULT_INTERVAL) -> None:
-    """Start the supervised watch loop (idempotent). Called from the app lifespan."""
-    global _loop_task, _stop_event, _started
-    if _loop_task is not None and not _loop_task.done():
-        return
-    _stop_event = asyncio.Event()
-    _loop_task = _supervise(watch_loop(interval=interval, stop_event=_stop_event))
-    _started = True
-
-
-async def stop() -> None:
-    """Signal the loop to stop and await its exit (best-effort). Called on shutdown."""
-    global _loop_task, _started
-    _started = False
-    if _stop_event is not None:
-        _stop_event.set()
-    if _loop_task is not None:
-        try:
-            await asyncio.wait_for(asyncio.shield(_loop_task), timeout=5.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
-        _loop_task = None
-
-
-def notify_spawn(spawn_id: int) -> None:
-    """In-process ping from the run recorder that a spawn just got a fresh scored run.
-
-    No-op unless the watch loop is running (the loop is the backstop; a ping only shortens
-    latency). Best-effort + non-blocking: schedules a supervised trigger check and returns.
-    Requires a running event loop (it always has one — the recorder is async)."""
-    if not _started:
-        return
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return
-    _supervise(trigger_spawn(spawn_id))

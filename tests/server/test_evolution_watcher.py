@@ -206,20 +206,6 @@ def test_is_structural_covers_all_three_construction_reasons():
 
 # ── evolution_auto gate ─────────────────────────────────────────────────────────────────
 
-async def test_evolution_auto_off_never_runs(wdb, monkeypatch):
-    Session = wdb
-    monkeypatch.setattr(evolution_loop, "propose_improvement", _fail_propose)
-    sid = await _spawn(Session)
-    await _seed_runs(Session, sid, 10)
-    async with Session() as db:
-        db.add(Setting(key="evolution_auto", value="off"))
-        await db.commit()
-
-    assert await evolution_watcher.trigger_spawn(sid) is None
-    await _drain()
-    assert await _attempts(Session, sid) == []
-
-
 # ── budget cap ──────────────────────────────────────────────────────────────────────────
 
 async def test_over_budget_records_skipped_budget(wdb, monkeypatch):

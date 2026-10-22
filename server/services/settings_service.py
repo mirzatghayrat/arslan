@@ -31,7 +31,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                # 0.1.58 §6: one model of the slot's config (empty = the config's own model).
                "compaction_model", "synthesis_model", "router_model", "vision_model",
-               "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
+               "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
@@ -49,7 +49,7 @@ _PLAIN_KEYS = (
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
-_INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
+_INT_KEYS = ("run_debug_retention_days",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
@@ -207,7 +207,6 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     # Asserted complete against _BOOL_KEYS by test_settings_bool_keys.
     for bool_key, accessor in _BOOL_ACCESSORS.items():
         out[bool_key] = await accessor(session)
-    out["evolution_auto"] = "on" if await evolution_auto(session) else "off"
     return out
 
 
@@ -475,55 +474,13 @@ async def run_budget_from_settings():
         return run_budget()
 
 
-async def evolution_auto(session: AsyncSession) -> bool:
-    """Whether the background evolution watcher may run attempts for spawns.
-
-    🔴 Default OFF. It used to default ON, justified as "standing consent — the estimate
-    is visible in the inbox, and the budget cap + backoff prevent runaway spend". Both
-    halves of that justification turned out to be false:
-
-      * the budget cap did not exist at the time. `evolution_max_dispatches` now caps
-        projected DISPATCHES, but is still unset by default,
-        because the estimate it would gate on is a known over-estimate that grows with
-        the corpus (see evolution_estimate.py) — a fixed cap over a growing number is a
-        permanent kill switch, so no cap is set and nothing bounds the total;
-      * "visible in the inbox" is visible only to someone who already knows to look.
-        There was no Settings control for this at all, so a user could neither see that
-        it was running nor turn it off without calling the API by hand.
-
-    Which left: clone the repo, run it, and a background loop starts spending YOUR API
-    credits without being asked. That is not consent, standing or otherwise.
-
-    This is the same rule `curation_enabled` above already states — the proposing side is
-    fail-open, the EXECUTING side (writes, tools, spend) is fail-closed — applied to the
-    loop that spends two orders of magnitude more. It was written down there and not
-    applied here, because this default predates the discovery that its cap was fiction.
-
-    Only an explicit 'on'/'true'/'1'/'yes' enables it.
-    """
-    raw = await _get_raw(session, "evolution_auto")
-    if raw is None:
-        return False
-    return str(raw).strip().lower() in ("on", "true", "1", "yes")
-
-
-_LEGACY_TOKEN_CAP_KEY = "evolution_max_est_tokens"
-
-
-async def legacy_token_cap_if_set(session: AsyncSession) -> str | None:
-    """The pre-dispatch-cap key, if an install had actually set one.
-
-    🔴 fail-LOUD, not fail-silent. The replacement changed the UNIT, so the old value
-    cannot be carried over — any conversion would be invented, since tokens-per-dispatch
-    is exactly the figure this project does not reliably know. But a limit that vanishes
-    without a word is worse than one that is refused with an explanation: the user set a
-    spending limit and would go on believing it applied. Surfaced by the diagnostics
-    payload so it reaches a screen instead of a log line nobody reads."""
-    return await _get_raw(session, _LEGACY_TOKEN_CAP_KEY)
-
-
 async def evolution_max_dispatches(session: AsyncSession) -> int | None:
-    """Per-attempt cap on PROJECTED REPLAY DISPATCHES. Unset (None) = no cap, and that is
+    """DELETE-BY: when the manual evolve path is deleted (with evolution_watcher, C7 step 2's
+    "evolution second batch" PR, planned for v0.1.63).
+    No longer a served setting since C2b-2; only the watcher's (unreachable) manual path
+    still reads a stored value.
+
+    Per-attempt cap on PROJECTED REPLAY DISPATCHES. Unset (None) = no cap, and that is
     still the default: the `actual` ledger is empty on every install, so there is no
     distribution to pick a number from.
 
@@ -639,7 +596,6 @@ async def brain_usage_event_max_rows(session: AsyncSession) -> int:
 #: (see the comment in get_settings). test_settings_int_keys pins the equality.
 _INT_ACCESSORS = {
     "run_debug_retention_days": run_debug_retention_days,
-    "evolution_max_dispatches": evolution_max_dispatches,
     "brain_usage_event_retention_days": brain_usage_event_retention_days,
     "brain_usage_event_max_rows": brain_usage_event_max_rows,
 }
@@ -647,8 +603,7 @@ _INT_ACCESSORS = {
 
 #: Read-path registry for the BOOL settings. Every entry in `_BOOL_KEYS` MUST appear
 #: here — a key that is writable but not readable reports the schema default forever
-#: (see the comment in get_settings). `evolution_auto` is deliberately absent: it is a
-#: bool in the service but a STRING ("on"/"off") on the wire, so it keeps its own line.
+#: (see the comment in get_settings).
 async def first_run_seen(session: AsyncSession) -> bool:
     """Whether onboarding was dismissed or completed. Default False."""
     return _truthy(await _get_raw(session, "first_run_seen"))

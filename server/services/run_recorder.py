@@ -438,9 +438,7 @@ class RunRecorder:
         if current_task() is not None:
             current_task().record_run_output(self.run_id)
         if replay or status_override is not None or self.kind in {"host", "recipe", "recipe_step", "worker"}:
-            # replay → paired gate; cancelled/interrupted → never scored. This also skips
-            # the evolution_watcher nudge below — harmless, since a cancelled run creates
-            # no scored run, so the nudge would be a guaranteed no-op.
+            # replay → paired gate; cancelled/interrupted → never scored.
             return self.run_id
         async with db_session.AsyncSessionLocal() as db:
             recorded = await db.get(Run, self.run_id)
@@ -453,16 +451,6 @@ class RunRecorder:
             schedule_scoring(self.run_id)
         except Exception as exc:  # noqa: BLE001 — scoring is best-effort
             logger.warning("schedule_scoring failed (non-fatal): %s", exc)
-        # E5: nudge the evolution watcher that this spawn got fresh activity so a newly
-        # eligible spawn doesn't wait for the next 5-min tick. No-op unless the watch loop
-        # is running (the loop is the backstop); best-effort + non-blocking.
-        try:
-            if self.spawn_id is not None:
-                from server.services import evolution_watcher
-
-                evolution_watcher.notify_spawn(self.spawn_id)
-        except Exception as exc:  # noqa: BLE001 — the ping is never fatal
-            logger.warning("evolution notify failed (non-fatal): %s", exc)
         return self.run_id
 
     def _merge_tool_trace(self, steps: list[dict]) -> None:

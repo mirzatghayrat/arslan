@@ -57,7 +57,6 @@ class SettingsIn(BaseModel):
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
     run_debug_retention_days: int | None = None
-    evolution_auto: str | None = None
     # 🔴 These two were in _PLAIN_KEYS (so update_settings would store them) but on
     # NEITHER schema, and the PUT route feeds update_settings `body.model_dump()` —
     # so pydantic dropped them and the write path was dead. The frontend has been
@@ -73,7 +72,6 @@ class SettingsIn(BaseModel):
     compaction_config_id: str | None = None
     router_config_id: str | None = None
     vision_config_id: str | None = None
-    evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool | None = None
     # Comma-separated BCP-47 tags for image text recognition. Empty string is a
     # MEANINGFUL value, not "unset": it restores "follow the interface language
@@ -137,7 +135,6 @@ class SettingsOut(BaseModel):
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
     run_debug_retention_days: int = 30
-    evolution_auto: str = "off"
     synthesis_config_id: str = ""
     compaction_model: str = ""
     synthesis_model: str = ""
@@ -147,7 +144,6 @@ class SettingsOut(BaseModel):
     compaction_config_id: str = ""
     router_config_id: str = ""
     vision_config_id: str = ""
-    evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool = False
 
     # Empty string = follow the interface language plus English (the default),

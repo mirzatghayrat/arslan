@@ -133,8 +133,6 @@ describe("every settings field the UI can edit is mappable", () => {
       memory_in_conversations: { memoryInConversations: false },
       learned_practices_take_effect: { learnedPracticesTakeEffect: false },
       phone_bridge_enabled: { phoneBridgeEnabled: true },
-      evolution_auto: { evolutionAuto: true },
-      evolution_max_dispatches: { evolutionMaxDispatches: 5 },
       ocr_languages: { ocrLanguages: "eng" },
       run_debug_retention_days: { runDebugRetentionDays: 30 },
       mcp_server_enabled: { mcpServerEnabled: true },
