@@ -29,7 +29,8 @@ function isFullHtmlDoc(s: string): boolean {
 }
 
 // A doc cut by max-tokens has no </html>; only salvage it as a deliverable when there
-// is substantial content after the doctype (backend parity: html_artifact.MIN_TRUNCATED_CHARS).
+// is substantial content after the doctype. (It mirrored html_artifact.MIN_TRUNCATED_CHARS until
+// the backend half went with the dispatcher in C7b-4; this is now the only copy.)
 const MIN_TRUNCATED_CHARS = 2000;
 
 /**

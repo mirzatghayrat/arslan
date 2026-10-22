@@ -1,7 +1,7 @@
 """Records one turn as a Run + ordered RunSteps.
 
-A RunRecorder is created at the start of host_run.execute (an Arslan turn) or
-dispatcher._dispatch_replay (a replay arm); its tee() wraps the EventSink so every
+A RunRecorder is created at the start of host_run.execute (an Arslan turn; replay
+arms, the other creator, went with the expert dispatcher in C7b-4); its tee() wraps the EventSink so every
 emitted event is both forwarded live AND timestamped for step derivation.
 finalize() persists steps, links the summary message, and schedules async judge
 scoring.

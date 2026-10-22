@@ -24,11 +24,11 @@ from server.db import session as db_session
 from server.db.models import ScheduledTask
 
 # NOTE: `server.services.scheduler` is imported inside the functions below, not
-# here. scheduler → dispatcher → spawn_loop → tool_loop → registry.executors →
-# this module, so a module-level import is a cycle: importing this module
-# directly raised ImportError while importing it THROUGH executors happened to
-# work, which is the kind of asymmetry that hides until something imports it the
-# other way round.
+# here. When this was written, scheduler reached tool_loop → registry.executors →
+# this module (through the expert dispatcher, deleted in C7b-4), so a module-level
+# import was a cycle: importing this module directly raised ImportError while
+# importing it THROUGH executors happened to work. The lazy import stays; it keeps
+# this module importable from either side whatever scheduler imports next.
 
 logger = logging.getLogger(__name__)
 

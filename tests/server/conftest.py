@@ -479,3 +479,23 @@ async def wdb(tmp_path, monkeypatch):
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
     yield Session
     await engine.dispose()
+
+
+# ── worker_scope: what personal_context.for_worker did ───────────────────────────────
+# for_worker (a thin wrapper over the live `personal_context.worker_context`) went with the dispatcher
+# in C7b-6 (v0.1.63): no product code entered a worker scope through it any more. The memory-privacy
+# tests that use it to enter a worker's scope keep checking the live narrowing through this helper.
+def worker_scope(expert_id: str):
+    from contextlib import contextmanager
+
+    from server.services import personal_context as pc
+
+    @contextmanager
+    def _scope():
+        parent = pc.current()
+        if parent is None:
+            yield None
+            return
+        with pc.bind(pc.worker_context(parent, expert_id)) as child:
+            yield child
+    return _scope()

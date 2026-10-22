@@ -2,8 +2,8 @@
  * Whether the selected provider can call tools at all.
  *
  * WHAT IS ACTUALLY BROKEN, measured rather than assumed: both production paths
- * — Arslan's answer path (server/orchestrator/arslan.py) and the spawn path
- * (server/orchestrator/spawn_loop.py) — go through `tool_loop.run_native`,
+ * — Arslan's answer path (server/orchestrator/arslan.py) and background workers
+ * (server/services/task_workers.py) — go through `tool_loop.run_native`,
  * which passes tool schemas to the adapter. `openai_provider` serializes them
  * (`if tools: payload["tools"] = tools`), and since G1 the Anthropic adapter
  * does too (`_translate_tools` -> tools[].input_schema, `tool_use` parsed back).
