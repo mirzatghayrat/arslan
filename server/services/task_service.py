@@ -944,16 +944,17 @@ def checked_driver(driver: dict | None) -> dict:
     # "expert" is still accepted so a task saved before 0.1.44 can be read and resumed
     # (resume_turn hands it to Arslan). Remove it with the README §8 "expert-era REST"
     # item, after a migration marks leftover expert tasks ended.
+    # "recipe" is NOT accepted since C7b-3 (v0.1.63): recipes were removed, so an old
+    # recipe-driven task fails closed here with task_invalid_driver — prepare_resume calls
+    # this before it starts an attempt, so the task is left exactly as it was.
     driver = {"kind": "host"} if driver is None else driver
     if not isinstance(driver, dict):
         raise TaskError("task_invalid_driver")
     if driver in ({"kind": "host"}, {"kind": "background"}):
         return dict(driver)
-    if (driver.get("kind") not in {"expert", "recipe"} or
+    if (driver.get("kind") != "expert" or
             type(driver.get("id")) is not int or driver["id"] < 1 or
             set(driver) - {"kind", "id", "version_id"}):
-        raise TaskError("task_invalid_driver")
-    if driver["kind"] == "recipe" and (type(driver.get("version_id")) is not int or driver["version_id"] < 1):
         raise TaskError("task_invalid_driver")
     return dict(driver)
 
@@ -1056,11 +1057,6 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
         saved_driver = checked_driver(ceiling.get("driver"))
         if driver is not None and checked_driver(driver) != saved_driver:
             raise TaskError("task_goal_changed")
-        if saved_driver["kind"] == "recipe":
-            from server.db.models import RecipeExecution
-            recipe = await repo.db.get(RecipeExecution, saved_driver["id"])
-            if recipe is None or recipe.recipe_id != saved_driver["version_id"] or recipe.input != spec.instruction:
-                raise TaskError("task_goal_changed")
         saved = await repo.latest_checkpoint(task_id)
         value = await repo.start(task_id, expected_version, explicit_resume=True)
         # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
@@ -1105,9 +1101,6 @@ async def resume_turn(task_id: str, expected_version: int, conversation_id: str,
     async def body(sink):
         # 0.1.63 (C1): a pre-0.1.44 expert task ({"kind": "expert"}) resumes as an
         # Arslan turn below; experts are no longer a runtime path.
-        if driver["kind"] == "recipe":
-            from server.services import recipes
-            return await recipes.execute(driver["id"])
         return await arslan._handle_answer(conversation_id, spec.instruction, sink, extra_system=extra,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
             confirm_schedule=confirm_schedule)

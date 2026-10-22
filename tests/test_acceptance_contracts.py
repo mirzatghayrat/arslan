@@ -3,10 +3,11 @@ import xml.etree.ElementTree as ET
 from scripts.acceptance_contracts import CASES, summarize
 
 
-def test_catalog_has_thirty_unique_stable_contracts():
-    assert len(CASES) == 30
-    assert len({c[0] for c in CASES}) == 30
-    assert len({c[1:] for c in CASES}) == 30
+def test_catalog_has_twenty_five_unique_stable_contracts():
+    # 30 until C7b-3 (v0.1.63) removed recipes and its five contracts.
+    assert len(CASES) == 25
+    assert len({c[0] for c in CASES}) == 25
+    assert len({c[1:] for c in CASES}) == 25
 
 
 def test_missing_and_skipped_evidence_never_passes():
