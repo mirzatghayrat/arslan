@@ -76,7 +76,7 @@ v0.1.63 发出去之前，用数字确认「真的变好了」，并让发布说
   - 打包版不再认继承来的 `ARSLAN_STATIC_DIR`、`ARSLAN_SANDBOX_PYTHON`、`ARSLAN_DEFAULT_WORKSPACE`、`ARSLAN_PORT` 等配置变量（和 `ARSLAN_ALLOWED_*` 同一类；③Hands 在 #364 之后收掉）。
   - 要过云端审计的安全文案都已回复并定稿：S1b 里 `schedule_task` 的说明（含审计要加的「只调用服务器标注为只读的 MCP 工具」）；C11 的 SECURITY.md 改写（#339）；#298b（按三层模型重写命令那几段，等 S2a-3）。
   - 命令分类的洞（S2a-3）：用户 2026-10-22 定了做法和门槛（S2a 卡的 S2a-3 节），按那里的验收合并后才打 tag。
-  - C11 审出的后续加固（C11b：#338 审查的 F3–F7）：用户 2026-10-22 定「发版前修，先用简单办法」——令牌不换传法（不动网页和 Bridge），只在服务端日志里给 `token=` 打码；非 ASCII 令牌返回 401 而不是 500；配置加载时拒绝 `*`；打包版不开 /docs、/redoc、/openapi.json；测试用的 seed 路由也要访问令牌。合并后才打 tag。
+  - C11 审出的后续加固（C11b：#338 审查的 F3–F7）：用户 2026-10-22 定「发版前修，先用简单办法」：令牌不换传法（不动网页和 Bridge），其余四项按 #338 审查的小修法。（⓪Plan 补充的具体做法：服务端日志里给 `token=` 打码；非 ASCII 令牌返回 401 而不是 500；配置加载时拒绝 `*`；打包版不开 /docs、/redoc、/openapi.json；测试用的 seed 路由也要访问令牌。）合并后才打 tag。
   - #339（SECURITY.md）按云端审计（2026-10-22）改完：
     - 先 rebase 到 main，PR 只改 SECURITY.md；
     - 打包版忽略 `ARSLAN_ALLOWED_ORIGINS` / `ARSLAN_ALLOWED_HOSTS`（单独一个小的代码 PR），之后 Cross-site 段改成「桌面版的服务不接受任何跨源调用方（忽略这两个变量），拒绝没有 Origin 的 WebSocket；开发时绑定非 localhost 地址要自己配这两个变量」；
