@@ -70,6 +70,10 @@ _THINKING_OFF = {
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
 _DROP_BLOCK = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
 _FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-")
+# 0.1.63 K8b: the short update these models write before a tool call (what they found, what they do next)
+# comes back as a thinking block, empty unless the request asks for `display: "updates"` (claude-api
+# model-migration guide, read 2026-10-22: Opus and Sonnet 5.5, Fable 5 and 5.1, Mythos 5.1).
+UPDATES_BETA = "thinking-display-updates-2026-08-18"
 # Marks the system entry of a message list built by build_trajectory_messages (never sent).
 _TRAJECTORY = "_trajectory"
 _HISTORY_END = "_history_end"
@@ -240,6 +244,18 @@ class AnthropicProvider(BaseLLMProvider):
         host = (url.hostname or "").lower()
         return self._is_claude() and (host == _OFFICIAL_HOST
                                       or (f"{host}:{url.port}" if url.port else host) in _FIRST_PARTY_HOSTS)
+
+    def writes_updates(self) -> bool:
+        """K8b: requests ask for Claude's progress updates: a model that writes them, on Anthropic's host or a
+        listed first-party proxy (never a beta header to another router, ⓪Plan's Q4), unless it refused them."""
+        model = self.model.lower()
+        version, family = _claude_version(model), _FAMILY.search(model)
+        if version is None or family is None or not self._clears_server_side() \
+                or param_heal.refused(self.endpoint_fingerprint(), "display"):
+            return False
+        name = family.group(1)
+        return ((name in ("opus", "sonnet") and version >= (5, 5)) or (name == "fable" and version >= (5, 0))
+                or (name == "mythos" and version >= (5, 1)))
 
     def streams_tool_calls(self) -> bool:
         """0.1.63 K8b: Claude on Anthropic's host (or a listed first-party proxy) streams its replies, tool calls
@@ -476,6 +492,11 @@ class AnthropicProvider(BaseLLMProvider):
                         **({"exclude_tools": kept} if (kept := [n for n in _KEEP_RESULTS if n in names]) else {})}
                 payload["context_management"] = {"edits": [edit]}
                 betas.append(CONTEXT_BETA)
+            thinking = payload.get("thinking") or {"type": "adaptive"}
+            if self.writes_updates() and thinking.get("type") == "adaptive":
+                # K8b: shown as notes before the calls they introduce; reasoning itself stays hidden.
+                payload["thinking"] = {**thinking, "display": "updates"}
+                betas.append(UPDATES_BETA)
             if betas:
                 payload["_betas"] = betas
         return payload

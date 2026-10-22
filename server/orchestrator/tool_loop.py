@@ -2694,6 +2694,22 @@ class _StepStream:
         self.pending = "" if final else text[cut:]
 
 
+# Claude's documented stand-in for an update a limit cut short (claude-api model-migration guide): not news.
+_UPDATE_CUT = "This part of the response was interrupted before it finished."
+
+
+def _progress_updates(a, resp) -> list[str]:
+    """K8b: the non-empty thinking blocks of a Claude step, when its requests ask for progress updates
+    (`writes_updates`): under that display such a block is an update, never the model's reasoning."""
+    continuation = getattr(resp, "continuation", None) or {}
+    if (continuation.get("protocol") != "anthropic"
+            or not getattr(getattr(a, "_provider", None), "writes_updates", lambda: False)()):
+        return []
+    texts = [str(b.get("thinking") or "").strip() for b in continuation.get("content") or []
+             if b.get("type") == "thinking"]
+    return [text for text in texts if text and text != _UPDATE_CUT]
+
+
 async def _streams_answer(a, acceptance_runtime) -> bool:
     """K8a: whether this turn's answer is shown as it is written. Not for work with explicit acceptance
     criteria (background jobs and the like: a failed check rewrites what was written; ⓪Plan Q1), not for
@@ -3180,6 +3196,10 @@ async def _run_native(
                               if provider_content else getattr(resp, "continuation", None)),
                 finish=getattr(resp, "finish_reason", None)))
             marks: list[tuple[int, str]] = []
+            # K8b: Claude's progress updates, shown as notes before the calls they introduce; never part of the
+            # answer, never spoken, not on the phone (the Bridge maps no `note`).
+            for update in _progress_updates(a, resp):
+                emit({"type": "note", "text": update[:400]})
             # A reply cut by the output limit may carry incomplete arguments in
             # ANY of its calls: execute none of them (0.1.49 S6).
             cut_off = getattr(resp, "finish_reason", None) == "length"
