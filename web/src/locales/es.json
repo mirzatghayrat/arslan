@@ -417,8 +417,6 @@
     "labelTheme": "Tema",
     "labelTelemetry": "Telemetría de diagnóstico",
     "telemetryDesc": "Recopila datos de uso locales para mejorar el rendimiento (opcional)",
-    "distill_on_session_end": "Resumir preferencias al terminar la sesión",
-    "distill_hint": "Al terminar una conversación, aprende tus preferencias a partir de tus comentarios",
     "retentionLabel": "Días de retención del detalle de depuración de ejecuciones",
     "retentionHint": "Tras estos días, el prompt de sistema real / conocimiento inyectado / entradas completas de herramientas y respuestas en bruto de una ejecución se borran automáticamente (las puntuaciones y los tiempos no se ven afectados).",
     "headerLore": "Gestiona conexiones, preferencias y permisos.",

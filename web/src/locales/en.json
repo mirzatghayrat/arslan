@@ -417,8 +417,6 @@
     "labelTheme": "Theme",
     "labelTelemetry": "Diagnostic telemetry",
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
-    "distill_on_session_end": "Distill preferences at session end",
-    "distill_hint": "When a conversation ends, learn your preferences from your feedback",
     "retentionLabel": "Run debug detail retention (days)",
     "retentionHint": "After this many days, a run's actual system prompt / injected knowledge / full tool inputs and raw returns are cleared automatically (scores and timings are unaffected).",
     "headerLore": "Manage your connections, preferences, and permissions.",

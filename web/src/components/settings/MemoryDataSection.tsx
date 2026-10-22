@@ -3,8 +3,8 @@
  *
  * Self-contained card lifted verbatim out of SettingsScreen's `memory` slot.
  * Per spec B1 this section groups: the semantic-retrieval embedding config
- * (<EmbeddingSettings/>, rendered as-is), the session-end distillation toggle,
- * and the run-debug detail retention-days input.
+ * (<EmbeddingSettings/>, rendered as-is) and the run-debug detail retention-days
+ * input. (The session-end distillation toggle went with C8-4, v0.1.63.)
  *
  * Copy fix (spec B3): the retention label + hint were hardcoded Chinese inline;
  * they now come from the i18n keys settings.retentionLabel / settings.retentionHint
@@ -30,9 +30,6 @@ export interface MemoryDataSectionProps {
   /** Currently selected embedding config id (empty string = built-in local). */
   embeddingConfigId: string;
   onEmbeddingConfigIdChange: (value: string) => void;
-  /** Whether to distill per-spawn preferences at session end. */
-  distillOnSessionEnd: boolean;
-  onDistillChange: (value: boolean) => void;
   /** Days before the boot sweep redacts sensitive/bulky run fields. */
   retentionDays: number;
   onRetentionDaysChange: (value: number) => void;
@@ -47,14 +44,12 @@ export interface MemoryDataSectionProps {
   bare?: boolean;
 }
 
-export type MemoryBlock = 'remember' | 'practices' | 'data' | 'embedding' | 'distill' | 'retention';
+export type MemoryBlock = 'remember' | 'practices' | 'data' | 'embedding' | 'retention';
 
 export default function MemoryDataSection({
   providerConfigs,
   embeddingConfigId,
   onEmbeddingConfigIdChange,
-  distillOnSessionEnd,
-  onDistillChange,
   retentionDays,
   onRetentionDaysChange,
   memoryInConversations = true,
@@ -99,24 +94,6 @@ export default function MemoryDataSection({
         embeddingConfigId={embeddingConfigId}
         onEmbeddingConfigIdChange={onEmbeddingConfigIdChange}
       />
-    </>)],
-    ['distill', (<>
-      {/* Toggle session-end distillation */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-[13px] font-medium text-foreground">{t('settings.distill_on_session_end')}</h4>
-          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
-            {t('settings.distill_hint')}
-          </p>
-        </div>
-        <input
-          id="settings-distill-toggle"
-          type="checkbox"
-          checked={distillOnSessionEnd}
-          onChange={(e) => onDistillChange(e.target.checked)}
-          className="kit-switch"
-        />
-      </div>
     </>)],
     ['retention', (<>
       {/* Run debug detail retention — days before boot sweep redacts sensitive/bulky run fields */}

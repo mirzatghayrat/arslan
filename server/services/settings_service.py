@@ -20,7 +20,7 @@ _PLAIN_KEYS = (
     "llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
                "search_provider_role",
-               "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
+               "llm_strategy", "orchestrator_shell_enabled",
                "shell_confirm_policy", "background_job_budget", "task_usd_cap", "synthesis_config_id",
                "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
@@ -201,12 +201,6 @@ async def get_decrypted_api_key(session: AsyncSession) -> str:
     return await get_decrypted(session, "llm_api_key")
 
 
-async def distill_enabled(session: AsyncSession) -> bool:
-    """Whether session-end distillation is on (default True; only an explicit 'false' disables)."""
-    raw = await _get_raw(session, "distill_on_session_end")
-    return raw is None or str(raw).strip().lower() != "false"
-
-
 async def keep_awake_enabled(session: AsyncSession) -> bool:
     """Whether the desktop shell holds a sleep assertion while work is in flight.
     Default ON (user ruling 2026-09-26): a task started before walking away
@@ -298,7 +292,7 @@ async def default_read_enabled(session: AsyncSession) -> bool:
     configured workspace. Default **ON** (spec 2026-08-24, user ruling): the whole
     point is that a novice can 'look at my desktop' the moment they install. Only
     an explicit 'false' turns it off — the exit for a privacy-sensitive user, not
-    a gate for everyone. Mirrors distill_on_session_end's default-on shape.
+    a gate for everyone.
 
     This governs READS only. Writes stay workspace-bound and gated regardless."""
     raw = await _get_raw(session, "default_read_enabled")
@@ -507,7 +501,6 @@ async def first_run_seen(session: AsyncSession) -> bool:
 
 _BOOL_ACCESSORS = {
     "first_run_seen": first_run_seen,
-    "distill_on_session_end": distill_enabled,
     "research_review_enabled": research_review_enabled,
     "keep_awake_enabled": keep_awake_enabled,
     "desktop_notifications_enabled": desktop_notifications_enabled,

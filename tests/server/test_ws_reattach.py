@@ -179,25 +179,14 @@ def test_no_active_turn_no_replay(app_client, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# (e) session_ended must not distill under a live turn or run
+# (e) session_ended is acked even while the conversation is mid-turn
 # --------------------------------------------------------------------------- #
 
-def test_session_ended_skips_distill_and_clear_while_turn_active(app_client, monkeypatch):
-    """Switching threads fires session_ended for the conversation the user LEFT —
-    which may still be mid-turn. Distilling a half-written session is the
-    hazard; it must be skipped, and the ack must still arrive."""
+def test_session_ended_is_acked_while_turn_active(app_client):
+    """Switching threads fires session_ended for the conversation the user LEFT,
+    which may still be mid-turn. The ack must still arrive. (It used to also
+    skip session-end distillation here; that went in C8-4, v0.1.63.)"""
     conv = "busy-conv"
-    calls = {"distill": 0}
-
-    async def spy_distill(cid):  # noqa: ANN001
-        calls["distill"] += 1
-
-    async def enabled(_s):  # noqa: ANN001
-        return True
-
-    monkeypatch.setattr(ws_arslan_mod.distill_service, "distill_session", spy_distill)
-    monkeypatch.setattr(ws_arslan_mod.settings_service, "distill_enabled", enabled)
-
     app_client.portal.call(lambda: turn_journal.begin(conv))
 
     with app_client.websocket_connect("/ws/arslan/other-conv") as ws:
@@ -205,30 +194,3 @@ def test_session_ended_skips_distill_and_clear_while_turn_active(app_client, mon
         ws.send_json({"type": "session_ended", "conversation_id": conv})
         ack = ws.receive_json()
         assert ack["type"] == "session_ended_ack" and ack["conversation_id"] == conv
-    assert calls == {"distill": 0}
-
-
-def test_session_ended_distills_when_idle(app_client, monkeypatch):
-    """Control: without a live turn/run the existing behaviour stands."""
-    conv = "idle-ended-conv"
-    calls = {"distill": 0}
-
-    async def spy_distill(cid):  # noqa: ANN001
-        calls["distill"] += 1
-
-    async def enabled(_s):  # noqa: ANN001
-        return True
-
-    monkeypatch.setattr(ws_arslan_mod.distill_service, "distill_session", spy_distill)
-    monkeypatch.setattr(ws_arslan_mod.settings_service, "distill_enabled", enabled)
-
-    with app_client.websocket_connect("/ws/arslan/other-conv-2") as ws:
-        assert ws.receive_json()["type"] == "history"
-        ws.send_json({"type": "session_ended", "conversation_id": conv})
-        assert ws.receive_json()["type"] == "session_ended_ack"
-    # distill is a create_task on the server loop: give it a moment to run.
-    import time
-    deadline = time.monotonic() + 5
-    while calls["distill"] == 0 and time.monotonic() < deadline:
-        time.sleep(0.02)
-    assert calls["distill"] == 1

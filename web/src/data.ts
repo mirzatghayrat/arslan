@@ -24,7 +24,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   telemetry: false,
   llmStrategy: 'single',
-  distillOnSessionEnd: true,
   orchestratorShellEnabled: true,
   shellConfirmPolicy: 'ask_risky',
   backgroundJobBudget: 'standard',

@@ -297,8 +297,9 @@ export default function App() {
   }, [wsSend]);
 
   // Best-effort: flush a session_ended for the active thread if the page is closed/hidden
-  // without an explicit thread switch, so the last conversation still gets its background
-  // distill. pagehide fires on tab close and bfcache navigation; the WS send is best-effort.
+  // without an explicit thread switch, so the server can let go of it (a temporary
+  // conversation's state is cleared on it; session-end distillation went in C8-4).
+  // pagehide fires on tab close and bfcache navigation; the WS send is best-effort.
   useEffect(() => {
     const onPageHide = () => {
       if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
@@ -393,7 +394,7 @@ export default function App() {
       ...(projectId ? { projectId } : {}),
     };
 
-    // Signal the OLD conversation ended (backend may background-distill prefs).
+    // Signal the OLD conversation ended (the server clears a temporary conversation's state on it).
     // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
     if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
 

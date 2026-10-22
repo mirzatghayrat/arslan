@@ -417,8 +417,6 @@
     "labelTheme": "主题",
     "labelTelemetry": "诊断遥测",
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
-    "distill_on_session_end": "会话结束时蒸馏偏好",
-    "distill_hint": "对话结束时，从你的反馈里学习你的偏好",
     "retentionLabel": "运行调试详情保留天数",
     "retentionHint": "超过此天数的 run，实际系统提示 / 注入知识 / 工具完整入参与原始返回会被自动清除（分数与耗时不受影响）。",
     "headerLore": "管理连接、使用偏好与权限。",

@@ -164,8 +164,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         providerConfigs={providerConfigs}
         embeddingConfigId={localSettings.embeddingConfigId ?? ''}
         onEmbeddingConfigIdChange={(v) => saveField({ embeddingConfigId: v })}
-        distillOnSessionEnd={localSettings.distillOnSessionEnd ?? true}
-        onDistillChange={(v) => saveField({ distillOnSessionEnd: v })}
         retentionDays={localSettings.runDebugRetentionDays ?? 30}
         onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
         memoryInConversations={localSettings.memoryInConversations ?? true}
@@ -299,7 +297,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     memory: (
       <div className="space-y-6">
         {intro('memory')}
-        <SettingsGroup title={t('settings.grpRemember')}>{memoryData(['remember', 'practices', 'distill'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpRemember')}>{memoryData(['remember', 'practices'])}</SettingsGroup>
         <SettingsGroup title={t('settings.grpData')}>
           {memoryData(['data', 'retention'])}
           <div className="mt-5">{advanced(['telemetry'])}</div>
