@@ -1,8 +1,9 @@
 # Third-Party Notices
 
-Arslan bundles skill/persona content that originates from third-party open-source
+Arslan bundles or adapts content and code that originates from third-party open-source
 projects. Each retains its original license; this file provides the attribution those
-licenses require. Where a file was adapted (not copied verbatim), the change is noted in
+licenses require. It ships inside the app as `Arslan.app/Contents/Resources/THIRD_PARTY_NOTICES.md`
+(0.1.63+), beside Arslan's own `LICENSE`. Where a file was adapted (not copied verbatim), the change is noted in
 that file's `source:` frontmatter, and the significant-change requirement of Apache-2.0
 is satisfied here + there.
 
@@ -50,7 +51,8 @@ their sources' notices. A user's own and imported skills keep their own licences
 ### msitarzewski/agency-agents — MIT License (verified 2026-07-01)
 - Copyright (c) msitarzewski. <https://github.com/msitarzewski/agency-agents>
 - Source recorded in the DB as `agency-agents@<commit>`. MIT requires retaining the copyright +
-  permission notice — the same MIT text reproduced above (obra/superpowers) applies.
+  permission notice — the MIT text reproduced under Terminal command reading below applies,
+  with this project's copyright line.
 - Used as the persona-seed library (identity references composed into spawns; curation-only —
   imported into the `persona_seeds` table, never redistributed as standalone files).
 

@@ -716,15 +716,11 @@ footer p{margin-top:22px;font-size:12px;max-width:70em;line-height:1.7}
   <p>The Mac clips come from Arslan's 0.1.52 launch film: the interface is rebuilt from source and the scenario is staged. The iPhone clip is a real screen recording. The gate answers on this page are produced by Arslan's own policy code.</p>
   <div class="att">
     <div>Third-party attribution</div>
-    <div>lahfir/agent-desktop 0.9.4 — Apache-2.0 (inside Arslan Hands, unmodified)</div>
-    <div>NousResearch/hermes-agent — MIT © 2025 Nous Research (command-safety rules, vendored)</div>
-    <div>obra/superpowers — MIT © 2025 Jesse Vincent</div>
-    <div>anthropics/skills — Apache-2.0 © 2025 Anthropic PBC</div>
-    <div>anthropics/financial-services — Apache-2.0 © 2025 Anthropic PBC</div>
-    <div>mattpocock/skills — MIT © Matt Pocock</div>
-    <div>JimLiu/baoyu-skills — MIT © JimLiu</div>
+    <div>lahfir/agent-desktop 0.9.4 plus four commits — Apache-2.0 (inside Arslan Hands, with one change by Arslan)</div>
+    <div>NousResearch/hermes-agent — MIT © 2025 Nous Research (shell command reading, adapted)</div>
+    <div>anthropics/skills — Apache-2.0 © 2026 Anthropic, PBC (skill-creator, adapted)</div>
     <div>msitarzewski/agency-agents — MIT</div>
-    <div>hugohe3/ppt-master — MIT (inspiration only)</div>
+    <div>Full list: THIRD_PARTY_NOTICES.md, also inside the app</div>
   </div>
 </div></footer>
 
@@ -833,7 +829,7 @@ addEventListener('scroll',function(){var h=document.documentElement.scrollHeight
 var LOOP=[
  ['01','Message','window · iPhone · voice','/ws/arslan','You ask from the window, from your iPhone, or by voice. Every surface feeds the same conversation and the same loop.',[['host','server/orchestrator/arslan.py'],['iPhone link','server/services/phone_bridge.py'],['voice','desktop/src-tauri/src/voice.rs']]],
  ['02','Loop','model ⇄ tools','75 s per model call','One native tool-calling loop. The plan is kept by the host, not the model, and a reply cut off half-way continues instead of guessing.',[['loop','server/orchestrator/tool_loop.py'],['model call cap','_CHAT_TIMEOUT_S = 75.0'],['plan','turn_plan.py']]],
- ['03','Policy','run · ask · forbid','a pure function','Before anything runs, a fixed function of the command text answers run, ask or forbid. Not another model — the same command always gets the same answer.',[['policy','server/services/terminal_policy.py'],['detection','arslan/vendor/hermes (MIT)'],['approval window','approvals.py · 30 min since 0.1.61 (300 s before)']]],
+ ['03','Policy','run · ask · forbid','a pure function','Before anything runs, a fixed function of the command text answers run, ask or forbid. Not another model — the same command always gets the same answer.',[['policy','server/services/terminal_policy.py'],['reading','server/services/shell_text.py (adapted from Hermes, MIT)'],['approval window','approvals.py · 30 min since 0.1.61 (300 s before)']]],
  ['04','Sandbox','macOS seatbelt','20 s per tool call','Commands may write only to the work folder, temp and caches. SSH keys, the keychain and Arslan’s own data stay closed, and model keys never reach a command.',[['sandbox','server/services/command_sandbox.py'],['tool call cap','TOOL_TIMEOUT_S = 20.0'],['keys','terminal_exec.py']]],
  ['05','Result','wrapped as untrusted','then shown','Whatever comes back — a web page, a file, a command’s output — is wrapped as untrusted data, so instructions hidden inside it are read, not obeyed.',[['wrap','server/orchestrator/untrusted.py'],['guard','promise_guard.py'],['ledger','usage ledger · every call']]]
 ];

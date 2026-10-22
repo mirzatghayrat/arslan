@@ -215,6 +215,16 @@ def _codesign_info(path: pathlib.Path) -> dict[str, str]:
     return info if out.returncode == 0 else {}
 
 
+def check_notices(app: pathlib.Path, c: Checks) -> None:
+    """A5 (0.1.63): the third-party notices and Arslan's own licence ship inside the app, the same files as in
+    the repository (tauri.conf.json's bundle resources put them there)."""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for name in ("THIRD_PARTY_NOTICES.md", "LICENSE"):
+        shipped = app / "Contents/Resources" / name
+        c.ok(shipped.is_file() and shipped.read_bytes() == (root / name).read_bytes(),
+             f"{name} ships inside the app, as in the repository", str(shipped))
+
+
 def check_bridge(app: pathlib.Path, c: Checks) -> None:
     """Arslan Bridge, the iPhone companion helper (docs/specs/mobile-bridge-protocol.md §6):
     present at Contents/Helpers, its own bundle id and the app's version, runs inside the
@@ -810,6 +820,7 @@ def main() -> int:
     c = Checks()
     print(f"==> checking {app.name}")
     check_bundle_contents(app, c)
+    check_notices(app, c)
     check_bridge(app, c)
 
     home = pathlib.Path(tempfile.mkdtemp(prefix="arslan-fresh-"))
