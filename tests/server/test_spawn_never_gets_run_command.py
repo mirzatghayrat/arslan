@@ -10,7 +10,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Spawn, SpawnCapability
+from server.db.models import Base
 
 
 @pytest_asyncio.fixture
@@ -26,22 +26,15 @@ async def maker(tmp_path, monkeypatch):
 
 
 @pytest_asyncio.fixture
-async def spawn(maker):
-    """A spawn that has been (impossibly) equipped with a run_command toolset row,
-    plus the universal safe baseline path. The layer-3 gate must still exclude it."""
+async def seeded(maker):
+    """The real seeded registry, so assert_assignable judges run_command by its real tier."""
     from server.registry.seeder import seed_registry
 
     await seed_registry()
-    async with maker() as s:
-        s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
-        # Even if a bad row equips a 'run_command' toolset, the tier/status gate excludes it.
-        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="run_command"))
-        await s.commit()
-    return 1
 
 
 @pytest.mark.asyncio
-async def test_run_command_toolset_is_never_assignable(spawn):
+async def test_run_command_toolset_is_never_assignable(seeded):
     from server.registry import service
 
     # run_command is not a safe-tier assignable toolset; assert_assignable must reject it.

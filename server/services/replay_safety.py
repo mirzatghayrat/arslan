@@ -55,13 +55,12 @@ def filter_replay_tools(wired: list[dict]) -> list[dict]:
 
 
 # Synthetic conversation ids used ONLY by evolution eval/replay dispatch. A dispatch
-# under one of these must be hermetic — the single source of truth both the structural
-# rule (dispatcher.dispatch) and the throat backstop (tool_loop._dispatch_tool) read,
-# so the two layers can never drift on "is this an eval context".
-#   "evolution-replay"  — replay_run.REPLAY_CONVERSATION_ID, the ONLY sentinel any live
-#                         dispatch path uses today (run_arm / replay_gate /
-#                         synthetic_corpus / evaluator / evolution_loop._val_outputs all
-#                         route through it).
+# under one of these must be hermetic. The throat backstop (tool_loop._dispatch_tool)
+# reads this set; so did the expert dispatcher's structural rule until C7b-4 deleted it.
+#   "evolution-replay"  — was replay_run.REPLAY_CONVERSATION_ID, the sentinel every
+#                         eval/replay path used. Those paths went in C7b-1/C7b-2
+#                         (v0.1.63), so no live path dispatches under it today; the
+#                         seal stays for old rows and any future eval path.
 #   "evolution-eval"    — RESERVED, not in use: no dispatch path under server/ or
 #                         arslan/ passes this id (it appears in this module and in the
 #                         tests that pin the set). It stays so a future eval path can

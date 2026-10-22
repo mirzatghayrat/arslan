@@ -809,12 +809,10 @@ _READINESS = [
 
 @pytest.fixture
 async def readiness(execution_db, monkeypatch):
-    """One server per case (id = index + 1), each with one safe, wired tool, all equipped to spawn 1."""
-    from server.db.models import Spawn, SpawnCapability
+    """One server per case (id = index + 1), each with one safe, wired tool."""
     monkeypatch.setattr(session.manager, "_sessions", {})
     now = sm._utcnow()
     async with execution_db() as s:
-        s.add(Spawn(id=1, name="worker", domain_category="d", system_prompt="p"))
         for sid, (case, state, status, allowed, live, _ready) in enumerate(_READINESS, start=1):
             s.add(MCPServer(id=sid, label=f"srv{sid}", transport="http", command="",
                             url=f"https://example.test/{sid}", args=[], status=status, state=state,
@@ -824,7 +822,6 @@ async def readiness(execution_db, monkeypatch):
         for sid in range(1, len(_READINESS) + 1):
             s.add(Tool(key=f"mcp_{sid}__t", toolset_key=f"mcp_{sid}", description="t", tier="safe",
                        status="wired", input_schema={}, external_name="t"))
-            s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key=f"mcp_{sid}"))
         await s.commit()
     for sid, (_case, _state, _status, _allowed, live, _ready) in enumerate(_READINESS, start=1):
         if live:
@@ -848,12 +845,6 @@ async def test_every_surface_agrees_which_servers_are_ready(readiness):
         # the status line names every switched-on server that is not ready, and no other
         assert (f"srv{sid}: " in status_line) is (allowed and not ready), case
 
-
-# ── Task 8 fix round 1: a spawn is told which of its servers are not ready ───────────────────────────
-#
-# §B1 "the prompt says which servers are unavailable and why": the host has its status line; a spawn
-# whose server is not ready gets nothing from that server's toolset, and its prompt now says so, in the
-# same words, in the volatile tail (after the static guidance — never in the stable part).
 
 # ── final review, fix B: every shown `last_error` is masked first and cut second ─────────────────
 
