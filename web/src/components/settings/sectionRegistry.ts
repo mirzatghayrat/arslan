@@ -89,7 +89,6 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'memory.retention_days': 'memory',
   'memory.run_debug_retention_days': 'memory',
   'memory.embedding_model': 'models',
-  'curation.enabled': 'background',
   'research_review.enabled': 'background',
   'proactive.enabled': 'background',
   'proactive.sources': 'background',

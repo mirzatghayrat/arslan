@@ -6,11 +6,9 @@ import ProactiveDiagnosisCap from './ProactiveDiagnosisCap';
 /**
  * Automation — everything that runs on its own and calls the model provider.
  *
- * The reason this section exists is not tidiness. Background curation lived
- * NOWHERE: `curation_enabled` has shipped in `SettingsIn`/`SettingsOut` since
- * the curation round, `server/schemas.py:20` documents it as opt-in "because it
- * spends", and the app rendered no control for it at all. A user could not see
- * it, could not turn it off, and had no reason to suspect it existed.
+ * The reason this section exists is not tidiness. A control that spends and is
+ * shown nowhere is one the user cannot see or stop: background curation once
+ * shipped that way, API-only. (Curation itself went in C8-3, v0.1.63.)
  *
  * Putting them together is what makes the honest copy possible: the lede states
  * once, for all of them, that these cost money and are off by default. Split
@@ -22,8 +20,6 @@ import ProactiveDiagnosisCap from './ProactiveDiagnosisCap';
  * experts it evolved.)
  */
 export default function AutomationSection({
-  curationEnabled,
-  onCurationEnabledChange,
   researchReviewEnabled = false,
   onResearchReviewEnabledChange,
   heartbeatEnabled,
@@ -32,8 +28,6 @@ export default function AutomationSection({
   onHeartbeatChecklistChange,
   onOpenActivity,
 }: {
-  curationEnabled: boolean;
-  onCurationEnabledChange?: (v: boolean) => void;
   researchReviewEnabled?: boolean;
   onResearchReviewEnabledChange?: (v: boolean) => void;
   heartbeatEnabled: boolean;
@@ -57,37 +51,6 @@ export default function AutomationSection({
       </p>
 
       <div className="space-y-5">
-        {/* ── background curation — API-only until this round ─────────────── */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h4 className="text-[13px] font-medium text-foreground">
-              {t('settings.labelCuration')}
-            </h4>
-            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
-              {t('settings.curationDesc')}
-            </p>
-            {/* 🔴 Unconditional, unlike the evolution warning above, and that
-                asymmetry is the honest part: evolution HAS a dispatch cap the
-                user can set, so its warning changes once they set one. This
-                loop has no cap of its own, so there is no state in which a
-                softer sentence would be true. */}
-            <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
-               data-testid="curation-spend-note">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
-              <span>{t('settings.curationSpendNote')}</span>
-            </p>
-          </div>
-          <input
-            id="settings-curation-toggle"
-            type="checkbox"
-            checked={curationEnabled}
-            onChange={(e) => onCurationEnabledChange?.(e.target.checked)}
-            className="kit-switch mt-0.5"
-          />
-        </div>
-
-        <div className="h-[1px] bg-border/40" />
-
         {/* ── source review of saved reports (0.1.41) ──────────────────────
             Advice only, after the report is saved; it never blocks a save.
             Off by default: one extra model request per qualifying save, and

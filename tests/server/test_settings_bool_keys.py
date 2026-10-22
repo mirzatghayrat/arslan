@@ -11,9 +11,9 @@ response entirely, and `SettingsOut(**data)`'s pydantic default is what the API 
 That makes TWO independent definitions of every bool default — the accessor and the
 schema — with nothing asserting they agree.
 
-Concretely, this is what the F2 round has to touch: flipping `curation_enabled` means
-changing the accessor AND the schema in lockstep, in two different files, with no test
-today that would notice if only one moved.
+Concretely: flipping any bool's default means changing the accessor AND the schema in
+lockstep, in two different files. (The case that prompted this was `curation_enabled`,
+removed with the curation loop in C8-3, v0.1.63.)
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_the_two_definitions_of_every_bool_default_agree():
         assert accessor.__doc__, f"{key}: accessor needs a docstring stating its default"
 
 
-@pytest.mark.parametrize("key", ["curation_enabled", "distill_on_session_end",
+@pytest.mark.parametrize("key", ["distill_on_session_end",
                                  "mcp_server_enabled", "first_run_seen"])
 async def test_bool_key_round_trips_through_the_api(client, key):
     """PUT then GET must return what was stored, not the schema default — in BOTH
@@ -66,9 +66,8 @@ async def test_get_settings_EMITS_every_bool_key_on_a_fresh_install(client):
     The property that actually differs is PRESENCE: without the registry these keys ride
     `_PLAIN_KEYS`, which skips them entirely when nothing is stored, and the schema
     default silently answers instead. With it, the service's own answer is always in the
-    payload — so the day a default is changed in one place and not the other (which is
-    exactly what flipping curation_enabled will be), the API reports the service's truth
-    rather than the schema's stale copy.
+    payload — so the day a default is changed in one place and not the other, the API
+    reports the service's truth rather than the schema's stale copy.
     """
     async with client.db_maker() as s:
         out = await settings_service.get_settings(s)
@@ -77,14 +76,6 @@ async def test_get_settings_EMITS_every_bool_key_on_a_fresh_install(client):
             f"{key} is absent from get_settings on a fresh install — the schema default "
             "would answer for it, giving the value two independent definitions")
         assert out[key] is await accessor(s), f"{key}: emitted value is not the service's"
-
-
-async def test_curation_stays_opt_in_this_round(client):
-    """🔴 F2 ships the inbox, the switch and the backfill gate — but does NOT flip this.
-    Turning it on is an explicit user action, because the first tick after a flip is a
-    historical backfill over every undistilled conversation ever recorded."""
-    body = (await client.get("/api/v1/settings", headers=AUTH)).json()
-    assert body["curation_enabled"] is False
 
 
 async def test_onboarding_seen_survives_a_new_database_session(client):

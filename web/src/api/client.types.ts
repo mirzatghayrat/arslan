@@ -414,9 +414,6 @@ export interface AppSettings {
   compaction_config_id?: string;
   router_config_id?: string;
   vision_config_id?: string;
-  /** Sleep-time curation sweep. Wire type is a real bool here (unlike
-   *  an "on"/"off" string), matching SettingsOut.curation_enabled. */
-  curation_enabled?: boolean;
   research_review_enabled?: boolean;
   keep_awake_enabled?: boolean;
   desktop_notifications_enabled?: boolean;
