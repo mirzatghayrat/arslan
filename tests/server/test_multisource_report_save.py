@@ -1,12 +1,26 @@
-"""Default path regression: actual isolated disk write/read, no reviewer call."""
-import pytest
+"""A multi-source report is saved, read back and its web reads compacted, with no extra model call.
 
+Was test_research_review_default_off.py ("no reviewer call by default"). Research review was
+removed in C8-2 (v0.1.63); the save path it guarded stays, and `len(adapter.calls) == 4` still
+proves no extra model request rides on a saved report.
+"""
+from arslan.companion.research import receipt
 from server.orchestrator import tool_loop
 from tests.server.test_native_loop import _NativeAdapter, _LLMResp, _tc
-from tests.server.test_research_review import trace
 
 
-async def test_default_saves_multisource_report_without_review(monkeypatch, tmp_path):
+def trace():
+    result = []
+    for i, text in enumerate(["Measured across 17 tasks. Repetitions not reported.",
+                              "Embedding endpoints are configurable."]):
+        url = f"https://example.org/source-{i}"
+        result.append({"tool": "web_extract", "args": {"url": url}, "result": {
+            "ok": True, "url": url, "text": text,
+            "source": receipt(url, text, truncated=False).model_dump(mode="json")}})
+    return result
+
+
+async def test_a_multisource_report_saves_without_an_extra_model_call(monkeypatch, tmp_path):
     evidence = trace()
     content = "# Comparison\n\n" + "\n".join(e["result"]["url"] for e in evidence)
     adapter = _NativeAdapter([
@@ -15,11 +29,6 @@ async def test_default_saves_multisource_report_without_review(monkeypatch, tmp_
         _LLMResp(tool_calls=[_tc("read_file", {"path": "report.md"})]),
         _LLMResp(content="Saved and read back; sources are navigation, not fact verification."),
     ])
-
-    async def forbidden(*args, **kwargs):
-        pytest.fail("default path must not make a review/model call")
-
-    monkeypatch.setattr("server.orchestrator.research_review.inspect", forbidden)
 
     async def resolve():
         return [{"key": k, "description": k} for k in ("web_extract", "write_file", "read_file")]

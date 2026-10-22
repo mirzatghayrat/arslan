@@ -559,9 +559,6 @@
     "navAutomation": "Automatisierung",
     "navAutomationHint": "Alles, was von sich aus Kosten verursachen kann",
     "automationLede": "Diese laufen im Hintergrund und rufen deinen Modellanbieter auf — das kostet Geld. Alle sind standardmäßig aus, und keines ändert etwas ohne dich.",
-    "labelResearchReview": "Quellenprüfung gespeicherter Berichte",
-    "researchReviewDesc": "Nachdem Arslan einen Bericht mit mehreren Webquellen gespeichert hat, liest das Modell die Quellen erneut und markiert Aussagen, denen eine Quelle widersprechen könnte – etwa „Dokument A erwähnt X nicht“, obwohl es das tut. Der Bericht wird immer gespeichert; die Hinweise erscheinen beim Öffnen. Modellmeinung, keine Faktenprüfung.",
-    "researchReviewSpendNote": "Jede passende Speicherung sendet mit deinem Schlüssel eine zusätzliche Anfrage mit dem Bericht und seinen Quellen an dein Modell. Derzeit werden nur offizielle DeepSeek- und Anthropic-Verbindungen unterstützt; andere Modelle werden übersprungen.",
     "navDesktop": "Desktop",
     "navProactive": "Proaktivität",
     "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (bis zu 30 Minuten; antwortet niemand, passiert es nicht – ein Nein ist das nicht). Eine geplante Aufgabe wartet nie auf eine Antwort: Sie tut nur, was kein OK braucht, alles andere wird abgelehnt (die meisten davon stehen im Posteingang). Ein früheres „Immer“ zählt dort nicht. Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
@@ -1431,15 +1428,6 @@
     "conversationStart": "Gespräch starten",
     "conversationStop": "Zuhören beenden",
     "speaking": "spricht…"
-  },
-  "artifactReview": {
-    "title": "Quellenprüfung",
-    "disclaimer": "Modellmeinung zu Aussagen darüber, was die Quellen enthalten oder nicht. Sie kann falsch sein und ist keine Faktenprüfung; öffne die Quelle zum Prüfen.",
-    "noObjection": "Prüfung abgeschlossen; nichts zu prüfen gefunden.",
-    "unavailable": "Prüfung nicht abgeschlossen.",
-    "draft": "Bericht:",
-    "source": "Quelle:",
-    "openSource": "Quelle öffnen"
   },
   "kit": {
     "allow": "Erlauben",

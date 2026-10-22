@@ -251,7 +251,6 @@ export interface AppSettings {
   mcpServerEnabled: boolean;
   /** Advisory source review of saved multi-source reports (0.1.41). Default
    *  off: one extra model request per qualifying save. Never blocks saving. */
-  researchReviewEnabled?: boolean;
   /** Resident shell (0.1.41): hold a sleep assertion while work is in flight. Default on. */
   keepAwakeEnabled?: boolean;
   /** Resident shell (0.1.41): native notifications while the window is hidden. Default on. */

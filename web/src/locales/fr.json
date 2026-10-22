@@ -559,9 +559,6 @@
     "navAutomation": "Automatisation",
     "navAutomationHint": "Tout ce qui peut dépenser de lui-même",
     "automationLede": "Ceux-ci s'exécutent en arrière-plan et appellent votre fournisseur de modèles, ce qui coûte de l'argent. Ils sont tous désactivés par défaut et aucun ne change quoi que ce soit sans vous.",
-    "labelResearchReview": "Vérification des sources des rapports enregistrés",
-    "researchReviewDesc": "Après qu’Arslan a enregistré un rapport citant plusieurs sources web, le modèle relit les sources et signale les affirmations qu’une source pourrait contredire, par exemple « le document A ne mentionne pas X » alors qu’il le fait. Le rapport est toujours enregistré ; les remarques apparaissent à l’ouverture. Avis du modèle, pas une vérification des faits.",
-    "researchReviewSpendNote": "Chaque enregistrement concerné envoie une requête supplémentaire avec le rapport et ses sources à votre modèle, avec votre clé. Pour l’instant, seules les connexions officielles DeepSeek et Anthropic sont prises en charge ; les autres modèles sont ignorés.",
     "navDesktop": "Bureau",
     "navProactive": "Proactivité",
     "desktopLede": "Fermer la fenêtre ne quitte plus Arslan : il reste dans la barre des menus, les tâches et tâches planifiées continuent, et les actions qui vous attendent restent dans la fenêtre (jusqu’à 30 minutes ; sans réponse, elles ne sont pas faites, sans que ce soit un refus). Une tâche planifiée n’attend jamais de réponse : elle ne fait que ce qui ne demande aucune confirmation, et tout le reste est refusé (la plupart de ces refus sont listés dans la Boîte de réception). Un « Toujours » donné avant n’y compte pas. Quittez avec ⌘Q ou « Quitter Arslan » dans la barre des menus.",
@@ -1431,15 +1428,6 @@
     "conversationStart": "Démarrer la conversation",
     "conversationStop": "Arrêter l'écoute",
     "speaking": "lecture…"
-  },
-  "artifactReview": {
-    "title": "Vérification des sources",
-    "disclaimer": "Avis du modèle sur ce que les sources contiennent ou non. Il peut se tromper et ce n’est pas une vérification des faits ; ouvrez la source pour vérifier.",
-    "noObjection": "Vérification terminée ; rien à vérifier.",
-    "unavailable": "Vérification non terminée.",
-    "draft": "Rapport :",
-    "source": "Source :",
-    "openSource": "Ouvrir la source"
   },
   "kit": {
     "allow": "Autoriser",

@@ -2,7 +2,6 @@ import { useAuthStore } from "../stores/authStore";
 import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
 import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
-  ArtifactReview,
   AccessTokenInfo,
   AnomalyDto,
   AppSettings,
@@ -451,14 +450,6 @@ export const api = {
     });
     if (!response.ok) throw new ApiError(`Download failed: HTTP ${response.status}`, response.status);
     return new Blob([await response.arrayBuffer()], { type: 'application/octet-stream' });
-  },
-  /** Advisory source-review note for one saved artifact snapshot (0.1.41). */
-  getArtifactReview: (runId: number, filename: string) => {
-    if (!Number.isSafeInteger(runId) || runId <= 0 || !filename.startsWith(`run_${runId}_`)
-        || /[/\\\u0000]/.test(filename) || filename.includes('..')) {
-      return Promise.reject(new Error('Invalid artifact identity'));
-    }
-    return request<ArtifactReview>(`/runs/${runId}/artifacts/${encodeURIComponent(filename)}/review`);
   },
   getRuns: (spawnId?: number, limit = 50, conversationId?: string) => {
     const qs = new URLSearchParams();

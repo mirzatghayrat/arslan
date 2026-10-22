@@ -37,7 +37,6 @@ class SettingsIn(BaseModel):
     github_token: str | None = None
     llm_strategy: str | None = None
     # Advisory after-save source review of research reports. Opt-in: it spends.
-    research_review_enabled: bool | None = None
     # Desktop shell while its window is hidden (0.1.41). Default ON.
     keep_awake_enabled: bool | None = None
     desktop_notifications_enabled: bool | None = None
@@ -117,7 +116,6 @@ class SettingsOut(BaseModel):
     search_api_key_status: str = "unset"
     github_token_status: str = "unset"
     llm_strategy: str = "single"
-    research_review_enabled: bool = False
     keep_awake_enabled: bool = True
     desktop_notifications_enabled: bool = True
     island_enabled: bool = True

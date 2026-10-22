@@ -122,7 +122,6 @@ describe("every settings field the UI can edit is mappable", () => {
       compaction_config_id: { compactionConfigId: "1" },
       router_config_id: { routerConfigId: "1" },
       vision_config_id: { visionConfigId: "1" },
-      research_review_enabled: { researchReviewEnabled: true },
       keep_awake_enabled: { keepAwakeEnabled: false },
       desktop_notifications_enabled: { desktopNotificationsEnabled: false },
       island_enabled: { islandEnabled: false },
