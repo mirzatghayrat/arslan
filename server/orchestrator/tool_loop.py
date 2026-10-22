@@ -3422,7 +3422,7 @@ async def _run_native(
                     if reads is not None and reads.launchable(index):
                         await reads.run(index, lambda key, arguments, **own: _dispatch_tool(
                             key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
-                            **gated, **own), live=emit,
+                            **gated, **own),
                             exhausted=lambda: budget.tool_calls >= budget.limits.tool_calls)
                     if reads is not None and reads.has(index):
                         result = reads.take(index, emit=emit, tool_trace=tool_trace, convo=convo)

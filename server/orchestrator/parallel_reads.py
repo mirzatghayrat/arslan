@@ -5,10 +5,11 @@ A run is two or more calls in a row, each one of READS or an MCP tool whose serv
 that parse and fit its table. Any other call ends the run and goes alone, in its place, as before.
 
 Each call of a run still goes through `_dispatch_tool` with every gate, one after another in the reply's
-order: a refused fetch budget or the turn's tool limit lands on the same call as before, and the
-`tool_call` frames go out in order. Only the executors overlap, at most CONCURRENCY at once. A call's
-record (its `tool_result` frame, its history record, its trace entries) is held and handed over in the
-reply's order, so the history, the frames and every result keep today's order and pairing.
+order: a refused fetch budget or the turn's tool limit lands on the same call as before. Only the executors
+overlap, at most CONCURRENCY at once. A call's record (its `tool_call` and `tool_result` frames, its history
+record, its trace entries) is held and handed over in the reply's order, the two frames together: every
+consumer that pairs them by position (RunRecorder's steps, the phone's reads, the window's store) sees
+today's call, result, call, result. The run's lines arrive when it ends.
 
 The whole run finishes before the loop records its first call, so nothing of it outlives the batch;
 stopping the turn while it runs stops every call of it.
@@ -41,7 +42,6 @@ class _Slot:
     name: str
     args: dict
     places: asyncio.Semaphore
-    live: Callable[[dict], None]
     admitted: asyncio.Event = field(default_factory=asyncio.Event)
     frames: list[dict] = field(default_factory=list)
     trace: list[dict] = field(default_factory=list)
@@ -50,11 +50,8 @@ class _Slot:
     task: asyncio.Task | None = None
 
     def emit(self, frame: dict) -> None:
-        """The call's own frame goes out as its gates pass it, in order; the rest waits for its turn."""
-        if frame.get("type") == "tool_call":
-            self.live(frame)
-        else:
-            self.frames.append(frame)
+        """Held, the tool_call frame too: it goes out next to its result (review B1 on #368)."""
+        self.frames.append(frame)
 
 
 @asynccontextmanager
@@ -137,7 +134,7 @@ class Batch:
     def has(self, index: int) -> bool:
         return index in self.slots
 
-    async def run(self, start: int, dispatch: Callable[..., Awaitable[dict]], *, live: Callable[[dict], None],
+    async def run(self, start: int, dispatch: Callable[..., Awaitable[dict]], *,
                   exhausted: Callable[[], bool]) -> None:
         """Start the run at `start`: each call's gates after the previous one's, the executors together.
         Returns when every started call has finished. A call the turn's tool limit refuses, and every
@@ -151,12 +148,14 @@ class Batch:
                 if exhausted():
                     break
                 name, args = self.calls[index]
-                slot = self.slots[index] = _Slot(name, args, places, live)
+                slot = self.slots[index] = _Slot(name, args, places)
                 slot.task = asyncio.create_task(self._one(slot, dispatch))
                 started.append(slot.task)
                 passed = asyncio.create_task(slot.admitted.wait())
-                await asyncio.wait({slot.task, passed}, return_when=asyncio.FIRST_COMPLETED)
-                passed.cancel()
+                try:
+                    await asyncio.wait({slot.task, passed}, return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    passed.cancel()             # a stop here leaves no waiter behind
                 if slot.task.done() and (slot.task.cancelled() or slot.task.exception() is not None):
                     break                       # e.g. BudgetExceeded: it is raised when the loop takes it
             await asyncio.wait(started)

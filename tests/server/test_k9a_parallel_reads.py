@@ -10,6 +10,7 @@ Driven through the real run_native and _dispatch_tool, with executors that log w
 - stopping the turn stops every call of the group.
 """
 import asyncio
+import json
 
 import pytest
 
@@ -109,9 +110,15 @@ async def test_at_most_four_run_at_once(monkeypatch, execution_db):
     gate = asyncio.Event()
 
     seen_while_held: list[int] = []
+    gated: list[str] = []
+
+    async def budget(tool_key, *, conversation_id):
+        gated.append(tool_key)
+        return None
+    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
 
     async def watch():
-        while sum(f.get("type") == "tool_call" for f in log.frames) < 6:
+        while len(gated) < 6:
             await asyncio.sleep(0.005)
         await asyncio.sleep(0.05)        # every call has passed its gates: only the cap holds the last two
         seen_while_held.append(log.running)
@@ -165,8 +172,8 @@ async def test_frames_trace_and_history_keep_the_replys_order_whatever_finished_
     script = _Script(("read_file", {"path": "slow"}), ("list_dir", {"path": "fast"}))
     result = await _turn(monkeypatch, log, script, {"read_file": slow, "list_dir": fast})
     assert log.events.index(("end", "fast")) < log.events.index(("end", "slow"))       # fast finished first
-    assert _steps(log) == [("tool_call", "read_file"), ("tool_call", "list_dir"),
-                           ("tool_result", "read_file"), ("tool_result", "list_dir")]
+    assert _steps(log) == [("tool_call", "read_file"), ("tool_result", "read_file"),     # each call next to
+                           ("tool_call", "list_dir"), ("tool_result", "list_dir")]      # its own result
     assert [s["args"]["path"] for s in result["tool_trace"]] == ["slow", "fast"]
     sent = [str(m.get("content")) for m in script.requests[1]][1:]          # each call, then its own result
     assert ["invocation completed: read_file" in sent[0], "TOOL RESULT for read_file" in sent[1],
@@ -290,3 +297,92 @@ def test_the_allowlist_is_reads_only():
     assert parallel_reads.READS == {"web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
                                     "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities",
                                     "whats_new", "task_progress", "background_status", "mac_list_shortcuts"}
+
+
+async def test_the_run_record_has_one_step_per_call_with_its_own_arguments(monkeypatch, execution_db):
+    """Review B1 on #368: RunRecorder pairs a tool_call with the next tool_result, and the run trace by position."""
+    from datetime import datetime
+
+    from server.orchestrator import run_trace
+    from server.services.run_recorder import RunRecorder
+    log = _Log()
+    read = _Read(log, delay=0.02)
+    calls = [("read_file", {"path": "A"}), ("list_dir", {"path": "B"}), ("read_file", {"path": "C"}),
+             ("fixture_write", {"tag": "W"})]
+    recorder = RunRecorder(run_id=1, started_at=datetime(2026, 10, 22), route_ms=None)
+    with run_trace.collecting():
+        for key, executor in {"read_file": read, "list_dir": read, "fixture_write": _Read(log)}.items():
+            monkeypatch.setitem(tool_loop.EXECUTORS, key, executor)
+
+        async def tools():
+            return [{"key": key, "description": key} for key in ("read_file", "list_dir", "fixture_write")]
+        await tool_loop.run_native(system="S", user_content="q", history=[], resolve_tools=tools,
+                                   emit=recorder.tee(log.frames.append), on_chunk=lambda _: None,
+                                   adapter_override=_Script(*calls))
+        steps = [s for s in recorder._derive_steps("Done.") if s["kind"] == "tool_call"]
+        recorder._merge_tool_trace(steps)
+    assert log.most >= 2                                                        # A, B and C ran together
+    assert [s["ref"]["tool"] for s in steps] == ["read_file", "list_dir", "read_file", "fixture_write"]
+    for step, (_name, args) in zip(steps, calls):
+        assert json.loads(step["detail"]["args_summary"]) == args
+        assert json.loads(step["detail"]["args_full"]) == args
+
+
+async def test_a_stop_while_a_later_call_is_in_its_gates_leaves_no_task_behind(monkeypatch, execution_db):
+    """Review F2 on #368."""
+    log = _Log()
+    held = asyncio.Event()
+    gated: list[str] = []
+
+    async def budget(tool_key, *, conversation_id):
+        gated.append(tool_key)
+        if len(gated) == 2:
+            await held.wait()                       # the second call never gets through its gates
+        return None
+    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
+    before = set(asyncio.all_tasks())
+    turn = asyncio.create_task(_turn(monkeypatch, log, _Script(("read_file", {"path": "a"}),
+                                                               ("list_dir", {"path": "b"})),
+                                     {"read_file": _Read(log, forever=True), "list_dir": _Read(log)}))
+    for _ in range(500):
+        if len(gated) == 2 and log.running == 1:
+            break
+        await asyncio.sleep(0.01)
+    assert len(gated) == 2 and log.running == 1
+    turn.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await turn
+    for _ in range(5):
+        await asyncio.sleep(0)
+    left = [t for t in asyncio.all_tasks() - before if t is not asyncio.current_task() and not t.done()]
+    assert left == []
+
+
+async def test_each_calls_gates_finish_before_the_next_calls_start(monkeypatch, execution_db):
+    """Review F3 (a) on #368: the gates run one call after another, even when the first is slow."""
+    log = _Log()
+    gates: list[tuple[str, str]] = []
+
+    async def budget(tool_key, *, conversation_id):
+        gates.append(("start", tool_key))
+        if tool_key == "read_file":
+            await asyncio.sleep(0.1)
+        gates.append(("end", tool_key))
+        return None
+    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
+    read = _Read(log, meet=2)
+    await _turn(monkeypatch, log, _Script(("read_file", {"path": "a"}), ("list_dir", {"path": "b"})),
+                {"read_file": read, "list_dir": read})
+    assert gates == [("start", "read_file"), ("end", "read_file"), ("start", "list_dir"), ("end", "list_dir")]
+    assert log.most == 2
+
+
+async def test_the_tool_limit_counts_a_call_the_cap_still_holds(monkeypatch, execution_db):
+    """Review F3 (b) on #368: six reads, a limit of five, the cap holding the fifth when the sixth comes up."""
+    log = _Log()
+    read = _Read(log, delay=0.2)
+    calls = [("read_file", {"path": f"f{i}"}) for i in range(6)]
+    with execution_budget.scope(execution_budget.Budget(execution_budget.Limits(tool_calls=5))):
+        result = await _turn(monkeypatch, log, _Script(*calls), {"read_file": read})
+    assert [s["result"].get("code") for s in result["tool_trace"]] == [None] * 5 + ["task_budget_exhausted"]
+    assert log.most == 4
