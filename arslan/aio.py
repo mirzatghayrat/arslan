@@ -4,12 +4,22 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import weakref
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
-_disposing: set[asyncio.Task] = set()       # held until done (a task nobody holds can be collected)
+#: Work we cancelled (a stop, the limit) and that is still running this long is logged: it holds its caller's
+#: cleanup or a process (an MCP server, a browser) that should be gone.
+STILL_RUNNING_WARN_S = 30.0
+_disposing: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, set[asyncio.Task]] = weakref.WeakKeyDictionary()
+
+
+def disposing() -> set[asyncio.Task]:
+    """The disposals still running on this loop, held until done (a task nobody holds can be collected). One
+    set per loop: a disposal left pending when its loop closed never reaches another loop's."""
+    return _disposing.setdefault(asyncio.get_running_loop(), set())
 
 
 async def within(awaitable: Awaitable[T], timeout: float | None, *,
@@ -52,6 +62,7 @@ async def within(awaitable: Awaitable[T], timeout: float | None, *,
 async def _past_the_limit(task: asyncio.Future, dispose) -> Any:
     if not task.done():
         task.cancel()
+        _watch(task)
         try:
             await asyncio.wait({task})
         except asyncio.CancelledError:
@@ -66,6 +77,7 @@ def _stopped(task: asyncio.Future, dispose, *, cancel: bool = True) -> None:
     """The caller was stopped: cancel the work once; whatever it still ends with is not returned."""
     if cancel and not task.done():
         task.cancel()
+        _watch(task)
 
     def settled(done: asyncio.Future) -> None:
         if done.cancelled():
@@ -75,9 +87,19 @@ def _stopped(task: asyncio.Future, dispose, *, cancel: bool = True) -> None:
             logger.debug("work stopped by its caller ended with %s: %s", type(error).__name__, error)
         elif dispose is not None:
             closing = asyncio.ensure_future(_dispose(dispose, done.result()))
-            _disposing.add(closing)
-            closing.add_done_callback(_disposing.discard)
+            held = disposing()
+            held.add(closing)
+            closing.add_done_callback(held.discard)
     task.add_done_callback(settled)
+
+
+def _watch(task: asyncio.Future) -> None:
+    """A WARNING if the work we just cancelled is still running after STILL_RUNNING_WARN_S."""
+    def still_running() -> None:
+        if not task.done():
+            logger.warning("work cancelled %.0f s ago is still running: %r", STILL_RUNNING_WARN_S, task)
+    later = asyncio.get_running_loop().call_later(STILL_RUNNING_WARN_S, still_running)
+    task.add_done_callback(lambda _done: later.cancel())
 
 
 async def _dispose(dispose, value) -> None:
