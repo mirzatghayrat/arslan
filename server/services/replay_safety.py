@@ -103,7 +103,7 @@ _NON_CURATABLE_CONVERSATION_IDS: frozenset[str] = _HERMETIC_CONVERSATION_IDS
 
 def should_not_curate(conversation_id: str | None) -> bool:
     """True iff this conversation's traffic is synthetic and must not be distilled or
-    curated into the second brain. Used by distill_service and the curation sweep.
+    curated into the second brain. Used by distill_service.
 
     Kept distinct from `is_hermetic_context` — see its docstring for why merging the two
     would seal the curation layer's own writes.

@@ -81,9 +81,9 @@ describe("what IS touched still travels correctly", () => {
   });
 
   it("carries several touched fields together", () => {
-    expect(toBackendSettingsPatch({ language: "ja", curationEnabled: true })).toEqual({
+    expect(toBackendSettingsPatch({ language: "ja", keepAwakeEnabled: false })).toEqual({
       language: "ja",
-      curation_enabled: true,
+      keep_awake_enabled: false,
     });
   });
 });
@@ -124,7 +124,6 @@ describe("every settings field the UI can edit is mappable", () => {
       compaction_config_id: { compactionConfigId: "1" },
       router_config_id: { routerConfigId: "1" },
       vision_config_id: { visionConfigId: "1" },
-      curation_enabled: { curationEnabled: true },
       research_review_enabled: { researchReviewEnabled: true },
       keep_awake_enabled: { keepAwakeEnabled: false },
       desktop_notifications_enabled: { desktopNotificationsEnabled: false },

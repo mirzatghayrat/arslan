@@ -320,20 +320,10 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — scheduler start must never block boot
         logger.warning("scheduler start failed (non-fatal): %s", exc)
 
-    # 整理层: a third supervised loop (15min tick) that distills conversations whose
-    # session_ended never fired. It waits INITIAL_DELAY before its first tick so a boot
-    # never immediately spends on LLM calls, and every tick re-reads BOTH kill switches
-    # (curation_enabled AND distill_on_session_end). Best-effort start.
-    try:
-        from server.services import curation_loop
-
-        curation_loop.start()
-    except Exception as exc:  # noqa: BLE001 — curation start must never block boot
-        logger.warning("curation loop start failed (non-fatal): %s", exc)
-
     # D5 retention for brain_usage_events (first pass after 5 min, then every 15 min).
     # Not opt-in: brain_usage.record appends on every retrieval, so the log needs its
-    # bound on a default install. It rode on the curation loop until C8-3 (v0.1.63).
+    # bound on a default install. It rode on the curation loop (整理层) until C8-3
+    # (v0.1.63) deleted that loop.
     try:
         from server.services import usage_retention
 
@@ -374,14 +364,6 @@ async def _shutdown_services(app: FastAPI) -> None:
     except Exception as exc:  # noqa: BLE001 — scheduler stop must never block shutdown
         cleanup_complete = False
         logger.warning("scheduler stop failed (non-fatal): %s", exc)
-
-    try:
-        from server.services import curation_loop as _curation
-
-        await _curation.stop()
-    except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
-        cleanup_complete = False
-        logger.warning("curation loop stop failed (non-fatal): %s", exc)
 
     try:
         from server.services import usage_retention as _retention

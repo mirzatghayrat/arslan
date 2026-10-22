@@ -2,8 +2,8 @@
  * "Model roles" — which task uses which model.
  *
  * A section of its own rather than part of `automation`, deliberately. That section's
- * whole narrative is a spend warning (auto-evolution, dispatch caps, curation, each
- * with honest copy about what the caps do and do not bound), and these slots do not
+ * whole narrative is a spend warning (each control there carries honest copy about
+ * what its cap does and does not bound), and these slots do not
  * spend on their own — they only change which model handles a call that was going to
  * happen anyway. Mixing them in dilutes the warning, and collecting the spending
  * controls in one place is the entire reason that section exists.

@@ -42,7 +42,7 @@ def test_the_two_definitions_of_every_bool_default_agree():
         assert accessor.__doc__, f"{key}: accessor needs a docstring stating its default"
 
 
-@pytest.mark.parametrize("key", ["curation_enabled", "distill_on_session_end",
+@pytest.mark.parametrize("key", ["distill_on_session_end",
                                  "mcp_server_enabled", "first_run_seen"])
 async def test_bool_key_round_trips_through_the_api(client, key):
     """PUT then GET must return what was stored, not the schema default — in BOTH
@@ -77,14 +77,6 @@ async def test_get_settings_EMITS_every_bool_key_on_a_fresh_install(client):
             f"{key} is absent from get_settings on a fresh install — the schema default "
             "would answer for it, giving the value two independent definitions")
         assert out[key] is await accessor(s), f"{key}: emitted value is not the service's"
-
-
-async def test_curation_stays_opt_in_this_round(client):
-    """🔴 F2 ships the inbox, the switch and the backfill gate — but does NOT flip this.
-    Turning it on is an explicit user action, because the first tick after a flip is a
-    historical backfill over every undistilled conversation ever recorded."""
-    body = (await client.get("/api/v1/settings", headers=AUTH)).json()
-    assert body["curation_enabled"] is False
 
 
 async def test_onboarding_seen_survives_a_new_database_session(client):

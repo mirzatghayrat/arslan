@@ -39,8 +39,8 @@ async def complete_chat(spawn_id: int) -> tuple[int, bool]:
         # 🔴 Archiving here used to be UNCONDITIONAL: a silently-failed distillation
         # moved the transcript out of the active window with nothing learned from it —
         # real, unrecoverable data loss. Leave it active so the user can retry (this
-        # path is user-triggered, so retries are human-paced; the automatic-spend risk
-        # lives in the curation sweep, which has its own cap).
+        # path is user-triggered, so retries are human-paced; nothing retries it
+        # automatically since the curation sweep went in C8-3).
         return 0, False
 
     async with db_session.AsyncSessionLocal() as db:

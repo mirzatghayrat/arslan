@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import select
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = (
-    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
+    "llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
                "search_provider_role",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
@@ -31,7 +30,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                # 0.1.58 §6: one model of the slot's config (empty = the config's own model).
                "compaction_model", "synthesis_model", "router_model", "vision_model",
-               "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
+               "mcp_server_enabled", "research_review_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
@@ -119,15 +118,6 @@ async def _set_raw(session: AsyncSession, key: str, value: str) -> None:
         session.add(Setting(key=key, value=value))
 
 
-async def _clear_raw(session: AsyncSession, key: str) -> None:
-    """Delete a setting outright. Distinct from storing "" — the boundary readers treat
-    an unparsable value as "not recorded", but leaving a blank row behind would make a
-    cleared boundary indistinguishable from a corrupt one in the DB."""
-    existing = await session.get(Setting, key)
-    if existing:
-        await session.delete(existing)
-
-
 def _truthy(value) -> bool:
     """The one place that decides what an incoming settings value means. Accepts real
     bools (the API) and the strings the DB round-trips."""
@@ -150,16 +140,6 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
         # (e.g. "sk-...9999" or "***") which must never replace the real key.
         if val and not _looks_masked(str(val)):
             await _set_raw(session, secret_key, crypto.encrypt(str(val)))
-
-    # 🔴 Turning curation OFF discards the backfill boundary, so a later re-enable
-    # records a FRESH one. The boundary belongs to the CURRENT enablement, not to the
-    # database: written once per DB, the most likely real sequence — enable, find it
-    # expensive, disable, use the app for months, enable again — would sweep the entire
-    # off-period, which is the mass historical backfill the gate exists to prevent.
-    # Cleared HERE rather than only in the loop because the toggle can happen while the
-    # app is down; the loop's own off-tick clearing is belt and braces for a direct DB edit.
-    if "curation_enabled" in data and not _truthy(data["curation_enabled"]):
-        await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
 
     await session.commit()
     if "language" in data and data["language"] is not None:
@@ -202,8 +182,8 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     # so on a fresh install the key is ABSENT from the response and SettingsOut's
     # pydantic default answers for it. That gave every bool TWO independent definitions
     # of its default (the accessor and the schema) with nothing asserting they agree.
-    # A change that moved only one of them — exactly what flipping curation_enabled
-    # would be — produces a UI reporting OFF while the loop runs, or the reverse.
+    # A change that moved only one of them produces a UI reporting OFF while the
+    # feature runs, or the reverse.
     # Asserted complete against _BOOL_KEYS by test_settings_bool_keys.
     for bool_key, accessor in _BOOL_ACCESSORS.items():
         out[bool_key] = await accessor(session)
@@ -225,23 +205,6 @@ async def distill_enabled(session: AsyncSession) -> bool:
     """Whether session-end distillation is on (default True; only an explicit 'false' disables)."""
     raw = await _get_raw(session, "distill_on_session_end")
     return raw is None or str(raw).strip().lower() != "false"
-
-
-async def curation_enabled(session: AsyncSession) -> bool:
-    """Whether the sleep-time curation loop may run.
-
-    🔴 Default OFF (opt-in), unlike every other toggle here. The loop SPENDS money, and
-    its output currently lands in the brain proposal inbox, which has no UI yet (that
-    is the F2 frontend round) — so a default-on sweep would burn tokens producing
-    something the user cannot see. Per the project's standing rule, the proposing side
-    is fail-open but the EXECUTING side (writes, tools, spend) is fail-closed. Flip the
-    default once the inbox is visible.
-
-    The loop ALSO requires distill_enabled: ignoring the user's session-end distill
-    switch would violate that consent and spend money doing it.
-    """
-    raw = await _get_raw(session, "curation_enabled")
-    return raw is not None and str(raw).strip().lower() == "true"
 
 
 async def keep_awake_enabled(session: AsyncSession) -> bool:
@@ -474,24 +437,6 @@ async def run_budget_from_settings():
         return run_budget()
 
 
-def _parse_iso_utc(value: str | None) -> datetime | None:
-    """Parse an ISO-8601 timestamp to a NAIVE-UTC datetime — matching Run.created_at, which
-    is written via datetime.utcnow(). A tz-aware value is converted to UTC and stripped of
-    tzinfo so it compares directly against the naive DB column. Unparsable → None."""
-    if not value:
-        return None
-    s = value.strip()
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(s)
-    except (TypeError, ValueError):
-        return None
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
-
 DEFAULT_RUN_DEBUG_RETENTION_DAYS = 30
 
 
@@ -563,7 +508,6 @@ async def first_run_seen(session: AsyncSession) -> bool:
 _BOOL_ACCESSORS = {
     "first_run_seen": first_run_seen,
     "distill_on_session_end": distill_enabled,
-    "curation_enabled": curation_enabled,
     "research_review_enabled": research_review_enabled,
     "keep_awake_enabled": keep_awake_enabled,
     "desktop_notifications_enabled": desktop_notifications_enabled,
@@ -578,31 +522,3 @@ _BOOL_ACCESSORS = {
 #: The bool keys this registry is responsible for.
 _BOOL_KEYS = tuple(_BOOL_ACCESSORS)
 
-
-#: The moment curation was switched on. Everything idle BEFORE it is history and is not
-#: swept; see curation_loop.ensure_backfill_boundary for why.
-CURATION_BACKFILL_FROM_KEY = "curation_backfill_from"
-
-
-async def curation_backfill_from(session: AsyncSession) -> datetime | None:
-    """When the curation sweep's scope begins. None = not recorded yet.
-
-    An UNPARSABLE stored value returns None rather than falling through to "no gate":
-    reopening the historical backfill is the expensive direction, and it would happen
-    invisibly. The loop treats None as "record a boundary now and sweep only forward",
-    so a corrupt value costs a small amount of scope, never a surprise bill.
-    """
-    return _parse_iso_utc(await _get_raw(session, CURATION_BACKFILL_FROM_KEY))
-
-
-async def clear_curation_backfill_from(session: AsyncSession) -> None:
-    """Forget the boundary, so the next enable records a fresh one."""
-    await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
-    await session.commit()
-
-
-async def set_curation_backfill_from(session: AsyncSession, dt: datetime) -> None:
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    await _set_raw(session, CURATION_BACKFILL_FROM_KEY, dt.isoformat())
-    await session.commit()

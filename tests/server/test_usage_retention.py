@@ -84,13 +84,24 @@ async def test_start_is_idempotent_and_stop_ends_the_loop(monkeypatch):
     assert first.done()
 
 
+def _running_loop_modules() -> set[str]:
+    """The modules whose coroutines the event loop is currently running as tasks."""
+    out: set[str] = set()
+    for task in asyncio.all_tasks():
+        frame = getattr(task.get_coro(), "cr_frame", None)
+        if frame is not None:
+            out.add(frame.f_globals.get("__name__", ""))
+    return out
+
+
 async def test_a_default_boot_prunes_old_usage_events(tmp_path, monkeypatch):
     """Drives server.main.lifespan on a fresh install, not a replica of it.
 
-    No settings rows at all, so every opt-in switch (curation included) is at its
-    default, off. An event older than the default 30-day window must still be pruned
-    while the app runs. If the lifespan stopped starting usage_retention, nothing
-    would ever prune and this would fail.
+    No settings rows at all, so every opt-in switch is at its default, off. An event
+    older than the default 30-day window must still be pruned while the app runs. If
+    the lifespan stopped starting usage_retention, nothing would ever prune and this
+    would fail. The C8 card's acceptance check rides along: after boot, no curation
+    loop is running.
     """
     import importlib
 
@@ -127,6 +138,9 @@ async def test_a_default_boot_prunes_old_usage_events(tmp_path, monkeypatch):
 
     try:
         async with main.lifespan(FastAPI()):
+            running = _running_loop_modules()
+            assert "server.services.usage_retention" in running
+            assert "server.services.curation_loop" not in running
             await _seed_events(maker, [
                 ("note", "note:1", datetime.utcnow() - timedelta(days=90))])
             deadline = asyncio.get_running_loop().time() + 20

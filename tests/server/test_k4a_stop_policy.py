@@ -143,7 +143,7 @@ async def test_a_persisted_turn_runs_on_the_tier_in_settings(execution_db):
 
 
 def test_the_app_registers_the_settings_budget_at_startup():
-    """The suite doesn't run the whole lifespan (see test_curation_loop's wiring test), so the wiring is
+    """Most of the suite doesn't run the whole lifespan (test_usage_retention's boot test is one that does), so the wiring is
     pinned at the source; the factory itself and governed's use of it are tested above."""
     from pathlib import Path
 

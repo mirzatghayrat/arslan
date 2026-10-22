@@ -22,6 +22,10 @@ It does two things:
 Cadence is on-demand today (a human opens the Skill Forge panel). A weekly cron
 could call review_promoted_skills later — Hermes's weekly Curator — but retire is
 never automatic. Self-manages its own AsyncSessionLocal sessions, like the forge.
+
+Not the curation loop (整理层, deleted in C8-3): this module only serves the Skill
+Forge's /skills/curator/review and /skills/curator/retire, which the page still uses.
+DELETE-BY: v0.1.64, with the skill forge it belongs to (C8 card, deviations).
 """
 from __future__ import annotations
 

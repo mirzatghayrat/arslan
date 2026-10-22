@@ -22,17 +22,10 @@ AUTH: dict[str, str] = {}
 # 🔴 This list is a hazard statement, not a convenience. Every entry needs a reason why
 # accepting it from a client would be actively harmful — "it is internal" is not enough
 # on its own, because the next reader will use that as licence to add anything.
-PLAIN_KEYS_NOT_USER_SETTABLE = {
-    "curation_backfill_from": (
-        "The curation loop's backfill boundary, written by ensure_backfill_boundary when "
-        "the loop is switched on. Accepting it from a client would let anyone move the "
-        "boundary BACKWARDS, which re-triggers a distillation sweep over every "
-        "conversation after that instant — a mass historical backfill that spends money "
-        "per conversation. That sweep is precisely what the F2 boundary gate exists to "
-        "prevent, so exposing the knob would hand out a bypass for it. Harmful, not "
-        "merely internal."
-    ),
-}
+#
+# Empty since C8-3 (v0.1.63): its one entry, `curation_backfill_from`, went with the
+# curation loop that wrote it.
+PLAIN_KEYS_NOT_USER_SETTABLE: dict[str, str] = {}
 
 
 def test_every_plain_key_is_declared_or_explicitly_exempt():
