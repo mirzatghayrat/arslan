@@ -129,14 +129,12 @@ async def preview(run_id: int) -> dict:
             "later_turns": len(turn.users) - 1, "facts": facts}
 
 
-async def check(run_id: int) -> None:
-    """Raise Refused when `undo` would refuse now (POST "both" checks before it puts any file back)."""
-    async with db_session.AsyncSessionLocal() as db:
-        _busy(await _find(db, int(run_id)))
+async def undo(run_id: int, *, first=None) -> dict:
+    """Take the turn back (the module docstring says what that covers). Raises Refused.
 
-
-async def undo(run_id: int) -> dict:
-    """Take the turn back (the module docstring says what that covers). Raises Refused."""
+    `first` (POST "both": putting the files back) is awaited after every check passed, under the turn lock,
+    before the conversation goes; what it raises stops the undo with nothing taken back, and what it
+    returns is the result's `files`."""
     from server.ws import arslan as ws_arslan
     run_id = int(run_id)
     async with db_session.AsyncSessionLocal() as db:
@@ -156,12 +154,14 @@ async def undo(run_id: int) -> dict:
     async with lock:                        # no turn starts in this conversation while it is taken back
         async with db_session.AsyncSessionLocal() as db:
             turn = await _find(db, run_id)
-            _busy(turn, holding_lock=True)
-            if _post_turn_job(turn.conversation_id) is not None:
-                raise Refused("finishing")
-            out = await _take_back(db, turn)
+        _busy(turn, holding_lock=True)
+        if _post_turn_job(turn.conversation_id) is not None:
+            raise Refused("finishing")
+        files = await first() if first is not None else None
+        async with db_session.AsyncSessionLocal() as db:
+            out = await _take_back(db, await _find(db, run_id))
             await db.commit()
-    return out
+    return out if first is None else {**out, "files": files}
 
 
 async def _take_back(db, turn: _Turn) -> dict:

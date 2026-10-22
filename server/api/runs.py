@@ -564,30 +564,44 @@ def _started(run: Run) -> float:
 
 @router.get("/runs/{run_id}/checkpoint")
 async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
-    """0.1.63 S3: whether this run's file changes can be undone, and what an undo covers and does not."""
-    from server.services import checkpoints
+    """0.1.63 S3: whether this run's file changes can be undone, and what an undo covers and does not;
+    S3b: whether its conversation can (`conversation`, or `reason` why not), how many messages and later
+    turns that removes, and how many facts."""
+    from server.services import checkpoints, turn_undo
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
-    return checkpoints.summary(run_id, _started(run))
+    return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
+
+
+def _refused(exc) -> HTTPException:
+    return HTTPException(404 if exc.code == "none" else 409,
+                         detail={"code": exc.code, "runs": getattr(exc, "runs", [])})
 
 
 @router.post("/runs/{run_id}/checkpoint/restore")
 async def restore_run_checkpoint(run_id: int, body: CheckpointRestoreIn,
                                  db: AsyncSession = Depends(get_session)) -> dict:
-    """0.1.63 S3: put the run's files back. The conversation ("conversation", "both") arrives in S3b."""
-    from server.services import checkpoints
+    """0.1.63 S3: put the run's files back ("files"), take its conversation back ("conversation", S3b),
+    or both: every check of both first, so a refusal of either changes nothing; then the files, then the
+    conversation, under the conversation's turn lock."""
+    from server.services import checkpoints, turn_undo
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
-    if body.what != "files":
-        raise HTTPException(409, detail={"code": "not_yet"})
-    if not checkpoints.summary(run_id, _started(run))["exists"]:
+    files = body.what in ("files", "both")
+    if files and not checkpoints.summary(run_id, _started(run))["exists"]:
         raise HTTPException(404, detail={"code": "none"})
     try:
-        return await checkpoints.restore_files(run_id)
-    except checkpoints.Refused as exc:
-        raise HTTPException(404 if exc.code == "none" else 409, detail={"code": exc.code, "runs": exc.runs})
+        if body.what == "files":
+            return await checkpoints.restore_files(run_id)
+        if body.what == "conversation":
+            return {"conversation": await turn_undo.undo(run_id)}
+        await checkpoints.check_restore(run_id)          # the files' checks first, then the conversation's
+        both = await turn_undo.undo(run_id, first=lambda: checkpoints.restore_files(run_id))
+    except (checkpoints.Refused, turn_undo.Refused) as exc:
+        raise _refused(exc) from None
+    return {"files": both.pop("files"), "conversation": both}
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

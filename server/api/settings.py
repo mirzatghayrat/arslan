@@ -253,10 +253,16 @@ async def ocr_languages() -> dict:
     }
 
 
+async def _settings_out(session: AsyncSession) -> SettingsOut:
+    from server.services import checkpoints
+    data = await settings_service.get_settings(session)
+    data["workspace_other_volume"] = checkpoints.other_volume(await settings_service.workspace_dir(session))
+    return SettingsOut(**data)
+
+
 @router.get("/settings", response_model=SettingsOut)
 async def read_settings(session: AsyncSession = Depends(get_session)) -> SettingsOut:
-    data = await settings_service.get_settings(session)
-    return SettingsOut(**data)
+    return await _settings_out(session)
 
 
 @router.put("/settings", response_model=SettingsOut)
@@ -273,8 +279,7 @@ async def write_settings(
         await heartbeat.sync_task()
     except Exception as exc:  # noqa: BLE001
         logger.warning("heartbeat sync failed (non-fatal): %s", exc)
-    data = await settings_service.get_settings(session)
-    return SettingsOut(**data)
+    return await _settings_out(session)
 
 
 @router.get("/settings/provider-configs", response_model=list[ProviderConfigOut])

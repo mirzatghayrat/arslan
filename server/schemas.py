@@ -97,6 +97,8 @@ class SettingsIn(BaseModel):
 
 
 class SettingsOut(BaseModel):
+    #: S3b: the working folder is on another volume than Arslan's data, so its changes can't be undone.
+    workspace_other_volume: bool = False
     llm_provider: str = ""
     llm_model: str = ""
     llm_base_url: str = ""
