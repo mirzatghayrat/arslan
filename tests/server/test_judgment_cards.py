@@ -60,8 +60,8 @@ def test_a_command_card_in_the_window_is_answered_and_not_judged(app_client, mon
 
 @pytest.mark.parametrize("sandbox", [None, "retry"])
 async def test_a_jobs_command_card_is_answered_and_not_judged(execution_db, monkeypatch, answering_judge, sandbox):
-    """A rule card (decided by permissions.decide, with its ledger row) and a sandbox card (a plain
-    card: no ledger row until S4a), each answered by a window on the conversation."""
+    """A rule card and a sandbox card (S4a: kind `outside`), each decided by permissions.decide with its
+    ledger row and answered by a window on the conversation."""
     from server.services import approvals, run_registry
 
     def window(frame):
@@ -76,7 +76,5 @@ async def test_a_jobs_command_card_is_answered_and_not_judged(execution_db, monk
     assert await job.command("ls -la", [], sandbox=sandbox) is True
     assert await _settled_rows(execution_db, Judgment) == []
     events = await _settled_rows(execution_db, ApprovalEvent)
-    if sandbox is None:
-        assert [(e.kind, e.decided_by, e.decision, e.job_id) for e in events] == [("command", "user", "allow", "job-1")]
-    else:
-        assert events == []
+    kind = "command" if sandbox is None else "outside"
+    assert [(e.kind, e.decided_by, e.decision, e.job_id) for e in events] == [(kind, "user", "allow", "job-1")]

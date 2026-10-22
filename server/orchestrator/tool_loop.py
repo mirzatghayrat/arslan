@@ -1140,6 +1140,18 @@ async def _unattended(error: str, req, conversation_id: str | None) -> str:
         req, permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
 
 
+async def _outside_granted(conversation_id: str | None, command: str) -> bool:
+    """S4a: whether this conversation's commands may run outside the sandbox without a card — its stored
+    `outside` grant, read by `permissions.standing` (which writes the `grant` ledger row, and finds nothing
+    where nobody can be asked)."""
+    from server.services import background_jobs, permissions
+    decision = await permissions.standing(
+        permissions.Request(kind="outside", target="*", detail=command,
+                            title=f"Run `{command[:80]}` outside the sandbox?"),
+        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+    return decision is not None and decision.allowed
+
+
 async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
                                          unwrapped: bool, conversation_id: str | None) -> dict:
     """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
@@ -1421,11 +1433,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
         wants_out = (sandbox_on and args.get("outside_sandbox") is True
                      and not _task_service.unwrapped_once(command))
-        # The conversation's "rest of this conversation" grant is a session grant: only a
-        # callback that says it honours them (the chat window's) may use it. A background
-        # job or an unattended turn starts inside the sandbox whatever the window said.
-        run_outside = (sandbox_on and getattr(confirm_command, "honours_session_grants", False)
-                       and command_sandbox.granted(conversation_id))
+        # S4a: this conversation's stored grant to run its commands outside the sandbox (the outside card
+        # answered "In this conversation"), read through decide's rule and grant lookup with its ledger row:
+        # in a chat turn and a background job alike. With nobody to ask (a scheduled run) nothing stands,
+        # and the command starts inside the sandbox.
+        run_outside = sandbox_on and await _outside_granted(conversation_id, command)
         net_due = _network_card_due(command, args)
         net_kw = {"network": True} if net_due else {}
         net_clicked = False                # the command's own card, clicked, asked for the network too
@@ -1437,7 +1449,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 result = {"ok": False, "error": await _unattended(
                               "running a command outside the sandbox needs the user's click, which is not "
                               "available here",
-                              permissions.Request(kind="command", target="unsandboxed:*", detail=command,
+                              permissions.Request(kind="outside", target="*", detail=command,
                                                   title=f"Run `{command[:80]}` outside the sandbox?"),
                               conversation_id),
                           "note": "Run it without outside_sandbox, or tell the user what you needed."}
@@ -1464,7 +1476,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
               and (run_outside or (sandbox_on and command_sandbox.available()))):
             # S2a-2 layer ③: no card, and decided here only. In the sandbox only when it can start (R4: with
             # seatbelt unavailable the command would run unwrapped). Outside it under this conversation's
-            # grant to leave the sandbox, which is the user's yes (S4a moves that grant into decide()).
+            # stored grant to leave the sandbox, which is the user's yes (S4a).
             pass
         else:
             if confirm_command is None:

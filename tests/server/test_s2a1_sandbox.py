@@ -255,8 +255,6 @@ class _Exec:
 
 
 class _Cards:
-    honours_session_grants = True
-
     def __init__(self, *answers):
         self.answers, self.calls = list(answers), []
 
@@ -428,8 +426,12 @@ async def _after_outside_content(monkeypatch, command, *, asker=None, outside=Fa
     untrusted.mark_external()                  # this turn read a web page
     _seatbelt(monkeypatch)
     ex = _NetExec()
-    if outside:
-        command_sandbox.grant("c1")            # "for the rest of this conversation" outside the sandbox
+    if outside:                                # "In this conversation" on an outside card (S4a: stored)
+        from server.db import session as db_session
+        from server.services import permission_store
+        async with db_session.AsyncSessionLocal() as db:
+            await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="card-1")
+            await db.commit()
     try:
         with permissions.asking_with(asker):
             result = await _dispatch(monkeypatch, command, ex, _Cards(True), **args)
@@ -492,8 +494,9 @@ async def test_outside_the_sandbox_the_network_card_is_this_time_only_and_ignore
 async def test_outside_the_sandbox_after_outside_content_a_command_runs_offline_too(execution_db, monkeypatch):
     """The minimal outside profile carries the offline rule (card, piece 4): a script whose network use
     its text does not show cannot reach out with the user's secrets readable."""
-    ex, result = await _after_outside_content(monkeypatch, "python3 collect.py", outside=True)
-    assert ex.runs == [(True, True)] and result["ok"]
+    asker = _Asker()                           # a stored grant stands only where someone could be asked (S1)
+    ex, result = await _after_outside_content(monkeypatch, "python3 collect.py", asker=asker, outside=True)
+    assert ex.runs == [(True, True)] and result["ok"] and asker.frames == []
 
 
 async def test_a_retry_outside_the_sandbox_stays_offline_after_outside_content(execution_db, monkeypatch):

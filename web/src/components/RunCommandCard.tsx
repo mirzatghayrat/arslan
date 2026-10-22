@@ -86,8 +86,10 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
       context={context}
       // A command card's "In this conversation" is a grant for its kind of command (the rules it matched: every `rm`, every
       // `git push`), not for this one text — the same set "Always" names (approvals._command_request). It says so.
+      // S4a: on the card to leave the sandbox it lets every command of this conversation out, a background task's too.
       options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
-        conversationLabel={permKind === "command" ? alwaysLabel : undefined} testId="runcmd-scope" />
+        conversationLabel={permKind === "command" ? alwaysLabel
+          : permKind === "outside" ? t("runcmd.sandboxConversation") : undefined} testId="runcmd-scope" />
         : isRemote || background || noRemember ? null : (
         <AskOption checked={remember} onChange={setRemember} testId="runcmd-remember"
           label={t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")} />

@@ -1134,6 +1134,7 @@
     "sandboxRetryLabel": "沙盒拦下了这条命令",
     "sandboxRetryNote": "它想写工作文件夹以外的地方，或读受保护的文件。在沙盒外运行会从头再跑一遍。",
     "sandboxRemember": "这次对话里，命令都可以在沙盒外运行",
+    "sandboxConversation": "命令（包括后台任务）都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
     "remember": "以后这类命令不再询问（可在 设置 › Arslan 能做什么 里恢复）",

@@ -1134,6 +1134,7 @@
     "sandboxRetryLabel": "The sandbox stopped this command",
     "sandboxRetryNote": "It tried to write outside the working folder or read a protected file. Running it outside the sandbox starts it again from the beginning.",
     "sandboxRemember": "Allow commands outside the sandbox for the rest of this conversation",
+    "sandboxConversation": "commands, background tasks included, may run outside the sandbox",
     "runOutside": "Run outside the sandbox",
     "label": "Run this command?",
     "remember": "Don't ask again for this kind of command (undo in Settings › What Arslan may do)",

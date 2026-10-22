@@ -232,6 +232,17 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     return decisions
 
 
+async def standing(req: Request, ctx: Context) -> Decision | None:
+    """S4a: what `decide` would answer from a stored rule or grant, with its ledger row — or None, and
+    then no card is shown: the caller decides what not having one means (the tool loop runs a command
+    in the sandbox). As in `decide`, nothing stands where nobody can be asked (S1, U14 a). It does not
+    set `LAST_DECISION`: a card shown after it is a decision of its own."""
+    _check(req)
+    if _ASKER.get() is None:
+        return None
+    return await _standing(req, _filled(ctx), await _mode())
+
+
 #: Who may have decided a standing yes that `record_standing` writes, and the scope it records:
 #: an "Always" rule, or the mode (§A8's `decided_by`), which stores nothing and has no scope.
 _STANDING_BY = {"rule": "always", "mode": None}

@@ -19,14 +19,11 @@ from server.ws import protocol
 
 class Confirmations:
     def __init__(self, conversation_id: str | None, *, job_id: str | None = None, surface: str = "chat",
-                 asker=None, session_grants: bool = False):
+                 asker=None):
         self.conversation_id = conversation_id
         self.job_id = job_id
         self.surface = surface
         self.asker = asker
-        # The window's in-memory "rest of this conversation" sandbox grant is its own to use and to
-        # give; a job's card offers none and never uses one.
-        self.session_grants = session_grants
 
     def _context(self):
         from server.services import permissions
@@ -36,12 +33,6 @@ class Confirmations:
         """Bind this ladder's card surface for one decision; the window's is bound by its turn."""
         from server.services import permissions
         return permissions.asking_with(self.asker) if self.asker is not None else contextlib.nullcontext()
-
-    async def _card(self, frame: dict) -> dict:
-        """A plain card (leaving the sandbox, another machine): one answer, on this ladder's surface."""
-        from server.services import permissions
-        asker = self.asker if self.asker is not None else permissions.current_asker()
-        return await asker(frame)
 
     async def workspace_write(self, action: str, path: str) -> bool:
         from server.db import session as db_session
@@ -78,35 +69,42 @@ class Confirmations:
         outside the sandbox; "retry" — the sandbox stopped it and it would run again outside, from the
         start. `network` (S2a-2): the card also asks for the network, this time."""
         from server.db import session as db_session
-        from server.services import approvals, command_sandbox, permissions, settings_service, terminal_policy
+        from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
         risk = effective_risk(remote_host, command, argv)
-        verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
+        shell = terminal_policy.as_shell(command, argv)
+        verdict = terminal_policy.assess(shell)
+        net = " It will use the network, this time." if network else ""
         if sandbox in ("outside", "retry"):
-            if self.session_grants and command_sandbox.granted(self.conversation_id):
-                return True
-            answer = await self._card(protocol.propose_run_command(
-                uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-                sandbox=sandbox, why=why, network=network))
-            if self.session_grants and answer["approved"] and answer.get("remember"):
-                command_sandbox.grant(self.conversation_id)    # this conversation only, never saved
-            return bool(answer["approved"])
-        if remote_host:
+            # S4a: this time, or every command of this conversation — a background job's too — for as long as
+            # the conversation lasts (a stored grant, `outside` / `*`). No "Always". The phone and the
+            # island answer this time only (FIRST_CHOICE_ONLY); the island never answers it at all.
+            request = permissions.Request(
+                kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
+                why=why, frame=protocol.propose_run_command(
+                    uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
+                    sandbox=sandbox, why=why, network=network))
+        elif remote_host:
             # A remote command takes none of the shortcuts: the local risk grade describes a binary on THIS
-            # machine, and `git` over there is not the same program (P3b 裁决③). Nothing is remembered.
-            answer = await self._card(protocol.propose_run_command(
-                uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                remote_host=remote_host, fingerprints=list(fingerprints or [])))
-            return bool(answer.get("approved"))
+            # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
+            # time only (`permissions._ONCE_ONLY`): nothing is remembered.
+            request = permissions.Request(
+                kind="remote", target=remote_host, title=f"Run `{shell[:80]}` on {remote_host}?", detail=shell,
+                frame=protocol.propose_run_command(
+                    uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
+                    remote_host=remote_host, fingerprints=list(fingerprints or [])))
+        else:
+            request = None
+        if request is not None:
+            with self._surface():
+                return (await permissions.decide(request, self._context())).allowed
         async with db_session.AsyncSessionLocal() as db:
             ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
-        shell = terminal_policy.as_shell(command, argv)
         rules = sorted(terminal_policy.ask_rules(shell))
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network)
-        unsandboxed = ask_all and await approvals.runs_unsandboxed(
-            self.conversation_id if self.session_grants else None)
+        unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
         with self._surface():
             decision = await permissions.decide(
                 approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,

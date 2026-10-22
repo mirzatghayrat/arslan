@@ -1134,6 +1134,7 @@
     "sandboxRetryLabel": "Die Sandbox hat diesen Befehl gestoppt",
     "sandboxRetryNote": "Er wollte außerhalb des Arbeitsordners schreiben oder eine geschützte Datei lesen. Außerhalb der Sandbox startet er noch einmal von vorn.",
     "sandboxRemember": "Befehle außerhalb der Sandbox für den Rest dieser Unterhaltung erlauben",
+    "sandboxConversation": "Befehle, auch die von Hintergrundaufgaben, dürfen außerhalb der Sandbox laufen",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
     "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen › Was Arslan darf)",

@@ -129,14 +129,6 @@ def test_what_counts_as_stopped_by_the_sandbox(result, stopped):
     assert command_sandbox.stopped_by_sandbox(result) is stopped
 
 
-def test_the_conversation_grant_is_per_conversation_and_in_memory():
-    command_sandbox.grant("c1")
-    command_sandbox.grant(None)
-    assert command_sandbox.granted("c1") and not command_sandbox.granted("c2") and not command_sandbox.granted(None)
-    command_sandbox._reset_for_tests()
-    assert not command_sandbox.granted("c1")
-
-
 async def test_without_seatbelt_commands_run_as_before_and_say_so(tmp_path, monkeypatch):
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **k: None)
     out = await terminal_exec.run("echo hi", cwd=tmp_path, sandbox=True)

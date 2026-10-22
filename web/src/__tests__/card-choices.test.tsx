@@ -30,6 +30,20 @@ describe("a rule card (run a command)", () => {
     expect(onConfirm).toHaveBeenCalledWith("c1", false, "always");
   });
 
+  it("S4a: the card to leave the sandbox says what its \"In this conversation\" lets out, and answers with it", () => {
+    const onConfirm = vi.fn();
+    render(<RunCommandCard callId="c5" pretty="mv a ~/b" sandbox="retry" permKind="outside"
+      options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('kit.scope.conversationFor:{"label":"runcmd.sandboxConversation"}'));
+    fireEvent.click(screen.getByTestId("runcmd-run"));
+    expect(onConfirm).toHaveBeenCalledWith("c5", false, "conversation");
+    cleanup();
+    // Another kind's card keeps the plain choice: the label is the outside card's own.
+    render(<RunCommandCard callId="c6" pretty="ls" permKind="network" options={["once", "conversation"]}
+      onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByLabelText("kit.scope.conversation")).toBeInTheDocument();
+  });
+
   it("No with a note sends it; No without one sends none", () => {
     const onCancel = vi.fn();
     render(<RunCommandCard callId="c2" pretty="rm a" options={["once", "conversation"]} onConfirm={vi.fn()} onCancel={onCancel} />);

@@ -1134,6 +1134,7 @@
     "sandboxRetryLabel": "Le bac à sable a arrêté cette commande",
     "sandboxRetryNote": "Elle a essayé d’écrire hors du dossier de travail ou de lire un fichier protégé. L’exécuter hors du bac à sable la relance depuis le début.",
     "sandboxRemember": "Autoriser les commandes hors du bac à sable pour le reste de cette conversation",
+    "sandboxConversation": "les commandes, y compris celles des tâches en arrière-plan, peuvent s’exécuter hors du bac à sable",
     "runOutside": "Exécuter hors du bac à sable",
     "label": "Exécuter cette commande ?",
     "remember": "Ne plus demander pour ce type de commande (annulable dans Réglages › Ce qu’Arslan peut faire)",

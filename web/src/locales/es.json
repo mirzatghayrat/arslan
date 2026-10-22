@@ -1134,6 +1134,7 @@
     "sandboxRetryLabel": "El entorno aislado detuvo este comando",
     "sandboxRetryNote": "Intentó escribir fuera de la carpeta de trabajo o leer un archivo protegido. Ejecutarlo fuera del entorno aislado lo vuelve a empezar desde el principio.",
     "sandboxRemember": "Permitir comandos fuera del entorno aislado durante el resto de esta conversación",
+    "sandboxConversation": "los comandos, incluidos los de tareas en segundo plano, pueden ejecutarse fuera del entorno aislado",
     "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",
     "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes › Lo que Arslan puede hacer)",

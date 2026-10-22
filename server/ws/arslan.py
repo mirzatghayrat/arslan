@@ -350,8 +350,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             # A card earlier in this turn went unanswered: the person is away. This one does not
             # open and wait 30 minutes more; it reads as expired at once ("NOT a refusal"). Marked
             # "away", as a job's (approvals.BroadcastAsker): decide records it so, and the Inbox
-            # lists it with "Always allow" — not yet a plain card (leaving the sandbox, another
-            # machine), which writes no ledger row until it asks through decide (PR 3).
+            # lists it (with "Always allow" where its card offered one). The install card is the one
+            # that does not ask through decide: S7 gives it its row.
             approvals.LAST_OUTCOME.set("expired")
             return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
                     "extras": {}, "call_id": frame.get("call_id"), "away": True}
@@ -463,9 +463,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             _window_gone(pending)
 
     # The one ladder (S4a), on the card surface this turn bound (`_window_asker`): the three callbacks the tool
-    # loop expects are shells over it. The window's "rest of this conversation" sandbox grant is its own.
+    # loop expects are shells over it.
     from server.services import command_confirm
-    ladder = command_confirm.Confirmations(conversation_id, session_grants=True)
+    ladder = command_confirm.Confirmations(conversation_id)
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
         """0.1.61: "In this conversation" is a conversation grant for the folder: it holds across sockets
@@ -479,14 +479,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
                               sandbox: str | None = None, why: str = "", network: bool = False) -> bool:
-        """See `command_confirm.Confirmations.command`. Leaving the sandbox shows a card whose checkbox
-        means "for the rest of this conversation" (memory only), never a saved rule."""
+        """See `command_confirm.Confirmations.command`."""
         return await ladder.command(command, argv, remote_host=remote_host, fingerprints=fingerprints,
                                     sandbox=sandbox, why=why, network=network)
-
-    # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
-    # loop honours it only for a callback that says so (never a job's, never no callback).
-    confirm_command.honours_session_grants = True
 
     async def confirm_capability(card: dict) -> dict:
         """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key).

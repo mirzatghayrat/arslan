@@ -19,9 +19,8 @@ requests in one conversation (the same `dedupe` key) share one card; it closes w
 its last waiter is done, and nobody waits on it past the expiry it shows.
 
 A background job asks like a window (0.1.61, `BroadcastAsker`): the same choices, and
-the grants and rules of its conversation, through `permissions.decide`. Leaving the
-sandbox stays one plain card per command, and a job never uses the sandbox grant a
-window was given.
+the grants and rules of its conversation, through `permissions.decide` — leaving the
+sandbox and another machine too (S4a).
 """
 from __future__ import annotations
 
@@ -44,7 +43,7 @@ FIRST_CHOICE_ONLY = ("phone", "island")
 #: How the last card this task waited on ended: "approved", "declined", or "expired" (nobody
 #: answered in time). A tool result must not tell the model the user said no when nobody did.
 LAST_OUTCOME: ContextVar[str | None] = ContextVar("approvals_last_outcome", default=None)
-#: S2a-1: who answered the last plain card this task waited on ("mac" for the asking window, or a
+#: S2a-1: who answered the last card this task waited on ("mac" for the asking window, or a
 #: SOURCES entry), None when nobody did. Only the asking window's own click unlocks a bare run (U11).
 LAST_ANSWERED_BY: ContextVar[str | None] = ContextVar("approvals_last_answered_by", default=None)
 ANSWERS = {
@@ -375,9 +374,8 @@ class BroadcastAsker:
 
     Such an answer is marked `"away": True` (with `"by": None`, as an expiry): permissions.decide
     records it as an expiry decided by "away", with what "Always" on the card would have stored,
-    and the Inbox lists it with "Always allow" (§A4: "listed in the Inbox the same way"). Not yet
-    for a plain card (leaving the sandbox, another machine): it writes no ledger row at all, so one
-    refused this way is not listed until it asks through decide (PR 3)."""
+    and the Inbox lists it with "Always allow" (§A4: "listed in the Inbox the same way"). Every card a
+    job shows asks through decide, leaving the sandbox and another machine too (S4a)."""
 
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
@@ -412,8 +410,7 @@ class JobConfirmations(Confirmations):
     (`command_confirm.Confirmations`) on its `BroadcastAsker`, its ledger rows carrying the job id (§A8).
     Rule cards, the workspace write and the schedule are decided by `permissions.decide` (0.1.61): the
     window's choices, and the grants and rules of the job's conversation — a job's grants are its
-    conversation's. Leaving the sandbox and another machine stay plain cards: one answer, nothing
-    remembered."""
+    conversation's, leaving the sandbox among them (S4a)."""
 
     def __init__(self, conversation_id: str, job_id: str | None = None):
         super().__init__(conversation_id, job_id=job_id, surface="job", asker=BroadcastAsker(conversation_id))
@@ -421,11 +418,17 @@ class JobConfirmations(Confirmations):
 
 async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
     """Whether a command run now would have no sandbox around it: the setting is off, seatbelt cannot
-    start (R4), or `conversation_id`'s grant lets it out (the window's own; a job never uses one)."""
+    start (R4), or `conversation_id` has a stored grant to run its commands outside it (S4a). Only marks a
+    card for the island, so it reads the grant without a ledger row (`permissions.standing` writes one)."""
+    from server.db import session as db_session
     from server.orchestrator.tool_loop import _sandbox_enabled
-    from server.services import command_sandbox
-    return (not (await _sandbox_enabled() and command_sandbox.available())
-            or (conversation_id is not None and command_sandbox.granted(conversation_id)))
+    from server.services import command_sandbox, permission_store
+    if not (await _sandbox_enabled() and command_sandbox.available()):
+        return True
+    if conversation_id is None:
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        return await permission_store.find_grant(db, conversation_id, None, "outside", "*") is not None
 
 
 def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
@@ -476,9 +479,8 @@ def _paused_clock():
 
 
 def _forget_decision() -> None:
-    """A card starts: an earlier decision is not its answer. `tool_loop._declined` reads
-    `permissions.LAST_DECISION` first, so a plain card (leaving the sandbox, another machine)
-    must not be told the words of a decide card before it; a decide card sets its own after."""
+    """A card starts: an earlier decision is not its answer (`tool_loop._declined` reads
+    `permissions.LAST_DECISION` first); a decide card sets its own after."""
     from server.services import permissions
     permissions.LAST_DECISION.set(None)
 
