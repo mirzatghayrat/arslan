@@ -235,9 +235,6 @@ class AnthropicProvider(BaseLLMProvider):
             return {}
         return _THINKING_OFF.get(model[model.find("claude-"):])
 
-    def supports_bounded_critique(self) -> bool:
-        return self._thinking_off() is not None
-
     def supports_native_trajectory(self) -> bool:
         return True
 

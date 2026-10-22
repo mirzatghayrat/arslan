@@ -44,12 +44,6 @@ class BaseLLMProvider(ABC):
         provider whose error shapes are not known names none; the caller then matches names."""
         return None
 
-    def supports_bounded_critique(self) -> bool:
-        """Whether a tool-free critique request can be sent with hidden reasoning
-        provably OFF. Default False: a provider/model that may think by default
-        can burn the whole output cap and return nothing (0.1.40 evidence)."""
-        return False
-
     # ------------------------------------------------------------------
     # Abstract interface
     # ------------------------------------------------------------------
