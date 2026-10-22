@@ -116,7 +116,7 @@ export interface RunCheckpoint {
   running?: boolean;
   restored_at?: number | null;
   conversation: boolean;
-  /** Why the conversation can't be undone: none | already | summarised | running | finishing. */
+  /** Why the conversation can't be undone: none | job | already | summarised | running | finishing. */
   reason: string | null;
   messages_after?: number;
   later_turns?: number;

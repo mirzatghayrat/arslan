@@ -218,6 +218,23 @@ async def test_refused_for_a_turn_with_no_reply_and_for_a_second_undo(execution_
     assert (await turn_undo.preview(second.run))["reason"] == "already"
 
 
+async def test_a_background_jobs_result_is_not_a_turn_of_its_own(execution_db):
+    """A job's result arrives after later turns, so the last user message before it is not its turn's."""
+    await _turn(execution_db, CID, "start a job")
+    await _turn(execution_db, CID, "meanwhile")
+    async with execution_db() as db:
+        run = Run(conversation_id=CID, user_message="job", status="done")
+        db.add(run)
+        await db.flush()
+        db.add(ArslanMessage(conversation_id=CID, role="arslan", content="job result", run_id=run.id, job_outcome="done"))
+        await db.commit()
+        job_run = run.id
+    assert (await turn_undo.preview(job_run))["reason"] == "job"
+    with pytest.raises(turn_undo.Refused) as refused:
+        await turn_undo.undo(job_run)
+    assert refused.value.code == "job" and len(await _messages(execution_db, CID)) == 5
+
+
 async def test_the_recap_drops_only_the_removed_turns_memory_events(execution_db):
     await _turn(execution_db, CID, "one")
     before = datetime.utcnow() - timedelta(seconds=5)

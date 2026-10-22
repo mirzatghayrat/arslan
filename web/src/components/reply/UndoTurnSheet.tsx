@@ -17,7 +17,7 @@ export function showUndone(detail: TurnUndoneDetail | undefined, openConversatio
   return true;
 }
 
-const KNOWN = new Set(["none", "already", "summarised", "running", "finishing", "not_finished"]);
+const KNOWN = new Set(["none", "job", "already", "summarised", "running", "finishing", "not_finished"]);
 
 /**
  * 0.1.63 S3b: what undoing a turn covers, before anything changes. Only the choices that can happen are

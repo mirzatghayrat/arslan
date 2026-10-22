@@ -14,7 +14,9 @@
   a whole-conversation suppression, wiped summaries, cleared run prompts. For each entry taken back, the
   removed turns' messages and runs are suppressed as its sources, so a writer still holding one cannot
   bring it back.
-- **Refused:** `none` (no reply), `already` (undone before), `summarised` (the user message is folded
+- **Refused:** `none` (no reply), `job` (a background job's result: it arrives after later turns, so
+  the last user message before it is not its turn's; the turn that started the job can be undone),
+  `already` (undone before), `summarised` (the user message is folded
   into the conversation's summary, which would go on saying it), `running` (a run, a turn, a background
   job, or a task those turns started is still going or paused), `finishing` (the post-turn job, which
   saves facts, has not ended after FINISH_WAIT_S; ⓪Plan's answer to the S3 plan's Q5).
@@ -41,7 +43,7 @@ _ENDED = frozenset({"succeeded", "failed", "cancelled"})
 
 
 class Refused(Exception):
-    """`code`: none, already, summarised, running, finishing (the module docstring says when)."""
+    """`code`: none, job, already, summarised, running, finishing (the module docstring says when)."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -66,6 +68,8 @@ async def _find(db, run_id: int) -> _Turn:
         undone = await db.scalar(select(ConversationEvent.id).where(
             ConversationEvent.kind == UNDONE, func.json_extract(ConversationEvent.ref, "$.run_id") == run_id).limit(1))
         raise Refused("already" if undone else "none")
+    if reply.job_outcome is not None:
+        raise Refused("job")                # a job's result came after later turns: undo the turn that started it
     cid = reply.conversation_id
     first = await db.scalar(select(ArslanMessage).where(
         ArslanMessage.conversation_id == cid, ArslanMessage.role == "user", ArslanMessage.id < reply.id,
