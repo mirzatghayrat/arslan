@@ -115,7 +115,10 @@ async def assemble(response: httpx.Response, on_text: Callable[[str], None] | No
         if budget <= 0:
             raise StreamStalled(f"no model output for {IDLE_S:.0f}s (stream stalled)")
         try:
-            raw = await asyncio.wait_for(lines.__anext__(), timeout=budget)
+            # Never asyncio.wait_for here: on Python 3.11 it drops a cancellation that lands as a line
+            # arrives (gh-86296), and a stream that never pauses then outlives the turn's cut or a stop.
+            async with asyncio.timeout(budget):
+                raw = await lines.__anext__()
         except StopAsyncIteration:
             break
         except TimeoutError:

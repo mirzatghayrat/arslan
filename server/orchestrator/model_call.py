@@ -150,7 +150,14 @@ async def call_with_recovery(request, state: TurnRecovery, *, remaining_s=None):
             limit = CALL_TIMEOUT_S
             if remaining_s is not None:
                 limit = max(1.0, min(limit, remaining_s()))
-            return await asyncio.wait_for(request(), timeout=limit)
+            # Not asyncio.wait_for: on Python 3.11 it drops a cancellation (the turn's stop) that lands as
+            # the call completes (gh-86296). asyncio.timeout counts it; its expiry is the same TimeoutError.
+            # The call keeps a task of its own, as under wait_for: after a stop lost elsewhere the turn's task
+            # stays cancelling, and TaskRuntime.checkpoint skips while its task is, so only in its own task
+            # does the call's checkpoint reach the task row and end the turn (review of #377). A plain await
+            # of a task never drops a cancel: one that lands as it completes is raised at the next step.
+            async with asyncio.timeout(limit):
+                return await asyncio.ensure_future(request())
         except Exception as exc:  # noqa: BLE001 — classified below; others re-raised untouched
             found = classify(exc)
             if found is None:
