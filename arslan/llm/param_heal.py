@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Sampling knobs a request can do without. Never a parameter that changes what
 # is asked (messages, tools, thinking switches): dropping those changes meaning.
-_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding", "context_management", "ttl")
+_DROPPABLE = ("temperature", "top_p", "top_k", "block_binding", "context_management", "ttl", "display")
 # 0.1.63 K3: `ttl` sits inside every cache_control marker (system, tool and message blocks). Refused, it
 # goes from every marker; the markers stay (the default five-minute cache).
 _IN_MARKERS = ("ttl",)
@@ -44,7 +44,9 @@ _IN_MARKERS = ("ttl",)
 # the request means the same without them (the caller trims context itself instead, K1b). Betas
 # travel in the payload's private "_betas" list until the provider turns it into the header.
 _BETA_OF = {"block_binding": "thinking-binding-controls-2026-08-01",
-            "context_management": "context-management-2025-06-27"}
+            "context_management": "context-management-2025-06-27",
+            # K8b: Claude's progress updates (thinking.display "updates"); without them the blocks are empty
+            "display": "thinking-display-updates-2026-08-18"}
 # OpenAI's reasoning models: "Use 'max_completion_tokens' instead." Renamed only
 # when the error itself names the new key, so the budget is kept, never lost.
 _RENAMES = {"max_tokens": "max_completion_tokens"}

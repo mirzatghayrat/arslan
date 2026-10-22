@@ -169,7 +169,9 @@ async def test_gemini_takes_tool_choice_none():
 async def test_native_requests_ask_to_drop_invalidated_blocks(monkeypatch, model):
     _, sent, headers = await claude_turn(monkeypatch, [tool_reply(("toolu_01", "one")), END], model=model)
     for payload, head in zip(sent, headers):
-        assert payload["thinking"] == {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+        # K8b C3 adds `display: "updates"` beside it (test_k8b_progress_updates.py)
+        assert payload["thinking"]["type"] == "adaptive"
+        assert payload["thinking"]["block_binding"] == {"prefix_mismatch_behavior": "drop_block"}
         assert BINDING_BETA in head.get("anthropic-beta", "")
 
 
