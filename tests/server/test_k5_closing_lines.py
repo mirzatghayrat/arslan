@@ -61,6 +61,6 @@ async def test_a_delegated_worker_never_gets_it(monkeypatch):
     assert not any(CLOSING in _status(c) for c in calls)
 
 
-def test_unverified_is_not_read_as_a_search_claim_but_not_found_still_is():
+def test_neither_unverified_nor_not_found_is_read_as_a_search_claim():
     assert not tool_loop._CLAIMS_SEARCH_RE.search("未核对：价格")
-    assert tool_loop._CLAIMS_SEARCH_RE.search("没查到价格")       # K8's job; the note avoids it
+    assert not tool_loop._CLAIMS_SEARCH_RE.search("没查到价格")   # K8a fixed it: nothing found is no claim
