@@ -93,12 +93,20 @@ _SCHEDULED_INSTEAD = ("A scheduled run cannot act on this Mac: nobody is there t
                       "you would have done, so they can do it or ask you in a conversation.")
 
 
-def _not_in_job() -> dict:
+async def _not_in_job(kind: str, target: str, title: str) -> dict:
     if _scheduled_run() is not None:
-        return _not_run({"ok": False, "external": False, "code": "act_in_background", "error": _SCHEDULED_INSTEAD})
+        return await _refused_unattended(kind, target, title)
     return _not_run({"ok": False, "external": False, "code": "act_in_background",
                      "error": "Acting in the browser and running Shortcuts or scripts happen in background work. "
                               "Call start_background_work with this goal; looking at pages is fine here."})
+
+
+async def _refused_unattended(kind: str, target: str, title: str) -> dict:
+    """S1b follow-up (cloud audit): a scheduled run's refusal leaves the row decide() leaves for want of someone
+    to ask (policy, deny, no "Always"), so the Inbox lists what the run could not do (S1b)."""
+    from server.services import permissions
+    await permissions.refuse_unattended(permissions.Request(kind=kind, target=target, title=title), _context())
+    return _not_run({"ok": False, "external": False, "code": "act_in_background", "error": _SCHEDULED_INSTEAD})
 
 
 def _unavailable() -> dict:
@@ -242,7 +250,8 @@ class _BrowserTool:
         if self.acts:
             _, job_id = _conversation_and_job()
             if job_id is None:
-                return _not_in_job()
+                where = _origin(agent_browser.current_url()) or "*"
+                return await _not_in_job("site", where, f"Act on {where}?")
             if self.action == "type" and _PASSWORD.search(str(args.get("element", ""))):
                 return _not_run({"ok": False, "external": False, "code": "no_passwords",
                                  "error": "Arslan never types passwords. Ask the user to log in themselves in "
@@ -372,7 +381,7 @@ class MacRunShortcutExecutor:
             return _bad_request("name required")
         job_id = _conversation_and_job()[1]
         if job_id is None:
-            return _not_in_job()
+            return await _not_in_job("shortcut", name, f"Run the Shortcut “{name}”?")
         if (stop := _stopped(job_id)) is not None:
             return stop
         text_input = (args or {}).get("input")
@@ -405,7 +414,7 @@ class MacAppleScriptExecutor:
             return _bad_request("script required (max 4000 characters)")
         job_id = _conversation_and_job()[1]
         if job_id is None:
-            return _not_in_job()
+            return await _not_in_job("app_risky", "AppleScript", "Run this AppleScript?")
         if (stop := _stopped(job_id)) is not None:
             return stop
         from server.services import hands_contract, hands_service
@@ -965,9 +974,10 @@ class DesktopTakeoverExecutor:
             return _bad_request("why (what you will do, in words) and minutes (1 to 30) are required")
         conversation_id, job_id = _conversation_and_job()
         if job_id is None:
+            if _scheduled_run() is not None:
+                return await _refused_unattended("takeover", "*", "Take over the screen?")
             return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                             "error": _SCHEDULED_INSTEAD if _scheduled_run() is not None else
-                             "Taking the screen over runs in background work only. Call start_background_work."})
+                             "error": "Taking the screen over runs in background work only. Call start_background_work."})
         if not desktop_available():
             return _unavailable()
         if (stop := _stopped(job_id)) is not None:
