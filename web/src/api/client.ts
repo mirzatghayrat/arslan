@@ -36,7 +36,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   SkillPromoteResult,
   SpawnDetail,
   SpawnSummary,
-  SuggestDraft,
   SuggestPrimaryResult,
   TemplateInfo,
   UsageSummary,
@@ -319,18 +318,6 @@ export const api = {
   generateNotes: (topic: string) =>
     request<{ created: NoteDto[] }>("/brain/notes/generate", { method: "POST", body: JSON.stringify({ topic }) }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
-  draftSpawn: (description: string) =>
-    request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
-  createSpawn: (body: {
-    name: string;
-    domain: string;
-    capabilities: string[];
-    persona_role?: string | null;
-    persona_tone?: string | null;
-    seed_refs?: string[];
-    equipment?: { toolsets: string[]; skills: string[] };
-  }) =>
-    request<SpawnDetail>("/spawns", { method: "POST", body: JSON.stringify(body) }),
   /** Browse / search the 249 persona seed identities. */
   getSeeds: (query?: string, limit = 40, offset = 0) => {
     const qs = new URLSearchParams();

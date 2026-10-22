@@ -18,7 +18,7 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  createSpawnDirty, gapFillDirty, noteDirty, sameKeys, spawnStudioDirty,
+  gapFillDirty, noteDirty, sameKeys, spawnStudioDirty,
 } from "../lib/dirty";
 
 describe("spawnStudioDirty", () => {
@@ -75,19 +75,6 @@ describe("spawnStudioDirty", () => {
     expect(spawnStudioDirty({
       ...empty, mode: "edit", baseline: base, name: "typed", description: "typed",
     })).toBe(false);
-  });
-});
-
-describe("createSpawnDirty", () => {
-  it("blank is clean, any field is dirty", () => {
-    expect(createSpawnDirty("", "", "")).toBe(false);
-    expect(createSpawnDirty("n", "", "")).toBe(true);
-    expect(createSpawnDirty("", "d", "")).toBe(true);
-    expect(createSpawnDirty("", "", "desc")).toBe(true);
-  });
-
-  it("whitespace is clean", () => {
-    expect(createSpawnDirty(" ", "\t", "\n")).toBe(false);
   });
 });
 

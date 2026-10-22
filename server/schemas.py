@@ -295,20 +295,6 @@ class SpawnDetailOut(SpawnOut):
     seeds: list[SeedRefOut] = []
 
 
-class DraftIn(BaseModel):
-    description: str
-
-
-class SpawnCreateIn(BaseModel):
-    name: str
-    domain: str  # free-form "category.subcategory"
-    capabilities: list[str] = []
-    seed_refs: list[str] = []   # persona-seed slugs this spawn is composed from
-    persona_role: str | None = None
-    persona_tone: str | None = None
-    equipment: dict | None = None
-
-
 class EquipmentUpdateIn(BaseModel):
     toolsets: list[str] = []
     skills: list[str] = []

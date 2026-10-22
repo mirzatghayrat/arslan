@@ -307,7 +307,7 @@ async def test_usage_summary_not_covered_footnote(client):
     # optimizer LEFT it in C7b-1, compare_judge and synthetic_corpus in C7b-2: deleted.
     for gone in ("optimizer", "compare_judge", "synthetic_corpus"):
         assert gone not in nc
-    assert len(nc) == 7
+    assert len(nc) == 5
 
 
 # ---------------------------------------------------------------------------

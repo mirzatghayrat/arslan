@@ -41,12 +41,6 @@ export function spawnStudioDirty(args: {
     || !sameKeys(args.skills, args.baseline.skills);
 }
 
-/** The create-spawn modal. The emoji has a default and is deliberately NOT
- *  counted — counting it would make every open dirty. */
-export function createSpawnDirty(name: string, domain: string, description: string): boolean {
-  return Boolean(name.trim() || domain.trim() || description.trim());
-}
-
 /** GapFillModal. `busy` counts: closing mid-step orphans an in-flight call, and
  *  a draft under review is a paid-for result the user has not consented to yet. */
 export function gapFillDirty(args: {

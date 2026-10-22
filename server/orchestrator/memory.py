@@ -346,7 +346,7 @@ async def facts_text(*, include_sensitive: bool = False,
     """The memory the bound task context may see, rendered for a prompt ('' if none, or no context).
 
     include_sensitive=False is FAIL-CLOSED: sensitive entries reach a prompt only where the host
-    call site declares the privilege (router / host answer / spawn_drafter) AND the context allows
+    call site declares the privilege (router / host answer) AND the context allows
     them. Spawn dispatch, sandbox drafts and replay ambient keep the safe default, so a forgotten
     flag gives less, never a private fact in a spawn prompt.
     """
