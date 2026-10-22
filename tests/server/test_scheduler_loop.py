@@ -35,7 +35,6 @@ from server.db.models import (
 )
 from server.orchestrator import arslan
 from server.services import (
-    replay_set,
     run_recorder,
     run_registry,
     scheduler,
@@ -355,16 +354,6 @@ async def _seed_scored_run(Session, *, spawn_id: int, kind: str, task: str,
                              score=8.0, comment="x"))
         await db.commit()
         return run.id
-
-
-async def test_scheduled_runs_never_enter_replay_corpus(memdb):
-    spawn_id = await _seed_spawn(memdb)
-    live_id = await _seed_scored_run(memdb, spawn_id=spawn_id, kind="live",
-                                     task="live-task", output="live-out")
-    await _seed_scored_run(memdb, spawn_id=spawn_id, kind="scheduled",
-                           task="sched-task", output="sched-out")
-    items = await replay_set.build(spawn_id)
-    assert [it["run_id"] for it in items] == [live_id]   # live in, scheduled out
 
 
 # ---------------------------------------------------------------------------

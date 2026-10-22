@@ -10,7 +10,6 @@ Each test monkeypatches the adapter to a deterministic stub. The invariants:
 """
 from __future__ import annotations
 
-import difflib
 
 import pytest
 from sqlalchemy import func, select
@@ -32,7 +31,7 @@ from server.db.models import (
     Toolset,
 )
 from server.orchestrator import dispatcher, tool_loop
-from server.services import replay_run, run_recorder
+from server.services import run_recorder
 from server.services.replay_safety import REPLAY_SAFE_BUILTINS, filter_replay_tools
 from server.services import personal_context as pc
 
@@ -249,32 +248,6 @@ async def test_replay_creates_replay_run(maker, monkeypatch):
 # ---------------------------------------------------------------------------
 # 5. two-arm symmetry
 # ---------------------------------------------------------------------------
-async def test_two_arm_symmetry(maker, monkeypatch):
-    sid = await _spawn(maker)
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _StreamAdapter(["out"]))
-
-    prompt_a = "You are agent X.\nRULE ONE: be concise."
-    prompt_b = "You are agent X.\nRULE ONE: be verbose."
-
-    async with maker() as s:
-        ambient = await replay_run.snapshot_ambient(
-            s, spawn_id=sid, conversation_id="c", task="do the thing")
-
-    arm_a = await replay_run.run_arm(None, spawn_id=sid, task="do the thing",
-                                     system_prompt=prompt_a, ambient=ambient)
-    arm_b = await replay_run.run_arm(None, spawn_id=sid, task="do the thing",
-                                     system_prompt=prompt_b, ambient=ambient)
-
-    async with maker() as s:
-        sys_a = (await s.get(Run, arm_a["run_id"])).system_prompt
-        sys_b = (await s.get(Run, arm_b["run_id"])).system_prompt
-
-    changed = [ln for ln in difflib.ndiff(sys_a.splitlines(), sys_b.splitlines())
-               if ln.startswith(("+ ", "- "))]
-    assert changed == ["- RULE ONE: be concise.", "+ RULE ONE: be verbose."], (
-        "the two arms' full system prompts must differ ONLY by the one target line")
-
-
 # ---------------------------------------------------------------------------
 # 6. is_replayable
 # ---------------------------------------------------------------------------
@@ -289,14 +262,3 @@ async def _run_with_tool(maker, tool_key: str | None) -> int:
                           ref={"tool": tool_key, "ok": True}, detail={}))
             await s.commit()
         return run.id
-
-
-async def test_is_replayable(maker):
-    builtin_run = await _run_with_tool(maker, "web_search")
-    mcp_run = await _run_with_tool(maker, "mcp_1__list")
-    no_tool_run = await _run_with_tool(maker, None)
-
-    async with maker() as s:
-        assert await replay_run.is_replayable(s, builtin_run) is True
-        assert await replay_run.is_replayable(s, mcp_run) is False
-        assert await replay_run.is_replayable(s, no_tool_run) is True

@@ -58,8 +58,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from server.db import session as db_session
 from server.db.models import Base
 from server.services import replay_safety
-from server.services.replay_run import REPLAY_CONVERSATION_ID
 from server.orchestrator import tool_loop
+
+# The replay sentinel replay_safety still seals (replay_run, which defined it, went in C7b-2).
+REPLAY_CONVERSATION_ID = "evolution-replay"
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -95,18 +97,39 @@ def test_is_hermetic_context_matches_both_eval_sentinels():
     assert replay_safety.is_hermetic_context(None) is False
 
 
-def test_hermetic_set_covers_every_sentinel_a_dispatch_path_actually_uses():
-    """Pin the sentinels against the LIVE dispatch paths, not against themselves.
+def test_every_sentinel_in_product_code_is_sealed():
+    """Census, not a tautology over the set's own literals.
 
-    The old version of this test asserted `"evolution-eval" in _HERMETIC_CONVERSATION_IDS`
-    — a tautology over a literal that no dispatch path uses (repo-wide grep: the string
-    appears ONLY in replay_safety's own set). It could never fail. The real invariant is
-    that the sentinel each eval/replay entry point dispatches under is a member.
+    Every `evolution-*` conversation-id literal anywhere in server/ or arslan/ (outside
+    replay_safety, which DEFINES the set) must be a member of the hermetic set, and every
+    member must stay hermetic AND non-curatable. A new eval/replay entry point that
+    dispatches under a fresh sentinel without adding it to the set fails here.
+
+    Rewritten in C7b-2 (v0.1.63): the old version read the sentinel from
+    replay_run.REPLAY_CONVERSATION_ID, which went with replay_run. No live dispatch path
+    uses a sentinel any more; the guard stays while the dispatcher does (C7b-4).
     """
-    from server.services.replay_run import REPLAY_CONVERSATION_ID
+    import ast
+    import pathlib
+    import re
 
-    assert REPLAY_CONVERSATION_ID in replay_safety._HERMETIC_CONVERSATION_IDS
-    assert replay_safety.is_hermetic_context(REPLAY_CONVERSATION_ID) is True
+    root = pathlib.Path(replay_safety.__file__).resolve().parents[2]
+    sentinel = re.compile(r"^evolution-[a-z][a-z-]*$")
+    found: dict[str, list[str]] = {}
+    for top in ("server", "arslan"):
+        for path in (root / top).rglob("*.py"):
+            if path.name == "replay_safety.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and sentinel.match(node.value):
+                    found.setdefault(node.value, []).append(f"{path.relative_to(root)}:{node.lineno}")
+    unsealed = {s: where for s, where in found.items() if s not in replay_safety._HERMETIC_CONVERSATION_IDS}
+    assert not unsealed, f"sentinel conversation ids outside the hermetic set: {unsealed}"
+
+    assert replay_safety._HERMETIC_CONVERSATION_IDS          # the census has something to hold
+    for s in replay_safety._HERMETIC_CONVERSATION_IDS:
+        assert replay_safety.is_hermetic_context(s) is True
+        assert replay_safety.should_not_curate(s) is True
 
 
 # --------------------------------------------------------------------------- curation split

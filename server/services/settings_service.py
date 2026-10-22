@@ -474,10 +474,6 @@ async def run_budget_from_settings():
         return run_budget()
 
 
-# S2 E9 — the developer-declared clean-corpus start (spec §E9 / audit #12).
-EVOLUTION_BASELINE_STARTED_AT_KEY = "evolution_baseline_started_at"
-
-
 def _parse_iso_utc(value: str | None) -> datetime | None:
     """Parse an ISO-8601 timestamp to a NAIVE-UTC datetime — matching Run.created_at, which
     is written via datetime.utcnow(). A tz-aware value is converted to UTC and stripped of
@@ -494,21 +490,6 @@ def _parse_iso_utc(value: str | None) -> datetime | None:
     if dt.tzinfo is not None:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
-
-
-async def get_baseline_started_at(session: AsyncSession) -> datetime | None:
-    """The clean-corpus start declared in E9. None = never declared → build_corpus /
-    replay_set apply no created_at floor (back-compat: every epoch>=1 live run is eligible)."""
-    return _parse_iso_utc(await _get_raw(session, EVOLUTION_BASELINE_STARTED_AT_KEY))
-
-
-async def set_baseline_started_at(session: AsyncSession, dt: datetime) -> None:
-    """Persist the clean-corpus start as an ISO-8601 string, stored naive-UTC (a tz-aware
-    dt is normalized first) so the round-trip and the DB comparison stay consistent."""
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    await _set_raw(session, EVOLUTION_BASELINE_STARTED_AT_KEY, dt.isoformat())
-    await session.commit()
 
 
 DEFAULT_RUN_DEBUG_RETENTION_DAYS = 30
