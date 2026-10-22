@@ -1,12 +1,16 @@
 """C8-4 (v0.1.63): session-end distillation, its switch, and the rest of the distill
 chain are gone.
 
-`session_ended` started distill_session in the background (ws/arslan.py), and
-POST /spawns/{id}/complete-chat ran distill_from_signals. Neither could produce
-anything on main: _distill_v2 returned `learning_disabled` unless a personal context
-was bound to that expert, and neither a background task nor that REST handler binds
-one. The `session_ended` frame itself stays and is still acked
-(test_ws_session_ended, test_ws_reattach, test_phone_turn_cards).
+`session_ended` started distill_session in the background (ws/arslan.py); it could
+not learn anything on main, because _distill_v2 returned `learning_disabled` without a
+personal context bound to that expert, and a background task binds none. The frame
+itself stays and is still acked (test_ws_session_ended, test_ws_reattach,
+test_phone_turn_cards).
+
+POST /spawns/{id}/complete-chat had no caller (no component, Bridge, desktop or
+script). Had something called it, distill_from_signals would have returned
+`learning_disabled` (not a failure reason), and the route would then have archived that
+spawn chat's messages. With no caller, removing it changes nothing anyone can reach.
 """
 import importlib.util
 
