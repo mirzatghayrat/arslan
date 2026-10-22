@@ -75,34 +75,6 @@ async def _host_wired(monkeypatch) -> dict[str, dict]:
     return {t["key"]: t for t in tools if t["key"] in ("recall", "remember")}
 
 
-def _spawn_wired() -> list[dict]:
-    """The recall/remember wired dicts a spawn equipped with second_brain gets —
-    same shape wired_tools_for_spawn returns ({key, description=Tool.description,
-    input_schema}), with descriptions sourced live from seed_catalog.TOOLSETS (the
-    catalog that seeds those Tool.description rows), never a copy-pasted string."""
-    from server.registry.seed_catalog import TOOLSETS
-
-    second_brain = next(ts for ts in TOOLSETS if ts["key"] == "second_brain")
-    desc_by_key = {t[0]: t[1] for t in second_brain["tools"]}
-    return [
-        {"key": "recall", "description": desc_by_key["recall"]},
-        {"key": "remember", "description": desc_by_key["remember"]},
-    ]
-
-
-def _spawn_prose_lines() -> tuple[str, str]:
-    """Live "- TOOL <key> (live): <description>" lines exactly as
-    dispatcher._equipment_block_from renders them for a spawn equipped with ONLY
-    second_brain — the prose cost the spawn pays IN ADDITION to the tools= schema."""
-    from server.orchestrator.dispatcher import _equipment_block_from
-
-    block = _equipment_block_from({"toolsets": [], "skills": []}, _spawn_wired())
-    tool_lines = [ln for ln in block.splitlines() if ln.startswith("- TOOL ")]
-    recall_line = next(ln for ln in tool_lines if ln.startswith("- TOOL recall "))
-    remember_line = next(ln for ln in tool_lines if ln.startswith("- TOOL remember "))
-    return recall_line, remember_line
-
-
 # ---------------------------------------------------------------------------
 # (a) HOST path — full native JSON schema (the tools= wire form)
 # ---------------------------------------------------------------------------
@@ -131,38 +103,6 @@ async def test_host_full_schema_tokens_real_cost(monkeypatch):
 # (b) SPAWN path — full JSON schema (tools=) AND prose (_equipment_block_from)
 # ---------------------------------------------------------------------------
 
-def test_spawn_schema_plus_prose_tokens_real_cost():
-    """A spawn equipped with second_brain, on a native provider, pays BOTH the
-    tools= JSON schema AND the prose equipment block. Measured: schema=234 tok
-    (the catalog Tool.description strings are longer than the host's terse ones)
-    + prose=82 tok = 316 tok total. Both are counted — the double cost is real."""
-    schema_tok = _schema_tokens(_spawn_wired())
-    recall_line, remember_line = _spawn_prose_lines()
-    prose_tok = estimate_tokens(recall_line) + estimate_tokens(remember_line)
-    total = schema_tok + prose_tok
-
-    assert schema_tok < 260, f"spawn recall+remember schema grew to {schema_tok} tok (was 234)"
-    assert prose_tok < 100, f"spawn recall+remember prose grew to {prose_tok} tok (was 82)"
-    assert total < 350, f"spawn schema+prose combined grew to {total} tok (was 316)"
-
-
 # ---------------------------------------------------------------------------
 # combined — the REAL total an agentic-memory-enabled turn pays across both paths
 # ---------------------------------------------------------------------------
-
-async def test_combined_real_cost_bound(monkeypatch):
-    """Host full schema (207) + spawn (schema 234 + prose 82 = 316) = 523 tok.
-    This is the honest, full-cost figure the earlier description-only draft (44
-    tok) understated ~12x by measuring the Anthropic path where the feature is
-    inert. The bound is the real value + headroom, with this explanation — the
-    plan's naive < 200 target predates the decision to measure the true wire
-    cost, and a 4-action × 4-kind memory API legitimately needs a richer schema
-    than a one-line router-rubric bullet. Drift past this bound is a real
-    regression (shrink a schema/description or re-budget with a comment)."""
-    host = _schema_tokens(list((await _host_wired(monkeypatch)).values()))
-    spawn = _schema_tokens(_spawn_wired())
-    recall_line, remember_line = _spawn_prose_lines()
-    prose = estimate_tokens(recall_line) + estimate_tokens(remember_line)
-
-    total = host + spawn + prose
-    assert total < 570, f"real combined recall+remember token cost grew to {total} tok (was 523)"

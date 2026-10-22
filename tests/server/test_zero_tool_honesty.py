@@ -16,12 +16,7 @@ way — never a weaker parallel copy. These tests pin:
     original text; an honest reply passes through byte-for-byte with no extra LLM call.
 """
 import pytest
-import pytest_asyncio
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-import server.db.session as db_session
-from server.db.models import Base, ConversationEvent, Spawn
 from server.orchestrator import promise_guard
 
 
@@ -121,23 +116,6 @@ async def test_correct_zero_tool_fail_open_on_llm_error(monkeypatch):
 # ---------------------------------------------------------------------------
 # Flow: dispatcher.dispatch on a ZERO-TOOL spawn (unseeded registry → no wired tools)
 # ---------------------------------------------------------------------------
-@pytest_asyncio.fixture
-async def maker(tmp_path, monkeypatch):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'zt.db'}")
-    m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with m() as s:
-        # NO registry seed → wired_tools_for_spawn returns [] → the zero-tool branch.
-        s.add(Spawn(id=7, name="persona", domain_category="content-creator",
-                    system_prompt="You are a persona-only assistant with no tools."))
-        await s.commit()
-
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    return m
-
-
 class _StreamStub:
     """dispatcher adapter: chat_stream yields a preset final reply (the persona output)."""
 
@@ -159,71 +137,3 @@ class _ChatStub:
         self.calls.append({"system": system, "user": user})
         from arslan.models import LLMResponse
         return LLMResponse(content=self._reply, tool_calls=[], usage={})
-
-
-@pytest.mark.asyncio
-async def test_zero_tool_dispatch_deck_fabrication_is_corrected(maker, monkeypatch):
-    """THE gap, closed: a persona-only spawn fabricates a delivered PPT → the correction is
-    appended (persisted in full_output) AND streamed live; the original text is kept; exactly
-    ONE bounded re-synthesis fires; a promise_intercept(tier=zero_tool) audit event is logged."""
-    from server.orchestrator import dispatcher, tool_loop
-
-    chat_stub = _ChatStub(HONEST_FIX)
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _StreamStub(DECK_FAB))
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: chat_stub)
-
-    chunks: list[str] = []
-    out = await dispatcher.dispatch("main", spawn_id=7, task_brief="给我做个 OKX 新手 PPT",
-                                    on_chunk=chunks.append)
-
-    # correction appended + persisted, original fabrication kept
-    assert HONEST_FIX in out["full_output"]
-    assert DECK_FAB in out["full_output"]
-    # correction streamed live (not just persisted)
-    assert HONEST_FIX in "".join(chunks)
-    # exactly one bounded re-synthesis LLM call
-    assert len(chat_stub.calls) == 1
-    # audit event
-    async with db_session.AsyncSessionLocal() as s:
-        evs = (await s.execute(select(ConversationEvent))).scalars().all()
-    hits = [e for e in evs if e.kind == "promise_intercept"]
-    assert len(hits) == 1
-    assert hits[0].ref["tier"] == "zero_tool"
-    assert hits[0].ref["pattern"]
-
-
-@pytest.mark.asyncio
-async def test_zero_tool_dispatch_forward_promise_is_corrected(maker, monkeypatch):
-    from server.orchestrator import dispatcher, tool_loop
-
-    chat_stub = _ChatStub(HONEST_FIX)
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _StreamStub(PROMISE_FAB))
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: chat_stub)
-
-    chunks: list[str] = []
-    out = await dispatcher.dispatch("main", spawn_id=7, task_brief="做个方案",
-                                    on_chunk=chunks.append)
-    assert HONEST_FIX in out["full_output"]
-    assert HONEST_FIX in "".join(chunks)
-    assert len(chat_stub.calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_zero_tool_dispatch_honest_answer_untouched(maker, monkeypatch):
-    """No false positive: an honest persona reply passes through byte-for-byte with NO
-    correction appended and NO extra LLM call."""
-    from server.orchestrator import dispatcher, tool_loop
-
-    chat_stub = _ChatStub("SHOULD NOT BE CALLED")
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _StreamStub(HONEST_ANSWER))
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: chat_stub)
-
-    chunks: list[str] = []
-    out = await dispatcher.dispatch("main", spawn_id=7, task_brief="护肤建议",
-                                    on_chunk=chunks.append)
-    assert out["full_output"] == HONEST_ANSWER   # unchanged
-    assert "".join(chunks) == HONEST_ANSWER      # nothing extra streamed
-    assert chat_stub.calls == []                 # no re-synthesis call
-    async with db_session.AsyncSessionLocal() as s:
-        evs = (await s.execute(select(ConversationEvent))).scalars().all()
-    assert [e for e in evs if e.kind == "promise_intercept"] == []

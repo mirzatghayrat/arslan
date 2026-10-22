@@ -27,32 +27,3 @@ async def test_skill_bodies_returns_map(maker):
     assert out["withbody"].startswith("## Trigger")
     assert out.get("nobody") in (None, "")
     assert "missing" not in out or out["missing"] in (None, "")
-
-
-def test_equipment_block_injects_body_or_falls_back():
-    from server.orchestrator.dispatcher import _equipment_block_from
-    equipment = {"toolsets": [], "skills": [
-        {"key": "withbody", "name": "With Body", "description": "d"},
-        {"key": "nobody", "name": "No Body", "description": "fallback desc"},
-    ]}
-    bodies = {"withbody": "## Trigger\nuse it\n## 决策规则\nstep one", "nobody": None}
-    block = _equipment_block_from(equipment, [], bodies)
-    assert "Your techniques:" in block
-    assert "step one" in block                              # body injected
-    assert "- TECHNIQUE No Body: fallback desc" in block    # NULL body → old one-liner
-
-
-def test_equipment_block_truncates_long_body():
-    from server.orchestrator.dispatcher import _equipment_block_from, _SKILL_BLOCK_LIMIT
-    long_body = "intro before headings. " * 100 + "\n## Trigger\n" + ("x" * 5000)
-    equipment = {"toolsets": [], "skills": [{"key": "big", "name": "Big", "description": "d"}]}
-    block = _equipment_block_from(equipment, [], {"big": long_body})
-    # bounded: the long body becomes a summary+TOC block, never the raw 5000-char dump
-    assert len(block) < len(long_body)
-    assert ("x" * 5000) not in block
-    # 3000 since the truncation-trap fix (user-approved queue-jump D2): the old
-    # 2000 cap was silently truncating two SHIPPING seeds (competitive-analysis
-    # 2199, deck-authoring 2742) into bare TOCs. This pin exists to force exactly
-    # this kind of conscious change — do not edit it without re-measuring the
-    # seed sizes the way the dispatcher.py comment records them.
-    assert _SKILL_BLOCK_LIMIT == 3000

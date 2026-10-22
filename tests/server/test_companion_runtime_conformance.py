@@ -1,6 +1,7 @@
-"""Real host/dispatcher entry points, synthetic models and tool executors.
+"""Real host entry point, synthetic models and tool executors.
 
-The recipe entry left with recipes in C7b-3 (v0.1.63)."""
+The recipe entry left with recipes in C7b-3 and the worker (dispatcher) entry with the
+dispatcher in C7b-4 (v0.1.63)."""
 import asyncio
 
 import pytest
@@ -8,18 +9,15 @@ from sqlalchemy import select
 
 from arslan.execution_budget import current
 from arslan.models import LLMResponse
-from server.db.models import Run, RunStep, Spawn
-from server.orchestrator import arslan, dispatcher, memory, spawn_loop, tool_loop
+from server.db.models import Run, RunStep
+from server.orchestrator import arslan, memory, tool_loop
 from server.orchestrator.tool_caller import current_caller
-from server.services import host_run, knowledge, run_registry
+from server.services import knowledge, run_registry
 
 
 @pytest.fixture
 async def runtime_case(execution_db, monkeypatch):
     tool = {"key": "fixture_read", "description": "Read synthetic evidence"}
-    async with execution_db() as db:
-        db.add(Spawn(id=1, name="Fixture Expert", domain_category="test", system_prompt="Fixture"))
-        await db.commit()
 
     async def context(*args, **kwargs):
         return {"history": [{"role": "user", "content": "Read fixture"}], "summary": ""}
@@ -29,33 +27,19 @@ async def runtime_case(execution_db, monkeypatch):
         return []
     async def tools(*args, **kwargs):
         return [tool]
-    async def system(*args, **kwargs):
-        return "Fixture system", [tool]
     monkeypatch.setattr(memory, "assemble_working_context", context)
     monkeypatch.setattr(memory, "facts_text", facts)
     monkeypatch.setattr(knowledge, "retrieve_scoped", retrieve)
     monkeypatch.setattr(arslan, "_arslan_tools", tools)
     monkeypatch.setattr(arslan, "_callable_tools", tools)        # K7: what the turn may run
-    monkeypatch.setattr(dispatcher, "build_spawn_system", system)
-    monkeypatch.setattr(spawn_loop, "wired_tools_for_spawn", tools)
 
     async def run(entry, events):
-        if entry == "host":
-            return await arslan._handle_answer("fixture-host", "Read fixture", events.append)
-        assert entry == "worker", entry
-        async def body(sink):
-            result = await dispatcher.dispatch(
-                "fixture-worker", spawn_id=1, task_brief="Read fixture",
-                on_event=sink, on_chunk=lambda text: sink({"type": "stream_chunk", "content": text}),
-                include_history=False, persist=False,
-            )
-            return result["full_output"]
-        return await host_run.execute("fixture-worker", "Read fixture", events.append, body,
-                                      kind="host", name="Fixture Expert")
+        assert entry == "host", entry
+        return await arslan._handle_answer("fixture-host", "Read fixture", events.append)
     return run
 
 
-@pytest.mark.parametrize("entry", ["host", "worker"])
+@pytest.mark.parametrize("entry", ["host"])
 @pytest.mark.parametrize("allowed", [True, False])
 async def test_actual_entries_share_pretool_gate_and_persisted_results(
     entry, allowed, runtime_case, execution_db, monkeypatch,
@@ -94,7 +78,7 @@ async def test_actual_entries_share_pretool_gate_and_persisted_results(
     assert current_caller() is None
 
 
-@pytest.mark.parametrize("entry", ["host", "worker"])
+@pytest.mark.parametrize("entry", ["host"])
 async def test_actual_entries_propagate_outer_cancellation(entry, runtime_case, execution_db, monkeypatch):
     entered = asyncio.Event()
     stopped = asyncio.Event()

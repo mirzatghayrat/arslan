@@ -4,10 +4,6 @@ preamble at the top of the injected techniques section.
 skill_compatibility(key, body) is deterministic and HONEST — "full" only when every
 bundled script is runnable in the sandbox exactly as shipped."""
 from server.db.models import SkillPack
-from server.orchestrator.dispatcher import (
-    _TECHNIQUE_HONESTY_PREAMBLE,
-    _equipment_block_from,
-)
 from server.registry import service
 
 
@@ -97,23 +93,3 @@ def test_skill_dict_carries_compatibility(tmp_path, monkeypatch):
 
 
 # ── Part B: one-time anti-fabrication preamble ───────────────────────────────────────
-
-def test_preamble_present_exactly_once_when_skills_equipped(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    equipment = {"toolsets": [], "skills": [
-        service._skill_dict(_pack("a")),
-        service._skill_dict(_pack("b")),
-    ]}
-    bodies = {"a": "## X\nalpha technique", "b": "## Y\nbeta technique"}
-    block = _equipment_block_from(equipment, [], bodies)
-    assert block.count(_TECHNIQUE_HONESTY_PREAMBLE) == 1
-    # preamble sits above the per-skill blocks
-    assert block.index(_TECHNIQUE_HONESTY_PREAMBLE) < block.index("alpha technique")
-
-
-def test_preamble_absent_when_no_skills_equipped(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    equipment = {"toolsets": [], "skills": []}
-    block = _equipment_block_from(equipment, [], {})
-    assert _TECHNIQUE_HONESTY_PREAMBLE not in block
-    assert "Your techniques:" not in block

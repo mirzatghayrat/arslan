@@ -122,23 +122,17 @@ async def test_a_task_without_a_spawn_fires_an_arslan_turn(db, monkeypatch):
 async def test_an_old_expert_row_fires_as_an_arslan_turn(db, monkeypatch, spawn_id):
     """0.1.63 (C1): a row an older build wrote with target="spawn" (migration 0056
     rewrites stored rows; this is one it missed) runs as an Arslan turn, whether
-    its spawn still exists or was deleted (spawn_id SET NULL). No expert is
-    dispatched, and the fire is an ordinary ok outcome."""
+    its spawn still exists or was deleted (spawn_id SET NULL), and the fire is an
+    ordinary ok outcome. (No expert can be dispatched: the dispatcher went in C7b-4.)"""
     from sqlalchemy import select
 
-    from server.orchestrator import dispatcher
     from server.services import scheduler
 
-    arslan_turns, dispatches = [], []
+    arslan_turns = []
 
     async def fake_turn(cid, prompt):
         arslan_turns.append((cid, prompt))
     monkeypatch.setattr(scheduler, "run_arslan_turn", fake_turn)
-
-    async def fake_dispatch(*args, **kwargs):
-        dispatches.append(args)
-        raise AssertionError("an expert was dispatched")
-    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
 
     tid = await _task(db, prompt="do it", cid="conv-y")
     async with db() as s:
@@ -149,7 +143,6 @@ async def test_an_old_expert_row_fires_as_an_arslan_turn(db, monkeypatch, spawn_
     await scheduler._fire(task)
 
     assert arslan_turns == [("conv-y", "do it")]
-    assert dispatches == []
     async with db() as s:
         rows = (await s.execute(
             select(ScheduledTaskRun).where(ScheduledTaskRun.task_id == tid))).scalars().all()
