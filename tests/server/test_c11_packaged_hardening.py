@@ -92,6 +92,12 @@ def test_a_packaged_server_allows_no_other_origin_by_default(monkeypatch):
     assert explicit.settings.allowed_origins == ("https://a.example",)
 
 
+def test_a_packaged_server_trusts_only_localhost_hosts(monkeypatch):
+    # C11 review F1: no test-harness host (t, test, testserver) in the desktop app's TrustedHost list.
+    assert _config(monkeypatch, ARSLAN_PACKAGED="1").settings.allowed_hosts == ("localhost", "127.0.0.1")
+    assert "testserver" in _config(monkeypatch).settings.allowed_hosts            # dev keeps the harness hosts
+
+
 # 4 ── a WebSocket with no Origin is refused ──────────────────────────────────────────────────────────
 
 def test_a_packaged_server_refuses_a_websocket_with_no_origin(monkeypatch):
@@ -118,7 +124,7 @@ def test_a_packaged_server_registers_no_test_route(monkeypatch):
 # 6 ── a new MCP token needs the current access token ─────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_generating_an_mcp_token_needs_the_current_access_token(monkeypatch, tmp_path):
+async def test_generating_or_disabling_an_mcp_token_needs_the_current_access_token(monkeypatch, tmp_path):
     from unittest.mock import AsyncMock
 
     from server.services import settings_service
@@ -134,6 +140,10 @@ async def test_generating_an_mcp_token_needs_the_current_access_token(monkeypatc
         right = await c.post("/api/v1/settings/mcp-token/generate", headers={"Authorization": f"Bearer {current}"})
     assert (bare.status_code, wrong.status_code) == (401, 401)
     assert right.status_code == 200 and right.json()["token"]
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        off_bare = await c.post("/api/v1/settings/mcp-token/disable")
+        off_right = await c.post("/api/v1/settings/mcp-token/disable", headers={"Authorization": f"Bearer {current}"})
+    assert off_bare.status_code == 401 and off_right.status_code == 200   # C11 review F2
 
 
 # ── prod mode is gone ────────────────────────────────────────────────────────────────────────────────

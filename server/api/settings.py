@@ -146,6 +146,12 @@ async def generate_mcp_token(request: Request, db: AsyncSession = Depends(get_se
 async def disable_mcp_token(request: Request, db: AsyncSession = Depends(get_session)) -> McpTokenOut:
     if not _is_direct_localhost(request):
         raise HTTPException(status_code=403, detail="MCP token control is localhost-only")
+    active = auth.active_token()
+    if active and not _bearer_matches(request, active):
+        raise HTTPException(
+            status_code=401,
+            detail="present the current access token to disable the MCP token",
+            headers={"WWW-Authenticate": "Bearer"})
     from server.mcp_server import token_store
     token_store.clear_mcp_token()
     enabled = await settings_service.mcp_server_enabled(db)

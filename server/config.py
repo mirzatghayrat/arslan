@@ -133,6 +133,8 @@ def load_settings() -> Settings:
     hosts_raw = os.environ.get("ARSLAN_ALLOWED_HOSTS", "").strip()
     if hosts_raw:
         allowed_hosts: tuple[str, ...] = tuple(h.strip() for h in hosts_raw.split(",") if h.strip())
+    elif packaged:
+        allowed_hosts = ("localhost", "127.0.0.1")     # no test-harness host in the desktop app (C11 review F1)
     else:
         allowed_hosts = ("localhost", "127.0.0.1", "testserver", "test", "t")
 
