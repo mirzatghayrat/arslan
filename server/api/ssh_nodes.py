@@ -1,9 +1,9 @@
 """Enrolled machines: list, enrol, revoke, and the audit trail (spec P3c).
 
 Enrolment lands HERE and only here. The tool that proposes it writes nothing —
-it paints a card, and the card's button calls this endpoint. That is the same
-division `propose_connect_mcp` uses, and it is what makes "enrolment is an
-explicit human action" true of the code rather than a thing the docs assert.
+it paints a card, and the card's button calls this endpoint. That division is
+what makes "enrolment is an explicit human action" true of the code rather
+than a thing the docs assert.
 """
 from __future__ import annotations
 

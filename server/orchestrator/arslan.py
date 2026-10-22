@@ -1262,12 +1262,6 @@ async def _every_tool() -> list[dict]:
         tools.append({"key": "read_skill", "description":
             "Read one of the user's saved methods (skills) before doing work it covers, then follow it. "
             "args: {key, section?}. Available:\n" + index})
-    if not in_job:
-        tools.append({"key": "suggest_connector", "description":
-            "Offer to connect one of the built-in connectors (GitHub, Notion, …) when the user wants a "
-            "service connected. Shows the user a confirm card; nothing connects until they confirm, and "
-            "any key is typed on the card, never here. args: {name}. If there is no such connector, the "
-            "result lists what exists: then do the task another way instead of stopping."})
     # 0.1.56 §7: a project's conversation may propose a changed plan (a card; the user decides).
     from server.services import personal_context as _pc
     _ctx = _pc.current()

@@ -2,9 +2,9 @@
  *
  *  A card waits 30 minutes, and running out is never a no. Settings › Desktop used to say a card is "declined after 5 minutes"
  *  in every app language, the support page and the Bridge protocol said five minutes too. And the notice that comes up when a
- *  card runs out ("…so it was not done… Arslan will tell you what is waiting") is wrong for a proposal to enrol a machine or to
- *  connect a server: those never wait on the server, nothing is held for them, and Arslan has nothing to tell. They get a line
- *  of their own, in six languages. */
+ *  card runs out ("…so it was not done… Arslan will tell you what is waiting") is wrong for a proposal to enrol a machine (and
+ *  was for one to connect a server, until 0.1.63 C9b removed that card): it never waits on the server, nothing is held for it,
+ *  and Arslan has nothing to tell. It gets a line of its own, in six languages. */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, cleanup, render, screen } from "@testing-library/react";
@@ -131,8 +131,6 @@ describe("the support page and the Bridge protocol", () => {
 // ── The notice when a card runs out ───────────────────────────────────────────────────────────────────────────
 
 const ENROLL = { type: "propose_enroll_node", call_id: "n1", name: "mini", host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"] };
-const CONNECT = { type: "propose_connect_mcp", call_id: "m1", key: "memory", label: "Memory", transport: "stdio", command: "npx", argv: [],
-  url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null };
 const COMMAND = { type: "propose_run_command", call_id: "c1", pretty: "ls", reason: "", options: ["once", "conversation"] };
 const WRITE = { type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a", options: ["once", "conversation"] };
 
@@ -152,17 +150,6 @@ describe("the notice when a card runs out says what is true of that card", () =>
     expect(body()).toContain("kit.expiredTitle");
     expect(body()).toContain("kit.expiredEnrollBody");
     expect(body()).not.toContain("kit.expiredBody");
-    expect(body()).not.toContain("kit.expiredConnectBody");
-  });
-
-  it("a proposal to connect a server has its own line too", () => {
-    render(<AskSlot send={vi.fn()} />);
-    frame(CONNECT);
-    runOut();
-    expect(body()).toContain("kit.expiredTitle");
-    expect(body()).toContain("kit.expiredConnectBody");
-    expect(body()).not.toContain("kit.expiredBody");
-    expect(body()).not.toContain("kit.expiredEnrollBody");
   });
 
   it.each([["a command card", COMMAND], ["a write card", WRITE]])("%s keeps the line that says Arslan will tell what is waiting", (_n, card) => {
@@ -171,7 +158,6 @@ describe("the notice when a card runs out says what is true of that card", () =>
     runOut();
     expect(body()).toContain("kit.expiredBody");
     expect(body()).not.toContain("kit.expiredEnrollBody");
-    expect(body()).not.toContain("kit.expiredConnectBody");
   });
 
   it("when a card the server waits on runs out beside a proposal, the notice keeps the line that is true of it, whichever ran out first", () => {
@@ -211,7 +197,7 @@ describe("the notice when a card runs out says what is true of that card", () =>
     cleanup();
     useArslanStore.setState(initialArslanState(), true);
     render(<AskSlot send={vi.fn()} />);
-    frame(CONNECT);
+    frame(ENROLL);
     runOut();
     act(() => { useArslanStore.getState().addUserMessage("I'm back"); });
     expect(useArslanStore.getState().cardExpiredKind).toBeNull();
@@ -244,15 +230,15 @@ const WILL_TELL: Record<Lang, RegExp> = {
   de: /sagt dir, was noch wartet/, fr: /vous dira ce qui attend/,
 };
 
-describe("the three lines, in six languages", () => {
-  it.each(LANGS)("%s: enrol and connect each have a line of their own — 30 minutes, not a no, what was left undone — and neither claims what is not true of them", (lang) => {
+describe("the two lines, in six languages", () => {
+  it.each(LANGS)("%s: enrol has a line of its own — 30 minutes, not a no, what was left undone — and it claims nothing that is not true of it", (lang) => {
     const kit = LOCALES[lang].kit;
-    const lines = [kit.expiredBody, kit.expiredEnrollBody, kit.expiredConnectBody];
-    expect(new Set(lines).size, `${lang}: three different lines`).toBe(3);
+    const lines = [kit.expiredBody, kit.expiredEnrollBody];
+    expect(new Set(lines).size, `${lang}: two different lines`).toBe(2);
     // The default is the one that says "not done" and "Arslan will tell you" — the guard that the patterns bite.
     expect(kit.expiredBody).toMatch(NOT_DONE[lang]);
     expect(kit.expiredBody).toMatch(WILL_TELL[lang]);
-    for (const own of [kit.expiredEnrollBody, kit.expiredConnectBody]) {
+    for (const own of [kit.expiredEnrollBody]) {
       expect(own.trim(), lang).not.toBe("");
       expect(own, lang).toMatch(/\b30\b/);
       expect(own, lang).toMatch(NOT_A_NO_NOTICE[lang]);
@@ -261,23 +247,18 @@ describe("the three lines, in six languages", () => {
     }
   });
 
-  it.each(LANGS)("%s: the enrol line is about the machine and the connect line about the server", (lang) => {
+  it.each(LANGS)("%s: the enrol line is about the machine, not a server", (lang) => {
     const kit = LOCALES[lang].kit;
     expect(kit.expiredEnrollBody, lang).toMatch(MACHINE[lang]);
     expect(kit.expiredEnrollBody, lang).not.toMatch(SERVER[lang]);
-    expect(kit.expiredConnectBody, lang).toMatch(SERVER[lang]);
-    expect(kit.expiredConnectBody, lang).not.toMatch(MACHINE[lang]);
   });
 });
 
 // ── Fix round 1 ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** What the enrol and connect lines say was NOT done. A flipped verb ("已经记住") keeps every keyword above, so these pin the negation. */
+/** What the enrol line says was NOT done. A flipped verb ("已经记住") keeps every keyword above, so these pin the negation. */
 const ENROLL_NOT_DONE: Record<Lang, RegExp> = {
   en: /was not remembered/, zh: /没有记住/, ja: /記憶していません/, es: /no se recordó/, de: /nicht gemerkt/, fr: /pas été mémorisée/,
-};
-const CONNECT_NOT_DONE: Record<Lang, RegExp> = {
-  en: /was not connected/, zh: /没有连接/, ja: /接続していません/, es: /no se conectó/, de: /nicht verbunden/, fr: /pas été connecté/,
 };
 /** A scheduled task never waits for an answer (spec §A4): the lede says so, after the sentence about cards that wait in the window. */
 const SCHEDULED_NEVER_WAITS: Record<Lang, RegExp> = {
@@ -286,19 +267,13 @@ const SCHEDULED_NEVER_WAITS: Record<Lang, RegExp> = {
 };
 
 describe("fix round 1: the notice lines say what was left undone, and the lede does not make a scheduled task wait", () => {
-  it.each(LANGS)("%s: the enrol line says the machine was NOT remembered and the connect line that the server was NOT connected", (lang) => {
-    const kit = LOCALES[lang].kit;
-    expect(kit.expiredEnrollBody, lang).toMatch(ENROLL_NOT_DONE[lang]);
-    expect(kit.expiredConnectBody, lang).toMatch(CONNECT_NOT_DONE[lang]);
-    expect(kit.expiredEnrollBody, lang).not.toMatch(CONNECT_NOT_DONE[lang]);
-    expect(kit.expiredConnectBody, lang).not.toMatch(ENROLL_NOT_DONE[lang]);
+  it.each(LANGS)("%s: the enrol line says the machine was NOT remembered", (lang) => {
+    expect(LOCALES[lang].kit.expiredEnrollBody, lang).toMatch(ENROLL_NOT_DONE[lang]);
   });
 
-  it("the German lines ask Arslan again in one plain sentence, not with an adverb that also reads as 'please'", () => {
+  it("the German line asks Arslan again in one plain sentence, not with an adverb that also reads as 'please'", () => {
     expect(de.kit.expiredEnrollBody).not.toMatch(/Bitte Arslan/);
-    expect(de.kit.expiredConnectBody).not.toMatch(/Bitte Arslan/);
     expect(de.kit.expiredEnrollBody).toContain("Frag Arslan einfach noch einmal danach, wann immer du willst.");
-    expect(de.kit.expiredConnectBody).toContain("Frag Arslan einfach noch einmal danach, wann immer du willst.");
   });
 
   it.each(LANGS)("%s: the Desktop lede says a scheduled task never waits for an answer, after the cards that wait in the window", (lang) => {

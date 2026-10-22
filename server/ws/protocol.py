@@ -180,8 +180,7 @@ def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
                         fingerprints: list[str]) -> dict[str, Any]:
     """Arslan proposes enrolling a machine (P3c). Emitting this enrolls NOTHING.
 
-    Same shape as propose_connect_mcp and for the same reason: the card is where
-    the person acts, and the write goes over REST from their click. Enrolment is
+    The card is where the person acts, and the write goes over REST from their click. Enrolment is
     the highest-consequence thing in this feature, so it must never be reachable
     as a side effect of Arslan having looked at a machine.
 
@@ -190,46 +189,6 @@ def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
     them a second time."""
     return {"type": "propose_enroll_node", "call_id": call_id, "name": name,
             "host": host, "user": user, "fingerprints": list(fingerprints)}
-
-
-def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
-                        command: str, argv: list[str], url: str | None,
-                        env_keys: list[dict], prerequisites: str = "",
-                        requires_path: bool = False,
-                        path_placeholder: str | None = None,
-                        label_key: str | None = None) -> dict[str, Any]:
-    """Arslan proposes connecting a preset MCP server. Emitting this frame connects
-    NOTHING — the frontend renders a confirm card; the user reviews prerequisites, enters
-    any required credentials (in the card's password fields, NEVER here), and the apply
-    runs over REST. `env_keys` carries credential NAMES + metadata only, never values.
-    `requires_path`/`path_placeholder` (Filesystem/Git) flag a local filesystem path the
-    card must collect in a PLAIN TEXT field (not a secret) and append to `argv` client-side
-    before connecting."""
-    return {"type": "propose_connect_mcp", "call_id": call_id, "key": key, "label": label,
-            **({"label_key": label_key} if label_key else {}),
-            "transport": transport, "command": command, "argv": argv, "url": url,
-            "env_keys": [{"name": str(e["name"]), "description": str(e.get("description", "")),
-                          "get_it_url": str(e.get("get_it_url", "")), "paid": bool(e.get("paid", False)),
-                          **({"description_key": e["description_key"]} if isinstance(e.get("description_key"), str) else {})}
-                         for e in env_keys],
-            "prerequisites": prerequisites,
-            "requires_path": requires_path,
-            "path_placeholder": path_placeholder}
-
-
-def mcp_connect_followup(*, server_id: int, tool_count: int, safe_count: int,
-                         restricted_count: int, assignable: bool,
-                         call_id: str | None = None) -> dict[str, Any]:
-    """Honest, tier-aware result after a connect card completed. assignable=False means
-    no tool is safe+wired → connected but must be reviewed in Settings before equipping.
-
-    `call_id` is the proposal's (`propose_connect_mcp`) — the card this answers. The frame is
-    fanned out to every window on the conversation, and only the window that connected the
-    server knows which card it was; naming it lets every window close its own copy. Absent
-    (an older client sent no id), the frame is what it always was and names only the server."""
-    return {"type": "mcp_connect_followup", "server_id": server_id, "tool_count": tool_count,
-            "safe_count": safe_count, "restricted_count": restricted_count, "assignable": assignable,
-            **({"call_id": call_id} if call_id else {})}
 
 
 def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:

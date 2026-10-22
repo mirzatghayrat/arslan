@@ -50,7 +50,7 @@ describe("Approve now", () => {
   });
 
   it("a card it cannot answer outside the chat is not shown; nothing waiting shows nothing", async () => {
-    vi.spyOn(client, "request").mockResolvedValue([{ ...ask, frame: { type: "propose_connect_mcp", call_id: "m" } }] as never);
+    vi.spyOn(client, "request").mockResolvedValue([{ ...ask, frame: { type: "propose_enroll_node", call_id: "m" } }] as never);
     const count = vi.fn();
     const { container } = render(<InboxApprovals onOpenConversation={() => {}} onCount={count} />);
     await waitFor(() => expect(count).toHaveBeenCalledWith(0));

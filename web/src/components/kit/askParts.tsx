@@ -114,7 +114,7 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, conversatio
 }
 
 /**
- * 0.1.61 §A4: while a card's own apply is in flight (connecting a server, enrolling a machine) its Allow, No and keys are off, and a REST call
+ * 0.1.61 §A4: while a card's own apply is in flight (enrolling a machine) its Allow, No and keys are off, and a REST call
  * has no client timeout. This is the way out that is not an answer: the apply goes on, the card leaves, and the chat says how it ended.
  */
 export function HideWhileBusy({ onHide, testId }: { onHide: () => void; testId: string }) {

@@ -885,8 +885,6 @@
     },
     "chips": {
       "all": "すべて",
-      "recommended": "おすすめ",
-      "registered": "登録済みサーバー",
       "usable": "利用可能",
       "unimplemented": "未実装",
       "arslan_only": "Arslanのみ"
@@ -919,7 +917,6 @@
       }
     },
     "sections": {
-      "recommended_mcp": "おすすめ · ワンクリック接続",
       "import_skills": "リポジトリからスキルをインポート"
     },
     "dossier": {
@@ -1470,11 +1467,8 @@
     "expiredTitle": "あなたを待っています",
     "expiredBody": "30 分間だれも応答しなかったので、実行していません。拒否ではありません。何が待っているかは Arslan が伝えます。",
     "expiredEnrollBody": "30 分間だれも応答しなかったので、このマシンは記憶していません。拒否ではありません。使いたいときは、もう一度 Arslan に頼んでください。",
-    "expiredConnectBody": "30 分間だれも応答しなかったので、サーバーには接続していません。拒否ではありません。使いたいときは、もう一度 Arslan に頼んでください。",
     "hide": "隠す",
     "hideHint": "処理は続きます。結果はチャットでお知らせします。",
-    "hiddenConnected": "{{name}} に接続しました。",
-    "hiddenConnectFailed": "{{name}} に接続できませんでした。{{why}}",
     "hiddenEnrolled": "{{name}} を記憶しました。",
     "hiddenEnrollFailed": "{{name}} を記憶できませんでした。{{why}}"
   },

@@ -8,7 +8,7 @@
 - **SSH with no enrolled machine** offers `ssh_probe` and `enroll_node` only. Enrolling pins the host key
   before a first command runs, and the Capabilities page says the same. ssh_run itself works on any
   host, so this changes first use. ⓪Plan's call (A) on the user's card U3.
-- `suggest_connector` is C9b's to delete, and `run_python`, `create_skill` and `propose_plan_change`
+- `suggest_connector` is gone (C9b), and `run_python`, `create_skill` and `propose_plan_change`
   were never resident; only the last is pinned here.
 """
 import sys

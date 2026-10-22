@@ -95,14 +95,12 @@ async def test_with_someone_to_ask_a_missing_callback_writes_no_row():
     assert out["ok"] is False and await _rows() == []
 
 
-async def test_a_connector_and_a_machine_offered_with_nobody_there_are_listed():
-    """⓪Plan's review: the schedule card promises every step that needs an OK is listed; offering a
-    connector or enrolling a machine needs the user too."""
-    await _dispatch("suggest_connector", {"name": "GitHub"})
+async def test_a_machine_offered_with_nobody_there_is_listed():
+    """⓪Plan's review: the schedule card promises every step that needs an OK is listed; enrolling a
+    machine needs the user too. (Offering a connector was the other case; 0.1.63 C9b removed that tool.)"""
     await _dispatch("enroll_node", {"host": "studio.local", "user": "me"})
-    first, second = await _rows()
-    assert _policy(first, "capability") and first.target == "connector:GitHub"
-    assert _policy(second, "remote") and second.target == "remote:studio.local"
+    [row] = await _rows()
+    assert _policy(row, "remote") and row.target == "remote:studio.local"
 
 
 async def test_a_capability_found_with_nobody_there_is_listed_too(monkeypatch):

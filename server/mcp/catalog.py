@@ -1,92 +1,11 @@
-"""Backend preset MCP-connector catalog — the SINGLE source of truth for both the
-Settings recommended list and conversation-driven connect. Static, versioned, reviewed
-data ONLY (no runtime network fetch). Ported from web/src/data/mcpPresets.ts (now deleted)
-and extended with per-credential prerequisite metadata (description / how-to URL / paid)
-so the connect card can disclose requirements BEFORE the user hits a wall.
+"""Hand-graded tool tiers for MCP servers whose tool names do not say what they do (Playwright).
 
-`requires_path` / `path_placeholder` restore the old mcpPresets.ts `needsPath` /
-`pathPlaceholder` fields (Filesystem + Git take a local filesystem path, appended to
-`args` by the caller — never a credential, so they stay `one_click` in the
-no-env-required sense). `requires_path` is orthogonal to `env`/`one_click`: a
-connector can need a path, credentials, both, or neither."""
+0.1.63 C9b: this used to be the preset connector catalog as well (the recommended list in Settings
+and the model's `suggest_connector` tool). Both are gone: recommending MCP servers waits for its own
+round after v0.1.65 (user, 2026-10-21); adding one is `find_capability` (the official MCP Registry) or
+the manual form. What stays grades the tools of a server already installed (`server.mcp.discovery`)."""
 from __future__ import annotations
 
-# Each connector: env is a list of REQUIRED credentials; empty env == one_click.
-# requires_path/path_placeholder gate a local-path prompt independent of env.
-#: `auth` is EXPLICIT on every entry — "none" | "static_key" | "oauth" — because the
-#: derived two-way split (`_one_click` = "has no env") has no way to say "needs an
-#: OAuth flow we do not support yet". The first oauth-shaped entry added under the
-#: old shape would have rendered as a needs-key card with a prefill form collecting
-#: a key no service will ever issue. The field ships before any oauth entry does,
-#: deliberately (ruling ②, 2026-08-08): the mechanism first, never a decoy entry.
-CONNECTORS: list[dict] = [
-    {"key": "fetch", "auth": "none", "label": "Fetch", "transport": "stdio", "command": "uvx",
-     "args": ["mcp-server-fetch"], "url": None, "runtime": "python", "env": [],
-     "requires_path": False, "path_placeholder": None,
-     "description": "Fetch a URL and convert it to clean markdown."},
-    {"key": "memory", "auth": "none", "label": "Memory", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@modelcontextprotocol/server-memory"], "url": None, "runtime": "node",
-     "env": [], "requires_path": False, "path_placeholder": None,
-     "description": "Persistent knowledge-graph memory (stored locally)."},
-    {"key": "sequential-thinking", "auth": "none", "label": "Sequential Thinking", "transport": "stdio",
-     "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-     "url": None, "runtime": "node", "env": [],
-     "requires_path": False, "path_placeholder": None,
-     "description": "A structured step-by-step reasoning scaffold."},
-    {"key": "time", "auth": "none", "label": "Time", "transport": "stdio", "command": "uvx",
-     "args": ["mcp-server-time"], "url": None, "runtime": "python", "env": [],
-     "requires_path": False, "path_placeholder": None,
-     "description": "Current time and timezone conversion."},
-    {"key": "filesystem", "auth": "none", "label": "Filesystem", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@modelcontextprotocol/server-filesystem"], "url": None, "runtime": "node",
-     "env": [], "requires_path": True, "path_placeholder": "/absolute/path/to/expose",
-     "description": "Read and write files under a directory you choose. Takes a local path."},
-    {"key": "git", "auth": "none", "label": "Git", "transport": "stdio", "command": "uvx",
-     "args": ["mcp-server-git", "--repository"], "url": None, "runtime": "python", "env": [],
-     "requires_path": True, "path_placeholder": "/absolute/path/to/git/repo",
-     "description": "Read, search, and commit a local git repository. Takes a repo path."},
-    {"key": "everything", "auth": "none", "label": "Everything", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@modelcontextprotocol/server-everything"], "url": None, "runtime": "node",
-     "env": [], "requires_path": False, "path_placeholder": None,
-     "description": "Reference server with sample tools — for testing MCP plumbing."},
-    {"key": "brave-search", "auth": "static_key", "label": "Brave Search", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@modelcontextprotocol/server-brave-search"], "url": None, "runtime": "node",
-     "requires_path": False, "path_placeholder": None,
-     "description": "Web search via the Brave Search API.",
-     "env": [{"name": "BRAVE_API_KEY",
-              "description": "A Brave Search API key.",
-              "get_it_url": "https://brave.com/search/api/",
-              "paid": False}]},
-    {"key": "github", "auth": "static_key", "label": "GitHub", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@modelcontextprotocol/server-github"], "url": None, "runtime": "node",
-     "requires_path": False, "path_placeholder": None,
-     "description": "GitHub repo / issue / PR access.",
-     "env": [{"name": "GITHUB_PERSONAL_ACCESS_TOKEN",
-              "description": "A GitHub personal access token (classic or fine-grained).",
-              "get_it_url": "https://github.com/settings/tokens",
-              "paid": False}]},
-    # Playwright. CONTAINMENT IS IN THE ARGS, not in a note asking the user to
-    # be careful: --isolated gives every session a throwaway profile, so the
-    # browser starts with no cookies, no logged-in accounts and nothing of the
-    # user's own to lose. A connector that could drive a signed-in browser is a
-    # different and much larger thing than one that cannot, and which of the two
-    # this is must not depend on anybody remembering a flag.
-    {"key": "playwright", "auth": "none", "label": "Playwright", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@playwright/mcp@0.0.80", "--isolated", "--sandbox"], "url": None,
-     "runtime": "node", "env": [], "requires_path": False, "path_placeholder": None,
-     "description": ("Drive a web page through its accessibility tree — read what is on "
-                     "screen, and (once you allow it) click and type. Runs in a private "
-                     "browser profile with no logged-in accounts."),
-     "containment": "isolated browser profile; no access to your signed-in sessions"},
-]
-
-# Manual tiering, because the heuristic is WRONG here and wrong in the unsafe
-# direction's opposite: verified on this build, suggest_tier() answers
-# "orchestrator" for every playwright tool including browser_snapshot, since
-# none of snapshot/click/navigate/type appears in its read or write verb lists.
-# A toolset with no safe tool fails assert_assignable, so a spawn would gain
-# nothing at all from this connector.
-#
 # The grading rule is the obvious one, applied by hand: a tool that only OBSERVES
 # is safe; a tool that ACTS on the page starts at orchestrator and can be raised
 # per tool in Settings. Listing them explicitly rather than pattern-matching
@@ -143,33 +62,4 @@ def manual_tier(server_args: list[str] | None, tool_name: str) -> str | None:
         for marker, table in MANUAL_TIERS.items():
             if marker in str(token):
                 return table.get(tool_name, "orchestrator")
-    return None
-
-
-def _one_click(c: dict) -> bool:
-    return not c["env"]
-
-
-def list_connectors() -> list[dict]:
-    return [_display_connector(c) for c in CONNECTORS]
-
-
-def _display_connector(c: dict) -> dict:
-    # UI hints only. Keep command, permissions, credential names and source copy
-    # unchanged; make nested copies so consumers cannot mutate the preset.
-    prefix = f"catalogUI.connectors.{c['key']}"
-    return {**c, "one_click": _one_click(c), "label_key": f"{prefix}.name",
-            "description_key": f"{prefix}.description", "args": list(c["args"]),
-            "env": [{**e, "description_key": f"{prefix}.credentials.{e['name']}"} for e in c["env"]]}
-
-
-def find_connector(query: str) -> dict | None:
-    """Case-insensitive exact match on key or label (deterministic; no LLM, no network).
-    A fuzzy/aliased 'connect my github' is normalized by the caller to 'github' before this."""
-    q = (query or "").strip().lower()
-    if not q:
-        return None
-    for c in CONNECTORS:
-        if q == c["key"].lower() or q == c["label"].lower():
-            return _display_connector(c)
     return None
