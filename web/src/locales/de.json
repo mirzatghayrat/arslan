@@ -751,16 +751,12 @@
     "complete_confirm": "Dieses Gespräch wird für das Langzeitgedächtnis zusammengefasst und archiviert. Fortfahren?",
     "new_chat": "Neues Gespräch",
     "thread_menu": "Gesprächsaktionen",
-    "distill": "Für Gedächtnis zusammenfassen",
     "archive": "Archivieren",
     "unarchive": "Archivierung aufheben",
     "delete": "Löschen",
     "delete_confirm_body": "Nachrichten und Ereignisse dieses Gesprächs werden gelöscht. Diagnose- und Routing-Prüfverläufe bleiben absichtlich erhalten. Dies kann nicht rückgängig gemacht werden.",
     "delete_confirm_ok": "Löschen",
     "archived_section": "Archiviert",
-    "distilled_toast": "{{count}} Agent(en) in den Speicher destilliert",
-    "distilled_none": "Nichts zu destillieren",
-    "distill_failed": "Zusammenfassung fehlgeschlagen",
     "no_spawns": "Noch keine Spawns",
     "no_spawns_desc": "Sie erscheinen hier, sobald du einen erstellst.",
     "remote": "Remote",
@@ -1507,12 +1503,6 @@
     "tool_error": {
       "title": "{{name}} hatte einen Werkzeugfehler",
       "detail": "{{tool}} fehlgeschlagen · run #{{run_id}}"
-    }
-  },
-  "recap": {
-    "distill": {
-      "manual": "{{distilled}} Spawns manuell destilliert",
-      "manual_with_failures": "{{distilled}} Spawns manuell destilliert ({{failed}} fehlgeschlagen)"
     }
   },
   "wswrite": {

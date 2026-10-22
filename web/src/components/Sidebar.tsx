@@ -28,7 +28,7 @@ function loadOpen(): string[] {
 interface SidebarProps {
   threads: ArslanThread[]; activeThreadId: string; onSelectThread: (id: string) => void; onAddThread: () => void;
   activeSection: Section; onChangeSection: (section: Section) => void;
-  onDistillThread: (id: string) => void; onArchiveThread: (id: string) => void;
+  onArchiveThread: (id: string) => void;
   onUnarchiveThread: (id: string) => void; onDeleteThread: (id: string) => void;
   backendStatus: BackendStatus;
   onOpenConversation?: (conversationId: string) => void;
@@ -46,7 +46,7 @@ interface SidebarProps {
 }
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
-    activeSection, onChangeSection, onDistillThread, onArchiveThread, onUnarchiveThread,
+    activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
     onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, capabilityFinds = 0, meta = {},
     projects = [], onStartInProject, onOpenProject, onMoveToProject } = props;
   const { t } = useTranslation();
@@ -96,7 +96,7 @@ export default function Sidebar(props: SidebarProps) {
       {meta[thread.id]?.origin === "phone" && meta[thread.id]?.kind !== "remote" &&
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
-        onDistill={onDistillThread} onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
+        onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
         projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject} />}
     </div>;
   }

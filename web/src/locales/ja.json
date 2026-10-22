@@ -751,16 +751,12 @@
     "complete_confirm": "会話を要約して長期記憶に保存し、アーカイブします。続行しますか？",
     "new_chat": "新しい会話",
     "thread_menu": "会話の操作",
-    "distill": "記憶に要約",
     "archive": "アーカイブ",
     "unarchive": "アーカイブから戻す",
     "delete": "削除",
     "delete_confirm_body": "この会話のメッセージとイベントを削除します。診断とルーティング監査の履歴は設計上保持されます。この操作は元に戻せません。",
     "delete_confirm_ok": "削除",
     "archived_section": "アーカイブ済み",
-    "distilled_toast": "{{count}} 個のエージェントをメモリに蒸留しました",
-    "distilled_none": "蒸留できる内容がありません",
-    "distill_failed": "記憶への要約に失敗しました",
     "no_spawns": "スポーンがまだありません",
     "no_spawns_desc": "作成するとここに表示されます。",
     "remote": "Remote",
@@ -1507,12 +1503,6 @@
     "tool_error": {
       "title": "{{name}} でツールエラー",
       "detail": "{{tool}} 失敗 · run #{{run_id}}"
-    }
-  },
-  "recap": {
-    "distill": {
-      "manual": "{{distilled}} 体を手動で蒸留",
-      "manual_with_failures": "{{distilled}} 体を手動で蒸留（{{failed}} 件失敗）"
     }
   },
   "wswrite": {

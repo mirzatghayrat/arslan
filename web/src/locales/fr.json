@@ -751,16 +751,12 @@
     "complete_confirm": "Cette conversation sera résumée dans la mémoire à long terme puis archivée. Continuer ?",
     "new_chat": "Nouvelle conversation",
     "thread_menu": "Actions de conversation",
-    "distill": "Résumer en mémoire",
     "archive": "Archiver",
     "unarchive": "Désarchiver",
     "delete": "Supprimer",
     "delete_confirm_body": "Les messages et événements de cette conversation seront supprimés. Les historiques de diagnostic et d’audit du routage sont conservés par conception. Cette action est irréversible.",
     "delete_confirm_ok": "Supprimer",
     "archived_section": "Archivées",
-    "distilled_toast": "{{count}} agent(s) distillé(s) dans la mémoire",
-    "distilled_none": "Rien à distiller",
-    "distill_failed": "Échec du résumé en mémoire",
     "no_spawns": "Aucun spawn pour l'instant",
     "no_spawns_desc": "Ils apparaîtront ici dès que vous en créerez un.",
     "remote": "Remote",
@@ -1507,12 +1503,6 @@
     "tool_error": {
       "title": "{{name}} a rencontré une erreur d'outil",
       "detail": "{{tool}} a échoué · run #{{run_id}}"
-    }
-  },
-  "recap": {
-    "distill": {
-      "manual": "{{distilled}} spawns distillés à la main",
-      "manual_with_failures": "{{distilled}} spawns distillés à la main ({{failed}} en échec)"
     }
   },
   "wswrite": {

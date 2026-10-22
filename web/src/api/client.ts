@@ -20,7 +20,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   RegistryCatalog,
   SkillHealth,
   CuratorFlag,
-  DistillResult,
   DeleteResult,
   RunCatalogDto,
   RunVitalsDto,
@@ -714,11 +713,7 @@ export const fetchProviderModels = (id: number, refresh = false) =>
 export const getCatalog = () =>
   request<CatalogEntry[]>("/settings/catalog");
 
-// ── Conversation actions: distill (harvest spawn chats) + delete ──────────────
-
-/** Distill a conversation's spawn chats into memory. Returns how many were distilled. */
-export const distillConversation = (id: string) =>
-  request<DistillResult>(`/conversations/${id}/distill`, { method: "POST" });
+// ── Conversation actions: delete ──────────────
 
 /** Permanently delete a conversation + its rows. Returns per-table delete counts. */
 export const deleteConversation = (id: string) =>

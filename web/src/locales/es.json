@@ -751,16 +751,12 @@
     "complete_confirm": "Se resumirá esta conversación en la memoria a largo plazo y se archivará. ¿Continuar?",
     "new_chat": "Nueva conversación",
     "thread_menu": "Acciones de conversación",
-    "distill": "Resumir en memoria",
     "archive": "Archivar",
     "unarchive": "Desarchivar",
     "delete": "Eliminar",
     "delete_confirm_body": "Se eliminarán los mensajes y eventos de esta conversación. El historial de diagnóstico y auditoría de enrutamiento se conserva por diseño. No se puede deshacer.",
     "delete_confirm_ok": "Eliminar",
     "archived_section": "Archivadas",
-    "distilled_toast": "Se destilaron {{count}} agente(s) en la memoria",
-    "distilled_none": "Nada que destilar",
-    "distill_failed": "No se pudo resumir en memoria",
     "no_spawns": "Aún no hay spawns",
     "no_spawns_desc": "Aparecerán aquí cuando crees uno.",
     "remote": "Remote",
@@ -1507,12 +1503,6 @@
     "tool_error": {
       "title": "{{name}} tuvo un error de herramienta",
       "detail": "{{tool}} falló · run #{{run_id}}"
-    }
-  },
-  "recap": {
-    "distill": {
-      "manual": "Se destilaron {{distilled}} spawns manualmente",
-      "manual_with_failures": "Se destilaron {{distilled}} spawns manualmente ({{failed}} fallaron)"
     }
   },
   "wswrite": {

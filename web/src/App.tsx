@@ -17,7 +17,7 @@ import { firstLiveThread } from './lib/threadLifecycle';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
-import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, distillConversation, deleteConversation } from './api/client';
+import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import Sidebar from './components/Sidebar';
@@ -490,24 +490,7 @@ export default function App() {
     }
   };
 
-  // ── Conversation row overflow actions (Distill / Archive / Delete) ──────────
-
-  // Distill: harvest this conversation's spawn chats into memory (backend call),
-  // then surface how many were distilled via the transient toast.
-  const handleDistillThread = async (id: string) => {
-    try {
-      const res = await distillConversation(id);
-      // `distilled_spawns` is a count of AGENTS folded into memory, NOT memory items.
-      // Zero producing spawns → a truthful no-op message instead of "distilled 0".
-      showToast(
-        res.distilled_spawns > 0
-          ? t('sidebar.distilled_toast', { count: res.distilled_spawns })
-          : t('sidebar.distilled_none'),
-      );
-    } catch {
-      showToast(t('sidebar.distill_failed'));
-    }
-  };
+  // ── Conversation row overflow actions (Archive / Delete) ──────────
 
   // Archive is purely client-side (persisted via sessionPersistence). If the
   // archived thread was active, hop to the first remaining non-archived thread
@@ -654,7 +637,6 @@ export default function App() {
           setActiveSection(section);
           setPanelView('default');
         }}
-        onDistillThread={handleDistillThread}
         onArchiveThread={handleArchiveThread}
         onUnarchiveThread={handleUnarchiveThread}
         onDeleteThread={handleDeleteThread}

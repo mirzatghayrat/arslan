@@ -8,7 +8,7 @@ const noop = () => {};
 const props: ComponentProps<typeof Sidebar> = {
   threads: [], activeThreadId: "", onSelectThread: noop, onAddThread: noop,
   activeSection: "arslan", onChangeSection: noop,
-  onDistillThread: noop, onArchiveThread: noop, onUnarchiveThread: noop,
+  onArchiveThread: noop, onUnarchiveThread: noop,
   onDeleteThread: noop, backendStatus: "online",
 };
 const labels = {
