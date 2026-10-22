@@ -75,6 +75,11 @@ def _sanitize_env() -> None:
         # this only forces the one token source the shell can actually see.
         os.environ.pop("ARSLAN_API_TOKEN", None)
 
+        # The desktop app's server allows no other origin and trusts localhost only; server.config
+        # ignores these two when packaged, and they are dropped here too so nothing it starts sees them.
+        for var in ("ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS"):
+            os.environ.pop(var, None)
+
     _point_static_dir_into_the_bundle()
 
 
