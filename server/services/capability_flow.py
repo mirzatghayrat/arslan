@@ -197,9 +197,15 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     card = card_for(cand, why=why, retry=retry, folders=folders)
     if ask is None:
         await record_find(cand, need=why, why="job", conversation_id=conversation_id)
+        from server.services import background_jobs, permissions
+        if permissions.current_asker() is None:
+            # S1 (U14 c, ⓪Plan): a scheduled run: listed in the Inbox too, the one list a user checks after one.
+            await permissions.refuse_unattended(permissions.Request(
+                kind="capability", target=f"capability:{cand['name']}"[:200], title=f"Add {cand['name']}?",
+                detail=why[:500]), permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
         return {"ok": False, "recorded": True,
-                "note": "Nobody to ask here (a background job). Saved on the Capabilities page under "
-                        "'Arslan found' for the user; say so in your answer."}
+                "note": "Nobody to ask here (a background job or a scheduled run). Saved on the Capabilities "
+                        "page under 'Arslan found' for the user; say so in your answer."}
     decision = await ask(card)
     if not decision.get("approved"):
         from server.services import approvals
