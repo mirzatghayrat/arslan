@@ -10,7 +10,7 @@ Arslan is a **local-first, BYOK (bring-your-own-key), multi-agent orchestrator**
 
 - **Backend** — FastAPI. A **WebSocket** channel carries the live conversation stream; **REST** (`/api/v1`) carries configuration and spawn/knowledge management. Async SQLAlchemy over a single **SQLite** file stores spawns, the roster, the knowledge base (FTS5), run records, and encrypted provider keys. (`server/`)
 - **Frontend** — an AI-Studio-style React 19 + TypeScript + Vite single-page app. (`web/src/`)
-- **The "shape" of the product** — talk → a self-evolving team of agents. A capability layer (built-in tools + an MCP client + `SKILL.md` skill packs) behind a single write gate; a kernel sandbox + credential proxy for generated code; honesty guardrails; a visible "second brain"; and a two-tier evolution loop.
+- **The "shape" of the product** — talk → a self-evolving team of agents. A capability layer (built-in tools + an MCP client + `SKILL.md` skill packs) behind a single write gate; a kernel sandbox for generated code and commands; honesty guardrails; a visible "second brain"; and a two-tier evolution loop.
 
 ### Subsystems at a glance
 
@@ -21,7 +21,7 @@ Arslan is a **local-first, BYOK (bring-your-own-key), multi-agent orchestrator**
 | WebSocket layer | `server/ws/` | Conversation stream frames + accept-frame handling |
 | Orchestrator core | `server/orchestrator/` | The Arslan host loop: route vs. answer vs. dispatch, native tool-calling |
 | Capability layer | `server/registry/` | Three-library registry (Tools / MCP / Skills), executors, the single write gate |
-| Services layer | `server/services/` | ~45 modules: BYOK routing, spawn services, evolution/eval, memory/distill, shell-net proxy |
+| Services layer | `server/services/` | ~45 modules: BYOK routing, spawn services, evolution/eval, memory/distill |
 | Data store | `server/db/` | SQLite schema, models, hand-wired boot migrations |
 | External | (third-party) | BYOK LLM providers, MCP servers, GitHub, web-search providers |
 
@@ -143,7 +143,7 @@ graph LR
     registry["Three-library registry + hard gate<br/>server/registry/service.py"]
     executors["Tool executors<br/>server/registry/executors.py"]
     mcp-client["MCP client<br/>server/services/mcp_service.py"]
-    shell-sandbox["Shell sandbox + credential proxy<br/>server/services/command_*.py"]
+    shell-sandbox["Shell sandbox<br/>server/services/command_sandbox.py"]
 
     registry -->|"resolve_executor dispatch"| executors
     registry -->|"mcp_ prefix → proxy executor"| mcp-client
@@ -155,11 +155,11 @@ graph LR
 - **Three libraries** — Tools, Toolsets, and SkillPacks, plus per-spawn `spawn_capabilities`, all in `server/registry/service.py`.
 - **Single-throat write gate** — `assert_assignable` is the **only** path that grants a capability, and it only lets through **safe + functional** ones. `safe_menu` lists what is assignable, and `wired_tools_for_spawn` resolves a spawn's current capabilities.
 - **Built-in executors** (`server/registry/executors.py`) — `web_search`, `web_extract`, `render_chart`, `deck`, `run_python`, `run_command`, `create_skill`, `list_my_capabilities`, plus an MCP proxy executor (dispatched by the `mcp_` name prefix).
-- **Tier isolation invariant** — **orchestrator-tier** capabilities (e.g. `run_command`) are held **implicitly by Arslan only**; a spawn can never be granted one. Shell and MCP are **off by default**.
+- **Tier isolation invariant** — **orchestrator-tier** capabilities (e.g. `run_command`) are held **implicitly by Arslan only**; a spawn can never be granted one. MCP is **off by default**; the terminal is on unless switched off in Settings.
 
 ## Sandbox, security & the command surface
 
-Generated code and shell commands are the most dangerous machinery Arslan runs, so they get their own hardened surface. Files: `server/services/command_policy.py`, `command_sandbox.py`, `command_proxy.py`, `command_ca.py`, `command_net.py`.
+Generated code and shell commands are the most dangerous machinery Arslan runs, so they get their own hardened surface. Files: `server/services/terminal_policy.py`, `shell_text.py`, `command_sandbox.py`, `command_policy.py`.
 
 ```mermaid
 graph LR
@@ -167,30 +167,19 @@ graph LR
     policy["Policy gate<br/>command_policy validate/classify"]
     confirm["Confirm card<br/>RunCommandCard (per command)"]
     local-path["Local command<br/>command_sandbox network-denied tmp"]
-    net-path["Network command orchestration<br/>command_net"]
-    proxy["MITM credential proxy<br/>command_proxy + command_ca"]
-    github["GitHub<br/>external"]
 
     run-command -->|"validate + risk grade"| policy
     policy -->|"high-risk → confirm card"| confirm
     policy -->|"local git / ffmpeg / pandoc"| local-path
-    policy -->|"network git / gh"| net-path
-    net-path -->|"preflight + seatbelt allows only localhost:proxy"| proxy
-    proxy -->|"MITM TLS + inject real token"| github
     classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
-    classDef external fill:#585b70,stroke:#585b70,color:#cdd6f4
     class run-command entry
-    class github external
 ```
 
 *Figure 5 — Command surface.*
 
 **Invariants (command surface; see also `SECURITY.md`):**
 
-- **Whitelist of 4 binaries** — `git`, `gh`, `ffmpeg`, `pandoc` — plus a hard-deny list (`sudo`, `rm`, shell metacharacters). `run_command` is orchestrator-only and off by default.
-- **A confirmation card per command**, risk-graded (`ask_all` / `ask_risky`).
-- **Local commands run network-denied** in an ephemeral tmp dir under the **macOS seatbelt**. **If the kernel sandbox cannot start, the command is refused — it never silently downgrades.**
-- **Network `git`/`gh` go through a local MITM credential-injecting proxy** (`command_proxy` + `command_ca`): seatbelt only allows egress to `localhost:proxy`; the proxy terminates TLS and injects the real token, so **raw credentials never enter the sandbox**. Network is restricted to GitHub + the current repo's remote host, and `git push` is limited to the current branch.
+- Three layers (S2a-2). A few commands are never run (sudo, wiping disks, reading keychain passwords). Risky kinds — deleting outside the working folder, sending, uploading, pushing, controlling other apps, login items — show a card each time. Everything else runs in the macOS seatbelt sandbox without a card: it writes only the working folder, temp and caches; it can't read ~/.ssh, the keychain or Arslan's data; it sends no Apple Events; network is cut after the turn reads outside content unless the user allows it. Where the sandbox is off or can't start, every command needs a click; leaving the sandbox needs a click too (which can cover the rest of the conversation).
 - **`run_python` fails closed** where the kernel sandbox is unavailable (non-macOS). The dev-only escape hatch `ARSLAN_ALLOW_UNSANDBOXED_PY=1` runs generated Python with the server's full privileges and network — runs are marked `sandboxed=false` for audit. See [SECURITY.md](../SECURITY.md).
 
 ## Services layer
@@ -203,7 +192,6 @@ graph LR
     spawn-svc["Spawn services<br/>spawn_service/drafter/trust/match"]
     eval-evolution["Evolution · eval<br/>evolution_loop/evaluator/compare_judge"]
     memory-distill["Memory · knowledge<br/>distill_service/ingest/knowledge"]
-    shell-net["Shell network proxy<br/>command_net/proxy/ca"]
 
     spawn-svc -->|"role routing picks adapter"| llm-factory
     eval-evolution -->|"judge calls model"| llm-factory
@@ -255,16 +243,15 @@ graph LR
 
 ## External integrations
 
-Third-party, outside the repo: BYOK LLM providers (OpenAI-compatible / DeepSeek, native Gemini), MCP servers (GitHub / Memory / Fetch / Notion, launched as **stdio subprocesses** you configure), GitHub (via the shell credential proxy), and web-search providers.
+Third-party, outside the repo: BYOK LLM providers (OpenAI-compatible / DeepSeek, native Gemini), MCP servers (GitHub / Memory / Fetch / Notion, launched as **stdio subprocesses** you configure), GitHub (from `git`/`gh` commands), and web-search providers.
 
 ## Cross-cutting invariants
 
 Reliability and safety here rest on a handful of load-bearing rules. Preserve them; don't weaken one without a design discussion.
 
-- **Single-throat capability gate.** All capability grants pass through `assert_assignable`; shell/MCP off by default; **orchestrator-tier is Arslan-only** (spawns can't get it).
+- **Single-throat capability gate.** All capability grants pass through `assert_assignable`; MCP off by default; **orchestrator-tier is Arslan-only** (spawns can't get it).
 - **Untrusted tool output.** Every tool result goes through `wrap_external` and is treated as untrusted data.
 - **Sandbox fails closed.** No kernel sandbox → refuse to run (the macOS seatbelt is the only kernel sandbox today; other platforms are unavailable and fail closed).
-- **Credentials never enter the sandbox.** The MITM proxy injects tokens outside it.
 - **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.
 - **Evolution is human-gated.** Tier-2 edits are bounded, position-bias-corrected, and only ship on an explicit human promote.
 - **Safe-by-default auth.** Dev + localhost is unauthenticated on purpose; `prod` / packaged / non-loopback binds require a bearer token (auto-minted if unset), and cross-site requests are blocked by TrustedHost + CORS + WebSocket-Origin checks. See [SECURITY.md](../SECURITY.md).

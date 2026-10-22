@@ -5,7 +5,6 @@ Arslan is a local-first personal AI orchestrator. By design it runs powerful, po
 ## What Arslan runs
 
 - **A Python computation sandbox.** On macOS, generated Python uses a default-deny Seatbelt profile: read-only interpreter libraries, a per-run read/write workspace, read-only staged inputs, and denied network/host IPC. Other tool classes have different boundaries; this is not an app-wide jail.
-- **A credential-injecting MITM proxy.** So sandboxed git can reach the network without the raw tokens ever entering the sandbox, a local proxy terminates TLS and injects credentials on the way out. The raw secret lives only in the parent process.
 - **Stored BYOK secrets.** Your LLM provider API keys are stored on disk, encrypted at rest.
 - **An MCP client.** Arslan can launch configured MCP servers as **stdio subprocesses** — i.e. it runs arbitrary local commands that you configure.
 
