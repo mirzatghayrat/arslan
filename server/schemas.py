@@ -1009,13 +1009,6 @@ class SkillForgeIn(BaseModel):
     source: str = "skill_creator"
 
 
-class SkillEvaluateIn(BaseModel):
-    # E8: min_samples removed — the candidate now runs the shared holdout ReplayGate
-    # (skill-ON vs skill-OFF), not a private min-samples observation gate. Pydantic
-    # ignores a stale `min_samples` field if an old client still sends one.
-    target_spawn_id: int
-
-
 class SkillCandidateOut(BaseModel):
     id: int
     key: str

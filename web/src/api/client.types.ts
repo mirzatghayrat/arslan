@@ -1240,21 +1240,6 @@ export interface SkillCandidate {
   promoted_at: string | null;
 }
 
-/** Gate result from evaluating a skill candidate against a target spawn. */
-export interface SkillGate {
-  passed: boolean;
-  reason: string;
-  aggregate: Record<string, unknown> | null;
-}
-
-/** Result of POST /skills/candidates/{id}/evaluate. */
-export interface SkillEvaluateResult {
-  ok: boolean;
-  status: string;
-  gate: SkillGate;
-  [key: string]: unknown;
-}
-
 /** Result of POST /skills/candidates/{id}/promote. */
 export interface SkillPromoteResult {
   ok: boolean;

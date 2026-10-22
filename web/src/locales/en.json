@@ -1055,13 +1055,6 @@
       "rejected": "rejected",
       "liveLabel": "Live skill"
     },
-    "eval": {
-      "target": "Eval target spawn…",
-      "button": "Evaluate",
-      "pickTarget": "Pick a target spawn to evaluate against.",
-      "passed": "Gate passed: {{reason}}",
-      "failed": "Gate not passed: {{reason}}"
-    },
     "promote": {
       "button": "Promote",
       "confirm": "Confirm — go live",

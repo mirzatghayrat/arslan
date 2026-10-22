@@ -1055,13 +1055,6 @@
       "rejected": "却下",
       "liveLabel": "ライブスキル"
     },
-    "eval": {
-      "target": "評価対象のスパーン…",
-      "button": "評価",
-      "pickTarget": "評価する対象のスパーンを選んでください。",
-      "passed": "ゲート通過：{{reason}}",
-      "failed": "ゲート未通過：{{reason}}"
-    },
     "promote": {
       "button": "昇格",
       "confirm": "確認——ライブにする",

@@ -44,7 +44,6 @@ import type { RunProcessOut, PhoneCode, PhoneStatus,
   ScheduledTaskUpdateBody,
   SeedsResponse,
   SkillCandidate,
-  SkillEvaluateResult,
   SkillPromoteResult,
   SpawnDetail,
   SpawnSummary,
@@ -641,11 +640,6 @@ export const api = {
     const q = qs.toString();
     return request<SkillCandidate[]>(`/skills/candidates${q ? `?${q}` : ""}`);
   },
-  evaluateSkillCandidate: (id: number, body: { target_spawn_id: number; min_samples?: number }) =>
-    request<SkillEvaluateResult>(`/skills/candidates/${id}/evaluate`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
   promoteSkillCandidate: (id: number) =>
     request<SkillPromoteResult>(`/skills/candidates/${id}/promote`, { method: "POST" }),
   rejectSkillCandidate: (id: number) =>

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatUiDate } from "../lib/localeFormatting";
-import { Hammer, RefreshCcw, Plus, X, Check, Rocket, FlaskConical, Archive, AlertTriangle } from "lucide-react";
+import { Hammer, RefreshCcw, Plus, X, Check, Rocket, Archive, AlertTriangle } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { CuratorFlag, SkillCandidate, SpawnSummary } from "../api/client.types";
+import type { CuratorFlag, SkillCandidate } from "../api/client.types";
 
 // Skill Forge — the self-authored end of the skills library.
 // A human (or Arslan) packages a method into a SKILL.md → candidate (observing) →
-// evaluate against a real spawn's scored runs (gate) → the human promote gate makes
-// it a LIVE assignable skill. Frontend-only, against existing /skills/* endpoints.
+// the human promote gate makes it a LIVE assignable skill. Frontend-only, against
+// existing /skills/* endpoints.
 // 🔒 SKILL.md body is shown ONLY in a <textarea> (plain text), never rendered as HTML.
 
 const MAX_BODY_BYTES = 15 * 1024;
@@ -31,7 +31,6 @@ function statusBadgeCls(status: string): string {
 export default function SkillForge() {
   const { t, i18n } = useTranslation();
   const [candidates, setCandidates] = useState<SkillCandidate[]>([]);
-  const [spawns, setSpawns] = useState<SpawnSummary[]>([]);
   const [listError, setListError] = useState<string | null>(null);
 
   // Create-form state.
@@ -42,7 +41,6 @@ export default function SkillForge() {
 
   // Per-candidate action state.
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [evalTarget, setEvalTarget] = useState<Record<number, number>>({});
   const [rowNotice, setRowNotice] = useState<Record<number, Notice>>({});
   const [confirmPromote, setConfirmPromote] = useState<number | null>(null);
 
@@ -70,7 +68,6 @@ export default function SkillForge() {
 
   useEffect(() => {
     void reload();
-    api.listSpawns().then(setSpawns).catch(() => setSpawns([]));
   }, []);
 
   const bodyBytes = new TextEncoder().encode(form.body).length;
@@ -103,29 +100,6 @@ export default function SkillForge() {
   };
 
   const setRow = (id: number, n: Notice) => setRowNotice((prev) => ({ ...prev, [id]: n }));
-
-  const handleEvaluate = async (id: number) => {
-    const target = evalTarget[id];
-    if (!target) {
-      setRow(id, { kind: "err", text: t("forge.eval.pickTarget") });
-      return;
-    }
-    setBusyId(id);
-    setRow(id, null);
-    try {
-      const res = await api.evaluateSkillCandidate(id, { target_spawn_id: target });
-      if (res.gate.passed) {
-        setRow(id, { kind: "ok", text: t("forge.eval.passed", { reason: res.gate.reason }) });
-      } else {
-        setRow(id, { kind: "err", text: t("forge.eval.failed", { reason: res.gate.reason }) });
-      }
-      await reload();
-    } catch (e) {
-      setRow(id, { kind: "err", text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   const handlePromote = async (id: number) => {
     setBusyId(id);
@@ -436,27 +410,6 @@ export default function SkillForge() {
 
                 {canAct && (
                   <div className="flex items-center gap-2 flex-wrap pt-1">
-                    <select
-                      value={evalTarget[c.id] ?? ""}
-                      onChange={(e) =>
-                        setEvalTarget((prev) => ({ ...prev, [c.id]: Number(e.target.value) }))
-                      }
-                      className="bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-2 py-1.5 text-[10px] text-foreground font-mono max-w-[160px]"
-                    >
-                      <option value="">{t("forge.eval.target")}</option>
-                      {spawns.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => handleEvaluate(c.id)}
-                      disabled={busy}
-                      className="px-3 py-1.5 bg-surface hover:bg-foreground/[0.04] border border-border hover:border-border-strong text-muted-foreground hover:text-foreground text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {busy ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <FlaskConical className="w-3 h-3" />}
-                      <span>{t("forge.eval.button")}</span>
-                    </button>
                     {confirmPromote === c.id ? (
                       <span className="inline-flex items-center gap-1">
                         <button

@@ -1055,13 +1055,6 @@
       "rejected": "rechazado",
       "liveLabel": "Habilidad en vivo"
     },
-    "eval": {
-      "target": "Spawn objetivo de evaluación…",
-      "button": "Evaluar",
-      "pickTarget": "Elige un spawn objetivo para evaluar.",
-      "passed": "Puerta superada: {{reason}}",
-      "failed": "Puerta no superada: {{reason}}"
-    },
     "promote": {
       "button": "Promover",
       "confirm": "Confirmar — poner en vivo",
