@@ -18,7 +18,7 @@ from server.registry.seed_catalog import SKILLS, TOOLSETS
 
 logger = logging.getLogger(__name__)
 
-_SEEDS_DIR = Path(arslan.skills.__file__).parent / "bundled"   # C9: out of arslan/spawn (C7 deletes it)
+_SEEDS_DIR = Path(arslan.skills.__file__).parent / "bundled"   # C9: moved out of arslan/spawn (C7 deleted it)
 
 # ── Retirement lists (2026-07 open-source curation) ────────────────────────────
 # Seed keys that used to ship in the catalog and must be removed from existing
