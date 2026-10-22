@@ -83,11 +83,13 @@ class Confirmations:
         net = " It will use the network, this time." if network else ""
         if sandbox in ("outside", "retry"):
             # S4a: this time, or every command of this conversation — a background job's too — for as long as
-            # the conversation lasts (a stored grant, `outside` / `*`). No "Always". The phone and the
-            # island answer this time only (FIRST_CHOICE_ONLY); the island never answers it at all.
+            # the conversation lasts (a stored grant, `outside` / `*`). No "Always". Only a Mac window gives
+            # more than this time (the Inbox, the phone and the island: this time); the island never answers
+            # it at all. Always a card: the tool loop reads the stored grant itself, and writes its row when
+            # the command runs (`always_asks`).
             request = permissions.Request(
                 kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
-                why=why, frame=protocol.propose_run_command(
+                why=why, always_asks=True, frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
                     sandbox=sandbox, why=why, network=network))
         elif remote_host:

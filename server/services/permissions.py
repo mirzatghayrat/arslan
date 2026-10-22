@@ -70,10 +70,17 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 _NEVER_ALWAYS = (_ONCE_ONLY
                  | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
                               "mcp_tool", "outside"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
+# S4a (⓪Plan review, fix 1): kinds whose "In this conversation" only a Mac window may give. The Inbox lists every
+# conversation's cards, a background job's too: a click there must not let every later command of a conversation
+# the user is not looking at out of the sandbox, past a restart. Elsewhere such a yes is this time.
+_WINDOW_SCOPE_ONLY = frozenset({"outside"})
+# S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
+# card, as before S4a. One click must not run the same remote command for two jobs.
+_NEVER_JOINED = frozenset({"outside", "remote"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
-if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
-    raise AssertionError(f"scope sets name unknown kinds: "
-                         f"{sorted((_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) - KINDS)}")
+_SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _NEVER_JOINED
+if not _SCOPE_SETS <= KINDS:
+    raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
 _EXTRA_MAX = 1024
 #: A ledger row's target is kept whole up to this: a bound, not a trim (a many-app card's target
 #: is every bundle id joined, and cutting it would cut an app in two).
@@ -113,6 +120,10 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
+    #: S4a (⓪Plan review, fix 3): `decide` shows the card even where a stored rule or grant would answer:
+    #: the caller reads them itself (`standing`) and writes their row when its step runs. The card's own
+    #: choices are unchanged.
+    always_asks: bool = False
 
 
 @dataclass(frozen=True)
@@ -186,7 +197,8 @@ async def decide(req: Request, ctx: Context) -> Decision:
     mode = await _mode()
     # S1 (U14 a): with nobody to ask (a scheduled run), nothing standing answers: an "Always" rule or a
     # grant let a scheduled run act with nobody there. `_ask` then refuses by policy.
-    standing = await _standing(req, ctx, mode) if _ASKER.get() is not None else None
+    standing = (await _standing(req, ctx, mode)
+                if _ASKER.get() is not None and not req.always_asks else None)
     if standing is not None:
         return _done(standing)
     return _done(await _ask(req, ctx, mode))
@@ -414,7 +426,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     call_id = base.get("call_id") or uuid.uuid4().hex
     frame = {**base, "call_id": call_id, "title": req.title, "options": opts,
              "always_label": req.always_label if "always" in opts else "",
-             "perm_kind": req.kind, "dedupe": _dedupe(req),
+             "perm_kind": req.kind, "dedupe": call_id if req.kind in _NEVER_JOINED else _dedupe(req),
              "expires_at": time.time() + approvals.TIMEOUT_S}
     if req.why and "why" not in frame:
         frame["why"] = req.why[:300]
@@ -438,6 +450,8 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
         scope = answer.get("scope") if answer.get("scope") in opts else opts[0]
         if answer.get("by") in approvals.FIRST_CHOICE_ONLY:
             scope = opts[0]                    # the phone and the island answer once only (§A4)
+        elif req.kind in _WINDOW_SCOPE_ONLY and answer.get("by") != "mac":
+            scope = opts[0]                    # only a Mac window gives this kind more than this time
         decision = Decision(True, "user", scope)
     else:
         decision = Decision(False, "user", note=note, model_text=_declined_text(req.title, note))

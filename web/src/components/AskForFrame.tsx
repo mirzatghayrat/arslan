@@ -56,6 +56,8 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
         remoteHost={str("remote_host")} fingerprints={(f.fingerprints as string[]) ?? []}
         background={f.background === true} why={str("why")} permKind={str("perm_kind") || undefined}
         sandbox={f.sandbox === "outside" || f.sandbox === "retry" ? f.sandbox : undefined} {...v2}
+        // S4a: only the window that asked lets a conversation's commands out of the sandbox; from here, this time.
+        options={f.perm_kind === "outside" ? v2.options?.slice(0, 1) : v2.options}
         {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     case "propose_action":
       return <ActionApprovalCard kind={str("kind")} target={str("target")} detail={str("detail")} {...v2}

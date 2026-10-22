@@ -1404,6 +1404,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         mcp_fail_counts=mcp_fail_counts)
 
     run_outside = False          # 0.1.51 P3: this command leaves the sandbox (a click said so)
+    outside_grant = None         # S4a: this conversation's stored grant to leave the sandbox, as first read
+    by_grant = False             # S4a: that grant is what lets this command run outside (read again at execute)
     sandbox_on = False
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
@@ -1471,7 +1473,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
-            net_clicked = net_due and _approvals.LAST_OUTCOME.get() == "approved"
+            # ⓪Plan review, fix 2: the network is answered only by the user's own click on this card (as below for
+            # the command's card), never by whatever else let the command out.
+            from server.services import permissions
+            decided = permissions.LAST_DECISION.get()
+            net_clicked = net_due and decided is not None and decided.by == "user"
             # S2a-1: the plain outside card records whose click approved it (approvals.LAST_ANSWERED_BY);
             # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
             unwrapped, kept_wrapped = _bare_once(
@@ -1517,6 +1523,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             unwrapped, kept_wrapped = _bare_once(
                 command, by_user=confirm_command is not None and decided is not None and decided.by == "user")
             run_outside = run_outside or unwrapped
+            by_grant = by_grant and not unwrapped     # a bare run is the user's click on its card, not the grant
             net_clicked = net_due and decided is not None and decided.by == "user"
         network = {} if net_clicked else await _network_after_outside_content(
             command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
@@ -1526,12 +1533,6 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
-        if by_grant:
-            # Cleared to run: now the grant's ledger row (never for a command a card or the network stopped).
-            from server.services import background_jobs, permissions
-            await permissions.note_standing(_outside_request(command), permissions.Context(
-                conversation_id, job_id=background_jobs._inside_job.get()), outside_grant)
-
     # Reaching another machine (P3b). Every call asks, with no session memory and
     # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
     # when the same command is LOW locally.
@@ -1698,7 +1699,32 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         try:
             from server.services.task_service import current as current_task
             from server.services.task_repository import TaskError
+            grant_due = {"yes": by_grant, "fell_back": False}
+
             async def execute(admitted_args):
+                if grant_due["yes"]:
+                    # S4a (⓪Plan review, fixes 2 and 3): the grant was read before any card; it may have been taken
+                    # back since. Read it again here, right before the executor, and only now write its row: never
+                    # for a command that did not run. Gone: the command runs in the sandbox, or, where none can
+                    # start (switched off, seatbelt unavailable), it does not run at all.
+                    grant_due["yes"] = False
+                    from server.services import command_sandbox as _sandbox
+                    from server.services import terminal_exec as _exec
+                    found = await _outside_grant(conversation_id, command)
+                    if found is None:
+                        if not (sandbox_on and _sandbox.available()):
+                            return {"ok": False, "error": "this conversation's permission to run commands outside "
+                                    "the sandbox was taken back while this one waited; it did not run",
+                                    "note": "Ask the user again if it is still needed."}
+                        grant_due["fell_back"] = True     # in the sandbox after all: say so, offer the retry
+                        inside = _exec.OUTSIDE_SANDBOX.set(False)
+                        try:
+                            return await execute(admitted_args)
+                        finally:
+                            _exec.OUTSIDE_SANDBOX.reset(inside)
+                    from server.services import background_jobs, permissions
+                    await permissions.note_standing(_outside_request(command), permissions.Context(
+                        conversation_id, job_id=background_jobs._inside_job.get()), found)
                 # A tool that waits for the user's card or a slow app declares its own limit
                 # (`timeout_s`): the default cut a Notes look mid-card on a real Mac (0.1.53).
                 own = getattr(executor, "timeout_s", None)
@@ -1726,7 +1752,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             result = await run_once(run_outside)
-            if (tool_key == "run_command" and sandbox_on and not run_outside and confirm_command is not None
+            ran_outside = run_outside and not grant_due["fell_back"]
+            if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
                     and isinstance(result, dict) and result.get("sandbox_denied")):
                 # Stopped by the sandbox: offer ONE re-run outside it, from the start.
                 if await confirm_command(command, argv, sandbox="retry"):
@@ -1741,7 +1768,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                         result = await run_once(True)
                     if isinstance(result, dict) and not network.get("refused"):
                         result["ran_outside_sandbox"] = True
-            elif tool_key == "run_command" and run_outside and isinstance(result, dict):
+            elif tool_key == "run_command" and ran_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
             if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
                 result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)

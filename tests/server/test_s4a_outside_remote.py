@@ -124,11 +124,13 @@ async def test_once_stores_nothing(execution_db):
     assert [(r.decided_by, r.scope) for r in await _rows()] == [("user", "once")]
 
 
-@pytest.mark.parametrize("source", ["phone", "island"])
-async def test_the_phone_and_the_island_never_give_the_grant(execution_db, source):
+@pytest.mark.parametrize("source", ["phone", "island", "inbox"])
+async def test_only_the_window_that_asked_gives_the_grant(execution_db, source):
+    """⓪Plan review, fix 1: the Inbox lists every conversation's cards, a job's too; its yes is this time."""
     with permissions.asking_with(_Asker(scope="conversation", by=source)):
         assert await command_confirm.Confirmations("c1").command("mv a ~/b", [], sandbox="outside") is True
     assert await _grants() == []
+    assert [(r.decided_by, r.scope) for r in await _rows()] == [("user", "once")]
 
 
 async def test_an_unanswered_outside_card_is_expired_not_refused(execution_db):
@@ -450,3 +452,146 @@ async def test_every_command_card_carries_its_choices(execution_db, monkeypatch,
         await ladder.command("uptime", [], remote_host="me@10.0.0.2", host="10.0.0.2", fingerprints=[])
     assert [f["type"] for f in asker.frames] == ["propose_run_command"] * 6
     assert all(f.get("options") for f in asker.frames)
+
+
+# ── ⓪Plan's review of #352 ───────────────────────────────────────────────────
+
+async def test_review_2_a_grant_taken_back_while_a_card_waits_lets_nothing_out(execution_db, monkeypatch):
+    """Fix 2: read before the card, taken back while it waited, then approved: the command runs in the sandbox
+    and no row says a grant let it out."""
+    await _give_outside_grant("c1")
+
+    async def take_back_then_yes(command, argv, **kw):
+        async with db_session.AsyncSessionLocal() as db:
+            [grant] = await permission_store.list_conversation_grants(db, "outside")
+            await permission_store.delete_conversation_grant(db, grant.id)
+            await db.commit()
+        return True
+    ex = _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "git push origin main"}, executor=ex,
+                            cards=take_back_then_yes, cid="c1")
+    assert ex.outside == [False] and r["ok"] is True and "ran_outside_sandbox" not in r
+    assert await _rows() == []
+
+
+async def test_review_2_after_falling_back_into_the_sandbox_a_stop_offers_the_retry(execution_db, monkeypatch):
+    await _give_outside_grant("c1")
+    answers = []
+
+    async def take_back_then_yes(command, argv, **kw):
+        answers.append(kw.get("sandbox"))
+        if kw.get("sandbox") is None:
+            async with db_session.AsyncSessionLocal() as db:
+                [grant] = await permission_store.list_conversation_grants(db, "outside")
+                await permission_store.delete_conversation_grant(db, grant.id)
+                await db.commit()
+        return True
+    ex = _Exec()                                # stopped by the sandbox unless let out
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "git push origin main"}, executor=ex,
+                            cards=take_back_then_yes, cid="c1")
+    assert answers == [None, "retry"] and ex.outside == [False, True] and r["ran_outside_sandbox"] is True
+    assert [x.kind for x in await _rows()] == []
+
+
+async def test_review_2_with_no_sandbox_to_fall_back_to_a_taken_back_grant_runs_nothing(execution_db, monkeypatch):
+    await _sandbox_off(monkeypatch)
+    await _give_outside_grant("c1")
+    real = tool_loop._network_after_outside_content
+
+    async def taken_back_meanwhile(*a, **kw):
+        async with db_session.AsyncSessionLocal() as db:
+            [grant] = await permission_store.list_conversation_grants(db, "outside")
+            await permission_store.delete_conversation_grant(db, grant.id)
+            await db.commit()
+        return await real(*a, **kw)
+    monkeypatch.setattr(tool_loop, "_network_after_outside_content", taken_back_meanwhile)
+    ex = _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=_Cards(True), cid="c1")
+    assert ex.outside == [] and r["ok"] is False and "taken back" in r["error"]
+    assert await _rows() == []
+
+
+async def test_review_2_only_the_users_click_on_the_outside_card_answers_the_network(execution_db, monkeypatch):
+    """Fix 2: a yes to the up-front card that is not the user's click on it (here a callback that approves
+    with no decision of its own) does not stand for the network: its card still comes."""
+    from server.orchestrator import untrusted
+
+    async def yes_without_a_click(command, argv, **kw):
+        approvals.LAST_OUTCOME.set("approved")
+        return True
+    monkeypatch.setattr(untrusted, "external_seen", lambda: True)
+    asker = _Asker(approved=False)
+    ex = _Exec(stop=False)
+    with permissions.asking_with(asker):
+        await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True, "network": True}, executor=ex,
+                        cards=yes_without_a_click, cid="c1")
+    assert [f["perm_kind"] for f in asker.frames] == ["network"] and ex.outside == []
+
+
+async def test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row(execution_db):
+    """Fix 3: decide never answers the outside card from a stored grant (`always_asks`): every grant row comes
+    from the tool loop, written when the command runs — not from the retry card, before its network check."""
+    await _give_outside_grant("c1")
+    asker = _Asker(scope="once")
+    with permissions.asking_with(asker):
+        assert await command_confirm.Confirmations("c1").command("mv a ~/b", [], sandbox="retry") is True
+    assert len(asker.frames) == 1
+    assert [(r.decided_by, r.scope) for r in await _rows()] == [("user", "once")]
+
+
+async def test_review_3_no_grant_row_for_a_command_whose_executor_never_ran(execution_db, monkeypatch):
+    await _give_outside_grant("c1")
+
+    async def none(key):
+        return None
+    monkeypatch.setattr(tool_loop, "resolve_executor", none)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=_Exec(), cards=_Cards(True), cid="c1")
+    assert r["ok"] is False
+    assert await _rows() == []
+
+
+@pytest.mark.parametrize("ask_all", [False, True])
+async def test_review_4_with_the_sandbox_off_an_approved_card_writes_no_grant_row(execution_db, monkeypatch, ask_all):
+    """Fix 4: with the sandbox off the grant answers only layer ③'s card; a layer ② or ask-all card the user
+    approves is that card's yes, and no row says the grant let the command out."""
+    await _sandbox_off(monkeypatch)
+    if ask_all:
+        async def yes():
+            return True
+        monkeypatch.setattr(tool_loop, "_asks_for_everything", yes)
+    await _give_outside_grant("c1")
+    cards, ex = _Cards(True), _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "ls" if ask_all else "git push origin main"}, executor=ex,
+                            cards=cards, cid="c1")
+    assert len(cards.calls) == 1 and r["ok"] is True
+    assert [x.kind for x in await _rows()] == []
+
+
+@pytest.mark.parametrize("ask", [
+    lambda job: job.command("uptime", [], remote_host="me@10.0.0.2", host="10.0.0.2", fingerprints=[]),
+    lambda job: job.command("mv a ~/b", [], sandbox="retry"),
+], ids=["remote", "outside"])
+async def test_review_5_two_identical_asks_get_two_cards(execution_db, monkeypatch, ask):
+    """Fix 5: as before S4a, a card to leave the sandbox or to reach another machine never joins an identical
+    ask: one click must not run the same remote command for two jobs."""
+    import asyncio
+
+    from server.services import run_registry
+    shown = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (
+        lambda f: shown.append(f) if f["type"].startswith("propose_") else None))
+    first = asyncio.ensure_future(ask(approvals.JobConfirmations("c1", job_id="job-a")))
+    second = asyncio.ensure_future(ask(approvals.JobConfirmations("c1", job_id="job-b")))
+    for _ in range(300):
+        if len(shown) == 2:
+            break
+        await asyncio.sleep(0.01)
+    assert len({f["call_id"] for f in shown}) == 2
+    for f in shown:
+        approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
+    assert await first is False and await second is False
