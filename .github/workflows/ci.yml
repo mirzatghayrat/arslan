@@ -5,14 +5,22 @@ on:
   # once for `push` (unqualified: every branch) and once for `pull_request`.
   # They never deduplicate: push and pull_request carry different `github.ref`,
   # so the concurrency group below cancels neither against the other. Scoping
-  # push to `main` keeps direct pushes and merges to main covered, while a PR
-  # branch now runs the suite exactly once, via pull_request. A branch with no
-  # open PR, and a tag push, no longer trigger this workflow — tags are built
-  # by release.yml, and a branch gets CI the moment its PR against main opens.
+  # push to the long-lived branches keeps direct pushes and merges to them
+  # covered, while a PR branch runs the suite exactly once, via pull_request.
+  #
+  # 🔴 `release/**` MUST stay in both lists. Hotfixes land on release/<version>
+  # (docs/sessions.md §7), and release.yml refuses to build a tag unless THIS
+  # workflow succeeded on that exact commit ("Require successful CI for this
+  # exact source"). Drop release/** and a hotfix PR gets no CI, and a tag on a
+  # release-branch commit fails its build. (#330 scoped this to main alone and
+  # had exactly that gap.)
+  #
+  # A branch with no open PR, and a tag push itself, do not trigger this
+  # workflow: the tagged commit already ran it on main or release/**.
   push:
-    branches: [main]
+    branches: [main, "release/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
