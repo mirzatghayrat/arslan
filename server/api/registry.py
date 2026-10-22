@@ -106,7 +106,7 @@ async def check_skill_health(key: str, session: AsyncSession = Depends(get_sessi
     body = row.body
     try:
         # Bounded, mirroring PB-4. skill_health is sync + cheap; run it off-loop so the timeout
-        # is real. wait_for cancels with CancelledError (BaseException) — NOT caught by
+        # is real. `within` cancels with CancelledError (BaseException) — NOT caught by
         # `except Exception` — so we handle TimeoutError explicitly and never leak a 500.
         return await within(
             asyncio.to_thread(skill_health, key, body),
