@@ -503,10 +503,6 @@ def create_app() -> FastAPI:
 
     app.include_router(templates_api.router, prefix="/api/v1")
 
-    from server.api import evolution as evolution_api
-
-    app.include_router(evolution_api.router, prefix="/api/v1")
-
     from server.api import facts as facts_api
 
     app.include_router(facts_api.router, prefix="/api/v1")
