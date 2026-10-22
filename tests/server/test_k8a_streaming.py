@@ -309,15 +309,16 @@ async def test_answers_only_when_complete_is_the_old_path(turn, monkeypatch):
         return True
     monkeypatch.setattr(settings_service, "answer_when_complete", yes)
     sent, at_first = [], []
-    original = tool_loop._reveal_streamed
+    original = tool_loop._TurnText.show
 
-    async def reveal(text, on_chunk):
+    def show(self, text):
         at_first.append(len(sent))
-        await original(text, on_chunk)
-    monkeypatch.setattr(tool_loop, "_reveal_streamed", reveal)
+        original(self, text)
+    monkeypatch.setattr(tool_loop._TurnText, "show", show)
     result, chunks, _, _ = await turn([_reply(PROSE)], sent=sent)
     total = len([e for e in _reply(PROSE).split(b"\n\n") if e])
-    assert at_first == [total] and "".join(chunks) == result["final"]   # shown only once the model finished
+    # K8c: shown only once the model finished, and in one piece (no simulated typing)
+    assert chunks == [result["final"]] and all(at == total for at in at_first)
 
 
 def test_nothing_found_is_not_a_search_claim():

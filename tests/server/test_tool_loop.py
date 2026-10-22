@@ -133,7 +133,8 @@ async def test_budget_exhaustion_forces_final(monkeypatch):
     assert "Tool budget exhausted" not in adapter.calls[-1]["system"]
 
 
-async def test_final_answer_streams(monkeypatch):
+async def test_final_answer_goes_out_whole_when_not_streamed(monkeypatch):
+    # K8c: an endpoint that does not stream shows its answer in one piece (no simulated typing).
     adapter = _StreamAdapter(["hello world answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
@@ -141,8 +142,7 @@ async def test_final_answer_streams(monkeypatch):
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     assert out["final"] == "hello world answer"
-    assert len(chunks) > 1                       # genuinely streamed in pieces
-    assert "".join(chunks) == "hello world answer"
+    assert chunks == ["hello world answer"]
 
 
 async def test_tool_json_is_buffered_silently(monkeypatch):
