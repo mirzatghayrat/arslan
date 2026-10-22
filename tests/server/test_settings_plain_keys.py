@@ -4,16 +4,11 @@
 Both grew out of the same defect: a key writable in one place and read in another, with
 two independent definitions of its default and nothing asserting they agree.
 
-`evolution_auto` fell through BOTH. It is a bool in the service and a STRING on the wire
-("on"/"off"), so it is excluded from `_BOOL_ACCESSORS` by design — and `_INT_ACCESSORS`
-never applied. Its emission from `get_settings` is a hand-written line, and
-test_settings_bool_keys' own docstring already says so: "evolution_auto escapes only
-because someone hand-wrote a line for it." That was written down and left standing.
-
-The cost of leaving it: the accessor default (settings_service) and the schema default
-(SettingsOut) can disagree, and a half-done flip produces a UI reading OFF while the
-background loop runs — the exact failure mode the bool tests exist to prevent, on the one
-key that spends the most money.
+The key that first fell through both was `evolution_auto` (a bool in the service, a STRING
+on the wire). C2b-2 removed it; the guard stays for every other plain key, because the
+failure is the same: the accessor default (settings_service) and the schema default
+(SettingsOut) disagree, and a half-done flip shows one state in the UI while the server
+runs the other.
 """
 from __future__ import annotations
 
@@ -74,46 +69,6 @@ def test_exemptions_name_real_keys():
     for key in PLAIN_KEYS_NOT_USER_SETTABLE:
         assert key in settings_service._PLAIN_KEYS, (
             f"{key} is exempted but is not in _PLAIN_KEYS — stale exemption")
-
-
-async def test_evolution_auto_defaults_off(client):
-    """🔴 Off by default, because ON means: a stranger clones this repo, runs it, and the
-    background watcher starts spending THEIR API credits without being asked.
-
-    The old default cited two safeguards, neither of which exists:
-      * "the budget cap prevents runaway spend" — evolution_max_est_tokens must stay
-        unset (the estimate is a known over-estimate, see evolution_estimate.py), so
-        there is no cap to hit;
-      * "the estimate is visible in the inbox" — visible only to someone who already
-        knows to look; there was no Settings control at all until this round.
-    """
-    async with client.db_maker() as s:
-        assert await settings_service.evolution_auto(s) is False
-
-
-def test_the_two_definitions_of_the_evolution_auto_default_agree():
-    """The half-flip guard. The accessor and SettingsOut each define this default, in two
-    different files. Changing one and not the other yields a UI that reads OFF while the
-    loop runs — which is worse than either state on its own, because the user believes
-    they are safe."""
-    schema_default = SettingsOut.model_fields["evolution_auto"].default
-    assert schema_default == "off", (
-        "SettingsOut.evolution_auto still defaults to on while the accessor defaults to "
-        "off — the two definitions have drifted")
-
-
-async def test_evolution_auto_round_trips_in_both_directions(client):
-    """Both directions: a one-way test passes whenever the value happens to equal the
-    default, which after this round is exactly the 'off' case."""
-    for wire, expected in (("on", True), ("off", False)):
-        r = await client.put("/api/v1/settings", json={"evolution_auto": wire},
-                             headers=AUTH)
-        assert r.status_code == 200, r.text
-        assert r.json()["evolution_auto"] == wire
-        got = await client.get("/api/v1/settings", headers=AUTH)
-        assert got.json()["evolution_auto"] == wire, "GET lost the stored value"
-        async with client.db_maker() as s:
-            assert await settings_service.evolution_auto(s) is expected
 
 
 async def test_config_id_keys_round_trip(client):

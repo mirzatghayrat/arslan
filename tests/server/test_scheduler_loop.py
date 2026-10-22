@@ -378,7 +378,6 @@ async def test_scheduled_runs_ignored_by_evolution_watcher_count(memdb):
     async with memdb() as db:
         count = await evolution_watcher._new_replayable_run_count(db, spawn_id, None)
         assert count == 1                                # only the live run counts
-        assert await evolution_watcher._is_eligible(db, spawn_id) is False
 
 
 # ---------------------------------------------------------------------------

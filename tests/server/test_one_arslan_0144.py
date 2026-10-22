@@ -125,27 +125,16 @@ async def test_arslan_is_offered_read_skill_only_when_skills_exist(execution_db)
     assert "weekly-report — Weekly report" in offered["description"]
 
 
-@pytest.mark.asyncio
-async def test_background_evolution_never_spends_while_experts_are_off(execution_db, monkeypatch):
-    """0.1.46: a user who had auto-evolution switched on before experts were removed
-    must not keep paying to rewrite prompts nothing reads."""
-    from server.db.models import Setting, Spawn
+def test_background_evolution_has_no_automatic_entry():
+    """0.1.46: a user who had auto-evolution switched on before experts were removed must
+    not keep paying to rewrite prompts nothing reads. Since C2b-2 (v0.1.63) that holds by
+    construction: the watch loop, its trigger and the run-recorder ping are gone, so
+    nothing starts an attempt in the background. (Surface check, matching the card's
+    acceptance grep; enqueue_attempt — the manual path — has had no caller since C2b-1.)"""
     from server.services import evolution_watcher
-    async with execution_db() as db:
-        db.add(Spawn(id=6, name="Old expert", domain_category="x", system_prompt="You are an old expert. " * 10))
-        db.add(Setting(key="evolution_auto", value="true"))
-        await db.commit()
-    started = []
-
-    async def enqueue(spawn_id, manual=False):
-        started.append(spawn_id)
-        return 1
-    monkeypatch.setattr(evolution_watcher, "enqueue_attempt", enqueue)
-
-    async def eligible(db, spawn_id):
-        return True
-    monkeypatch.setattr(evolution_watcher, "_is_eligible", eligible)
-    assert await evolution_watcher.trigger_spawn(6) is None and started == []
+    for name in ("start", "stop", "tick", "watch_loop", "trigger_spawn", "notify_spawn",
+                 "_is_eligible"):
+        assert not hasattr(evolution_watcher, name), f"evolution_watcher.{name} is back"
 
 
 @pytest.mark.asyncio

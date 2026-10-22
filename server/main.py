@@ -304,17 +304,6 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — canary must never block boot
         logger.warning("evolution baseline canary failed (non-fatal): %s", exc)
 
-    # E5 evolution watcher: a supervised background loop that, per spawn, checks the
-    # trigger (new replayable runs since the last attempt >= the backoff threshold), runs
-    # attempts within the token budget, and refreshes living proposals. Best-effort start —
-    # never blocks boot; a long interval keeps it idle-cheap.
-    try:
-        from server.services import evolution_watcher
-
-        evolution_watcher.start()
-    except Exception as exc:  # noqa: BLE001 — watcher start must never block boot
-        logger.warning("evolution watcher start failed (non-fatal): %s", exc)
-
     # S3-M4 scheduler: a second supervised loop (60s tick, own task set — independent
     # of the evolution watcher's) that fires due scheduled tasks headless
     # K4a (v0.1.63): a run that starts at an entry point (a chat turn, a scheduled turn) takes the work
@@ -376,14 +365,6 @@ async def _shutdown_services(app: FastAPI) -> None:
     """A recovery stop is confirmed only after every tracked cleanup succeeds."""
     app.state.shutdown_complete = False
     cleanup_complete = True
-    try:
-        from server.services import evolution_watcher as _evo_watcher
-
-        await _evo_watcher.stop()
-    except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
-        cleanup_complete = False
-        logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
-
     try:
         from server.services import scheduler as _scheduler
 

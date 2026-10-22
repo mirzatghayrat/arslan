@@ -6,10 +6,10 @@ from server import main
 from server.api import browser
 from server.mcp.session import manager
 from server.mcp.supervisor import supervisor
-from server.services import curation_loop, evolution_watcher, scheduler
+from server.services import curation_loop, scheduler
 
 
-@pytest.mark.parametrize("failure", [None, "watcher", "scheduler", "curation", "supervisor", "browser", "mcp", "database"])
+@pytest.mark.parametrize("failure", [None, "scheduler", "curation", "supervisor", "browser", "mcp", "database"])
 async def test_recovery_shutdown_confirmation_requires_every_cleanup(monkeypatch, failure):
     events = []
     def cleanup(name):
@@ -18,7 +18,6 @@ async def test_recovery_shutdown_confirmation_requires_every_cleanup(monkeypatch
             if name == failure:
                 raise RuntimeError("synthetic cleanup failure")
         return call
-    monkeypatch.setattr(evolution_watcher, "stop", cleanup("watcher"))
     monkeypatch.setattr(scheduler, "stop", cleanup("scheduler"))
     monkeypatch.setattr(curation_loop, "stop", cleanup("curation"))
     monkeypatch.setattr(supervisor, "stop", cleanup("supervisor"))
@@ -31,5 +30,5 @@ async def test_recovery_shutdown_confirmation_requires_every_cleanup(monkeypatch
             await main._shutdown_services(app)
     else:
         await main._shutdown_services(app)
-        assert events == ["watcher", "scheduler", "curation", "supervisor", "browser", "mcp", "database"]
+        assert events == ["scheduler", "curation", "supervisor", "browser", "mcp", "database"]
     assert app.state.shutdown_complete is (failure is None)
