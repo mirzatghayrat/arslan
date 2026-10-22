@@ -45,6 +45,10 @@ _PLAIN_KEYS = (
                # go out as they are written). No UI yet. DELETE-BY: v0.1.64, when v0.1.63's M1 shows streaming
                # no worse than buffering two rounds running and no issue was opened for it (card K8).
                "answer_when_complete",
+               # 0.1.63 K9a: run every tool call one at a time ("true" | "false"; default off: consecutive reads
+               # run together). No UI: the rollback. DELETE-BY: v0.1.64, when v0.1.63's M1 shows parallel no
+               # worse than serial twice running and the pairing tests stay green (card K9).
+               "tools_serial",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
@@ -269,6 +273,13 @@ async def research_review_enabled(session: AsyncSession) -> bool:
 async def answer_when_complete(session: AsyncSession) -> bool:
     """K8a: answers shown only when complete, as before K8. Default off. DELETE-BY: v0.1.64 (card K8)."""
     raw = await _get_raw(session, "answer_when_complete")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def tools_serial(session: AsyncSession) -> bool:
+    """K9a: every tool call one at a time, as before reads ran together. Default off. DELETE-BY: v0.1.64
+    (card K9)."""
+    raw = await _get_raw(session, "tools_serial")
     return str(raw).strip().lower() == "true" if raw is not None else False
 
 

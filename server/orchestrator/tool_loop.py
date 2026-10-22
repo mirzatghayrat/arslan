@@ -19,7 +19,7 @@ from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, 
 from server.orchestrator import run_trace
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
-from server.orchestrator import on_demand, turn_context
+from server.orchestrator import on_demand, parallel_reads, turn_context
 from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -403,6 +403,23 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     if images and not _SENT_IS_FINAL.get():
         trajectory.keep_latest_images(convo)
     return result
+
+
+def _planned_read(call: dict, neutral_call: dict, wired_keys: set, params_by_key: dict) -> tuple[str, dict] | None:
+    """K9a: the call's name and arguments as the batch loop will see them, when it is called by its own name
+    with arguments that parse and fit its table; otherwise None (it cannot run next to others)."""
+    fn = call.get("function") or {}
+    name = str(fn.get("name") or "")
+    args = fn.get("arguments")
+    if not isinstance(args, dict):
+        args, bad_json = _parse_arguments(neutral_call["arguments_raw"])
+        if bad_json is not None or not isinstance(args, dict):
+            return None
+    if name not in wired_keys or name in ("use_tool", "find_tools"):
+        return None
+    if name in params_by_key and _schema_problem(args, params_by_key[name]):
+        return None
+    return name, args
 
 
 def _claim_results(convo: list[dict], marks: list[tuple[int, str]]) -> None:
@@ -1746,7 +1763,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             if result is None:
                 try:
-                    result = await run_once(ran_outside)
+                    async with parallel_reads.executing():      # K9a: the next read's gates may start now
+                        result = await run_once(ran_outside)
                 except asyncio.CancelledError:
                     grant_use["found"] = None          # a stop: no row written while the task is being cancelled
                     raise
@@ -3245,7 +3263,12 @@ async def _run_native(
                 turn_state.truncated_calls += 1
             elif any((call.get("function") or {}).get("name") != "update_plan" for call in tool_calls):
                 tool_steps += 1
-            for call, neutral_call in zip(tool_calls, calls):
+            # K9a: consecutive reads of this reply run together (parallel_reads); never in a reply cut off
+            # or while wrapping up.
+            reads = None if cut_off or wrap_up else await parallel_reads.plan(
+                [_planned_read(call, neutral_call, wired_keys, params_by_key)
+                 for call, neutral_call in zip(tool_calls, calls)])
+            for index, (call, neutral_call) in enumerate(zip(tool_calls, calls)):
                 marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}
                 name = str(fn.get("name") or "")
@@ -3346,7 +3369,8 @@ async def _run_native(
                         from server.services import desktop_status
                         desktop_status.note_plan(plan.items)
                     continue
-                if policy.stopped and not (finishing and name in FINISH_TOOLS):
+                ran = reads is not None and reads.has(index)    # K9a: it already ran with the reads next to it
+                if policy.stopped and not (finishing and name in FINISH_TOOLS) and not ran:
                     wrap_refused += bool(wrap_up)
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
@@ -3375,7 +3399,7 @@ async def _run_native(
                         runtime.pause_reason = "task_input_required"
                     return {"final": _shown(turn_text), "escalation": None, "clarify": clarify,
                             "tool_trace": tool_trace}
-                if budget.tool_calls >= budget.limits.tool_calls:
+                if budget.tool_calls >= budget.limits.tool_calls and not ran:
                     # The batch crossed the hard tool budget: record the rest as
                     # not run and let the next step (forced) deliver what was
                     # gathered, instead of aborting the turn with an empty reply.
@@ -3388,15 +3412,23 @@ async def _run_native(
                 from server.services import terminal_exec
                 offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
                 try:
-                    result = await _dispatch_tool(
-                        name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
-                        tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
-                        confirm_command=confirm_command,
-                        confirm_workspace_write=confirm_workspace_write,
-                        confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
-                        mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                        log_events=log_events, caller=caller, turn_adapter=a,
-                        resolve_callable=resolve_callable)
+                    gated = dict(resolve_tools=resolve_tools, tool_timeout_s=tool_timeout_s,
+                                 confirm_command=confirm_command,
+                                 confirm_workspace_write=confirm_workspace_write,
+                                 confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
+                                 mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
+                                 log_events=log_events, caller=caller, turn_adapter=a,
+                                 resolve_callable=resolve_callable)
+                    if reads is not None and reads.launchable(index):
+                        await reads.run(index, lambda key, arguments, **own: _dispatch_tool(
+                            key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
+                            **gated, **own),
+                            exhausted=lambda: budget.tool_calls >= budget.limits.tool_calls)
+                    if reads is not None and reads.has(index):
+                        result = reads.take(index, emit=emit, tool_trace=tool_trace, convo=convo)
+                    else:
+                        result = await _dispatch_tool(name, args, assistant_content, emit=emit,
+                                                      tool_trace=tool_trace, convo=convo, **gated)
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)
