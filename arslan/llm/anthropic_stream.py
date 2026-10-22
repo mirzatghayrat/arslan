@@ -14,9 +14,10 @@ as it arrives: never thinking, never tool arguments.
 - **An `error` event** raises the HTTP status its type means, so model_call classifies it as if it had come
   before the stream (Q3). Whether it may be resent once text went out is the loop's call (K8a, `_once_shown`).
 - **A stream that ends before `message_stop`** is never taken as an answer.
-- **A delta this version does not know** leaves its block possibly incomplete: the reply is marked
-  NOT_VERBATIM (replayed rebuilt, without thinking) or, when it calls a tool (whose next request might need
-  that thinking), refused as a protocol error (Q5).
+- **A delta this version does not know, or a `data:` line it cannot parse** (a dropped signature_delta
+  would make the next request a 400), leaves the reply possibly incomplete: it is marked NOT_VERBATIM
+  (replayed rebuilt, without thinking) or, when it calls a tool (whose next request might need that
+  thinking), refused with stream_assembly.UnreadableReply, which is never resent (Q5; ⓪Plan's review).
 """
 from __future__ import annotations
 
@@ -105,8 +106,8 @@ class _Assembler:
             raise httpx.RemoteProtocolError("model stream ended before the reply finished")
         content = [self.blocks[index] for index in sorted(self.blocks)]
         if self.unknown and any(block.get("type") == "tool_use" for block in content):
-            raise httpx.RemoteProtocolError(
-                "the reply streamed a block in a form this version does not know (unknown delta); "
+            raise stream_assembly.UnreadableReply(
+                "the reply streamed something this version cannot read (an unknown delta or line); "
                 "its tool call is not run")
         return {**self.message, "content": content, **({NOT_VERBATIM: True} if self.unknown else {})}
 
@@ -143,11 +144,12 @@ async def assemble(response: httpx.Response, on_text: Callable[[str], None] | No
         line = raw.strip()
         if not line.startswith("data:"):
             continue                      # "event:" names and blank lines
+        last_progress = stream_assembly.monotonic()
         try:
             frame = json.loads(line[len("data:"):].strip())
         except json.JSONDecodeError:
+            assembler.unknown = True      # what it carried is lost: the reply may be incomplete
             continue
-        last_progress = stream_assembly.monotonic()
         assembler.feed(frame, request)
         if assembler.stopped:
             break

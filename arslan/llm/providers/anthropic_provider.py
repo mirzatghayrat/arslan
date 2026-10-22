@@ -557,6 +557,10 @@ class AnthropicProvider(BaseLLMProvider):
         send = (lambda p: self._chat_streamed(p, on_text)) if stream else self._post
         data = await param_heal.send(self.endpoint_fingerprint(), payload, send)
         response = self._parse_response(data)
+        # K8b: the request that was answered asked for progress updates (param_heal may have dropped them on
+        # the way): its thinking blocks are updates, never reasoning. tool_loop shows them only then.
+        if response.continuation is not None and (payload.get("thinking") or {}).get("display") == "updates":
+            response.continuation["updates"] = True
         native = any(m.get(_TRAJECTORY) for m in messages if m.get("role") == "system")
         _note_context(response.input_transformations, data.get("context_management"),
                       clearing_off=native and self._clears_server_side() and not self.trims_context_server_side(),

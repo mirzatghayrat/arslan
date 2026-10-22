@@ -26,6 +26,12 @@ IDLE_S = 90.0                 # no real delta for this long = stalled
 monotonic = time.monotonic    # injectable for tests
 
 
+class UnreadableReply(Exception):
+    """0.1.63 K8b: a streamed reply this version cannot read for sure (a delta or a line it does not know)
+    that calls a tool: the call is not run on it. model_call classifies it as `unreadable` and never resends
+    it (the same stream would come back the same); once text went out, the turn ends interrupted."""
+
+
 class StreamStalled(TimeoutError):
     """No real delta within IDLE_S. A TimeoutError, so model_call classifies it
     as a stall (retried once)."""

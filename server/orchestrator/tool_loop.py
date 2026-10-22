@@ -2699,11 +2699,11 @@ _UPDATE_CUT = "This part of the response was interrupted before it finished."
 
 
 def _progress_updates(a, resp) -> list[str]:
-    """K8b: the non-empty thinking blocks of a Claude step, when its requests ask for progress updates
-    (`writes_updates`): under that display such a block is an update, never the model's reasoning."""
+    """K8b: the non-empty thinking blocks of a Claude step whose answered request carried
+    `display: "updates"` (the provider marks the continuation): under that display such a block is an
+    update, never the model's reasoning."""
     continuation = getattr(resp, "continuation", None) or {}
-    if (continuation.get("protocol") != "anthropic"
-            or not getattr(getattr(a, "_provider", None), "writes_updates", lambda: False)()):
+    if continuation.get("protocol") != "anthropic" or not continuation.get("updates"):
         return []
     texts = [str(b.get("thinking") or "").strip() for b in continuation.get("content") or []
              if b.get("type") == "thinking"]

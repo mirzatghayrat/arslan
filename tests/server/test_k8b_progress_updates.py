@@ -75,15 +75,35 @@ def test_sonnet_5_5s_between_tools_switch_never_gets_updates():
     assert payload["thinking"] == {"type": "between_tools"} and UPDATES_BETA not in (payload.get("_betas") or [])
 
 
-def test_no_updates_asked_means_no_notes_from_thinking_text():
+def test_notes_come_only_from_a_reply_whose_request_carried_updates():
     from types import SimpleNamespace
     from server.orchestrator import tool_loop
-    resp = SimpleNamespace(continuation={"protocol": "anthropic", "content": [
-        {"type": "thinking", "thinking": "a summary of reasoning", "signature": "s"}]})
-    asking = SimpleNamespace(_provider=SimpleNamespace(writes_updates=lambda: True))
-    silent = SimpleNamespace(_provider=SimpleNamespace(writes_updates=lambda: False))
-    assert tool_loop._progress_updates(asking, resp) == ["a summary of reasoning"]
-    assert tool_loop._progress_updates(silent, resp) == []
+    blocks = [{"type": "thinking", "thinking": "a summary of reasoning", "signature": "s"}]
+    asked = SimpleNamespace(continuation={"protocol": "anthropic", "content": blocks, "updates": True})
+    not_asked = SimpleNamespace(continuation={"protocol": "anthropic", "content": blocks})
+    assert tool_loop._progress_updates(None, asked) == ["a summary of reasoning"]
+    assert tool_loop._progress_updates(None, not_asked) == []
+
+
+async def test_a_reply_to_a_request_that_lost_updates_on_the_way_gives_no_notes():
+    """⓪Plan's review: the endpoint refused `display`, param_heal resent without it; the answered request
+    did not ask, so its thinking text (whatever it is) is never shown as an update."""
+    param_heal.forget()
+
+    def handler(request):
+        body = json.loads(request.content)
+        if "display" in body.get("thinking", {}):
+            return httpx.Response(400, json={"type": "error", "error": {
+                "type": "invalid_request_error", "message": "thinking.display: unexpected value 'updates'"}})
+        return httpx.Response(200, json=whole([{"type": "thinking", "thinking": "private reasoning", "signature": "s"},
+                                               {"type": "tool_use", "id": "t1", "name": "read_file", "input": {}}],
+                                              "tool_use"))
+    provider = AnthropicProvider("claude-opus-5-5", api_key="k", base_url=BASE, transport=httpx.MockTransport(handler))
+    response = await provider.chat(NATIVE)
+    assert "updates" not in response.continuation
+    from server.orchestrator import tool_loop
+    assert tool_loop._progress_updates(None, response) == []
+    param_heal.forget()
 
 
 async def test_an_update_is_a_note_before_its_tool_call_and_never_part_of_the_answer(turn):  # noqa: F811

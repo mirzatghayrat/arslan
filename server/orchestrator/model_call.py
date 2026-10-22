@@ -107,6 +107,9 @@ def classify(exc: BaseException) -> tuple[str, int | None] | None:
         return "input", status
     if isinstance(exc, httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError):
         return "server", None
+    from arslan.llm.stream_assembly import UnreadableReply
+    if isinstance(exc, UnreadableReply):
+        return "unreadable", None              # K8b: never resent, the same stream would come back
     if isinstance(exc, TimeoutError):
         return "stall", None
     return None

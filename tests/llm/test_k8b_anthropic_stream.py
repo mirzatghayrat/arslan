@@ -182,5 +182,25 @@ async def test_an_unknown_delta_in_a_reply_that_calls_a_tool_fails_cleanly():
                piece(0, type="a_future_delta", value="?"), stop(0),
                block(1, {"type": "tool_use", "id": "toolu_3", "name": "read_file", "input": {}}),
                piece(1, type="input_json_delta", partial_json="{}"), stop(1), end("tool_use"))
-    with pytest.raises(httpx.RemoteProtocolError, match="unknown"):
+    with pytest.raises(stream_assembly.UnreadableReply, match="unknown"):
         await assemble(data)
+
+
+async def test_a_line_that_does_not_parse_counts_as_unknown():
+    """⓪Plan's review: a skipped line could be the signature_delta the next request needs."""
+    answer = sse(start(), block(0, {"type": "thinking", "thinking": "", "signature": ""}), stop(0),
+                 block(1, {"type": "text", "text": ""}), piece(1, type="text_delta", text="Answer."), stop(1), end())
+    garbled = answer.replace(b"event: content_block_stop", b"event: content_block_delta\ndata: {\"type\": \"content_bl\n\n"
+                                                           b"event: content_block_stop", 1)
+    response = parse(await assemble(garbled))
+    assert response.content == "Answer." and response.continuation is None
+    calls = sse(start(), event("content_block_delta").replace("{", "{oops", 1),
+                block(0, {"type": "tool_use", "id": "toolu_4", "name": "read_file", "input": {}}),
+                piece(0, type="input_json_delta", partial_json="{}"), stop(0), end("tool_use"))
+    with pytest.raises(stream_assembly.UnreadableReply):
+        await assemble(calls)
+
+
+def test_an_unreadable_reply_is_classified_and_never_resent():
+    from server.orchestrator import model_call
+    assert model_call.classify(stream_assembly.UnreadableReply("x")) == ("unreadable", None)

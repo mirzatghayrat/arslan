@@ -156,14 +156,12 @@ async def test_a_retryable_error_after_text_went_out_is_not_resent(turn, kind):
     assert result["stop_reason"] == "model_error_after_text" and holder["kind"] == "model_error_after_text"
 
 
-async def test_an_unknown_delta_in_a_reply_that_calls_a_tool_never_runs_the_tool(turn, monkeypatch):
-    async def no_wait(_s):
-        return None
-    monkeypatch.setattr(model_call, "sleep", no_wait)
+async def test_an_unknown_delta_in_a_reply_that_calls_a_tool_never_runs_the_tool_and_is_sent_once(turn):
     search = _Search()
     odd = _claude(tool=("web_search", {"query": "tides"}), thinking=True, unknown=True)
-    with pytest.raises(model_call.ModelCallError):
+    with pytest.raises(model_call.ModelCallError) as failed:
         await turn([odd], tools=("web_search",), executors={"web_search": search})
+    assert failed.value.kind == "unreadable" and failed.value.attempts == 1    # never resent (⓪Plan's review)
     assert search.calls == 0                                      # nothing ran on a reply we could not read
 
 
