@@ -624,6 +624,7 @@
     "labelWorkspaceDir": "工作区目录",
     "workspaceDirPlaceholder": "~/Arslan",
     "workspaceDirHint": "Arslan 保存产出的地方。留空就用 Arslan 自己的文件夹（~/Arslan），在那里写文件不用问。你选的文件夹每次对话第一次写入前问一次。密钥类文件（.env、私钥、证书）一律不读。",
+    "workspaceOtherVolume": "这个文件夹和 Arslan 的数据不在同一个磁盘上，在这里的改动无法撤回。",
     "labelHeartbeat": "定期检查清单",
     "heartbeatDesc": "你写一份清单,Arslan 每隔几小时读一遍,有该办的事就告诉你。它只能查看和汇报——后台运行时写不了文件、跑不了命令。",
     "heartbeatSpendNote": "每次检查都会消耗你 key 上的 token。默认关闭;清单为空则不会运行。",

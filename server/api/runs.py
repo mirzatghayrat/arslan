@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -556,6 +556,22 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
 
 class CheckpointRestoreIn(BaseModel):
     what: Literal["files", "conversation", "both"]
+    #: S3b: the newest message the box showed; the conversation is taken back only if it hasn't moved on.
+    last_message_id: int | None = None
+
+    @model_validator(mode="after")
+    def _shown_range(self):
+        if self.what != "files" and self.last_message_id is None:
+            raise ValueError("last_message_id is required to take a conversation back")
+        return self
+
+
+class _FilesFailed(Exception):
+    """S3b "both": some files could not be put back; the conversation stays, so the files can be tried again."""
+
+    def __init__(self, files: dict) -> None:
+        super().__init__("files_failed")
+        self.files = files
 
 
 def _started(run: Run) -> float:
@@ -564,30 +580,64 @@ def _started(run: Run) -> float:
 
 @router.get("/runs/{run_id}/checkpoint")
 async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
-    """0.1.63 S3: whether this run's file changes can be undone, and what an undo covers and does not."""
-    from server.services import checkpoints
+    """0.1.63 S3: whether this run's file changes can be undone, and what an undo covers and does not;
+    S3b: whether its conversation can (`conversation`, or `reason` why not), how many messages and later
+    turns that removes, and how many facts."""
+    from server.services import checkpoints, turn_undo
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
-    return checkpoints.summary(run_id, _started(run))
+    return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
+
+
+async def _with_history(undone: dict) -> dict:
+    """The conversation as it is now, in the rows the window's socket sends, so the window shows it at once."""
+    from server.ws.arslan import _history
+    return {**undone, "history": await _history(undone["conversation_id"])}
+
+
+def _refused(exc) -> HTTPException:
+    return HTTPException(404 if exc.code == "none" else 409,
+                         detail={"code": exc.code, "runs": getattr(exc, "runs", [])})
 
 
 @router.post("/runs/{run_id}/checkpoint/restore")
 async def restore_run_checkpoint(run_id: int, body: CheckpointRestoreIn,
                                  db: AsyncSession = Depends(get_session)) -> dict:
-    """0.1.63 S3: put the run's files back. The conversation ("conversation", "both") arrives in S3b."""
-    from server.services import checkpoints
+    """0.1.63 S3: put the run's files back ("files"), take its conversation back ("conversation", S3b),
+    or both: every check of both first, so a refusal of either changes nothing; then the files, then the
+    conversation, under the conversation's turn lock. A file that could not be put back keeps the
+    conversation (409 files_failed with what was done; ⓪Plan's review 🟠4); a conversation that fails after
+    the files went back is reported with them (409 conversation_failed, 🟡13)."""
+    from server.services import checkpoints, turn_undo
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
-    if body.what != "files":
-        raise HTTPException(409, detail={"code": "not_yet"})
-    if not checkpoints.summary(run_id, _started(run))["exists"]:
+    files = body.what in ("files", "both")
+    if files and not checkpoints.summary(run_id, _started(run))["exists"]:
         raise HTTPException(404, detail={"code": "none"})
     try:
-        return await checkpoints.restore_files(run_id)
-    except checkpoints.Refused as exc:
-        raise HTTPException(404 if exc.code == "none" else 409, detail={"code": exc.code, "runs": exc.runs})
+        if body.what == "files":
+            return await checkpoints.restore_files(run_id)
+        if body.what == "conversation":
+            return {"conversation": await _with_history(await turn_undo.undo(run_id, last=body.last_message_id))}
+
+        async def files_first() -> dict:
+            out = await checkpoints.restore_files(run_id)
+            if any(r["failed"] or r.get("git") == "failed" for r in out["runs"]):
+                raise _FilesFailed(out)
+            return out
+        await checkpoints.check_restore(run_id)          # the files' checks first, then the conversation's
+        both = await turn_undo.undo(run_id, last=body.last_message_id, first=files_first)
+    except (checkpoints.Refused, turn_undo.Refused) as exc:
+        raise _refused(exc) from None
+    except _FilesFailed as exc:
+        raise HTTPException(409, detail={"code": "files_failed", "files": exc.files}) from None
+    except turn_undo.PartlyDone as exc:
+        raise HTTPException(409, detail={"code": "conversation_failed", "reason": exc.code,
+                                         "files": exc.files}) from None
+    files_out = both.pop("files")
+    return {"files": files_out, "conversation": await _with_history(both)}
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

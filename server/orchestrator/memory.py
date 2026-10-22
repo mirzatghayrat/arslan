@@ -361,10 +361,12 @@ async def facts_text(*, include_sensitive: bool = False,
 
 
 async def user_turn_count(conversation_id: str) -> int:
-    """Number of user turns so far — the 'turn clock' for temporary grants."""
+    """Number of user turns so far — the 'turn clock' for temporary grants. Turns taken back by an undo
+    still count (S3b, turn_undo): the clock never runs backwards, so an expired grant stays expired."""
     from sqlalchemy import func, select
 
     from server.db.models import ArslanMessage
+    from server.services.turn_undo import undone_turns_clause
 
     async with db_session.AsyncSessionLocal() as db:
         n = (await db.execute(
@@ -373,4 +375,5 @@ async def user_turn_count(conversation_id: str) -> int:
                 ArslanMessage.role == "user",
             )
         )).scalar_one()
+        n += int((await db.execute(undone_turns_clause(conversation_id))).scalar_one() or 0)
     return int(n)

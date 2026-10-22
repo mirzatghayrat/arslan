@@ -624,6 +624,7 @@
     "labelWorkspaceDir": "Directorio del espacio de trabajo",
     "workspaceDirPlaceholder": "~/Arslan",
     "workspaceDirHint": "Dónde guarda Arslan lo que hace. Déjalo vacío para usar su propia carpeta (~/Arslan), donde escribe sin preguntar. Una carpeta que elijas pregunta una vez por conversación antes de la primera escritura. Nunca lee archivos de credenciales (.env, claves, certificados).",
+    "workspaceOtherVolume": "Esta carpeta está en otro disco que los datos de Arslan, así que sus cambios no se pueden deshacer.",
     "labelHeartbeat": "Lista de comprobación periódica",
     "heartbeatDesc": "Una lista que escribes; Arslan la relee cada pocas horas y te avisa si algo requiere acción. Solo puede mirar e informar: una ejecución en segundo plano no puede escribir archivos ni ejecutar comandos.",
     "heartbeatSpendNote": "Cada comprobación gasta tokens de tu clave. Desactivado por defecto; una lista vacía no ejecuta nada.",

@@ -624,6 +624,7 @@
     "labelWorkspaceDir": "Workspace-Verzeichnis",
     "workspaceDirPlaceholder": "~/Arslan",
     "workspaceDirHint": "Wo Arslan speichert, was es erstellt. Leer lassen für Arslans eigenen Ordner (~/Arslan), in dem es ohne Nachfrage schreibt. Ein selbst gewählter Ordner fragt pro Unterhaltung einmal vor dem ersten Schreiben. Zugangsdateien (.env, Schlüssel, Zertifikate) werden nie gelesen.",
+    "workspaceOtherVolume": "Dieser Ordner liegt auf einem anderen Laufwerk als Arslans Daten, Änderungen darin lassen sich nicht rückgängig machen.",
     "labelHeartbeat": "Regelmäßige Checkliste",
     "heartbeatDesc": "Eine Liste, die du schreibst; Arslan liest sie alle paar Stunden erneut und meldet sich, wenn etwas davon zu tun ist. Es kann nur nachsehen und berichten — ein Hintergrundlauf kann weder Dateien schreiben noch Befehle ausführen.",
     "heartbeatSpendNote": "Jede Prüfung kostet Tokens auf deinem Key. Standardmäßig aus; eine leere Liste bedeutet keine Prüfungen.",

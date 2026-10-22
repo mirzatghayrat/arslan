@@ -88,6 +88,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
       ? backend.background_job_budget : "standard",
     // Workspace for the file tools (P1). Empty = unset = tools not offered.
     workspaceDir: backend.workspace_dir ?? "",
+    workspaceOtherVolume: backend.workspace_other_volume ?? false,
     // Heartbeat: default OFF, and an empty checklist means no task at all.
     heartbeatEnabled: backend.heartbeat_enabled === "true",
     heartbeatChecklist: backend.heartbeat_checklist ?? "",

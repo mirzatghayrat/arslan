@@ -624,6 +624,7 @@
     "labelWorkspaceDir": "Dossier de l'espace de travail",
     "workspaceDirPlaceholder": "~/Arslan",
     "workspaceDirHint": "Où Arslan enregistre ce qu’il produit. Laisse vide pour utiliser son propre dossier (~/Arslan), où il écrit sans demander. Un dossier que tu choisis demande une fois par conversation avant la première écriture. Les fichiers d’identifiants (.env, clés, certificats) ne sont jamais lus.",
+    "workspaceOtherVolume": "Ce dossier est sur un autre disque que les données d’Arslan : ses changements ne peuvent pas être annulés.",
     "labelHeartbeat": "Liste de contrôle périodique",
     "heartbeatDesc": "Une liste que vous écrivez ; Arslan la relit toutes les quelques heures et vous prévient si quelque chose demande une action. Il peut seulement regarder et rapporter — une exécution en arrière-plan ne peut ni écrire de fichiers ni lancer de commandes.",
     "heartbeatSpendNote": "Chaque vérification consomme des tokens sur votre clé. Désactivé par défaut ; une liste vide ne lance rien.",

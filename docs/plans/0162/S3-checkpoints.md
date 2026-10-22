@@ -9,7 +9,7 @@
 | 合并位置 | S4b、S5 之前（问得少了，就得回得去：总计划 §3.2 第 3 条；U4「能撤销的不问」靠它）。最好也在 S2a-2 之前：之后工作文件夹里的删除不再出卡。和 F1（`RunCommandExecutor`）、K6（写文件工具）碰同一处，谁后合谁 rebase。不改 `server/orchestrator/tool_loop.py`、`server/services/task_service.py` |
 | 推动的门槛 | §5.3 第 8 条；领先路线 L13 的证明（让它删掉一个文件夹再撤销，原样恢复）；附录 A「检查点与回滚」落后 → 领先 |
 | 分支 | `claude/0162-s3a-checkpoints`（S3a）、`claude/0162-s3b-undo-ui`（S3b） |
-| 迁移号 | 无（已复核）：索引就是数据目录里的清单文件；按对话列出、配额、重叠都靠扫清单（只留 7 天）；撤对话和事实用现有的表 |
+| 迁移号 | S3a 无：索引就是数据目录里的清单文件；按对话列出、配额、重叠都靠扫清单（只留 7 天）。**S3b 用 0069（偏离原定「无」，⓪Plan 2026-10-22 定）：** `arslan_messages` 重建成 AUTOINCREMENT。撤对话会删掉最新的消息，没有 AUTOINCREMENT 时下一条新消息会拿到被删消息的 id，手机的 seenUpTo、窗口续传的 last_message_id、摘要的 up_to_message_id 都会把它当成「已经看过」而悄悄丢掉。撤事实仍用现有的表 |
 
 ## 目标
 

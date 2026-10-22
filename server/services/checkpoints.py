@@ -166,6 +166,15 @@ def _same_volume(a: Path, b: Path) -> bool:
     return os.stat(a).st_dev == os.stat(b).st_dev
 
 
+def other_volume(folder: Path | None) -> bool:
+    """Settings' hint (S3b): changes in a folder on another volume than the data folder can't be undone."""
+    from server import config
+    try:
+        return folder is not None and not _same_volume(folder, config.data_dir())
+    except OSError:
+        return False
+
+
 def _free_bytes(path: Path) -> int:
     return shutil.disk_usage(path).free
 
@@ -576,7 +585,6 @@ def summary(run_id: int, not_before: float) -> dict:
         "overlap": data["overlap"],
         "later": [] if data.get("restored_at") else [rid for rid, _ in _later(run_id, saved)],
         "running": run_id in _live,
-        "conversation": False,  # S3b: whether the turn's messages and facts can be taken back too
         "restored_at": data.get("restored_at"),
         "expires_at": datetime.fromtimestamp(data["created_at"] + KEEP_S, timezone.utc)
                       .replace(tzinfo=None).isoformat(),
@@ -605,22 +613,38 @@ async def restore_files(run_id: int) -> dict:
     return await asyncio.to_thread(_restore_sync, int(run_id))
 
 
+async def check_restore(run_id: int) -> None:
+    """Raise Refused when `restore_files` would refuse now (S3b's "both" checks before it changes anything)."""
+    await asyncio.to_thread(_check_sync, int(run_id))
+
+
+def _check_sync(run_id: int) -> None:
+    with _restoring:
+        _chain(run_id)
+
+
+def _chain(run_id: int) -> list[tuple[int, dict]]:
+    """The runs to put back, newest first, after the checks a restore makes. Raises Refused."""
+    data = manifest(run_id) if run_id not in _live else None
+    roots = {e["path"] for e in data["roots"] if e["skipped"] is None} if data else set()
+    running = sorted({r for root in roots for r in _touching.get(root, set())} | ({run_id} & _live))
+    if running:
+        raise Refused("running", running)
+    if not roots:
+        raise Refused("none")
+    if data.get("restored_at"):
+        raise Refused("already")
+    chain = _later(run_id, roots) + [(run_id, data)]
+    unfinished = [rid for rid, d in chain if any(e["skipped"] is None and e["finished"] is None
+                                                for e in d["roots"])]
+    if unfinished:
+        raise Refused("not_finished", unfinished)
+    return chain
+
+
 def _restore_sync(run_id: int) -> dict:
     with _restoring:
-        data = manifest(run_id) if run_id not in _live else None
-        roots = {e["path"] for e in data["roots"] if e["skipped"] is None} if data else set()
-        running = sorted({r for root in roots for r in _touching.get(root, set())} | ({run_id} & _live))
-        if running:
-            raise Refused("running", running)
-        if not roots:
-            raise Refused("none")
-        if data.get("restored_at"):
-            raise Refused("already")
-        chain = _later(run_id, roots) + [(run_id, data)]
-        unfinished = [rid for rid, d in chain if any(e["skipped"] is None and e["finished"] is None
-                                                    for e in d["roots"])]
-        if unfinished:
-            raise Refused("not_finished", unfinished)
+        chain = _chain(run_id)
         return {"run_id": run_id, "later": [rid for rid, _ in chain[:-1]],
                 "runs": [_restore_run(rid, d) for rid, d in chain]}
 

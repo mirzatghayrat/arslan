@@ -58,6 +58,8 @@ export interface AdvancedSectionProps {
   /** Directory the file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   onWorkspaceDirChange: (value: string) => void;
+  /** S3b: the workspace is on another volume than Arslan's data: its changes can't be undone. */
+  workspaceOtherVolume?: boolean;
   /** May Arslan look at what is on the local network? Default OFF. */
   lanDiscoveryEnabled: boolean;
   onLanDiscoveryChange: (value: boolean) => void;
@@ -100,6 +102,7 @@ export default function AdvancedSection({
   onTaskUsdCapChange,
   workspaceDir,
   onWorkspaceDirChange,
+  workspaceOtherVolume = false,
   lanDiscoveryEnabled,
   onLanDiscoveryChange,
   defaultReadEnabled,
@@ -157,6 +160,9 @@ export default function AdvancedSection({
           <p className="text-[10.5px] text-subtle-foreground font-sans">
             {t('settings.workspaceDirHint')}
           </p>
+          {workspaceOtherVolume && <p className="text-[10.5px] text-warning font-sans" data-testid="settings-workspace-other-volume">
+            {t('settings.workspaceOtherVolume')}
+          </p>}
         </div>
     </>)],
     ['defaultRead', (<>

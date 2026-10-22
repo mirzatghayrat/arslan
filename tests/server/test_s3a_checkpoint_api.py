@@ -7,8 +7,8 @@
 - `GET /runs/{id}/checkpoint`: whether there is one, counts, what was not saved and why, overlapping
   runs, the later runs an undo would undo first, and when it expires. A copy older than its run
   (a database made anew) is not that run's.
-- `POST /runs/{id}/checkpoint/restore {what: "files"}` puts files back; "conversation" and "both"
-  arrive in S3b (409 `not_yet`); a refusal says why (409) and a missing checkpoint is a 404.
+- `POST /runs/{id}/checkpoint/restore {what: "files"}` puts files back ("conversation" and "both":
+  S3b, test_s3b_undo_api.py); a refusal says why (409) and a missing checkpoint is a 404.
 """
 import json
 import types
@@ -112,12 +112,14 @@ async def test_no_checkpoint_and_a_copy_older_than_its_run(client, ws):
     assert (await client.get("/api/v1/runs/99999/checkpoint")).status_code == 404
 
 
-async def test_restore_files_and_what_is_not_there_yet(client, ws):
+async def test_restore_files_and_a_second_time(client, ws):
     run_id = await _seed(client)
     await _run(run_id, ws, "after")
-    for what in ("conversation", "both"):
-        resp = await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore", json={"what": what})
-        assert resp.status_code == 409 and resp.json()["detail"]["code"] == "not_yet"
+    for what in ("conversation", "both"):             # this run has no reply: no conversation to take back
+        resp = await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore",
+                                 json={"what": what, "last_message_id": 0})
+        assert resp.status_code == 404 and resp.json()["detail"]["code"] == "none"
+    assert (ws / "notes.md").read_text() == "after"
     resp = await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore", json={"what": "files"})
     assert resp.status_code == 200 and resp.json()["runs"][0]["restored"] == ["notes.md"]
     assert (ws / "notes.md").read_text() == "before"

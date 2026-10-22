@@ -1,6 +1,7 @@
 """Settings REST endpoints."""
 from __future__ import annotations
 
+import asyncio
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -253,10 +254,22 @@ async def ocr_languages() -> dict:
     }
 
 
+async def _settings_out(session: AsyncSession) -> SettingsOut:
+    from pathlib import Path
+
+    from server.services import checkpoints
+    data = await settings_service.get_settings(session)
+    # S3b: the folder as set (Arslan's own when empty), never created by reading Settings; the check reads
+    # the disk, so off the event loop (⓪Plan's review 🟡10). A folder that isn't there reads False.
+    raw = str(data.get("workspace_dir") or "").strip()
+    folder = Path(raw).expanduser() if raw else settings_service.default_workspace()
+    data["workspace_other_volume"] = await asyncio.to_thread(checkpoints.other_volume, folder)
+    return SettingsOut(**data)
+
+
 @router.get("/settings", response_model=SettingsOut)
 async def read_settings(session: AsyncSession = Depends(get_session)) -> SettingsOut:
-    data = await settings_service.get_settings(session)
-    return SettingsOut(**data)
+    return await _settings_out(session)
 
 
 @router.put("/settings", response_model=SettingsOut)
@@ -273,8 +286,7 @@ async def write_settings(
         await heartbeat.sync_task()
     except Exception as exc:  # noqa: BLE001
         logger.warning("heartbeat sync failed (non-fatal): %s", exc)
-    data = await settings_service.get_settings(session)
-    return SettingsOut(**data)
+    return await _settings_out(session)
 
 
 @router.get("/settings/provider-configs", response_model=list[ProviderConfigOut])

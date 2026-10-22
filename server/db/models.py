@@ -133,6 +133,9 @@ class ArslanMessage(Base):
     """The orchestrator conversation (Layer 1). display != memory at the row level."""
 
     __tablename__ = "arslan_messages"
+    # An id is never handed out twice (0069, v0.1.63 S3b): undoing a turn deletes the newest rows, and the
+    # phone, the window's resume and summaries remember ids.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String(50), nullable=False, index=True)
