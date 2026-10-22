@@ -127,9 +127,11 @@ def test_anything_outside_it_is_not_understood_and_says_why(command, why):
     assert why in reading.why
 
 
-def test_a_quoted_name_before_the_equals_sign_is_a_program_not_an_assignment():
-    assert shell_grammar.read("'A'=1").commands == (("A=1",),)       # bash runs a program called A=1
-    assert shell_grammar.read("A=1").commands == ()
+def test_a_quoted_name_before_the_equals_sign_is_not_an_assignment():
+    # bash runs a program called A=1; a program name with = in it is not one this reader reads (PR1b)
+    reading = shell_grammar.read("'A'=1")
+    assert not reading.understood and "program name" in reading.why
+    assert shell_grammar.read("A=1").understood and shell_grammar.read("A=1").commands == ()
 
 
 def test_the_reader_stops_at_its_caps():
