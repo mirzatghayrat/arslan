@@ -12,9 +12,11 @@
    reported; a restore with failures can be retried for what failed.
 """
 import asyncio
+import errno
 import hashlib
 import json
 import os
+import shutil
 import types
 from pathlib import Path
 
@@ -141,6 +143,46 @@ async def test_the_reproduction_a_file_that_failed_to_copy_is_never_trashed(ws, 
     out = await checkpoints.restore_files(35)
     assert (ws / "big.bin").exists() and (ws / "big2.bin").read_bytes() == b"z" * 200 and _trash(tmp_path) == []
     assert out["runs"][0]["not_saved"] == ["big2.bin"] and out["runs"][0]["restored"] == ["notes.md"]
+
+
+def _half_then_fail(name):
+    real = shutil.copy2
+
+    def copy(src, dst, **kw):
+        if str(src).endswith(name):
+            with open(dst, "wb") as f:
+                f.write(open(src, "rb").read()[:100])
+            raise OSError(errno.ENOSPC, "No space left on device", str(dst))
+        return real(src, dst, **kw)
+    return copy
+
+
+async def test_a_copy_that_fails_halfway_never_puts_half_a_file_back(ws, monkeypatch):
+    """⓪Plan's re-check: copy2 writes the target before it can fail (ENOSPC, EIO, copystat); the partial
+    file stayed in the copy, read as changed by the run, and undo wrote it over an untouched file."""
+    monkeypatch.setattr(checkpoints, "sys", types.SimpleNamespace(platform="linux"))   # the copy path
+    (ws / "doc.txt").write_text("the whole document, untouched by the run\n" * 50)
+    whole = (ws / "doc.txt").read_text()
+    monkeypatch.setattr(checkpoints.shutil, "copy2", _half_then_fail("doc.txt"))
+    await checkpoints.ensure(77, [ws])
+    (ws / "notes.md").write_text("after")
+    await checkpoints.finish(77)
+    out = await checkpoints.restore_files(77)
+    assert (ws / "doc.txt").read_text() == whole and "doc.txt" not in out["runs"][0]["restored"]
+    assert not any(p.name.endswith(".part") for p in checkpoints.clone_of(77, ws).iterdir())
+
+
+async def test_a_left_out_file_that_fails_halfway_is_not_put_back_over_the_runs_change(ws, monkeypatch):
+    monkeypatch.setattr(checkpoints, "sys", types.SimpleNamespace(platform="linux"))
+    (ws / "node_modules").mkdir()
+    lib = ws / "node_modules" / "lib.js"
+    lib.write_text("module.exports = 1;\n" * 40)
+    monkeypatch.setattr(checkpoints.shutil, "copy2", _half_then_fail("lib.js"))
+    await checkpoints.ensure(78, [ws], written=lib)
+    lib.write_text("changed by the run")
+    await checkpoints.finish(78)
+    out = await checkpoints.restore_files(78)
+    assert lib.read_text() == "changed by the run" and out["runs"][0]["not_saved"] == ["node_modules/lib.js"]
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads any folder")

@@ -261,7 +261,17 @@ def _clone_file(src: Path, dst: Path, size: int) -> str:
             raise OSError(err, os.strerror(err), str(src))
     if size > COPY_MAX:
         raise OSError(errno.EFBIG, "too large to copy", str(src))
-    shutil.copy2(src, dst, follow_symlinks=False)
+    # A copy goes in under a temporary name and takes its own only when whole: copy2 writes the target
+    # before it can fail (ENOSPC, EIO, copystat), and half a file in the copy would be put back over an
+    # untouched one (⓪Plan's re-check). A crash in between leaves no manifest entry, so nothing restores it.
+    part = dst.with_name(f".{dst.name[:200]}.{secrets.token_hex(4)}.part")
+    try:
+        shutil.copy2(src, part, follow_symlinks=False)
+        os.replace(part, dst)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(part)
+        raise
     return "copy"
 
 
