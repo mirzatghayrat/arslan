@@ -127,15 +127,6 @@ def _child_limits() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (_FSIZE_BYTES, _FSIZE_BYTES))
 
 
-def net_profile(proxy_port: int) -> str:
-    """Deny all network EXCEPT the local credential proxy — the sandbox's ONLY way out. Seatbelt
-    requires the host be `*` or `localhost` (a literal `127.0.0.1:port` is REJECTED — verified
-    empirically), and `remote tcp "localhost:port"` is the working form; connecting to 127.0.0.1
-    matches it. Used for network git/gh so their HTTPS traffic can only reach the proxy."""
-    return (f"(version 1)\n(allow default)\n(deny network*)\n"
-            f'(allow network-outbound (remote tcp "localhost:{proxy_port}"))\n')
-
-
 def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:
     """Default-deny compute policy: runtime reads, workspace writes, no network/host IPC.
 
@@ -174,7 +165,7 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
 
 def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
     """The seatbelt wrapper, when usable. Probed once per process. `profile` overrides the default
-    deny-all-network one (e.g. net_profile(port) to allow ONLY the local credential proxy)."""
+    deny-all-network one (computation_profile for run_python)."""
     if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").exists():
         return None
     return ["/usr/bin/sandbox-exec", "-p", profile or _SEATBELT_PROFILE]
@@ -250,7 +241,7 @@ def _unsandboxed_valve_open() -> bool:
     """The deliberate, VISIBLE escape valve: ARSLAN_ALLOW_UNSANDBOXED_PY truthy lets run_python
     execute WITHOUT isolation (pure-stdlib no-net compute is real before bubblewrap lands)."""
     from server import config
-    if (config.settings.is_prod or getattr(sys, "frozen", False)
+    if (config.settings.packaged or getattr(sys, "frozen", False)
             or os.environ.get("ARSLAN_PACKAGED", "").strip().lower() in {"1", "true", "yes", "on"}):
         return False
     return os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY", "").strip().lower() in (

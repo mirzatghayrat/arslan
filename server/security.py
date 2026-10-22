@@ -54,7 +54,7 @@ class LocalOnlyWhenUnauthenticatedMiddleware:
         await self.app(scope, receive, send)
 
 # Loopback hostnames trusted locally in dev (any scheme/port). Not trusted
-# implicitly in prod — prod uses the explicit ARSLAN_ALLOWED_ORIGINS allowlist.
+# implicitly in the desktop app's server, which allows only same-origin (C11).
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
@@ -95,19 +95,20 @@ def ws_origin_allowed(origin: str | None, host: str | None = None) -> bool:
       * No ``Origin`` header → a non-browser client (the smoke's ``websockets`` lib,
         curl, native tools). Browsers ALWAYS send ``Origin`` on a WS handshake, so its
         absence means cross-site-WS (the threat) is not in play. Allowed in dev (keeps
-        the daily dev/smoke flow alive), refused in prod (require ``Origin``).
+        the daily dev/smoke flow alive), refused in the desktop app's server (C11: its native
+        clients send a same-origin ``Origin``, as the Bridge does).
       * Same-origin — the ``Origin`` host:port equals this request's own ``Host`` —
         is always allowed: a page can only send that ``Origin`` if it was itself
         served from this exact host (keeps a same-origin packaged app working).
       * An origin in the configured allowlist (dev default = the vite dev server;
-        prod = ``ARSLAN_ALLOWED_ORIGINS``) → allowed.
+        ``ARSLAN_ALLOWED_ORIGINS`` replaces it; none when packaged) → allowed.
       * Dev only: any loopback origin (localhost / 127.0.0.1 / ::1, any scheme/port)
         → allowed, so ``http://localhost:5173`` etc. pass without enumerating ports.
       * Everything else (e.g. ``http://evil.com``) → refused.
     """
     cfg = config.settings
     if not origin:
-        return not cfg.is_prod
+        return not cfg.packaged
 
     parts = urlsplit(origin)
     hostname = parts.hostname
@@ -119,7 +120,7 @@ def ws_origin_allowed(origin: str | None, host: str | None = None) -> bool:
     if _norm(origin) in {_norm(o) for o in cfg.allowed_origins if o.strip()}:
         return True
 
-    if not cfg.is_prod and hostname in _LOOPBACK_HOSTS:
+    if not cfg.packaged and hostname in _LOOPBACK_HOSTS:
         return True
 
     return False

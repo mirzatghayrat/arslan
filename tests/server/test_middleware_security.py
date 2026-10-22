@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 _ENV_KEYS = (
     "ARSLAN_ENV",
+    "ARSLAN_PACKAGED",
     "ARSLAN_ALLOWED_HOSTS",
     "ARSLAN_ALLOWED_ORIGINS",
     "ARSLAN_API_TOKEN",
@@ -73,11 +74,11 @@ def test_testserver_host_allowed(monkeypatch):
     assert resp.status_code == 200
 
 
-def test_prod_allowed_hosts_from_env(monkeypatch):
+def test_packaged_allowed_hosts_from_env(monkeypatch):
     client = TestClient(
         _dev_app(
             monkeypatch,
-            ARSLAN_ENV="prod",
+            ARSLAN_PACKAGED="1",
             ARSLAN_SECRET_KEY="x" * 32,
             ARSLAN_API_TOKEN="tok",
             ARSLAN_ALLOWED_HOSTS="app.example.com,localhost",
@@ -85,7 +86,7 @@ def test_prod_allowed_hosts_from_env(monkeypatch):
     )
     assert client.get("http://app.example.com/api/v1/health").status_code == 200
     assert client.get("http://localhost/api/v1/health").status_code == 200
-    # testserver is NOT in the prod allowlist → rejected.
+    # testserver is NOT in the configured allowlist → rejected.
     assert client.get("http://testserver/api/v1/health").status_code == 400
 
 
@@ -117,15 +118,15 @@ def test_ws_origin_no_header_allowed_in_dev(monkeypatch):
     assert security.ws_origin_allowed("") is True
 
 
-def test_ws_origin_prod_fail_closed(monkeypatch):
+def test_ws_origin_packaged_fail_closed(monkeypatch):
     _config, security = _reload(
         monkeypatch,
-        ARSLAN_ENV="prod",
+        ARSLAN_PACKAGED="1",
         ARSLAN_SECRET_KEY="x" * 32,
         ARSLAN_API_TOKEN="tok",
         ARSLAN_ALLOWED_ORIGINS="https://app.example.com",
     )
-    # prod requires an Origin (no implicit no-Origin pass, no implicit localhost).
+    # packaged requires an Origin (no implicit no-Origin pass, no implicit localhost; C11).
     assert security.ws_origin_allowed(None) is False
     assert security.ws_origin_allowed("http://localhost:5173") is False
     # only the configured allowlist + genuine same-origin get through.

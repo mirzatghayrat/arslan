@@ -116,7 +116,7 @@ suffix = 'Library/Application Support/Arslan' if sys.platform == 'darwin' else '
 if sys.platform == 'win32':
     suffix = 'AppData/Roaming/Arslan'
 assert resolve_data_dir() == home / suffix
-key = bootstrap_secret_key(env='dev', explicit='', data_dir=resolve_data_dir(), log=logging.getLogger())
+key = bootstrap_secret_key(explicit='', data_dir=resolve_data_dir(), log=logging.getLogger())
 assert key and (home / '.arslan/secret_key').read_text().strip() == key
 print('isolated-key-created')
 """

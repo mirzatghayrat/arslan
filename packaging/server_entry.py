@@ -52,7 +52,9 @@ def _sanitize_env() -> None:
     managing their own key and could make already-stored provider keys
     undecryptable.
     """
-    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH"):
+    # ARSLAN_ENV too (C11): the removed prod mode makes the server refuse to start when it is set,
+    # and it means nothing to the desktop app, so a value inherited from a shell must not stop it.
+    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_ENV"):
         os.environ.pop(var, None)
 
     if getattr(sys, "frozen", False):
@@ -62,7 +64,8 @@ def _sanitize_env() -> None:
         # packaged app ran as "dev + localhost = unauthenticated", which the
         # spec forbids: 127.0.0.1 is reachable by every process on the machine,
         # and this server holds the user's whole brain plus their BYOK keys.
-        os.environ.setdefault("ARSLAN_PACKAGED", "1")
+        # Assigned, not setdefault (C11): an inherited ARSLAN_PACKAGED=0 must not turn auth off.
+        os.environ["ARSLAN_PACKAGED"] = "1"
 
         # An inherited env token would win over the persisted file
         # (token_bootstrap step 1) and NOTHING would be written to disk — but

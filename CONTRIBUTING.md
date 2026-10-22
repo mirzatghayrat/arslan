@@ -56,7 +56,7 @@ Open **http://localhost:5173**. The Vite dev server proxies `/api` and `/ws` to 
 
 Notes for the dev flow:
 
-- **Auth is off by design in dev + localhost.** With `ARSLAN_ENV=dev` (the default) and an empty `ARSLAN_API_TOKEN` on a loopback bind, no token is required — zero friction locally. This is *only* safe for a loopback bind on a machine you control; see [SECURITY.md](SECURITY.md) before exposing it.
+- **Auth is off by design in dev + localhost.** With an empty `ARSLAN_API_TOKEN` on a loopback bind, no token is required — zero friction locally. This is *only* safe for a loopback bind on a machine you control; see [SECURITY.md](SECURITY.md) before exposing it.
 - **`ARSLAN_DATA_DIR=data` keeps your brain in the repo's `data/` dir** while developing. If you leave it unset, Arslan uses the stable per-platform app-data dir instead (macOS `~/Library/Application Support/Arslan`, Linux `~/.local/share/Arslan`, Windows `%APPDATA%/Arslan`) — handy so a packaged app keeps *one* brain regardless of launch directory, but for dev an in-repo `data/` is easier to inspect and reset (`.gitignore`d).
 - **No `--reload`.** The backend does not auto-reload; restart uvicorn after backend changes. The frontend (Vite) hot-reloads.
 
@@ -66,12 +66,11 @@ Mirrors [README.md](README.md#environment-variables); every var below is read in
 
 | Env var | Dev value | Purpose |
 | --- | --- | --- |
-| `ARSLAN_SECRET_KEY` | `dev-secret-key` (any non-empty value) | Derives the Fernet key (PBKDF2-HMAC-SHA256 over a per-install salt) that encrypts stored BYOK secrets. Unset in dev → auto-generated once and persisted to `~/.arslan/secret_key` (see the README env table). An explicit value always wins — don't flip-flop between explicit and auto-generated, or previously-stored keys become undecryptable. In `prod` a missing value is boot-fatal. |
-| `ARSLAN_API_TOKEN` | *(empty)* | API/WS bearer token. Empty + dev + localhost = no auth. For `prod` / packaged / non-loopback binds a token is auto-generated on first run. |
+| `ARSLAN_SECRET_KEY` | `dev-secret-key` (any non-empty value) | Derives the Fernet key (PBKDF2-HMAC-SHA256 over a per-install salt) that encrypts stored BYOK secrets. Unset in dev → auto-generated once and persisted to `~/.arslan/secret_key` (see the README env table). An explicit value always wins — don't flip-flop between explicit and auto-generated, or previously-stored keys become undecryptable. The desktop app refuses to start if it cannot create or read its secret. |
+| `ARSLAN_API_TOKEN` | *(empty)* | API/WS bearer token. Empty + dev + localhost = no auth. For the desktop app and non-loopback binds a token is auto-generated on first run. |
 | `ARSLAN_DATA_DIR` | `data` | Where the SQLite DB, notes, spawns, and encrypted secrets live. **This directory plus your secret are the backup unit** (the secret lives outside it — your env value or `~/.arslan/secret_key`). Unset → platform app-data dir. |
-| `ARSLAN_ENV` | `dev` (default) | `dev` or `prod`. `prod` hardens defaults and makes a missing secret boot-fatal. |
-| `ARSLAN_ALLOWED_HOSTS` | *(unset)* | Comma-separated TrustedHost allowlist for non-localhost / prod. Dev defaults to localhost + test hosts. |
-| `ARSLAN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated CORS + WS-Origin allowlist for non-localhost / prod. Dev defaults to the Vite origin `http://localhost:5173`. |
+| `ARSLAN_ALLOWED_HOSTS` | *(unset)* | Comma-separated TrustedHost allowlist for non-localhost binds. Dev defaults to localhost + test hosts. |
+| `ARSLAN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated CORS + WS-Origin allowlist for non-localhost binds. Dev defaults to the Vite origin `http://localhost:5173`. |
 | `ARSLAN_ALLOW_INSECURE_SECRETS` | *(off)* | Dev-only escape hatch: permits writing secrets under the public default key. Never use for real keys. |
 | `ARSLAN_ALLOW_UNSANDBOXED_PY` | *(off)* | Dev-only escape hatch: lets generated Python run **without** a sandbox where none is available (non-macOS). Runs then have the server's full privileges + network; marked `sandboxed=false`. Only enable on a machine you fully trust. |
 
