@@ -25,7 +25,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 
 const base = {
   activeThreadId: "", onSelectThread: () => {}, onAddThread: () => {}, activeSection: "arslan" as const,
-  onChangeSection: () => {}, onDistillThread: vi.fn(), onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(),
+  onChangeSection: () => {}, onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(),
   onDeleteThread: vi.fn(), backendStatus: "online" as const,
 };
 const thread = (id: string, projectId?: string) => ({ id, title: `chat ${id}`, ...(projectId ? { projectId } : {}) });
@@ -76,14 +76,14 @@ describe("the sidebar's projects", () => {
 
   it("a conversation's menu moves it into a project, or out of one", () => {
     const onMove = vi.fn();
-    const { rerender } = render(<ThreadRowMenu threadId="t1" onDistill={vi.fn()} onArchive={vi.fn()} onDelete={vi.fn()}
+    const { rerender } = render(<ThreadRowMenu threadId="t1" onArchive={vi.fn()} onDelete={vi.fn()}
       projects={[{ id: "p1", name: "Tidepool" }, { id: "p2", name: "Lisbon" }]} projectId={null} onMove={onMove} />);
     fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
     fireEvent.click(screen.getByTestId("thread-move"));
     expect(screen.queryByTestId("thread-move-out")).toBeNull();
     fireEvent.click(screen.getByTestId("thread-move-to-p2"));
     expect(onMove).toHaveBeenLastCalledWith("t1", "p2");
-    rerender(<ThreadRowMenu threadId="t1" onDistill={vi.fn()} onArchive={vi.fn()} onDelete={vi.fn()}
+    rerender(<ThreadRowMenu threadId="t1" onArchive={vi.fn()} onDelete={vi.fn()}
       projects={[{ id: "p1", name: "Tidepool" }, { id: "p2", name: "Lisbon" }]} projectId="p2" onMove={onMove} />);
     fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
     fireEvent.click(screen.getByTestId("thread-move"));

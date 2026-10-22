@@ -751,16 +751,12 @@
     "complete_confirm": "Completing this chat will summarize it into long-term memory and archive it. Continue?",
     "new_chat": "New chat",
     "thread_menu": "Conversation actions",
-    "distill": "Distill",
     "archive": "Archive",
     "unarchive": "Unarchive",
     "delete": "Delete",
     "delete_confirm_body": "Deleting removes this conversation's content (messages, events). Diagnostics and routing-audit history are retained by design. This cannot be undone.",
     "delete_confirm_ok": "Delete",
     "archived_section": "Archived",
-    "distilled_toast": "Distilled {{count}} agent(s) into memory",
-    "distilled_none": "Nothing to distill",
-    "distill_failed": "Distill failed",
     "no_spawns": "No spawns yet",
     "no_spawns_desc": "They appear here once you create one.",
     "remote": "Remote",
@@ -1507,12 +1503,6 @@
     "tool_error": {
       "title": "{{name}} hit a tool error",
       "detail": "{{tool}} failed · run #{{run_id}}"
-    }
-  },
-  "recap": {
-    "distill": {
-      "manual": "Distilled {{distilled}} spawns by hand",
-      "manual_with_failures": "Distilled {{distilled}} spawns by hand ({{failed}} failed)"
     }
   },
   "wswrite": {

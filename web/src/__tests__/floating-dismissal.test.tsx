@@ -25,7 +25,7 @@ import ThreadRowMenu from "../components/ThreadRowMenu";
 
 const props = {
   threadId: "t1",
-  onDistill: vi.fn(), onArchive: vi.fn(), onUnarchive: vi.fn(), onDelete: vi.fn(),
+  onArchive: vi.fn(), onUnarchive: vi.fn(), onDelete: vi.fn(),
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -79,8 +79,8 @@ describe("floating menus are dismissable", () => {
     // Discriminating: dismissal that swallowed the click would look correct in
     // every test above while quietly disabling every menu item.
     openMenu();
-    fireEvent.click(screen.getByText("sidebar.distill"));
-    expect(props.onDistill).toHaveBeenCalledWith("t1");
+    fireEvent.click(screen.getByText("sidebar.archive"));
+    expect(props.onArchive).toHaveBeenCalledWith("t1");
     expect(screen.queryByRole("menu")).toBeNull();
   });
 });
