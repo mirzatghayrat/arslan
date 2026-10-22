@@ -19,9 +19,17 @@ from server.config import settings
 logger = logging.getLogger(__name__)
 
 
-def build_engine(db_url: str) -> AsyncEngine:
-    """Create an async engine with SQLite concurrency pragmas applied."""
-    engine = create_async_engine(db_url, echo=False)
+def build_engine(db_url: str, *, poolclass=None, foreign_keys: bool = True) -> AsyncEngine:
+    """Create an async engine with SQLite concurrency pragmas applied.
+
+    The tests' shared engines are built here too (tests/server/conftest.py), so they run SQLite
+    the way the app does: WAL, where a reader left behind by a cancelled statement does not
+    block the next writer's COMMIT. `poolclass` is for them. `foreign_keys=False` is the one
+    difference they keep for now: turning it on may surface test inserts with no parent row.
+    DELETE-BY: v0.1.64 if the shared test engines pass with foreign_keys=ON (its own PR).
+    """
+    engine = create_async_engine(db_url, echo=False,
+                                 **({"poolclass": poolclass} if poolclass is not None else {}))
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ANN001
@@ -29,7 +37,8 @@ def build_engine(db_url: str) -> AsyncEngine:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.execute("PRAGMA foreign_keys=ON")
+        if foreign_keys:
+            cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
     return install_cancel_rollback(engine)
