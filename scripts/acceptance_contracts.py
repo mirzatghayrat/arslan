@@ -41,7 +41,7 @@ CASES = [
     ("browser-private-network", "browser_proxy", "proxy_refuses_loopback_and_non_https"),
     ("provider-gemini-wire", "gemini_native_roundtrip", "signed_parallel_function_responses_roundtrip"),
     ("context-summary-cap", "context_budget", "compaction_second_oversized_cjk_summary_is_actually_bounded"),
-    # The last three IDs stay stable; their tests were rewritten for memory v2 in C2a-2b (#307).
+    # The last three IDs stay stable; their tests were rewritten for memory v2 in C2a (#237, #307).
     ("context-fact-cap", "context_budget", "an_oversized_top_ranked_fact_cannot_bypass_budget"),
     ("memory-spawn-scope", "retrieve_scoped", "no_context_no_project_or_another_expert_retrieves_nothing"),
     ("memory-host-scope", "retrieve_scoped", "a_turn_sees_its_projects_collections_only_never_wells"),
