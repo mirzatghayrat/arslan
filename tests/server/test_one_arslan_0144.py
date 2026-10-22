@@ -127,14 +127,13 @@ async def test_arslan_is_offered_read_skill_only_when_skills_exist(execution_db)
 
 def test_background_evolution_has_no_automatic_entry():
     """0.1.46: a user who had auto-evolution switched on before experts were removed must
-    not keep paying to rewrite prompts nothing reads. Since C2b-2 (v0.1.63) that holds by
-    construction: the watch loop, its trigger and the run-recorder ping are gone, so
-    nothing starts an attempt in the background. (Surface check, matching the card's
-    acceptance grep; enqueue_attempt — the manual path — has had no caller since C2b-1.)"""
-    from server.services import evolution_watcher
-    for name in ("start", "stop", "tick", "watch_loop", "trigger_spawn", "notify_spawn",
-                 "_is_eligible"):
-        assert not hasattr(evolution_watcher, name), f"evolution_watcher.{name} is back"
+    not keep paying to rewrite prompts nothing reads. C2b-2 removed the watch loop, its
+    trigger and the run-recorder ping; C7b-1 (v0.1.63) removed the evolution modules
+    themselves, so no code path is left that could start an attempt."""
+    import importlib.util
+    for mod in ("evolution_watcher", "evolution_loop", "evolution_service",
+                "evolution_estimate"):
+        assert importlib.util.find_spec(f"server.services.{mod}") is None, f"{mod} is back"
 
 
 @pytest.mark.asyncio

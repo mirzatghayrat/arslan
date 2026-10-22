@@ -303,7 +303,9 @@ async def test_usage_summary_not_covered_footnote(client):
     # learning_service LEFT it in 0.1.63 (C1c-1): its only LLM call (the distill) was deleted.
     assert "learning_service" not in nc
     # fact_classify LEFT it in 0.1.63 (C2a-2): the v1 classifier was deleted.
-    assert len(nc) == 10
+    # optimizer LEFT it in C7b-1: deleted with the manual evolve path.
+    assert "optimizer" not in nc
+    assert len(nc) == 9
 
 
 # ---------------------------------------------------------------------------

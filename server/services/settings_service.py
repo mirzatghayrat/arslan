@@ -474,36 +474,6 @@ async def run_budget_from_settings():
         return run_budget()
 
 
-async def evolution_max_dispatches(session: AsyncSession) -> int | None:
-    """DELETE-BY: when the manual evolve path is deleted (with evolution_watcher, C7 step 2's
-    "evolution second batch" PR, planned for v0.1.63).
-    No longer a served setting since C2b-2; only the watcher's (unreachable) manual path
-    still reads a stored value.
-
-    Per-attempt cap on PROJECTED REPLAY DISPATCHES. Unset (None) = no cap, and that is
-    still the default: the `actual` ledger is empty on every install, so there is no
-    distribution to pick a number from.
-
-    🔴 Counts dispatches, not tokens, and it REPLACED `evolution_max_est_tokens` rather
-    than being renamed from it. Renaming while changing the unit is a silent-corruption
-    trap: a stored 30,000,000 would survive as a "30 million dispatch" cap — no cap at all
-    — and no conversion is honest, because tokens-per-dispatch is precisely the figure we
-    do not reliably know. The old key was verified unset before removal, and any install
-    that DID set it gets a warning rather than a silently dropped limit.
-
-    The unit changed because the old one gated on a number that over-states by 3.7-5.2x:
-    a user setting a cap from what evolution really costs would have had every attempt
-    refused. The gate failed in the direction where setting a limit switches the feature
-    off, with nothing on screen explaining why."""
-    raw = await _get_raw(session, "evolution_max_dispatches")
-    if raw is None:
-        return None
-    try:
-        return int(str(raw).strip())
-    except ValueError:
-        return None
-
-
 # S2 E9 — the developer-declared clean-corpus start (spec §E9 / audit #12).
 EVOLUTION_BASELINE_STARTED_AT_KEY = "evolution_baseline_started_at"
 
