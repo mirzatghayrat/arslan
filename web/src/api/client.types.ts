@@ -343,11 +343,6 @@ export interface SeedRef {
   summary: string;
 }
 
-export interface SeedsResponse {
-  seeds: SeedRef[];
-  total: number;
-}
-
 export interface SpawnDetail extends SpawnSummary {
   persona_role: string | null;
   persona_tone: string | null;
@@ -475,13 +470,6 @@ export interface ModelListResult {
   stale: boolean;
   error: string | null;
   source: string;
-}
-
-export interface TemplateInfo {
-  name: string;
-  domain: string;
-  description: string;
-  tags: string[];
 }
 
 // WebSocket wire messages (server -> client)

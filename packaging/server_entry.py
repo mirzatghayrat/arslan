@@ -452,7 +452,6 @@ def selftest() -> int:
         # not in the bundle. collect_submodules does not collect these.
         for rel, why in (
             ("arslan/skills/bundled", "the bundled skills are missing"),
-            ("arslan/templates/official", "official templates are unavailable"),
         ):
             d = root / rel
             if not d.is_dir() or not any(d.rglob("*")):
