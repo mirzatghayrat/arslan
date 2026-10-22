@@ -172,9 +172,10 @@ async def test_a_stop_while_a_start_tears_down_past_its_budget_returns_at_once_a
     loop = asyncio.get_running_loop()
     start = asyncio.create_task(mgr.get_session(_server("slow_init", SLOW_INIT_S="30"), budget_s=0.5))
     await asyncio.sleep(0.8)                     # past the budget, inside the open's teardown
+    assert not start.done()                      # still waiting for the teardown: the repro, not its end
     stopped = loop.time()
     start.cancel()
-    with pytest.raises((asyncio.CancelledError, TimeoutError)):
+    with pytest.raises(asyncio.CancelledError):
         await start
     assert loop.time() - stopped < 1.0
     pid = _pid(mgr.stderr_tail(1, secrets=[]))

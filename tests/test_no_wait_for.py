@@ -6,6 +6,7 @@ completes (gh-86296). On a turn's path that is a lost stop: the turn runs on aft
 awaitable in a task of its own as wait_for runs it, and no cancellation is ever lost.
 """
 import asyncio
+import contextlib
 import pathlib
 import re
 
@@ -166,8 +167,8 @@ async def test_nothing_is_disposed_when_the_work_did_not_finish(how):
 async def _disposals():
     for _ in range(5):
         await asyncio.sleep(0)
-    if aio._disposing:
-        await asyncio.gather(*aio._disposing)
+    if aio.disposing():
+        await asyncio.gather(*aio.disposing())
 
 
 async def _stopped_twice(work, *, dispose=None, gap=0.05):
@@ -286,3 +287,54 @@ async def test_no_limit_awaits_it_as_it_is_and_a_limit_of_zero_never_starts_it()
     with pytest.raises(TimeoutError):
         await within(work(), 0)
     assert started == []
+
+
+def test_a_disposal_left_on_a_closed_loop_never_reaches_another():
+    """#384's follow-up: one set of disposals per loop. A dispose still pending when a loop closed (a test's
+    own loop) must not be in the next loop's set, where gathering it would fail."""
+    async def leave_one_pending():
+        async def dispose(value):
+            await asyncio.Event().wait()             # never finishes
+
+        async def work():
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                return "late"
+        waiting = asyncio.create_task(within(work(), 60, dispose=dispose))
+        await asyncio.sleep(0.02)
+        waiting.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await waiting
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert len(aio.disposing()) == 1
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(leave_one_pending())
+    finally:
+        loop.close()
+
+    async def seen_by_the_next_loop():
+        return set(aio.disposing())
+    assert asyncio.run(seen_by_the_next_loop()) == set()
+
+
+@pytest.mark.parametrize("cleanup_s,warned", [(0.3, True), (0.0, False)], ids=["slow", "prompt"])
+async def test_work_still_running_long_after_its_cancel_is_logged(monkeypatch, caplog, cleanup_s, warned):
+    """#384's follow-up: a stopped work that keeps running (holding a process, or its caller's cleanup) is said."""
+    monkeypatch.setattr(aio, "STILL_RUNNING_WARN_S", 0.1)
+
+    async def work():
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            await asyncio.sleep(cleanup_s)
+            raise
+    waiting = asyncio.create_task(within(work(), 60))
+    await asyncio.sleep(0.02)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    await asyncio.sleep(0.4)
+    assert ("is still running" in caplog.text) is warned
