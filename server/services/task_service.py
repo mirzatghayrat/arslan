@@ -970,6 +970,15 @@ async def _note_project_activity(project_id: str) -> None:
         logger.warning("project activity not recorded", exc_info=True)
 
 
+# K8a (⓪Plan Q1): this turn's acceptance is only the default "an answer was delivered" (run_turn was given
+# none). Its answer may go out as it is written; work with criteria of its own is shown when complete.
+_answer_only: ContextVar[bool] = ContextVar("answer_only", default=False)
+
+
+def answer_only() -> bool:
+    return _answer_only.get()
+
+
 async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
                    _acceptance: list[dict] | None = None, _budget: Budget | None = None, **kwargs):
     if current() is not None:
@@ -1011,7 +1020,11 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         value = await repo.start(spec.id, created["version"])
     async def body(sink):
         return await function(conversation_id, user_message, sink, *args, **kwargs)
-    result = await _launch(value, emit, body, context=ctx)
+    token = _answer_only.set(_acceptance is None)
+    try:
+        result = await _launch(value, emit, body, context=ctx)
+    finally:
+        _answer_only.reset(token)
     if ctx.project_id:
         _project_evidence_later(ctx.project_id, conversation_id, user_message)
     return result

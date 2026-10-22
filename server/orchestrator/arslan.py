@@ -887,8 +887,10 @@ async def _handle_answer_body(
     if clarify:
         compact = clarify["question"] + "\n" + "\n".join(
             f"- {o['label']}" for o in clarify["options"])
-        await memory.add_message(conversation_id, "arslan", compact)
-        emit({"type": "stream_end", "message_id": None,
+        shown = result.get("final")     # K8a: text that went out before the choice card: kept, in its bubble
+        msg_id = await memory.add_message(conversation_id, "arslan", f"{shown}\n\n{compact}" if shown else compact,
+                                          **({"display_content": shown} if shown else {}))
+        emit({"type": "stream_end", "message_id": msg_id if shown else None,
               "usage": _usage_frame(usage_sink.detail())})
         emit(protocol.clarify_options(clarify["question"], clarify["options"]))
         return compact

@@ -85,6 +85,7 @@ class SettingsIn(BaseModel):
     projects_auto_advance: str | None = None
     show_technical_details: str | None = None
     tools_all_resident: str | None = None   # K7, no UI; DELETE-BY: v0.1.64
+    answer_when_complete: str | None = None   # K8a, no UI; DELETE-BY: v0.1.64
     heartbeat_checklist: str | None = None
     heartbeat_interval_s: str | None = None
     lan_discovery_enabled: str | None = None
@@ -158,6 +159,7 @@ class SettingsOut(BaseModel):
     projects_auto_advance: str = ""
     show_technical_details: str = ""
     tools_all_resident: str = ""   # K7, no UI; DELETE-BY: v0.1.64
+    answer_when_complete: str = ""   # K8a, no UI; DELETE-BY: v0.1.64
     heartbeat_checklist: str = ""
     heartbeat_interval_s: str = ""
     lan_discovery_enabled: str = ""

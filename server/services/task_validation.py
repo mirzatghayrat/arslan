@@ -373,6 +373,25 @@ def failures(report: dict) -> list[str]:
             for item in [*report["checks"], *report["artifacts"]] if item["status"] == "failed"]
 
 
+_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(([^\n)]+)\)")
+
+
+def unverified_links(text: str, report: dict) -> list[str]:
+    """The artifact links in `text` that no check verified: what failure_output would rewrite. A K8a answer
+    that already went out is never rewritten; these are listed after it instead."""
+    verified = {item.get("url") for item in report["artifacts"] if item["status"] == "passed"}
+    found = [url for match in _MARKDOWN_LINK.finditer(text)
+             if "/api/v1/runs/" in (url := unquote(match[2].strip("<>"))) and "/artifacts/" in url
+             and url not in verified]
+    plain = _MARKDOWN_LINK.sub("", text)
+    for pattern in (_FOREIGN, _BARE):          # a foreign link's path is not listed again as a bare one
+        # A link that ends a sentence keeps its full stop in the match: the same link, listed once.
+        found += [link for match in pattern.finditer(plain)
+                  if unquote(link := match[0].rstrip(".,;:!?")) not in verified]
+        plain = pattern.sub("", plain)
+    return list(dict.fromkeys(found))
+
+
 def failure_output(text: str, report: dict, locale: str) -> str:
     """Never expose a failed artifact candidate as a working download link."""
     copy = {

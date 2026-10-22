@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
@@ -230,13 +230,15 @@ class OpenAIProvider(BaseLLMProvider):
         tool_choice: str | None = None,
         max_tokens: int | None = None,
         stream: bool = False,
+        on_text: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         """POST to {base_url}/chat/completions and return a normalised LLMResponse.
 
         stream=True (native trajectory on streams_tool_calls() endpoints) reads
         the reply as SSE under an idle watchdog and assembles it; the caller
-        still gets one complete response. A server that answers with plain JSON
-        anyway is parsed as before."""
+        still gets one complete response, and `on_text` (K8a) each piece of the
+        answer's text as it arrives. A server that answers with plain JSON
+        anyway is parsed as before, and never calls `on_text`."""
         payload = self._payload(messages, tools, temperature, tool_choice)
         if max_tokens:
             payload["max_tokens"] = max_tokens
@@ -251,7 +253,8 @@ class OpenAIProvider(BaseLLMProvider):
 
         fingerprint = self.endpoint_fingerprint()
         if stream:
-            return await param_heal.send(fingerprint, payload, lambda p: self._chat_streamed(p, headers))
+            # A resend (param_heal) follows an error status, raised before any body is read: no text first.
+            return await param_heal.send(fingerprint, payload, lambda p: self._chat_streamed(p, headers, on_text))
         return self._parse_response(
             await param_heal.send(fingerprint, payload, lambda p: self._post(p, headers)))
 
@@ -278,7 +281,8 @@ class OpenAIProvider(BaseLLMProvider):
             await request_evidence.acknowledge(evidence)
             return response.json()
 
-    async def _chat_streamed(self, payload: dict[str, Any], headers: dict[str, str]) -> LLMResponse:
+    async def _chat_streamed(self, payload: dict[str, Any], headers: dict[str, str],
+                             on_text: Callable[[str], None] | None = None) -> LLMResponse:
         from arslan.llm import stream_assembly
         evidence = await request_evidence.begin(payload)
         body = {**payload, "stream": True, "stream_options": {"include_usage": True}}
@@ -300,7 +304,7 @@ class OpenAIProvider(BaseLLMProvider):
                 if "text/event-stream" not in response.headers.get("content-type", ""):
                     await response.aread()
                     return self._parse_response(response.json())
-                data = await stream_assembly.assemble(response)
+                data = await stream_assembly.assemble(response, on_text)
         return self._parse_response(data)
 
     async def chat_stream(

@@ -26,7 +26,8 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "model_retried": {"attempts", "seconds"},   # 0.1.49
                        "budget_closing_saved": {"reason", "files", "sources"},   # 0.1.50
                        "budget_closing_unsaved": {"reason", "sources"},
-                       "turn_long": {"minutes"}}   # K4b
+                       "turn_long": {"minutes"},   # K4b
+                       "links_not_verified": {"links"}}   # K8a
             assert fields == allowed.get(key, set())
             if locale != "en":
                 assert text != copy.MESSAGES["en"][key]

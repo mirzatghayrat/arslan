@@ -13,7 +13,23 @@ from dataclasses import replace
 from arslan.llm import usage_sink
 from arslan.execution_budget import governed
 from server.orchestrator import run_trace
+from contextvars import ContextVar
+
 from server.services import checkpoints, execution_context, run_recorder, run_registry
+
+# K8a: a failure the run's answer did not end with an `error` frame for (a holder per run: a child task
+# writes into the same dict).
+_failure: ContextVar[dict | None] = ContextVar("host_run_failure", default=None)
+
+
+def note_failure(kind: str, text: str = "") -> None:
+    """K8a (⓪Plan Q2): the run failed though its answer ended normally (the model stopped after part of it
+    was shown). It is recorded as failed, with no `error` frame: the window would drop the text the phone
+    kept, and the stored answer is what was shown."""
+    holder = _failure.get()
+    if holder is not None:
+        holder.setdefault("kind", kind)
+        holder.setdefault("text", text or kind)
 
 
 @governed
@@ -29,6 +45,7 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
     chunks: list[str] = []
     summary_id = None
     error = None
+    failure: dict = {}
 
     def capture(event: dict) -> None:
         nonlocal summary_id, error
@@ -51,7 +68,7 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
             model=usage["model"], provider=usage["provider"],
             tokens_in=usage["tokens_in"], tokens_out=usage["tokens_out"],
             tokens_estimated=usage["tokens_in"] is None,
-            error_kind="HostError" if error else None, error_text=error,
+            error_kind="HostError" if error else failure.get("kind"), error_text=error or failure.get("text"),
             system_prompt=prompt["system_prompt"], injected_kb=prompt["injected_kb"],
             injected_kb_sources=prompt.get("injected_kb_sources"),
             status_override="cancelled" if cancelled else None,
@@ -59,6 +76,7 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
 
     async def run() -> str | None:
         nonlocal error
+        _failure.set(failure)
         from server.services import personal_context
         ctx = personal_context.current()
         memory_scope = personal_context.bind(replace(ctx, run_id=f"run:{recorder.run_id}",

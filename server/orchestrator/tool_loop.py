@@ -127,7 +127,8 @@ _CLAIMS_CHART_RE = re.compile(
     r"上图|已生成图|已为您生成|已绘制|图表已|chart (is )?(generated|ready|done)|here('s| is) (the|your) chart",
     re.IGNORECASE)
 _CLAIMS_SEARCH_RE = re.compile(
-    r"我搜索|搜索了|查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
+    # K8a: 没查到 / 未查到 says nothing was found, not that a search ran.
+    r"我搜索|搜索了|(?<![没未])查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
     re.IGNORECASE)
 
 
@@ -601,7 +602,8 @@ async def _images_to_text(convo: list[dict]) -> int:
 
 async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
                       tools, schemas, forced: bool, state, status: str = "",
-                      drops: _SchemaDrops | None = None, conversation_id: str | None = None):
+                      drops: _SchemaDrops | None = None, conversation_id: str | None = None,
+                      step: "_StepStream | None" = None):
     """The one model call of a run_native step, with recovery (0.1.49 S6).
 
     Native adapters (OpenAI-compatible and Gemini; Claude from K1b;
@@ -618,7 +620,11 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     `status` (0.1.50 S1) is appended to the last message of the step's base
     messages in both renderings (on a provider with APPENDS_STATUS natively: stored
     once in the trajectory as its own block, K1); continuation turns follow it, so a
-    continuation request shares the original request's exact prefix."""
+    continuation request shares the original request's exact prefix.
+
+    `step` (K8a) gets the answer's text as it arrives, where the endpoint streams. Once some of it was
+    shown, nothing re-sends the request (a retry, a protocol switch, a compaction or a raised output limit
+    would show it twice): TextShown ends the turn instead. A cut answer is still continued."""
     from server.orchestrator import agent_status
     from server.orchestrator import model_call as mc
 
@@ -655,6 +661,8 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         if native:
             step_tools = schemas if forced else tools
             # tool_choice only with tools: leaving every MCP tool out (0.1.62 F3) can empty the list.
+            if step is not None:
+                kwargs["on_text"] = step.feed
             return await a.chat_trajectory(system, sent, tools=step_tools,
                                            tool_choice="none" if forced and step_tools else None, **kwargs)
         # One legacy entry point (_render_request) for every request of the step.
@@ -712,9 +720,11 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     remaining = _remaining_seconds()
     relaxed = False
     try:
-        resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+        resp = await mc.call_with_recovery(_once_shown(request, step), state, remaining_s=remaining)
     except mc.ModelCallError as exc:
         from server.services import ocr_fallback
+        if step is not None and step.released:
+            raise TextShown(exc.excerpt) from exc
         # First: an image refusal can also look like a protocol rejection; switching protocols
         # would send the same screenshots again and fail the same way.
         if (trajectory.image_count(convo) and not state.images_read_locally
@@ -747,13 +757,27 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         else:
             raise
         try:
-            resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+            resp = await mc.call_with_recovery(_once_shown(request, step), state, remaining_s=remaining)
         except mc.ModelCallError as again:
             # Refused again after one tool was left out: every MCP tool goes, for one last try.
             if not (relaxed and await relax(again, last=True)):
                 raise
-            resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
-    return await _recover_truncation(a, resp, request, state, remaining)
+            resp = await mc.call_with_recovery(_once_shown(request, step), state, remaining_s=remaining)
+    return await _recover_truncation(a, resp, request, state, remaining, step)
+
+
+def _once_shown(make, step: "_StepStream | None"):
+    """K8a: `make` for call_with_recovery, whose retries resend the whole request. A retry goes out only
+    while nothing of the failed attempt was shown; otherwise TextShown (never classified, never retried)."""
+    tries = 0
+
+    async def attempt():
+        nonlocal tries
+        tries += 1
+        if tries > 1 and step is not None and not step.retry_ok():
+            raise TextShown("the model stopped after part of the answer was shown")
+        return await make()
+    return attempt
 
 
 def _remaining_seconds():
@@ -778,20 +802,22 @@ def _replaced(resp, **fields):
     return clone
 
 
-async def _recover_truncation(a, resp, request, state, remaining):
+async def _recover_truncation(a, resp, request, state, remaining, step=None):
     """finish_reason == "length": raise to the endpoint's ceiling once, then
     continue a cut answer. A cut caused by the work budget is not raised (that
-    would spin: raise -> clamp -> cut). Per-turn caps live on `state`."""
+    would spin: raise -> clamp -> cut). Per-turn caps live on `state`. Once the
+    answer was shown as it was written (K8a), only continuing it is allowed."""
     from server.orchestrator import model_call as mc
     if getattr(resp, "finish_reason", None) != "length" or _output_clamped():
         return resp
     provider = getattr(a, "_provider", None)
     ceiling, current_max = getattr(provider, "output_ceiling", None), getattr(provider, "max_tokens", None)
     raise_to = ceiling if isinstance(ceiling, int) and isinstance(current_max, int) and ceiling > current_max else None
-    if raise_to and state.output_raises < 2 and not state.exhausted:
+    if raise_to and state.output_raises < 2 and not state.exhausted and not (step is not None and step.released):
         state.output_raises += 1
         state.note(f"raised output limit to {raise_to}")
-        resp = await mc.call_with_recovery(lambda: request(max_tokens=raise_to), state, remaining_s=remaining)
+        resp = await mc.call_with_recovery(_once_shown(lambda: request(max_tokens=raise_to), step), state,
+                                           remaining_s=remaining)
         if getattr(resp, "finish_reason", None) != "length" or _output_clamped():
             return resp
     text = resp.content or ""
@@ -805,7 +831,7 @@ async def _recover_truncation(a, resp, request, state, remaining):
         extra = [trajectory.assistant(text, continuation=getattr(last, "continuation", None)
                                       if last is resp else None),
                  {"role": "user", "content": CONTINUE_PROMPT}]
-        last = await mc.call_with_recovery(lambda: request(extra=extra, max_tokens=raise_to),
+        last = await mc.call_with_recovery(_once_shown(lambda: request(extra=extra, max_tokens=raise_to), step),
                                            state, remaining_s=remaining)
         text += last.content or ""
         if getattr(last, "finish_reason", None) != "length" or getattr(last, "tool_calls", None) \
@@ -2248,6 +2274,19 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     return schemas
 
 
+# What a tool call written as text looks like, in every provider's shape. One list: _embeds_protocol
+# judges a whole answer with it, and K8a's streaming holds back the tail of a reply against it.
+_PROTOCOL_PATTERNS = (
+    # Some providers render a proposed call as XML instead of native tool_calls, including an unfinished
+    # opening tag.
+    re.compile(r'<\s*/?\s*(?:tool_call|tool_calls|function_call)(?=[\s>/]|$)', re.I),
+    # DeepSeek's own chat-template tokens leaking into content instead of native tool_calls (seen in the
+    # 0.1.49 bench: "<｜｜DSML｜｜tool_calls>", and V3's "<｜tool▁calls▁begin｜>").
+    re.compile(r'[｜|]\s*DSML\s*[｜|]|<\s*[｜|]+\s*(?:DSML\s*[｜|]+\s*)?/?\s*(?:tool[▁_ ]?calls?|invoke)', re.I),
+    re.compile(r'\{\s*"(?:tool|tool_calls|function_call|functionCall|escalate)"\s*:'),
+)
+
+
 def _embeds_protocol(text: str) -> bool:
     """True if `text` is / EMBEDS a tool-call or escalate JSON in ANY provider's shape (even behind
     a prose prefix like 'Let me search…{…}'). Covers OpenAI/DeepSeek ({"tool"} / {"tool_calls"} /
@@ -2255,19 +2294,9 @@ def _embeds_protocol(text: str) -> bool:
     prose — it never surfaces one of these as the reply."""
     # Detection is deliberately stricter than parsing for dispatch: malformed
     # quotes or an interrupted object must not turn a proposed action into an
-    # answer. This only rejects text; it never repairs JSON or executes a call.
-    # Some providers render a proposed call as XML instead of native tool_calls.
-    # Treat that as the same protocol failure, including an unfinished opening
-    # tag. Never parse its arguments or grant the proposed action permission.
-    if re.search(r'<\s*/?\s*(?:tool_call|tool_calls|function_call)(?=[\s>/]|$)', text or "", re.I):
-        return True
-    # DeepSeek's own chat-template tokens leaking into content instead of
-    # native tool_calls (seen in the 0.1.49 bench: "<｜｜DSML｜｜tool_calls>",
-    # and V3's "<｜tool▁calls▁begin｜>"). Same failure, same refusal to execute.
-    if re.search(r'[｜|]\s*DSML\s*[｜|]|<\s*[｜|]+\s*(?:DSML\s*[｜|]+\s*)?/?\s*(?:tool[▁_ ]?calls?|invoke)',
-                 text or "", re.I):
-        return True
-    if re.search(r'\{\s*"(?:tool|tool_calls|function_call|functionCall|escalate)"\s*:', text or ""):
+    # answer. This only rejects text; it never repairs JSON or executes a call,
+    # nor grants the proposed action permission.
+    if any(pattern.search(text or "") for pattern in _PROTOCOL_PATTERNS):
         return True
     obj = first_json_object(text or "") or parse_json_object(text or "")
     if not isinstance(obj, dict):
@@ -2513,6 +2542,173 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
             await asyncio.sleep(delay)
 
 
+# 0.1.63 K8a: the answer goes out while it is written (OpenAI-compatible endpoints that stream; Claude in
+# K8b, Gemini in K8c, which also deletes _reveal_streamed). A step's text is held until it passes
+# _DEFERRAL_MAX (a short answer is judged whole, exactly as before), then shown as it arrives, except:
+_STREAM_HOLD = 64      # the tail kept back: longer than any text _PROTOCOL_PATTERNS need to decide
+_JSON_HOLD = 1500      # a JSON object kept back until it closes (at most this long): its keys decide
+_JSON_START = re.compile(r'\{\s*"')
+#: Model names whose steps are shown only when complete (the guards bounce instead of correcting), as
+#: M1 decides (D6). Empty: every streaming model streams. Reviewed in v0.1.65; deleted when still empty.
+BUFFERED_MODELS: frozenset[str] = frozenset()
+
+
+#: K8a (⓪Plan Q4): an answer that claims what no tool did is sent back at most this often per turn, then
+#: written from the findings (the same-failure count of policy.observe used to end it; guards no longer
+#: count toward "no progress").
+_UNVERIFIED_BOUNCES = 2
+
+
+def _shown(turn_text: "_TurnText | None") -> str | None:
+    """What this turn already showed, for an answer that ends another way (a choice card, an escalation)."""
+    return turn_text.text if turn_text is not None and turn_text.parts else None
+
+
+async def _correct(turn_text: "_TurnText | None", shown: bool) -> None:
+    """K8a: once a step's text went out, a guard that sends it back says so to the user first."""
+    if shown and turn_text is not None:
+        from server.services import runtime_messages
+        turn_text.append(runtime_messages.render("stream_correction", await runtime_messages.selected_locale()))
+
+
+async def _not_verified(turn_text: "_TurnText", links: list[str]) -> None:
+    from server.services import runtime_messages
+    new = [link for link in links if link not in turn_text.listed]
+    if new:
+        turn_text.listed.update(new)
+        turn_text.append(runtime_messages.render("links_not_verified", await runtime_messages.selected_locale(),
+                                                 links=", ".join(new)))
+
+
+class TextShown(Exception):
+    """K8a: a model request failed after part of its answer was shown. It is never sent again (the text
+    would show twice); the turn ends with what was shown and says it was interrupted."""
+
+
+class _TurnText:
+    """K8a: everything this turn showed through on_chunk, corrections included: the stored answer is this
+    (every joiner, the window, the phone's Bridge and the run record, concatenates the chunks)."""
+
+    def __init__(self, on_chunk: Callable[[str], None]):
+        self.on_chunk, self.parts = on_chunk, []
+        self.listed: set[str] = set()       # links already said to be unverified
+
+    def show(self, text: str) -> None:
+        if text:
+            self.on_chunk(text)
+            self.parts.append(text)
+
+    def append(self, text: str) -> None:
+        """A new part of the answer (a step's text, a correction): after a blank line."""
+        self.show(("\n\n" if self.parts and text else "") + text)
+
+    @property
+    def text(self) -> str:
+        return "".join(self.parts)
+
+
+def _json_end(text: str, start: int) -> int | None:
+    """Just past the JSON object opening at `start`, or None while it is still open."""
+    depth, in_string, escaped = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            escaped, in_string = (False, True) if escaped else (ch == "\\", ch != '"')
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return None
+
+
+class _StepStream:
+    """K8a: one model step's text on its way out. Held until it passes the window; then shown as it
+    arrives, except a tool call written as text (_PROTOCOL_PATTERNS: never shown, and this step's stream
+    stops there) and host bookkeeping (agent_status.ECHO_BLOCK: dropped)."""
+
+    def __init__(self, turn: _TurnText, window: int = _DEFERRAL_MAX):
+        self.turn, self.window = turn, window
+        self.held = self.pending = ""
+        self.released = self.stopped = False
+        self._started = False
+
+    def feed(self, piece: str) -> None:
+        if self.stopped:
+            return
+        if not self.released:
+            self.held += piece
+            if len(self.held) < self.window:
+                return
+            self.released, self.pending, self.held = True, self.held, ""
+        else:
+            self.pending += piece
+        self._drain(final=False)
+
+    def retry_ok(self) -> bool:
+        """A failed request may be sent again only while nothing of it went out (what it held is dropped)."""
+        if self.released:
+            return False
+        self.held = ""
+        return True
+
+    def finish(self) -> None:
+        if self.released and not self.stopped:
+            self._drain(final=True)
+
+    def _show(self, text: str) -> None:
+        if text:
+            if self._started:
+                self.turn.show(text)
+            else:
+                self._started = True
+                self.turn.append(text)
+
+    def _drain(self, final: bool) -> None:
+        from server.orchestrator import agent_status
+        text = agent_status.ECHO_BLOCK.sub("", self.pending)
+        opened = [i for tag in agent_status.ECHO_TAGS if (i := text.find(tag)) >= 0]
+        cut = min(opened) if opened else len(text)   # a block still open: never shown; dropped if it never closes
+        hits = [m.start() for pattern in _PROTOCOL_PATTERNS if (m := pattern.search(text)) is not None]
+        start = 0
+        while (opening := _JSON_START.search(text, start)) is not None and opening.start() < cut:
+            end = _json_end(text, opening.start())
+            if end is None:
+                if not final and len(text) - opening.start() < _JSON_HOLD:
+                    cut = opening.start()
+                break
+            if _embeds_protocol(text[opening.start():end]):
+                hits.append(opening.start())
+                break
+            start = end
+        if hits and min(hits) < cut:
+            self._show(text[:min(hits)])
+            self.pending, self.stopped = "", True
+            return
+        if not final:
+            cut = min(cut, max(0, len(text) - _STREAM_HOLD))
+        self._show(text[:cut])
+        self.pending = "" if final else text[cut:]
+
+
+async def _streams_answer(a, acceptance_runtime) -> bool:
+    """K8a: whether this turn's answer is shown as it is written. Not for work with explicit acceptance
+    criteria (background jobs and the like: a failed check rewrites what was written; ⓪Plan Q1), not for
+    a model in BUFFERED_MODELS, not when the user chose to see answers only when complete."""
+    from server.db import session as db_session
+    from server.services import settings_service, task_service
+    if (acceptance_runtime is not None and not task_service.answer_only()) or _model_key(a)[1] in BUFFERED_MODELS:
+        return False
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return not await settings_service.answer_when_complete(db)
+    except Exception:  # noqa: BLE001 — an unreadable setting is the default: stream
+        return True
+
+
 # Tools a job may still use while wrapping up: saving the deliverable.
 WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
 
@@ -2577,7 +2773,11 @@ async def run_native(**kwargs) -> dict:
         task = current_task()
         if task is not None:
             _stop_for_limit(task, "task_budget_exhausted", trace)
-        await _reveal_streamed(text, kwargs["on_chunk"])
+        if (turn_text := facts.get("turn_text")) is not None and turn_text.parts:
+            turn_text.append(text)              # K8a: after what this turn already showed
+            text = turn_text.text
+        else:
+            await _reveal_streamed(text, kwargs["on_chunk"])
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
@@ -2752,8 +2952,10 @@ async def _run_native(
     plan = Plan()
     turn_started = agent_status.now()
     ws_root, own_folder = await _status_workspace(wired_keys)
+    # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
+    turn_text = _TurnText(on_chunk) if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None
     if _facts is not None:
-        _facts.update(ws_root=ws_root, started=turn_started)
+        _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -2937,9 +3139,25 @@ async def _run_native(
         except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
             logger.warning("context parts not measured", exc_info=True)
             usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
-        resp = await _model_call(a, system, convo, current_request, tools=step_tools,
-                                 schemas=schemas, forced=forced, state=turn_state, status=status,
-                                 drops=drops, conversation_id=conversation_id)
+        step = _StepStream(turn_text) if turn_text is not None else None
+        try:
+            resp = await _model_call(a, system, convo, current_request, tools=step_tools,
+                                     schemas=schemas, forced=forced, state=turn_state, status=status,
+                                     drops=drops, conversation_id=conversation_id, step=step)
+        except TextShown:
+            # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
+            # what was shown and says so, and the run records a failure (no `error` frame: the window
+            # would drop the text the phone kept).
+            from server.services import host_run, runtime_messages
+            step.finish()
+            turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()))
+            host_run.note_failure("model_error_after_text")
+            if acceptance_runtime is not None:
+                acceptance_runtime.pause_reason = "model_error_after_text"
+            return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
+                    "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
+        if step is not None:
+            step.finish()
         if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
             drops.changed = False
             wired = drops.keep(wired)
@@ -3002,7 +3220,7 @@ async def _run_native(
                     policy.observe(name, args, result)
                     continue
                 if name == "escalate" and allow_escalation:
-                    return {"final": None, "tool_trace": tool_trace,
+                    return {"final": _shown(turn_text), "tool_trace": tool_trace,
                             "escalation": {"kind": str(args.get("kind") or "data"),
                                            "need": str(args.get("need") or "").strip(),
                                            "context": str(args.get("context") or "").strip()}}
@@ -3097,7 +3315,7 @@ async def _run_native(
                         continue
                     if runtime:
                         runtime.pause_reason = "task_input_required"
-                    return {"final": None, "escalation": None, "clarify": clarify,
+                    return {"final": _shown(turn_text), "escalation": None, "clarify": clarify,
                             "tool_trace": tool_trace}
                 if budget.tool_calls >= budget.limits.tool_calls:
                     # The batch crossed the hard tool budget: record the rest as
@@ -3160,9 +3378,10 @@ async def _run_native(
             # Gemini provider pair and the old "invocation completed" text are now
             # renderings of this trajectory (trajectory.to_legacy), not rewrites.
             _claim_results(convo, marks)
-            # resp.content is narration — surface it as an ephemeral note ONLY, never final.
+            # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
+            # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())
-            if narration:
+            if narration and not (step is not None and step.released):
                 emit({"type": "note", "text": narration[:400]})
             pending_feedback = len(convo) - history_start
             continue
@@ -3178,9 +3397,10 @@ async def _run_native(
         # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
         # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
         own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
+        streamed = step is not None and step.released          # K8a: this step's text already went out
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
-        protocol_text = _embeds_protocol(final_text)
+        protocol_text = _embeds_protocol(final_text) or (step is not None and step.stopped)
         # 0.1.50: an answer that denies a capability this turn had (bench: "no file
         # write ability" with write_file offered) gets one correction.
         from server.orchestrator import capability_truth
@@ -3188,12 +3408,14 @@ async def _run_native(
                   else capability_truth.denied_capability(final_text, wired_keys, tool_trace))
         if denied:
             turn_state.capability_bounced = True
-            policy.observe("answer_validation", {}, {"ok": False, "code": "denied_capability"})
+            await _correct(turn_text, streamed)
             convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
                           {"role": "user", "content": capability_truth.correction(denied, wired_keys)}])
             continue
-        if not forced and (claimed or ((deferred or protocol_text) and wired_keys)):
-            policy.observe("answer_validation", {}, {"ok": False, "code": "unverified_answer"})
+        if not forced and (claimed or ((deferred or protocol_text) and wired_keys)) \
+                and turn_state.unverified_bounces < _UNVERIFIED_BOUNCES:
+            turn_state.unverified_bounces += 1
+            await _correct(turn_text, streamed)
             # Never execute rescued JSON, nor echo a malformed invocation back
             # as an example to imitate. Permit a new structured call only through
             # the normal tool resolver, permission gate and existing budgets.
@@ -3217,9 +3439,11 @@ async def _run_native(
         #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
         #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
         #     lie. Salvage a direct plain-text answer instead.
-        if (not final_text) or protocol_text or deferred or claimed:
+        replaced = (not final_text) or protocol_text or deferred or claimed
+        if replaced:
             from server.services import runtime_messages
             notice_locale = await runtime_messages.selected_locale()
+            await _correct(turn_text, streamed)
             if tool_trace:
                 final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
             else:
@@ -3228,17 +3452,24 @@ async def _run_native(
             if _unverified_claim(final_text, tool_trace, wired_keys):
                 final_text = (_fallback_with_digest(user_content, tool_trace, locale=notice_locale)
                               if tool_trace else _chat_miss_message(user_content, locale=notice_locale))
+        # K8a: what is still to be shown at the end (nothing when this step's text already went out), and
+        # the whole answer as the user will have read it.
+        to_show = final_text if replaced or not streamed else ""
+        answer = final_text if turn_text is None else turn_text.text + ("\n\n" if turn_text.parts and to_show else "") + to_show
         if acceptance_runtime is not None:
             from server.services import task_validation
-            report = await task_validation.validate_output(acceptance_runtime, final_text, tool_trace, model_adapter=a)
+            report = await task_validation.validate_output(acceptance_runtime, answer, tool_trace, model_adapter=a)
             validation_failures = task_validation.failures(report)
             if validation_failures:
                 repair_fingerprint = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
                 prior_repairs = acceptance_runtime.progress.validation_repairs
+                links = task_validation.unverified_links(answer, report)
                 if not forced and len(prior_repairs) < 2 and repair_fingerprint not in prior_repairs:
                     acceptance_runtime.progress = acceptance_runtime.progress.model_copy(update={
                         "validation_repairs": (*prior_repairs, repair_fingerprint)})
                     await acceptance_runtime.checkpoint("validation_repair")
+                    if streamed and links:      # K8a Q1: what went out is never rewritten; the repair follows
+                        await _not_verified(turn_text, links)
                     # The reply's continuation belongs to its own text only; a
                     # synthesized/salvaged answer came from another request.
                     own = final_text == (resp.content or "").strip()
@@ -3251,7 +3482,16 @@ async def _run_native(
                         "state the failed checks and remaining work; do not claim acceptance."}])
                     continue
                 acceptance_runtime.pause_reason = "task_validation_failed"
-                final_text = task_validation.failure_output(final_text, report, acceptance_runtime.spec.locale)
+                if turn_text is not None and (streamed or turn_text.parts):
+                    turn_text.append(to_show)           # K8a Q1: appended to, never rewritten
+                    to_show = ""
+                    await _not_verified(turn_text, links)
+                else:
+                    final_text = task_validation.failure_output(final_text, report, acceptance_runtime.spec.locale)
+        if turn_text is not None and (streamed or turn_text.parts):
+            turn_text.append(to_show)
+            return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
+                    "stop_reason": stop_reason, "history_compacted": history_compacted}
         if final_text:
             await _reveal_streamed(final_text, on_chunk)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace,

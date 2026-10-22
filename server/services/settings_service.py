@@ -42,6 +42,10 @@ _PLAIN_KEYS = (
                # 0.1.63 K7: every tool on every request ("true" | "false"; default off). No UI: M1's A/B
                # and the rollback. DELETE-BY: v0.1.64 (see arslan.RESIDENT).
                "tools_all_resident",
+               # 0.1.63 K8a: show an answer only once it is complete ("true" | "false"; default off: answers
+               # go out as they are written). No UI yet. DELETE-BY: v0.1.64, when v0.1.63's M1 shows streaming
+               # no worse than buffering two rounds running and no issue was opened for it (card K8).
+               "answer_when_complete",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
@@ -304,6 +308,12 @@ async def research_review_enabled(session: AsyncSession) -> bool:
     positive rate is being calibrated. Never a gate on saving."""
     raw = await _get_raw(session, "research_review_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def answer_when_complete(session: AsyncSession) -> bool:
+    """K8a: answers shown only when complete, as before K8. Default off. DELETE-BY: v0.1.64 (card K8)."""
+    raw = await _get_raw(session, "answer_when_complete")
+    return str(raw).strip().lower() == "true" if raw is not None else False
 
 
 async def tools_all_resident(session: AsyncSession) -> bool:
