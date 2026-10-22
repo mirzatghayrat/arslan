@@ -35,8 +35,8 @@ class _Writer:
 async def _settle():
     for _ in range(5):
         await asyncio.sleep(0)
-    if aio._disposing:
-        await asyncio.gather(*aio._disposing)
+    if pending := aio.disposing():
+        await asyncio.gather(*pending)
 
 
 async def test_a_stop_that_lands_as_the_connection_opens_closes_it(monkeypatch):
