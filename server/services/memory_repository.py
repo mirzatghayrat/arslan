@@ -13,7 +13,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from sqlalchemy import delete, or_, select, text, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import OperationalError
 
@@ -488,6 +488,64 @@ class MemoryRepository:
         self.deletions_changed = True
         return {"id": entry_id, "status": "deleted", "version": entry.version,
                 "deletion_epoch": state.deletion_epoch}
+
+    async def turn_entries(self, message_ids: set[int], run_ids: set[int]):
+        """S3b: the entries undone turns taught (their first source is one of those turns) and the older
+        entries those turns only re-confirmed, each with those turns' sources: ([(entry, sources)], same)."""
+        if not message_ids and not run_ids:
+            return [], []
+        matched = (await self.db.execute(select(MemorySource).where(or_(
+            func.json_extract(MemorySource.source_ref, "$.message_id").in_(sorted(message_ids)),
+            func.json_extract(MemorySource.source_ref, "$.run_id").in_(sorted(run_ids)),
+        )))).scalars().all()
+        mine = {source.id for source in matched}
+        taught, trimmed = [], []
+        for entry_id in sorted({source.entry_id for source in matched}):
+            entry = await self.db.get(MemoryEntry, entry_id)   # a deleted entry has no sources left to match
+            if entry is None:
+                continue
+            first = await self.db.scalar(select(MemorySource.id).where(MemorySource.entry_id == entry_id)
+                                         .order_by(MemorySource.created_at, MemorySource.id).limit(1))
+            (taught if first in mine else trimmed).append(
+                (entry, [source for source in matched if source.entry_id == entry_id]))
+        return taught, trimmed
+
+    async def forget_turns(self, message_ids: set[int], run_ids: set[int]) -> int:
+        """S3b (turn_undo): take back what undone turns taught; returns how many entries went. Unlike
+        `delete_entry` (Forget): no tombstone of the text, no suppression beyond these turns' own messages
+        and runs, summaries and run prompts kept. An older entry they only re-confirmed loses just their
+        sources (⓪Plan's Q4)."""
+        taught, trimmed = await self.turn_entries(message_ids, run_ids)
+        now = datetime.utcnow()
+        for entry, sources in taught:
+            # These turns' own messages and runs, for this entry (as `delete_entry` keys them): a writer still
+            # holding one is refused (`_not_suppressed`). Never the conversation or the task.
+            for kind, value in {(key, source.source_ref[key]) for source in sources for key in ("message_id", "run_id")
+                                if source.source_ref.get(key) in (message_ids if key == "message_id" else run_ids)}:
+                await self.db.execute(sqlite_insert(MemorySuppression).values(
+                    source_kind=kind, source_id=str(value), entry_id=entry.id, cutoff_at=now, created_at=now,
+                ).on_conflict_do_nothing())
+            revision_id = _id()
+            result = await self.db.execute(update(MemoryEntry).where(
+                MemoryEntry.id == entry.id, MemoryEntry.version == entry.version,
+            ).values(status="deleted", version=entry.version + 1, current_revision_id=revision_id,
+                     normalized_hash=None, dedup_key=None, confirmed_at=None, confirmation_kind=None,
+                     updated_at=now).execution_options(synchronize_session=False))
+            if result.rowcount != 1:
+                raise MemoryError("memory_version_conflict")
+            self.db.add(MemoryRevision(id=revision_id, entry_id=entry.id, version=entry.version + 1,
+                                       content=None, previous_version=None, change_reason="turn_undone"))
+            await self.db.flush()
+            await self.db.execute(delete(MemorySource).where(MemorySource.entry_id == entry.id))
+            await self.db.execute(delete(MemoryRevision).where(
+                MemoryRevision.entry_id == entry.id, MemoryRevision.id != revision_id))
+            await self.db.execute(update(MemoryProposal).where(MemoryProposal.target_entry_id == entry.id)
+                                  .values(candidate=None, status="dismissed", reason="turn_undone"))
+            await self._sync_index(entry.id)
+        for _entry, sources in trimmed:
+            await self.db.execute(delete(MemorySource).where(MemorySource.id.in_([s.id for s in sources])))
+        await self.db.flush()
+        return len(taught)
 
     async def _erase_legacy_payload(self, entry_id):
         mapping = await self.db.scalar(select(MemoryLegacyMap).where(MemoryLegacyMap.entry_id == entry_id))
