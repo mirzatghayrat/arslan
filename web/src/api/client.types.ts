@@ -313,22 +313,6 @@ export interface StoredArtifact {
   url: string;
 }
 
-/** Advisory source-review note stored beside one artifact snapshot (0.1.41). */
-export interface ArtifactReviewIssue {
-  claim: string;
-  quote: string;
-  reason: string;
-  source_id: string;
-  source_url: string;
-}
-
-export interface ArtifactReview {
-  status: "none" | "issues" | "no_objection" | "unavailable";
-  code?: string;
-  issues?: ArtifactReviewIssue[];
-  artifact_sha256?: string;
-}
-
 export interface SpawnSummary {
   id: number;
   name: string;
@@ -413,7 +397,6 @@ export interface AppSettings {
   compaction_config_id?: string;
   router_config_id?: string;
   vision_config_id?: string;
-  research_review_enabled?: boolean;
   keep_awake_enabled?: boolean;
   desktop_notifications_enabled?: boolean;
   island_enabled?: boolean;

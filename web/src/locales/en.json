@@ -559,9 +559,6 @@
     "navAutomation": "Automation",
     "navAutomationHint": "Everything that can spend on its own",
     "automationLede": "These run in the background and call your model provider, which costs money. They are all off by default and none of them changes anything without you.",
-    "labelResearchReview": "Source review of saved reports",
-    "researchReviewDesc": "After Arslan saves a report that cites several web sources, the model rereads the sources and flags claims a source may contradict, such as “document A doesn’t mention X” when it does. The report is always saved; the notes appear when you open it. Model advice, not a fact check.",
-    "researchReviewSpendNote": "Each qualifying save sends one extra request with the report and its sources to your model, on your key. For now only official DeepSeek and Anthropic connections are supported; other models are skipped.",
     "navDesktop": "Desktop",
     "navProactive": "Proactivity",
     "desktopLede": "Closing the window no longer quits Arslan: it stays in the menu bar, tasks and scheduled tasks keep running, and actions that need you still wait in the window (for up to 30 minutes; if nobody answers, it is not done — and that is not a no). A scheduled task never waits for an answer: it does only what needs no OK, and anything else is refused (most of those are listed in the Inbox). An earlier “Always” doesn’t count there. Quit with ⌘Q or “Quit Arslan” in the menu bar.",
@@ -1431,15 +1428,6 @@
     "conversationStart": "Start conversation",
     "conversationStop": "Stop listening",
     "speaking": "speaking…"
-  },
-  "artifactReview": {
-    "title": "Source review",
-    "disclaimer": "Model advice about claims of what the sources contain or lack. It may be wrong and is not a fact check; open the source to check.",
-    "noObjection": "Review finished; nothing to check was found.",
-    "unavailable": "Review not completed.",
-    "draft": "Report:",
-    "source": "Source:",
-    "openSource": "Open source"
   },
   "kit": {
     "allow": "Allow",

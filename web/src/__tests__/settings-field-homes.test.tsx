@@ -90,7 +90,7 @@ describe("settings section registry", () => {
     // Split across sections is how someone turns on the second spend control
     // without seeing the first one's warning. Since 0.1.55 they all live in
     // "Background", the place for things Arslan does when nobody asked.
-    const spenders = ["research_review.enabled", "proactive.diagnosis_cap",
+    const spenders = ["proactive.diagnosis_cap",
       "advanced.background_job_budget"];
     for (const f of spenders) {
       expect(FIELD_HOMES[f], `${f} is not in background`).toBe("background");

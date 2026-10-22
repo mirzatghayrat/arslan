@@ -2482,58 +2482,6 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
 _CHAT_TIMEOUT_S = 75.0  # per model call — DeepSeek's API can be slow and occasionally stalls.
 
 
-def _saved_research_report(name: str, args, result: dict) -> bool:
-    """A successful write_file of a text report with a stored artifact snapshot."""
-    return (name == "write_file" and result.get("ok") is True and isinstance(args, dict)
-            and isinstance(result.get("artifact"), dict)
-            and str(args.get("path", "")).lower().endswith((".md", ".txt")))
-
-
-async def _research_review_enabled() -> bool:
-    """Settings toggle, default OFF. Fail closed: an unreadable setting is OFF,
-    because the review spends a model request on the user's key."""
-    try:
-        from server.db import session as db_session
-        from server.services import settings_service
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.research_review_enabled(db)
-    except Exception:  # noqa: BLE001 — optional advice must never break a task
-        return False
-
-
-async def _review_saved_report(adapter, args: dict, result: dict, tool_trace: list, user_content,
-                               cache: dict, emit) -> dict | None:
-    """0.1.41: critique a report AFTER it was saved; advice only, never a gate.
-
-    Nothing here reaches the writing model's conversation or changes the tool
-    result, the task outcome or its stop/pause reason. The note is stored beside
-    the artifact snapshot for the user. Only task control (cancellation) and a
-    genuinely exhausted budget propagate; `affordable` makes the latter a race.
-    """
-    from server.orchestrator import research_review
-    from server.services import artifact_store
-    subject = research_review.subject("write_file", args, tool_trace, request=user_content)
-    if subject is None:
-        return None
-    supports = getattr(adapter, "supports_bounded_critique", None)
-    if not (callable(supports) and supports()):
-        outcome = {"status": "unavailable", "code": "research_review_unsupported_provider"}
-    elif not research_review.affordable(subject[1]):
-        outcome = {"status": "unavailable", "code": "research_review_budget_reserved"}
-    else:
-        emit({"type": "note", "text": "Saved report source review · advice only · uses the current task budget"})
-        outcome = await research_review.inspect(subject, adapter=adapter, chat=_chat_retry, cache=cache)
-    stored = research_review.note(outcome, subject[2])
-    try:
-        artifact_store.write_review(result["artifact"], stored)
-    except OSError:
-        pass  # the report is saved; losing an advisory note must not fail the task
-    emit({"type": "research_review", "run_id": result["artifact"].get("run_id"),
-          "filename": result["artifact"].get("filename"), "status": stored["status"],
-          "issues": len(stored["issues"])})
-    return stored
-
-
 async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
     """One bounded retry for known transient transport failures, never for denial."""
     return await _with_retry(lambda: a.chat(system, user, history=history, tools=tools))
@@ -3007,8 +2955,6 @@ async def _run_native(
         lesson_notes = lessons.status_lines(recalled)
         if _facts is not None:
             _facts["recalled_lessons"] = recalled
-    research_review_cache: dict = {}
-    review_enabled: bool | None = None  # read lazily, once, at the first saved report
     research_source_feedback: list = []
     # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
     # run_native invocation — one invocation = one turn — so a new turn starts at zero by
@@ -3441,13 +3387,6 @@ async def _run_native(
                     note = await _link_check_note(name, args, result, tool_trace, link_hints)
                     if note:
                         convo[-1]["content"] += note
-                if name in wired_keys and _saved_research_report(name, args, result):
-                    if review_enabled is None:
-                        review_enabled = await _research_review_enabled()
-                    if review_enabled:
-                        # K3: checked against what the user asked, not the turn's reference block.
-                        await _review_saved_report(a, args, result, tool_trace, turn_context.users_words(user_content),
-                                                   research_review_cache, emit)
                 if not provider_content:
                     if name == "web_extract" and _web_read_feedback(name, args, result) is not None:
                         research_source_feedback.append((convo[-1], result))

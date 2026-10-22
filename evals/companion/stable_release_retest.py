@@ -116,7 +116,7 @@ def configured():
         "ENV": "ARSLAN_STABLE_RELEASE", "OPT_IN": OPT_IN, "REQUESTS": 24, "USD": "3.00",
         "CAPS": {"S2-R1": 12, "S2-R4": 7 if number == 11 else 12}, "MAX_REVIEW_OUTPUT_TOKENS": 16384,
         "EXTRA_FILES": {"evals/companion/stable_release_retest.py", "tests/server/test_stable_release_live.py",
-                        "tests/test_stable_release_grant.py", "server/orchestrator/research_review.py",
+                        "tests/test_stable_release_grant.py",
                         "arslan/llm/request_policy.py", "arslan/llm/providers/openai_provider.py",
                         "evals/companion/stable_live.py", "tests/test_stable_live.py"}}
     old = {key: getattr(four, key) for key in values}

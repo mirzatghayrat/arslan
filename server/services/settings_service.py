@@ -30,7 +30,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                # 0.1.58 §6: one model of the slot's config (empty = the config's own model).
                "compaction_model", "synthesis_model", "router_model", "vision_model",
-               "mcp_server_enabled", "research_review_enabled", "keep_awake_enabled",
+               "mcp_server_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
@@ -259,15 +259,6 @@ async def terminal_sandbox_enabled(session: AsyncSession) -> bool:
     ON; only an explicit 'false' turns it off (back to the 0.1.50 behaviour)."""
     raw = await _get_raw(session, "terminal_sandbox_enabled")
     return raw is None or str(raw).strip().lower() != "false"
-
-
-async def research_review_enabled(session: AsyncSession) -> bool:
-    """Whether a saved multi-source research report gets an advisory source
-    review after saving. Default OFF (user ruling 2026-09-26): it spends one
-    extra model request on the user's key per qualifying save, and its false-
-    positive rate is being calibrated. Never a gate on saving."""
-    raw = await _get_raw(session, "research_review_enabled")
-    return raw is not None and str(raw).strip().lower() == "true"
 
 
 async def answer_when_complete(session: AsyncSession) -> bool:
@@ -515,7 +506,6 @@ async def first_run_seen(session: AsyncSession) -> bool:
 
 _BOOL_ACCESSORS = {
     "first_run_seen": first_run_seen,
-    "research_review_enabled": research_review_enabled,
     "keep_awake_enabled": keep_awake_enabled,
     "desktop_notifications_enabled": desktop_notifications_enabled,
     "island_enabled": island_enabled,

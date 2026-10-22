@@ -271,8 +271,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpSpends')}>
       <AutomationSection
-        researchReviewEnabled={localSettings.researchReviewEnabled ?? false}
-        onResearchReviewEnabledChange={(v) => saveField({ researchReviewEnabled: v })}
         heartbeatEnabled={localSettings.heartbeatEnabled ?? false}
         onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
         heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}

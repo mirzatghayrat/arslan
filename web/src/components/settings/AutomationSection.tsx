@@ -20,16 +20,12 @@ import ProactiveDiagnosisCap from './ProactiveDiagnosisCap';
  * experts it evolved.)
  */
 export default function AutomationSection({
-  researchReviewEnabled = false,
-  onResearchReviewEnabledChange,
   heartbeatEnabled,
   onHeartbeatEnabledChange,
   heartbeatChecklist,
   onHeartbeatChecklistChange,
   onOpenActivity,
 }: {
-  researchReviewEnabled?: boolean;
-  onResearchReviewEnabledChange?: (v: boolean) => void;
   heartbeatEnabled: boolean;
   onHeartbeatEnabledChange?: (v: boolean) => void;
   heartbeatChecklist: string;
@@ -51,36 +47,6 @@ export default function AutomationSection({
       </p>
 
       <div className="space-y-5">
-        {/* ── source review of saved reports (0.1.41) ──────────────────────
-            Advice only, after the report is saved; it never blocks a save.
-            Off by default: one extra model request per qualifying save, and
-            its false-positive rate is still being measured. */}
-        <div className="flex items-start justify-between gap-4" data-testid="settings-research-review">
-          <div>
-            <h4 className="text-[13px] font-medium text-foreground">
-              {t('settings.labelResearchReview')}
-            </h4>
-            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
-              {t('settings.researchReviewDesc')}
-            </p>
-            <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
-               data-testid="research-review-spend-note">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
-              <span>{t('settings.researchReviewSpendNote')}</span>
-            </p>
-          </div>
-          <input
-            id="settings-research-review-toggle"
-            data-testid="research-review-toggle"
-            type="checkbox"
-            checked={researchReviewEnabled}
-            onChange={(e) => onResearchReviewEnabledChange?.(e.target.checked)}
-            className="kit-switch mt-0.5"
-          />
-        </div>
-
-        <div className="h-[1px] bg-border/40" />
-
         {/* ── heartbeat: a checklist Arslan re-reads on a cadence (P2 §1.3) ─ */}
         <div className="space-y-2" data-testid="settings-heartbeat">
           <div className="flex items-start justify-between gap-4">
