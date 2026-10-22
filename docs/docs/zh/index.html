@@ -183,7 +183,7 @@ body.menu-open .side{transform:none}main{padding:0 18px 80px}.hero{padding:40px 
 <tr><th>桌面自动化组件</th><td>Hands 使用 <code>agent-desktop</code>（Apache-2.0）上游 v0.9.4 之后再加四个提交的版本，从一个 fork 构建：fork 内置其依赖，并带有 Arslan 的一处修改（进程已不存在的 app 不再列入 app 清单），这处修改已提交给上游；Arslan 在外层实现独立 helper、身份验证和权限策略。</td></tr>
 <tr><th>终端规则来源</th><td>部分破坏性命令与安全底线规则复用 Hermes Agent 的 MIT 许可代码，再结合 Arslan 的对外行为与凭证规则。</td></tr>
 </tbody></table></div>
-<p>项目以 Apache-2.0 开源，第三方组件的许可和归属见 THIRD_PARTY_NOTICES.md；Hermes Agent 的 MIT 许可另随源码保存在 arslan/vendor/hermes/LICENSE。开源让实现、限制和演进过程可被检查，也让“为什么这么做”成为文档的一部分。</p>
+<p>项目以 Apache-2.0 开源，第三方组件的许可和归属见 THIRD_PARTY_NOTICES.md，这份文件也随 App 一起发布；Arslan 读取终端命令的代码改编自 Hermes Agent（MIT），出处也写在里面。开源让实现、限制和演进过程可被检查，也让“为什么这么做”成为文档的一部分。</p>
 <p class="evidence">作者开发方式来自作者说明。实现与归属：<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/LICENSE" target="_blank" rel="noopener">项目许可证</a>；<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">第三方组件归属</a>；<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/docs/companion/ADR-001-native-runtime.md" target="_blank" rel="noopener">运行核心的架构选择</a>；<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/docs/companion/0.1.48-one-loop.md" target="_blank" rel="noopener">统一循环重构</a>。</p>
 </section>
 <section class="chapter" id="stack"><h2><span class="num">03 / 技术栈</span>界面、宿主、执行与数据的分工</h2>

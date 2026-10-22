@@ -29,6 +29,8 @@
       "binaries/sidecar": "sidecar",
       "binaries/listen": "listen",
       "binaries/hands": "hands",
+      "../../LICENSE": "LICENSE",
+      "../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
       "locales/en.lproj": "en.lproj",
       "locales/zh-Hans.lproj": "zh-Hans.lproj",
       "locales/ja.lproj": "ja.lproj",
