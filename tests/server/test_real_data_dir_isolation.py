@@ -53,14 +53,17 @@ def _child_pytest(home: Path, args: list[str], data_dir_env: str | None = "data"
 @pytest.mark.parametrize(
     ("args", "data_dir_env"),
     [
+        # The writer in these two used to be test_dispatcher_override (spawn dispatch ->
+        # evolution mkdir under spawns_dir). The dispatcher went in C7b-4 (v0.1.63); the
+        # writer is now the run_command output spill, which writes under settings.data_dir.
         pytest.param(
             ["tests/server/test_data_dir.py::test_default_macos_uses_application_support",
-             "tests/server/test_dispatcher_override.py"],
+             "tests/server/test_run_command_executor.py::test_long_output_keeps_the_head_and_the_tail"],
             "data",
-            id="darwin-default-test-then-dispatch",
+            id="darwin-default-test-then-write",
         ),
         pytest.param(
-            ["tests/server/test_dispatcher_override.py"],
+            ["tests/server/test_run_command_executor.py::test_long_output_keeps_the_head_and_the_tail"],
             None,
             id="ARSLAN_DATA_DIR-unset",
         ),
