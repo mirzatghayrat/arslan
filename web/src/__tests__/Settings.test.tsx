@@ -70,7 +70,6 @@ const defaultSettings: AppSettings = {
   theme: "dark",
   telemetry: false,
   llmStrategy: "single",
-  distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   mcpServerEnabled: false,
@@ -176,8 +175,8 @@ describe("SettingsScreen", () => {
         initialSection="memory"
       />
     );
-    // The memory section's distill toggle is mounted from first paint…
-    expect(document.getElementById("settings-distill-toggle")).not.toBeNull();
+    // The memory section's first toggle is mounted from first paint…
+    expect(document.getElementById("settings-memory-in-conversations")).not.toBeNull();
     // …while the default 'providers' section is not.
     expect(screen.queryByRole("heading", { name: "settings.navModels" })).toBeNull();
   });

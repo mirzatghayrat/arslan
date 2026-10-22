@@ -42,8 +42,7 @@ def test_the_two_definitions_of_every_bool_default_agree():
         assert accessor.__doc__, f"{key}: accessor needs a docstring stating its default"
 
 
-@pytest.mark.parametrize("key", ["distill_on_session_end",
-                                 "mcp_server_enabled", "first_run_seen"])
+@pytest.mark.parametrize("key", ["mcp_server_enabled", "first_run_seen", "keep_awake_enabled"])
 async def test_bool_key_round_trips_through_the_api(client, key):
     """PUT then GET must return what was stored, not the schema default — in BOTH
     directions, since a one-directional test passes whenever the value happens to match

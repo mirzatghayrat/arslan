@@ -77,7 +77,6 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     language: backend.language ?? "en",
     // Routing strategy round-trips through the backend (default "single").
     llmStrategy: (backend.llm_strategy ?? "single") as AppSettings["llmStrategy"],
-    distillOnSessionEnd: backend.distill_on_session_end ?? true,
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.
     // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON and ask_risky (0.1.48).
@@ -150,7 +149,6 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   searchProviderRole: { key: "search_provider_role", to: (v) => (v as string) ?? "" },
   language: { key: "language" },
   llmStrategy: { key: "llm_strategy" },
-  distillOnSessionEnd: { key: "distill_on_session_end" },
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
   shellConfirmPolicy: { key: "shell_confirm_policy" },
   backgroundJobBudget: { key: "background_job_budget" },

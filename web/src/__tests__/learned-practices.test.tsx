@@ -131,7 +131,7 @@ describe("island: +1 practice", () => {
 
 describe("Settings › Memory › learned practices take effect", () => {
   const base = { providerConfigs: [], embeddingConfigId: "", onEmbeddingConfigIdChange: vi.fn(),
-    distillOnSessionEnd: false, onDistillChange: vi.fn(), retentionDays: 30, onRetentionDaysChange: vi.fn() };
+    retentionDays: 30, onRetentionDaysChange: vi.fn() };
   it("is on unless turned off and reports changes", () => {
     const onChange = vi.fn();
     const { rerender } = render(<MemoryDataSection {...base} onLearnedPracticesChange={onChange} />);

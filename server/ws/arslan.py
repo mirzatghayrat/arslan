@@ -18,10 +18,8 @@ from server.db.models import ArslanMessage
 from server.orchestrator import arslan
 from server.services import approvals, background_jobs, desktop_status, permissions
 from server.services import (
-    distill_service,
     mcp_service,
     run_registry,
-    settings_service,
     turn_journal,
 )
 from server.ws import protocol
@@ -615,28 +613,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 continue
 
             if msg_type == "session_ended":
-                old_cid = data.get("conversation_id")
-                if old_cid and (run_registry.active_for(str(old_cid))
-                                or turn_journal.active(str(old_cid))):
-                    # The conversation the user LEFT is still mid-run/mid-turn
-                    # (a thread switch fires session_ended immediately).
-                    # Distilling now would capture a half-written session and
-                    # roster-clear would yank membership from under the live
-                    # run — skip both; the next session_ended after the work
-                    # completes distills. Ack regardless: the client is waiting.
-                    logger.info("session_ended for %s deferred: run/turn in flight", old_cid)
-                    await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
-                    continue
-                if old_cid:
-                    # Best-effort: an optional feature must never suppress the ack or close the socket.
-                    try:
-                        async with db_session.AsyncSessionLocal() as _s:
-                            enabled = await settings_service.distill_enabled(_s)
-                        if enabled:
-                            asyncio.create_task(distill_service.distill_session(str(old_cid)))
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("session_ended distill trigger failed (non-fatal): %s", exc)
-                await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
+                # Ack only. Session-end distillation, the one thing this frame used to
+                # start, was removed in C8-4 (v0.1.63); clients still send the frame and
+                # wait for the ack, so the ack stays.
+                await ws.send_json({"type": "session_ended_ack",
+                                    "conversation_id": data.get("conversation_id")})
                 continue
 
             if msg_type != "user_message":

@@ -60,7 +60,6 @@ const defaultSettings: AppSettings = {
   theme: "dark",
   telemetry: false,
   llmStrategy: "single",
-  distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   mcpServerEnabled: false,

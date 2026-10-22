@@ -35,7 +35,6 @@ const base: AppSettings = {
   theme: "dark",
   telemetry: false,
   llmStrategy: "single",
-  distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   embeddingConfigId: "",
@@ -129,7 +128,7 @@ describe("useDebouncedSettingsSave", () => {
     const { result } = setupHook();
     act(() => {
       result.current.saveField({ searchProvider: "serpapi" });
-      result.current.saveField({ distillOnSessionEnd: false });
+      result.current.saveField({ keepAwakeEnabled: false });
       result.current.saveField({ orchestratorShellEnabled: true });
     });
     // Nothing fires before the debounce elapses.
@@ -140,7 +139,7 @@ describe("useDebouncedSettingsSave", () => {
     expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
     const body = mockUpdateSettings.mock.calls[0][0];
     expect(body.search_provider).toBe("serpapi");
-    expect(body.distill_on_session_end).toBe(false);
+    expect(body.keep_awake_enabled).toBe(false);
     expect(body.orchestrator_shell_enabled).toBe("true");
   });
 

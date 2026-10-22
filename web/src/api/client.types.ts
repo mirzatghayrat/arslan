@@ -386,7 +386,6 @@ export interface AppSettings {
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   llm_strategy?: string;
-  distill_on_session_end?: boolean;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)

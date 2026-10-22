@@ -28,6 +28,7 @@ vi.mock("../api/client", () => ({
 }));
 
 import MemoryDataSection from "../components/settings/MemoryDataSection";
+import { toBackendSettingsPatch } from "../api/adapters";
 
 type Props = React.ComponentProps<typeof MemoryDataSection>;
 
@@ -36,8 +37,6 @@ function setup(overrides: Partial<Props> = {}) {
     providerConfigs: [],
     embeddingConfigId: "",
     onEmbeddingConfigIdChange: vi.fn(),
-    distillOnSessionEnd: true,
-    onDistillChange: vi.fn(),
     retentionDays: 30,
     onRetentionDaysChange: vi.fn(),
     ...overrides,
@@ -51,12 +50,18 @@ describe("MemoryDataSection", () => {
     vi.clearAllMocks();
   });
 
-  it("renders EmbeddingSettings, the distill toggle, and the retention input", () => {
+  it("renders EmbeddingSettings and the retention input, and no distill toggle", () => {
     setup();
     // EmbeddingSettings renders its own section heading key.
     expect(screen.getByText("settings.sectionEmbedding")).toBeInTheDocument();
-    expect(document.getElementById("settings-distill-toggle")).not.toBeNull();
+    // Session-end distillation went in C8-4 (v0.1.63), and its toggle with it.
+    expect(document.getElementById("settings-distill-toggle")).toBeNull();
+    expect(screen.queryByText("settings.distill_on_session_end")).toBeNull();
     expect(document.getElementById("settings-run-debug-retention-days")).not.toBeNull();
+  });
+
+  it("the session-end distill setting has no wire key any more (C8-4)", () => {
+    expect(toBackendSettingsPatch({ distillOnSessionEnd: false } as never)).toEqual({});
   });
 
   it("retention control uses the NEW i18n keys (no hardcoded Chinese)", () => {
@@ -68,13 +73,6 @@ describe("MemoryDataSection", () => {
     expect(
       screen.queryByText(/超过此天数的 run/),
     ).toBeNull();
-  });
-
-  it("fires onDistillChange when the toggle is flipped", () => {
-    const props = setup({ distillOnSessionEnd: true });
-    const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
-    fireEvent.click(toggle);
-    expect(props.onDistillChange).toHaveBeenCalledWith(false);
   });
 
   it("fires onRetentionDaysChange with a clamped value", () => {

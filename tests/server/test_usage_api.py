@@ -298,7 +298,8 @@ async def test_usage_summary_not_covered_footnote(client):
         assert importlib.util.find_spec(f"server.services.{name}") is not None, name
     # distill_service LEFT this list in 整理层#10 段 A4: its two LLM calls (the distill
     # itself and the meta-upflow) now run inside usage_ledger.scope("distill"), so
-    # claiming it is unaccounted would itself be the dishonest statement.
+    # claiming it is unaccounted would itself be the dishonest statement. (C8-4 then
+    # deleted the module; it must not come back onto the list either.)
     assert "distill_service" not in nc
     # learning_service LEFT it in 0.1.63 (C1c-1): its only LLM call (the distill) was deleted.
     assert "learning_service" not in nc

@@ -14,7 +14,7 @@ afterEach(() => cleanup());
 
 describe("Remember me and use it in conversations", () => {
   const base = { providerConfigs: [], embeddingConfigId: "", onEmbeddingConfigIdChange: vi.fn(),
-    distillOnSessionEnd: false, onDistillChange: vi.fn(), retentionDays: 30, onRetentionDaysChange: vi.fn() };
+    retentionDays: 30, onRetentionDaysChange: vi.fn() };
 
   it("is on unless turned off and reports changes", () => {
     const onChange = vi.fn();
