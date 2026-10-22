@@ -149,6 +149,8 @@
 - **f 只对无人值守的定时任务：** `run_command` 只放行只读白名单，写文件仍走 `write_file`（只在 `~/Arslan`）；S1b 里 `schedule_task` 说明的「run sandboxed commands」相应收窄。聊天里保持 a–d。只有 a–d 到 R63 前做不完，才把 f 整体当临时兜底，等 v0.1.64 默认拒绝的沙箱上线后撤掉。
 - 安全代码在 Opus 5.5 上写；②Main 用 effort=max 审，⓪Plan 复核。具体的复现写法只放在测试和 PR 评论里。
 
+- **DELETE-BY 提醒：** SECURITY.md 里「命令可以请 macOS 系统服务替它在沙箱外办事、沙箱挡不住」那句（#339 的 b，在 S2a-3 PR2 之后合）：v0.1.64 默认拒绝的沙箱上线后改写。
+
 **验收（R63 门槛）：** a + b（两档）+ c + d（含真 shell 对照和自动变形）+ 出卡率不退步（bench「等你」仍为 0）+ ②Main 的 effort=max 复审；变异；全量；CI。（⓪Plan 补充：PR 按 a+c → b → d → f 拆，每个不超过约 800 行。）
 
 **合并位置：** S 线里排在 S4a、S7 前面，紧跟 S2b-1；R63 之前必须合。
