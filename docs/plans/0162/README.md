@@ -157,10 +157,12 @@ C1 → K1 → K2 → K3 → K4a → K4b → K5 → K7 → K8a → K8b → K8c �
 | 道 | 负责的卡 | 拥有的文件 | 不许碰 |
 |---|---|---|---|
 | ⓪Plan | M1、M1B（和用户一起）、M2、M3；R63 的门槛判定；代为提交 H1 的回答；维护总计划、本表和任务卡；10-21 晚起另做 D5、C1c-2、C2a-2（②Main 线上卡太多） | `scripts/kernel_bench/**`、M2 新增的周报脚本、`docs/plans/**`、`docs/sessions.md`；那三张卡改到的文件 | 其他产品代码；自己写的产品代码由别的会话审 |
-| ②Main | F5a、F1、F2、F3、F4a、F4b、FR、F5b；全部 C、K、S 卡；R63 的发版准备；合并队列、本表的「状态」列、迁移号登记、CI 健康 | `server/**`、`arslan/**`、`web/**`、`.github/**`、`packaging/**`、`docs/releases/**`、`docs/CAPABILITY_INVENTORY.md`。<br>以下除外：③Hands 的文件；Bridge 契约文件的帧格式 | ③Hands 的文件（要改须由 ③Hands 审，例如 F5b、C2c 里 AppleScript 那两行）；Bridge 帧格式 |
+| ②Main | F5a、F1、F2、F3、F4a、F4b、FR、F5b；全部 C、K、S 卡（C6 移给 ⑤，C7、C8 移给 ⑥，10-22）；R63 的发版准备；合并队列、本表的「状态」列、迁移号登记、CI 健康 | `server/**`、`arslan/**`、`web/**`、`.github/**`、`packaging/**`、`docs/releases/**`、`docs/CAPABILITY_INVENTORY.md`。<br>以下除外：③Hands 的文件；Bridge 契约文件的帧格式 | ③Hands 的文件（要改须由 ③Hands 审，例如 F5b、C2c 里 AppleScript 那两行）；Bridge 帧格式 |
 | ③Hands | H1、H2、H3、H4；审 F5b 和任何改 Hands 文件的卡；U13 / U14 起另做 D7、D8、D9、C9、C10、C11；10-21 晚起另做 S2a-2、S2b、S4a、S7（这几张卡改到的文件，期间 ②Main 不碰） | `desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` | 其他所有文件。本轮不新增 Hands 能力 |
 | ①iOS | 无 | iOS 仓库 | 本轮 Mac 端不改 Bridge 帧格式（`desktop/bridge/**`、`server/ws/bridge.py`、`spec/mobile-bridge/**`）。哪张卡如果发现需要改（最可能是 K9），先停下来找 ②Main 和 ①iOS |
 | C 线试点会话 | v0.1.62 发布后的 C 卡（§9） | 同 ②Main 的 C 卡 | 同 ②Main；不装 superpowers |
+| ⑤C6 | C6（2026-10-22 从 ②Main 移来，用户同意加开会话） | `.github/workflows/ci.yml`、pytest 的配置和依赖（`pyproject.toml` 的测试部分、`uv.lock`） | 其他所有文件；改动跑哪些测试之前先问 ⓪Plan。删 macOS 计数那两条测试留给 ②Main |
+| ⑥C7 | C7 第一、二步（v0.1.63 的部分），之后 C8（2026-10-22 从 ②Main 移来） | 这两张卡要删的文件，加上 `compact_saved_context` 搬去的新位置 | K8 的流式文件、S3b 的文件、③Hands 的文件、Bridge 帧格式；碰到权限或沙箱的路径先停下来问 ⓪Plan |
 
 ## 5. 迁移号登记表
 
