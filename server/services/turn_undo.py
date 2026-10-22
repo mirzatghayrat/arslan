@@ -2,14 +2,20 @@
 (card S3; ⓪Plan's answers in the S3b plan). Its files are S3a's (`checkpoints.restore_files`).
 
 - **The turn** is found from its reply (role arslan, `run_id`); it starts at the last user message
-  before that reply. A turn with no reply (a choice card's answer) cannot be undone this way.
+  before that reply. A turn with no reply (a choice card's answer) cannot be undone this way, nor a reply
+  that is not the answer to that message: another run's reply between them means it is a scheduled fire's
+  or a resumed task's, which store no user message of their own (`not_own_turn`, ⓪Plan's review 🟠2).
+- **Held to what the box showed** (🟠1): the box's `last_message_id` comes back with the undo; a range
+  that grew since (a turn from the phone, another window, a scheduled fire) is refused (`changed`), and the
+  delete never goes past it.
 - **What goes:** every message of the conversation from that user message on (this turn and every
   later one: the confirm box says how many turns, ⓪Plan's Q2); the recap's `memory` events from then
   on (turn_facts' line, scoped to this conversation and that kind, Q5); and the "for this task" grants
   of the tasks those turns ran. An ended task drops its own, but a delete that failed would outlive the
   turn.
-- **Facts, narrowly** (`MemoryRepository.forget_turns`): an entry whose first source is a removed turn
-  is deleted; an older entry a removed turn only re-confirmed keeps all but that turn's source (Q4).
+- **Facts, narrowly** (`MemoryRepository.forget_turns`, sources of this conversation only): an entry
+  whose every source is a removed turn is deleted; any other keeps everything but those turns' sources:
+  the user's acceptance, another conversation's save, the user's own revisions (⓪Plan's ruling, 🟠3).
   Never: a tombstone of the fact's text (undo is not Forget: the same fact learnt elsewhere is saved),
   a whole-conversation suppression, wiped summaries, cleared run prompts. For each entry taken back, the
   removed turns' messages and runs are suppressed as its sources, so a writer still holding one cannot
@@ -42,8 +48,18 @@ UNDONE = "turn_undone"                      # the event that records an undo
 _ENDED = frozenset({"succeeded", "failed", "cancelled"})
 
 
+class PartlyDone(Exception):
+    """The files were put back ("both"), then the conversation could not be taken back: `files` is what was
+    put back, `code` why (a Refused code, or `error`). Reported as such, never as a bare failure (🟡13)."""
+
+    def __init__(self, files: dict, code: str) -> None:
+        super().__init__(code)
+        self.files, self.code = files, code
+
+
 class Refused(Exception):
-    """`code`: none, job, already, summarised, running, finishing (the module docstring says when)."""
+    """`code`: none, job, not_own_turn, already, summarised, running, finishing, changed (the module
+    docstring says when)."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -55,6 +71,7 @@ class _Turn:
     run_id: int
     conversation_id: str
     first: int                              # the turn's user message
+    last: int                               # the newest message of the conversation now
     users: list[int]                        # the user messages that go (the first, then later turns')
     runs: set[int]                          # the runs whose replies go
     messages: int
@@ -80,8 +97,12 @@ async def _find(db, run_id: int) -> _Turn:
         ArslanSummary.conversation_id == cid))
     if folded is not None and folded >= first.id:
         raise Refused("summarised")
-    rows = (await db.execute(select(ArslanMessage.id, ArslanMessage.role, ArslanMessage.run_id).where(
+    rows = (await db.execute(select(ArslanMessage.id, ArslanMessage.role, ArslanMessage.run_id,
+                                    ArslanMessage.job_outcome).where(
         ArslanMessage.conversation_id == cid, ArslanMessage.id >= first.id))).all()
+    if any(first.id < row.id < reply.id and row.role == "arslan" and row.run_id is not None
+           and row.job_outcome is None for row in rows):
+        raise Refused("not_own_turn")
     runs = {row.run_id for row in rows if row.run_id is not None} | {run_id}
     # A turn's task starts just before its message is stored: found by its runs; a task started after
     # the first message that has no run yet, by its time.
@@ -91,7 +112,7 @@ async def _find(db, run_id: int) -> _Turn:
         f"json_each(a.run_ids) j WHERE t.conversation_id = :cid AND j.value IN ({holders})"), {"cid": cid})).all()
     started = (await db.execute(select(CompanionTask.id, CompanionTask.phase).where(
         CompanionTask.conversation_id == cid, CompanionTask.created_at >= first.timestamp))).all()
-    return _Turn(run_id=run_id, conversation_id=cid, first=first.id,
+    return _Turn(run_id=run_id, conversation_id=cid, first=first.id, last=max(row.id for row in rows),
                  users=[row.id for row in rows if row.role == "user"], runs=runs, messages=len(rows),
                  tasks={task_id: phase for task_id, phase in (*linked, *started)})
 
@@ -126,19 +147,22 @@ async def preview(run_id: int) -> dict:
             _busy(turn)
             if _post_turn_job(turn.conversation_id) is not None:
                 raise Refused("finishing")
-            facts = len((await MemoryRepository(db).turn_entries(set(turn.users), turn.runs))[0])
+            facts = len((await MemoryRepository(db).turn_entries(
+                turn.conversation_id, set(turn.users), turn.runs))[0])
     except Refused as exc:
         return {"conversation": False, "reason": exc.code}
     return {"conversation": True, "reason": None, "messages_after": turn.messages,
-            "later_turns": len(turn.users) - 1, "facts": facts}
+            "later_turns": len(turn.users) - 1, "facts": facts, "last_message_id": turn.last}
 
 
-async def undo(run_id: int, *, first=None) -> dict:
+async def undo(run_id: int, *, last: int | None = None, first=None) -> dict:
     """Take the turn back (the module docstring says what that covers). Raises Refused.
 
-    `first` (POST "both": putting the files back) is awaited after every check passed, under the turn lock,
-    before the conversation goes; what it raises stops the undo with nothing taken back, and what it
-    returns is the result's `files`."""
+    `last`: the newest message the box showed; a conversation that has moved on since is refused (the routes
+    always send it). `first` (POST "both": putting the files back) is awaited after every check passed,
+    under the turn lock, before the conversation goes; what it raises stops the undo with nothing taken
+    back, and what it returns is the result's `files`. Once it has put files back, a refusal or failure of
+    the conversation raises PartlyDone."""
     from server.ws import arslan as ws_arslan
     run_id = int(run_id)
     async with db_session.AsyncSessionLocal() as db:
@@ -161,17 +185,38 @@ async def undo(run_id: int, *, first=None) -> dict:
         _busy(turn, holding_lock=True)
         if _post_turn_job(turn.conversation_id) is not None:
             raise Refused("finishing")
-        files = await first() if first is not None else None
-        async with db_session.AsyncSessionLocal() as db:
-            out = await _take_back(db, await _find(db, run_id))
-            await db.commit()
-    return out if first is None else {**out, "files": files}
+        if last is not None and turn.last != last:
+            raise Refused("changed")
+        if first is None:
+            out = await _commit_take_back(run_id, turn.last)
+            return out
+        files = await first()
+        try:
+            # A scheduled fire takes no turn lock: what changed while the files went back is checked again.
+            async with db_session.AsyncSessionLocal() as db:
+                _busy(await _find(db, run_id), holding_lock=True)
+            out = await _commit_take_back(run_id, turn.last)
+        except Refused as exc:
+            raise PartlyDone(files, exc.code) from exc
+        except Exception as exc:  # noqa: BLE001 — reported with the files that did go back
+            raise PartlyDone(files, "error") from exc
+    return {**out, "files": files}
+
+
+async def _commit_take_back(run_id: int, bound: int) -> dict:
+    async with db_session.AsyncSessionLocal() as db:
+        turn = await _find(db, run_id)
+        if turn.last != bound:
+            raise Refused("changed")
+        out = await _take_back(db, turn)
+        await db.commit()
+    return out
 
 
 async def _take_back(db, turn: _Turn) -> dict:
     from server.services.memory_repository import MemoryRepository
     cid = turn.conversation_id
-    facts = await MemoryRepository(db).forget_turns(set(turn.users), turn.runs)
+    facts = await MemoryRepository(db).forget_turns(cid, set(turn.users), turn.runs)
     first_at = await db.scalar(select(ArslanMessage.timestamp).where(ArslanMessage.id == turn.first))
     await db.execute(delete(ConversationEvent).where(
         ConversationEvent.conversation_id == cid, ConversationEvent.kind == "memory",
@@ -180,7 +225,7 @@ async def _take_back(db, turn: _Turn) -> dict:
         await db.execute(delete(PermissionGrant).where(
             PermissionGrant.conversation_id == cid, PermissionGrant.task_id.in_(list(turn.tasks))))
     await db.execute(delete(ArslanMessage).where(
-        ArslanMessage.conversation_id == cid, ArslanMessage.id >= turn.first))
+        ArslanMessage.conversation_id == cid, ArslanMessage.id >= turn.first, ArslanMessage.id <= turn.last))
     db.add(ConversationEvent(conversation_id=cid, kind=UNDONE, summary="", ref={
         "run_id": turn.run_id, "user_turns": len(turn.users), "messages": turn.messages, "facts": facts}))
     return {"run_id": turn.run_id, "conversation_id": cid, "messages": turn.messages,

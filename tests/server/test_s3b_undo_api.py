@@ -48,14 +48,24 @@ async def _changed_files(run_id, ws):
     await checkpoints.finish(run_id)
 
 
+async def _ids(client) -> list[int]:
+    async with client.db_maker() as db:
+        return [m.id for m in (await db.execute(
+            select(ArslanMessage).where(ArslanMessage.conversation_id == CID))).scalars()]
+
+
 async def _left(client) -> list[str]:
     async with client.db_maker() as db:
         return [m.content for m in (await db.execute(
             select(ArslanMessage).where(ArslanMessage.conversation_id == CID).order_by(ArslanMessage.id))).scalars()]
 
 
-def _restore(client, run_id, what):
-    return client.post(f"/api/v1/runs/{run_id}/checkpoint/restore", json={"what": what})
+async def _restore(client, run_id, what, last=None):
+    """As the sheet does: the conversation is taken back only up to the newest message the box showed."""
+    if what != "files" and last is None:
+        last = (await client.get(f"/api/v1/runs/{run_id}/checkpoint")).json().get("last_message_id") or 0
+    return await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore",
+                             json={"what": what, **({"last_message_id": last} if what != "files" else {})})
 
 
 async def test_the_checkpoint_says_whether_the_conversation_can_be_undone(client, ws):
@@ -66,6 +76,7 @@ async def test_the_checkpoint_says_whether_the_conversation_can_be_undone(client
     assert body["exists"] is False                               # it changed no file
     assert (body["conversation"], body["reason"], body["messages_after"], body["later_turns"], body["facts"]) == (
         True, None, 4, 1, 0)
+    assert body["last_message_id"] == max((await _ids(client)))
     card = await _turn(client, "a choice card", reply=False)
     assert (await client.get(f"/api/v1/runs/{card}/checkpoint")).json() == {
         "exists": False, "conversation": False, "reason": "none"}
@@ -149,3 +160,120 @@ async def test_settings_say_when_the_working_folder_is_on_another_volume(client,
     assert (await client.get("/api/v1/settings")).json()["workspace_other_volume"] is False
     monkeypatch.setattr(checkpoints, "_same_volume", lambda a, b: False)
     assert (await client.get("/api/v1/settings")).json()["workspace_other_volume"] is True
+
+
+# ── ⓪Plan's review of #329 ───────────────────────────────────────────────────────────────────────────
+
+async def test_taking_a_conversation_back_needs_the_range_the_box_showed(client, ws):
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    resp = await client.post(f"/api/v1/runs/{second}/checkpoint/restore", json={"what": "conversation"})
+    assert resp.status_code == 422 and len(await _left(client)) == 4
+
+
+async def test_a_turn_that_arrived_after_the_box_opened_is_refused(client, ws):
+    """🟠1 at the routes: the box showed two messages; one more turn arrived before the click."""
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    shown = (await client.get(f"/api/v1/runs/{second}/checkpoint")).json()["last_message_id"]
+    await _turn(client, "sent from the phone meanwhile")
+    resp = await _restore(client, second, "conversation", last=shown)
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "changed" and len(await _left(client)) == 6
+
+
+async def test_both_keeps_the_conversation_when_a_file_could_not_be_put_back(client, ws, monkeypatch):
+    """🟠4 (the reviewer's API probe): a file that stayed changed keeps the turn, so the files can be retried."""
+    (ws / "plan.md").write_text("before")
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    await checkpoints.ensure(second, [ws])
+    (ws / "notes.md").write_text("after")
+    (ws / "plan.md").write_text("after")
+    await checkpoints.finish(second)
+    real = checkpoints._put_back
+
+    def flaky(root, rel, src, saved):
+        if rel == "plan.md":
+            raise OSError("disk said no")
+        return real(root, rel, src, saved)
+    monkeypatch.setattr(checkpoints, "_put_back", flaky)
+    resp = await _restore(client, second, "both")
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "files_failed"
+    assert resp.json()["detail"]["files"]["runs"][0]["failed"] == ["plan.md"]
+    assert len(await _left(client)) == 4
+    monkeypatch.setattr(checkpoints, "_put_back", real)
+    retry = await _restore(client, second, "files")
+    assert retry.status_code == 200 and "plan.md" in retry.json()["runs"][0]["restored"]
+
+
+async def test_a_conversation_that_fails_after_the_files_went_back_is_reported_with_them(client, ws, monkeypatch):
+    """🟡13: the files went back, then a turn arrived (a scheduled fire takes no turn lock): reported as such."""
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    await _changed_files(second, ws)
+    real = checkpoints.restore_files
+
+    async def then_a_fire(run_id):
+        out = await real(run_id)
+        await _turn(client, "a scheduled fire meanwhile")
+        return out
+    monkeypatch.setattr(checkpoints, "restore_files", then_a_fire)
+    resp = await _restore(client, second, "both")
+    detail = resp.json()["detail"]
+    assert resp.status_code == 409 and detail["code"] == "conversation_failed" and detail["reason"] == "changed"
+    assert detail["files"]["runs"][0]["restored"] == ["notes.md"] and len(await _left(client)) == 6
+
+
+async def test_reading_settings_never_creates_the_workspace(client, tmp_path, monkeypatch):
+    """🟡10: Settings used to recreate a deleted ~/Arslan just by being opened."""
+    gone = tmp_path / "Arslan-deleted"
+    monkeypatch.setenv("ARSLAN_DEFAULT_WORKSPACE", str(gone))
+    assert (await client.get("/api/v1/settings")).json()["workspace_other_volume"] is False
+    assert not gone.exists()
+
+
+async def test_a_run_that_starts_while_the_files_go_back_stops_the_conversation(client, ws, monkeypatch):
+    """🟠1: the busy checks run again after the files (a scheduled fire takes no turn lock)."""
+    from server.services import run_registry
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    await _changed_files(second, ws)
+    real = checkpoints.restore_files
+
+    async def then_a_run(run_id):
+        out = await real(run_id)
+        monkeypatch.setattr(run_registry, "active_for", lambda cid: [999] if cid == CID else [])
+        return out
+    monkeypatch.setattr(checkpoints, "restore_files", then_a_run)
+    resp = await _restore(client, second, "both")
+    detail = resp.json()["detail"]
+    assert resp.status_code == 409 and (detail["code"], detail["reason"]) == ("conversation_failed", "running")
+    assert len(await _left(client)) == 4
+
+
+async def test_a_failure_taking_the_conversation_back_is_reported_with_the_files(client, ws, monkeypatch):
+    from server.services.memory_repository import MemoryRepository
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    await _changed_files(second, ws)
+
+    async def broken(self, *args):
+        raise RuntimeError("database went away")
+    monkeypatch.setattr(MemoryRepository, "forget_turns", broken)
+    resp = await _restore(client, second, "both")
+    detail = resp.json()["detail"]
+    assert resp.status_code == 409 and (detail["code"], detail["reason"]) == ("conversation_failed", "error")
+    assert detail["files"]["runs"][0]["restored"] == ["notes.md"] and len(await _left(client)) == 4
+
+
+async def test_a_git_folder_that_could_not_go_back_keeps_the_conversation_too(client, ws, monkeypatch):
+    await _turn(client, "one")
+    second = await _turn(client, "two")
+    await _changed_files(second, ws)
+
+    async def git_failed(run_id):
+        return {"run_id": run_id, "later": [], "runs": [{"run_id": run_id, "restored": ["notes.md"], "trashed": [],
+                "user_changed": [], "failed": [], "not_saved": [], "git": "failed"}]}
+    monkeypatch.setattr(checkpoints, "restore_files", git_failed)
+    resp = await _restore(client, second, "both")
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "files_failed" and len(await _left(client)) == 4

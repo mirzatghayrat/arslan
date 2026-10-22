@@ -116,7 +116,8 @@ async def test_restore_files_and_a_second_time(client, ws):
     run_id = await _seed(client)
     await _run(run_id, ws, "after")
     for what in ("conversation", "both"):             # this run has no reply: no conversation to take back
-        resp = await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore", json={"what": what})
+        resp = await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore",
+                                 json={"what": what, "last_message_id": 0})
         assert resp.status_code == 404 and resp.json()["detail"]["code"] == "none"
     assert (ws / "notes.md").read_text() == "after"
     resp = await client.post(f"/api/v1/runs/{run_id}/checkpoint/restore", json={"what": "files"})

@@ -178,7 +178,8 @@ async def test_a_fresh_database_never_hands_a_deleted_id_out_again_and_0069_leav
 
 # ── ⓪Plan's review of #329 (🟡6, 🟡8): ids memory still remembers; a failure part-way; the real boot ────
 
-async def test_0069_starts_past_any_message_id_memory_still_remembers(tmp_path):
+@pytest.mark.parametrize("source,suppressed,expected", [(11, 14, 15), (16, 14, 17)])
+async def test_0069_starts_past_any_message_id_memory_still_remembers(tmp_path, source, suppressed, expected):
     """A source or a suppression naming a message deleted before 0069: a new message with that id would be
     left out of context, and an undo would take back an unrelated fact (the reviewer's probe 4)."""
     engine = await _legacy_db(tmp_path / "m.db")
@@ -187,12 +188,12 @@ async def test_0069_starts_past_any_message_id_memory_still_remembers(tmp_path):
             await conn.exec_driver_sql("CREATE TABLE memory_sources (id VARCHAR(36) PRIMARY KEY, source_ref JSON)")
             await conn.exec_driver_sql("CREATE TABLE memory_suppressions (source_kind VARCHAR(30), "
                                        "source_id VARCHAR(100), entry_id VARCHAR(36))")
-            await conn.exec_driver_sql("""INSERT INTO memory_sources VALUES ('s1', '{"message_id": 11}')""")
-            await conn.exec_driver_sql("INSERT INTO memory_suppressions VALUES ('message_id', '14', 'e1'), "
+            await conn.exec_driver_sql(f"""INSERT INTO memory_sources VALUES ('s1', '{{"message_id": {source}}}')""")
+            await conn.exec_driver_sql(f"INSERT INTO memory_suppressions VALUES ('message_id', '{suppressed}', 'e1'), "
                                        "('run_id', '99', 'e1')")
             await conn.run_sync(upgrade_sync)
         async with engine.begin() as conn:
-            assert await _add(conn) == 15
+            assert await _add(conn) == expected
     finally:
         await engine.dispose()
 

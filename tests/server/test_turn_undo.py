@@ -22,13 +22,14 @@ from server.registry import service as registry_service
 from server.services import background_jobs, run_registry, turn_undo
 from server.services.memory_repository import repository
 from server.ws import arslan as ws_arslan
+from tests.server.test_promise_guard import maker  # noqa: F401 — a chat database for handle_user_message
 
 CID, OTHER = "undo-conversation", "undo-other"
 
 
-async def _turn(maker, cid, text, reply="done", *, with_reply=True):
+async def _turn(sessions, cid, text, reply="done", *, with_reply=True):
     mid = await memory.add_message(cid, "user", text)
-    async with maker() as db:
+    async with sessions() as db:
         run = Run(conversation_id=cid, user_message=text, status="done", system_prompt="prompt of " + text)
         db.add(run)
         await db.flush()
@@ -50,14 +51,14 @@ async def _fact(content, turn, cid=CID):
     return made["id"]
 
 
-async def _messages(maker, cid):
-    async with maker() as db:
+async def _messages(sessions, cid):
+    async with sessions() as db:
         return [(r.role, r.content) for r in (await db.execute(
             select(ArslanMessage).where(ArslanMessage.conversation_id == cid).order_by(ArslanMessage.id))).scalars()]
 
 
-async def _status(maker, entry_id):
-    async with maker() as db:
+async def _status(sessions, entry_id):
+    async with sessions() as db:
         return (await db.get(MemoryEntry, entry_id)).status
 
 
@@ -80,7 +81,8 @@ async def test_the_preview_says_what_the_undo_will_remove(execution_db):
     await _fact("Prefers tea.", second)
     await _fact("Lives by the sea.", third)
     shown = await turn_undo.preview(second.run)
-    assert shown == {"conversation": True, "reason": None, "messages_after": 4, "later_turns": 1, "facts": 2}
+    assert shown == {"conversation": True, "reason": None, "messages_after": 4, "later_turns": 1, "facts": 2,
+                     "last_message_id": third.reply}
     out = await turn_undo.undo(second.run)
     assert (out["messages"], out["later_turns"], out["facts"]) == (4, 1, 2)
 
@@ -102,7 +104,8 @@ async def test_the_facts_the_removed_turns_taught_go_and_nothing_else_does(execu
     async with execution_db() as db:                 # the second turn re-confirmed an older entry (Q4)
         entry = await db.get(MemoryEntry, reconfirmed)
         db.add(MemorySource(id=str(uuid.uuid4()), entry_id=reconfirmed, revision_id=entry.current_revision_id,
-                            source_kind="conversation", source_ref={"message_id": second.mid, "run_id": second.run},
+                            source_kind="conversation",
+                            source_ref={"message_id": second.mid, "run_id": second.run, "conversation_id": CID},
                             author="host", created_at=datetime.utcnow() + timedelta(seconds=1)))
         db.add(ArslanSummary(conversation_id=OTHER, summary="kept", up_to_message_id=1))
         await db.commit()
@@ -138,8 +141,8 @@ async def test_a_writer_from_an_undone_turn_cannot_save_its_fact_again(execution
     assert made["status"] == "active"
 
 
-async def _unfinished_task(maker, cid):
-    async with maker() as db:
+async def _unfinished_task(sessions, cid):
+    async with sessions() as db:
         db.add(CompanionTask(id="task-" + uuid.uuid4().hex, conversation_id=cid, attempt_id="a", budget={},
                              phase="waiting_user", created_at=datetime.utcnow() + timedelta(seconds=1)))
         await db.commit()
@@ -283,3 +286,203 @@ async def test_after_an_undo_no_expired_grant_comes_back_no_turn_grant_survives_
     async with execution_db() as db:
         grants = {(g.task_id, g.target) for g in (await db.execute(select(PermissionGrant))).scalars()}
     assert grants == {("", "y")}                                         # (ii) gone, (iii) unchanged
+
+
+# ── ⓪Plan's review of #329: the reviewer's probes, now asserting the fixed behaviour ─────────────────
+
+A, B = "probe-a", "probe-b"
+
+
+async def _plain(sessions, cid, text, reply="done"):
+    mid = await memory.add_message(cid, "user", text)
+    async with sessions() as db:
+        run = Run(conversation_id=cid, user_message=text, status="done")
+        db.add(run)
+        await db.flush()
+        row = ArslanMessage(conversation_id=cid, role="arslan", content=reply + " " + text, run_id=run.id)
+        db.add(row)
+        await db.flush()
+        await db.commit()
+        return SimpleNamespace(mid=mid, run=run.id, reply=row.id)
+
+
+async def _reply_only(sessions, cid, text):
+    """A reply with a run and no user message of its own: a scheduled fire bound to the conversation
+    (scheduler.run_arslan_turn) or a resumed task (task_service.resume_turn)."""
+    async with sessions() as db:
+        run = Run(conversation_id=cid, user_message=text, status="done")
+        db.add(run)
+        await db.flush()
+        db.add(ArslanMessage(conversation_id=cid, role="arslan", content=text, run_id=run.id))
+        await db.commit()
+        return run.id
+
+
+async def test_probe_1_the_clock_never_runs_backwards_across_two_undos(execution_db):
+    ts = [await _plain(execution_db, A, f"t{i}") for i in range(1, 6)]
+    await turn_undo.undo(ts[4].run)
+    assert await memory.user_turn_count(A) == 5
+    await _plain(execution_db, A, "t6")
+    out = await turn_undo.undo(ts[2].run)
+    assert out["later_turns"] == 2 and await memory.user_turn_count(A) == 6
+    await _plain(execution_db, A, "t7")
+    assert await memory.user_turn_count(A) == 7 and await memory.user_turn_count(B) == 0
+
+
+async def test_probe_2_a_fact_the_user_accepted_on_the_memory_page_stays(execution_db):
+    """🟠3: a fact goes only when every source is from the undone turns; the user's acceptance is not."""
+    await _plain(execution_db, A, "one")
+    second = await _plain(execution_db, A, "I have a cat")
+    async with repository() as repo:
+        made = await repo.create(MemoryWrite(content="Has a cat.", scope=MemoryScope(kind="global")),
+                                 MemoryActor(origin="extractor", source_message_id=second.mid,
+                                             source_run_id=second.run, conversation_id=A))
+    async with execution_db() as db:
+        proposal = await db.scalar(select(MemoryProposal).where(MemoryProposal.target_entry_id == made["id"]))
+    async with repository() as repo:
+        await repo.resolve_proposal(proposal.id, accept=True, actor=MemoryActor(origin="user"))
+    assert (await turn_undo.preview(second.run))["facts"] == 0
+    await turn_undo.undo(second.run)
+    assert await _status(execution_db, made["id"]) == "active"
+    async with execution_db() as db:
+        refs = [s.source_ref for s in (await db.execute(
+            select(MemorySource).where(MemorySource.entry_id == made["id"]))).scalars()]
+    assert refs and not any(r.get("message_id") == second.mid for r in refs)     # only the turn's source went
+
+
+async def test_probe_3_a_fact_another_conversation_saved_explicitly_stays(execution_db):
+    import hashlib
+    from arslan.companion.content_policy import normalized_memory
+    await _plain(execution_db, A, "one")
+    second = await _plain(execution_db, A, "my cat is called Miso")
+    content = "The user's cat is called Miso."
+    async with repository() as repo:
+        made = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global")),
+                                 MemoryActor(origin="extractor", source_message_id=second.mid,
+                                             source_run_id=second.run, conversation_id=A))
+    b1 = await _plain(execution_db, B, "remember: my cat is called Miso")
+    digest = hashlib.sha256(normalized_memory(content).encode()).hexdigest()
+    async with repository() as repo:
+        saved = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global")),
+                                  MemoryActor(origin="host", source_message_id=b1.mid, source_run_id=b1.run,
+                                              conversation_id=B, explicit_save_ref=f"message:{b1.mid}",
+                                              explicit_save_digest=digest, allow_global_save=True))
+    assert saved["id"] == made["id"]
+    await turn_undo.undo(second.run)
+    assert await _status(execution_db, made["id"]) == "active"
+
+
+async def test_probe_4_a_source_from_another_conversation_with_the_same_message_id_is_not_touched(execution_db):
+    """🟡6: turn_entries is fenced by conversation."""
+    await _plain(execution_db, A, "one")
+    next_id = (await _plain(execution_db, A, "two")).reply + 1
+    async with repository() as repo:
+        old = await repo.create(MemoryWrite(content="Works in Lisbon.", scope=MemoryScope(kind="global")),
+                                MemoryActor(origin="user", source_message_id=next_id, conversation_id="deleted-c"))
+    third = await _plain(execution_db, A, "three")
+    assert third.mid == next_id
+    await turn_undo.undo(third.run)
+    assert await _status(execution_db, old["id"]) == "active"
+
+
+@pytest.mark.parametrize("case", ["scheduled fire", "resumed task"])
+async def test_probes_5_and_9_a_reply_that_is_not_the_answer_to_the_last_message_is_refused(execution_db, case):
+    """🟠2: a scheduled fire's or a resumed task's reply has no user message of its own; undoing it took the
+    turn before it."""
+    if case == "resumed task":
+        await memory.add_message(A, "user", "build the report")        # the turn that paused, no reply
+    await _plain(execution_db, A, "unrelated question", "unrelated answer")
+    run = await _reply_only(execution_db, A, "today's digest" if case == "scheduled fire" else "report done")
+    before = await _messages(execution_db, A)
+    assert (await turn_undo.preview(run))["reason"] == "not_own_turn"
+    with pytest.raises(turn_undo.Refused) as refused:
+        await turn_undo.undo(run)
+    assert refused.value.code == "not_own_turn" and await _messages(execution_db, A) == before
+
+
+async def test_probe_6_interleaved_conversations_are_fenced(execution_db):
+    a1 = await _plain(execution_db, A, "a1")
+    await _plain(execution_db, B, "b1")
+    await _plain(execution_db, A, "a2")
+    b2 = await _plain(execution_db, B, "b2")
+    async with repository() as repo:
+        fb = await repo.create(MemoryWrite(content="Likes jazz.", scope=MemoryScope(kind="global")),
+                               MemoryActor(origin="user", source_message_id=b2.mid, source_run_id=b2.run,
+                                           conversation_id=B))
+    clock_b = await memory.user_turn_count(B)
+    await turn_undo.undo(a1.run)
+    assert await _messages(execution_db, A) == [] and len(await _messages(execution_db, B)) == 4
+    assert await _status(execution_db, fb["id"]) == "active"
+    assert await memory.user_turn_count(B) == clock_b and await memory.user_turn_count(A) == 2
+
+
+async def test_probe_7_a_turn_that_arrived_after_the_box_opened_refuses_the_undo(execution_db):
+    """🟠1: the undo is held to the range the box showed."""
+    await _plain(execution_db, A, "one")
+    second = await _plain(execution_db, A, "two")
+    shown = await turn_undo.preview(second.run)
+    assert (shown["messages_after"], shown["later_turns"], shown["last_message_id"]) == (2, 0, second.reply)
+    await _plain(execution_db, A, "sent from the phone meanwhile")
+    with pytest.raises(turn_undo.Refused) as refused:
+        await turn_undo.undo(second.run, last=shown["last_message_id"])
+    assert refused.value.code == "changed" and len(await _messages(execution_db, A)) == 6
+    again = await turn_undo.preview(second.run)
+    assert (await turn_undo.undo(second.run, last=again["last_message_id"]))["messages"] == 4
+
+
+async def test_probe_8_a_message_in_another_conversation_between_question_and_answer_is_not_touched(execution_db):
+    await _plain(execution_db, A, "earlier")
+    await memory.add_message(A, "user", "question in A")
+    await memory.add_message(B, "user", "question in B")
+    run_a = await _reply_only(execution_db, A, "answer in A")
+    await turn_undo.undo(run_a)
+    assert await _messages(execution_db, A) == [("user", "earlier"), ("arslan", "done earlier")]
+    assert await _messages(execution_db, B) == [("user", "question in B")]
+
+
+async def test_a_choice_card_turn_that_streamed_text_is_a_turn_and_can_be_undone(maker, monkeypatch):  # noqa: F811
+    """🟡12: since K8a, text that went out before a choice card is stored as the turn's reply, with its run:
+    that turn is undoable like any other (intended: it is a turn)."""
+    from server.orchestrator import tool_loop
+    from server.db import session as db_session
+    text = "Here is what I found so far about the three options and how they compare. " * 3
+    clarify = {"question": "Which one?", "options": [{"label": "A"}, {"label": "B"}]}
+
+    async def run_native(**kwargs):
+        kwargs["on_chunk"](text)
+        return {"final": text, "clarify": clarify, "escalation": None, "tool_trace": []}
+    monkeypatch.setattr(tool_loop, "run_native", run_native)
+    await arslan.handle_user_message("cards", "question", lambda event: None)
+    async with db_session.AsyncSessionLocal() as db:
+        reply = [m for m in (await db.execute(select(ArslanMessage).where(
+            ArslanMessage.conversation_id == "cards"))).scalars() if m.role == "arslan"][-1]
+    assert reply.run_id is not None
+    if (job := arslan._after_turn_tail.get("cards")) is not None:
+        await job                                   # the post-turn job ends first ("finishing" until then)
+    shown = await turn_undo.preview(reply.run_id)
+    assert shown["conversation"] is True
+    out = await turn_undo.undo(reply.run_id, last=shown["last_message_id"])
+    assert out["messages"] == 2
+    async with db_session.AsyncSessionLocal() as db:
+        assert not (await db.execute(select(ArslanMessage).where(ArslanMessage.conversation_id == "cards"))).first()
+
+
+
+async def test_a_job_result_inside_a_turn_does_not_make_it_another_runs(execution_db):
+    """🟠2's rule counts replies of other runs, not a background job's result (it arrives whenever it ends)."""
+    await _plain(execution_db, A, "start a long job")
+    asked = await memory.add_message(A, "user", "meanwhile, a question")
+    async with execution_db() as db:
+        job_run = Run(conversation_id=A, user_message="job", status="done")
+        answer_run = Run(conversation_id=A, user_message="meanwhile, a question", status="done")
+        db.add_all([job_run, answer_run])
+        await db.flush()
+        db.add(ArslanMessage(conversation_id=A, role="arslan", content="job result", run_id=job_run.id,
+                             job_outcome="done"))
+        await db.flush()
+        db.add(ArslanMessage(conversation_id=A, role="arslan", content="the answer", run_id=answer_run.id))
+        await db.commit()
+        answer = answer_run.id
+    out = await turn_undo.undo(answer)
+    assert out["messages"] == 3 and asked
+    assert await _messages(execution_db, A) == [("user", "start a long job"), ("arslan", "done start a long job")]

@@ -489,33 +489,35 @@ class MemoryRepository:
         return {"id": entry_id, "status": "deleted", "version": entry.version,
                 "deletion_epoch": state.deletion_epoch}
 
-    async def turn_entries(self, message_ids: set[int], run_ids: set[int]):
-        """S3b: the entries undone turns taught (their first source is one of those turns) and the older
-        entries those turns only re-confirmed, each with those turns' sources: ([(entry, sources)], same)."""
+    async def turn_entries(self, conversation_id: str, message_ids: set[int], run_ids: set[int]):
+        """S3b: what undone turns of `conversation_id` taught: entries every source of which is one of those
+        turns, and the entries something else backs too (the user's acceptance, another conversation's save,
+        an older turn), each with those turns' sources: ([(entry, sources)], same) (⓪Plan's ruling, 🟠3)."""
         if not message_ids and not run_ids:
             return [], []
-        matched = (await self.db.execute(select(MemorySource).where(or_(
-            func.json_extract(MemorySource.source_ref, "$.message_id").in_(sorted(message_ids)),
-            func.json_extract(MemorySource.source_ref, "$.run_id").in_(sorted(run_ids)),
-        )))).scalars().all()
+        matched = (await self.db.execute(select(MemorySource).where(
+            func.json_extract(MemorySource.source_ref, "$.conversation_id") == conversation_id,
+            or_(func.json_extract(MemorySource.source_ref, "$.message_id").in_(sorted(message_ids)),
+                func.json_extract(MemorySource.source_ref, "$.run_id").in_(sorted(run_ids))),
+        ))).scalars().all()
         mine = {source.id for source in matched}
         taught, trimmed = [], []
         for entry_id in sorted({source.entry_id for source in matched}):
             entry = await self.db.get(MemoryEntry, entry_id)   # a deleted entry has no sources left to match
             if entry is None:
                 continue
-            first = await self.db.scalar(select(MemorySource.id).where(MemorySource.entry_id == entry_id)
-                                         .order_by(MemorySource.created_at, MemorySource.id).limit(1))
-            (taught if first in mine else trimmed).append(
+            every = (await self.db.execute(select(MemorySource.id).where(
+                MemorySource.entry_id == entry_id))).scalars().all()
+            (taught if set(every) <= mine else trimmed).append(
                 (entry, [source for source in matched if source.entry_id == entry_id]))
         return taught, trimmed
 
-    async def forget_turns(self, message_ids: set[int], run_ids: set[int]) -> int:
+    async def forget_turns(self, conversation_id: str, message_ids: set[int], run_ids: set[int]) -> int:
         """S3b (turn_undo): take back what undone turns taught; returns how many entries went. Unlike
         `delete_entry` (Forget): no tombstone of the text, no suppression beyond these turns' own messages
-        and runs, summaries and run prompts kept. An older entry they only re-confirmed loses just their
-        sources (⓪Plan's Q4)."""
-        taught, trimmed = await self.turn_entries(message_ids, run_ids)
+        and runs, summaries and run prompts kept. An entry something else backs too loses just their sources
+        (⓪Plan's Q4 and its ruling on the review)."""
+        taught, trimmed = await self.turn_entries(conversation_id, message_ids, run_ids)
         now = datetime.utcnow()
         for entry, sources in taught:
             # These turns' own messages and runs, for this entry (as `delete_entry` keys them): a writer still
