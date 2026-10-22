@@ -102,15 +102,14 @@ def test_the_windows_card_offers_only_this_time_despite_a_rule_and_a_grant(app_c
 
 # ── review fixes (⓪Plan on #199) ───────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("command", [
-    "xargs " + " ".join(["-n 1"] * 40) + " not-osascript",
-    "xargs " + " ".join(["-0"] * 60) + " cat",
-    "xargs " + " ".join(["-n1"] * 40) + " -I",
-    "ls | xargs " + "-P 4 " * 40 + "osascript.sh",
+@pytest.mark.parametrize("make,n", [
+    (lambda n: "xargs " + " ".join(["-n 1"] * n) + " not-osascript", 40),
+    (lambda n: "xargs " + " ".join(["-0"] * n) + " cat", 60),
+    (lambda n: "xargs " + " ".join(["-n1"] * n) + " -I", 40),
+    (lambda n: "ls | xargs " + "-P 4 " * n + "osascript.sh", 40),
 ], ids=["n-1", "zero", "n1", "P-4"])
-def test_recognising_a_long_xargs_line_is_fast(command):
-    with _hard_limit(2.0):
-        assert _our_patterns_take(command) < 0.2
+def test_recognising_a_long_xargs_line_is_fast(make, n):
+    _assert_grows_linearly(make, n)
 
 
 class _TooSlow(Exception):
@@ -139,24 +138,43 @@ class _hard_limit:
 
 
 def _our_patterns_take(command) -> float:
-    """Time for this card's two rules over every detection text. Building the texts (Hermes'
-    normalisation, unchanged by this card) is not counted."""
+    """CPU time this thread spends on the once-only rules over every detection text. Building the
+    texts (Hermes' normalisation) is not counted, nor is time the thread waits for a core: on a
+    loaded runner wall time caught a longer run descheduled more often than a short one."""
     import time
     ours = [p for k, p, _w in tp._ASK_C if k in tp.ONCE_ONLY_RULES]
     texts = tp._detection_texts(command)
-    started = time.monotonic()
+    started = time.thread_time()
     for text in texts:
         for pattern in ours:
             pattern.search(text)
-    return time.monotonic() - started
+    return time.thread_time() - started
 
 
-@pytest.mark.parametrize("command", ["\nexec " * 300 + "x", "\n exec  exec \t" * 200, "\ncommand " * 300 + "x",
-                                     "exec -a " * 200 + "x"],
-                         ids=["exec-lines", "exec-pairs", "command-lines", "exec-a"])
-def test_recognising_many_lines_of_launchers_is_fast(command):
-    with _hard_limit(2.0):
-        assert _our_patterns_take(command) < 0.1
+def _assert_grows_linearly(make, n):
+    """4x the input may take about 4x the time (measured 3.4-4.1x with every core busy). Relative to
+    itself in the same run, so a loaded runner does not fail it (an absolute 0.1 s bound did, under
+    xdist); a pattern that tries every line again from every line (quadratic: ~16x) or worse fails.
+    The absolute bound is only a backstop, and the hard limit stops one that never ends."""
+    small = large = float("inf")
+    with _hard_limit(10.0):
+        for _ in range(5):                    # best of five, taken in turn
+            small = min(small, _our_patterns_take(make(n)))
+            large = min(large, _our_patterns_take(make(4 * n)))
+            if large > 1.0:                   # past the backstop already: no need for five
+                break
+    assert large / max(small, 1e-4) < 10, f"{n}: {small * 1000:.2f} ms, {4 * n}: {large * 1000:.2f} ms"
+    assert large < 1.0, f"{4 * n}: {large:.2f} s"
+
+
+@pytest.mark.parametrize("make,n", [
+    (lambda n: "\nexec " * n + "x", 75),
+    (lambda n: "\n exec  exec \t" * n, 50),
+    (lambda n: "\ncommand " * n + "x", 75),
+    (lambda n: "exec -a " * n + "x", 50),
+], ids=["exec-lines", "exec-pairs", "command-lines", "exec-a"])
+def test_recognising_many_lines_of_launchers_is_fast(make, n):
+    _assert_grows_linearly(make, n)
 
 
 @pytest.mark.parametrize("command", ["osascript<<EOF\ntell app \"Finder\" to activate\nEOF", "osascript</dev/null",
