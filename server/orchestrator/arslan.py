@@ -841,6 +841,9 @@ async def _handle_answer_body(
             # has to be passed rather than inferred.
             has_images=bool(images),
             turn_notes=[PHONE_NOTE] if source == "phone" else None,
+            # K9b: only the chat turn reads what the user sends meanwhile; never a job, a worker or a
+            # delegated loop on the same conversation.
+            steerable=True,
         )
 
     try:

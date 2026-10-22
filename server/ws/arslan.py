@@ -16,7 +16,7 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan
-from server.services import approvals, background_jobs, desktop_status, permissions
+from server.services import approvals, background_jobs, desktop_status, permissions, steering
 from server.services import (
     run_registry,
     turn_journal,
@@ -232,7 +232,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         async with lock:
             if told:
                 await _send_or_gone({"type": "dequeued"})
-            yield
+            # K9b: while this turn runs, a message sent meanwhile reaches it at its next tool boundary;
+            # what it never took goes back to its sender's inbox, once (services/steering).
+            steering.open_box(conversation_id)
+            try:
+                yield
+            finally:
+                steering.close_box(conversation_id)
 
     import uuid
 
@@ -287,6 +293,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if t == "user_message" and _turn_lock(conversation_id).locked():
                     data = {**data, "_queued": True}
                     await _send_or_gone({"type": "queued"})
+                    # K9b: no card of this window waits (one that does keeps the rule above): the running
+                    # turn takes it at its next tool boundary, and tells this socket `dequeued` + inserted.
+                    if not my_cards and steering.insertable(data) and await steering.enabled() and steering.put(
+                            conversation_id, steering.Steer(str(data.get("content") or ""), message_source(data),
+                                                            data, _send_or_gone, inbox.put_nowait)):
+                        continue
                 await inbox.put(data)
         except Exception:  # noqa: BLE001 — disconnect (or a closed socket): the loop ends after the turn
             socket_gone["yes"] = True

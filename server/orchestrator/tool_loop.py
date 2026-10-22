@@ -23,7 +23,7 @@ from server.orchestrator import on_demand, parallel_reads, turn_context
 from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
-from server.services import replay_safety
+from server.services import replay_safety, steering
 from server.services.llm_factory import build_adapter
 from arslan.aio import within
 
@@ -423,6 +423,30 @@ def _planned_read(call: dict, neutral_call: dict, wired_keys: set, params_by_key
     return name, args
 
 
+async def _read_steers(steers: list, convo: list[dict], conversation_id: str) -> None:
+    """K9b: the messages sent while the turn worked join it after the batch's results (K1's order: tool
+    results, then the user's text). Each is stored as a user message tagged with this run, so the undo of
+    the turn (S3b) takes it with the turn and never counts it as a later one; one from the iPhone is shown
+    in the Mac windows as today (never journaled: it is in the history); its sender hears `dequeued` with
+    `inserted`."""
+    from server.orchestrator import memory
+    from server.services import personal_context, run_registry
+    from server.ws import protocol
+    current = personal_context.current()
+    run_id = current.source_run_id if current is not None else None
+    for steer in steers:
+        convo.append({"role": "user", "content": steer.content})
+        message_id = await memory.add_message(conversation_id, "user", steer.content, source=steer.source,
+                                              run_id=run_id)
+        if steer.source == "phone":
+            run_registry.make_emit(conversation_id)(
+                protocol.message(message_id, steer.content, "user") | {"source": "phone"})
+        try:
+            await steer.tell({"type": "dequeued", "inserted": True})
+        except Exception:  # noqa: BLE001 — its socket closed; the message is in the turn anyway
+            pass
+
+
 def _claim_results(convo: list[dict], marks: list[tuple[int, str]]) -> None:
     """Bind each call's result record to the model's tool call id.
 
@@ -511,6 +535,9 @@ _OFFLINE_NOTE = (" Files you already fetched can still be processed with run_com
 
 CONTINUE_PROMPT = ("Your previous reply was cut off by the output limit. Continue exactly where it "
                    "stopped, without repeating anything already written and without any preamble.")
+# K9b: a call of the batch not started when the user sent a message (it is read right after these results).
+SKIPPED_FOR_MESSAGE = ("Not run: the user sent a message while you were working. It comes right after these "
+                       "results; read it first, then call this again only if it still makes sense.")
 TRUNCATED_CALL_ERROR = (
     "The output limit was reached while writing this call's arguments; nothing was executed. "
     "Split the work: write the first part with write_file, then append each further part with "
@@ -2829,6 +2856,7 @@ async def _run_native(
     stream_without_tools: bool = False,
     progress_lane=None,
     turn_notes: list[str] | None = None,
+    steerable: bool = False,
 ) -> dict:
     """Canonical native tool loop. Same signature and core return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -3179,10 +3207,20 @@ async def _run_native(
             reads = None if cut_off or wrap_up else await parallel_reads.plan(
                 [_planned_read(call, neutral_call, wired_keys, params_by_key)
                  for call, neutral_call in zip(tool_calls, calls)])
+            steered: list | None = None        # K9b: messages sent meanwhile, taken at a tool boundary
             for index, (call, neutral_call) in enumerate(zip(tool_calls, calls)):
                 marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}
                 name = str(fn.get("name") or "")
+                # K9b: the boundary after the previous call (or group of reads): a message sent meanwhile is
+                # read before anything else runs. A call not started is not run, and still gets a result.
+                if steered is None and index and steerable and conversation_id and steering.waiting(conversation_id):
+                    steered = steering.take(conversation_id)
+                if steered and not (reads is not None and reads.has(index)):
+                    _record_tool_result(name, {}, {"ok": False, "external": False, "code": "skipped_for_message",
+                                                   "error": SKIPPED_FOR_MESSAGE},
+                                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
+                    continue
                 args = fn.get("arguments")
                 bad_json = None
                 if not isinstance(args, dict) and not cut_off:
@@ -3372,6 +3410,10 @@ async def _run_native(
             # Gemini provider pair and the old "invocation completed" text are now
             # renderings of this trajectory (trajectory.to_legacy), not rewrites.
             _claim_results(convo, marks)
+            if steered is None and steerable and conversation_id and not cut_off:
+                steered = steering.take(conversation_id) or None       # the boundary after the batch
+            if steered:
+                await _read_steers(steered, convo, conversation_id)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
             # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())

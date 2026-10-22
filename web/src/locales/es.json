@@ -1113,7 +1113,8 @@
     "stalled": "Se perdió el contacto con Arslan; puede que siga trabajando. Vuelve a abrir este chat para comprobarlo.",
     "thinking": "Pensando…",
     "long": "Sigue trabajando: una respuesta larga puede tardar unos minutos",
-    "queued": "Arslan leerá esto en cuanto termine la respuesta actual"
+    "queued": "Arslan leerá esto en cuanto termine la respuesta actual",
+    "inserted": "Añadido a la respuesta en la que trabaja Arslan: lo lee antes de su siguiente paso"
   },
   "runcmd": {
     "sandboxOutsideLabel": "¿Ejecutar esto fuera del entorno aislado?",

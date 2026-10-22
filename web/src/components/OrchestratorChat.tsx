@@ -186,6 +186,7 @@ export default function OrchestratorChat({
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
   const lastStepAt = useArslanStore((s) => s.lastStepAt);
   const queued = useArslanStore((s) => s.queued);
+  const inserted = useArslanStore((s) => s.inserted);
   // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
   // never message text), tick checkStall() so a turn whose frames stop arriving
   // for >90s renders a static 「已中断」 instead of an infinite pulse. Any new
@@ -964,6 +965,11 @@ export default function OrchestratorChat({
         {queued && (
           <p className="pl-10 text-[11px] text-muted-foreground select-none" data-testid="queued-notice">
             {t('working.queued')}</p>
+        )}
+        {/* 0.1.63 K9b: …or it was added to the reply that is running, which reads it at its next step. */}
+        {inserted && !queued && (
+          <p className="pl-10 text-[11px] text-muted-foreground select-none" data-testid="inserted-notice">
+            {t('working.inserted')}</p>
         )}
 
       </div>
