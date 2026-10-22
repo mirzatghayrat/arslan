@@ -770,8 +770,19 @@ class _Reader:
             raise _NotUnderstood("it feeds shell code to a shell on its input")
 
     def _find(self, argv: list[_Word]) -> None:
+        """find -exec / -execdir / -ok starts its command once per file found, with {} in its words
+        replaced by the file's path. It is recorded once per starting path, {} written as a file under it,
+        so what judges the command sees where it acts (`find . -exec rm {} \\;` stays in the folder;
+        `find / -exec rm {} \\;` does not)."""
         words = argv[1:]
         k = 0
+        while k < len(words) and words[k].text in ("-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"):
+            k += 1
+        starts = []
+        while k < len(words) and not words[k].text.startswith("-") and words[k].text not in ("(", "!", ")"):
+            starts.append(words[k].text)
+            k += 1
+        starts = starts or ["."]
         while k < len(words):
             if words[k].text in ("-exec", "-execdir", "-ok", "-okdir"):
                 end = k + 1
@@ -779,7 +790,8 @@ class _Reader:
                     end += 1
                 if end >= len(words) or end == k + 1:
                     raise _NotUnderstood("its find -exec does not end")
-                self._started(words[k + 1:end], [], 0)
+                for start in starts:
+                    self._started([_placed(w, start) for w in words[k + 1:end]], [], 0)
                 k = end
             k += 1
 
@@ -788,6 +800,16 @@ class _Reader:
             raise _NotUnderstood("its syntax is not one Arslan reads")
         if self.heredocs:
             raise _NotUnderstood("its here-document does not end")
+
+
+def _placed(word: _Word, start: str) -> _Word:
+    """`word` with find's {} written as a file under `start`."""
+    if "{}" not in word.text:
+        return word
+    placed = _Word()
+    placed.chars = [word.text.replace("{}", start.rstrip("/") + "/found")]
+    placed.expanded, placed.globbed, placed.quoted, placed.bare = word.expanded, word.globbed, word.quoted, word.bare
+    return placed
 
 
 def _assigned_name(word: _Word) -> str | None:

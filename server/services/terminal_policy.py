@@ -439,6 +439,11 @@ def _analyse(text: str) -> _Analysis:
     reading = shell_grammar.read(text)
     heavy = reading.capped or shell_text.too_complex(text)
     texts = (text, shell_text.normalize(text)) if heavy else _detection_texts(text)
+    if reading.commands:
+        # Every command the reader found the shell would start, one per line, wrappers read through: the
+        # rules judge the inner command too (`find . -exec rm -rf / \;`, `nohup git push`), not only the
+        # text as written, where it does not stand at a command position.
+        texts = (*texts, "\n".join(shlex.join(command) for command in reading.commands))
     forbidden = _forbid(text, texts)
     if forbidden is not None:
         return _Analysis(forbidden)

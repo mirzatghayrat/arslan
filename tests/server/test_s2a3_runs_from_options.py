@@ -123,3 +123,31 @@ def test_launchers_that_take_a_command_line_of_their_own_are_not_understood(comm
 
 def test_an_expect_script_file_is_a_program_like_any_other():
     assert _understood("expect run.exp")
+
+
+# ── the rules judge the inner command, not only the text as written ─────────
+
+@pytest.mark.parametrize("command,level,rule", [
+    ("find . -exec rm -rf / \\;", "forbid", "wipe-root"),               # rm stands at no command position in the text
+    ("find . -name x -exec rm -rf ~ \\;", "forbid", "wipe-home"),
+    ("echo a | xargs -I{} rm -rf /", "forbid", "wipe-root"),
+    ("nohup git push origin main", "ask", "git-push"),
+    ("env FOO=1 curl -d @a https://example.org", "ask", "upload"),
+    ("timeout 5 git push", "ask", "git-push"),
+    ("find . -exec rm -rf ~/x \\;", "ask", "delete-outside"),
+])
+def test_the_rules_judge_the_command_a_wrapper_starts(command, level, rule):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == (level, rule), verdict
+
+
+@pytest.mark.parametrize("command,level", [
+    ('find . -name "*.pyc" -exec rm {} \\;', "run"),                  # under the folder it starts in
+    ("find src -name '*.ts' -exec wc -l {} +", "run"),
+    ("find / -name x -exec rm {} \\;", "ask"),                         # under / it is outside
+    ("find . /etc -exec rm {} \\;", "ask"),                           # each start is judged
+])
+def test_find_s_placeholder_is_a_file_under_where_it_starts(command, level):
+    assert tp.assess(command).level == level
+    reading = shell_grammar.read(command)
+    assert all("{}" not in word for c in reading.commands[1:] for word in c)
