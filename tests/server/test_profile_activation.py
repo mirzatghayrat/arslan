@@ -350,13 +350,13 @@ def _restricted_app(profiles, monkeypatch):
 def test_restricted_trial_runs_storage_boot_but_exposes_only_authenticated_health(profiles, monkeypatch):
     from fastapi.testclient import TestClient
     import server.main as main
-    from server.services import scheduler, curation_loop
+    from server.services import scheduler, curation_loop, usage_retention
 
     app, active, operation = _restricted_app(profiles, monkeypatch)
     def forbidden(*args, **kwargs):
         pytest.fail("restricted trial must not start the normal lifespan or background work")
     monkeypatch.setattr(main, "lifespan", forbidden)
-    for module in (scheduler, curation_loop):
+    for module in (scheduler, curation_loop, usage_retention):
         monkeypatch.setattr(module, "start", forbidden)
     with TestClient(app) as client:
         path = "/api/v1/activation-trial/health"

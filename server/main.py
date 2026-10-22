@@ -331,6 +331,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — curation start must never block boot
         logger.warning("curation loop start failed (non-fatal): %s", exc)
 
+    # D5 retention for brain_usage_events (first pass after 5 min, then every 15 min).
+    # Not opt-in: brain_usage.record appends on every retrieval, so the log needs its
+    # bound on a default install. It rode on the curation loop until C8-3 (v0.1.63).
+    try:
+        from server.services import usage_retention
+
+        usage_retention.start()
+    except Exception as exc:  # noqa: BLE001 — retention start must never block boot
+        logger.warning("usage retention start failed (non-fatal): %s", exc)
+
     # 0.1.47 proactivity: a fourth supervised loop (10 min pass, first pass after 60 s).
     # Detectors are deterministic and free; it only stores inbox items, and never
     # acts. Best-effort start.
@@ -372,6 +382,14 @@ async def _shutdown_services(app: FastAPI) -> None:
     except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
         cleanup_complete = False
         logger.warning("curation loop stop failed (non-fatal): %s", exc)
+
+    try:
+        from server.services import usage_retention as _retention
+
+        await _retention.stop()
+    except Exception as exc:  # noqa: BLE001 — retention stop must never block shutdown
+        cleanup_complete = False
+        logger.warning("usage retention stop failed (non-fatal): %s", exc)
 
     try:
         from server.services import proactive_service as _proactive
