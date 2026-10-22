@@ -890,7 +890,9 @@ fn open_main_window(app: &tauri::AppHandle, port: u16) {
                 app_icon::restore(win.app_handle());
                 reveal(win.app_handle());
             }
-        });
+        })
+        // The window stays on the sidecar's page: see main_navigation_allowed.
+        .on_navigation(move |url| main_navigation_allowed(url, port));
 
     // No opaque white title bar: the webview fills the window and the native
     // traffic lights float over the sidebar's top-left corner (which the SPA
@@ -922,7 +924,7 @@ fn open_main_window(app: &tauri::AppHandle, port: u16) {
     // immediately, instead of the server silently running open to every local
     // process.
     match read_api_token() {
-        Some(token) => init.push_str(&format!("window.__ARSLAN_TOKEN__ = \"{token}\";")),
+        Some(token) => init.push_str(&token_script(port, &token)),
         None => eprintln!(
             "WARNING: no readable api_token — the UI will be unauthenticated \
              against an auth-enforcing server"
@@ -948,6 +950,32 @@ fn open_main_window(app: &tauri::AppHandle, port: u16) {
     // AFTER the window exists so the pill has somewhere to appear. Startup-only
     // + the menu item — deliberately no periodic timer (user decision, v0.1.5).
     check_for_updates(app.clone(), false);
+}
+
+/// The token assignment for the main window's initialization script, guarded by the page's origin
+/// (0.1.63, C11 review F9): an initialization script runs in whatever page the webview shows, so a
+/// remote page the window was ever sent to would otherwise read the token. `token` is
+/// [A-Za-z0-9_-] only (read_api_token), so it needs no escaping inside the JS string.
+fn token_script(port: u16, token: &str) -> String {
+    format!(
+        "if (window.location.origin === \"http://127.0.0.1:{port}\") {{ window.__ARSLAN_TOKEN__ = \"{token}\"; }}"
+    )
+}
+
+/// Whether the main window may go to `url` (0.1.63, C11 review F9). Only the sidecar's own origin
+/// over http: a remote page in this window would run beside the app's own pages and the token. The
+/// page already sends links to the system browser (web MarkdownLink); this is the backstop, and what
+/// it refuses simply does not load. Schemes with no network origin (blob: downloads, data:, about:)
+/// stay allowed: they get no token (token_script checks the origin) and the app uses them.
+fn main_navigation_allowed(url: &tauri::Url, port: u16) -> bool {
+    match url.scheme() {
+        "http" | "https" => {
+            url.scheme() == "http"
+                && url.host_str() == Some("127.0.0.1")
+                && url.port() == Some(port)
+        }
+        _ => true,
+    }
 }
 
 /// Show the main window and retire the launch screen, in that order and once.
@@ -1132,6 +1160,47 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_token_is_given_only_to_the_sidecars_own_page() {
+        let script = token_script(54321, "abc_DEF-1");
+        let check = script
+            .find("if (window.location.origin === \"http://127.0.0.1:54321\")")
+            .expect("the origin check");
+        let token = script
+            .find("window.__ARSLAN_TOKEN__ = \"abc_DEF-1\";")
+            .expect("the token");
+        assert!(
+            token > check,
+            "the assignment sits inside the check: {script}"
+        );
+        assert!(script.trim_end().ends_with('}'), "{script}");
+    }
+
+    #[test]
+    fn the_main_window_never_leaves_the_sidecars_origin() {
+        let ok = |u: &str| main_navigation_allowed(&u.parse().unwrap(), 54321);
+        assert!(ok("http://127.0.0.1:54321/"));
+        assert!(ok("http://127.0.0.1:54321/settings?tab=general#x"));
+        for remote in [
+            "https://evil.example/",
+            "http://evil.example/",
+            "http://127.0.0.1:9999/",
+            "http://localhost:54321/",
+            "https://127.0.0.1:54321/",
+            "http://127.0.0.1.evil.example:54321/",
+        ] {
+            assert!(!ok(remote), "{remote}");
+        }
+        // no network origin, no token (the script checks the origin): downloads and previews keep working
+        for local in [
+            "blob:http://127.0.0.1:54321/0b0d",
+            "about:blank",
+            "data:text/html,hi",
+        ] {
+            assert!(ok(local), "{local}");
+        }
+    }
 
     #[cfg(target_os = "macos")]
     fn pending_failure() -> StartupFailure {
