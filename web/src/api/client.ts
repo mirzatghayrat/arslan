@@ -501,8 +501,10 @@ export const api = {
   runProcess: (runId: number) => request<RunProcessOut>(`/runs/${runId}/process`),
   /** 0.1.63 S3: what undoing this turn would put back and take back. */
   runCheckpoint: (runId: number) => request<RunCheckpoint>(`/runs/${runId}/checkpoint`),
-  undoTurn: (runId: number, what: "files" | "conversation" | "both") =>
-    request<TurnUndone>(`/runs/${runId}/checkpoint/restore`, { method: "POST", body: JSON.stringify({ what }) }),
+  /** S3b: `lastMessageId` is the newest message the box counted; a conversation that moved on is refused. */
+  undoTurn: (runId: number, what: "files" | "conversation" | "both", lastMessageId?: number) =>
+    request<TurnUndone>(`/runs/${runId}/checkpoint/restore`, { method: "POST",
+      body: JSON.stringify(what === "files" ? { what } : { what, last_message_id: lastMessageId }) }),
   getRunsSummary: () => request<RunSummary>("/runs/summary"),
   /** Per-spawn RED aggregate + fleet rollup, worst-first (diagnosis dashboard). */
   getRunCatalog: (range: string) => request<RunCatalogDto>(`/runs/catalog?range=${range}`),

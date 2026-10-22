@@ -116,8 +116,10 @@ export interface RunCheckpoint {
   running?: boolean;
   restored_at?: number | null;
   conversation: boolean;
-  /** Why the conversation can't be undone: none | job | already | summarised | running | finishing. */
+  /** Why the conversation can't be undone: none | job | not_own_turn | already | summarised | running | finishing. */
   reason: string | null;
+  /** The newest message the undo would take back: sent with it, so it is held to what was shown. */
+  last_message_id?: number;
   messages_after?: number;
   later_turns?: number;
   facts?: number;

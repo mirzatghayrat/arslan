@@ -26,8 +26,10 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const BOTH: RunCheckpoint = {
   exists: true, changed: 2, created: 1, skipped: [], excluded: ["node_modules"], later: [9], running: false,
-  restored_at: null, conversation: true, reason: null, messages_after: 6, later_turns: 2, facts: 1,
+  restored_at: null, conversation: true, reason: null, messages_after: 6, later_turns: 2, facts: 1, last_message_id: 42,
 };
+const NO_FILES: RunCheckpoint = { exists: false, conversation: true, reason: null, messages_after: 6, later_turns: 2,
+  facts: 1, last_message_id: 42 };
 const HISTORY: ArslanHistoryRow[] = [{ message_id: 1, role: "user", content: "one", spawn_id: null },
   { message_id: 2, role: "arslan", content: "reply", spawn_id: null, run_id: 3 }];
 
@@ -47,13 +49,15 @@ describe("undo this turn", () => {
     expect(screen.queryByTestId("reply-undo")).toBeNull();
   });
 
-  it("says the later turns first, what goes, and offers all three when all three can happen", async () => {
+  it("says the later turns first, what goes, the iPhone, and with files offers them alone or with the conversation", async () => {
     await openSheet(BOTH);
     expect(screen.getByTestId("undo-later-turns").textContent).toContain('process.undoLater:{"count":2}');
     expect(screen.getByTestId("undo-facts").textContent).toContain('process.undoFacts:{"count":1}');
+    expect(screen.getByTestId("undo-phone").textContent).toBe("process.undoPhone");
     expect(screen.getByText('process.undoLaterRuns:{"count":1}')).toBeTruthy();
     expect(screen.getByText('process.undoExcluded:{"names":"node_modules"}')).toBeTruthy();
-    for (const id of ["undo-files", "undo-conversation", "undo-both"]) expect(screen.getByTestId(id)).toBeTruthy();
+    for (const id of ["undo-files", "undo-both"]) expect(screen.getByTestId(id)).toBeTruthy();
+    expect(screen.queryByTestId("undo-conversation")).toBeNull();     // afterwards the menu, and its files, are gone
   });
 
   it("offers only what can happen, and says why the rest can't", async () => {
@@ -65,6 +69,7 @@ describe("undo this turn", () => {
     cleanup();
     await openSheet({ exists: false, conversation: true, reason: null, messages_after: 2, later_turns: 0, facts: 0 });
     expect(screen.getByText("process.undoNoFiles")).toBeTruthy();
+    expect(screen.getByTestId("undo-conversation")).toBeTruthy();
     expect(screen.queryByTestId("undo-later-turns")).toBeNull();
     expect(screen.queryByTestId("undo-files")).toBeNull();
     expect(screen.queryByTestId("undo-both")).toBeNull();
@@ -74,11 +79,11 @@ describe("undo this turn", () => {
     undoTurn.mockResolvedValue({ conversation: { conversation_id: "c1", messages: 6, later_turns: 2, facts: 1, history: HISTORY } });
     const seen = vi.fn();
     window.addEventListener(TURN_UNDONE_EVENT, seen);
-    await openSheet(BOTH);
+    await openSheet(NO_FILES);
     fireEvent.click(screen.getByTestId("undo-conversation"));
     await waitFor(() => expect(seen).toHaveBeenCalled());
     window.removeEventListener(TURN_UNDONE_EVENT, seen);
-    expect(undoTurn).toHaveBeenCalledWith(7, "conversation");
+    expect(undoTurn).toHaveBeenCalledWith(7, "conversation", 42);     // held to what the box counted
     expect((seen.mock.calls[0][0] as CustomEvent).detail.history).toEqual(HISTORY);
     expect(toast).toHaveBeenCalledWith("process.undoDone");
     await waitFor(() => expect(screen.queryByTestId("undo-turn")).toBeNull());
@@ -89,8 +94,27 @@ describe("undo this turn", () => {
     await openSheet(BOTH);
     fireEvent.click(screen.getByTestId("undo-both"));
     await waitFor(() => expect(toast).toHaveBeenCalledWith("process.undoWhy_finishing"));
-    expect(undoTurn).toHaveBeenCalledWith(7, "both");
+    expect(undoTurn).toHaveBeenCalledWith(7, "both", 42);
     expect(screen.getByTestId("undo-turn")).toBeTruthy();
+  });
+
+  it("files that could not go back are listed and the sheet stays, so they can be tried again", async () => {
+    undoTurn.mockRejectedValue(new ApiError("refused", 409, { code: "files_failed",
+      files: { runs: [{ failed: ["plan.md"], git: null }, { failed: [], git: "failed" }] } }));
+    await openSheet(BOTH);
+    fireEvent.click(screen.getByTestId("undo-both"));
+    await screen.findByTestId("undo-not-back");
+    expect(screen.getByTestId("undo-not-back").textContent).toContain('"paths":"plan.md, .git"');
+    expect(toast).not.toHaveBeenCalledWith("process.undoDone");
+    expect(screen.getByTestId("undo-files")).toBeTruthy();
+  });
+
+  it("a conversation that failed after the files went back says so", async () => {
+    undoTurn.mockRejectedValue(new ApiError("refused", 409, { code: "conversation_failed", reason: "changed",
+      files: { runs: [{ failed: [] }] } }));
+    await openSheet(BOTH);
+    fireEvent.click(screen.getByTestId("undo-both"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("process.undoConversationFailed"));
   });
 
   it("the open conversation shows what the server now has; another one is left alone", () => {
