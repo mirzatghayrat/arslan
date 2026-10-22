@@ -522,9 +522,15 @@ fn answer_of_waits_for_a_request_still_running_and_deadlines_say_timeout() {
         writeln!(stream, "{req}").unwrap();
         // The caller gives up without reading: its answer must still be kept.
     });
+    // Only a guard against waiting forever for the request to reach agent-desktop; what the test
+    // checks is the outcome below. 30 s, not 5: the macOS CI runner once took longer than 5 s to
+    // start Hands and its fake agent-desktop (run 39740188051).
     let started = Instant::now();
     while !hands.calls().iter().any(|c| c[0] == "wait") {
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "the wait request never reached agent-desktop"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
     let fetched = hands.ask("answer_of", json!({"id": "wait-slow", "wait_ms": 15000}));
