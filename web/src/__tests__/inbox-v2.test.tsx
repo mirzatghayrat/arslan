@@ -105,12 +105,12 @@ describe("Approve now — a card from the permission layer (0.1.61 §A4)", () =>
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "task" }) }));
   });
 
-  it("an old command card in the Inbox offers no 'remember' tick: the server never keeps it there", async () => {
+  it("a command card in the Inbox offers no tick (S4a: none is left)", async () => {
     vi.spyOn(client, "request").mockImplementation(async (path: string) =>
       (path === "/approvals/pending" ? [{ ...ask, frame: { ...ask.frame, sandbox: "retry" } }] : { ok: true }) as never);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     expect(await screen.findByTestId("runcmd-card")).toBeInTheDocument();
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 });
 

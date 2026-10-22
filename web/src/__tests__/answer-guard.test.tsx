@@ -171,18 +171,6 @@ describe("one gesture answers one card", () => {
     expect(send).toHaveBeenLastCalledWith({ type: "cancel_run_command", call_id: "danger-two" });
   });
 
-  it("the old card's tick ('don't ask again') is not ticked on the card that moved up either", () => {
-    render(<AskSlot send={vi.fn()} />);
-    frame({ type: "propose_run_command", call_id: "a", pretty: "ls a", reason: "" });          // old frames: the checkbox
-    frame({ type: "propose_run_command", call_id: "b", pretty: "ls b", reason: "" });
-    run();
-    fireEvent.click(screen.getByTestId("runcmd-remember"));
-    expect((screen.getByTestId("runcmd-remember") as HTMLInputElement).checked).toBe(false);
-    advance(500);
-    fireEvent.click(screen.getByTestId("runcmd-remember"));
-    expect((screen.getByTestId("runcmd-remember") as HTMLInputElement).checked).toBe(true);
-  });
-
   it("Esc in the composer right after a note answered a card is not a No to the card that moved up", () => {
     const send = vi.fn();
     render(<><AskSlot send={send} /><input id="chat-message-input" data-testid="composer" /></>);

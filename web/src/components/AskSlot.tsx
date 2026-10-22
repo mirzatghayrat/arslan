@@ -97,11 +97,10 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
     return () => window.clearTimeout(id);
   }, [next?.callId, next?.at, expireCard]);
 
-  /** A yes: a v2 card's carries its scope (one the card offered), an old card's frame is exactly as before. */
-  const yes = (type: string, callId: string, card: { options?: string[]; alwaysLabel?: string }, scope: string | undefined,
-               old: Record<string, unknown> = {}) => {
+  /** A yes: with its scope (one the card offered); a card without choices answers with none. */
+  const yes = (type: string, callId: string, card: { options?: string[]; alwaysLabel?: string }, scope: string | undefined) => {
     const s = scope === undefined ? undefined : scopeToSend(card.options, scope, card.alwaysLabel);
-    send(s !== undefined ? { type, call_id: callId, scope: s } : { type, call_id: callId, ...old });
+    send(s !== undefined ? { type, call_id: callId, scope: s } : { type, call_id: callId });
   };
   /** A No: with the user's note when there is one, else exactly as before. A note is typed in a field on the
    *  card, which leaves with the card: the composer takes the focus the field held. */
@@ -120,7 +119,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         background={c.background} sandbox={c.sandbox} why={c.why}
         options={c.options} alwaysLabel={c.alwaysLabel} permKind={c.permKind}
         expiresAt={expires(c)} queue={queue}
-        onConfirm={(callId, remember, scope) => { yes('confirm_run_command', callId, c, scope, { remember }); clearPendingCommand(c.callId); }}
+        onConfirm={(callId, scope) => { yes('confirm_run_command', callId, c, scope); clearPendingCommand(c.callId); }}
         onCancel={(callId, note) => { no('cancel_run_command', callId, note); clearPendingCommand(c.callId); }} />) })),
     ...pendingEnrollNodes.map((n) => ({ rank: 0, seq: n.seq ?? 0, key: `node:${n.callId}`, render: (queue: AskQueuePosition) => (
       <EnrollNodeCard callId={n.callId} name={n.name} host={n.host}

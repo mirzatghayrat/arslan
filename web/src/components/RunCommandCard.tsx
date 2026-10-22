@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
-import { AskOption, DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
+import { DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
 
 interface Props {
   callId: string;
@@ -14,29 +14,27 @@ interface Props {
   remoteHost?: string;
   /** That machine's host key fingerprints, for the user to compare. */
   fingerprints?: string[];
-  /** 0.1.42: a background job is asking; "remember" is never honoured for a job. */
+  /** 0.1.42: a background job is asking. */
   background?: boolean;
   /** 0.1.51 P3: "outside" — leave the sandbox; "retry" — the sandbox stopped it. */
   sandbox?: "outside" | "retry";
   /** With "outside": Arslan's one-line reason (the model's words). */
   why?: string;
   expiresAt?: number | null;
-  /** 0.1.61 §A4: the choices a card from the permission layer offers. Absent on an old frame
-   *  (leaving the sandbox, another machine), which keeps its checkbox and its "remember". */
+  /** 0.1.61 §A4: the choices a card from the permission layer offers. Every command card carries them
+   *  (S4a); a frame without them answers with its first, narrowest choice. */
   options?: string[];
   /** The literal scope "Always" stores (the frame's `always_label`). */
   alwaysLabel?: string;
   /** The frame's permission kind (`perm_kind`). A red kind (money, app_risky, destructive) draws Run red,
    *  as the action card does; a once-only kind offers only the frame's first choice. Absent on an old frame. */
   permKind?: string;
-  /** The Inbox: the server never keeps "remember" from there, so the old checkbox is not shown. */
-  noRemember?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
   queue?: import("./kit").AskQueuePosition;
   onOpenContext?: () => void;
-  /** An old card answers (callId, remember); a v2 card answers (callId, false, scope). */
-  onConfirm: (callId: string, remember: boolean, scope?: string) => void;
+  /** A yes, with the choice ticked (none on a frame without choices). */
+  onConfirm: (callId: string, scope?: string) => void;
   /** A v2 card's No may carry the user's note. */
   onCancel: (callId: string, note?: string) => void;
 }
@@ -45,18 +43,15 @@ interface Props {
  * Per-command confirmation (a `propose_run_command` frame), in the 0.1.55 AskCard.
  * The FULL command is shown; only the user's click (or ⌘⏎) runs it.
  *
- * Remote: the machine leads, its fingerprint is shown to compare, and there is NO
- * "remember" — the backend refuses it for a remote command, and a checkbox that does
- * nothing would be a lie in a safety dialog. Sandbox: the question is about leaving
- * the sandbox, and the checkbox means "for the rest of this conversation".
- * 0.1.61: a card from the permission layer (a frame with `options`) shows its choices in place
- * of the checkbox, and takes a note on No.
+ * Remote: the machine leads, its fingerprint is shown to compare, and it is answered this time only.
+ * Sandbox: the question is about leaving the sandbox, and "In this conversation" lets every command
+ * of the conversation out, background tasks' too (S4a). 0.1.61: the card shows the frame's choices
+ * and takes a note on No. (S4a deleted the old "remember" tick: every command card carries choices.)
  */
 export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
-                                         sandbox, why, expiresAt, options, alwaysLabel, permKind, noRemember, busy, queue,
+                                         sandbox, why, expiresAt, options, alwaysLabel, permKind, busy, queue,
                                          onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
-  const [remember, setRemember] = useState(false);
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
   const offered = offeredScopes(options, permKind);
   const v2 = Boolean(offered?.length);
@@ -90,10 +85,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
       options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
         conversationLabel={permKind === "command" ? alwaysLabel
           : permKind === "outside" ? t("runcmd.sandboxConversation") : undefined} testId="runcmd-scope" />
-        : isRemote || background || noRemember ? null : (
-        <AskOption checked={remember} onChange={setRemember} testId="runcmd-remember"
-          label={t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")} />
-      )}
+        : null}
       extra={v2 ? <DeclineNote testId="runcmd-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
       destructive={RED_KINDS.has(permKind ?? "")}
@@ -102,8 +94,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
       allowLabel={isRemote ? t("runcmd.runRemote") : sandbox ? t("runcmd.runOutside") : t("runcmd.run")}
       declineLabel={t("runcmd.cancel")}
       allowTestId="runcmd-run" declineTestId="runcmd-cancel"
-      onAllow={() => (v2 ? onConfirm(callId, false, scopeToSend(offered, scope, alwaysLabel))
-        : onConfirm(callId, remember && !background && !isRemote && !noRemember))}
+      onAllow={() => onConfirm(callId, v2 ? scopeToSend(offered, scope, alwaysLabel) : undefined)}
       onDecline={() => onCancel(callId)} />
   );
 }

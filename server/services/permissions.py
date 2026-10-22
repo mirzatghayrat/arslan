@@ -30,6 +30,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 
 from server.db import session as db_session
+from server.db.models import PermissionRule
 from server.services import approvals, permission_store
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,11 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 #: rule lookup (`_standing`) all follow it.
 # S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
 # time or for this conversation, never "Always": outside content can steer what it sends.
+# S4a: "outside" (every command of a conversation out of the sandbox) is this time or this conversation,
+# never "Always": no rule, however it was stored, lets every command out for good.
 _NEVER_ALWAYS = (_ONCE_ONLY
                  | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
-                              "mcp_tool"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
+                              "mcp_tool", "outside"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
 if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: "
@@ -232,15 +235,44 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     return decisions
 
 
-async def standing(req: Request, ctx: Context) -> Decision | None:
-    """S4a: what `decide` would answer from a stored rule or grant, with its ledger row — or None, and
-    then no card is shown: the caller decides what not having one means (the tool loop runs a command
-    in the sandbox). As in `decide`, nothing stands where nobody can be asked (S1, U14 a). It does not
-    set `LAST_DECISION`: a card shown after it is a decision of its own."""
+@dataclass(frozen=True)
+class Standing:
+    """A standing answer `standing` found: the decision, and the rule or grant it stands on."""
+    decision: Decision
+    rule_id: int | None = None
+    grant_id: int | None = None
+
+
+async def standing(req: Request, ctx: Context) -> Standing | None:
+    """S4a: the stored rule or grant that answers `req` — what `decide` would find before any card —
+    or None, and then no card is shown: the caller decides what not having one means (the tool loop
+    runs a command in the sandbox). Nothing is written: the caller writes the ledger row with
+    `note_standing` once the step it answers goes ahead (⓪Plan, S4a Q2: the ledger never says "allowed
+    by a grant" for a step that did not run). As in `decide`, nothing stands where nobody can be asked
+    (S1, U14 a). It does not set `LAST_DECISION`: a card shown after it is a decision of its own."""
     _check(req)
     if _ASKER.get() is None:
         return None
-    return await _standing(req, _filled(ctx), await _mode())
+    async with db_session.AsyncSessionLocal() as db:
+        decision, rule, grant = await _find_standing(db, req, _filled(ctx))
+    if decision is None:
+        return None
+    return Standing(decision, rule_id=rule.id if rule is not None else None,
+                    grant_id=grant.id if grant is not None else None)
+
+
+async def note_standing(req: Request, ctx: Context, found: Standing) -> None:
+    """The ledger row of a standing answer `standing` found, written when its step goes ahead. A
+    write that fails is logged; the step goes ahead (as `_note_standing_use`)."""
+    _check(req)
+    mode = await _mode()
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            rule = await db.get(PermissionRule, found.rule_id) if found.rule_id is not None else None
+            await _note_standing_use(db, req, _filled(ctx), mode, found.decision, rule=rule,
+                                     grant_id=found.grant_id)
+    except Exception:  # noqa: BLE001 — the row is a record of a yes already given, never the yes itself
+        logger.warning("approval ledger write failed", exc_info=True)
 
 
 #: Who may have decided a standing yes that `record_standing` writes, and the scope it records:
@@ -318,27 +350,31 @@ def _check(req: Request) -> None:
 # ── the ladder ────────────────────────────────────────────────────────────────
 
 async def _standing(req: Request, ctx: Context, mode: str) -> Decision | None:
-    if req.kind in _ONCE_ONLY or req.once_only:
-        return None
     async with db_session.AsyncSessionLocal() as db:
-        # Only a kind whose card offers "Always" has rules: a stray row for any other is not one.
-        rule = (await permission_store.find_rule(db, req.kind, req.target)
-                if req.kind not in _NEVER_ALWAYS else None)
-        if rule is not None:
-            decision = Decision(True, "rule", "always")
-            await _note_standing_use(db, req, ctx, mode, decision, rule=rule)
-            return decision
-        grant = await permission_store.find_grant(db, ctx.conversation_id, ctx.task_id,
-                                                  req.kind, req.target)
-        if grant is not None:
-            decision = Decision(True, "grant", "task" if grant.task_id else "conversation")
-            await _note_standing_use(db, req, ctx, mode, decision, grant=grant)
-            return decision
-    return None
+        decision, rule, grant = await _find_standing(db, req, ctx)
+        if decision is not None:
+            await _note_standing_use(db, req, ctx, mode, decision, rule=rule,
+                                     grant_id=grant.id if grant is not None else None)
+    return decision
+
+
+async def _find_standing(db, req: Request, ctx: Context):
+    """(decision, rule, grant) of the rule or grant that answers `req`, or (None, None, None)."""
+    if req.kind in _ONCE_ONLY or req.once_only:
+        return None, None, None
+    # Only a kind whose card offers "Always" has rules: a stray row for any other is not one.
+    rule = (await permission_store.find_rule(db, req.kind, req.target)
+            if req.kind not in _NEVER_ALWAYS else None)
+    if rule is not None:
+        return Decision(True, "rule", "always"), rule, None
+    grant = await permission_store.find_grant(db, ctx.conversation_id, ctx.task_id, req.kind, req.target)
+    if grant is not None:
+        return Decision(True, "grant", "task" if grant.task_id else "conversation"), None, grant
+    return None, None, None
 
 
 async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision: Decision, *,
-                             rule=None, grant=None) -> None:
+                             rule=None, grant_id: int | None = None) -> None:
     """The rule or grant has decided. Counting its use and writing the ledger row come after, and
     a failure there (a locked database, a full disk) must not turn a standing yes into an
     exception: the write is rolled back, logged, and the yes stands. (The lookup above is not
@@ -347,8 +383,7 @@ async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision
         if rule is not None:
             await permission_store.touch_rule(db, rule)
         await _record_in(db, req, ctx, mode, decision,
-                         rule_id=rule.id if rule is not None else None,
-                         grant_id=grant.id if grant is not None else None)
+                         rule_id=rule.id if rule is not None else None, grant_id=grant_id)
         await db.commit()
     except Exception:  # noqa: BLE001 — see above
         logger.warning("approval ledger write failed", exc_info=True)

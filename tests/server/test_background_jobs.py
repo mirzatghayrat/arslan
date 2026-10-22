@@ -274,7 +274,7 @@ def _declining(asked: list, field: str):
     return window
 
 
-async def test_a_remote_job_command_always_asks(monkeypatch):
+async def test_a_remote_job_command_always_asks(execution_db, monkeypatch):
     # S2a-2: whether a local command needs a card is decided once, in the tool loop; the job's ladder
     # shows one whenever it is called. A remote command is never skipped, even a read-only one.
     from server.services import settings_service

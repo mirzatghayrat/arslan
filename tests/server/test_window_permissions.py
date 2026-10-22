@@ -546,6 +546,9 @@ def test_a_remote_card_answered_with_remember_still_asks_next_time(app_client, m
         ws.send_json({"type": "cancel_run_command", "call_id": frames[-1]["call_id"]})
         _collect_until(ws, "stream_end")
     assert len(fake.calls) == 1
+    # S4a: each card is one ledger row, under the machine's address (⓪Plan Q7), this time only.
+    assert [(e.kind, e.target, e.decision, e.scope) for e in _ledger(app_client, "conv-r")] == [
+        ("remote", "remote:192.168.1.8", "allow", "once"), ("remote", "remote:192.168.1.8", "deny", None)]
 
 
 class _AsksForApps:

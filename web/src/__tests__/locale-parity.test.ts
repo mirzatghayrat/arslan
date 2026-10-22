@@ -62,14 +62,6 @@ describe("locale parity", () => {
         });
       }
 
-      it(`${lang}: runcmd.remember points, with a ›, to the Settings section that holds the rules (settings.navAbilities)`, () => {
-        expect(d.runcmd.remember).toContain(`› ${d.settings.navAbilities}`);
-      });
-
-      it(`${lang}: runcmd.remember no longer sends the person to the old Advanced page`, () => {
-        expect(d.runcmd.remember).not.toMatch(/Advanced|高级|詳細|Avanzado|Erweitert|Avancé/);
-      });
-
       it(`${lang}: terminalRulesEmpty names the card's own "Always" word (kit.scope.always)`, () => {
         const word = d.kit.scope.always.split(/[:：]/)[0].trim();
         expect(d.settings.terminalRulesEmpty).toContain(word);

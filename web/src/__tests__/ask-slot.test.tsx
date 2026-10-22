@@ -31,7 +31,7 @@ describe("the ask slot", () => {
     expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^(30:00|29:\d\d)$/);
     act(() => { vi.advanceTimersByTime(500); });                         // c1 came up where none was: it answers once the guard has run out
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
-    expect(send).toHaveBeenCalledWith({ type: "confirm_run_command", call_id: "c1", remember: false });
+    expect(send).toHaveBeenCalledWith({ type: "confirm_run_command", call_id: "c1" });
     // the next one moves up; its risk line is read from the script
     expect(screen.getByTestId("action-card")).toBeInTheDocument();
     expect(screen.getByTestId("ask-risk")).toHaveTextContent("kit.riskLine");

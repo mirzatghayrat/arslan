@@ -1140,16 +1140,20 @@ async def _unattended(error: str, req, conversation_id: str | None) -> str:
         req, permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
 
 
-async def _outside_granted(conversation_id: str | None, command: str) -> bool:
-    """S4a: whether this conversation's commands may run outside the sandbox without a card — its stored
-    `outside` grant, read by `permissions.standing` (which writes the `grant` ledger row, and finds nothing
-    where nobody can be asked)."""
+def _outside_request(command: str):
+    """S4a: what running `command` outside the sandbox asks: every command of the conversation may (`outside`
+    / `*`), the card's "In this conversation" (command_confirm)."""
+    from server.services import permissions
+    return permissions.Request(kind="outside", target="*", detail=command,
+                               title=f"Run `{command[:80]}` outside the sandbox?")
+
+
+async def _outside_grant(conversation_id: str | None, command: str):
+    """S4a: this conversation's stored grant to run its commands outside the sandbox (`permissions.standing`,
+    which finds nothing where nobody can be asked), or None. No ledger row yet: `note_standing` writes it."""
     from server.services import background_jobs, permissions
-    decision = await permissions.standing(
-        permissions.Request(kind="outside", target="*", detail=command,
-                            title=f"Run `{command[:80]}` outside the sandbox?"),
-        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
-    return decision is not None and decision.allowed
+    return await permissions.standing(_outside_request(command), permissions.Context(
+        conversation_id, job_id=background_jobs._inside_job.get()))
 
 
 async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
@@ -1434,10 +1438,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         wants_out = (sandbox_on and args.get("outside_sandbox") is True
                      and not _task_service.unwrapped_once(command))
         # S4a: this conversation's stored grant to run its commands outside the sandbox (the outside card
-        # answered "In this conversation"), read through decide's rule and grant lookup with its ledger row:
-        # in a chat turn and a background job alike. With nobody to ask (a scheduled run) nothing stands,
-        # and the command starts inside the sandbox.
-        run_outside = sandbox_on and await _outside_granted(conversation_id, command)
+        # answered "In this conversation"), found as decide finds one: in a chat turn and a background job
+        # alike. With nobody to ask (a scheduled run) nothing stands, and the command starts inside the
+        # sandbox. Its ledger row is written below, once the command is cleared to run.
+        outside_grant = await _outside_grant(conversation_id, command)
+        run_outside = sandbox_on and outside_grant is not None
+        by_grant = run_outside            # the grant is what lets this command run outside the sandbox
         net_due = _network_card_due(command, args)
         net_kw = {"network": True} if net_due else {}
         net_clicked = False                # the command's own card, clicked, asked for the network too
@@ -1449,8 +1455,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 result = {"ok": False, "error": await _unattended(
                               "running a command outside the sandbox needs the user's click, which is not "
                               "available here",
-                              permissions.Request(kind="outside", target="*", detail=command,
-                                                  title=f"Run `{command[:80]}` outside the sandbox?"),
+                              _outside_request(command),
                               conversation_id),
                           "note": "Run it without outside_sandbox, or tell the user what you needed."}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1473,11 +1478,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
                 and _approvals.LAST_ANSWERED_BY.get() == "mac")
         elif (verdict.level == "run" and not await _asks_for_everything()
-              and (run_outside or (sandbox_on and command_sandbox.available()))):
+              and (outside_grant is not None or (sandbox_on and command_sandbox.available()))):
             # S2a-2 layer ③: no card, and decided here only. In the sandbox only when it can start (R4: with
             # seatbelt unavailable the command would run unwrapped). Outside it under this conversation's
-            # stored grant to leave the sandbox, which is the user's yes (S4a).
-            pass
+            # stored grant to leave the sandbox, which is the user's yes (S4a) — with the sandbox switched
+            # off or unable to start too: that card asks the same thing (⓪Plan, S4a Q3). A layer ② card and
+            # "ask for every command" still ask, whatever the grant.
+            by_grant = outside_grant is not None
         else:
             if confirm_command is None:
                 # Layer ②, `unreadable`, "ask for every command", or layer ③ with no sandbox to run it in.
@@ -1519,6 +1526,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
+        if by_grant:
+            # Cleared to run: now the grant's ledger row (never for a command a card or the network stopped).
+            from server.services import background_jobs, permissions
+            await permissions.note_standing(_outside_request(command), permissions.Context(
+                conversation_id, job_id=background_jobs._inside_job.get()), outside_grant)
 
     # Reaching another machine (P3b). Every call asks, with no session memory and
     # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
@@ -1530,13 +1542,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # cannot SSH" structural rather than a rule someone has to remember.
     if tool_key == "ssh_run":
         if confirm_command is None:
-            from server.services import permissions
+            from server.services import command_confirm, permissions
             host, remote = str(args.get("host") or "*")[:200], str(args.get("command") or "")
             result = {"ok": False, "error": await _unattended(
                 "running a command on another machine requires your confirmation, which is not available "
                 "in this context",
-                permissions.Request(kind="remote", target=host, title=f"Run `{remote[:80]}` on {host}?",
-                                    detail=remote), conversation_id)}
+                permissions.Request(kind="remote", target=command_confirm.remote_target(host),
+                                    title=f"Run `{remote[:80]}` on {host}?", detail=remote), conversation_id)}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1557,7 +1569,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         approved = await confirm_command(
             prep["command"], prep["argv"],
             remote_host=label,
-            fingerprints=prep["fingerprints"])
+            fingerprints=prep["fingerprints"], host=prep["host"])
         if not approved:
             # Un-stage: a declined command must not leave an approved host key
             # sitting where the next call would silently consume it.
@@ -1611,12 +1623,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     if tool_key == "enroll_node":
         if confirm_command is None:
-            from server.services import permissions
+            from server.services import command_confirm, permissions
             host = str(args.get("host") or "*")[:200]
             result = {"ok": False, "error": await _unattended(
                 "enrolling a machine has to be proposed to you directly, and there is nobody on this "
                 "channel to propose it to",
-                permissions.Request(kind="remote", target=host, title=f"Enrol {host}?"), conversation_id)}
+                permissions.Request(kind="remote", target=command_confirm.remote_target(host), title=f"Enrol {host}?"),
+                conversation_id)}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)

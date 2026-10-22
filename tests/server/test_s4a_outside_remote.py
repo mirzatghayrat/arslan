@@ -247,6 +247,93 @@ async def test_under_the_grant_the_network_card_is_this_time_only_and_a_network_
     assert ex.outside == [] and r["ok"] is False
     net = [f for f in asker.frames if f.get("perm_kind") == "network"]
     assert len(net) == 1 and net[0]["options"] == ["once"]
+    # The command did not run: the grant wrote no row for it (⓪Plan, S4a Q2).
+    assert [(x.kind, x.decided_by) for x in await _rows()] == [("network", "user")]
+
+
+# ── the grant's row is written only for a command that runs (⓪Plan, S4a Q2) ──
+
+class _Cards:
+    """The tool loop's confirm callback, played by the test: answers each command card with `yes`."""
+
+    def __init__(self, yes):
+        self.yes, self.calls = yes, []
+
+    async def __call__(self, command, argv, **kw):
+        self.calls.append(kw)
+        return self.yes
+
+
+@pytest.mark.parametrize("yes", [True, False])
+async def test_a_layer_two_card_still_asks_under_the_grant_and_a_no_writes_no_grant_row(
+        execution_db, monkeypatch, yes):
+    await _give_outside_grant("c1")
+    cards, ex = _Cards(yes), _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        await _dispatch(monkeypatch, {"command": "git push origin main"}, executor=ex, cards=cards, cid="c1")
+    assert [c.get("sandbox") for c in cards.calls] == [None]          # its own card, whatever the grant
+    assert ex.outside == ([True] if yes else [])
+    assert [(x.kind, x.decided_by) for x in await _rows()] == ([("outside", "grant")] if yes else [])
+
+
+async def test_nothing_stands_with_nobody_to_ask_whatever_is_stored(execution_db):
+    """The S1b invariant through the new door: a scheduled run reads no grant, however it asks."""
+    await _give_outside_grant("c1")
+    req = permissions.Request(kind="outside", target="*", title="t")
+    assert await permissions.standing(req, permissions.Context("c1")) is None
+    with permissions.asking_with(_Asker()):
+        found = await permissions.standing(req, permissions.Context("c1"))
+    assert found is not None and (found.decision.by, found.decision.scope) == ("grant", "conversation")
+    assert await _rows() == []                                         # a lookup writes nothing
+
+
+async def test_an_outside_rule_is_never_read(execution_db):
+    """No "Always" lets every command out for good: a stray `outside` rule row stands for nothing."""
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_rule(db, "outside", "*", label="every command")
+        await db.commit()
+    with permissions.asking_with(_Asker()):
+        assert await permissions.standing(permissions.Request(kind="outside", target="*", title="t"),
+                                          permissions.Context("c1")) is None
+    assert permissions.options_for(permissions.Request(kind="outside", target="*", title="t",
+                                                       always_label="every command")) == ["once", "conversation"]
+
+
+# ── with the sandbox switched off (⓪Plan, S4a Q3) ────────────────────────────
+
+async def _sandbox_off(monkeypatch):
+    async def off():
+        return False
+    monkeypatch.setattr(tool_loop, "_sandbox_enabled", off)
+
+
+async def test_with_the_sandbox_off_the_grant_answers_the_layer_three_card(execution_db, monkeypatch):
+    await _sandbox_off(monkeypatch)
+    await _give_outside_grant("c1")
+    cards, ex = _Cards(False), _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=cards, cid="c1")
+    assert cards.calls == [] and r["ok"] is True
+    assert [(x.kind, x.decided_by) for x in await _rows()] == [("outside", "grant")]
+    # Without the grant, the same command asks (layer ③ with no sandbox to run it in).
+    cards, ex = _Cards(False), _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=cards, cid="c2")
+    assert len(cards.calls) == 1 and ex.outside == []
+
+
+async def test_with_the_sandbox_off_ask_for_every_command_still_asks_under_the_grant(execution_db, monkeypatch):
+    await _sandbox_off(monkeypatch)
+
+    async def yes():
+        return True
+    monkeypatch.setattr(tool_loop, "_asks_for_everything", yes)
+    await _give_outside_grant("c1")
+    cards, ex = _Cards(False), _Exec(stop=False)
+    with permissions.asking_with(_Asker()):
+        await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=cards, cid="c1")
+    assert len(cards.calls) == 1 and ex.outside == []
+    assert await _rows() == []
 
 
 # ── another machine ──────────────────────────────────────────────────────────
@@ -257,16 +344,109 @@ async def test_the_remote_card_is_this_time_only_and_writes_a_row_each_time(exec
     with permissions.asking_with(asker):
         for _ in range(2):
             assert await ladder.command("uptime", [], remote_host="studio (me@10.0.0.2)",
-                                        fingerprints=["SHA256:x"]) is True
+                                        fingerprints=["SHA256:x"], host="10.0.0.2") is True
     assert [f["perm_kind"] for f in asker.frames] == ["remote", "remote"]
-    assert all(f["options"] == ["once"] and f["remote_host"] == "studio (me@10.0.0.2)" for f in asker.frames)
+    assert all(f["options"] == ["once"] and f["remote_host"] == "studio (me@10.0.0.2)"
+               and f["title"] == "Run `uptime` on studio (me@10.0.0.2)?" for f in asker.frames)
     assert await _grants() == []
+    # ⓪Plan Q7: one machine, one target — its address, whatever the card calls it.
     assert [(r.kind, r.target, r.decided_by, r.scope) for r in await _rows()] == [
-        ("remote", "studio (me@10.0.0.2)", "user", "once")] * 2
+        ("remote", "remote:10.0.0.2", "user", "once")] * 2
 
 
 async def test_a_declined_remote_card_is_a_deny_row(execution_db):
     with permissions.asking_with(_Asker(approved=False)):
         assert await command_confirm.Confirmations("c1").command(
-            "uptime", [], remote_host="me@10.0.0.2", fingerprints=[]) is False
-    assert [(r.kind, r.decided_by, r.decision) for r in await _rows()] == [("remote", "user", "deny")]
+            "uptime", [], remote_host="me@10.0.0.2", fingerprints=[], host="10.0.0.2") is False
+    assert [(r.kind, r.target, r.decided_by, r.decision) for r in await _rows()] == [
+        ("remote", "remote:10.0.0.2", "user", "deny")]
+
+
+async def test_a_scheduled_runs_remote_refusal_has_the_same_target(execution_db, monkeypatch):
+    async def tools():
+        return [{"key": "ssh_run", "description": "ssh"}]
+    r = await tool_loop._dispatch_tool(
+        "ssh_run", {"host": "10.0.0.2", "command": "uptime"}, "{}", resolve_tools=tools, emit=lambda e: None,
+        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=None, conversation_id="c1")
+    assert r["ok"] is False
+    assert [(x.kind, x.target, x.decided_by) for x in await _rows()] == [("remote", "remote:10.0.0.2", "policy")]
+
+
+# ── taking the grant back (⓪Plan, S4a Q5) ────────────────────────────────────
+
+@pytest.fixture
+async def api(execution_db, monkeypatch):
+    import httpx
+    from fastapi import FastAPI
+
+    from server import auth
+    from server.api.permissions import router
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-grants-token")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                headers={"Authorization": "Bearer synthetic-grants-token"}) as client:
+        yield client
+
+
+async def test_the_outside_grants_are_listed_by_conversation_and_can_be_taken_back(api, execution_db, monkeypatch):
+    from server.db.models import ArslanMessage
+    async with db_session.AsyncSessionLocal() as db:
+        db.add_all([ArslanMessage(conversation_id="c1", role="assistant", content="Hello"),
+                    ArslanMessage(conversation_id="c1", role="user", content="tidy   my\nDownloads"),
+                    ArslanMessage(conversation_id="c1", role="user", content="and the Desktop")])
+        await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="card-1")
+        await permission_store.add_grant(db, "c1", "", "network", "network:*", call_id="card-2")
+        await permission_store.add_grant(db, "c1", "turn-1", "outside", "*", call_id="card-3")  # a task's
+        await db.commit()
+    listed = (await api.get("/api/v1/permissions/grants", params={"kind": "outside"})).json()
+    assert [(g["conversation_id"], g["title"], g["kind"], g["target"]) for g in listed] == [
+        ("c1", "tidy my Downloads", "outside", "*")]
+    assert {g["kind"] for g in (await api.get("/api/v1/permissions/grants")).json()} == {"outside", "network"}
+    # Taken back: the next command of that conversation starts in the sandbox again.
+    assert (await api.delete(f"/api/v1/permissions/grants/{listed[0]['id']}")).json() == {"ok": True}
+    ex, asker = _Exec(), _Asker(approved=False)
+    with permissions.asking_with(asker):
+        await _dispatch(monkeypatch, {"command": "ls"}, executor=ex,
+                        cards=command_confirm.Confirmations("c1").command, cid="c1")
+    assert ex.outside == [False] and [f["sandbox"] for f in asker.frames] == ["retry"]
+    assert (await api.get("/api/v1/permissions/grants", params={"kind": "outside"})).json() == []
+    assert (await api.delete(f"/api/v1/permissions/grants/{listed[0]['id']}")).status_code == 404
+
+
+async def test_a_tasks_grant_is_not_taken_back_here(api, execution_db):
+    async with db_session.AsyncSessionLocal() as db:
+        task = await permission_store.add_grant(db, "c1", "turn-1", "outside", "*", call_id="card-3")
+        await db.commit()
+    assert (await api.delete(f"/api/v1/permissions/grants/{task.id}")).status_code == 404
+    assert await _grants() == [("c1", "turn-1", "outside", "*")]
+
+
+async def test_the_grants_need_the_token(api):
+    for call in (api.get("/api/v1/permissions/grants", headers={"Authorization": "Bearer wrong"}),
+                 api.delete("/api/v1/permissions/grants/1", headers={"Authorization": "Bearer wrong"})):
+        assert (await call).status_code == 401
+
+
+# ── the old "remember" tick is unreachable (⓪Plan, S4a Q6) ───────────────────
+
+@pytest.mark.parametrize("ask_all", [False, True])
+async def test_every_command_card_carries_its_choices(execution_db, monkeypatch, ask_all):
+    """Every `propose_run_command` frame is built by the one ladder and shown through decide, which stamps
+    the choices: the web's old tick (shown for a frame without `options`) has nothing left to show on."""
+    from unittest.mock import AsyncMock
+
+    from server.services import settings_service
+    monkeypatch.setattr(settings_service, "shell_confirm_policy",
+                        AsyncMock(return_value="ask_all" if ask_all else "ask_risky"))
+    asker = _Asker(approved=False)
+    ladder = command_confirm.Confirmations("c1")
+    with permissions.asking_with(asker):
+        await ladder.command("git push origin main", [])                       # layer ②
+        await ladder.command("ls", [])                                         # layer ③ / ask for everything
+        await ladder.command("curl https://example.com", [], network=True)     # with the network
+        await ladder.command("mv a ~/b", [], sandbox="outside", why="w")       # leave the sandbox
+        await ladder.command("mv a ~/b", [], sandbox="retry")                  # stopped by it
+        await ladder.command("uptime", [], remote_host="me@10.0.0.2", host="10.0.0.2", fingerprints=[])
+    assert [f["type"] for f in asker.frames] == ["propose_run_command"] * 6
+    assert all(f.get("options") for f in asker.frames)

@@ -17,6 +17,11 @@ import uuid
 from server.ws import protocol
 
 
+def remote_target(host: str) -> str:
+    """S4a (⓪Plan Q7): one machine's ledger rows share one target, whichever path wrote them."""
+    return f"remote:{host}"
+
+
 class Confirmations:
     def __init__(self, conversation_id: str | None, *, job_id: str | None = None, surface: str = "chat",
                  asker=None):
@@ -63,11 +68,12 @@ class Confirmations:
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False) -> bool:
+                      network: bool = False, host: str | None = None) -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
         outside the sandbox; "retry" — the sandbox stopped it and it would run again outside, from the
-        start. `network` (S2a-2): the card also asks for the network, this time."""
+        start. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
+        machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`)."""
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
@@ -89,7 +95,8 @@ class Confirmations:
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
             # time only (`permissions._ONCE_ONLY`): nothing is remembered.
             request = permissions.Request(
-                kind="remote", target=remote_host, title=f"Run `{shell[:80]}` on {remote_host}?", detail=shell,
+                kind="remote", target=remote_target(host or remote_host), title=f"Run `{shell[:80]}` on {remote_host}?",
+                detail=shell,
                 frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
                     remote_host=remote_host, fingerprints=list(fingerprints or [])))

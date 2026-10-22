@@ -55,8 +55,8 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
       return <RunCommandCard callId={ask.call_id} pretty={str("pretty")} reason={str("reason")}
         remoteHost={str("remote_host")} fingerprints={(f.fingerprints as string[]) ?? []}
         background={f.background === true} why={str("why")} permKind={str("perm_kind") || undefined}
-        sandbox={f.sandbox === "outside" || f.sandbox === "retry" ? f.sandbox : undefined} noRemember {...v2}
-        {...common} onConfirm={(_id, _remember, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
+        sandbox={f.sandbox === "outside" || f.sandbox === "retry" ? f.sandbox : undefined} {...v2}
+        {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     case "propose_action":
       return <ActionApprovalCard kind={str("kind")} target={str("target")} detail={str("detail")} {...v2}
         title={str("title") || undefined} why={str("why") || undefined} permKind={str("perm_kind") || undefined}

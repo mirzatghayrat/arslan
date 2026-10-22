@@ -54,7 +54,7 @@ async def test_a_command_that_needs_a_card_is_listed(tmp_path):
 async def test_a_command_asked_to_run_outside_the_sandbox_is_listed():
     out = await _dispatch("run_command", {"command": "ls", "outside_sandbox": True})
     [row] = await _rows()
-    assert out["ok"] is False and _policy(row, "command") and row.target == "unsandboxed:*"
+    assert out["ok"] is False and _policy(row, "outside") and row.target == "*"      # S4a: its own kind
 
 
 @pytest.mark.parametrize("key,args", [("write_file", {"path": "a.md", "content": "x"}),
@@ -77,7 +77,7 @@ async def test_a_schedule_and_another_machine_are_listed():
     await _dispatch("schedule_task", {"name": "digest", "when": "daily 08:00", "prompt": "x"})
     await _dispatch("ssh_run", {"host": "studio.local", "command": "ls"})
     first, second = await _rows()
-    assert _policy(first, "schedule") and _policy(second, "remote") and second.target == "studio.local"
+    assert _policy(first, "schedule") and _policy(second, "remote") and second.target == "remote:studio.local"
 
 
 async def test_the_network_after_outside_content_is_listed(monkeypatch):
@@ -102,7 +102,7 @@ async def test_a_connector_and_a_machine_offered_with_nobody_there_are_listed():
     await _dispatch("enroll_node", {"host": "studio.local", "user": "me"})
     first, second = await _rows()
     assert _policy(first, "capability") and first.target == "connector:GitHub"
-    assert _policy(second, "remote") and second.target == "studio.local"
+    assert _policy(second, "remote") and second.target == "remote:studio.local"
 
 
 async def test_a_capability_found_with_nobody_there_is_listed_too(monkeypatch):

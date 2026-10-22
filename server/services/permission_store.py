@@ -106,6 +106,22 @@ async def add_grant(db, conversation_id: str, task_id: str, kind: str, target: s
         PermissionGrant.kind == kind, PermissionGrant.target == target))).scalar_one()
 
 
+async def list_conversation_grants(db, kind: str | None = None) -> list[PermissionGrant]:
+    """Every "in this conversation" grant (task_id ""), newest first; of one kind when `kind` is given.
+    A task's grants end with it, so they are not listed."""
+    query = select(PermissionGrant).where(PermissionGrant.task_id == "")
+    if kind is not None:
+        query = query.where(PermissionGrant.kind == kind)
+    return list((await db.execute(query.order_by(PermissionGrant.id.desc()))).scalars().all())
+
+
+async def delete_conversation_grant(db, grant_id: int) -> bool:
+    """Take back one "in this conversation" grant. A task's grant is not one: it ends with its task."""
+    result = await db.execute(delete(PermissionGrant).where(
+        PermissionGrant.id == grant_id, PermissionGrant.task_id == ""))
+    return bool(result.rowcount)
+
+
 async def delete_task_grants(db, task_id: str) -> int:
     """Every grant for this one task (a turn or a job). A conversation grant (task_id "") is never
     one of them, so an empty id deletes nothing."""
