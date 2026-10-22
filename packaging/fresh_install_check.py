@@ -464,6 +464,57 @@ def _check_crypto_salt_location(conn, appsup: pathlib.Path, c: Checks) -> None:
          f"crypto_salt_lost_at_boot = {marker[0] if marker else ''}")
 
 
+def check_websocket(port: int, token: str, c: Checks) -> None:
+    """The chat transport really holds a WebSocket, and only the desktop window's own page gets one.
+
+    THE BUG THIS CATCHES (0.1.0-0.1.6, found 2026-07-27): `websockets` sat in the `dev` extra, so no
+    release build installed it, and PyInstaller could not see it either because uvicorn imports it lazily
+    by name. uvicorn then logs "No supported WebSocket library detected" and serves every /ws/ upgrade as
+    a plain HTTP request, which the SPA catch-all answers 200. The server passed /health, passed auth,
+    passed every check in this file, and chat had never worked in any packaged build. Only a real
+    handshake against the real bundle can tell the difference, so do that.
+
+    Since #338 the desktop app's server refuses a WebSocket with no Origin, so every handshake here sends
+    the same-origin one the window and the Bridge send (http://127.0.0.1:<port>). Three handshakes, each
+    proving one guard: with the token (upgraded: the library is there), without it (refused: auth, not a
+    missing Origin), and with the token but no Origin (refused: the Origin rule)."""
+    origin = f"http://127.0.0.1:{port}"
+
+    def _ws_status(query: str, with_origin: bool) -> int:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        headers = {
+            "Connection": "Upgrade",
+            "Upgrade": "websocket",
+            "Sec-WebSocket-Version": "13",
+            "Sec-WebSocket-Key": base64.b64encode(b"0123456789abcdef").decode(),
+        }
+        if with_origin:
+            headers["Origin"] = origin
+        try:
+            conn.request("GET", f"/ws/arslan/acceptance-probe{query}", headers=headers)
+            return conn.getresponse().status
+        except Exception as exc:  # noqa: BLE001 — a failed probe is a failed check
+            print(f"    (websocket probe raised {type(exc).__name__}: {exc})")
+            return -1
+        finally:
+            conn.close()
+
+    upgraded = _ws_status(f"?token={token}", True)
+    # 101 = upgraded. 200 is the specific corpse of this bug: the SPA catch-all answering an upgrade
+    # the server could not perform.
+    c.ok(upgraded == 101, "the bundle can hold a WebSocket (chat transport)",
+         f"authenticated same-origin /ws/ upgrade returned {upgraded}"
+         + (" — this is the SPA catch-all: uvicorn has no WebSocket library" if upgraded == 200 else ""))
+    # Discrimination: a 101 that ignores auth would also pass the line above while meaning something much
+    # worse. Same-origin, so a refusal here is the token's, not the missing Origin's.
+    anon = _ws_status("", True)
+    c.ok(anon in (401, 403), "the WebSocket refuses an unauthenticated handshake",
+         f"anonymous same-origin /ws/ upgrade returned {anon}")
+    bare = _ws_status(f"?token={token}", False)
+    c.ok(bare == 403, "the WebSocket refuses a handshake with no Origin (#338)",
+         f"authenticated /ws/ upgrade with no Origin returned {bare}")
+
+
 def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, app: pathlib.Path | None = None) -> None:
     # ---- the UI is actually served ------------------------------------
     for path, label in (("/", "the UI is served at /"),
@@ -535,6 +586,7 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, a
     #   and accepts with it (the persisted token is the real credential —
     #   a gate that rejects everything would pass the middle check too).
     token_path = appsup / "api_token"
+    token = ""                       # no file: the WebSocket checks below cannot run, and the line above says why
     if c.ok(token_path.is_file(), "an api_token was minted on first run"):
         mode = token_path.stat().st_mode & 0o777
         c.ok(mode == 0o600, "api_token is owner-only", f"mode is {oct(mode)}")
@@ -560,44 +612,8 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, a
         if app is not None:
             check_version(app, port, token, c)
 
-    # ---- the chat transport actually holds a WebSocket ------------------
-    # THE BUG THIS CATCHES (0.1.0-0.1.6, found 2026-07-27): `websockets` sat in
-    # the `dev` extra, so no release build installed it, and PyInstaller could
-    # not see it either because uvicorn imports it lazily by name. uvicorn then
-    # logs "No supported WebSocket library detected" and serves every /ws/
-    # upgrade as a plain HTTP request, which the SPA catch-all answers 200. The
-    # server passed /health, passed auth, passed every check in this file — and
-    # chat had never worked in any packaged build. Only a real handshake against
-    # the real bundle can tell the difference, so do that.
-    def _ws_status(query: str) -> int:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        try:
-            conn.request("GET", f"/ws/arslan/acceptance-probe{query}", headers={
-                "Connection": "Upgrade",
-                "Upgrade": "websocket",
-                "Sec-WebSocket-Version": "13",
-                "Sec-WebSocket-Key": base64.b64encode(b"0123456789abcdef").decode(),
-            })
-            return conn.getresponse().status
-        except Exception as exc:  # noqa: BLE001 — a failed probe is a failed check
-            print(f"    (websocket probe raised {type(exc).__name__}: {exc})")
-            return -1
-        finally:
-            conn.close()
-
     if token:
-        upgraded = _ws_status(f"?token={token}")
-        # 101 = upgraded. 200 is the specific corpse of this bug: the SPA
-        # catch-all answering an upgrade the server could not perform.
-        c.ok(upgraded == 101, "the bundle can hold a WebSocket (chat transport)",
-             f"authenticated /ws/ upgrade returned {upgraded}"
-             + (" — this is the SPA catch-all: uvicorn has no WebSocket library"
-                if upgraded == 200 else ""))
-        # Discrimination: a 101 that ignores auth would also pass the line above
-        # while meaning something much worse.
-        anon_ws = _ws_status("")
-        c.ok(anon_ws in (401, 403), "the WebSocket refuses an unauthenticated handshake",
-             f"anonymous /ws/ upgrade returned {anon_ws}")
+        check_websocket(port, token, c)
 
     # ---- the SPA is really SERVED, not merely present on disk -----------
     # The existing bundle check asserts index.html and assets/ exist. A file
