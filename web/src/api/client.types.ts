@@ -721,20 +721,6 @@ export type ArslanServerMessage =
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
       detail: string; background?: boolean } & CardV2Fields)
-  // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
-  // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
-  // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
-  // local path the card must collect in a PLAIN TEXT field and append to argv itself.
-  | { type: "propose_connect_mcp"; call_id: string; key: string; label: string; transport: string;
-      label_key?: string;
-      command: string; argv: string[]; url: string | null; env_keys: McpConnectorEnvVar[];
-      prerequisites: string; requires_path: boolean; path_placeholder: string | null }
-  // Honest, tier-aware result after a connect card completed — counts are ALWAYS
-  // recomputed server-side from the DB, never trusted from the client's apply chain.
-  // `call_id` is the proposal's (the server echoes the confirm's): the card this answers, in every
-  // window on the conversation. An older server sends none, and the follow-up names only the server.
-  | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
-      restricted_count: number; assignable: boolean; call_id?: string }
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
@@ -1059,62 +1045,8 @@ export interface McpTool {
   host_enabled: boolean; // Arslan (host) may use this MCP tool
 }
 
-/** A required credential for a preset MCP connector (GET /mcp/catalog). */
-export interface McpConnectorEnvVar {
-  name: string;
-  description: string;
-  description_key?: string | null;
-  get_it_url: string;
-  paid: boolean;
-}
-
-/** How a connect card's apply chain ended (add -> connect -> expose -> wire). Kept in the store by call id while the card is paged away
- *  from, so the card that comes back knows whether it worked (see arslanStore `cardApply`). */
-export interface ApplyConnectMcpResult {
-  ok: boolean;
-  /** Present only on failure — the stage where the chain stopped. */
-  stage?: 'add' | 'connect' | 'expose' | 'wire';
-  serverId?: number;
-  /** Human-readable outcome: on failure, names the stopped state + where to fix it
-   *  (never a bare "failed"); on success, unset (the card renders its own copy from
-   *  the counts below). */
-  message?: string;
-  toolCount?: number;
-  safeCount?: number;
-  restrictedCount?: number;
-  /** False when NO tool was wired "safe" — connected but nothing is usable by a
-   *  spawn until a human reviews tiers in Connections & permissions. */
-  assignable?: boolean;
-}
-
-/** GET /mcp/catalog — the backend's single source of truth for preset MCP connectors
- * (feeds both the Settings recommended list and conversation-driven connect). Static,
- * versioned, reviewed data; `one_click` is true iff `env` is empty. `requires_path` is
- * orthogonal to `env`/`one_click` — Filesystem/Git need no credential but DO need a local
- * path (appended to `args` by the caller) before they can actually connect. */
-export interface McpConnector {
-  key: string;
-  /** Explicit auth category — replaces deriving it from `env`. "oauth" entries
-   *  render as an honest "not supported yet" card, never a Connect that can
-   *  only fail or a form collecting a key no service will issue. */
-  auth: 'none' | 'static_key' | 'oauth';
-  label: string;
-  label_key?: string | null;
-  description_key?: string | null;
-  transport: string;
-  command: string;
-  args: string[];
-  url: string | null;
-  runtime: string; // "node" | "python"
-  description: string;
-  one_click: boolean;
-  env: McpConnectorEnvVar[];
-  requires_path: boolean;
-  path_placeholder?: string | null;
-}
-
-/** Prefill payload for the MCP add-server form (built from a McpConnector or a saved
- * discovery candidate). `envKeys`, if present, seeds one env row per required credential —
+/** Prefill payload for the MCP add-server form (built from a saved discovery candidate
+ * or a dossier). `envKeys`, if present, seeds one env row per required credential —
  * it never auto-submits, the user reviews & supplies values before connecting. */
 export interface McpPrefill {
   label: string;

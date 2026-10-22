@@ -885,8 +885,6 @@
     },
     "chips": {
       "all": "全部",
-      "recommended": "推荐接入",
-      "registered": "已注册服务器",
       "usable": "可用",
       "unimplemented": "未实装",
       "arslan_only": "仅 Arslan"
@@ -919,7 +917,6 @@
       }
     },
     "sections": {
-      "recommended_mcp": "推荐 · 一键接入",
       "import_skills": "从仓库导入技能"
     },
     "dossier": {
@@ -1470,11 +1467,8 @@
     "expiredTitle": "在等你",
     "expiredBody": "30 分钟内没人回应，所以这一步没有做。这不算拒绝：Arslan 会告诉你还有什么在等你。",
     "expiredEnrollBody": "30 分钟内没人回应，所以没有记住这台机器。这不算拒绝：想用时再让 Arslan 提一次就行。",
-    "expiredConnectBody": "30 分钟内没人回应，所以没有连接这个服务器。这不算拒绝：想用时再让 Arslan 提一次就行。",
     "hide": "隐藏",
     "hideHint": "它会继续进行，结束后会在对话里告诉你结果。",
-    "hiddenConnected": "已连接 {{name}}。",
-    "hiddenConnectFailed": "未能连接 {{name}}。{{why}}",
     "hiddenEnrolled": "已记住 {{name}}。",
     "hiddenEnrollFailed": "未能记住 {{name}}。{{why}}"
   },

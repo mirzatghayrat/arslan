@@ -182,7 +182,7 @@ class TurnTracker:
                 return {"type": "confirm_action", "call_id": frame["call_id"]}
             self.actions_declined += 1
             return {"type": "cancel_action", "call_id": frame["call_id"]}
-        elif t in ("propose_schedule", "propose_connect_mcp", "propose_enroll_node"):
+        elif t in ("propose_schedule", "propose_enroll_node"):
             self.approvals += 1
             return {"type": "cancel_schedule" if t == "propose_schedule" else "cancel_action", "call_id": frame["call_id"]}
         return None

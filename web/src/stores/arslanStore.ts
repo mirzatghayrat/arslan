@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { request } from "../api/client";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ApplyConnectMcpResult, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 let _cardSeq = 0;
@@ -20,29 +20,11 @@ export type PendingSchedule = { callId: string; name: string; when: string; prom
 export type PendingCapability = { callId: string; receivedAt?: number; seq?: number } & import("../api/client.types").CapabilityCard;
 export type PendingAction = { callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean;
   receivedAt?: number; seq?: number } & CardV2;
-export type PendingConnectMcp = {
-  callId: string;
-  key: string;
-  label: string;
-  labelKey?: string;
-  transport: string;
-  command: string;
-  argv: string[];
-  url: string | null;
-  envKeys: { name: string; description: string; get_it_url: string; paid: boolean }[];
-  prerequisites: string;
-  requiresPath: boolean;
-  pathPlaceholder: string | null;
-  receivedAt?: number; seq?: number;
-  /** The server this card connected (set when its apply succeeded): the follow-up frame names the server, not the card. */
-  appliedServerId?: number;
-};
-
-/** How a card's own apply stands in this window (0.1.61 §A4, fix round 3): a connect and an enrolment call the REST API from the card and
- *  take a while. It is kept here by call id, not in the card, because the card is remounted when the person pages away and back: while
+/** How a card's own apply stands in this window (0.1.61 §A4, fix round 3): an enrolment calls the REST API from the card and
+ *  takes a while. It is kept here by call id, not in the card, because the card is remounted when the person pages away and back: while
  *  the apply is in flight that card's buttons stay off (never a second apply) though paging and the other cards stay available, and a
- *  card that comes back knows how the apply ended (a connect's result, an enrolment's error). */
-export type CardApply = { busy: boolean; result?: ApplyConnectMcpResult; error?: string;
+ *  card that comes back knows how the apply ended (an enrolment's error). */
+export type CardApply = { busy: boolean; error?: string;
   /** The person hid the card while the apply was in flight (`hideCard`): it goes on with no card, and the chat says how it ended. */
   hidden?: boolean };
 
@@ -82,15 +64,10 @@ interface ArslanState {
   pendingActions: PendingAction[];
   // 0.1.61 §A4: a card here ran out with nobody answering — "waiting for you", never "declined".
   cardExpired: boolean;
-  // Which sort of card ran out, so the notice can say what is true of it: a proposal to enrol a machine or to connect a server
-  // never waits on the server (nothing is held for it), every other card does. "ask" wins over a proposal that ran out beside it.
-  cardExpiredKind: "ask" | "enroll" | "connect" | null;
-  // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
-  // frame arrives. env_keys carries credential NAMES + metadata only — the card
-  // collects VALUES locally and sends them only over REST (addMcpServer). A card is cleared
-  // once its connect's follow-up (`mcp_connect_followup`, which names the server) lands, or on cancel.
-  pendingConnectMcps: PendingConnectMcp[];
-  /** The connect / enrol cards' applies, by call id (see CardApply). */
+  // Which sort of card ran out, so the notice can say what is true of it: a proposal to enrol a machine never waits on the
+  // server (nothing is held for it), every other card does. "ask" wins over a proposal that ran out beside it.
+  cardExpiredKind: "ask" | "enroll" | null;
+  /** The enrol cards' applies, by call id (see CardApply). */
   cardApply: Record<string, CardApply>;
   /** Which conversation this is: it goes up with every `resetForNewConversation`. An apply that settles after it has changed belongs to a
    *  conversation the person has left, and tells nobody in this one. */
@@ -137,15 +114,12 @@ interface ArslanState {
   clearPendingWorkspaceWrite: (callId: string) => void;
   clearPendingSchedule: (callId: string) => void;
   clearPendingAction: (callId: string) => void;
-  clearPendingConnectMcp: (callId: string) => void;
-  /** The connect card `callId` connected the server `serverId`: the follow-up that names that server closes it. */
-  markConnectApplied: (callId: string, serverId: number) => void;
   /** The card `callId` has started its apply (and forgets how the last one ended). */
   beginCardApply: (callId: string) => void;
-  /** Its apply ended, with how: nothing, a connect's result or an enrolment's error. A card that is gone keeps nothing. Returns whether the card had
+  /** Its apply ended, with how: nothing or an enrolment's error. A card that is gone keeps nothing. Returns whether the card had
    *  been hidden (`hideCard`): then there is no card to show how it ended, and whoever ended it says so in the chat (`addCardNote`). */
-  endCardApply: (callId: string, outcome?: { result?: ApplyConnectMcpResult; error?: string }) => boolean;
-  /** The card `callId`, a connect or an enrolment whose apply is in flight, leaves the slot; the apply goes on. Nothing else can be hidden: a card
+  endCardApply: (callId: string, outcome?: { error?: string }) => boolean;
+  /** The card `callId`, an enrolment whose apply is in flight, leaves the slot; the apply goes on. Nothing else can be hidden: a card
    *  that is not busy is answered. */
   hideCard: (callId: string) => void;
   /** A plain note in the chat (the way a hidden apply ends). */
@@ -175,25 +149,6 @@ function runningSince(s: { streaming: boolean; workStartedAt: number | null }): 
 // so they never collide with server message ids.
 let clientSeq = -1;
 const nextClientId = () => clientSeq--;
-
-// Honest, tier-aware copy for the `mcp_connect_followup` chat note. Counts are the
-// server's recomputed-from-DB truth (Task 3) — never the client's own tally.
-// assignable=false (no tool wired "safe") gets a needs-review note pointed at
-// Settings, never phrasing that implies the connector is ready to equip.
-function _mcpConnectFollowupText(frame: {
-  tool_count: number;
-  safe_count: number;
-  restricted_count: number;
-  assignable: boolean;
-}): string {
-  if (!frame.assignable) {
-    const n = frame.tool_count;
-    return `Connected — all ${n} tool${n === 1 ? "" : "s"} need review in Settings → MCP before any spawn can use ${n === 1 ? "it" : "them"}.`;
-  }
-  return frame.restricted_count > 0
-    ? `Connected — ${frame.safe_count} ready, ${frame.restricted_count} restricted; equip which spawn?`
-    : `Connected — ${frame.safe_count} ready; equip which spawn?`;
-}
 
 // Data-only initial state. Actions are attached separately and merged in so a
 // `setState(initialArslanState(), true)` full-replace (used by tests) keeps the
@@ -238,7 +193,7 @@ function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unk
 
 /** Every list of cards waiting on the user in this window: a card of any of them runs out, or is resolved elsewhere, by its id. */
 const CARD_LISTS = ["pendingCommands", "pendingEnrollNodes", "pendingWorkspaceWrites", "pendingSchedules", "pendingActions",
-                    "pendingCapabilities", "pendingConnectMcps"] as const;
+                    "pendingCapabilities"] as const;
 type CardLists = Pick<ArslanState, typeof CARD_LISTS[number]>;
 
 /** The list with `card` added at the end — the newest — replacing the card of the same call id if it is sent again. */
@@ -252,12 +207,11 @@ function _shows(state: CardLists, id: string): boolean {
 }
 
 /** The change that says the card `id` ran out (it is one of the pending ones): "waiting for you", and which sort of card it was. A proposal to
- *  enrol a machine or to connect a server has a line of its own; any other card says the usual one, and keeps it when a proposal runs out
+ *  enrol a machine has a line of its own; any other card says the usual one, and keeps it when a proposal runs out
  *  after it (the card the server waited on is the one to tell about). */
-function _ranOut(state: CardLists & { cardExpired: boolean; cardExpiredKind: "ask" | "enroll" | "connect" | null }, id: string):
-    { cardExpired: true; cardExpiredKind: "ask" | "enroll" | "connect" } {
-  const kind = state.pendingEnrollNodes.some((c) => c.callId === id) ? "enroll"
-    : state.pendingConnectMcps.some((c) => c.callId === id) ? "connect" : "ask";
+function _ranOut(state: CardLists & { cardExpired: boolean; cardExpiredKind: "ask" | "enroll" | null }, id: string):
+    { cardExpired: true; cardExpiredKind: "ask" | "enroll" } {
+  const kind = state.pendingEnrollNodes.some((c) => c.callId === id) ? "enroll" : "ask";
   return { cardExpired: true, cardExpiredKind: state.cardExpired && state.cardExpiredKind === "ask" ? "ask" : kind };
 }
 
@@ -282,8 +236,8 @@ export const REPLAY_SETTLE_MS = 3_000;
 /** How long the request that asks the server which cards wait is given. `request` has no timeout of its own, and one that never answered would leave
  *  a dead card on screen until its own expiry: past this it counts as a failure, and the fallback applies. */
 export const REPLAY_ASK_TIMEOUT_MS = 10_000;
-/** The cards that are replayed to a socket that connects: the shared ones, which `approvals.pending_cards` lists. A proposal to enrol a machine or to
- *  connect a server is never registered there, and a capability card is the asking window's own. */
+/** The cards that are replayed to a socket that connects: the shared ones, which `approvals.pending_cards` lists. A proposal to enrol a machine is never
+ *  registered there, and a capability card is the asking window's own. */
 const REPLAYED = new Set(["propose_run_command", "propose_workspace_write", "propose_schedule", "propose_action"]);
 /** After a `history` frame: the shared cards that were on screen, which the replay has not listed (yet). Nothing is waiting when there were none. */
 let _replay: { stale: Set<string>; timer: ReturnType<typeof setTimeout>; giveUp: ReturnType<typeof setTimeout>; due: boolean; failed: boolean } | null = null;
@@ -367,7 +321,6 @@ function initialData() {
     pendingCapabilities: [] as PendingCapability[],
     pendingSchedules: [] as PendingSchedule[],
     pendingActions: [] as PendingAction[],
-    pendingConnectMcps: [] as PendingConnectMcp[],
     cardApply: {} as Record<string, CardApply>,
     epoch: 0,
     thinking: false,
@@ -377,7 +330,7 @@ function initialData() {
     lastStepAt: null as number | null,
     queued: false,
     cardExpired: false,
-    cardExpiredKind: null as "ask" | "enroll" | "connect" | null,
+    cardExpiredKind: null as "ask" | "enroll" | null,
     activeRunId: null as number | null,
     taskState: null as import("../api/tasks").TaskFrame | null,
     taskSequences: {} as Record<string, number>,
@@ -434,10 +387,6 @@ function makeActions(set: SetState, get: GetState) {
     clearPendingSchedule: (callId: string) => set({ pendingSchedules: get().pendingSchedules.filter((c) => c.callId !== callId) }),
     clearPendingCapability: (callId: string) => set({ pendingCapabilities: get().pendingCapabilities.filter((c) => c.callId !== callId) }),
     clearPendingAction: (callId: string) => set({ pendingActions: get().pendingActions.filter((c) => c.callId !== callId) }),
-    clearPendingConnectMcp: (callId: string) => set({ pendingConnectMcps: get().pendingConnectMcps.filter((c) => c.callId !== callId), ..._dropApply(get(), [callId]) }),
-    markConnectApplied: (callId: string, serverId: number) => set({
-      pendingConnectMcps: get().pendingConnectMcps.map((c) => (c.callId === callId ? { ...c, appliedServerId: serverId } : c)),
-    }),
     beginCardApply: (callId: string) => set({ cardApply: { ...get().cardApply, [callId]: { busy: true } } }),
     endCardApply: (callId: string, outcome = {}) => {
       const entry = get().cardApply[callId];
@@ -454,7 +403,6 @@ function makeActions(set: SetState, get: GetState) {
       const entry = s.cardApply[callId];
       if (!entry?.busy || entry.hidden) return;                                        // only an apply in flight can be hidden
       set({
-        pendingConnectMcps: s.pendingConnectMcps.filter((c) => c.callId !== callId),
         pendingEnrollNodes: s.pendingEnrollNodes.filter((c) => c.callId !== callId),
         cardApply: { ...s.cardApply, [callId]: { ...entry, hidden: true } },
       });
@@ -507,7 +455,7 @@ function makeActions(set: SetState, get: GetState) {
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
       // K2b: fact_saved is not here: facts are looked for after the turn and may arrive during the next one.
-      const RESPONDING_TYPES = new Set(["message", "error", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["message", "error", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -915,58 +863,6 @@ function makeActions(set: SetState, get: GetState) {
             ..._arrived() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
-        case "propose_connect_mcp":
-          if (state.cardApply[frame.call_id]?.hidden) break;              // as above: a hidden apply's card does not come back
-          // NEXT BUILD (conversation-driven MCP, Task 5): env_keys carries credential
-          // NAMES + metadata only (never a value) — the ConnectMcpCard collects values
-          // locally and sends them ONLY over REST (addMcpServer's body).
-          set({
-            pendingConnectMcps: _added(state.pendingConnectMcps, {
-              callId: frame.call_id,
-              key: frame.key,
-              label: frame.label,
-              ...(frame.label_key ? { labelKey: frame.label_key } : {}),
-              transport: frame.transport,
-              command: frame.command,
-              argv: frame.argv,
-              url: frame.url,
-              envKeys: frame.env_keys,
-              prerequisites: frame.prerequisites,
-              requiresPath: frame.requires_path,
-              pathPlaceholder: frame.path_placeholder,
-              ..._arrived(),
-            }),
-          });
-          break;
-        case "mcp_connect_followup": {
-          // Honest, tier-aware result recomputed server-side from the DB (Task 3) —
-          // appends a plain chat note.
-          // assignable=false means connected but nothing is safe+wired yet, so the note
-          // points at Settings instead of implying it's ready to equip.
-          //
-          // It also closes the card that was connected. The frame is fanned out to every window on the
-          // conversation and names the card (the proposal's call_id, echoed by the server), so each window
-          // closes its own copy — not only the one that connected it and so marked its card. A follow-up that
-          // names no card (an older server) names only the server: the card that recorded connecting it closes.
-          const named = typeof frame.call_id === "string" && frame.call_id !== "";
-          const closes = (c: PendingConnectMcp) => (named
-            ? c.callId === frame.call_id
-            : typeof frame.server_id === "number" && c.appliedServerId === frame.server_id);
-          set({
-            pendingConnectMcps: state.pendingConnectMcps.filter((c) => !closes(c)),
-            ..._dropApply(state, state.pendingConnectMcps.filter(closes).map((c) => c.callId)),
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "system",
-                role: "arslan",
-                content: _mcpConnectFollowupText(frame),
-              },
-            ],
-          });
-          break;
-        }
         case "error":
           set({
             error: frame.message,

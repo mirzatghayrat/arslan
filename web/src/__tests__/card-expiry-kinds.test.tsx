@@ -1,7 +1,7 @@
 /** 0.1.61 §A4 (review of PR 2b Task 3): a card of EVERY kind the chat slot holds runs out the same way — it leaves 2 s after its
  *  expiry and the slot says it is waiting for you; the server's `card_resolved: expired` says the same; a re-sent card's later
  *  expiry replaces the old one. card-v2.test.tsx pins this for the command and write cards only. Fix round 1 (R5): the
- *  enroll-node and connect-MCP cards are in the table too — they used to sit at 0:00 for good. */
+ *  enroll-node card is in the table too (and the connect-MCP card was, until 0.1.63 C9b) — it used to sit at 0:00 for good. */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, cleanup } from "@testing-library/react";
 
@@ -23,8 +23,6 @@ const CAPABILITY = { type: "propose_capability", call_id: "k1", kind: "mcp", nam
   pushed_days: 10, runtime: "uv", runtime_download: null, remote_host: null, network: false, folders: [], keys: [], why: "w", retry: "r" };
 
 const ENROLL = { type: "propose_enroll_node", call_id: "n1", name: "mini", host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"] };
-const CONNECT = { type: "propose_connect_mcp", call_id: "m1", key: "memory", label: "Memory", transport: "stdio", command: "npx", argv: [],
-  url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null };
 
 // [name, the card's frame (with an optional expiry), its test id]
 const KINDS: [string, (expires?: number) => Record<string, unknown>, string][] = [
@@ -34,10 +32,9 @@ const KINDS: [string, (expires?: number) => Record<string, unknown>, string][] =
   ["an action card", (e) => ({ type: "propose_action", call_id: "a1", kind: "app", target: "x", detail: "", title: "Use x?", options: ["task", "conversation"], ...(e ? { expires_at: e } : {}) }), "action-card"],
   ["a capability card", () => CAPABILITY, "capability-card"],
   ["an enroll-node card", () => ENROLL, "enroll-node-card"],
-  ["a connect-MCP card", () => CONNECT, "connect-mcp-card"],
 ];
 const IDS: Record<string, string> = { "runcmd-card": "c1", "wswrite-card": "w1", "schedule-card": "s1", "action-card": "a1", "capability-card": "k1",
-  "enroll-node-card": "n1", "connect-mcp-card": "m1" };
+  "enroll-node-card": "n1" };
 
 describe("a card of every kind runs out", () => {
   it.each(KINDS)("%s leaves 2 s after its expiry (30 minutes after it arrived, when the frame says no time) and the slot says it is waiting for you", (_n, make, id) => {

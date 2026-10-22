@@ -26,7 +26,7 @@ const CAPABILITY = { type: "propose_capability", kind: "mcp", name: "excel-mcp-s
 
 interface Kind {
   name: string;
-  list: "pendingCommands" | "pendingWorkspaceWrites" | "pendingSchedules" | "pendingActions" | "pendingCapabilities" | "pendingEnrollNodes" | "pendingConnectMcps";
+  list: "pendingCommands" | "pendingWorkspaceWrites" | "pendingSchedules" | "pendingActions" | "pendingCapabilities" | "pendingEnrollNodes";
   make: (id: string, extra?: Record<string, unknown>) => Record<string, unknown>;
   yes: () => void;
   /** the frame the yes sends (none: nothing goes out) and the one a plain No (Esc) sends (none: Esc does not answer it) */
@@ -57,10 +57,6 @@ const KINDS: Kind[] = [
     sentYes: (id) => ({ type: "confirm_capability", call_id: id, keys: {}, folders: [] }), sentNo: (id) => ({ type: "cancel_capability", call_id: id }) },
   { name: "enroll-node", list: "pendingEnrollNodes", yes: click("enroll-cancel"),
     make: (id, x) => ({ type: "propose_enroll_node", call_id: id, name: `mini-${id}`, host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"], ...x }),
-    sentYes: null, sentNo: null },
-  { name: "connect-MCP", list: "pendingConnectMcps", yes: click("connect-mcp-cancel"),
-    make: (id, x) => ({ type: "propose_connect_mcp", call_id: id, key: "memory", label: `Memory ${id}`, transport: "stdio", command: "npx", argv: [],
-      url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null, ...x }),
     sentYes: null, sentNo: null },
 ];
 const ids = (k: Kind) => (state()[k.list] as { callId: string }[]).map((c) => c.callId);

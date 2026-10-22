@@ -55,7 +55,7 @@ export interface AskCardProps {
 /**
  * AskCard — the one shape of "Arslan needs your OK" (0.1.55 surface kit, spec §2).
  * Replaces the RunCommandCard variants, ActionApprovalCard kinds, WorkspaceWriteCard,
- * ScheduleGrantCard, EnrollNodeCard, ConnectMcpCard and the phone pairing request.
+ * ScheduleGrantCard, EnrollNodeCard and the phone pairing request.
  */
 export function AskCard(p: AskCardProps) {
   const { t } = useTranslation();

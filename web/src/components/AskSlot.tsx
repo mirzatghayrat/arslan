@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { useArslanStore } from "../stores/arslanStore";
 import ActionApprovalCard from "./ActionApprovalCard";
 import CapabilityProposeCard from "./capabilities/CapabilityProposeCard";
-import ConnectMcpCard from "./ConnectMcpCard";
 import EnrollNodeCard from "./EnrollNodeCard";
 import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
@@ -31,8 +30,8 @@ function focusComposer() {
  * permission layer (0.1.61 §A4), its scope on a yes and the user's note on a No.
  *
  * An answer here is a socket write and its card leaves in the same tick: nothing is in flight to wait
- * for, except on the two cards that call the REST API themselves (enrolling a machine, connecting a server).
- * Their apply is the store's, by call id (`cardApply`), so while it is in flight that card's own buttons
+ * for, except on the card that calls the REST API itself (enrolling a machine).
+ * Its apply is the store's, by call id (`cardApply`), so while it is in flight that card's own buttons
  * stay off but paging and every other card stay available, and a card paged back to is still busy. (The
  * queue keys each ask by its identity: what one card had picked or typed never reaches the ask that moves
  * up into its place.)
@@ -60,16 +59,12 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
   const pendingActions = useArslanStore((s) => s.pendingActions);
   const pendingCapabilities = useArslanStore((s) => s.pendingCapabilities);
   const clearPendingCapability = useArslanStore((s) => s.clearPendingCapability);
-  // Security-load-bearing: secrets never leave this card except over REST (ConnectMcpCard.tsx).
-  const pendingConnectMcps = useArslanStore((s) => s.pendingConnectMcps);
-  const markConnectApplied = useArslanStore((s) => s.markConnectApplied);
   const hideCard = useArslanStore((s) => s.hideCard);
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
   const clearPendingEnrollNode = useArslanStore((s) => s.clearPendingEnrollNode);
   const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
   const clearPendingAction = useArslanStore((s) => s.clearPendingAction);
   const clearPendingSchedule = useArslanStore((s) => s.clearPendingSchedule);
-  const clearPendingConnectMcp = useArslanStore((s) => s.clearPendingConnectMcp);
   const cardExpired = useArslanStore((s) => s.cardExpired);
   const cardExpiredKind = useArslanStore((s) => s.cardExpiredKind);
   const expireCard = useArslanStore((s) => s.expireCard);
@@ -86,9 +81,9 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
     return own === null ? wait : wait === null ? own : Math.min(own, wait);
   };
   // Every card here runs out on its own clock (the Mac waits 30 minutes: approvals.TIMEOUT_S; a proposal to enrol a
-  // machine or connect a server is held as long). The soonest to run out leaves the slot then.
+  // machine is held as long). The soonest to run out leaves the slot then.
   const next = [...pendingCommands, ...pendingEnrollNodes, ...pendingWorkspaceWrites, ...pendingSchedules, ...pendingActions,
-                ...pendingCapabilities, ...pendingConnectMcps]
+                ...pendingCapabilities]
     .flatMap((p) => { const at = expires(p); return at != null ? [{ callId: p.callId, at }] : []; })
     .reduce<{ callId: string; at: number } | null>((a, b) => (!a || b.at < a.at ? b : a), null);
   useEffect(() => {
@@ -111,9 +106,9 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
 
   // 0.1.55 S2: the pending asks, oldest first, for the one AskQueue slot. Keyed by the ask (kind and call id). Oldest is exact:
   // by the sequence number each card got on arrival, so two that arrive in one millisecond keep their order whatever their
-  // kinds. A proposal to connect a server (rank 1) waits behind every ask that needs an answer.
-  const items: (QueuedAsk & { rank: number; seq: number })[] = [
-    ...pendingCommands.map((c) => ({ rank: 0, seq: c.seq ?? 0, key: `cmd:${c.callId}`, render: (queue: AskQueuePosition) => (
+  // kinds.
+  const items: (QueuedAsk & { seq: number })[] = [
+    ...pendingCommands.map((c) => ({ seq: c.seq ?? 0, key: `cmd:${c.callId}`, render: (queue: AskQueuePosition) => (
       <RunCommandCard callId={c.callId} pretty={c.pretty} reason={c.reason}
         remoteHost={c.remoteHost} fingerprints={c.fingerprints}
         background={c.background} sandbox={c.sandbox} why={c.why}
@@ -121,59 +116,42 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         expiresAt={expires(c)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_run_command', callId, c, scope); clearPendingCommand(c.callId); }}
         onCancel={(callId, note) => { no('cancel_run_command', callId, note); clearPendingCommand(c.callId); }} />) })),
-    ...pendingEnrollNodes.map((n) => ({ rank: 0, seq: n.seq ?? 0, key: `node:${n.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingEnrollNodes.map((n) => ({ seq: n.seq ?? 0, key: `node:${n.callId}`, render: (queue: AskQueuePosition) => (
       <EnrollNodeCard callId={n.callId} name={n.name} host={n.host}
         user={n.user} fingerprints={n.fingerprints}
         expiresAt={expires(n)} queue={queue} onHide={() => hideCard(n.callId)} onDone={() => clearPendingEnrollNode(n.callId)} />) })),
-    ...pendingWorkspaceWrites.map((w) => ({ rank: 0, seq: w.seq ?? 0, key: `ws:${w.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingWorkspaceWrites.map((w) => ({ seq: w.seq ?? 0, key: `ws:${w.callId}`, render: (queue: AskQueuePosition) => (
       <WorkspaceWriteCard callId={w.callId} workspace={w.workspace}
         action={w.action} path={w.path} background={w.background}
         options={w.options} alwaysLabel={w.alwaysLabel}
         expiresAt={expires(w)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_workspace_write', callId, w, scope); clearPendingWorkspaceWrite(w.callId); }}
         onCancel={(callId, note) => { no('cancel_workspace_write', callId, note); clearPendingWorkspaceWrite(w.callId); }} />) })),
-    ...pendingActions.map((a) => ({ rank: 0, seq: a.seq ?? 0, key: `act:${a.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingActions.map((a) => ({ seq: a.seq ?? 0, key: `act:${a.callId}`, render: (queue: AskQueuePosition) => (
       <ActionApprovalCard kind={a.kind} target={a.target} detail={a.detail}
         options={a.options} alwaysLabel={a.alwaysLabel} title={a.title} why={a.why}
         permKind={a.permKind} background={a.background}
         expiresAt={expires(a)} queue={queue}
         onConfirm={(scope) => { yes('confirm_action', a.callId, a, scope); clearPendingAction(a.callId); }}
         onCancel={(note) => { no('cancel_action', a.callId, note); clearPendingAction(a.callId); }} />) })),
-    ...pendingSchedules.map((s) => ({ rank: 0, seq: s.seq ?? 0, key: `sched:${s.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingSchedules.map((s) => ({ seq: s.seq ?? 0, key: `sched:${s.callId}`, render: (queue: AskQueuePosition) => (
       <ScheduleGrantCard callId={s.callId} name={s.name} when={s.when} prompt={s.prompt}
         background={s.background} options={s.options} alwaysLabel={s.alwaysLabel}
         expiresAt={expires(s)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_schedule', callId, s, scope); clearPendingSchedule(s.callId); }}
         onCancel={(callId, note) => { no('cancel_schedule', callId, note); clearPendingSchedule(s.callId); }} />) })),
-    ...pendingCapabilities.map((k) => ({ rank: 0, seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingCapabilities.map((k) => ({ seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => (
       <CapabilityProposeCard card={k} callId={k.callId}
         expiresAt={expires(k)} queue={queue}
         onConfirm={(callId, keys, folders) => { send({ type: 'confirm_capability', call_id: callId, keys, folders }); clearPendingCapability(k.callId); }}
         onCancel={(callId) => { send({ type: 'cancel_capability', call_id: callId }); clearPendingCapability(k.callId); }} />) })),
-    ...pendingConnectMcps.map((m) => ({ rank: 1, seq: m.seq ?? 0, key: `mcp:${m.callId}`, render: (queue: AskQueuePosition) => (
-      <ConnectMcpCard callId={m.callId} label={m.label} labelKey={m.labelKey}
-        transport={m.transport} command={m.command} args={m.argv}
-        url={m.url} envKeys={m.envKeys} prerequisites={m.prerequisites}
-        requiresPath={m.requiresPath} pathPlaceholder={m.pathPlaceholder}
-        expiresAt={expires(m)} queue={queue} onHide={() => hideCard(m.callId)}
-        onApplied={(res) => {
-          // Secret-free confirm: server_id + tool_count only — no env values, no
-          // client-computed tier counts (the backend recomputes the honest tier split
-          // and emits mcp_connect_followup, which names the server: this card is the one that
-          // connected it, so it is marked, and the follow-up closes it).
-          if (res.ok) {
-            markConnectApplied(m.callId, res.serverId);
-            send({ type: 'confirm_connect_mcp', call_id: m.callId, server_id: res.serverId, tool_count: res.toolCount });
-          }
-        }}
-        onCancel={() => clearPendingConnectMcp(m.callId)} />) })),
-  ].sort((a, b) => a.rank - b.rank || a.seq - b.seq);
+  ].sort((a, b) => a.seq - b.seq);
 
   if (!items.length) {
-    // 0.1.61 §A4: a card that ran out unanswered is "waiting for you", never "declined". A proposal to enrol a machine or to connect a
-    // server never waited on the server, so "it was not done… Arslan will tell you what is waiting" is not true of it: it has its own line.
+    // 0.1.61 §A4: a card that ran out unanswered is "waiting for you", never "declined". A proposal to enrol a machine never waited
+    // on the server, so "it was not done… Arslan will tell you what is waiting" is not true of it: it has its own line.
     if (!cardExpired) return null;
-    const body = cardExpiredKind === "enroll" ? "kit.expiredEnrollBody" : cardExpiredKind === "connect" ? "kit.expiredConnectBody" : "kit.expiredBody";
+    const body = cardExpiredKind === "enroll" ? "kit.expiredEnrollBody" : "kit.expiredBody";
     return (
       <div className="ask-slot" data-testid="ask-slot">
         <Notice testId="ask-expired" title={t("kit.expiredTitle")}

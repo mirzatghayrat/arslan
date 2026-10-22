@@ -29,8 +29,9 @@ def test_every_offered_tool_has_words():
     assert not missing, f"tools without words in web/src/lib/toolWords.json: {missing}"
 
 
-# Tools that are gone, but whose steps old conversations still show: their words stay (C3a: render_deck).
-RETIRED_WITH_HISTORY = {"render_deck"}
+# Tools that are gone, but whose steps old conversations still show: their words stay (C3a: render_deck;
+# C9b: suggest_connector).
+RETIRED_WITH_HISTORY = {"render_deck", "suggest_connector"}
 
 
 def test_no_words_for_tools_that_do_not_exist():

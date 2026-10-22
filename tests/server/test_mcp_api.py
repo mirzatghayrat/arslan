@@ -46,8 +46,8 @@ async def test_connect_lists_tools_with_suggested_tier(client, monkeypatch):
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]
         connected = (await c.post(f"/api/v1/mcp/servers/{sid}/connect")).json()
         tools = (await c.get(f"/api/v1/mcp/servers/{sid}/tools")).json()
-    # The old UI reads the Connect answer itself as McpTool[] (McpServers, ConnectMcpCard,
-    # RecommendedMcp) — 0.1.61 keeps that contract through the supervisor.
+    # The UI reads the Connect answer itself as McpTool[] (McpServers) — 0.1.61 keeps that
+    # contract through the supervisor.
     assert {t["name"]: t["suggested_tier"] for t in connected} == {"read_file": "safe",
                                                                    "delete_file": "orchestrator"}
     by = {t["name"]: t for t in tools}

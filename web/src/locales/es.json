@@ -885,8 +885,6 @@
     },
     "chips": {
       "all": "Todos",
-      "recommended": "Recomendados",
-      "registered": "Servidores registrados",
       "usable": "Disponibles",
       "unimplemented": "No implementado",
       "arslan_only": "Solo Arslan"
@@ -919,7 +917,6 @@
       }
     },
     "sections": {
-      "recommended_mcp": "Recomendados · conexión con un clic",
       "import_skills": "Importar habilidades de un repositorio"
     },
     "dossier": {
@@ -1470,11 +1467,8 @@
     "expiredTitle": "Esperándote",
     "expiredBody": "Nadie respondió en 30 minutos, así que no se hizo. No es un no: Arslan te dirá qué queda pendiente.",
     "expiredEnrollBody": "Nadie respondió en 30 minutos, así que no se recordó esta máquina. No es un no: pídeselo de nuevo a Arslan cuando quieras.",
-    "expiredConnectBody": "Nadie respondió en 30 minutos, así que no se conectó el servidor. No es un no: pídeselo de nuevo a Arslan cuando quieras.",
     "hide": "Ocultar",
     "hideHint": "Sigue en marcha. El chat dirá cómo terminó.",
-    "hiddenConnected": "{{name}} conectado.",
-    "hiddenConnectFailed": "No se pudo conectar {{name}}. {{why}}",
     "hiddenEnrolled": "{{name}} recordada.",
     "hiddenEnrollFailed": "No se pudo recordar {{name}}. {{why}}"
   },

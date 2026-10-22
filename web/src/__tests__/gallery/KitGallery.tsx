@@ -2,7 +2,6 @@ import { Hand, ListChecks, LockKeyhole, Code2 } from "lucide-react";
 import { AskCard, Button, CodeBox, ConfirmSheet, Dialog, Notice, ProposalRow, Tag } from "../../components/kit";
 import RunCommandCard from "../../components/RunCommandCard";
 import ActionApprovalCard from "../../components/ActionApprovalCard";
-import ConnectMcpCard from "../../components/ConnectMcpCard";
 import WorkspaceWriteCard from "../../components/WorkspaceWriteCard";
 
 /**
@@ -57,9 +56,6 @@ export default function KitGallery() {
             detail={'tell application "Notes"\n  delete (notes whose name = "Hands 冒烟")\nend tell'} />
           <ActionApprovalCard kind="desktop_risky" target="Mail · “Send”" detail="点击「发送」" onConfirm={noop} onCancel={noop} />
           <WorkspaceWriteCard callId="w" workspace="~/Arslan" action="write_file" path="~/Arslan/报告/周报.md" onConfirm={noop} onCancel={noop} />
-          <ConnectMcpCard callId="m" label="GitHub" transport="stdio" command="npx" args={["-y", "@modelcontextprotocol/server-github"]}
-            url={null} envKeys={[{ name: "GITHUB_PERSONAL_ACCESS_TOKEN", description: "A token with repo scope", get_it_url: "https://github.com/settings/tokens", paid: false } as never]}
-            prerequisites="Needs: GITHUB_PERSONAL_ACCESS_TOKEN" onApplied={noop} onCancel={noop} />
         </div>
       )}
       {!location.hash.includes("cards") && <ConfirmSheet open options={{ title: "删除这个模型配置？", action: "删除",
