@@ -121,7 +121,7 @@ async def test_the_stop_step_still_runs_when_the_cancel_record_was_cancelled():
     async def checkpoint():
         ran.append(True)
     record.cancel()
-    await task_service._after(record, checkpoint())
+    await task_service._after(record, checkpoint)        # a factory: built only once it will run
     assert ran == [True]
 
 
@@ -135,11 +135,9 @@ async def test_a_cancel_aimed_at_the_stop_step_itself_is_not_swallowed():
 
     async def checkpoint():
         ran.append(True)
-    then = checkpoint()
-    step = asyncio.ensure_future(task_service._after(record, then))
+    step = asyncio.ensure_future(task_service._after(record, checkpoint))
     await asyncio.sleep(0)                       # waiting for the record
     step.cancel()
     with pytest.raises(asyncio.CancelledError):
         await step
-    then.close()
     assert ran == []
