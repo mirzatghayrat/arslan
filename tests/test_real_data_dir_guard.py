@@ -115,7 +115,7 @@ def test_a_pinned_key_changed_outside_monkeypatch_is_put_back(key):
                 os.environ[key] = before
 
 
-# ── The user's ~/Arslan folder (REAL_WORKSPACE_DIR) ──────────────────────────────
+# ── HOME and the user's ~/Arslan folder ──────────────────────────────────────────
 
 def test_a_file_written_deep_in_the_users_folder_is_reported(tmp_path):
     _leak(tmp_path, "reports/2026", "notes")
@@ -134,50 +134,90 @@ def test_a_users_folder_that_appears_is_reported(tmp_path):
     assert guard.created(before, guard.workspace_snapshot(root)) == [".", "outputs"]
 
 
-def test_the_watched_folder_is_the_default_workspaces_fallback(monkeypatch):
-    """What default_workspace() returns when the override is ignored or unset, so the two
-    cannot drift apart."""
+def test_the_suite_runs_with_a_home_of_its_own(monkeypatch):
+    """What a test that fakes sys.frozen gets: default_workspace() ignores the override and
+    falls back to Path.home() / "Arslan", which is now under this session's own HOME."""
     from server.services import settings_service
 
+    home = Path.home().resolve()
+    assert home != guard.REAL_HOME and guard.inside(home, guard.SUITE_HOMES)
     monkeypatch.delenv("ARSLAN_DEFAULT_WORKSPACE", raising=False)
-    assert settings_service.default_workspace().resolve() == guard.REAL_WORKSPACE_DIR
+    workspace = settings_service.default_workspace().resolve()
+    assert workspace == home / "Arslan" and workspace != guard.REAL_WORKSPACE_DIR
+    assert guard.REAL_WORKSPACE_DIR == guard.REAL_HOME / "Arslan"
 
 
-_INNER = '''from pathlib import Path
+_INNER = '''import os
+from pathlib import Path
 
 
-def test_writes(tmp_path):
-    target = Path.home() / "Arslan" if {into_users_folder} else tmp_path
-    (target / "reports").mkdir(parents=True, exist_ok=True)
-    (target / "reports" / "leaked.md").write_text("from a test")
+def test_writes():
+    root = Path(os.environ["INNER_REAL_ARSLAN"]) if {by_another_route} else Path.home() / "Arslan"
+    (root / "reports").mkdir(parents=True, exist_ok=True)
+    (root / "reports" / "leaked.md").write_text("from a test")
 '''
 
 
-def _inner_run(tmp_path, *, into_users_folder: bool) -> subprocess.CompletedProcess:
-    """A real pytest session under the suite's root conftest, with HOME pointed at a temp
-    dir: the guard watches <temp>/Arslan, and the user's own folder is never touched."""
+def _inner_run(tmp_path, *, by_another_route: bool = False, body: str | None = None,
+               env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """A real pytest session under the suite's root conftest, started with HOME at a temp
+    dir standing in for the user's home (``home/Arslan`` holds the user's ``mine.md``) and,
+    unless ``env_extra`` hands one over, none of this run's session-home variables."""
     home = tmp_path / "home"
     (home / "Arslan" / "reports").mkdir(parents=True)
     (home / "Arslan" / "reports" / "mine.md").write_text("the user's")
     test_file = tmp_path / "test_inner.py"
-    test_file.write_text(_INNER.format(into_users_folder=into_users_folder))
-    env = {**os.environ, "HOME": str(home)}
-    env.pop("PYTEST_XDIST_WORKER", None)
+    test_file.write_text(body or _INNER.format(by_another_route=by_another_route))
+    env = {**os.environ, "HOME": str(home), "INNER_REAL_ARSLAN": str(home / "Arslan")}
+    for key in ("PYTEST_XDIST_WORKER", guard.SUITE_HOME_ENV, guard.REAL_HOME_ENV):
+        env.pop(key, None)
+    env.update(env_extra or {})
     return subprocess.run(
         [sys.executable, "-m", "pytest", str(test_file), "-p", "tests.conftest", "-q",
          "-p", "no:cacheprovider", "--rootdir", str(REPO), "-c", str(REPO / "pyproject.toml")],
         cwd=REPO, env=env, capture_output=True, text=True, timeout=180)
 
 
-def test_a_write_into_the_users_arslan_folder_fails_the_run(tmp_path):
-    run = _inner_run(tmp_path, into_users_folder=True)
+def test_a_test_writing_into_home_arslan_lands_in_the_suites_home(tmp_path):
+    run = _inner_run(tmp_path, by_another_route=False)
     out = run.stdout + run.stderr
-    assert run.returncode != 0, out
-    assert "1 passed" in out and "in the user's Arslan folder" in out, out
+    assert run.returncode == 0, out
+    users = tmp_path / "home" / "Arslan" / "reports"
+    assert sorted(p.name for p in users.iterdir()) == ["mine.md"], out   # the real folder: untouched
+    assert "the user's Arslan folder changed" not in out, out
+    homes = tmp_path / "home" / guard.SUITE_HOMES.name
+    assert not homes.exists() or not any(homes.iterdir())                 # the session's HOME is gone
+
+
+def test_a_write_into_the_real_folder_is_reported_and_does_not_fail_the_run(tmp_path):
+    """Another route into the real folder (the app, another process): reported at the end
+    of the run, never a failure, and nothing removed."""
+    run = _inner_run(tmp_path, by_another_route=True)
+    out = run.stdout + run.stderr
+    assert run.returncode == 0, out
+    assert "the user's Arslan folder changed during this run" in out, out
     assert "reports/leaked.md" in out and "mine.md" not in out, out
-    assert (tmp_path / "home" / "Arslan" / "reports" / "leaked.md").exists()   # reported, not removed
+    assert (tmp_path / "home" / "Arslan" / "reports" / "leaked.md").exists()
 
 
-def test_a_run_that_writes_elsewhere_passes(tmp_path):
-    run = _inner_run(tmp_path, into_users_folder=False)
+def test_a_killed_runs_session_home_is_swept_once_it_is_a_day_old(tmp_path):
+    for name, age in (("session-old", 2 * 86_400), ("session-live", 60), ("not-ours", 2 * 86_400)):
+        (tmp_path / name / "Arslan").mkdir(parents=True)
+        os.utime(tmp_path / name, (os.path.getatime(tmp_path), os.path.getmtime(tmp_path) - age))
+    assert guard.sweep_stale_homes(tmp_path) == ["session-old"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["not-ours", "session-live"]
+
+
+def test_a_worker_takes_the_session_home_it_inherits_and_leaves_it_to_its_owner(tmp_path):
+    """What an xdist worker gets: its controller's session home, so every worker resolves
+    the same Path.home() (test ids carry it) and collects the same tests; and it does not
+    remove a home it did not make."""
+    session = tmp_path / "home" / guard.SUITE_HOMES.name / "session-controller"
+    session.mkdir(parents=True)
+    body = (f"from pathlib import Path\n\ndef test_home():\n"
+            f"    assert Path.home() == Path({str(session.resolve())!r})\n")
+    run = _inner_run(tmp_path, body=body, env_extra={
+        guard.SUITE_HOME_ENV: str(session), guard.REAL_HOME_ENV: str(tmp_path / "home")})
     assert run.returncode == 0, run.stdout + run.stderr
+    assert session.is_dir()
+    assert [p.name for p in session.parent.iterdir()] == ["session-controller"]   # made no other
