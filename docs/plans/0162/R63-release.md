@@ -72,6 +72,8 @@ v0.1.63 发出去之前，用数字确认「真的变好了」，并让发布说
   - 对外文档里会变错的句子已经改掉（U13 第 6 条的例外）：H3 之后，docs-site 6 种语言的 `08-tools.html`、`09-security.html` 和生成的 `docs/docs/*/index.html` 不能再说聊天回复「最多五步、只在一个 App 里」（③Hands 在 H3 之后用一个小 PR 改；定时任务照旧保留这个上限）。
   - S2b-2（#322）删掉 `arslan/vendor/hermes` 之后变错的句子（docs-site 6 种语言的 `02-development.html`、`docs/docs/**/index.html`、`docs/index.html` 里「MIT 许可随代码放在 `arslan/vendor/hermes/LICENSE`」和 `detection: arslan/vendor/hermes`）已由 A5（#347）改掉。
   - `fresh_install_check`：`THIRD_PARTY_NOTICES.md` 和 `LICENSE` 在 `Arslan.app/Contents/Resources` 里，和当次检出逐字节一致（A5 加的检查；候选版是第一次真正证明打包里有它们）。
+  - `fresh_install_check` 的 WebSocket 探针带上同源 Origin（#338 以后打包版拒绝没有 Origin 的 WebSocket，不改发版检查那一步会失败；#364 的审查员 2026-10-22 发现，③Hands 修）。
+  - 打包版不再认继承来的 `ARSLAN_STATIC_DIR`、`ARSLAN_SANDBOX_PYTHON`、`ARSLAN_DEFAULT_WORKSPACE`、`ARSLAN_PORT` 等配置变量（和 `ARSLAN_ALLOWED_*` 同一类；③Hands 在 #364 之后收掉）。
   - 要过云端审计的安全文案都已回复并定稿：S1b 里 `schedule_task` 的说明（含审计要加的「只调用服务器标注为只读的 MCP 工具」）；C11 的 SECURITY.md 改写（#339）；#298b（按三层模型重写命令那几段，等 S2a-3）。
   - 命令分类的洞（S2a-3）：用户 2026-10-22 定了做法和门槛（S2a 卡的 S2a-3 节），按那里的验收合并后才打 tag。
   - C11 审出的后续加固（C11b：WebSocket 握手把令牌写进日志等五项）：打 tag 前用户要在两者中选一——修完合并，或者同意顺延（写明原因和新的期限）。
