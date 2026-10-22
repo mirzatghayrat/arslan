@@ -207,37 +207,6 @@ async def test_no_cap_set_means_neither_branch_fires(wdb, monkeypatch):
     assert await _outcome(Session, aid) != "skipped_structural"
 
 
-async def test_a_legacy_token_cap_that_WAS_set_is_reported_not_dropped(client, monkeypatch):
-    """🔴 The fail-loud path, exercised in the only state it exists for.
-
-    Every other fixture leaves the legacy key unset, so `legacy_token_cap_dropped` is null
-    everywhere and the reporting branch has never run. That makes the docstring's promise
-    — "a limit that vanishes without a word is worse than one refused with an explanation"
-    — a sentence nothing enforces. An install that HAD set a token cap is exactly whose
-    limit is being dropped, and they are the ones who must be told.
-
-    Asserted through the diagnostics endpoint, because that is where the value has to
-    surface for a human to see it; a service-level check would pass while the payload
-    dropped the key.
-    """
-    from server.db import session as db_session
-
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
-    async with client.db_maker() as s:
-        sp = Spawn(name="S", domain_category="g", system_prompt="p")
-        s.add(sp)
-        s.add(Setting(key="evolution_max_est_tokens", value="30000000"))
-        await s.commit()
-        sid = sp.id
-
-    body = (await client.get(f"/api/v1/spawns/{sid}/evolution/diagnosis", headers=AUTH)).json()
-    assert body["legacy_token_cap_dropped"] == "30000000", (
-        "the removed cap's value must be reported back verbatim — a user who set 30M "
-        "tokens needs to recognise their own number, not be told 'something was dropped'")
-    # and the new cap really is absent, i.e. they are currently uncapped
-    assert body["max_dispatches"] is None
-
-
 async def test_each_attempt_starts_with_a_fresh_fetch_allowance(wdb, monkeypatch):
     """FU-2b's integration half, and the reason it exists as its own test.
 

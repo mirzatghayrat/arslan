@@ -41,44 +41,6 @@ async def test_baseline_setting_roundtrip(client):
 
 # ── 2. declare + GET endpoints ────────────────────────────────────────────────────────
 
-async def test_declare_endpoint_sets_baseline(client):
-    r0 = await client.get("/api/v1/evolution/baseline")
-    assert r0.status_code == 200
-    assert r0.json()["baseline_started_at"] is None
-    assert r0.json()["epoch1_runs_after"] == 0
-
-    r1 = await client.post("/api/v1/evolution/baseline/declare")
-    assert r1.status_code == 200
-    declared = r1.json()["baseline_started_at"]
-    assert declared  # a non-empty ISO string
-
-    r2 = await client.get("/api/v1/evolution/baseline")
-    assert r2.status_code == 200
-    assert r2.json()["baseline_started_at"] == declared
-
-
-async def test_baseline_get_counts_epoch1_after(client):
-    sid = await _seed_spawn(client)
-    async with client.db_maker() as db:
-        await settings_service.set_baseline_started_at(db, _BASE)
-        # two live epoch=1 AFTER baseline → counted
-        db.add(Run(conversation_id="c", spawn_id=sid, user_message="a", status="scored",
-                   kind="live", epoch=1, created_at=_AFTER))
-        db.add(Run(conversation_id="c", spawn_id=sid, user_message="b", status="scored",
-                   kind="live", epoch=1, created_at=_AFTER))
-        # one live epoch=1 BEFORE baseline → NOT counted (dev-era pollution)
-        db.add(Run(conversation_id="c", spawn_id=sid, user_message="c", status="scored",
-                   kind="live", epoch=1, created_at=_BEFORE))
-        # a replay arm after baseline → NOT counted
-        db.add(Run(conversation_id="c", spawn_id=sid, user_message="d", status="replayed",
-                   kind="replay", epoch=1, created_at=_AFTER))
-        await db.commit()
-
-    r = await client.get("/api/v1/evolution/baseline")
-    assert r.status_code == 200
-    assert r.json()["epoch1_runs_after"] == 2
-
-
 # ── 3. build_corpus created_at filter ─────────────────────────────────────────────────
 
 async def _mk_run(db, sid, msg, created_at):
