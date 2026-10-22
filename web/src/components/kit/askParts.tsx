@@ -30,19 +30,6 @@ export function Fingerprints({ label, list, testId }: { label: string; list: str
   );
 }
 
-/** A checkbox option under the card ("don't ask again …"). */
-export function AskOption({ checked, onChange, label, testId }:
-  { checked: boolean; onChange: (v: boolean) => void; label: string; testId: string }) {
-  const guarded = useAnswerGuard();                           // a tick right after the card came up in a queue is not for it
-  return (
-    <label className="flex items-start gap-2 text-[13px] text-muted-foreground">
-      <input type="checkbox" data-testid={testId} checked={checked} onChange={(e) => { if (!guarded()) onChange(e.target.checked); }}
-        className="mt-[3px] accent-foreground" />
-      <span>{label}</span>
-    </label>
-  );
-}
-
 /** 0.1.61 §A4: the only scope ids a card answers with. */
 export const SCOPES = ["once", "task", "conversation", "always"] as const;
 

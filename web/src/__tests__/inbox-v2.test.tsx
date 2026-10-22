@@ -105,12 +105,30 @@ describe("Approve now — a card from the permission layer (0.1.61 §A4)", () =>
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "task" }) }));
   });
 
-  it("an old command card in the Inbox offers no 'remember' tick: the server never keeps it there", async () => {
+  it("a command card in the Inbox offers no tick (S4a: none is left)", async () => {
     vi.spyOn(client, "request").mockImplementation(async (path: string) =>
       (path === "/approvals/pending" ? [{ ...ask, frame: { ...ask.frame, sandbox: "retry" } }] : { ok: true }) as never);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     expect(await screen.findByTestId("runcmd-card")).toBeInTheDocument();
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("S4a: a card to leave the sandbox offers this time only here: only the window that asked gives the conversation", async () => {
+    const outside = { ...ask, frame: { ...ask.frame, sandbox: "retry", perm_kind: "outside", options: ["once", "conversation"] } };
+    vi.spyOn(client, "request").mockImplementation(async (path: string) =>
+      (path === "/approvals/pending" ? [outside] : { ok: true }) as never);
+    render(<InboxApprovals onOpenConversation={() => {}} />);
+    expect(await screen.findByTestId("runcmd-card")).toBeInTheDocument();
+    expect(screen.queryByTestId("runcmd-scope-conversation")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("another command card keeps its choices here", async () => {
+    const rule = { ...ask, frame: { ...ask.frame, perm_kind: "command", options: ["once", "conversation"] } };
+    vi.spyOn(client, "request").mockImplementation(async (path: string) =>
+      (path === "/approvals/pending" ? [rule] : { ok: true }) as never);
+    render(<InboxApprovals onOpenConversation={() => {}} />);
+    expect(await screen.findByTestId("runcmd-scope-conversation")).toBeInTheDocument();
   });
 });
 

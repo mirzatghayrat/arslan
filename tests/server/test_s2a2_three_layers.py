@@ -323,23 +323,24 @@ def test_a_launchers_quoted_command_reaches_the_floor(command, rule):
 
 
 @pytest.mark.parametrize("granted,available", [(True, True), (False, False)])
-async def test_a_protected_write_shows_its_card_outside_the_sandbox_too(monkeypatch, granted, available):
+async def test_a_protected_write_shows_its_card_outside_the_sandbox_too(execution_db, monkeypatch, granted, available):
     """🔴 A, both routes: under this conversation's grant to leave the sandbox, and with no sandbox at all,
     the write still reaches its (this-time-only) card; it never runs on a grant."""
+    from server.services import permission_store, permissions
     asked = []
 
     async def cards(command, argv, **kw):
         asked.append(kw)
         return False
 
-    cards.honours_session_grants = True
-    command_sandbox._reset_for_tests()
+    async def surface(frame):                  # the turn's card surface: the stored grant stands only where one is
+        raise AssertionError("cards() is the card here")
     if granted:
-        command_sandbox.grant("c1")
-    try:
+        async with execution_db() as db:
+            await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="card-1")
+            await db.commit()
+    with permissions.asking_with(surface):
         ex, _ = await _run(monkeypatch, {"command": "echo 'export X=1' >> ~/.zshrc"}, cards, available=available)
-    finally:
-        command_sandbox._reset_for_tests()
     assert len(asked) == 1 and ex.ran == []
     assert approvals._command_request("echo x >> ~/.zshrc", ["protected-write"], None).once_only
 
@@ -357,18 +358,18 @@ async def test_a_careful_mode_card_with_no_sandbox_is_marked_and_the_island_leav
     assert approvals.island_may_answer({**kept, "perm_kind": "command"}) is True
 
 
-async def test_runs_unsandboxed_reads_the_setting_seatbelt_and_the_windows_grant(monkeypatch):
+async def test_runs_unsandboxed_reads_the_setting_seatbelt_and_the_conversations_grant(execution_db, monkeypatch):
+    from server.services import permission_store
     async def on():
         return True
     monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    command_sandbox._reset_for_tests()
-    try:
-        assert await approvals.runs_unsandboxed("c9") is False
-        command_sandbox.grant("c9")
-        assert await approvals.runs_unsandboxed("c9") is True and await approvals.runs_unsandboxed() is False
-        monkeypatch.setattr(command_sandbox, "available", lambda: False)
-        assert await approvals.runs_unsandboxed() is True
-    finally:
-        command_sandbox._reset_for_tests()
+    assert await approvals.runs_unsandboxed("c9") is False
+    async with execution_db() as db:
+        await permission_store.add_grant(db, "c9", "", "outside", "*", call_id="card-1")   # S4a: stored
+        await db.commit()
+    assert await approvals.runs_unsandboxed("c9") is True and await approvals.runs_unsandboxed() is False
+    assert await approvals.runs_unsandboxed("c8") is False
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)
+    assert await approvals.runs_unsandboxed() is True
 

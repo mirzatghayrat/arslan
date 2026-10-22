@@ -26,7 +26,7 @@ const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getStat
 // [card, its frame, the frame its yes answers, how that card says yes with a scope]
 const CARDS: [string, Record<string, unknown>, string, (scope: string) => void][] = [
   ["the command card", { type: "propose_run_command", call_id: "k", pretty: "ls" }, "confirm_run_command",
-    (scope) => shown.run.onConfirm("k", false, scope)],
+    (scope) => shown.run.onConfirm("k", scope)],
   ["the write card", { type: "propose_workspace_write", call_id: "k", workspace: "/w", action: "write_file", path: "a" }, "confirm_workspace_write",
     (scope) => shown.write.onConfirm("k", scope)],
   ["the schedule card", { type: "propose_schedule", call_id: "k", name: "n", when: "every: 60" }, "confirm_schedule",

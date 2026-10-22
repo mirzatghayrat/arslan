@@ -178,8 +178,8 @@ class _Steps:
 
 
 def test_a_card_after_a_refused_one_is_told_its_own_answer(app_client, monkeypatch):
-    """The words of a No (the user's note) belong to that card: a plain card after it in the same
-    turn (leaving the sandbox) is told its own answer, not the earlier one's."""
+    """The words of a No (the user's note) belong to that card: a card after it in the same turn
+    (leaving the sandbox, decided through permissions.decide since S4a) is told its own answer."""
     _enable_shell(app_client, policy="ask_risky")
     monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
         ("run_command", {"command": "rm", "argv": ["-rf", "build"]}),
@@ -197,12 +197,12 @@ def test_a_card_after_a_refused_one_is_told_its_own_answer(app_client, monkeypat
         frames += _collect_until(ws, "stream_end")
     summaries = [f["summary"] for f in frames if f.get("type") == "tool_result"]
     assert summaries == ["The user said no to: Run `rm -rf build` outside the sandbox?. They said: keep build",
-                         "user declined running this command outside the sandbox"]
+                         "The user said no to: Run `ls` outside the sandbox?. Don't ask for it again in this turn."]
     assert executor.calls == []
 
 
 def test_an_expired_card_to_leave_the_sandbox_is_no_answer_either(app_client, monkeypatch):
-    """§A9 for the plain window cards too (leaving the sandbox): expired is not declined."""
+    """§A9 for the card to leave the sandbox too: expired is not declined."""
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.2)
     _enable_shell(app_client, policy="ask_risky")
     monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
@@ -546,6 +546,9 @@ def test_a_remote_card_answered_with_remember_still_asks_next_time(app_client, m
         ws.send_json({"type": "cancel_run_command", "call_id": frames[-1]["call_id"]})
         _collect_until(ws, "stream_end")
     assert len(fake.calls) == 1
+    # S4a: each card is one ledger row, under the machine's address (⓪Plan Q7), this time only.
+    assert [(e.kind, e.target, e.decision, e.scope) for e in _ledger(app_client, "conv-r")] == [
+        ("remote", "remote:192.168.1.8", "allow", "once"), ("remote", "remote:192.168.1.8", "deny", None)]
 
 
 class _AsksForApps:

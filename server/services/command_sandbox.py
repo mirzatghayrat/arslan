@@ -26,8 +26,8 @@ its parent still shows its name. Before, the toggle closed only the file tools �
 the iPhone made Arslan scan the real ~/Downloads with ls/find/python while it was off.
 
 Leaving the sandbox is always a click (see tool_loop): the model asks up front,
-or a stopped command is offered a re-run, or the user ticks "for the rest of this
-conversation" — that last one is held here, in memory only, never saved.
+or a stopped command is offered a re-run, or the user answered such a card "in this
+conversation" — that last one is a stored grant (`outside` / `*`, S4a: `permissions`), not held here.
 """
 from __future__ import annotations
 
@@ -37,11 +37,8 @@ import re
 import subprocess
 import sys
 import tempfile
-import threading
 from pathlib import Path
 
-_lock = threading.Lock()
-_granted: set[str] = set()
 _available: bool | None = None
 
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
@@ -255,19 +252,6 @@ def note(workspace: Path, closed: list[Path] = ()) -> str:
 
 # ── "for the rest of this conversation" (memory only) ─────────────────────────
 
-def grant(conversation_id: str | None) -> None:
-    if conversation_id:
-        with _lock:
-            _granted.add(conversation_id)
-
-
-def granted(conversation_id: str | None) -> bool:
-    with _lock:
-        return bool(conversation_id) and conversation_id in _granted
-
-
 def _reset_for_tests() -> None:
     global _available
-    with _lock:
-        _granted.clear()
     _available = None

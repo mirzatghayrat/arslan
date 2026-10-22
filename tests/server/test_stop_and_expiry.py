@@ -49,15 +49,16 @@ async def test_a_card_nobody_answered_is_not_reported_as_a_refusal(execution_db,
     assert "Don't retry it in this turn" in text and "can be asked again" not in text
 
 
-async def test_a_jobs_plain_card_nobody_answered_is_not_reported_as_a_refusal(monkeypatch):
-    """A job's plain card (leaving the sandbox) has no decision of its own: the outcome says so."""
+async def test_a_jobs_outside_card_nobody_answered_is_not_reported_as_a_refusal(execution_db, monkeypatch):
+    """A job's card to leave the sandbox is decided through permissions.decide (S4a): nobody answered it."""
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: None)
     job = approvals.JobConfirmations("c10", job_id="job-c10")
     assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False
     assert approvals.LAST_OUTCOME.get() == "expired"
     text = tool_loop._declined("user declined this command", "this command")
-    assert text.startswith("Nobody answered the card for this command") and "NOT a refusal" in text
+    assert text.startswith("Nobody answered the card for Run `touch ~/Downloads/a` outside the sandbox?")
+    assert "NOT a refusal" in text
     assert "Don't retry it in this turn" in text and "can be asked again" not in text
 
 
@@ -89,7 +90,7 @@ async def test_after_one_unanswered_card_a_job_opens_no_more(execution_db, monke
     assert approvals.LAST_OUTCOME.get() == "expired", "and the retries read as expired, not refused"
 
 
-async def test_a_refused_card_does_not_close_the_job_to_later_cards(monkeypatch):
+async def test_a_refused_card_does_not_close_the_job_to_later_cards(execution_db, monkeypatch):
     opened = []
 
     def window(f):                    # a window on the conversation that says no to each card
@@ -117,8 +118,10 @@ async def test_a_jobs_card_is_told_its_own_answer_not_an_earlier_one(execution_d
     job = approvals.JobConfirmations("c9", job_id="job-c9")
     assert await job.schedule("daily", "08:00") is False
     assert tool_loop._declined("user declined to schedule this task", "scheduling this task").endswith("not daily")
-    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False      # a plain card
-    assert tool_loop._declined("user declined this command", "this command") == "user declined this command"
+    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False      # S4a: a decide card too
+    told = tool_loop._declined("user declined this command", "this command")
+    assert told.startswith("The user said no to: Run `touch ~/Downloads/a` outside the sandbox?")
+    assert "not daily" not in told
     assert await job.schedule("weekly", "Mon") is False
     monkeypatch.setattr(settings_service, "workspace_dir", AsyncMock(return_value=None))
     assert await job.workspace_write("write_file", "a.txt") is False                    # no card at all
