@@ -1055,13 +1055,6 @@
       "rejected": "rejeté",
       "liveLabel": "Compétence en service"
     },
-    "eval": {
-      "target": "Spawn cible d'évaluation…",
-      "button": "Évaluer",
-      "pickTarget": "Choisissez un spawn cible pour l'évaluation.",
-      "passed": "Contrôle réussi : {{reason}}",
-      "failed": "Contrôle non réussi : {{reason}}"
-    },
     "promote": {
       "button": "Promouvoir",
       "confirm": "Confirmer — mettre en service",

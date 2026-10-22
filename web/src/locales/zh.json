@@ -1055,13 +1055,6 @@
       "rejected": "已拒绝",
       "liveLabel": "在线技能"
     },
-    "eval": {
-      "target": "评估目标专家…",
-      "button": "评估",
-      "pickTarget": "请选择一个要评估的目标专家。",
-      "passed": "过闸：{{reason}}",
-      "failed": "未过闸：{{reason}}"
-    },
     "promote": {
       "button": "晋升",
       "confirm": "确认——上线",

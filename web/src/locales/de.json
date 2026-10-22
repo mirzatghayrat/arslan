@@ -1055,13 +1055,6 @@
       "rejected": "abgelehnt",
       "liveLabel": "Live-Skill"
     },
-    "eval": {
-      "target": "Ziel-Spawn zur Prüfung…",
-      "button": "Prüfen",
-      "pickTarget": "Wähle einen Ziel-Spawn für die Prüfung.",
-      "passed": "Tor bestanden: {{reason}}",
-      "failed": "Tor nicht bestanden: {{reason}}"
-    },
     "promote": {
       "button": "Freigeben",
       "confirm": "Bestätigen – live schalten",
