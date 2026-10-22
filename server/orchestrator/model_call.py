@@ -150,7 +150,10 @@ async def call_with_recovery(request, state: TurnRecovery, *, remaining_s=None):
             limit = CALL_TIMEOUT_S
             if remaining_s is not None:
                 limit = max(1.0, min(limit, remaining_s()))
-            return await asyncio.wait_for(request(), timeout=limit)
+            # Not asyncio.wait_for: on Python 3.11 it drops a cancellation (the turn's stop) that lands as
+            # the call completes (gh-86296). asyncio.timeout counts it; its expiry is the same TimeoutError.
+            async with asyncio.timeout(limit):
+                return await request()
         except Exception as exc:  # noqa: BLE001 — classified below; others re-raised untouched
             found = classify(exc)
             if found is None:
