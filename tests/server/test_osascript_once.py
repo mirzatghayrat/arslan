@@ -137,33 +137,47 @@ class _hard_limit:
         return False
 
 
-def _our_patterns_take(command) -> float:
-    """CPU time this thread spends on the once-only rules over every detection text. Building the
-    texts (Hermes' normalisation) is not counted, nor is time the thread waits for a core: on a
-    loaded runner wall time caught a longer run descheduled more often than a short one."""
+def _our_patterns_take(texts) -> float:
+    """CPU time this thread spends on the once-only rules over these detection texts, under the hard
+    limit. Building the texts (Hermes' normalisation) is not counted: it is not what these rules are
+    tested for, and it is quadratic in lines itself (0.9 s for 600 lines of exec here). Nor is time
+    the thread waits for a core: wall time caught a longer run descheduled more often on a loaded
+    runner."""
     import time
     ours = [p for k, p, _w in tp._ASK_C if k in tp.ONCE_ONLY_RULES]
-    texts = tp._detection_texts(command)
-    started = time.thread_time()
-    for text in texts:
-        for pattern in ours:
-            pattern.search(text)
-    return time.thread_time() - started
+    with _hard_limit(5.0):
+        started = time.thread_time()
+        for text in texts:
+            for pattern in ours:
+                pattern.search(text)
+        return time.thread_time() - started
+
+
+def _growth(make, n):
+    """Double n until one run takes at least 5 ms of CPU, so the clean time is far above the clock's
+    resolution on a fast runner too; then the best of five at n and 4n, taken in turn. Each size's
+    detection texts are built once."""
+    texts = tp._detection_texts(make(n))
+    while n < 512 and _our_patterns_take(texts) < 0.005:
+        n *= 2
+        texts = tp._detection_texts(make(n))
+    larger = tp._detection_texts(make(4 * n))
+    small = large = float("inf")
+    for _ in range(5):
+        small = min(small, _our_patterns_take(texts))
+        large = min(large, _our_patterns_take(larger))
+        if large > 1.0:                   # past the backstop already: no need for five
+            break
+    return n, small, large
 
 
 def _assert_grows_linearly(make, n):
-    """4x the input may take about 4x the time (measured 3.4-4.1x with every core busy). Relative to
-    itself in the same run, so a loaded runner does not fail it (an absolute 0.1 s bound did, under
-    xdist); a pattern that tries every line again from every line (quadratic: ~16x) or worse fails.
-    The absolute bound is only a backstop, and the hard limit stops one that never ends."""
-    small = large = float("inf")
-    with _hard_limit(10.0):
-        for _ in range(5):                    # best of five, taken in turn
-            small = min(small, _our_patterns_take(make(n)))
-            large = min(large, _our_patterns_take(make(4 * n)))
-            if large > 1.0:                   # past the backstop already: no need for five
-                break
-    assert large / max(small, 1e-4) < 10, f"{n}: {small * 1000:.2f} ms, {4 * n}: {large * 1000:.2f} ms"
+    """4x the input may take about 4x the time (measured 3.8-4.1x, 3.4-4.1x with every core busy).
+    Relative to itself in the same run, so a loaded runner does not fail it (an absolute 0.1 s bound
+    did, under xdist); a pattern that tries every line again from every line (quadratic: ~16x) or
+    worse fails. The absolute bound is only a backstop, and the hard limit stops one that never ends."""
+    n, small, large = _growth(make, n)
+    assert large / max(small, 1e-9) < 10, f"{n}: {small * 1000:.2f} ms, {4 * n}: {large * 1000:.2f} ms"
     assert large < 1.0, f"{4 * n}: {large:.2f} s"
 
 
