@@ -110,9 +110,9 @@ async def reset_access_token(request: Request) -> AccessTokenOut:
 
 
 # S4.1-C: dedicated inbound-MCP token (separate from the app api_token, see
-# server/mcp_server/token_store.py). Generation is localhost-gated only — no old-token
-# challenge — because this feature is optional (no lockout risk the way the app's own
-# access token has): a fresh generate simply rotates. Show-once (spec Q3 detail 2): the
+# server/mcp_server/token_store.py). Generating one is localhost-only and, like rotating the
+# access token, needs the CURRENT access token as the bearer when auth is on (C11): anything
+# on this Mac can open a loopback socket, and a fresh MCP token is a key to the brain. Show-once (spec Q3 detail 2): the
 # full plaintext is returned ONLY by generate, exactly once; GET never re-shows it.
 mcp_token_router = APIRouter()
 
@@ -130,6 +130,12 @@ async def get_mcp_token(db: AsyncSession = Depends(get_session)) -> McpTokenOut:
 async def generate_mcp_token(request: Request, db: AsyncSession = Depends(get_session)) -> McpTokenOut:
     if not _is_direct_localhost(request):
         raise HTTPException(status_code=403, detail="MCP token generation is localhost-only")
+    active = auth.active_token()
+    if active and not _bearer_matches(request, active):
+        raise HTTPException(
+            status_code=401,
+            detail="present the current access token to generate an MCP token",
+            headers={"WWW-Authenticate": "Bearer"})
     from server.mcp_server import token_store
     token = token_store.generate_mcp_token()
     enabled = await settings_service.mcp_server_enabled(db)

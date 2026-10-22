@@ -101,7 +101,11 @@ def is_insecure_default() -> bool:
 
 def insecure_writes_allowed() -> bool:
     """Escape hatch: ``ARSLAN_ALLOW_INSECURE_SECRETS`` re-permits writes under the
-    public key for a bare no-key local run. Default OFF; every such write is logged."""
+    public key for a bare no-key local run. Default OFF; every such write is logged.
+    Never in the desktop app's server (C11): an inherited variable must not let it store
+    API keys under the public key."""
+    if config.settings.packaged:
+        return False
     return os.environ.get("ARSLAN_ALLOW_INSECURE_SECRETS", "").strip().lower() in _TRUTHY
 
 

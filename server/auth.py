@@ -10,7 +10,7 @@ from server import config
 
 _bearer = HTTPBearer(auto_error=False)
 
-# Process-wide token minted at boot when the deployment is packaged / prod /
+# Process-wide token minted at boot when the deployment is packaged /
 # non-loopback but no explicit ARSLAN_API_TOKEN was supplied (see
 # server.token_bootstrap.bootstrap_api_token). An explicit env token always wins;
 # this is only consulted when ARSLAN_API_TOKEN is empty. Stays None in the

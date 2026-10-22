@@ -42,16 +42,15 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
 
     Called at lifespan startup so it raises BEFORE the server serves any
     request. Guarantees:
-      - prod + missing ARSLAN_SECRET_KEY -> refuse to boot (RuntimeError).
-        The message names only what is missing; it never echoes any configured
-        secret value.
+      - ARSLAN_ENV set to anything but dev -> refuse to boot (prod mode is gone, C11).
+      - packaged + no secret (first-boot generation failed) -> refuse to boot
+        (RuntimeError). The message names only what is missing; it never echoes
+        any configured secret value.
       - dev + missing secret -> keep booting; crypto.py supplies a deterministic
         dev fallback key, so we only warn once.
-      - no ACTIVE token -> startup banner (all API/WS unauthenticated). In prod /
-        packaged / non-loopback binds ``server.token_bootstrap`` mints one before
-        this runs, so the banner only shows for the dev+localhost zero-friction
-        flow. (Prod used to refuse boot on an empty token; that hard failure is
-        superseded by the S1-3 bootstrap, which auto-generates + enforces one.)
+      - no ACTIVE token -> startup banner (all API/WS unauthenticated). In packaged /
+        non-loopback binds ``server.token_bootstrap`` mints one before this runs, so
+        the banner only shows for the dev+localhost zero-friction flow.
       - 0.0.0.0 bind (best-effort) + no active token -> network-exposure advisory.
 
     ``active_token`` is the effective token after bootstrap (explicit env token or
@@ -63,15 +62,26 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
     if active_token is None:
         active_token = cfg.api_token
 
+    # 0.1.63 C11: there is no prod mode any more. Refuse rather than quietly run with the dev
+    # defaults it used to harden: the desktop app is the supported way to run Arslan.
+    if os.environ.get("ARSLAN_ENV", "dev").strip().lower() not in ("", "dev"):
+        raise RuntimeError(
+            "ARSLAN_ENV is no longer supported (prod mode was removed in v0.1.63); "
+            "run the desktop app, or unset ARSLAN_ENV for a local dev server."
+        )
+
     # Stripped on purpose: crypto treats a whitespace-only secret as UNSET
-    # (server.crypto._active_secret), so booting prod with one would only defer
-    # the failure to the first encrypt(). Fail fast at boot instead.
-    if cfg.is_prod and not cfg.secret_key.strip():
+    # (server.crypto._active_secret), so booting with one would only defer the
+    # failure to the first encrypt(). The desktop app's server creates and saves
+    # its secret on first boot (server.secret_bootstrap); if that failed, it
+    # refuses to start rather than store API keys under the public dev key —
+    # whatever ARSLAN_ALLOW_INSECURE_SECRETS says (C11).
+    if cfg.packaged and not cfg.secret_key.strip():
         # NOTE: do not interpolate any configured secret (api_token/secret_key/
         # etc.) into this message — only name what is missing.
         raise RuntimeError(
-            "ARSLAN_ENV=prod requires ARSLAN_SECRET_KEY (a long random value); "
-            "refusing to start. Set it in the environment."
+            "No secret key: the desktop app could not create or read ~/.arslan/secret_key; "
+            "refusing to start. Check that the file is readable, or set ARSLAN_SECRET_KEY."
         )
 
     if not cfg.secret_key.strip():
@@ -82,7 +92,7 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
         )
 
     if not active_token:
-        # Only reachable in dev+localhost now — prod/packaged/non-loopback boots
+        # Only reachable in dev+localhost now — packaged/non-loopback boots
         # mint a token in token_bootstrap before this runs.
         log.warning(
             "⚠ ARSLAN_API_TOKEN not set: ALL API/WS endpoints are "
@@ -185,7 +195,7 @@ async def lifespan(app: FastAPI):
     from server.db.session import AsyncSessionLocal
 
     # S1-3: mint/load an access token when this deployment must be authenticated
-    # (prod / packaged / non-loopback bind) and no explicit ARSLAN_API_TOKEN was
+    # (packaged / non-loopback bind) and no explicit ARSLAN_API_TOKEN was
     # given. Dev+localhost stays zero-friction (no token, no file). Runs BEFORE
     # validation so the banner/advisory below reflect the effective token.
     token_bootstrap.bootstrap_api_token(settings)
@@ -456,7 +466,7 @@ def create_app() -> FastAPI:
 
     # add_middleware wraps in reverse order → TrustedHost (added last) is outermost,
     # so a foreign Host is rejected before CORS/routing runs. CORS uses an explicit
-    # allowlist (dev: the vite dev server; prod: ARSLAN_ALLOWED_ORIGINS) — never
+    # allowlist (dev: the vite dev server; packaged: none; ARSLAN_ALLOWED_ORIGINS) — never
     # '*' with credentials.
     app.add_middleware(
         CORSMiddleware,
@@ -487,15 +497,15 @@ def create_app() -> FastAPI:
 
     # Test-only helper to seed a spawn without going through the build socket.
     # It creates a spawn with NO auth, so gate it twice: it must be explicitly
-    # opted in via ARSLAN_TEST_ROUTES=1 AND never register in prod — even if the
-    # flag leaks into a prod deployment (defense in depth, P0-3).
+    # opted in via ARSLAN_TEST_ROUTES=1 AND never register in the desktop app's
+    # server — even if the flag leaks into it (defense in depth, P0-3; C11).
     import os
 
     from server.config import settings as _test_route_settings
 
     if (
         os.environ.get("ARSLAN_TEST_ROUTES") == "1"
-        and not _test_route_settings.is_prod
+        and not _test_route_settings.packaged
     ):
         _register_test_routes(app)
 

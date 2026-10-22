@@ -2,21 +2,20 @@
 
 A fresh install ships with ``ARSLAN_API_TOKEN`` empty, which makes
 ``require_auth`` / ``is_ws_token_valid`` no-ops — every endpoint UNAUTHENTICATED.
-That is fine for the daily dev+localhost flow but dangerous for a packaged app, a
-prod deployment, or a non-loopback bind.
+That is fine for the daily dev+localhost flow but dangerous for a packaged app or a
+non-loopback bind.
 
 This module closes that gap *without* adding friction for developers:
 
   * ``_needs_token(cfg)`` decides whether this deployment must be authenticated:
-      - ``ARSLAN_ENV=prod`` (``cfg.is_prod``), OR
-      - the packaged build flag ``ARSLAN_PACKAGED`` is truthy (the Tauri wrapper
-        sets ``ARSLAN_PACKAGED=1`` — that is the integration hook), OR
+      - the packaged build flag ``ARSLAN_PACKAGED`` is truthy (``cfg.packaged``; the
+        frozen server entry assigns ``ARSLAN_PACKAGED=1`` — that is the integration hook), OR
       - the *advertised* bind host is non-loopback. The app cannot observe the
         launcher's ``uvicorn --host`` directly; it infers the bind from
         ``HOST`` / ``ARSLAN_BIND_HOST`` (same signal as the boot advisory in
         ``server.main``). LIMITATION: a bare ``uvicorn --host 0.0.0.0`` with
-        neither env var set is invisible here — prod/packaged users should set
-        one of the env vars, and prod already forces enforcement anyway. The
+        neither env var set is invisible here — the packaged build forces
+        enforcement anyway. The
         connection-boundary middleware independently rejects ALL non-loopback
         requests while no token is active, so an unadvertised public bind cannot
         expose an unauthenticated API or WebSocket.
@@ -77,9 +76,7 @@ def _advertised_bind_host(cfg) -> str:
 
 def _needs_token(cfg) -> bool:
     """Whether this deployment must be authenticated (see module docstring)."""
-    if cfg.is_prod:
-        return True
-    if _is_truthy(os.environ.get(PACKAGED_ENV)):
+    if cfg.packaged or _is_truthy(os.environ.get(PACKAGED_ENV)):
         return True
     host = _advertised_bind_host(cfg)
     if host and not is_loopback_host(host):

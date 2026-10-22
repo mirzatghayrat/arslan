@@ -36,8 +36,8 @@ def keyfile(tmp_path, monkeypatch):
     return p
 
 
-def _boot(env: str = "dev", explicit: str = "", **kw) -> str:
-    return secret_bootstrap.bootstrap_secret_key(env=env, explicit=explicit, **kw)
+def _boot(explicit: str = "", **kw) -> str:
+    return secret_bootstrap.bootstrap_secret_key(explicit=explicit, **kw)
 
 
 def _own_messages(caplog) -> str:
@@ -127,18 +127,6 @@ def test_whitespace_only_explicit_is_unset_and_autogenerates(keyfile):
 
 
 # --- boundaries: prod / disabled --------------------------------------------
-
-
-def test_prod_never_touches_the_file(keyfile, caplog):
-    keyfile.parent.mkdir(parents=True)
-    keyfile.write_text("file-secret", encoding="utf-8")
-    with caplog.at_level(logging.INFO):
-        assert _boot(env="prod") == ""
-        assert _boot(env="prod", explicit="env-secret") == "env-secret"
-    text = _own_messages(caplog)
-    assert "differs" not in text  # no mismatch read/compare in prod
-    assert "dev-only" in text  # points out the file env is ignored in prod
-    assert keyfile.read_text(encoding="utf-8") == "file-secret"
 
 
 def test_disabled_set_but_empty_returns_explicit_verbatim(monkeypatch, caplog):
@@ -296,13 +284,15 @@ def test_load_settings_autogenerates_and_reuses(monkeypatch, tmp_path):
     assert cfg.settings.secret_key == first
 
 
-def test_load_settings_prod_ignores_persisted_file(monkeypatch, tmp_path):
+def test_load_settings_packaged_reads_the_persisted_file(monkeypatch, tmp_path):
+    # C11 (v0.1.63): the desktop app's server uses the same saved secret as a dev run (the
+    # prod mode that skipped the file is gone); it refuses to start only if there is none.
     import server.config as config
 
     f = tmp_path / "sk"
     f.write_text("persisted-secret", encoding="utf-8")
-    monkeypatch.setenv("ARSLAN_ENV", "prod")
+    monkeypatch.setenv("ARSLAN_PACKAGED", "1")
     monkeypatch.delenv("ARSLAN_SECRET_KEY", raising=False)
     monkeypatch.setenv(secret_bootstrap.SECRET_FILE_ENV, str(f))
     cfg = importlib.reload(config)
-    assert cfg.settings.secret_key == ""
+    assert cfg.settings.secret_key == "persisted-secret"

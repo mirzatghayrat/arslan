@@ -1,9 +1,9 @@
 """S1-3 env-split access-token bootstrap.
 
-Goal: a fresh install must be SAFE BY DEFAULT for packaged / prod / non-loopback
+Goal: a fresh install must be SAFE BY DEFAULT for packaged / non-loopback
 binds (auto-generate + enforce a token), while dev+localhost stays ZERO-friction
-(no token file, ``require_auth`` a no-op). Covers BOTH trigger paths (prod env,
-packaged flag) + non-loopback bind + reset endpoint + no cross-origin token leak.
+(no token file, ``require_auth`` a no-op). Covers both trigger paths (the packaged
+flag, a non-loopback bind) + reset endpoint + no cross-origin token leak.
 
 Isolation notes:
   * We reload ``server.config`` only (never ``server.auth``) so the singleton auth
@@ -77,12 +77,12 @@ async def test_dev_localhost_no_token_stays_open(monkeypatch, tmp_path):
     assert auth.is_ws_token_valid(None) is True
 
 
-# --- (b) prod build => auto-generate & enforce ------------------------------
+# --- (b) packaged build => auto-generate & enforce (C11: prod mode is gone) ---
 
 
 @pytest.mark.asyncio
-async def test_prod_no_token_generates_and_enforces(monkeypatch, tmp_path, caplog):
-    config, auth, tb = _reload(monkeypatch, tmp_path, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32)
+async def test_packaged_no_token_generates_and_enforces(monkeypatch, tmp_path, caplog):
+    config, auth, tb = _reload(monkeypatch, tmp_path, ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32)
     assert tb._needs_token(config.settings) is True
 
     with caplog.at_level(logging.WARNING):
@@ -106,13 +106,13 @@ async def test_prod_no_token_generates_and_enforces(monkeypatch, tmp_path, caplo
 
 
 @pytest.mark.asyncio
-async def test_prod_second_boot_reuses_same_token(monkeypatch, tmp_path):
-    config, _auth, tb = _reload(monkeypatch, tmp_path, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32)
+async def test_packaged_second_boot_reuses_same_token(monkeypatch, tmp_path):
+    config, _auth, tb = _reload(monkeypatch, tmp_path, ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32)
     first = tb.bootstrap_api_token(config.settings)
     assert first
 
     # A second boot (same data_dir) must READ the persisted token, never regenerate.
-    config, auth, tb = _reload(monkeypatch, tmp_path, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32)
+    config, auth, tb = _reload(monkeypatch, tmp_path, ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32)
     second = tb.bootstrap_api_token(config.settings)
     assert second == first
     assert auth.active_token() == first
@@ -162,7 +162,7 @@ def test_loopback_host_classification():
 async def test_explicit_env_token_wins_no_file(monkeypatch, tmp_path):
     config, auth, tb = _reload(
         monkeypatch, tmp_path,
-        ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32, ARSLAN_API_TOKEN="explicit-tok",
+        ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32, ARSLAN_API_TOKEN="explicit-tok",
     )
     token = tb.bootstrap_api_token(config.settings)
     assert token == "explicit-tok"
@@ -280,7 +280,7 @@ async def test_reset_refuses_when_env_token_set(monkeypatch, tmp_path):
     bootstrapped token would rotate NOTHING (the env token still gates) and lock the
     user out. So reset must REFUSE with an actionable 409 and never mint."""
     app, auth = _app_after_bootstrap(
-        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok", ARSLAN_ENV="prod",
+        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok", ARSLAN_PACKAGED="1",
         ARSLAN_SECRET_KEY="x" * 32)
     assert auth.active_token() == "explicit-tok"
     transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
@@ -300,7 +300,7 @@ async def test_get_reports_env_token_honestly(monkeypatch, tmp_path):
     """GET reports token_required:true, and hands the authoritative ENV token to a
     localhost caller (the honest, useful value — env is what actually gates)."""
     app, auth = _app_after_bootstrap(
-        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok", ARSLAN_ENV="prod",
+        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok", ARSLAN_PACKAGED="1",
         ARSLAN_SECRET_KEY="x" * 32)
     transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
     async with AsyncClient(transport=transport, base_url="http://localhost") as c:
