@@ -350,7 +350,6 @@ def selftest() -> int:
         "pptx",                         # the PIL casualty: python-pptx imports PIL
         "server.services.extract",
         "arslan.llm.adapter",
-        "arslan.spawn",
         "mcp",
         "aiosqlite",
         "sqlalchemy.dialects.sqlite.aiosqlite",  # resolved by name, not import
@@ -453,7 +452,6 @@ def selftest() -> int:
         # not in the bundle. collect_submodules does not collect these.
         for rel, why in (
             ("arslan/skills/bundled", "the bundled skills are missing"),
-            ("arslan/spawn/scaffold", "new skill-packs cannot be scaffolded"),
             ("arslan/templates/official", "official templates are unavailable"),
         ):
             d = root / rel
