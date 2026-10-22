@@ -15,9 +15,9 @@ from arslan import aio
 from arslan.aio import within
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-#: ③Hands' files (docs/sessions.md: other lanes do not change them), with how many calls each still has; the
-#: count may only go down. DELETE-BY: v0.1.64, when ③Hands has converted them.
-NOT_YET = {"server/registry/hands_tools.py": 1, "server/services/hands_client.py": 2}
+#: Files still waiting to be converted, with how many calls each still has; the count may only go down.
+#: ③Hands converted its two (hands_tools.py, hands_client.py), so none is left. DELETE-BY: v0.1.64.
+NOT_YET: dict[str, int] = {}
 _IMPORT = re.compile(r"from\s+asyncio(?:\.tasks)?\s+import\s*(?:\([^)]*|[^\n]*)\bwait_for\b")
 
 
