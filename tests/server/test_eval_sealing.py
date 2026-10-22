@@ -121,36 +121,23 @@ def test_every_sentinel_in_product_code_is_sealed():
     assert replay_safety._HERMETIC_CONVERSATION_IDS          # the census has something to hold
     for s in replay_safety._HERMETIC_CONVERSATION_IDS:
         assert replay_safety.is_hermetic_context(s) is True
-        assert replay_safety.should_not_curate(s) is True
 
 
-# --------------------------------------------------------------------------- curation split
+# --------------------------------------------------------------------------- the hermetic set stays narrow
 
 
-def test_should_not_curate_covers_the_eval_sentinels():
-    """整理层: synthetic traffic must never be learned from."""
-    assert replay_safety.should_not_curate("evolution-replay") is True
-    assert replay_safety.should_not_curate("evolution-eval") is True
-
-
-def test_should_not_curate_leaves_real_and_live_work_curatable():
-    assert replay_safety.should_not_curate("conv_abc123") is False
-    assert replay_safety.should_not_curate("scheduled-7") is False   # real work
-    assert replay_safety.should_not_curate(None) is False
-
-
-def test_curation_ids_must_never_enter_the_hermetic_set():
-    """🔴 The split exists because is_hermetic_context is DUAL-purpose: besides marking
-    synthetic traffic it makes tool_loop's throat refuse every non-replay-safe tool
-    (tool_loop.py:335). Curation must be excluded from the corpus WITHOUT being sealed —
-    it has to write. Anyone who "simplifies" the two predicates back into one, or adds a
-    curation sentinel to the hermetic set, seals the curator's own writes; this test is
-    the tripwire."""
+def test_only_eval_sentinels_are_hermetic():
+    """🔴 is_hermetic_context makes tool_loop's throat refuse every non-replay-safe tool.
+    A real, scheduled or background conversation id in the hermetic set would seal that
+    work's own writes; this test is the tripwire. (Its sibling predicate,
+    should_not_curate, went with distill_service in C8-4, v0.1.63.)"""
     for cid in replay_safety._HERMETIC_CONVERSATION_IDS:
         assert cid.startswith("evolution-"), (
-            "only evolution eval/replay sentinels may be hermetic — a curation/background "
-            "id here would make tool_loop refuse the curator's own writes")
-    assert replay_safety.should_not_curate is not replay_safety.is_hermetic_context
+            "only evolution eval/replay sentinels may be hermetic — a real or background "
+            "id here would make tool_loop refuse that work's own writes")
+    assert replay_safety.is_hermetic_context("conv_abc123") is False
+    assert replay_safety.is_hermetic_context("scheduled-7") is False   # real work
+    assert replay_safety.is_hermetic_context(None) is False
 
 
 async def test_throat_refuses_nonsafe_tool_in_hermetic_context_even_if_resolver_leaks():

@@ -81,30 +81,10 @@ def is_hermetic_context(conversation_id: str | None) -> bool:
     user conversation). Both the structural hermetic rule and the fail-closed throat
     assertion derive hermeticity from THIS predicate.
 
-    🔴 This predicate is DUAL-purpose and that is exactly why `should_not_curate` below
-    is a SEPARATE function: besides meaning "synthetic traffic", a True here makes
-    `tool_loop._dispatch_tool` refuse every non-REPLAY_SAFE_BUILTINS tool. Anything that
-    must still WRITE (the curation layer) may be excluded from learning WITHOUT being
-    hermetic. Never merge the two, and never add a background/curation id to
-    `_HERMETIC_CONVERSATION_IDS` — that would seal the curator's own writes.
+    🔴 Besides meaning "synthetic traffic", a True here makes `tool_loop._dispatch_tool`
+    refuse every non-REPLAY_SAFE_BUILTINS tool. Never add a real or background
+    conversation id to `_HERMETIC_CONVERSATION_IDS`: it would seal that work's own
+    writes. (The separate "never learn from it" predicate, should_not_curate, went with
+    its only caller, distill_service, in C8-4, v0.1.63.)
     """
     return conversation_id in _HERMETIC_CONVERSATION_IDS
-
-
-# Conversations whose traffic must never be LEARNED FROM (distilled / curated). Today
-# this is exactly the hermetic set — synthetic eval traffic — but it is a separate
-# registry on purpose: "don't learn from it" and "don't let it run tools" are different
-# questions, and the curation layer needs the first without the second (see the
-# docstring above). Additions here are cheap and safe; additions to the hermetic set are
-# not.
-_NON_CURATABLE_CONVERSATION_IDS: frozenset[str] = _HERMETIC_CONVERSATION_IDS
-
-
-def should_not_curate(conversation_id: str | None) -> bool:
-    """True iff this conversation's traffic is synthetic and must not be distilled or
-    curated into the second brain. Used by distill_service.
-
-    Kept distinct from `is_hermetic_context` — see its docstring for why merging the two
-    would seal the curation layer's own writes.
-    """
-    return conversation_id in _NON_CURATABLE_CONVERSATION_IDS

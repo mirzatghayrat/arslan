@@ -611,7 +611,6 @@ export const api = {
       "/skills/curator/retire",
       { method: "POST", body: JSON.stringify({ key }) },
     ),
-  completeChat: (id: number) => request<{ ok: boolean; archived: number }>(`/spawns/${id}/complete-chat`, { method: "POST" }),
   extractAttachmentUrl: (url: string, compress = false) =>
     request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {
       method: "POST",
