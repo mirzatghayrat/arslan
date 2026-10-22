@@ -149,6 +149,14 @@ async def test_an_unknown_part_in_a_pure_answer_still_answers():
     assert response.content == "Fine." and response.provider_content is None
 
 
+async def test_steady_chunks_longer_than_the_idle_bound_in_total_still_answer(monkeypatch):
+    """The idle bound is per chunk, not a bound on the whole reply (review of #377)."""
+    monkeypatch.setattr(gemini_stream, "IDLE_S", 0.2)
+    data = sse(*[chunk({"text": "a"}) for _ in range(5)], chunk({"text": "b"}, finish="STOP", usage=USAGE))
+    response = parse(await assemble(data, gaps=[0.1] * 6))          # 0.6 s in all, never 0.2 s quiet
+    assert response.content == "aaaaab"
+
+
 async def test_silence_past_the_gemini_idle_bound_is_a_stall(monkeypatch):
     """Gemini sends nothing while it thinks: its own idle bound (Q2), here shortened."""
     monkeypatch.setattr(gemini_stream, "IDLE_S", 0.2)

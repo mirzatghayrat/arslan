@@ -82,12 +82,17 @@ async def test_stopping_the_turn_stops_a_stream_that_never_pauses(name):
     assert loop.time() - stopped < 3
 
 
+async def _awaiting(answer):
+    return await answer
+
+
 @pytest.mark.timeout(20, method="thread")      # a lost cancel can swallow the signal too
-async def test_a_stop_that_lands_as_the_answer_arrives_is_not_lost():
+@pytest.mark.parametrize("make", [lambda answer: answer, lambda answer: _awaiting(answer)], ids=["future", "coroutine"])
+async def test_a_stop_that_lands_as_the_answer_arrives_is_not_lost(make):
     """The stop and the model's answer in the same loop turn: the stop wins (wait_for returned the answer)."""
     loop = asyncio.get_running_loop()
     answer = loop.create_future()
-    call = asyncio.create_task(model_call.call_with_recovery(lambda: answer, model_call.TurnRecovery(),
+    call = asyncio.create_task(model_call.call_with_recovery(lambda: make(answer), model_call.TurnRecovery(),
                                                              remaining_s=lambda: 60))
     await asyncio.sleep(0)                          # the call is waiting for the answer
     loop.call_soon(answer.set_result, "answer")
@@ -98,3 +103,25 @@ async def test_a_stop_that_lands_as_the_answer_arrives_is_not_lost():
 
 def test_the_expiry_is_the_same_timeout_error_callers_catch():
     assert asyncio.TimeoutError is TimeoutError
+
+
+async def test_a_model_call_runs_in_a_task_of_its_own_so_a_lost_stop_still_ends_the_turn():
+    """Review of #377: a stop lost elsewhere (another wait_for) leaves the turn's task with a cancel count of 1.
+    TaskRuntime.checkpoint returns early while its task is cancelling (task_service.checkpoint), so the model
+    call's own checkpoint (save("before_model") in the providers) must run where that count is 0, as it did
+    under wait_for: there it reaches the task row, finds the stop, and ends the turn."""
+    turn = asyncio.current_task()
+    turn.cancel()
+    try:
+        await asyncio.sleep(0)
+    except asyncio.CancelledError:
+        pass                                            # the stop, lost: nothing uncancels it
+    assert turn.cancelling() == 1
+    seen = []
+
+    async def request():
+        seen.append(asyncio.current_task().cancelling())
+        return "answer"
+    assert await model_call.call_with_recovery(request, model_call.TurnRecovery(), remaining_s=lambda: 60) == "answer"
+    assert seen == [0]
+    turn.uncancel()
