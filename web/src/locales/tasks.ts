@@ -19,6 +19,7 @@ const en = {
   localHistory: "This conversation contains local-only memory. Use a local model here, or start a new conversation for a cloud model.",
   noProgress: "Repeated actions did not add new evidence. Review the saved results and adjust the request before resuming.",
   inputRequired: "More information is needed. Answer the question in the conversation before continuing.",
+  cannotResume: "This task was saved by a feature that has since been removed, so it can't be resumed. Its saved results are still here; send the request again to start over.",
 };
 type Messages = { [Key in keyof typeof en]: string };
 export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messages> = {
@@ -41,6 +42,7 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     localHistory:"此对话包含仅限本地使用的记忆。请使用本地模型，或新建对话使用云端模型。",
     noProgress:"重复操作没有带来新的证据。请先查看已保存的结果，调整要求后再继续。",
     inputRequired:"还需要补充信息。请先在对话中回答问题，再继续。",
+    cannotResume:"此任务由一个已移除的功能保存，无法继续。已保存的结果仍在；如需继续，请重新发送这条请求。",
   },
   ja: {
     memoryChanged:"このタスクで使用した記憶が変更されたか、利用できなくなりました。保存済みの進捗を確認し、現在の記憶で再開してください。",
@@ -60,6 +62,7 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     localHistory:"この会話にはローカル専用の記憶が含まれます。ローカルモデルを使うか、クラウドモデル用に新しい会話を開始してください。",
     noProgress:"操作を繰り返しても新しい根拠が得られませんでした。保存された結果を確認し、依頼を調整してから再開してください。",
     inputRequired:"追加情報が必要です。会話内の質問に回答してから続けてください。",
+    cannotResume:"このタスクは削除された機能で保存されたため、再開できません。保存済みの結果はそのまま残っています。続けるには、リクエストをもう一度送ってください。",
   },
   es: {
     memoryChanged:"La memoria usada por esta tarea cambió o ya no está disponible. Revisa el progreso guardado y reanuda con la memoria actual.",
@@ -79,6 +82,7 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     localHistory:"Esta conversación contiene memoria de uso exclusivamente local. Usa un modelo local o inicia otra conversación para un modelo en la nube.",
     noProgress:"Las acciones repetidas no aportaron nuevas pruebas. Revisa los resultados guardados y ajusta la solicitud antes de reanudar.",
     inputRequired:"Se necesita más información. Responde a la pregunta en la conversación antes de continuar.",
+    cannotResume:"Esta tarea la guardó una función que ya no existe, así que no se puede reanudar. Sus resultados guardados siguen aquí; envía la solicitud de nuevo para empezar otra vez.",
   },
   de: {
     memoryChanged:"Der von dieser Aufgabe genutzte Speicher wurde geändert oder ist nicht mehr verfügbar. Prüfe den gespeicherten Fortschritt und setze die Aufgabe mit dem aktuellen Speicher fort.",
@@ -98,6 +102,7 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     localHistory:"Diese Unterhaltung enthält nur lokal freigegebene Erinnerungen. Nutze ein lokales Modell oder starte eine neue Unterhaltung für ein Cloud-Modell.",
     noProgress:"Wiederholte Aktionen lieferten keine neuen Belege. Prüfe die gespeicherten Ergebnisse und passe die Anfrage vor dem Fortsetzen an.",
     inputRequired:"Weitere Angaben sind nötig. Beantworte zuerst die Frage in der Unterhaltung.",
+    cannotResume:"Diese Aufgabe wurde von einer inzwischen entfernten Funktion gespeichert und kann nicht fortgesetzt werden. Die gespeicherten Ergebnisse bleiben erhalten; sende die Anfrage erneut, um neu zu beginnen.",
   },
   fr: {
     memoryChanged:"La mémoire utilisée par cette tâche a changé ou n’est plus disponible. Vérifiez la progression enregistrée, puis reprenez avec la mémoire actuelle.",
@@ -117,5 +122,6 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     localHistory:"Cette conversation contient des souvenirs réservés à un usage local. Utilisez un modèle local ou ouvrez une nouvelle conversation pour un modèle cloud.",
     noProgress:"Les actions répétées n’ont apporté aucun nouvel élément. Vérifiez les résultats enregistrés et ajustez la demande avant de reprendre.",
     inputRequired:"Des informations supplémentaires sont nécessaires. Répondez à la question dans la conversation avant de continuer.",
+    cannotResume:"Cette tâche a été enregistrée par une fonction qui n’existe plus ; elle ne peut pas être reprise. Ses résultats enregistrés restent disponibles ; renvoyez la demande pour recommencer.",
   },
 };

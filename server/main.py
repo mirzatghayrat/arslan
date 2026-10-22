@@ -278,8 +278,6 @@ async def lifespan(app: FastAPI):
         from server.services import background_jobs
         await background_jobs.report_interrupted()
         await run_reaper.reap_stuck_runs()
-        from server.services import recipes
-        await recipes.mark_interrupted()
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
 
@@ -515,8 +513,6 @@ def create_app() -> FastAPI:
     app.include_router(lessons_api.router, prefix="/api/v1")
     from server.api import phone as phone_api
     app.include_router(phone_api.router, prefix="/api/v1")
-    from server.api import recipes as recipes_api
-    app.include_router(recipes_api.router, prefix="/api/v1")
     from server.api import browser as browser_api
     app.include_router(browser_api.router, prefix="/api/v1")
     from server.api import hands as hands_api  # 0.1.53 Arslan Hands (Mac apps)

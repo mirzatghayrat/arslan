@@ -74,36 +74,6 @@ def test_malformed_saved_driver_fails_closed(driver):
         task_service.checked_driver(driver)
 
 
-async def test_active_recipe_approval_resume_preserves_task_and_spent_budget(execution_db, active_context, monkeypatch):
-    from server.api import recipes as api
-    from server.services import recipes
-    from tests.server.test_recipes import read, seed, spec
-    execution_id, version_id = await seed(execution_db, spec(approval=True))
-    calls = []
-    async def dispatch(cid, **kwargs):
-        budget().tool()
-        calls.append((kwargs["task_brief"].split("\n")[0], budget().id))
-        return {"full_output": calls[-1][0]}
-    monkeypatch.setattr(recipes.dispatcher, "dispatch", dispatch)
-    await recipes.execute(execution_id)
-    task_id = f"recipe-task:{execution_id}"
-    async with repository() as repo:
-        row = await repo.get(task_id)
-        assert row.phase == "waiting_user" and row.pause_reason == "task_input_required"
-        assert row.privacy["driver"] == {"kind": "recipe", "id": execution_id, "version_id": version_id}
-        assert row.budget["used"]["tool_calls"] == 2
-    monkeypatch.setattr(recipes, "launch", lambda execution_id: None)
-    await api.resume_execution(execution_id, api.Resume(approve_steps=["c"]))
-    await recipes.execute(execution_id)
-    assert [name for name, _ in calls].count("A") == 1 and len(calls) == 3
-    assert len({identity for _, identity in calls}) == 1
-    assert (await read(execution_db, execution_id)).status == "completed"
-    async with repository() as repo:
-        row = await repo.get(task_id)
-        assert row.budget["used"]["tool_calls"] == 3
-        assert row.pause_reason is None and row.phase == "succeeded"  # 0.1.42: delivered, not review-pending
-
-
 async def test_scheduled_pause_is_not_recorded_as_success(execution_db, active_context, monkeypatch):
     from server.db.models import ScheduledTask, ScheduledTaskRun
     from server.services import scheduler
