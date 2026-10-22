@@ -455,8 +455,8 @@ def test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait
     The ledger says it, not the clock (PR 2c): the later three decisions are "away" expiries
     whose card never opened (`wait_ms` None). The old check, under 2.0 s with a 0.5 s card, failed
     on a slow CI runner (2.08 s, run 38354283470) and in a loaded local run (2.05 s). Traced, no
-    later card opened or waited in any run: the turn is the one card's wait, plus the final
-    answer's paced reveal (`tool_loop._REVEAL_TOTAL_S`, about 0.5 s for "done"), plus 130-odd
+    later card opened or waited in any run: the turn is the one card's wait (the final answer's paced
+    reveal, about 0.5 s for "done", went in K8c), plus 130-odd
     statements of turn overhead, 0.15 s idle and up to 1.75 s under background-QoS throttling.
     The time bound only catches every card waiting its full time, which takes 4 x TIMEOUT_S."""
     monkeypatch.setattr(approvals, "TIMEOUT_S", 1.5)

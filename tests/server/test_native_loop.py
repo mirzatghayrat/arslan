@@ -287,9 +287,9 @@ async def test_no_tool_answer_is_not_swapped_for_continue_nudge(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_final_answer_is_revealed_progressively(monkeypatch):
-    # UX: the final answer must be emitted in several paced slices (typed-out feel), not one
-    # blob that pops. Slices must still concatenate to exactly the final answer.
+async def test_an_answer_that_was_not_streamed_shows_whole_at_once(monkeypatch):
+    # K8c (⓪Plan's Q5): every provider streams where it can; one that did not (this adapter returns the
+    # reply whole) shows it in one piece the moment it is ready. The paced "typed-out" reveal is gone.
     long_answer = "半导体行业全景：\n" + "".join(f"{i}. 要点内容一段。\n" for i in range(40))
     adapter = _NativeAdapter([_LLMResp(content=long_answer, tool_calls=[])])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -297,8 +297,7 @@ async def test_final_answer_is_revealed_progressively(monkeypatch):
     r = await tool_loop.run_native(
         system="s", user_content="半导体", history=[], emit=lambda e: None,
         on_chunk=chunks.append, resolve_tools=_resolve)
-    assert len(chunks) > 1, "final answer must be revealed in multiple slices, not one blob"
-    assert "".join(chunks) == r["final"]  # slices reconstruct the answer exactly
+    assert chunks == [r["final"]] and r["final"].strip() == long_answer.strip()
 
 
 @pytest.mark.asyncio
