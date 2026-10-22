@@ -1543,7 +1543,8 @@
     "every_n_hours": "toutes les {{count}} heures",
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
-    "unattended": "Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée. Ce qui n’en demande pas se fait quand même : consulter, lancer des commandes ordinaires dans le bac à sable et écrire dans le dossier de travail d’Arslan.",
+    "prompt": "Ce qu’elle fera à chaque fois :",
+    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée dans la Boîte de réception. Elles peuvent chercher des informations, et écrire des fichiers ou lancer des commandes dans le bac à sable uniquement dans le dossier de travail d’Arslan (et dans les dossiers temporaires et de cache).",
     "anyTask": "créer n’importe quelle tâche planifiée"
   },
   "enroll": {

@@ -1543,7 +1543,8 @@
     "every_n_hours": "cada {{count}} horas",
     "every_minute": "cada minuto",
     "every_n_minutes": "cada {{count}} minutos",
-    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan.",
+    "prompt": "Lo que hará cada vez:",
+    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: un paso que necesitaría tu confirmación se rechaza y aparece en la Bandeja. Pueden buscar información, y escribir archivos o ejecutar comandos en el entorno aislado solo en la carpeta de trabajo propia de Arslan (y en carpetas temporales y de caché).",
     "anyTask": "crear cualquier tarea programada"
   },
   "enroll": {

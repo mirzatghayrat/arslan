@@ -67,7 +67,8 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
         path={str("path")} background={f.background === true} {...v2}
         {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     case "propose_schedule":
-      return <ScheduleGrantCard callId={ask.call_id} name={str("name")} when={str("when")} background={f.background === true} {...v2}
+      return <ScheduleGrantCard callId={ask.call_id} name={str("name")} when={str("when")} prompt={str("prompt")}
+        background={f.background === true} {...v2}
         {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     default:
       return null;

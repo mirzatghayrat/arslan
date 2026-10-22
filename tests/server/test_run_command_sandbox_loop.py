@@ -113,7 +113,7 @@ async def test_asking_up_front_always_cards_even_a_harmless_command(monkeypatch)
 async def test_asking_up_front_without_a_window_is_refused(monkeypatch):
     ex = _Exec(stop=False)
     r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=None)
-    assert ex.outside == [] and r["ok"] is False and "click" in r["error"]
+    assert ex.outside == [] and r["ok"] is False and "nobody to ask" in r["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
 
 
 async def test_a_conversation_grant_runs_outside_from_the_start_there_only(monkeypatch):

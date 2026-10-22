@@ -16,7 +16,7 @@ export type PendingCommand = { callId: string; pretty: string; reason: string; r
   sandbox?: "outside" | "retry"; why?: string; receivedAt?: number; seq?: number } & CardV2;
 export type PendingEnrollNode = { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number; seq?: number };
 export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
-export type PendingSchedule = { callId: string; name: string; when: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
+export type PendingSchedule = { callId: string; name: string; when: string; prompt?: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
 export type PendingCapability = { callId: string; receivedAt?: number; seq?: number } & import("../api/client.types").CapabilityCard;
 export type PendingAction = { callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean;
   receivedAt?: number; seq?: number } & CardV2;
@@ -878,7 +878,7 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_schedule":
           set({ pendingSchedules: _added(state.pendingSchedules, { callId: frame.call_id, name: frame.name,
-                                   when: frame.when, background: frame.background === true, ..._cardV2(frame),
+                                   when: frame.when, prompt: frame.prompt, background: frame.background === true, ..._cardV2(frame),
                                    ..._arrived() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;

@@ -150,7 +150,7 @@ async def test_native_loop_passes_explicit_confirmation_callbacks(tool_name, cal
             assert approved
             executed.append(args)
             return {"ok": True, "external": False}
-    async def approve(*args):
+    async def approve(*args, **kwargs):    # S1 (U14 d): the schedule card is also given the prompt
         approved.append(args)
         return True
     async def resolve():

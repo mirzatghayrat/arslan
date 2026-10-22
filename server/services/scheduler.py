@@ -395,7 +395,9 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     once — it never waits:
       - the tool loop refuses a command that needs a card, a write in the
         user's folder, a schedule and another machine ("no callback" means
-        "refuse", P1); these refusals write no approvals ledger row yet;
+        "refuse", P1), and since S1 (U14 c) each writes the same policy row
+        decide() writes, which the Inbox lists; its commands work in Arslan's
+        own folder (U14 b);
       - a permissions.decide request is refused with a ledger row
         (decided_by=policy), which the Inbox lists. Hands' cards are among
         them: they go through decide too (0.1.61).

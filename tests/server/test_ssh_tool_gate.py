@@ -124,7 +124,7 @@ async def test_a_scheduled_turn_cannot_ssh(tmp_path, monkeypatch):
 
     assert captured["confirm_command"] is None, "an unattended turn has no way to ask"
     assert captured["result"]["ok"] is False
-    assert "confirmation" in captured["result"]["error"]
+    assert "nobody to ask" in captured["result"]["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
     assert probed == [], "and it never reached the network on the way to being refused"
 
 

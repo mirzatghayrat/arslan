@@ -7,8 +7,10 @@ parse_cron — read from that module rather than copied, because a second copy o
 a threshold is a second thing to drift.
 
 spawn_id is always None: a task Arslan schedules runs as Arslan (P2 §1.1),
-which also means it runs with no confirm callbacks and therefore cannot write
-or execute — scheduling cannot be used to escape the interactive gates.
+which also means it runs with no confirm callbacks and nobody to ask: it writes
+files and runs sandboxed commands only in Arslan's own folder (and temporary and
+cache folders), and any step that needs an OK is refused and listed in the Inbox
+(S1, U14 b–c) — scheduling cannot be used to escape the interactive gates.
 """
 from __future__ import annotations
 

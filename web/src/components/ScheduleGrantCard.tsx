@@ -11,6 +11,8 @@ interface Props {
   name: string;
   /** Raw cadence from the backend: "every: 3600" or "cron: 0 9 * * *". */
   when: string;
+  /** S1 (U14 d): the text the task runs each time, in full (the server refuses one longer than a card shows). */
+  prompt?: string;
   background?: boolean;
   expiresAt?: number | null;
   /** 0.1.61 §A4: Once / In this conversation (a card from the permission layer); absent on an old frame. */
@@ -58,7 +60,7 @@ export function humanCadence(when: string, t?: TFunction): string {
  * long the yes lasts (the frame's options, 0.1.61: permissions.decide sends every schedule card),
  * and a No takes a note.
  */
-export default function ScheduleGrantCard({ callId, name, when, background, expiresAt, options, alwaysLabel, busy, queue,
+export default function ScheduleGrantCard({ callId, name, when, prompt, background, expiresAt, options, alwaysLabel, busy, queue,
                                             onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
@@ -66,10 +68,13 @@ export default function ScheduleGrantCard({ callId, name, when, background, expi
   return (
     <AskCard testId="schedule-card" who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
       title={t("schedgrant.label")}
-      detail={<><p className="text-[13px] text-muted-foreground">{t("schedgrant.body")}</p><CodeBox code={name} numbered={false} /></>}
+      detail={<><p className="text-[13px] text-muted-foreground">{t("schedgrant.body")}</p><CodeBox code={name} numbered={false} />
+        {prompt ? <div data-testid="schedule-prompt" className="flex flex-col gap-1">
+          <p className="text-[13px] text-muted-foreground">{t("schedgrant.prompt")}</p>
+          <CodeBox code={prompt} numbered={false} /></div> : null}</>}
       context={[{ icon: lineIcon(CalendarClock), text: humanCadence(when, t) },
-                // The choice says how long the yes lasts; this line says only what an unattended run
-                // does (it never waits: a step that needs you is skipped).
+                // The choice says how long the yes lasts; this line says what an unattended run may do (S1:
+                // a step that needs you is refused and listed; writes and sandboxed commands only in ~/Arslan).
                 { icon: lineIcon(Eye), text: <span data-testid="schedule-unattended">{t("schedgrant.unattended")}</span> }]}
       // "In this conversation" lets it create ANY scheduled task here without asking (the grant's target is every schedule).
       options={<ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
