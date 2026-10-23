@@ -24,6 +24,16 @@ def set_bootstrapped_token(token: str | None) -> None:
     _bootstrapped_token = token or None
 
 
+def _matches(presented: str, expected: str) -> bool:
+    """Constant-time equality. ``compare_digest`` only takes ASCII strings and raises ``TypeError``
+    on anything else, which turned a non-ASCII bearer or ``?token=`` into a 500 instead of a refusal
+    (C11b, #338 review F4). A token that cannot be compared is a mismatch."""
+    try:
+        return secrets.compare_digest(presented, expected)
+    except TypeError:
+        return False
+
+
 def active_token() -> str:
     """The token that currently gates the API/WS, resolved live.
 
@@ -49,7 +59,7 @@ async def require_auth(
     token = active_token()
     if not token:
         return
-    if credentials is None or not secrets.compare_digest(credentials.credentials, token):
+    if credentials is None or not _matches(credentials.credentials, token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",
@@ -64,4 +74,4 @@ def is_ws_token_valid(token: str | None) -> bool:
         return True
     if token is None:
         return False
-    return secrets.compare_digest(token, expected)
+    return _matches(token, expected)

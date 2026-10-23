@@ -113,6 +113,14 @@ class Settings:
         return f"sqlite+aiosqlite:///{self.db_path}"
 
 
+def _no_wildcard(variable: str, values: tuple[str, ...]) -> tuple[str, ...]:
+    """A `*` entry would hand the Host check or CORS to every host or origin; the server refuses to
+    start instead of binding wide open (C11b, #338 review F5). Only a dev run reads these variables."""
+    if "*" in values:
+        raise ValueError(f"{variable} must name each host or origin; '*' is not accepted")
+    return values
+
+
 def load_settings() -> Settings:
     """Build a Settings instance from current environment variables."""
     # Root data dir. UNSET -> stable per-platform app-data dir (so a stranger keeps
@@ -140,7 +148,8 @@ def load_settings() -> Settings:
     if packaged:
         allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")   # no test-harness host either (C11 review F1)
     elif hosts_raw:
-        allowed_hosts = tuple(h.strip() for h in hosts_raw.split(",") if h.strip())
+        allowed_hosts = _no_wildcard("ARSLAN_ALLOWED_HOSTS",
+                                     tuple(h.strip() for h in hosts_raw.split(",") if h.strip()))
     else:
         allowed_hosts = ("localhost", "127.0.0.1", "testserver", "test", "t")
 
@@ -151,7 +160,8 @@ def load_settings() -> Settings:
     if packaged:
         allowed_origins: tuple[str, ...] = ()     # the app's own page is same-origin; nothing else may call it
     elif origins_raw:
-        allowed_origins = tuple(o.strip() for o in origins_raw.split(",") if o.strip())
+        allowed_origins = _no_wildcard("ARSLAN_ALLOWED_ORIGINS",
+                                       tuple(o.strip() for o in origins_raw.split(",") if o.strip()))
     else:
         allowed_origins = ("http://localhost:5173", "http://127.0.0.1:5173")
 
