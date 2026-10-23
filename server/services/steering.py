@@ -10,8 +10,8 @@ The running turn's tool loop reads what is in the box after each tool, or each g
 carries it (tool_loop: stored, its sender told); one the turn ends without sending goes back. What is still
 here when the turn ends goes back to the inbox of the socket that sent it and runs once, as the next turn: a
 turn that was already writing its answer has no boundary left. A socket that closes takes its messages back
-first (`withdraw`), ahead of the close. `put` refuses when no turn is open, so a message never waits in a
-closed box.
+first (`withdraw`), and waits for the ones a turn already took to be part of it or back (`settled`), all
+ahead of the close. `put` refuses when no turn is open, so a message never waits in a closed box.
 
 `steering_off` (setting, no UI) leaves every such message queued, as before K9b. DELETE-BY: v0.1.64, when
 M3 #10 passes and v0.1.63 has no steering issue (card K9).
@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(eq=False)
 class Steer:
     content: str
     source: str | None                                 # "phone" from the Arslan Bridge, else the window
@@ -31,12 +31,20 @@ class Steer:
     tell: Callable[[dict], Awaitable[None]]            # the sending socket's own sender
     inbox: asyncio.Queue                               # the sending socket's inbox: where it goes back
     sink: Callable[[dict], None] | None = None         # the sending socket's fan-out sink (never echoed to)
+    done: asyncio.Event = field(default_factory=asyncio.Event)     # part of the turn, or handed back
 
     def hand_back(self) -> None:
         self.inbox.put_nowait(self.frame)
+        self.settle()
+
+    def settle(self) -> None:
+        self.done.set()
+        if self in _taken:
+            _taken.remove(self)
 
 
 _open: dict[str, list[Steer]] = {}
+_taken: list[Steer] = []           # taken by a turn, not yet part of it nor handed back
 
 
 def open_box(conversation_id: str) -> None:
@@ -62,6 +70,7 @@ def take(conversation_id: str) -> list[Steer]:
     if not box:
         return []
     taken, box[:] = list(box), []
+    _taken.extend(taken)
     return taken
 
 
@@ -74,6 +83,13 @@ def withdraw(conversation_id: str, inbox: asyncio.Queue) -> list[Steer]:
     mine = [steer for steer in box if steer.inbox is inbox]
     box[:] = [steer for steer in box if steer.inbox is not inbox]
     return mine
+
+
+async def settled(inbox: asyncio.Queue) -> None:
+    """A socket closed: its messages a turn already took become part of that turn (its next request) or come
+    back into this inbox (the turn ended first), still ahead of the close (review of #393)."""
+    for steer in [steer for steer in _taken if steer.inbox is inbox]:
+        await steer.done.wait()
 
 
 def close_box(conversation_id: str) -> None:

@@ -305,9 +305,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             socket_gone["yes"] = True
             gone.set()
             # K9b: this socket's messages still waiting in the box run as turns of their own, as a queued
-            # message always has: into its inbox ahead of the close (review of #393).
+            # message always has: into its inbox ahead of the close; so do the ones a turn took and ends
+            # without sending (review of #393).
             for steer in steering.withdraw(conversation_id, inbox):
                 inbox.put_nowait(steer.frame)
+            await steering.settled(inbox)
             await inbox.put(_CLOSED)
 
     def _answered_by_typing(note: str, by: str) -> None:

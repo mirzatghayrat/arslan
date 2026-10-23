@@ -44,12 +44,14 @@ def _clean():
     turn_journal._active.clear()
     approvals._reset_for_tests()
     steering._open.clear()
+    steering._taken.clear()
     yield
     approvals._reset_for_tests()
     for d in (run_registry._tasks, run_registry._by_conversation, run_registry._sinks, run_registry._recorders):
         d.clear()
     turn_journal._active.clear()
     steering._open.clear()
+    steering._taken.clear()
 
 
 @pytest.fixture
@@ -231,6 +233,53 @@ def test_a_message_whose_socket_goes_before_the_turn_ends_still_runs_as_a_turn(a
     assert [run for role, content, run, _s in rows if role == "user" and content == STEER] == [None]
 
 
+def test_a_message_a_turn_took_and_never_sent_still_runs_when_its_socket_went_meanwhile(app_client, monkeypatch):
+    """Review of #393: the window's turn took the phone's message after a tool, the phone's socket went, and the
+    turn then ended without sending it (here its store failed). Handed back behind the socket's close it would
+    never run; the closing socket waits for it, and it runs as a turn of its own."""
+    cid = "k9b-taken-then-gone"
+    model = _Model()
+    tool = _wire(monkeypatch, model)
+    committing, withdrawn, real_add, real_withdraw = threading.Event(), threading.Event(), memory.add_message, \
+        steering.withdraw
+    failed = []
+
+    async def add_message(conversation_id, role, content, **kwargs):
+        if content == STEER and not failed:
+            failed.append(True)
+            committing.set()
+            while not withdrawn.is_set():               # the phone's socket goes now
+                await asyncio.sleep(0.01)
+            raise OSError("database is locked")
+        return await real_add(conversation_id, role, content, **kwargs)
+
+    def withdraw(conversation_id, inbox):
+        mine = real_withdraw(conversation_id, inbox)
+        withdrawn.set()
+        return mine
+    monkeypatch.setattr(memory, "add_message", add_message)
+    monkeypatch.setattr(steering, "withdraw", withdraw)
+
+    def answered(rows):
+        users = [i for i, row in enumerate(rows) if row[0] == "user" and row[1] == STEER]
+        return bool(users) and any(row[0] == "arslan" for row in rows[users[0] + 1:])
+    with app_client.websocket_connect(f"/ws/arslan/{cid}") as window:
+        window.receive_json()
+        window.send_json({"type": "user_message", "content": "WANTS-TOOLS: two waits"})
+        assert tool.started.wait(5)
+        with app_client.websocket_connect(f"/ws/arslan/{cid}") as phone:
+            phone.receive_json()
+            phone.send_json({"type": "user_message", "content": STEER, "source": "phone"})
+            _collect_until(phone, "queued")
+            tool.release.set()
+            assert committing.wait(5)                   # the turn took it, and is about to send it
+            phone.send_text("the socket went")
+            rows = _rows_reached(app_client, cid, answered)
+    assert answered(rows), rows
+    assert [(run, source) for role, content, run, source in rows if role == "user" and content == STEER] == [
+        (None, "phone")]
+
+
 def test_a_message_waiting_for_the_lock_leaves_the_running_turns_box_alone(app_client, monkeypatch):
     """The box opens only once a turn holds the lock: a message with an attachment (which waits for its own
     turn, on another socket) never replaces the running turn's box and what is in it."""
@@ -390,18 +439,33 @@ async def test_a_turn_without_the_lock_never_takes_the_message(execution_db, mon
     assert tool.ran == ["a", "b"] and _box_left(cid) == [STEER] and tool.told == []
 
 
-async def test_a_message_read_that_no_request_carried_goes_back_to_run_on_its_own(execution_db, monkeypatch):
-    """Review of #393: read after the batch, then the turn reaches its limit before the next request. The
-    message is not stored and not said to be added; it goes back to its sender, to run once as a turn."""
+class _Charged(_Model):
+    """As a provider does: each request is counted against the budget as it is sent, and its tokens charged."""
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7, **kwargs):
+        from arslan import execution_budget
+        execution_budget.model_request(1024)
+        response = await super().chat(system, user, history=history, tools=tools, temperature=temperature, **kwargs)
+        execution_budget.charge_tokens(20)
+        return response
+
+
+@pytest.mark.parametrize("limit,model", [({"model_requests": 1}, _Model), ({"tokens": 12}, _Charged)],
+                         ids=["its requests", "its tokens"])
+async def test_a_message_read_that_no_request_carried_goes_back_to_run_on_its_own(execution_db, monkeypatch,
+                                                                                  limit, model):
+    """Review of #393: read after the batch, then the turn reaches a limit before the next request (the request
+    count at the top of the step; tokens or dollars only as the provider sends it). The message is not stored
+    and not said to be added; it goes back to its sender, to run once as a turn."""
     from arslan import execution_budget
-    cid, model = "k9b-not-carried", _Model()
+    cid, model = "k9b-not-carried", model()
     tool = _SteersIn(cid)
     monkeypatch.setitem(tool_loop_mod.EXECUTORS, "fixture_wait", tool)
 
     async def tools():
         return [{"key": "fixture_wait", "description": "Waits."}]
     steering.open_box(cid)
-    with execution_budget.scope(execution_budget.Budget(execution_budget.Limits(model_requests=1))):
+    with execution_budget.scope(execution_budget.Budget(execution_budget.Limits(**limit))):
         await tool_loop_mod.run_native(system="S", user_content="WANTS-TOOLS", history=[], emit=lambda _: None,
                                        on_chunk=lambda _: None, resolve_tools=tools, adapter_override=model,
                                        conversation_id=cid, steerable=True)
@@ -410,6 +474,77 @@ async def test_a_message_read_that_no_request_carried_goes_back_to_run_on_its_ow
     assert tool.inbox.get_nowait() == {"type": "user_message", "content": STEER}
     async with execution_db() as db:
         assert (await db.execute(select(ArslanMessage).where(ArslanMessage.conversation_id == cid))).first() is None
+
+
+@pytest.mark.parametrize("ending", ["a stop lands as it is stored", "its store fails"])
+async def test_a_message_is_never_both_stored_and_handed_back(execution_db, monkeypatch, ending):
+    """Review of #393: a stop that lands while the message is stored counts it as stored (handed back too, it
+    would run twice); a store that fails hands it back, not stored (it runs once as a turn of its own)."""
+    cid, model = "k9b-stored-once", _Model()
+    tool = _SteersIn(cid)
+    monkeypatch.setitem(tool_loop_mod.EXECUTORS, "fixture_wait", tool)
+    stored, real = asyncio.Event(), memory.add_message
+
+    async def add_message(conversation_id, role, content, **kwargs):
+        if content != STEER:
+            return await real(conversation_id, role, content, **kwargs)
+        if ending == "its store fails":
+            raise OSError("database is locked")
+        message_id = await real(conversation_id, role, content, **kwargs)
+        stored.set()
+        await asyncio.sleep(10)                        # the stop lands here, the row already written
+        return message_id
+    monkeypatch.setattr(memory, "add_message", add_message)
+
+    async def tools():
+        return [{"key": "fixture_wait", "description": "Waits."}]
+    steering.open_box(cid)
+    turn = asyncio.create_task(tool_loop_mod.run_native(
+        system="S", user_content="WANTS-TOOLS", history=[], emit=lambda _: None, on_chunk=lambda _: None,
+        resolve_tools=tools, adapter_override=model, conversation_id=cid, steerable=True))
+    if ending == "its store fails":
+        with pytest.raises(OSError):
+            await turn
+    else:
+        await asyncio.wait_for(stored.wait(), 5)
+        turn.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await turn
+    async with execution_db() as db:
+        rows = (await db.execute(select(ArslanMessage.content).where(ArslanMessage.conversation_id == cid))).all()
+    assert tool.told == [] and steering._taken == []
+    if ending == "its store fails":
+        assert rows == [] and tool.inbox.get_nowait() == {"type": "user_message", "content": STEER}
+    else:
+        assert [row.content for row in rows] == [STEER] and tool.inbox.empty()
+    _box_left(cid)
+
+
+async def test_a_reply_cut_off_keeps_every_calls_truncation_note_while_a_message_waits(execution_db, monkeypatch):
+    """Review of #393: a reply cut by the output limit runs none of its calls and reads nothing after them; a
+    waiting message never replaces a call's truncation note with "the message comes right after"."""
+    cid = "k9b-cut-off"
+
+    class _Cut(_Model):
+        async def chat(self, system, user, history=None, tools=None, temperature=0.7, **kwargs):
+            response = await super().chat(system, user, history=history, tools=tools, temperature=temperature,
+                                          **kwargs)
+            if len(self.inputs) == 1:
+                response.finish_reason = "length"
+            return response
+    model, told = _Cut(), _Told()
+    monkeypatch.setitem(tool_loop_mod.EXECUTORS, "fixture_wait", _SteersIn(cid))
+
+    async def tools():
+        return [{"key": "fixture_wait", "description": "Waits."}]
+    steering.open_box(cid)
+    steering.put(cid, steering.Steer(STEER, None, {"type": "user_message", "content": STEER}, told, asyncio.Queue()))
+    await tool_loop_mod.run_native(system="S", user_content="WANTS-TOOLS", history=[], emit=lambda _: None,
+                                   on_chunk=lambda _: None, resolve_tools=tools, adapter_override=model,
+                                   conversation_id=cid, steerable=True)
+    second = model.inputs[1]
+    assert second.count("The output limit was reached") == 2 and "Not run: the user sent a message" not in second
+    assert STEER not in second and _box_left(cid) == [STEER]
 
 
 @pytest.mark.parametrize("started,steered,origin", [(None, "phone", "chat"), ("phone", None, "phone")],

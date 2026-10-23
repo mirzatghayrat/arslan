@@ -437,17 +437,25 @@ async def _commit_steers(pending: list, conversation_id: str) -> None:
     run (so the undo of the turn, S3b, takes it with the turn and never counts it as a later one), one from the
     iPhone is shown in the Mac windows as today (never journaled: it is in the history; never echoed to its own
     sender, the Bridge, whose next turn would read as the phone's), and its sender hears `dequeued` with
-    `inserted`. Each leaves `pending` once stored: a stop meanwhile hands back only the rest."""
+    `inserted`. Each leaves `pending` before it is stored: a stop landing as it is stored counts it as stored (it
+    is never run twice); a store that fails puts it back, to go back with the rest."""
     from server.orchestrator import memory
     from server.services import personal_context, run_registry
     from server.ws import protocol
     current = personal_context.current()
     run_id = current.source_run_id if current is not None else None
     while pending:
-        steer = pending[0]
-        message_id = await memory.add_message(conversation_id, "user", steer.content, source=steer.source,
-                                              run_id=run_id)
-        pending.pop(0)
+        steer = pending.pop(0)
+        try:
+            message_id = await memory.add_message(conversation_id, "user", steer.content, source=steer.source,
+                                                  run_id=run_id)
+        except asyncio.CancelledError:
+            steer.settle()
+            raise
+        except Exception:
+            pending.insert(0, steer)
+            raise
+        steer.settle()
         if steer.source == "phone":
             run_registry.make_emit(conversation_id, skip=steer.sink)(
                 protocol.message(message_id, steer.content, "user") | {"source": "phone"})
@@ -3165,7 +3173,10 @@ async def _run_native(
             logger.warning("context parts not measured", exc_info=True)
             usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
         if _facts is not None and _facts.get("steers"):
-            await _commit_steers(_facts["steers"], conversation_id)    # K9b: this request carries them
+            # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
+            # provider checks as it sends; a stop here hands them back).
+            budget.check_request()
+            await _commit_steers(_facts["steers"], conversation_id)
         step = _StepStream(turn_text) if turn_text is not None else None
         try:
             resp = await _model_call(a, system, convo, current_request, tools=step_tools,
@@ -3231,7 +3242,10 @@ async def _run_native(
                 # K9b: the boundary after the previous call (or group of reads): a message sent meanwhile is
                 # read before anything else runs. A call not started is not run, and still gets a result. The
                 # message is taken after the batch, right as it is read (nothing can fall between the two).
-                if not steered and index and steerable and conversation_id and steering.waiting(conversation_id):
+                # A reply cut off by the output limit runs none of its calls and reads nothing after them: each
+                # keeps its truncation note.
+                if not steered and index and steerable and conversation_id and not cut_off \
+                        and steering.waiting(conversation_id):
                     steered = True
                 if steered and not (reads is not None and reads.has(index)):
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "skipped_for_message",
