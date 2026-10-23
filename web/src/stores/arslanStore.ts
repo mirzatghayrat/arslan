@@ -681,6 +681,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSource: null,
             activitySteps: [],
             activeRunId: null,
+            inserted: false,               // K9b: the reply it was added to is gone
             ...(item
               ? {
                   items: [...state.items, item],
@@ -877,6 +878,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSource: null,
             activitySteps: [],
             activeRunId: null,
+            inserted: false,               // K9b: the reply it was added to ended
           });
           break;
         // 0.1.59: a long answer is not "Interrupted" — the beat above kept the watchdog quiet.

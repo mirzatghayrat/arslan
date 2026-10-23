@@ -55,6 +55,16 @@ describe('a message added to the running reply', () => {
     expect(store().inserted).toBe(false);
   });
 
+  it.each([
+    ['a stop', { type: 'run_cancelled', run_id: 1 }],
+    ['an error', { type: 'error', message: 'Provider error' }],
+  ])('the notice goes when that reply ends in %s', (_how, frame) => {
+    store().handleFrame({ type: 'stream_start', source: 'arslan' } as never);
+    store().handleFrame({ type: 'dequeued', inserted: true } as never);
+    store().handleFrame(frame as never);
+    expect(store().inserted).toBe(false);
+  });
+
   it('a plain dequeued still starts its own turn', () => {
     store().handleFrame({ type: 'queued' } as never);
     store().handleFrame({ type: 'dequeued' } as never);

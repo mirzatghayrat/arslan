@@ -5,16 +5,20 @@ A socket's reader puts a `user_message` here instead of in its own inbox when a 
 that window waits (a waiting card keeps its rule: typing answers it No, with the message as the note, and
 the message runs next). The sender is told `queued` at once, as before.
 
-The running turn's tool loop takes what is in the box after each tool, or each group of reads run together
-(K9a). A message is only ever taken whole, once. What is still here when the turn ends goes back to the
-inbox of the socket that sent it and runs once, as the next turn: a turn that was already writing its
-answer has no boundary left. `put` refuses when no turn is open, so a message never waits in a closed box.
+The running turn's tool loop reads what is in the box after each tool, or each group of reads run together
+(K9a). A message is only ever taken whole, once, and becomes part of the turn when the next model request
+carries it (tool_loop: stored, its sender told); one the turn ends without sending goes back. What is still
+here when the turn ends goes back to the inbox of the socket that sent it and runs once, as the next turn: a
+turn that was already writing its answer has no boundary left. A socket that closes takes its messages back
+first (`withdraw`), ahead of the close. `put` refuses when no turn is open, so a message never waits in a
+closed box.
 
 `steering_off` (setting, no UI) leaves every such message queued, as before K9b. DELETE-BY: v0.1.64, when
 M3 #10 passes and v0.1.63 has no steering issue (card K9).
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -25,7 +29,11 @@ class Steer:
     source: str | None                                 # "phone" from the Arslan Bridge, else the window
     frame: dict                                        # the user_message as it came, to hand back
     tell: Callable[[dict], Awaitable[None]]            # the sending socket's own sender
-    hand_back: Callable[[dict], None]                  # into the sending socket's inbox
+    inbox: asyncio.Queue                               # the sending socket's inbox: where it goes back
+    sink: Callable[[dict], None] | None = None         # the sending socket's fan-out sink (never echoed to)
+
+    def hand_back(self) -> None:
+        self.inbox.put_nowait(self.frame)
 
 
 _open: dict[str, list[Steer]] = {}
@@ -57,10 +65,21 @@ def take(conversation_id: str) -> list[Steer]:
     return taken
 
 
+def withdraw(conversation_id: str, inbox: asyncio.Queue) -> list[Steer]:
+    """A socket closed: its messages still waiting leave the box, to go into its inbox ahead of the close
+    (handed back at the turn's end they would land after it, and never run)."""
+    box = _open.get(conversation_id)
+    if not box:
+        return []
+    mine = [steer for steer in box if steer.inbox is inbox]
+    box[:] = [steer for steer in box if steer.inbox is not inbox]
+    return mine
+
+
 def close_box(conversation_id: str) -> None:
     """The turn ends: what it never took goes back to its sender's inbox, to run once as the next turn."""
     for steer in _open.pop(conversation_id, None) or []:
-        steer.hand_back(steer.frame)
+        steer.hand_back()
 
 
 def insertable(frame: dict) -> bool:

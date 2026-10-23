@@ -423,23 +423,33 @@ def _planned_read(call: dict, neutral_call: dict, wired_keys: set, params_by_key
     return name, args
 
 
-async def _read_steers(steers: list, convo: list[dict], conversation_id: str) -> None:
+def _read_steers(steers: list, convo: list[dict], pending: list) -> None:
     """K9b: the messages sent while the turn worked join it after the batch's results (K1's order: tool
-    results, then the user's text). Each is stored as a user message tagged with this run, so the undo of
-    the turn (S3b) takes it with the turn and never counts it as a later one; one from the iPhone is shown
-    in the Mac windows as today (never journaled: it is in the history); its sender hears `dequeued` with
-    `inserted`."""
+    results, then the user's text). They become part of the turn when the next request carries them
+    (_commit_steers); until then `pending` holds them, and run_native hands back what no request carried."""
+    for steer in steers:
+        convo.append({"role": "user", "content": steer.content})
+        pending.append(steer)
+
+
+async def _commit_steers(pending: list, conversation_id: str) -> None:
+    """K9b: the request about to go carries these messages: each is stored as a user message tagged with this
+    run (so the undo of the turn, S3b, takes it with the turn and never counts it as a later one), one from the
+    iPhone is shown in the Mac windows as today (never journaled: it is in the history; never echoed to its own
+    sender, the Bridge, whose next turn would read as the phone's), and its sender hears `dequeued` with
+    `inserted`. Each leaves `pending` once stored: a stop meanwhile hands back only the rest."""
     from server.orchestrator import memory
     from server.services import personal_context, run_registry
     from server.ws import protocol
     current = personal_context.current()
     run_id = current.source_run_id if current is not None else None
-    for steer in steers:
-        convo.append({"role": "user", "content": steer.content})
+    while pending:
+        steer = pending[0]
         message_id = await memory.add_message(conversation_id, "user", steer.content, source=steer.source,
                                               run_id=run_id)
+        pending.pop(0)
         if steer.source == "phone":
-            run_registry.make_emit(conversation_id)(
+            run_registry.make_emit(conversation_id, skip=steer.sink)(
                 protocol.message(message_id, steer.content, "user") | {"source": "phone"})
         try:
             await steer.tell({"type": "dequeued", "inserted": True})
@@ -2793,6 +2803,10 @@ async def run_native(**kwargs) -> dict:
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
     finally:
+        # K9b: a message read after the last batch that no request carried (the turn stopped, hit its limit
+        # or failed first) goes back to its sender, to run once as a turn of its own.
+        for steer in facts.pop("steers", None) or []:
+            steer.hand_back()
         _untrusted.end_turn(seen)
         _SENT_IS_FINAL.reset(sent_is_final)
         tool_outputs.conversation.reset(copies_of)
@@ -3150,6 +3164,8 @@ async def _run_native(
         except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
             logger.warning("context parts not measured", exc_info=True)
             usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
+        if _facts is not None and _facts.get("steers"):
+            await _commit_steers(_facts["steers"], conversation_id)    # K9b: this request carries them
         step = _StepStream(turn_text) if turn_text is not None else None
         try:
             resp = await _model_call(a, system, convo, current_request, tools=step_tools,
@@ -3207,15 +3223,16 @@ async def _run_native(
             reads = None if cut_off or wrap_up else await parallel_reads.plan(
                 [_planned_read(call, neutral_call, wired_keys, params_by_key)
                  for call, neutral_call in zip(tool_calls, calls)])
-            steered: list | None = None        # K9b: messages sent meanwhile, taken at a tool boundary
+            steered = False                     # K9b: a message sent meanwhile waits: the rest is not started
             for index, (call, neutral_call) in enumerate(zip(tool_calls, calls)):
                 marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}
                 name = str(fn.get("name") or "")
                 # K9b: the boundary after the previous call (or group of reads): a message sent meanwhile is
-                # read before anything else runs. A call not started is not run, and still gets a result.
-                if steered is None and index and steerable and conversation_id and steering.waiting(conversation_id):
-                    steered = steering.take(conversation_id)
+                # read before anything else runs. A call not started is not run, and still gets a result. The
+                # message is taken after the batch, right as it is read (nothing can fall between the two).
+                if not steered and index and steerable and conversation_id and steering.waiting(conversation_id):
+                    steered = True
                 if steered and not (reads is not None and reads.has(index)):
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "skipped_for_message",
                                                    "error": SKIPPED_FOR_MESSAGE},
@@ -3410,10 +3427,9 @@ async def _run_native(
             # Gemini provider pair and the old "invocation completed" text are now
             # renderings of this trajectory (trajectory.to_legacy), not rewrites.
             _claim_results(convo, marks)
-            if steered is None and steerable and conversation_id and not cut_off:
-                steered = steering.take(conversation_id) or None       # the boundary after the batch
-            if steered:
-                await _read_steers(steered, convo, conversation_id)
+            if steerable and conversation_id and not cut_off and _facts is not None:
+                # The boundary after the batch: what waits joins the turn (no await between take and read).
+                _read_steers(steering.take(conversation_id), convo, _facts.setdefault("steers", []))
             # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
             # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())
