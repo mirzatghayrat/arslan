@@ -19,8 +19,13 @@ M3 #10 passes and v0.1.63 has no steering issue (card K9).
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+
+from arslan.aio import within
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(eq=False)
@@ -42,6 +47,11 @@ class Steer:
         if self in _taken:
             _taken.remove(self)
 
+
+#: How long a closing socket waits for the messages a turn took from it (⓪Plan's re-review of #393). Today one
+#: database write sits between taking a message and making it part of the turn; a future await there must not
+#: stall a socket's teardown for ever.
+SETTLE_WAIT_S = 30.0
 
 _open: dict[str, list[Steer]] = {}
 _taken: list[Steer] = []           # taken by a turn, not yet part of it nor handed back
@@ -87,9 +97,20 @@ def withdraw(conversation_id: str, inbox: asyncio.Queue) -> list[Steer]:
 
 async def settled(inbox: asyncio.Queue) -> None:
     """A socket closed: its messages a turn already took become part of that turn (its next request) or come
-    back into this inbox (the turn ended first), still ahead of the close (review of #393)."""
-    for steer in [steer for steer in _taken if steer.inbox is inbox]:
-        await steer.done.wait()
+    back into this inbox (the turn ended first), still ahead of the close (review of #393). For at most
+    SETTLE_WAIT_S: past it the socket closes, and one that comes back later lands behind the close and never runs,
+    which the WARNING says."""
+    mine = [steer for steer in _taken if steer.inbox is inbox]
+
+    async def every_one():
+        for steer in mine:
+            await steer.done.wait()
+    try:
+        await within(every_one(), SETTLE_WAIT_S)
+    except TimeoutError:
+        left = sum(not steer.done.is_set() for steer in mine)
+        logger.warning("steering: %d message(s) a turn took from a closing socket did not settle in %.0f s; "
+                       "the socket closes without them", left, SETTLE_WAIT_S)
 
 
 def close_box(conversation_id: str) -> None:
