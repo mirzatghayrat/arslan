@@ -81,7 +81,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // both default OFF / most-cautious when absent.
     // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON (0.1.48) and ask_all (v0.1.63).
     orchestratorShellEnabled: backend.orchestrator_shell_enabled !== "false",
-    shellConfirmPolicy: String(backend.shell_confirm_policy ?? "").trim().toLowerCase() === "ask_risky" ? "ask_risky" : "ask_all",
+    shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
     // 0.1.43: budget tier for one background job; unknown → the server's default.
     backgroundJobBudget: backend.background_job_budget === "lean" || backend.background_job_budget === "ample"
       ? backend.background_job_budget : "standard",

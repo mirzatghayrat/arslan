@@ -531,6 +531,9 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
               "timing": timing,
+              # v0.1.63: the command policy Arslan's instance ran under (ask_risky unless the run asked for
+              # ask_all), so the final M1's ask_all reference run is labelled; None for other entrants.
+              "shell_policy": driver_out(who, run).get("shell_policy"),
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = judge(verdict, end, who)

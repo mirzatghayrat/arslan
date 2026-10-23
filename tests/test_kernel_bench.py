@@ -413,6 +413,22 @@ def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
     assert len(waits) == 2 and all(ended > since > 0 for since, ended in waits)   # quiet counts from the exit
 
 
+def test_the_record_says_which_command_policy_the_run_used(tmp_path, monkeypatch):
+    """v0.1.63 (#398 review, F6): the driver prints the policy it set; the record carries it, so the final M1's
+    ask_all reference run is labelled."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
+    for policy in ("ask_risky", "ask_all"):
+        script = f"import json; print(json.dumps({{'end': 'done', 'final': 'ok', 'shell_policy': '{policy}'}}))"
+        monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+        rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
+        saved = json.loads(Path(tmp_path / "runs" / f"{rec['run']}.record.json").read_text())
+        assert rec["shell_policy"] == saved["shell_policy"] == policy
+
+
 def test_the_record_keeps_the_timing_the_driver_printed(tmp_path, monkeypatch):
     import sys
     from scripts.kernel_bench import runner

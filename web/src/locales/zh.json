@@ -504,6 +504,7 @@
     "orchestratorShellDesc": "Arslan 用终端干活：读取、转换、构建、运行脚本。凡是发送、发布、删除、安装或操控其他 App 的命令都会先问你。读取钥匙串密码、sudo、删除系统文件夹一律不允许。",
     "labelShellConfirmPolicy": "什么时候问",
     "shellPolicyAskAll": "每条命令都先问",
+    "shellPolicyAskAllNote": "每条新命令都先问。选了「本对话内」允许的命令，在这个对话里再运行时不再问。",
     "shellPolicyAskRisky": "只在有风险时问",
     "shellPolicyAskRiskyNote": "Arslan 判断哪些命令有风险，这部分还在补全（v0.1.64 完成）。在那之前，每条命令都问更稳妥。",
     "labelMcpServer": "MCP 服务器（入站）",

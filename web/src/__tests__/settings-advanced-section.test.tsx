@@ -95,14 +95,16 @@ describe("AdvancedSection", () => {
     expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky");
   });
 
-  it("asking only for risky commands stays selectable, and says its judgement is completed in v0.1.64", () => {
+  it("asking before every command says it means every new command (#398 F2), and no risky note", () => {
     setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
+    expect(screen.getByTestId("shell-policy-all-note").textContent).toBe("settings.shellPolicyAskAllNote");
     expect(screen.queryByTestId("shell-policy-risky-note")).toBeNull();
   });
 
   it("the note sits beside ask_risky when it is the choice", () => {
     setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
     expect(screen.getByTestId("shell-policy-risky-note").textContent).toBe("settings.shellPolicyAskRiskyNote");
+    expect(screen.queryByTestId("shell-policy-all-note")).toBeNull();
   });
 
   it("offers the three voice modes and reports the pick", () => {

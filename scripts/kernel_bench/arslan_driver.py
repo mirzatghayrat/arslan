@@ -318,9 +318,11 @@ def settings_body(run_dir: str) -> dict:
     return {**extra, "shell_confirm_policy": policy, "workspace_dir": run_dir}
 
 
-def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> None:
-    """Point the test instance's model at the metering proxy and its workspace at the run folder."""
+def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> str:
+    """Point the test instance's model at the metering proxy and its workspace at the run folder. Returns the
+    command policy it set, which the run's record carries (v0.1.63)."""
     import httpx
+    settings = settings_body(run_dir)
     with httpx.Client(timeout=30) as c:
         cfgs = c.get(f"{api}/settings/provider-configs").json()
         cfg = next((x for x in cfgs if x["label"] == "bench"), None)
@@ -328,7 +330,8 @@ def configure(api: str, run_dir: str, base_url: str, model: str, provider: str =
         cfg = c.put(f"{api}/settings/provider-configs/{cfg['id']}", json=body).json() if cfg else \
             c.post(f"{api}/settings/provider-configs", json=body).json()
         c.patch(f"{api}/settings/provider-configs/{cfg['id']}/primary").raise_for_status()
-        c.put(f"{api}/settings", json=settings_body(run_dir)).raise_for_status()
+        c.put(f"{api}/settings", json=settings).raise_for_status()
+    return settings["shell_confirm_policy"]
 
 
 if __name__ == "__main__":
@@ -342,7 +345,7 @@ if __name__ == "__main__":
     ap.add_argument("--decline-rule", action="append", default=[], help="regular expression on the card's rule")
     ap.add_argument("--decline-note", default="")
     a = ap.parse_args()
-    configure(a.api, a.run_dir, a.base_url, a.model, a.provider)
+    policy = configure(a.api, a.run_dir, a.base_url, a.model, a.provider)
     out = asyncio.run(run(a.api, a.run_dir, load_prompts(a.prompt_file), a.run_dir.rstrip("/") + ".frames.jsonl",
                           decline_rules=frozenset(a.decline_rule), decline_note=a.decline_note))
-    print(json.dumps(out, ensure_ascii=False))
+    print(json.dumps({**out, "shell_policy": policy}, ensure_ascii=False))

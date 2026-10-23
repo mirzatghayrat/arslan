@@ -349,6 +349,10 @@ describe("terminal settings follow the backend's defaults (0.1.48, v0.1.63)", ()
   it("unset is on and asks before every command", () => {
     expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
     expect(read("true", "garbage")).toMatchObject({ shellConfirmPolicy: "ask_all" });
+    // One rule with the server (settings_service, migration 0070): only the exact value Settings writes.
+    for (const odd of [" ask_risky", "ask_risky\n", "ASK_RISKY", "ask_risky\u00a0"]) {
+      expect(read("true", odd)).toMatchObject({ shellConfirmPolicy: "ask_all" });
+    }
   });
   it("only an explicit choice turns it off or asks only for risky commands", () => {
     expect(read("false", "ask_all")).toMatchObject({ orchestratorShellEnabled: false, shellConfirmPolicy: "ask_all" });

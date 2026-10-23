@@ -9,7 +9,8 @@ choice: the store keeps the value, not whether or when it was chosen. The compos
 
 A choice made after this runs is kept: the runner records 0070 and never runs it again, and only the user's own
 actions write the key. Idempotent (a second run finds nothing to move); a database without the table is left
-alone.
+alone. It matches exactly what the reader counts as ask_risky (settings_service.shell_confirm_policy: the exact
+value, what Settings writes); any other spelling already reads as ask_all.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ def upgrade_sync(connection) -> None:
     if "settings" in tables:
         connection.exec_driver_sql(
             "UPDATE settings SET value = 'ask_all'"
-            " WHERE key = 'shell_confirm_policy' AND lower(trim(value)) = 'ask_risky'")
+            " WHERE key = 'shell_confirm_policy' AND value = 'ask_risky'")
 
 
 def downgrade_sync(connection) -> None:
