@@ -114,10 +114,14 @@ class Settings:
 
 
 def _no_wildcard(variable: str, values: tuple[str, ...]) -> tuple[str, ...]:
-    """A `*` entry would hand the Host check or CORS to every host or origin; the server refuses to
-    start instead of binding wide open (C11b, #338 review F5). Only a dev run reads these variables."""
-    if "*" in values:
-        raise ValueError(f"{variable} must name each host or origin; '*' is not accepted")
+    """An entry carrying `*` would hand the Host check or CORS to every host or origin; the server
+    refuses to start instead of binding wide open (C11b, #338 review F5). Any `*` counts, not only a
+    bare one: server.security strips `:port`, so `*:8000` and `*:*` would become `*`, and `*.` matches
+    every name that ends in a dot (C11b review 4). Only a dev run reads these variables; a dev bind
+    names each host in full."""
+    for value in values:
+        if "*" in value:
+            raise ValueError(f"{variable} must name each host or origin in full; '*' is not accepted (got {value!r})")
     return values
 
 

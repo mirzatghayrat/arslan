@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,7 +60,7 @@ def _bearer_matches(request: Request, expected: str) -> bool:
     return (
         scheme.lower() == "bearer"
         and bool(token)
-        and secrets.compare_digest(token, expected)
+        and auth.token_matches(token, expected)     # a non-ASCII bearer is a mismatch, not a 500 (C11b review 3)
     )
 
 

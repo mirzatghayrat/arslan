@@ -29,26 +29,40 @@ logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
 _TOKEN_IN_LOG_LINE = re.compile(r"(token=)[^&\s\"']*")
 
 
+def _without_token(value: object) -> object:
+    """`value` with every `token=` value replaced, or `value` itself when it carries none. A
+    non-string is rendered with str() first, so a dict such as the ASGI scope that
+    `uvicorn.asgi` logs at trace level (its query_string is bytes) is covered too."""
+    text = value if isinstance(value, str) else str(value)
+    if "token=" not in text:
+        return value
+    return _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", text)
+
+
 class _RedactAccessTokens(logging.Filter):
     """The access token travels as a `?token=` query parameter on the WebSocket handshake, and
     uvicorn logs the request path with its query string at INFO (`uvicorn.error` for the WebSocket
-    lines, `uvicorn.access` for HTTP). The desktop app runs at INFO with stderr passed through, so
-    without this every handshake wrote the token to the log (C11b, #338 review F3). The path and
-    the rest of the query stay readable; only the value is replaced. The record is rewritten
-    (message formatted, args dropped), so every handler downstream sees the redacted line."""
+    lines, `uvicorn.access` for HTTP; `uvicorn.asgi` logs the whole scope at trace level). The
+    desktop app runs at INFO with stderr passed through, so without this every handshake wrote the
+    token to the log (C11b, #338 review F3). The path and the rest of the query stay readable;
+    only the value is replaced. The format string and each argument are redacted in place, and
+    the arguments keep their count and order: uvicorn's AccessFormatter unpacks the five access-line
+    arguments itself, so a flattened record would be dropped with a logging error (C11b review 1)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            message = record.getMessage()
-        except Exception:    # a malformed record is the handler's problem, not a reason to drop it
-            return True
-        if "token=" in message:
-            record.msg = _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", message)
-            record.args = ()
+            record.msg = _without_token(record.msg)
+            args = record.args
+            if isinstance(args, tuple):
+                record.args = tuple(_without_token(a) for a in args)
+            elif isinstance(args, dict):
+                record.args = {key: _without_token(v) for key, v in args.items()}
+        except Exception:    # a record that cannot be rendered is the handler's problem, not a reason to drop it
+            pass
         return True
 
 
-for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"):
     logging.getLogger(_name).addFilter(_RedactAccessTokens())
 
 # Undecryptable-key canary message (module-level so tests can pin the guidance).

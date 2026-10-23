@@ -112,14 +112,17 @@ def _generate_and_persist(data_dir, *, log: logging.Logger) -> str:
     token = secrets.token_urlsafe(32)
     path = _token_path(data_dir)
     _write_token(path, token)
+    # The value is never logged (C11b review 2): the desktop app passes this stream through, and the
+    # release check keeps it in app.log. The shell reads the file; a dev run on a non-loopback bind does too.
     log.warning(
         "\n"
         "  ┌─────────────────────────────────────────────────────────────┐\n"
-        "  │  Arslan access token: %s\n"
-        "  │  Enter it in the app (Settings), or set ARSLAN_API_TOKEN.\n"
+        "  │  Arslan access token minted (its value is not logged).\n"
+        "  │  Read it from the file below or in the app (Settings),\n"
+        "  │  or set ARSLAN_API_TOKEN to choose your own.\n"
         "  │  Stored at: %s\n"
         "  └─────────────────────────────────────────────────────────────┘",
-        token, path,
+        path,
     )
     return token
 
