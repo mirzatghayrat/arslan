@@ -74,6 +74,7 @@ class _Turn:
     first: int                              # the turn's user message
     last: int                               # the newest message of the conversation now
     users: list[int]                        # the user messages that go (the first, then later turns')
+    turns: int                              # how many of them start a turn (K9b: one read mid-turn does not)
     runs: set[int]                          # the runs whose replies go
     messages: int
     tasks: dict[str, str]                   # the tasks those turns ran: id -> phase
@@ -89,8 +90,11 @@ async def _find(db, run_id: int) -> _Turn:
     if reply.job_outcome is not None:
         raise Refused("job")                # a job's result came after later turns: undo the turn that started it
     cid = reply.conversation_id
+    # The turn's own first message: K9b's messages read mid-turn carry the run that read them (and sit
+    # between that message and its reply), so the last untagged one before the reply starts the turn.
     first = await db.scalar(select(ArslanMessage).where(
         ArslanMessage.conversation_id == cid, ArslanMessage.role == "user", ArslanMessage.id < reply.id,
+        ArslanMessage.run_id.is_(None),
     ).order_by(ArslanMessage.id.desc()).limit(1))
     if first is None:
         raise Refused("none")
@@ -114,7 +118,8 @@ async def _find(db, run_id: int) -> _Turn:
     started = (await db.execute(select(CompanionTask.id, CompanionTask.phase).where(
         CompanionTask.conversation_id == cid, CompanionTask.created_at >= first.timestamp))).all()
     return _Turn(run_id=run_id, conversation_id=cid, first=first.id, last=max(row.id for row in rows),
-                 users=[row.id for row in rows if row.role == "user"], runs=runs, messages=len(rows),
+                 users=[row.id for row in rows if row.role == "user"],
+                 turns=sum(1 for row in rows if row.role == "user" and row.run_id is None), runs=runs, messages=len(rows),
                  tasks={task_id: phase for task_id, phase in (*linked, *started)})
 
 
@@ -153,7 +158,7 @@ async def preview(run_id: int) -> dict:
     except Refused as exc:
         return {"conversation": False, "reason": exc.code}
     return {"conversation": True, "reason": None, "messages_after": turn.messages,
-            "later_turns": len(turn.users) - 1, "facts": facts, "last_message_id": turn.last}
+            "later_turns": turn.turns - 1, "facts": facts, "last_message_id": turn.last}
 
 
 async def undo(run_id: int, *, last: int | None = None, first=None) -> dict:
@@ -228,9 +233,9 @@ async def _take_back(db, turn: _Turn) -> dict:
     await db.execute(delete(ArslanMessage).where(
         ArslanMessage.conversation_id == cid, ArslanMessage.id >= turn.first, ArslanMessage.id <= turn.last))
     db.add(ConversationEvent(conversation_id=cid, kind=UNDONE, summary="", ref={
-        "run_id": turn.run_id, "user_turns": len(turn.users), "messages": turn.messages, "facts": facts}))
+        "run_id": turn.run_id, "user_turns": turn.turns, "messages": turn.messages, "facts": facts}))
     return {"run_id": turn.run_id, "conversation_id": cid, "messages": turn.messages,
-            "later_turns": len(turn.users) - 1, "facts": facts}
+            "later_turns": turn.turns - 1, "facts": facts}
 
 
 def undone_turns_clause(conversation_id: str):

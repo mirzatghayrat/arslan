@@ -435,7 +435,7 @@ async def handle_user_message(
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
                                  images=images, confirm_command=confirm_command,
                                  confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
-                                 source=source)
+                                 source=source, steerable=True)
         return
 
     # 0.1.48: one Arslan, one loop. Every message goes straight to the agent and its
@@ -452,7 +452,7 @@ async def handle_user_message(
     await _handle_answer(conversation_id, user_message, watch, attached_context=attached_context,
                          images=images, confirm_command=confirm_command,
                          confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
-                         source=source)
+                         source=source, steerable=True)
     # Durable facts, noticed after the answer (the router used to do this before it), and
     # compaction: both after the turn, outside its lock (K2b). The budget is the turn's, noted on
     # the turn's run as before.
@@ -678,8 +678,10 @@ async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
-    source: str | None = None,
+    source: str | None = None, steerable: bool = False,
 ) -> str | None:
+    """`steerable` (K9b): this turn holds the conversation's turn lock with its steering box open (a socket's
+    chat turn or a resumed task), so it reads what the user sends meanwhile; a scheduled run never does."""
     from server.services import host_run
 
     async def body(run_emit):
@@ -687,7 +689,7 @@ async def _handle_answer(
             conversation_id, user_message, run_emit, extra_system=extra_system,
             attached_context=attached_context, images=images,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-            confirm_schedule=confirm_schedule, source=source)
+            confirm_schedule=confirm_schedule, source=source, steerable=steerable)
 
     return await host_run.execute(conversation_id, user_message, emit, body,
                                   has_images=bool(images))
@@ -782,7 +784,7 @@ async def _handle_answer_body(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
-    source: str | None = None,
+    source: str | None = None, steerable: bool = False,
 ) -> str | None:
     # K2: history by the turn model's context window (context_window), not a fixed 3000.
     ctx = await memory.assemble_working_context(
@@ -841,6 +843,10 @@ async def _handle_answer_body(
             # has to be passed rather than inferred.
             has_images=bool(images),
             turn_notes=[PHONE_NOTE] if source == "phone" else None,
+            # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
+            # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a
+            # delegated loop on the same conversation (review of #393).
+            steerable=steerable,
         )
 
     try:

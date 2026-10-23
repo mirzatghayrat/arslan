@@ -16,7 +16,7 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan
-from server.services import approvals, background_jobs, desktop_status, permissions
+from server.services import approvals, background_jobs, desktop_status, permissions, steering
 from server.services import (
     run_registry,
     turn_journal,
@@ -232,7 +232,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         async with lock:
             if told:
                 await _send_or_gone({"type": "dequeued"})
-            yield
+            # K9b: while this turn runs, a message sent meanwhile reaches it at its next tool boundary;
+            # what it never took goes back to its sender's inbox, once (services/steering).
+            steering.open_box(conversation_id)
+            try:
+                yield
+            finally:
+                steering.close_box(conversation_id)
 
     import uuid
 
@@ -279,7 +285,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         await _send_or_gone(protocol.error(
                             "BUSY", "An action is awaiting your confirmation.", recoverable=True))
                         continue
-                if t == "user_message" and my_cards:
+                had_cards = bool(my_cards)         # before the awaits below (answering a card empties it)
+                if t == "user_message" and had_cards:
                     # 0.1.61 §A4: typing while this window's card waits answers it No, the message
                     # being the note; the message itself is queued below and runs next. The phone
                     # types on this socket during its turn: the card says the phone answered.
@@ -287,10 +294,22 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if t == "user_message" and _turn_lock(conversation_id).locked():
                     data = {**data, "_queued": True}
                     await _send_or_gone({"type": "queued"})
+                    # K9b: no card of this window waited (one that did keeps the rule above): the running
+                    # turn reads it at its next tool boundary, and tells this socket `dequeued` + inserted.
+                    if not had_cards and steering.insertable(data) and await steering.enabled() and steering.put(
+                            conversation_id, steering.Steer(str(data.get("content") or ""), message_source(data),
+                                                            data, _send_or_gone, inbox, sink)):
+                        continue
                 await inbox.put(data)
         except Exception:  # noqa: BLE001 — disconnect (or a closed socket): the loop ends after the turn
             socket_gone["yes"] = True
             gone.set()
+            # K9b: this socket's messages still waiting in the box run as turns of their own, as a queued
+            # message always has: into its inbox ahead of the close; so do the ones a turn took and ends
+            # without sending (review of #393).
+            for steer in steering.withdraw(conversation_id, inbox):
+                inbox.put_nowait(steer.frame)
+            await steering.settled(inbox)
             await inbox.put(_CLOSED)
 
     def _answered_by_typing(note: str, by: str) -> None:

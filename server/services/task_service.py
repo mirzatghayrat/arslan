@@ -1107,7 +1107,7 @@ async def resume_turn(task_id: str, expected_version: int, conversation_id: str,
         # Arslan turn below; experts are no longer a runtime path.
         return await arslan._handle_answer(conversation_id, spec.instruction, sink, extra_system=extra,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-            confirm_schedule=confirm_schedule)
+            confirm_schedule=confirm_schedule, steerable=True)      # K9b: inside the socket's turn lock
     return await _launch(value, emit, body, progress=progress, context=ctx)
 
 

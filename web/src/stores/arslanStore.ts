@@ -89,6 +89,8 @@ interface ArslanState {
   lastStepAt: number | null;
   // 0.1.59: this window's message is waiting for the conversation's current turn to finish.
   queued: boolean;
+  // 0.1.63 K9b: this window's message was added to the turn that is running (until that turn ends).
+  inserted: boolean;
   // S3-M1 · cancellable runs: the recorded run id of the in-flight stream (from
   // stream_start's run_id — both host and spawn runs). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
@@ -329,6 +331,7 @@ function initialData() {
     stalled: false,
     lastStepAt: null as number | null,
     queued: false,
+    inserted: false,
     cardExpired: false,
     cardExpiredKind: null as "ask" | "enroll" | null,
     activeRunId: null as number | null,
@@ -521,7 +524,7 @@ function makeActions(set: SetState, get: GetState) {
           set({
             items, lastMessageId: lastId, activitySteps: [], activeRunId: null,
             streaming: false, streamingText: "", thinking: false, workStartedAt: null, queued: false,
-            streamSource: null,
+            inserted: false, streamSource: null,
           });
           _beginReplay(get, set);
           break;
@@ -586,6 +589,7 @@ function makeActions(set: SetState, get: GetState) {
           set({ thinking: false, streamingText: state.streamingText + frame.content });
           break;
         case "stream_end": {
+          if (state.inserted) set({ inserted: false });     // K9b: the turn it was added to has ended
           if (!state.streaming) break;
           _voiceEnd();
           // A stream can end without persisting a message: the server sends
@@ -677,6 +681,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSource: null,
             activitySteps: [],
             activeRunId: null,
+            inserted: false,               // K9b: the reply it was added to is gone
             ...(item
               ? {
                   items: [...state.items, item],
@@ -873,6 +878,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSource: null,
             activitySteps: [],
             activeRunId: null,
+            inserted: false,               // K9b: the reply it was added to ended
           });
           break;
         // 0.1.59: a long answer is not "Interrupted" — the beat above kept the watchdog quiet.
@@ -884,6 +890,11 @@ function makeActions(set: SetState, get: GetState) {
           break;
         // …and its own turn has started now.
         case "dequeued":
+          // K9b: added to the turn that is running — that turn goes on, timer and all.
+          if (frame.inserted) {
+            set({ queued: false, inserted: true });
+            break;
+          }
           set({ queued: false, thinking: true, workStartedAt: Date.now(), lastStepAt: Date.now() });
           break;
         default:

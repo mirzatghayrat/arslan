@@ -672,7 +672,8 @@ export type ArslanServerMessage =
   | { type: "working"; elapsed_s: number }
   /** 0.1.59: this window's message waits for the conversation's current turn; then it starts. */
   | { type: "queued" }
-  | { type: "dequeued" }
+  // K9b: `inserted` — the message was added to the turn that is running (not a turn of its own).
+  | { type: "dequeued"; inserted?: boolean }
   // run_id (S3-M1): present only on recorded (spawn) runs — the cancel target for
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }

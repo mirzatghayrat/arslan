@@ -141,10 +141,11 @@ async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     for run_id, (msg_id, conv) in first_answer.items():
         if out[run_id] != "chat" or conv not in phoned:
             continue
-        # The user message that started this turn: the last one before its answer.
+        # The user message that started this turn: the last one before its answer that was not read
+        # mid-turn (K9b tags those with their run).
         source = (await db.execute(
             select(ArslanMessage.source).where(
-                ArslanMessage.conversation_id == conv, ArslanMessage.role == "user",
+                ArslanMessage.conversation_id == conv, ArslanMessage.role == "user", ArslanMessage.run_id.is_(None),
                 ArslanMessage.id < msg_id).order_by(ArslanMessage.id.desc()).limit(1))).scalar()
         if source == "phone":
             out[run_id] = "phone"
