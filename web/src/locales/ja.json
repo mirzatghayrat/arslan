@@ -505,6 +505,7 @@
     "labelShellConfirmPolicy": "確認のタイミング",
     "shellPolicyAskAll": "すべてのコマンドで確認",
     "shellPolicyAskRisky": "リスクのあるコマンドだけ確認",
+    "shellPolicyAskRiskyNote": "どのコマンドが危険かを見分ける Arslan の判定は、まだ仕上げの途中です（v0.1.64 で完成）。それまでは、すべてのコマンドで確認するほうが安全です。",
     "labelMcpServer": "MCPサーバー（受信）",
     "mcpServerDesc": "外部の MCP クライアント（Claude Code、Codex）から読み取り専用ツールを呼び出せるようにします。デフォルトはオフ。MCP トークンの生成が必要です。ローカルホスト限定。",
     "mcpToken": {

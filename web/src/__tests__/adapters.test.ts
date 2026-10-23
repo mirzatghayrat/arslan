@@ -340,16 +340,17 @@ describe("toUiMessages", () => {
   });
 });
 
-describe("terminal settings follow the backend's defaults (0.1.48)", () => {
-  // The backend treats an unset switch as ON and an unset policy as ask_risky
+describe("terminal settings follow the backend's defaults (0.1.48, v0.1.63)", () => {
+  // The backend treats an unset switch as ON (0.1.48) and an unset policy as ask_all (v0.1.63)
   // (settings_service.shell_enabled / shell_confirm_policy). Reading `=== "true"`
   // here showed a fresh install's terminal as OFF while it was working.
   const read = (enabled: string, policy: string) =>
     toUiSettings({ orchestrator_shell_enabled: enabled, shell_confirm_policy: policy } as unknown as BackendAppSettings);
-  it("unset is on and asks only for risky commands", () => {
-    expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
+  it("unset is on and asks before every command", () => {
+    expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
+    expect(read("true", "garbage")).toMatchObject({ shellConfirmPolicy: "ask_all" });
   });
-  it("only an explicit choice turns it off or asks for everything", () => {
+  it("only an explicit choice turns it off or asks only for risky commands", () => {
     expect(read("false", "ask_all")).toMatchObject({ orchestratorShellEnabled: false, shellConfirmPolicy: "ask_all" });
     expect(read("true", "ask_risky")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
   });

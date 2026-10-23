@@ -505,6 +505,7 @@
     "labelShellConfirmPolicy": "Cuándo preguntar",
     "shellPolicyAskAll": "Preguntar antes de cada comando",
     "shellPolicyAskRisky": "Preguntar solo en comandos arriesgados",
+    "shellPolicyAskRiskyNote": "El criterio de Arslan para saber qué comandos son arriesgados aún se está completando (v0.1.64). Hasta entonces, es más seguro preguntar antes de cada comando.",
     "labelMcpServer": "Servidor MCP (entrante)",
     "mcpServerDesc": "Permite que clientes MCP externos (Claude Code, Codex) llamen a herramientas de solo lectura. Desactivado por defecto; requiere un token MCP generado. Solo localhost.",
     "mcpToken": {

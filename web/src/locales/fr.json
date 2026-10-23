@@ -505,6 +505,7 @@
     "labelShellConfirmPolicy": "Quand demander",
     "shellPolicyAskAll": "Demander avant chaque commande",
     "shellPolicyAskRisky": "Demander seulement pour les commandes risquées",
+    "shellPolicyAskRiskyNote": "Le jugement d'Arslan sur les commandes à risque est encore en cours de finalisation (v0.1.64). D'ici là, il est plus sûr de demander avant chaque commande.",
     "labelMcpServer": "Serveur MCP (entrant)",
     "mcpServerDesc": "Permet aux clients MCP externes (Claude Code, Codex) d'appeler des outils en lecture seule. Désactivé par défaut ; nécessite un jeton MCP généré. Localhost uniquement.",
     "mcpToken": {

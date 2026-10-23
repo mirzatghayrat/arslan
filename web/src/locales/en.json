@@ -505,6 +505,7 @@
     "labelShellConfirmPolicy": "When to ask",
     "shellPolicyAskAll": "Ask before every command",
     "shellPolicyAskRisky": "Ask only for risky commands",
+    "shellPolicyAskRiskyNote": "Arslan's judgement of which commands are risky is still being completed (v0.1.64). Until then, asking before every command is safer.",
     "labelMcpServer": "MCP server (inbound)",
     "mcpServerDesc": "Let external MCP clients (Claude Code, Codex) call read-only tools. Off by default; requires a generated MCP token. Localhost only.",
     "mcpToken": {

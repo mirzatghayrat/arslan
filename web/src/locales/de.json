@@ -505,6 +505,7 @@
     "labelShellConfirmPolicy": "Wann fragen",
     "shellPolicyAskAll": "Vor jedem Befehl fragen",
     "shellPolicyAskRisky": "Nur bei riskanten Befehlen fragen",
+    "shellPolicyAskRiskyNote": "Arslans Einschätzung, welche Befehle riskant sind, wird noch vervollständigt (v0.1.64). Bis dahin ist es sicherer, vor jedem Befehl zu fragen.",
     "labelMcpServer": "MCP-Server (eingehend)",
     "mcpServerDesc": "Erlaubt externen MCP-Clients (Claude Code, Codex) den Aufruf schreibgeschützter Tools. Standardmäßig deaktiviert; erfordert ein generiertes MCP-Token. Nur localhost.",
     "mcpToken": {

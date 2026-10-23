@@ -111,7 +111,7 @@ export default function OrchestratorChat({
   onSelectModel,
   conversationId,
   shellEnabled = false,
-  shellPolicy = 'ask_risky',
+  shellPolicy = 'ask_all',
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);

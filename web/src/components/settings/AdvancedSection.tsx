@@ -327,6 +327,12 @@ export default function AdvancedSection({
           <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
             <div>
               <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelShellConfirmPolicy')}</h4>
+              {/* v0.1.63: still selectable; its judgement of what is risky is completed in v0.1.64 (S2a-3). */}
+              {shellConfirmPolicy === 'ask_risky' && (
+                <p data-testid="shell-policy-risky-note" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+                  {t('settings.shellPolicyAskRiskyNote')}
+                </p>
+              )}
             </div>
             <Select
               id="settings-shell-policy"

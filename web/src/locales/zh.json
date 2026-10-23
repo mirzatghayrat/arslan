@@ -505,6 +505,7 @@
     "labelShellConfirmPolicy": "什么时候问",
     "shellPolicyAskAll": "每条命令都先问",
     "shellPolicyAskRisky": "只在有风险时问",
+    "shellPolicyAskRiskyNote": "Arslan 判断哪些命令有风险，这部分还在补全（v0.1.64 完成）。在那之前，每条命令都问更稳妥。",
     "labelMcpServer": "MCP 服务器（入站）",
     "mcpServerDesc": "允许外部 MCP 客户端（Claude Code、Codex）调用只读工具。默认关闭；需生成 MCP 令牌。仅限本机。",
     "mcpToken": {

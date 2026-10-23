@@ -159,7 +159,8 @@ async def test_every_decision_is_one_ledger_row_with_its_scope_and_wait():
     assert [(e.decided_by, e.decision, e.scope) for e in events] == [
         ("user", "allow", "conversation"), ("grant", "allow", "conversation")]
     assert events[0].wait_ms is not None and events[1].wait_ms is None
-    assert events[0].conversation_id == "conv-1" and events[0].mode == "standard"
+    # v0.1.63: unset asks before every command, which the ledger calls Careful.
+    assert events[0].conversation_id == "conv-1" and events[0].mode == "careful"
 
 
 async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():
@@ -592,7 +593,8 @@ async def test_a_task_id_the_caller_gave_wins_over_the_running_turns(monkeypatch
         assert await permission_store.find_grant(db, "conv-1", "turn-x", "app", "com.apple.Notes") is None
 
 
-async def test_an_unreadable_setting_is_the_standard_mode(monkeypatch):
+async def test_an_unreadable_setting_is_the_default_careful_mode(monkeypatch):
+    """v0.1.63: the default asks before every command (Careful); an unreadable setting is that default."""
     async def broken(db):
         raise RuntimeError("settings table unreadable")
     monkeypatch.setattr(settings_service, "shell_confirm_policy", broken)
@@ -601,7 +603,7 @@ async def test_an_unreadable_setting_is_the_standard_mode(monkeypatch):
     assert d.allowed
     async with db_session.AsyncSessionLocal() as db:
         [event] = await permission_store.recent(db)
-    assert event.mode == "standard"
+    assert event.mode == "careful"
 
 
 async def test_a_ledger_that_cannot_be_written_does_not_break_a_refusal(monkeypatch):

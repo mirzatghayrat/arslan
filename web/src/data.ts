@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   telemetry: false,
   llmStrategy: 'single',
   orchestratorShellEnabled: true,
-  shellConfirmPolicy: 'ask_risky',
+  shellConfirmPolicy: 'ask_all',
   backgroundJobBudget: 'standard',
   taskUsdCap: 2,
   runDebugRetentionDays: 30,

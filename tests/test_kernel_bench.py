@@ -825,9 +825,30 @@ def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
 
     from scripts.kernel_bench.arslan_driver import settings_body
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
-    assert settings_body("/run") == {"workspace_dir": "/run"}
+    monkeypatch.delenv("BENCH_SHELL_POLICY", raising=False)
+    assert settings_body("/run") == {"shell_confirm_policy": "ask_risky", "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": "true", "workspace_dir": "/elsewhere"}')
-    assert settings_body("/run") == {"tools_all_resident": "true", "workspace_dir": "/run"}
+    assert settings_body("/run") == {"tools_all_resident": "true", "shell_confirm_policy": "ask_risky",
+                                     "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": true}')
+    with pytest.raises(ValueError):
+        settings_body("/run")
+
+
+def test_the_bench_pins_its_command_policy(monkeypatch):
+    """v0.1.63: the app's default became ask_all; a bench round stays on ask_risky (comparable with M1B and the
+    K rounds) unless the run asks for ask_all, and only BENCH_SHELL_POLICY sets it."""
+    import pytest
+
+    from scripts.kernel_bench.arslan_driver import settings_body
+    monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
+    monkeypatch.setenv("BENCH_SHELL_POLICY", "ask_all")
+    assert settings_body("/run")["shell_confirm_policy"] == "ask_all"
+    for bad in ("ask_everything", "ASK_ALL"):
+        monkeypatch.setenv("BENCH_SHELL_POLICY", bad)
+        with pytest.raises(ValueError):
+            settings_body("/run")
+    monkeypatch.delenv("BENCH_SHELL_POLICY")
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"shell_confirm_policy": "ask_all"}')
     with pytest.raises(ValueError):
         settings_body("/run")

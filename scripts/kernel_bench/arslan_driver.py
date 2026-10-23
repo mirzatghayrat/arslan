@@ -296,14 +296,26 @@ def provider_body(provider: str, model: str, base_url: str) -> dict:
     return {"label": "bench", "provider": provider, "model": model, "base_url": base_url, "api_key": "bench-dummy"}
 
 
+#: The bench asks only for risky commands unless a run says otherwise (BENCH_SHELL_POLICY=ask_all): v0.1.63 made
+#: "ask before every command" the app's default, and a bench round on it would no longer compare with M1B and
+#: the K rounds. The final M1 gates on ask_risky, with one ask_all run for reference.
+SHELL_POLICIES = ("ask_risky", "ask_all")
+
+
 def settings_body(run_dir: str) -> dict:
-    """The test instance's settings: its workspace is the run folder, plus BENCH_ARSLAN_SETTINGS, a JSON object of
-    plain settings for an A/B cell (e.g. {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63).
-    Values must be strings, as the settings API stores them; the workspace cannot be overridden."""
+    """The test instance's settings: its workspace is the run folder, its command policy BENCH_SHELL_POLICY
+    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell (e.g.
+    {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63). Values must be strings, as the
+    settings API stores them; the workspace and the policy cannot be set that way."""
     extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
     if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")
-    return {**extra, "workspace_dir": run_dir}
+    if "shell_confirm_policy" in extra:
+        raise ValueError("set the command policy with BENCH_SHELL_POLICY, not BENCH_ARSLAN_SETTINGS")
+    policy = os.environ.get("BENCH_SHELL_POLICY") or "ask_risky"
+    if policy not in SHELL_POLICIES:
+        raise ValueError(f"BENCH_SHELL_POLICY must be one of {', '.join(SHELL_POLICIES)}")
+    return {**extra, "shell_confirm_policy": policy, "workspace_dir": run_dir}
 
 
 def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> None:
