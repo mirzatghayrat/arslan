@@ -217,7 +217,9 @@ class Budget:
         if self.remaining_seconds() <= 0:
             self.stop("wall_seconds")
 
-    def model_request(self, requested_output: int) -> int:
+    def check_request(self):
+        """Stops when the next model request could not go: what model_request checks before counting one.
+        (K9b: a message read mid-turn becomes part of the turn only when the request carrying it can go.)"""
         self.check()
         if self.model_requests >= self.limits.model_requests:
             self.stop("model_requests")
@@ -225,6 +227,9 @@ class Budget:
             self.stop("tokens")
         if self.usd_cap is not None and self.usd >= self.usd_cap:
             self.stop("usd")
+
+    def model_request(self, requested_output: int) -> int:
+        self.check_request()
         self.model_requests += 1
         granted = min(requested_output, self.limits.output_tokens_per_request,
                       max(MIN_OUTPUT_TOKENS, self.limits.tokens - self.tokens))
