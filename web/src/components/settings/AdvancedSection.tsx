@@ -333,7 +333,7 @@ export default function AdvancedSection({
                   {t('settings.shellPolicyAskRiskyNote')}
                 </p>
               )}
-              {/* v0.1.63 (the user's decision, #398 F2): "In this conversation" still answers the same command text
+              {/* v0.1.63 (the user's decision, F2 of its review): "In this conversation" still answers the same command text
                   later, so "every command" means every new one, and the note says so. */}
               {shellConfirmPolicy === 'ask_all' && (
                 <p data-testid="shell-policy-all-note" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">

@@ -1037,7 +1037,7 @@ export default function OrchestratorChat({
           {shellEnabled && shellPolicy === 'ask_risky' && (
             <p className="max-w-4xl mx-auto mt-1.5 text-[11px] text-muted-foreground" data-testid="execution-options">
               {/* Not "read-only": under ask_risky, edits, installs and builds the policy rates harmless run in
-                  the sandbox unasked too (#398 re-check, F5). */}
+                  the sandbox unasked too (re-check of the ask-every-command PR, F5). */}
               {t('workspace.harmlessRunUnasked')}
             </p>
           )}
