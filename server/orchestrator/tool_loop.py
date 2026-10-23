@@ -1475,9 +1475,23 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
-        from server.services import command_sandbox, terminal_policy
+        from server.services import command_sandbox, permissions, terminal_policy
         command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
         argv = []
+        # v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask (a scheduled run: no card
+        # callback and no card surface) runs no command at all, whatever rule, grant or "always" answer stands:
+        # refused before any of them is read, and listed in the Inbox as the card would have read under "ask
+        # for every command" (U14 c). DELETE-BY: v0.1.64, with S2a-3 and PR4 (read-only commands come back).
+        if confirm_command is None and permissions.current_asker() is None:
+            from server.services import approvals as _approvals
+            result = {"ok": False, "error": await _unattended(
+                          "a scheduled run runs no commands",
+                          _approvals._command_request(command, [], None, ask_all=True), conversation_id),
+                      "note": "Scheduled runs don't run commands. Save what you found with write_file (it "
+                              "writes in Arslan's own folder), or tell the user what to run themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
         verdict = terminal_policy.assess(command)
         if verdict.level == "forbid":
             result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",

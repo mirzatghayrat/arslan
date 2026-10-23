@@ -1416,11 +1416,12 @@ async def _every_tool() -> list[dict]:
          "description": "Schedule a recurring task that YOU will run later. args: "
                         "{name, prompt, when} where when is 'every: 3600' (seconds) or "
                         "'cron: 0 9 * * *'. The user is asked for permission: for this one "
-                        # S1 (U14 d): this sentence's wording is pending the cloud audit (U14 [2]).
+                        # S1 (U14 d); v0.1.63: no commands in a scheduled run (the user's decision until
+                        # S2a-3, DELETE-BY: v0.1.64 with it and PR4).
                         "task, or for any scheduled task for the rest of the conversation. A scheduled "
-                        "run is unattended: it can write files or run sandboxed commands only in "
-                        "Arslan's own folder (and temporary/cache folders), and any step that needs "
-                        "the user's OK is refused and listed in their Inbox."},
+                        "run is unattended: it can write files only in Arslan's own folder, it runs no "
+                        "commands, and any step that needs the user's OK is refused and listed in their "
+                        "Inbox."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},
         {"key": "cancel_task",
@@ -1433,7 +1434,12 @@ async def _every_tool() -> list[dict]:
             " The user keeps Desktop, Documents and Downloads closed (Settings): commands cannot open them "
             "either, except the working folder and project folders kept there — if you need a file from "
             "them, ask the user.")
-        if await settings_service.shell_enabled(db):
+        # v0.1.63 (the user's decision until S2a-3 lands): a turn with nobody to ask (a scheduled run) runs no
+        # command, so none is offered there; the tool loop refuses one anyway. Outside a turn (the Capabilities
+        # page) the list says what a turn is offered. DELETE-BY: v0.1.64, with S2a-3 and PR4 (scheduled runs get
+        # read-only commands back).
+        nobody_to_ask = current_task() is not None and permissions.current_asker() is None
+        if await settings_service.shell_enabled(db) and not nobody_to_ask:
             tools.append({"key": "run_command", "description":
                 "Run a shell command on the user's Mac (zsh, in Arslan's working folder, the user's PATH "
                 "incl. Homebrew). Use it for anything a command-line tool does: files, conversions "

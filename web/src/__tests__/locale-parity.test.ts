@@ -67,12 +67,13 @@ describe("locale parity", () => {
         expect(d.settings.terminalRulesEmpty).toContain(word);
       });
 
-      it(`${lang}: schedgrant.unattended also says what still runs: the sandbox and the working folder, in the app's own words`, () => {
+      it(`${lang}: schedgrant.unattended also says what still runs, in the app's own words: writes in the working folder, and no commands`, () => {
         const [sandbox, folder] = SANDBOX_AND_FOLDER[lang];
         expect(d.runcmd.sandboxOutsideLabel).toContain(sandbox);     // the table is the app's own word, not an invention
         expect(d.runcmd.sandboxOutsideNote).toContain(folder);
-        expect(d.schedgrant.unattended).toContain(sandbox);
         expect(d.schedgrant.unattended).toContain(folder);
+        // v0.1.63: a scheduled run runs no command (until S2a-3), so the card no longer offers the sandbox.
+        expect(d.schedgrant.unattended).not.toContain(sandbox);
       });
     }
   });

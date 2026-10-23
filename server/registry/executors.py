@@ -778,7 +778,8 @@ class RunCommandExecutor:
             default_read = await settings_service.default_read_enabled(db)
         # S1 (U14 b): a run with nobody to ask (a scheduled run) works in Arslan's own folder, whatever
         # folder the user chose. Its commands always run in the sandbox (#308), so they write only there
-        # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7).
+        # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7). Since v0.1.63 the
+        # tool loop refuses every command in such a run before it gets here; this stays as the second line.
         from server.services import permissions
         if permissions.current_asker() is None:
             own = settings_service.default_workspace()

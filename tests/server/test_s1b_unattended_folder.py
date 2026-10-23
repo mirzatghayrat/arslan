@@ -5,6 +5,9 @@ needs an OK nobody can give), and the sandbox lets a command write in its workin
 cache folders. Before S1b that working folder was the one the user chose, so a scheduled run could
 change the user's own files with no one watching. Now, with nobody to ask, it is ~/Arslan, whatever the
 user chose; a turn with someone to ask keeps the user's folder.
+
+Since v0.1.63 the tool loop refuses every command in a run with nobody to ask before it reaches the executor
+(test_scheduled_run_no_command); these pin the executor's own rule, kept as the second line.
 """
 import pytest
 

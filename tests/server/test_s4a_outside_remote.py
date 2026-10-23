@@ -213,18 +213,20 @@ async def test_a_background_job_honours_its_conversations_grant(execution_db, mo
 
 
 async def test_a_scheduled_run_never_honours_the_grant_and_its_refusal_is_listed(execution_db, monkeypatch):
+    """v0.1.63: a scheduled run runs no command at all (test_scheduled_run_no_command), so the grant is never
+    read there; each attempt is listed in the Inbox."""
     await _give_outside_grant("c1")
     ex = _Exec(stop=False)
     r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None, cid="c1")
-    assert ex.outside == [False] and "ran_outside_sandbox" not in r
+    assert ex.outside == [] and r["ok"] is False and "ran_outside_sandbox" not in r
     ex = _Exec(stop=False)
     r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=None, cid="c1")
     assert ex.outside == [] and r["ok"] is False
     rows = await _rows()
-    assert [(x.kind, x.target, x.decided_by, x.decision) for x in rows] == [("outside", "*", "policy", "deny")]
+    assert [(x.kind, x.target, x.decided_by, x.decision) for x in rows] == [("command", "text:ls", "policy", "deny")] * 2
     async with db_session.AsyncSessionLocal() as db:
         listed = await permission_store.refused_groups(db, datetime.utcnow() - timedelta(hours=1))
-    assert [(row.kind, count) for row, count, _ in listed] == [("outside", 1)]
+    assert [(row.kind, count) for row, count, _ in listed] == [("command", 2)]
 
 
 async def test_the_in_memory_grant_is_gone():

@@ -1407,7 +1407,7 @@
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
     "prompt": "Ce qu’elle fera à chaque fois :",
-    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée dans la Boîte de réception. Elles peuvent chercher des informations, et écrire des fichiers ou lancer des commandes dans le bac à sable uniquement dans le dossier de travail d’Arslan (et dans les dossiers temporaires et de cache).",
+    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée dans la Boîte de réception. Elles peuvent chercher des informations et écrire des fichiers uniquement dans le dossier de travail d’Arslan ; elles ne lancent pas de commandes.",
     "anyTask": "créer n’importe quelle tâche planifiée"
   },
   "enroll": {
