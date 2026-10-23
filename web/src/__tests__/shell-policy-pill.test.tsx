@@ -39,7 +39,8 @@ describe('composer execution posture', () => {
 
   it('marks the looser "ask only for risky commands" as one line when the user chose it, with no control in the composer', () => {
     chat({ shellEnabled: true, shellPolicy: 'ask_risky' });
-    expect(screen.getByTestId('execution-options')).toHaveTextContent('workspace.readOnlyAutomatic');
+    // Its own words: "read-only" would understate it; edits, installs and builds the policy rates harmless run too.
+    expect(screen.getByTestId('execution-options')).toHaveTextContent('workspace.harmlessRunUnasked');
     expect(screen.queryByTestId('shell-policy-select')).not.toBeInTheDocument();
     expect(screen.queryByTestId('conversation-experts-bar')).not.toBeInTheDocument();
     expect(screen.getByTestId('composer-input-tools').querySelectorAll('button').length).toBeGreaterThanOrEqual(2);
