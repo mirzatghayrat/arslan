@@ -148,9 +148,9 @@
 - **e 真机上不演示逃逸**，只做正向回归：沙箱仍然挡住工作区外写入、Apple Events 和受保护路径。
 - **f 只对无人值守的定时任务：** `run_command` 只放行只读白名单，写文件仍走 `write_file`（只在 `~/Arslan`）；S1b 里 `schedule_task` 说明的「run sandboxed commands」相应收窄。聊天里保持 a–d。只有 a–d 到 R63 前做不完，才把 f 整体当临时兜底，等 v0.1.64 默认拒绝的沙箱上线后撤掉。
 - 安全代码在 Opus 5.5 上写（PR3 除外，由云端 Claude 写，用户 10-22 晚定、10-24 改为云端 Claude）；⓪Plan 复核每个 PR。具体的复现写法只放在测试和 PR 评论里。
-- **谁来审（用户 2026-10-22 晚改定）：** ②Main 的 effort=max 审查和 PR3 被安全分类器拦下后，用户定交给 Codex（10-22 晚），10-24 改为在 claude.ai 开的云端 Claude 会话（Fable 5.1），云端审计的四个条件照旧：
+- **谁来审（用户 2026-10-22 晚改定）：** ②Main 的 effort=max 审查和 PR3 被安全分类器拦下后，用户定交给 Codex（10-22 晚），10-24 改为在 claude.ai 开的云端 Claude 会话（Fable 5.1），云端审计的四个条件照旧（换成云端 Claude 这件事待云端审计确认）：
   - **#375（a+c）、#376、#378（b）由云端 Claude（Fable 5.1）审**（③Hands 写、云端 Claude 审；Session A），审查结论写明模型。
-  - **PR3（d：真 shell 对照、自动变形）由云端 Claude 写**（Session B），先由 ②Main 审；②Main 被拦就换一个全新的云端会话审，不用写代码的那个会话。PR3 只在一次性的 CI 虚拟机（GitHub 托管的 Linux / macOS）或 Linux 的 bwrap / 容器里跑：根目录只读、家目录用临时盘、`/bin` 和 `/usr/bin` 也换成桩程序；绝不在任何人的 Mac 上跑；执行时用沙箱模式、关网络。
+  - **PR3（d：真 shell 对照、自动变形）由云端 Claude 写**（Session B），先由 ②Main 审；②Main 被拦就换一个全新的云端会话审，不用写代码的那个会话。PR3 只在一次性的 CI 虚拟机（GitHub 托管的 Linux / macOS）或 Linux 的 bwrap / 容器里跑：根目录只读、家目录用临时盘、`/bin` 和 `/usr/bin` 也换成桩程序；绝不在任何人的 Mac 上跑；执行时用沙箱模式、关网络。**云端会话自己的机器算不算「一次性机器」等云端审计定（它要推代码，没法关网络）；审计定之前，真 shell 对照只在 GitHub CI 上跑。**
   - 云端会话不碰任何真密钥或令牌。
   - **交给云端会话的材料：** 本卡的 S2a-3 节、②Main 在 #320 上的审查、R63 验收清单（`R63-release.md`）、仓库约定（`docs/sessions.md` §5 的 PR 不超过约 800 行、§8 的完成证据四项）。
   - **PR4（f）谁做：** 还没定。
