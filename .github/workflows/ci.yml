@@ -350,6 +350,48 @@ jobs:
           print(f"all {EXPECTED} macOS-only tests executed on the shipping platform")
           PY
 
+  # ---------------------------------------------------------------------------
+  # S2a-3 d: the real shell against the command policy (scripts/shell_agreement).
+  # ---------------------------------------------------------------------------
+  # Every command the tests know, and every mechanical form of it, runs in the real
+  # /bin/bash -p -c inside bubblewrap: root read-only, a fresh empty home, no network,
+  # every program directory replaced by stubs that only record what the shell started.
+  # What it started is held against terminal_policy's verdict on the text. The card
+  # (docs/plans/0162/S2a-command-three-layers.md, S2a-3) allows this only on a one-time
+  # CI machine or in a Linux container, never on anyone's Mac: this job is that machine.
+  #
+  # ARSLAN_SHELL_AGREEMENT=required turns "no bwrap here" from a skip into a failure, so a
+  # runner that cannot sandbox cannot go green. The forms take minutes, so they run here and
+  # not in the backend job (which collects the same file and skips them).
+  shell-agreement:
+    runs-on: ubuntu-latest
+    env:
+      ARSLAN_SECRET_KEY: ci-secret
+      ARSLAN_API_TOKEN: ""
+      ARSLAN_DATA_DIR: data
+      ARSLAN_SHELL_AGREEMENT: required
+      ARSLAN_SHELL_AGREEMENT_FORMS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+        run: uv sync --frozen --extra dev --extra server
+
+      - name: The real shell against the policy
+        # -s: the summary (commands, runs, programs started, kinds of disagreement) and every
+        # disagreement are printed, so the log is the measurement.
+        run: .venv/bin/pytest tests/server/test_s2a3_shell_agreement.py -q -rfEs -s
+
   secrets:
     # FULL-HISTORY secret scan, not a diff scan.
     #
