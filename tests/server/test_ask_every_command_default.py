@@ -216,29 +216,47 @@ def _notice(db_path) -> str | None:
         engine.dispose()
 
 
-async def test_a_user_0070_moves_gets_a_one_time_notice(tmp_path):
-    """R63 (user 10-24): everyone 0070 switched from "Ask only for risky commands" is told once, after the
-    upgrade: 0070 leaves the notice pending when, and only when, it moves a stored ask_risky."""
-    db = tmp_path / "moved.db"
-    _before_0070(db)
-    _store(db, "ask_risky")
-    await _boot(db)
-    assert _notice(db) == "pending"
-
-
-@pytest.mark.parametrize("stored", [None, "ask_all", " ASK_RISKY ", "garbage"])
-async def test_nobody_0070_did_not_move_gets_the_notice(tmp_path, stored):
-    db = tmp_path / "not-moved.db"
+@pytest.mark.parametrize("stored", ["ask_risky", None, " ASK_RISKY ", "garbage", ""])
+async def test_every_old_install_v0162_read_as_ask_risky_gets_a_one_time_notice(tmp_path, stored):
+    """R63 (user 10-24, "in practice, every old user"): v0.1.62 read everything but ask_all as ask_risky, its
+    default, so an install that never touched the setting was on it too. Each is told once, after the upgrade."""
+    db = tmp_path / "old.db"
     _before_0070(db)
     if stored is not None:
         _store(db, stored)
     await _boot(db)
+    assert _notice(db) == "pending"
+
+
+@pytest.mark.parametrize("stored", ["ask_all", " ASK_ALL ", "Ask_All\n"])
+async def test_an_old_install_on_ask_all_gets_no_notice(tmp_path, stored):
+    """v0.1.62 read these as ask_all: nothing changed for them."""
+    db = tmp_path / "chose-all.db"
+    _before_0070(db)
+    _store(db, stored)
+    await _boot(db)
     assert _notice(db) is None
 
 
+async def test_an_install_from_before_the_ledger_counts_as_old(tmp_path):
+    """Its tables were there before this boot, with no migration recorded: an upgrade, not a new install."""
+    db = tmp_path / "pre-ledger.db"
+    engine = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with engine.begin() as conn:
+            Base.metadata.create_all(conn)
+    finally:
+        engine.dispose()
+    await _boot(db)
+    assert _notice(db) == "pending"
+
+
 async def test_a_new_install_gets_no_notice(tmp_path):
+    """It was never on ask_risky. The runner tells it from an upgrade before create_all makes its tables."""
     db = tmp_path / "new.db"
     await _boot(db)
+    assert _notice(db) is None
+    await _boot(db)                                  # and a restart adds none
     assert _notice(db) is None
 
 
@@ -261,6 +279,7 @@ async def test_the_notice_once_seen_stays_seen_across_restarts(tmp_path):
 
 async def test_the_settings_api_carries_the_notice(client):
     from server.db import session as db_session
+    assert (await client.get("/api/v1/settings")).json()["shell_policy_switch_notice"] == ""   # a new database
     async with db_session.AsyncSessionLocal() as session:
         await settings_service.update_settings(session, {"shell_policy_switch_notice": "pending"})
     assert (await client.get("/api/v1/settings")).json()["shell_policy_switch_notice"] == "pending"

@@ -5,9 +5,10 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { Button, Dialog } from "./kit";
 
 /**
- * R63 (the user's decision, 10-24): someone migration 0070 switched from "Ask only for risky commands" to "Ask before
- * every command" is told once, after the upgrade: that they were switched, why (v0.1.63's known issue), and how to
- * switch back. The server sets `shell_policy_switch_notice = "pending"`; the first time the window sees it, the notice
+ * R63 (the user's decision, 10-24): every existing install that was on "Ask only for risky commands" before v0.1.63
+ * (chosen, or v0.1.62's default) is told once, after the upgrade: that it now asks before every command, why
+ * (v0.1.63's known issue), and how to switch back. Migration 0070 sets `shell_policy_switch_notice = "pending"` for
+ * them; the first time the window sees it, the notice
  * opens and "seen" is written at once, so it never opens again, whether or not it is dismissed.
  * DELETE-BY: v0.1.64, with migration 0070's notice, when S2a-3 and #406 land (then its text is no longer true).
  */
