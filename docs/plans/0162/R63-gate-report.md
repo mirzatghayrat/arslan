@@ -25,7 +25,7 @@ R63 第 3 步「最后一轮 M1」的结果，按用户 2026-10-24 的要求写�
 |---|---|---|---|
 | 不退步（DeepSeek） | 每题不低于 v0.1.62 | 9 题全部不低于 M1B，也全部不低于 base63-ds。通过 22/27（M1B 6/27，base63-ds 18/27）；「等你」0（base63-ds 4） | **达到** |
 | 不退步（Claude） | 每题不低于 v0.1.62 | 8 题不低于 M1B；**T11 从 3/3 掉到 0/3**。通过 17/27（M1B 7/27） | **没达到（T11 一题）**，原因见第三节第 1 条 |
-| DeepSeek 上对 Hermes | 全套 Pass^3 不低于 Hermes | 全套 9 题：Arslan 6 题、Hermes 6 题（Hermes 不支持的 T8、T11 记 0）。只算两边都能跑的 7 题：Arslan 5、Hermes 6 | **按门槛原文达到（持平）**；同题比还差 1 题（T2） |
+| DeepSeek 上对 Hermes | 全套 Pass^3 不低于 Hermes | 全套 9 题：Arslan 6 题、Hermes 6 题（Hermes 不支持的 T8、T11 记 0）。只算两边都能跑的 7 题：Arslan 5、Hermes 6 | **按门槛原文达到（持平）**；同题比少 1 题：Hermes 在 T2、T3 上 3/3、Arslan 没有，Arslan 在 T1 上 3/3、Hermes 没有 |
 | Claude 上对 Claude Code | 差距比基线缩小一半以上 | 两边都能跑的 8 题（T11 Claude Code 不支持）：基线通过 Arslan 4/24、Claude Code 16/24，差 12；现在 Arslan 17/24、Claude Code 17/24，差 0。Pass^3：Arslan 5 题、Claude Code 5 题 | **达到（差距从 12 缩到 0）** |
 | 新题 3/3（T7 长命令、T8 三轮追问、T11 被拒后换路） | 三题都 3/3 | DeepSeek：T7 3/3、T8 1/3、T11 3/3。Claude：T7 3/3、T8 0/3、T11 0/3 | **没达到（T8 两个模型、T11 Claude）** |
 
