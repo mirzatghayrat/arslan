@@ -35,6 +35,7 @@ is not.
 from __future__ import annotations
 
 import os
+import sys
 import shutil
 import tempfile
 from pathlib import Path
@@ -74,6 +75,32 @@ _pinned: dict[str, str | None] = {}
 
 
 _owned: list[Path] = []
+
+
+#: The real secret folder (``~/.arslan``, the dev secret key's home). Nothing in a test run may open it.
+REAL_SECRET_DIR = os.path.join(str(REAL_HOME), ".arslan")
+
+
+def forbid_real_secret_folder() -> None:
+    """Make any open under the real ``~/.arslan`` fail for the rest of this process (incident 2026-10-24,
+    docs/incidents/2026-10-24-dev-secret-read.md). The suite already pins ``ARSLAN_SECRET_KEY_FILE=""`` and a HOME
+    of its own; this holds even for code that builds the path from the real home some other way. An audit hook
+    stays for the life of the process, which is what a test run wants; it costs one string compare per open."""
+    prefix = REAL_SECRET_DIR + os.sep
+
+    def hook(event: str, args: tuple) -> None:
+        if event != "open" or not args:
+            return
+        path = args[0]
+        if isinstance(path, int):
+            return
+        try:
+            text = os.path.abspath(os.fsdecode(os.fspath(path)))
+        except TypeError:
+            return
+        if text == REAL_SECRET_DIR or text.startswith(prefix):
+            raise PermissionError(f"a test opened the real secret folder ({text}); tests use their own HOME")
+    sys.addaudithook(hook)
 
 
 def pin_suite_home() -> Path:

@@ -20,6 +20,7 @@ os.environ["ARSLAN_MCP_SUPERVISOR"] = "0"
 from tests import real_data_dir_guard
 
 _SUITE_HOME = real_data_dir_guard.pin_suite_home()
+real_data_dir_guard.forbid_real_secret_folder()   # no open under the real ~/.arslan (incident 2026-10-24)
 
 import shutil  # noqa: E402 — after the HOME pin, on purpose
 from pathlib import Path  # noqa: E402
