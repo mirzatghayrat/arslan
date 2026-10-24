@@ -1,7 +1,7 @@
 """Settings REST endpoints."""
 from __future__ import annotations
 
-import secrets
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from server.schemas import AccessTokenOut, CatalogEntryOut, McpTokenOut, ModelLi
 from server.services import model_catalog, provider_config_service, searxng_probe, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def _bearer_matches(request: Request, expected: str) -> bool:
     return (
         scheme.lower() == "bearer"
         and bool(token)
-        and secrets.compare_digest(token, expected)
+        and auth.token_matches(token, expected)     # a non-ASCII bearer is a mismatch, not a 500 (C11b review 3)
     )
 
 
@@ -110,9 +111,9 @@ async def reset_access_token(request: Request) -> AccessTokenOut:
 
 
 # S4.1-C: dedicated inbound-MCP token (separate from the app api_token, see
-# server/mcp_server/token_store.py). Generation is localhost-gated only — no old-token
-# challenge — because this feature is optional (no lockout risk the way the app's own
-# access token has): a fresh generate simply rotates. Show-once (spec Q3 detail 2): the
+# server/mcp_server/token_store.py). Generating one is localhost-only and, like rotating the
+# access token, needs the CURRENT access token as the bearer when auth is on (C11): anything
+# on this Mac can open a loopback socket, and a fresh MCP token is a key to the brain. Show-once (spec Q3 detail 2): the
 # full plaintext is returned ONLY by generate, exactly once; GET never re-shows it.
 mcp_token_router = APIRouter()
 
@@ -130,6 +131,12 @@ async def get_mcp_token(db: AsyncSession = Depends(get_session)) -> McpTokenOut:
 async def generate_mcp_token(request: Request, db: AsyncSession = Depends(get_session)) -> McpTokenOut:
     if not _is_direct_localhost(request):
         raise HTTPException(status_code=403, detail="MCP token generation is localhost-only")
+    active = auth.active_token()
+    if active and not _bearer_matches(request, active):
+        raise HTTPException(
+            status_code=401,
+            detail="present the current access token to generate an MCP token",
+            headers={"WWW-Authenticate": "Bearer"})
     from server.mcp_server import token_store
     token = token_store.generate_mcp_token()
     enabled = await settings_service.mcp_server_enabled(db)
@@ -140,6 +147,12 @@ async def generate_mcp_token(request: Request, db: AsyncSession = Depends(get_se
 async def disable_mcp_token(request: Request, db: AsyncSession = Depends(get_session)) -> McpTokenOut:
     if not _is_direct_localhost(request):
         raise HTTPException(status_code=403, detail="MCP token control is localhost-only")
+    active = auth.active_token()
+    if active and not _bearer_matches(request, active):
+        raise HTTPException(
+            status_code=401,
+            detail="present the current access token to disable the MCP token",
+            headers={"WWW-Authenticate": "Bearer"})
     from server.mcp_server import token_store
     token_store.clear_mcp_token()
     enabled = await settings_service.mcp_server_enabled(db)
@@ -253,10 +266,22 @@ async def ocr_languages() -> dict:
     }
 
 
+async def _settings_out(session: AsyncSession) -> SettingsOut:
+    from pathlib import Path
+
+    from server.services import checkpoints
+    data = await settings_service.get_settings(session)
+    # S3b: the folder as set (Arslan's own when empty), never created by reading Settings; the check reads
+    # the disk, so off the event loop (⓪Plan's review 🟡10). A folder that isn't there reads False.
+    raw = str(data.get("workspace_dir") or "").strip()
+    folder = Path(raw).expanduser() if raw else settings_service.default_workspace()
+    data["workspace_other_volume"] = await asyncio.to_thread(checkpoints.other_volume, folder)
+    return SettingsOut(**data)
+
+
 @router.get("/settings", response_model=SettingsOut)
 async def read_settings(session: AsyncSession = Depends(get_session)) -> SettingsOut:
-    data = await settings_service.get_settings(session)
-    return SettingsOut(**data)
+    return await _settings_out(session)
 
 
 @router.put("/settings", response_model=SettingsOut)
@@ -273,8 +298,7 @@ async def write_settings(
         await heartbeat.sync_task()
     except Exception as exc:  # noqa: BLE001
         logger.warning("heartbeat sync failed (non-fatal): %s", exc)
-    data = await settings_service.get_settings(session)
-    return SettingsOut(**data)
+    return await _settings_out(session)
 
 
 @router.get("/settings/provider-configs", response_model=list[ProviderConfigOut])
@@ -397,7 +421,7 @@ async def openrouter_oauth_start():
 
     asyncio.create_task(run())
     try:
-        auth_url = await asyncio.wait_for(asyncio.shield(url_ready), timeout=15.0)
+        auth_url = await within(asyncio.shield(url_ready), timeout=15.0)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="no authorization URL was produced")
     except Exception as exc:  # noqa: BLE001

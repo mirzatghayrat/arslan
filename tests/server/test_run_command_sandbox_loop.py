@@ -1,6 +1,6 @@
 """Leaving the sandbox is a click (0.1.51 P3): the tool loop's three ways out —
-asked up front, offered after a stop, or granted for the rest of a conversation —
-and the cards that carry them."""
+asked up front, offered after a stop, or granted for the rest of a conversation (a stored
+grant since S4a: tests/server/test_s4a_outside_remote.py) — and the cards that carry them."""
 import pytest
 
 from server.orchestrator import tool_loop
@@ -43,8 +43,6 @@ class _Exec:
 
 
 class _Cards:
-    honours_session_grants = True      # like the chat window's callback
-
     def __init__(self, *answers):
         self.answers = list(answers)
         self.calls: list[dict] = []
@@ -88,9 +86,16 @@ async def test_declining_the_rerun_leaves_it_stopped_with_the_note(monkeypatch):
     assert cards.calls[-1]["sandbox"] == "retry"
 
 
-async def test_without_a_window_a_stop_is_final(monkeypatch):
+async def test_without_a_window_a_stop_is_final(execution_db, monkeypatch):
+    """A turn with someone to ask but no card callback for the rerun: the sandbox's stop stands. (A run with
+    nobody to ask at all, a scheduled one, runs no command since v0.1.63: test_scheduled_run_no_command.)"""
+    from server.services import permissions
+
+    async def no_card(frame):
+        raise AssertionError("no card in this test")
     ex = _Exec()
-    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None)
+    with permissions.asking_with(no_card):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None)
     assert ex.outside == [False] and r["sandbox_denied"] is True
 
 
@@ -113,18 +118,26 @@ async def test_asking_up_front_always_cards_even_a_harmless_command(monkeypatch)
 async def test_asking_up_front_without_a_window_is_refused(monkeypatch):
     ex = _Exec(stop=False)
     r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=None)
-    assert ex.outside == [] and r["ok"] is False and "click" in r["error"]
+    assert ex.outside == [] and r["ok"] is False and "nobody to ask" in r["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
 
 
-async def test_a_conversation_grant_runs_outside_from_the_start_there_only(monkeypatch):
-    command_sandbox.grant("c1")
+async def test_a_conversation_grant_runs_outside_from_the_start_there_only(execution_db, monkeypatch):
+    from server.db import session as db_session
+    from server.services import permission_store, permissions
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="card-1")
+        await db.commit()
+
+    async def no_card(frame):
+        raise AssertionError("no card is shown")
     ex, cards = _Exec(), _Cards(True)
-    r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=cards, cid="c1")
-    assert ex.outside == [True] and r["ran_outside_sandbox"] is True
-    assert all(c.get("sandbox") is None for c in cards.calls)       # no sandbox card
-    other = _Exec()
-    other_cards = _Cards(False)
-    await _dispatch(monkeypatch, {"command": "ls"}, executor=other, cards=other_cards, cid="c2")
+    with permissions.asking_with(no_card):
+        r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=cards, cid="c1")
+        assert ex.outside == [True] and r["ran_outside_sandbox"] is True
+        assert all(c.get("sandbox") is None for c in cards.calls)       # no sandbox card
+        other = _Exec()
+        other_cards = _Cards(False)
+        await _dispatch(monkeypatch, {"command": "ls"}, executor=other, cards=other_cards, cid="c2")
     assert other.outside == [False] and other_cards.calls[-1]["sandbox"] == "retry"
 
 
@@ -159,47 +172,15 @@ def _window(frames: list, approve: bool):
     return window
 
 
-async def test_a_background_job_asks_with_a_card_and_never_grants(monkeypatch):
+async def test_a_background_job_asks_with_a_card_and_a_bare_yes_grants_nothing(execution_db, monkeypatch):
+    """A yes that names no scope (an old client's "remember") is the card's first choice, this time."""
     from server.services import approvals, run_registry
     frames = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, True))
     job = approvals.JobConfirmations("c9")
     assert await job.command("mv a ~/b", [], sandbox="retry") is True
-    assert frames[0]["sandbox"] == "retry" and not command_sandbox.granted("c9")
-
-
-async def test_a_background_job_never_inherits_the_conversations_sandbox_grant(monkeypatch):
-    """The grant ("for the rest of this conversation") belongs to the chat window that
-    gave it; a background job on the same conversation still asks, every time."""
-    from server.services import approvals, run_registry
-    frames = []
-    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, False))
-    command_sandbox.grant("c9")
-    job = approvals.JobConfirmations("c9")
-    assert await job.command("mv a ~/b", [], sandbox="retry") is False
-    assert [f["sandbox"] for f in frames] == ["retry"]
-
-
-async def test_a_job_on_a_granted_conversation_starts_inside_the_sandbox(monkeypatch):
-    from server.services import approvals, run_registry, settings_service
-    from unittest.mock import AsyncMock
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
-    frames = []
-    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, False))
-    command_sandbox.grant("c9")
-    ex = _Exec()
-    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex,
-                        cards=approvals.JobConfirmations("c9").command, cid="c9")
-    assert ex.outside == [False] and "ran_outside_sandbox" not in r
-    assert [f.get("sandbox") for f in frames] == ["retry"]          # asked, declined
-    ex = _Exec()
-    await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex,
-                    cards=approvals.JobConfirmations("c9").command, cid="c9")
-    assert ex.outside == [] and frames[-1]["sandbox"] == "outside"
-
-
-async def test_an_unattended_turn_never_inherits_the_conversations_sandbox_grant(monkeypatch):
-    command_sandbox.grant("c1")
-    ex = _Exec(stop=False)
-    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None, cid="c1")
-    assert ex.outside == [False] and "ran_outside_sandbox" not in r
+    assert frames[0]["sandbox"] == "retry" and frames[0]["options"] == ["once", "conversation"]
+    from sqlalchemy import select
+    from server.db.models import PermissionGrant
+    async with execution_db() as db:
+        assert (await db.execute(select(PermissionGrant))).scalars().all() == []

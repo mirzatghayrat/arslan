@@ -72,10 +72,6 @@ class LLMAdapter:
                 raise ValueError("max_tokens override is only supported for OpenAI-compatible providers")
             self._provider.max_tokens = max_tokens
 
-    def supports_bounded_critique(self) -> bool:
-        provider = getattr(self, "_provider", None)
-        return bool(provider is not None and provider.supports_bounded_critique())
-
     @property
     def report_provider(self) -> str:
         # Fallback for __new__-constructed doubles (tests) that bypass __init__.
@@ -130,13 +126,18 @@ class LLMAdapter:
         tool_choice: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        on_text=None,
     ) -> LLMResponse:
         """Send the neutral in-turn trajectory (arslan/llm/trajectory.py) in the
-        provider's native tool protocol. Only for native_trajectory() adapters."""
+        provider's native tool protocol. Only for native_trajectory() adapters.
+        `on_text` (K8a) gets the answer's text as it arrives, where the endpoint
+        streams; elsewhere it is never called and the reply comes whole."""
         wire = self._provider.build_trajectory_messages(system, messages)
         extra = {"max_tokens": max_tokens} if max_tokens else {}
         if getattr(self._provider, "streams_tool_calls", lambda: False)():
             extra["stream"] = True   # idle watchdog instead of a total timeout (0.1.49 S7)
+            if on_text is not None:
+                extra["on_text"] = on_text
         resp = await self._provider.chat(wire, tools=tools, temperature=temperature,
                                          tool_choice=tool_choice, **extra)
         last = messages[-1].get("content") if messages else ""

@@ -202,7 +202,6 @@ export interface AppSettings {
   theme: 'dark' | 'light';
   telemetry: boolean;
   llmStrategy: 'single' | 'cost' | 'balanced' | 'performance';
-  distillOnSessionEnd: boolean;
   /** Orchestrator (Arslan) may run whitelisted shell commands. Off by default. */
   orchestratorShellEnabled: boolean;
   /** Confirmation posture for shell commands. */
@@ -213,6 +212,8 @@ export interface AppSettings {
   taskUsdCap: number;
   /** Directory Arslan's file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
+  /** S3b: the workspace is on another volume than Arslan's data, so its changes can't be undone (read only). */
+  workspaceOtherVolume?: boolean;
   /** Periodic checklist turn. Default OFF; an empty checklist means no task. */
   heartbeatEnabled: boolean;
   heartbeatChecklist: string;
@@ -248,13 +249,6 @@ export interface AppSettings {
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
    *  to external MCP clients like Claude Code/Codex) is enabled. Default off. */
   mcpServerEnabled: boolean;
-  /** Sleep-time curation sweep. Optional on purpose: it
-   *  keeps existing AppSettings literals valid. Default off — it spends, and
-   *  until this round it had NO UI at all, only a server field. */
-  curationEnabled?: boolean;
-  /** Advisory source review of saved multi-source reports (0.1.41). Default
-   *  off: one extra model request per qualifying save. Never blocks saving. */
-  researchReviewEnabled?: boolean;
   /** Resident shell (0.1.41): hold a sleep assertion while work is in flight. Default on. */
   keepAwakeEnabled?: boolean;
   /** Resident shell (0.1.41): native notifications while the window is hidden. Default on. */

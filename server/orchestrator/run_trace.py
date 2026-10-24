@@ -40,6 +40,14 @@ def snapshot() -> list[dict]:
     return list(_trace.get() or [])
 
 
+def extend(entries: list[dict]) -> None:
+    """K9a: a call that ran next to others recorded into a list of its own; its entries join the turn's
+    trace in the reply's order (parallel_reads.Batch.take)."""
+    buf = _trace.get()
+    if buf is not None:
+        buf.extend(entries)
+
+
 def record_prompt(*, system_prompt: str | None, injected_kb: str | None = None,
                    injected_kb_sources: list | None = None) -> None:
     d = _prompt.get()

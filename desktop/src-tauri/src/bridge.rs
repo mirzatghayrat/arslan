@@ -214,8 +214,10 @@ mod tests {
         (script, out)
     }
 
+    /// Polls until `done`, returning as soon as it is. Generous: on macOS the first start of a freshly
+    /// written script took 0.4–1.35 s in 20 runs (the system checks a new executable) and once went past 5 s.
     fn wait_until(mut done: impl FnMut() -> bool) -> bool {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
             if done() {
                 return true;
@@ -238,16 +240,18 @@ mod tests {
         assert!(sup.is_running());
         sup.tick(true, 8765, Some("tok"));
         assert!(sup.is_running(), "stays one Bridge");
+        // Running and holding its config before the stop is timed: a freshly written script's first
+        // start takes up to a second or more on macOS (see wait_until), which is not what this bound is about.
+        assert!(wait_until(|| std::fs::read_to_string(&out)
+            .map(|s| s.contains("\"token\":\"tok\""))
+            .unwrap_or(false)));
         let stopping = Instant::now();
         sup.tick(false, 8765, Some("tok"));
         assert!(!sup.is_running());
         assert!(
             stopping.elapsed() < Duration::from_secs(1),
-            "closing stdin ends it; no kill needed"
+            "closing stdin ends it; no kill needed (the kill comes at 2 s)"
         );
-        assert!(wait_until(|| std::fs::read_to_string(&out)
-            .map(|s| s.contains("\"token\":\"tok\""))
-            .unwrap_or(false)));
         let env = std::fs::read_to_string(dir.join("stdin.txt.env")).unwrap();
         assert!(
             !env.contains("must-not-leak"),

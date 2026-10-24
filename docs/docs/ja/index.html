@@ -183,7 +183,7 @@ body.menu-open .side{transform:none}main{padding:0 18px 80px}.hero{padding:40px 
 <tr><th>デスクトップ自動化コンポーネント</th><td>Hands は <code>agent-desktop</code>（Apache-2.0）を、上流の v0.9.4 に 4 つのコミットを加えた状態で使用します。依存関係を同梱した fork からビルドしており、この fork には Arslan による変更が一つだけ含まれます（プロセスがすでに終了したアプリをアプリ一覧から除外する変更で、上流にも提案済みです）。Arslan はその外側に、独立した helper、認証、権限ポリシーを実装しています。</td></tr>
 <tr><th>ターミナルルールの出所</th><td>破壊的なコマンドの検出や基本的な安全規則の一部には、MIT ライセンスの Hermes Agent のコードを再利用し、Arslan の外部への操作および認証情報に関するルールを組み合わせています。</td></tr>
 </tbody></table></div>
-<p>プロジェクトは Apache-2.0 で公開されています。サードパーティのコンポーネントのライセンスと帰属は、THIRD_PARTY_NOTICES.md を参照してください。Hermes Agent の MIT ライセンスは、ソースコードとともに arslan/vendor/hermes/LICENSE にも収録されています。オープンソース化によって、実装、制約、変遷を確認でき、「なぜこの設計にしたのか」も文書の一部となっています。</p>
+<p>プロジェクトは Apache-2.0 で公開されています。サードパーティのコンポーネントのライセンスと帰属は、THIRD_PARTY_NOTICES.md を参照してください。このファイルはアプリにも同梱されています。Arslan がシェルコマンドを読み取るコードは Hermes Agent（MIT）を元にしており、その出典もここに記載しています。オープンソース化によって、実装、制約、変遷を確認でき、「なぜこの設計にしたのか」も文書の一部となっています。</p>
 <p class="evidence">作者の開発方法は、作者自身の説明に基づきます。実装と帰属：<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/LICENSE" target="_blank" rel="noopener">プロジェクトのライセンス</a>；<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">サードパーティの帰属</a>；<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/docs/companion/ADR-001-native-runtime.md" target="_blank" rel="noopener">実行コアのアーキテクチャ選択</a>；<a class="src" href="https://github.com/mirzatghayrat/arslan/blob/8b6d3cff488c/docs/companion/0.1.48-one-loop.md" target="_blank" rel="noopener">統一ループへのリファクタリング</a>。</p>
 </section>
 <section class="chapter" id="stack"><h2><span class="num">03 / 技術スタック</span>UI、ホスト、実行、データの役割分担</h2>

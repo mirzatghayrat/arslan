@@ -291,19 +291,23 @@ async def test_usage_summary_not_covered_footnote(client):
     r = await client.get("/api/v1/usage/summary", headers=AUTH)
     body = r.json()
     nc = body["not_covered"]
-    assert "compare_judge" in nc
+    assert "ingest" in nc
     # Every listed name must still be a real module — a deleted call site left on the
     # list is the same dishonesty in the other direction.
     for name in nc:
         assert importlib.util.find_spec(f"server.services.{name}") is not None, name
     # distill_service LEFT this list in 整理层#10 段 A4: its two LLM calls (the distill
     # itself and the meta-upflow) now run inside usage_ledger.scope("distill"), so
-    # claiming it is unaccounted would itself be the dishonest statement.
+    # claiming it is unaccounted would itself be the dishonest statement. (C8-4 then
+    # deleted the module; it must not come back onto the list either.)
     assert "distill_service" not in nc
     # learning_service LEFT it in 0.1.63 (C1c-1): its only LLM call (the distill) was deleted.
     assert "learning_service" not in nc
     # fact_classify LEFT it in 0.1.63 (C2a-2): the v1 classifier was deleted.
-    assert len(nc) == 10
+    # optimizer LEFT it in C7b-1, compare_judge and synthetic_corpus in C7b-2: deleted.
+    for gone in ("optimizer", "compare_judge", "synthetic_corpus"):
+        assert gone not in nc
+    assert len(nc) == 5
 
 
 # ---------------------------------------------------------------------------

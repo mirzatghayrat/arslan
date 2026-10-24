@@ -10,7 +10,7 @@ from server import config
 
 _bearer = HTTPBearer(auto_error=False)
 
-# Process-wide token minted at boot when the deployment is packaged / prod /
+# Process-wide token minted at boot when the deployment is packaged /
 # non-loopback but no explicit ARSLAN_API_TOKEN was supplied (see
 # server.token_bootstrap.bootstrap_api_token). An explicit env token always wins;
 # this is only consulted when ARSLAN_API_TOKEN is empty. Stays None in the
@@ -22,6 +22,17 @@ def set_bootstrapped_token(token: str | None) -> None:
     """Install (or clear) the boot-minted access token. Empty string clears it."""
     global _bootstrapped_token
     _bootstrapped_token = token or None
+
+
+def token_matches(presented: str, expected: str) -> bool:
+    """Constant-time equality. ``compare_digest`` only takes ASCII strings and raises ``TypeError``
+    on anything else, which turned a non-ASCII bearer or ``?token=`` into a 500 instead of a refusal
+    (C11b, #338 review F4). A token that cannot be compared is a mismatch. Every place that checks
+    a presented access token against the active one goes through here (server.api.settings too)."""
+    try:
+        return secrets.compare_digest(presented, expected)
+    except TypeError:
+        return False
 
 
 def active_token() -> str:
@@ -49,7 +60,7 @@ async def require_auth(
     token = active_token()
     if not token:
         return
-    if credentials is None or not secrets.compare_digest(credentials.credentials, token):
+    if credentials is None or not token_matches(credentials.credentials, token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",
@@ -64,4 +75,4 @@ def is_ws_token_valid(token: str | None) -> bool:
         return True
     if token is None:
         return False
-    return secrets.compare_digest(token, expected)
+    return token_matches(token, expected)

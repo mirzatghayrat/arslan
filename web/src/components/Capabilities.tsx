@@ -1,31 +1,27 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Zap, FileDown } from "lucide-react";
+import { FileDown } from "lucide-react";
 import CapabilityTabs from "./CapabilityTabs";
 import CapabilityCatalog from "./CapabilityCatalog";
 import ToolHubDiscover, { type McpPrefill } from "./ToolHubDiscover";
 import McpServers from "./McpServers";
 import SavedCandidates from "./SavedCandidates";
 import SkillForge from "./SkillForge";
-import RecommendedMcp from "./RecommendedMcp";
 import SkillImportPanel from "./SkillImportPanel";
 import FilterChips from "./FilterChips";
 import ToolTransportWarning from "./settings/ToolTransportWarning";
-import { getMcpCatalog } from "../api/catalog";
-import { listMcpServers } from "../api/mcp";
 import ProfessionalMethods from "./companion/ProfessionalMethods";
 import CapabilitySwitches from "./CapabilitySwitches";
 import AddedCapabilities from "./capabilities/AddedCapabilities";
 import FoundRail from "./capabilities/FoundRail";
 
 type CapTab = "experts" | "abilities" | "discover" | "skills" | "forge" | "mcps" | "saved";
-type McpChip = "all" | "recommended" | "registered";
 
 // Capability Library page: one tab bar at the top
 // (DISCOVER | TOOLS | SKILLS | SKILL FORGE | MCPS | SAVED). Discover is the
 // default tab and holds the Google-style centered Tool-Hub hero (search →
-// project dossier). Curated MCP presets live inside the MCPS tab (behind a
-// filter-chip row); the SKILL.md importer inside SKILLS.
+// project dossier). The MCPS tab lists the servers you added (0.1.63 C9b removed the
+// curated presets); the SKILL.md importer lives inside SKILLS.
 /** The provider whose transport decides whether ANY of this page's equipping
  *  will have an effect. Passed in rather than fetched here: App already holds
  *  the configs, and a second fetch would give this page its own opinion of which
@@ -38,31 +34,10 @@ export default function Capabilities({ provider, experts, initialTab }: {
   const [tab, setTab] = useState<CapTab>(initialTab ?? "abilities");
   useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const [mcpPrefill, setMcpPrefill] = useState<McpPrefill | null>(null);
-  // Bumped when an MCP is added/connected elsewhere (dossier, recommended list) so the
-  // McpServers list remounts and picks the new server up.
+  // Bumped when an MCP is added from the dossier so the McpServers list remounts and picks the new server up.
   const [mcpRefreshKey, setMcpRefreshKey] = useState(0);
-
-  // MCPS tab chip row: jump between the curated presets and the registered
-  // server list. Both counts are fetched for the chip badges (null = unknown/offline).
-  const [mcpChip, setMcpChip] = useState<McpChip>("all");
-  const [mcpServerCount, setMcpServerCount] = useState<number | null>(null);
-  const [mcpPresetCount, setMcpPresetCount] = useState<number | null>(null);
-  useEffect(() => {
-    let alive = true;
-    listMcpServers()
-      .then((s) => { if (alive) setMcpServerCount(s.length); })
-      .catch(() => { if (alive) setMcpServerCount(null); });
-    getMcpCatalog()
-      .then((c) => { if (alive) setMcpPresetCount(c.length); })
-      .catch(() => { if (alive) setMcpPresetCount(null); });
-    return () => { alive = false; };
-  }, [mcpRefreshKey]);
-
-  // Prefill targets the McpServers add form — make sure it's on screen.
-  const prefillMcp = (p: McpPrefill) => {
-    setMcpPrefill(p);
-    setMcpChip("all");
-  };
+  // Prefill targets the McpServers add form.
+  const prefillMcp = (p: McpPrefill) => setMcpPrefill(p);
 
   const sectionLabel =
     "flex items-center gap-1.5 text-[10px] font-mono text-subtle-foreground uppercase tracking-widest mb-3";
@@ -138,36 +113,7 @@ export default function Capabilities({ provider, experts, initialTab }: {
 
         {tab === "forge" && <SkillForge />}
 
-        {tab === "mcps" && (
-          <div>
-            <FilterChips
-              chips={[
-                { id: "all", label: t("capabilities.chips.all") },
-                { id: "recommended", label: t("capabilities.chips.recommended"), count: mcpPresetCount ?? undefined },
-                { id: "registered", label: t("capabilities.chips.registered"), count: mcpServerCount ?? undefined },
-              ]}
-              active={mcpChip}
-              onSelect={(id) => setMcpChip(id as McpChip)}
-            />
-            <div className="space-y-8">
-              {mcpChip !== "registered" && (
-                <section>
-                  <div className={sectionLabel}>
-                    <Zap className="w-3 h-3 text-success" />
-                    <span>{t("capabilities.sections.recommended_mcp")}</span>
-                  </div>
-                  <RecommendedMcp
-                    onPrefillMcp={prefillMcp}
-                    onChanged={() => setMcpRefreshKey((k) => k + 1)}
-                  />
-                </section>
-              )}
-              {mcpChip !== "recommended" && (
-                <McpServers key={mcpRefreshKey} prefill={mcpPrefill ?? undefined} />
-              )}
-            </div>
-          </div>
-        )}
+        {tab === "mcps" && <McpServers key={mcpRefreshKey} prefill={mcpPrefill ?? undefined} />}
 
         {tab === "saved" && (
           <SavedCandidates onPrefillMcp={(p) => { prefillMcp(p); setTab("mcps"); }} />

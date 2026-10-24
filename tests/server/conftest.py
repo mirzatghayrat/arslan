@@ -12,14 +12,13 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from server.db import session as db_session
 from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
 from server.services.memory_activation import activate_sync
-from server.services import evolution_estimate, evolution_watcher
 from tests import real_data_dir_guard
 from tests.server.portal_teardown import shared_portal
 
@@ -274,8 +273,9 @@ async def client(tmp_path, monkeypatch, request):
 
     from server.main import create_app
 
-    engine = db_session.install_cancel_rollback(
-        create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}"))
+    # Built as production builds it (WAL, busy_timeout, the cancel rollback), only without
+    # foreign_keys yet: see build_engine.
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}", foreign_keys=False)
     async with engine.begin() as conn:
         await conn.run_sync(_schema_for(request))
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -417,9 +417,11 @@ def build_ws_client(
 
     importlib.reload(_config)
 
-    engine = db_session.install_cancel_rollback(create_async_engine(
-        f"sqlite+aiosqlite:///{tmp_path/db_name}", poolclass=NullPool
-    ))
+    # WAL as in production: a socket test's teardown cancels a turn mid-SELECT, and under the
+    # rollback journal that cursor's read lock made the cancel record's COMMIT wait out the 5 s
+    # busy_timeout, past the portal's 3 s grace ("task(s) still alive 3.0s after cancel").
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path/db_name}",
+                                     poolclass=NullPool, foreign_keys=False)
     portal._test_engines.append(engine)  # disposed at portal-fixture teardown
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -467,41 +469,36 @@ def _assert_testclient_portal_seam() -> None:
 _assert_testclient_portal_seam()
 
 
-# ── evolution watcher ────────────────────────────────────────────────────────────
-# Shared by test_evolution_watcher.py and test_evolution_attempt_source.py. Lives here
-# rather than being imported between them so the tests that take it as a parameter are
-# not flagged as redefinitions.
+# ── wdb: a file-backed DB behind db_session.AsyncSessionLocal ─────────────────────
+# For code that opens its own sessions. Lives here rather than being imported between test
+# modules so the tests that take it as a parameter are not flagged as redefinitions.
 @pytest.fixture
 async def wdb(tmp_path, monkeypatch):
-    """A file-backed SQLite DB wired into db_session.AsyncSessionLocal (so the watcher's own
-    sessions hit it), with a cheap stubbed estimate. Resets watcher module state around each
-    test so nothing bleeds."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'w.db'}")
+    """A file-backed SQLite DB wired into db_session.AsyncSessionLocal."""
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'w.db'}", foreign_keys=False)
     async with engine.begin() as conn:
         await conn.run_sync(boot_schema)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
-
-    async def fake_estimate(db, spawn_id):
-        # 🔴 Mirrors the CURRENT payload, including `basis` and the derived ceiling. A stub
-        # frozen at an older shape silently exercises the wrong branch: the spend gate
-        # discriminates old-schema estimates (let through, matching yesterday) from
-        # new-schema ones (judged against the dispatch cap), so a stale stub would make
-        # every wdb-based budget test take the pass-through path and prove nothing.
-        return {"pairs": 4, "dispatches": 56, "judge_calls": 56, "optimizer_calls": 3,
-                "synth_calls": 0, "est_tokens": 1000, "lower_bound": True,
-                "propose_pairs": 3, "val_pairs": 1,
-                "dispatches_max": 56, "judge_calls_max": 56, "optimizer_calls_max": 3,
-                "basis": "max", "avg_replay_tokens": None, "avg_replay_n": 0,
-                "tokens_projected": None,
-                "tokens_projected_unavailable_reason": "no_completed_attempts_with_actual"}
-
-    monkeypatch.setattr(evolution_estimate, "estimate", fake_estimate)
-
-    evolution_watcher._running_spawns.clear()
     yield Session
-    for t in list(evolution_watcher._tasks):
-        t.cancel()
-    evolution_watcher._tasks.clear()
-    evolution_watcher._running_spawns.clear()
     await engine.dispose()
+
+
+# ── worker_scope: what personal_context.for_worker did ───────────────────────────────
+# for_worker (a thin wrapper over the live `personal_context.worker_context`) went with the dispatcher
+# in C7b-6 (v0.1.63): no product code entered a worker scope through it any more. The memory-privacy
+# tests that use it to enter a worker's scope keep checking the live narrowing through this helper.
+def worker_scope(expert_id: str):
+    from contextlib import contextmanager
+
+    from server.services import personal_context as pc
+
+    @contextmanager
+    def _scope():
+        parent = pc.current()
+        if parent is None:
+            yield None
+            return
+        with pc.bind(pc.worker_context(parent, expert_id)) as child:
+            yield child
+    return _scope()

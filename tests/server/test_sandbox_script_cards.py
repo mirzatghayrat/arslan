@@ -95,13 +95,12 @@ async def test_the_loop_skips_the_card_for_a_plain_sandboxed_script(monkeypatch)
     assert asked == [] and ex.outside == [False]
 
 
-async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(monkeypatch):
+async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(execution_db, monkeypatch):
     asked = []
 
     async def cards(command, argv, **kw):
         asked.append(kw)
         return True
-    cards.honours_session_grants = True                      # the chat window's callback
 
     async def off():
         return False
@@ -112,11 +111,17 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(monkeypa
     async def on():
         return True
     monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
-    # Seatbelt starts here, as on a Mac: outside it the command is wrapped in the minimal profile, which
-    # takes the network away after outside content instead of asking (with no sandbox, it would ask).
+    # Seatbelt starts here, as on a Mac: outside it the command is wrapped in the minimal profile.
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    command_sandbox.grant("c2")                              # this conversation runs outside
-    ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
+    from server.services import permission_store, permissions
+    async with execution_db() as db:                         # this conversation runs outside (S4a: stored)
+        await permission_store.add_grant(db, "c2", "", "outside", "*", call_id="card-1")
+        await db.commit()
+
+    async def surface(frame):                                # the turn's surface: a grant stands only where one is.
+        return {"approved": True, "scope": "once", "note": "", "by": "mac"}  # (the network card, after outside content)
+    with permissions.asking_with(surface):
+        ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
     assert len(asked) == 1 and ex.outside == [True]          # S2a-2: that grant is the user's yes for layer ③
 
     async def ask_all():
@@ -140,5 +145,5 @@ async def test_where_seatbelt_cannot_start_layer_three_asks_and_nobody_to_ask_re
     assert ex.outside == []
 
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    ex = await _dispatch(monkeypatch, "ls -la", None)        # with the sandbox, layer ③ needs nobody
-    assert ex.outside == [False]
+    ex = await _dispatch(monkeypatch, "ls -la", None)        # v0.1.63: no command at all, sandbox or not
+    assert ex.outside == []

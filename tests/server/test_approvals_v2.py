@@ -221,7 +221,10 @@ async def test_a_job_schedule_card_goes_through_decide_and_a_no_keeps_its_note(j
     assert (row.job_id, row.kind, row.decision) == ("job-1", "schedule", "deny")
 
 
-async def test_a_jobs_remote_and_sandbox_cards_stay_plain_cards(job_db, monkeypatch):
+async def test_a_jobs_remote_and_sandbox_cards_are_decided_and_never_always(job_db, monkeypatch):
+    """S4a: decided through permissions.decide like every other job card. Another machine is answered this
+    time only; leaving the sandbox this time or in this conversation; neither ever "Always"."""
+    from server.db.models import PermissionRule
     windows = Windows(("yes", "always"), ("yes", "always"))
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
     job = approvals.JobConfirmations("conv", job_id="job-1")
@@ -229,7 +232,13 @@ async def test_a_jobs_remote_and_sandbox_cards_stay_plain_cards(job_db, monkeypa
     assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is True
     assert [c.get("remote_host") for c in windows.cards] == ["box", None]
     assert windows.cards[1]["sandbox"] == "retry"
-    assert not any("options" in c for c in windows.cards)      # one answer each, nothing to remember
+    assert [(c["perm_kind"], c["options"]) for c in windows.cards] == [
+        ("remote", ["once"]), ("outside", ["once", "conversation"])]
+    assert [(r.kind, r.decided_by, r.scope, r.job_id) for r in await _ledger(job_db)] == [
+        ("remote", "user", "once", "job-1"), ("outside", "user", "once", "job-1")]
+    async with job_db() as db:
+        assert (await db.execute(select(PermissionGrant))).scalars().all() == []
+        assert (await db.execute(select(PermissionRule))).scalars().all() == []
 
 
 # ── pre-review rulings (2026-10-12): merge only identical asks; phone/island answer once only ──
@@ -500,7 +509,9 @@ async def test_a_command_grant_is_found_again_under_its_own_target(job_db, shell
     ctx = permissions.Context(conversation_id="conv")
     with permissions.asking_with(conversation):
         await permissions.decide(_cmd(shell), ctx)
-    with permissions.asking_with(None):
+    async def no_card(frame):
+        raise AssertionError("the grant must answer: no card")
+    with permissions.asking_with(no_card):     # S1 (U14 a): a grant answers only where someone could be asked
         assert (await permissions.decide(_cmd(shell), ctx)).by == "grant"
     async with job_db() as db:
         targets = [g.target for g in (await db.scalars(select(PermissionGrant))).all()]
@@ -522,7 +533,7 @@ async def test_a_conversation_grant_outside_the_sandbox_never_covers_a_rule(job_
     assert shown == ["rm a.txt", "rm -rf ~/build"]
 
 
-async def test_a_declined_plain_job_card_reads_declined(monkeypatch):
+async def test_a_declined_outside_job_card_reads_declined(job_db, monkeypatch):
     def window(f):
         if f["type"].startswith("propose_"):
             approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})

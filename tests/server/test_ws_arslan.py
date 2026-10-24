@@ -2,27 +2,8 @@
 import pytest
 
 import server.orchestrator.arslan as arslan_mod
-import server.orchestrator.dispatcher as dispatcher_mod
 from server.db.models import Spawn
 from tests.server.conftest import build_ws_client
-
-
-class _FakeAdapter:
-    """Deterministic streaming adapter so spawn dispatch runs against the test DB."""
-
-    def __init__(self, text: str = "OK"):
-        self._text = text
-        self.captured_user: str | None = None
-
-    async def chat_stream(self, system, user, history=None):  # noqa: ANN001
-        self.captured_user = user
-        yield self._text
-
-
-def _stub_spawn_adapter(monkeypatch, text: str = "OK") -> _FakeAdapter:
-    adapter = _FakeAdapter(text)
-    monkeypatch.setattr(dispatcher_mod, "_get_adapter", lambda: adapter)
-    return adapter
 
 
 @pytest.fixture

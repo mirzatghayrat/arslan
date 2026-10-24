@@ -16,6 +16,7 @@ from server.services import personal_context as pc
 from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
+from tests.server.conftest import worker_scope
 
 
 @pytest.fixture(autouse=True)
@@ -178,7 +179,7 @@ async def test_worker_and_host_with_identical_text_keep_separate_attribution(sel
     adapter, _ = transport(monkeypatch)
     with pc.bind(ctx):
         await pc.record(host)
-        with pc.for_worker("expert"):
+        with worker_scope("expert"):
             worker = await pc.assemble("report")
             await pc.record(worker)
             await adapter.chat(worker.text, "report")

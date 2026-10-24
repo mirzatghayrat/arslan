@@ -50,7 +50,7 @@ describe("Approve now", () => {
   });
 
   it("a card it cannot answer outside the chat is not shown; nothing waiting shows nothing", async () => {
-    vi.spyOn(client, "request").mockResolvedValue([{ ...ask, frame: { type: "propose_connect_mcp", call_id: "m" } }] as never);
+    vi.spyOn(client, "request").mockResolvedValue([{ ...ask, frame: { type: "propose_enroll_node", call_id: "m" } }] as never);
     const count = vi.fn();
     const { container } = render(<InboxApprovals onOpenConversation={() => {}} onCount={count} />);
     await waitFor(() => expect(count).toHaveBeenCalledWith(0));
@@ -105,12 +105,30 @@ describe("Approve now — a card from the permission layer (0.1.61 §A4)", () =>
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "task" }) }));
   });
 
-  it("an old command card in the Inbox offers no 'remember' tick: the server never keeps it there", async () => {
+  it("a command card in the Inbox offers no tick (S4a: none is left)", async () => {
     vi.spyOn(client, "request").mockImplementation(async (path: string) =>
       (path === "/approvals/pending" ? [{ ...ask, frame: { ...ask.frame, sandbox: "retry" } }] : { ok: true }) as never);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     expect(await screen.findByTestId("runcmd-card")).toBeInTheDocument();
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("S4a: a card to leave the sandbox offers this time only here: only the window that asked gives the conversation", async () => {
+    const outside = { ...ask, frame: { ...ask.frame, sandbox: "retry", perm_kind: "outside", options: ["once", "conversation"] } };
+    vi.spyOn(client, "request").mockImplementation(async (path: string) =>
+      (path === "/approvals/pending" ? [outside] : { ok: true }) as never);
+    render(<InboxApprovals onOpenConversation={() => {}} />);
+    expect(await screen.findByTestId("runcmd-card")).toBeInTheDocument();
+    expect(screen.queryByTestId("runcmd-scope-conversation")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("another command card keeps its choices here", async () => {
+    const rule = { ...ask, frame: { ...ask.frame, perm_kind: "command", options: ["once", "conversation"] } };
+    vi.spyOn(client, "request").mockImplementation(async (path: string) =>
+      (path === "/approvals/pending" ? [rule] : { ok: true }) as never);
+    render(<InboxApprovals onOpenConversation={() => {}} />);
+    expect(await screen.findByTestId("runcmd-scope-conversation")).toBeInTheDocument();
   });
 });
 
@@ -168,6 +186,17 @@ describe("Not done while you were away", () => {
     expect(within(row(1)).queryByTestId("inbox-refused-allow")).toBeNull();
     expect(within(row(1)).queryByTestId("inbox-refused-stores")).toBeNull();
     expect(within(row(1)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.asksEachTime");
+  });
+
+  it("a scheduled run's refusal says why nothing can be allowed, beside an away card for the same thing (S1)", async () => {
+    serve([mail, { ...mail, id: 29, always_ok: false, always: [], unattended: true }]);
+    render(<InboxRefused />);
+    await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();
+    expect(screen.getAllByTestId("inbox-refused-row")).toHaveLength(2);
+    expect(within(row(0)).getByTestId("inbox-refused-allow")).toBeInTheDocument();
+    expect(within(row(1)).queryByTestId("inbox-refused-allow")).toBeNull();
+    expect(within(row(1)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.scheduledNeverAsks");
   });
 
   it("an entry whose card would not have offered Always gets no click even if a list came with it", async () => {

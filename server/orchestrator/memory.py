@@ -103,8 +103,10 @@ async def add_message(
     spawn_id: int | None = None,
     job_outcome: str | None = None,
     source: str | None = None,
+    run_id: int | None = None,
 ) -> int:
-    """Append an arslan_messages row; return its id."""
+    """Append an arslan_messages row; return its id. `run_id` on a user message: one sent while that run
+    was working, which it read mid-turn (K9b); the turn's own first message has none."""
     async with db_session.AsyncSessionLocal() as db:
         row = ArslanMessage(
             conversation_id=conversation_id,
@@ -114,6 +116,7 @@ async def add_message(
             spawn_id=spawn_id,
             job_outcome=job_outcome,
             source=source,
+            run_id=run_id,
         )
         db.add(row)
         await db.commit()
@@ -346,7 +349,7 @@ async def facts_text(*, include_sensitive: bool = False,
     """The memory the bound task context may see, rendered for a prompt ('' if none, or no context).
 
     include_sensitive=False is FAIL-CLOSED: sensitive entries reach a prompt only where the host
-    call site declares the privilege (router / host answer / spawn_drafter) AND the context allows
+    call site declares the privilege (router / host answer) AND the context allows
     them. Spawn dispatch, sandbox drafts and replay ambient keep the safe default, so a forgotten
     flag gives less, never a private fact in a spawn prompt.
     """
@@ -361,16 +364,20 @@ async def facts_text(*, include_sensitive: bool = False,
 
 
 async def user_turn_count(conversation_id: str) -> int:
-    """Number of user turns so far — the 'turn clock' for temporary grants."""
+    """Number of user turns so far — the 'turn clock' for temporary grants. Turns taken back by an undo
+    still count (S3b, turn_undo): the clock never runs backwards, so an expired grant stays expired."""
     from sqlalchemy import func, select
 
     from server.db.models import ArslanMessage
+    from server.services.turn_undo import undone_turns_clause
 
     async with db_session.AsyncSessionLocal() as db:
         n = (await db.execute(
             select(func.count()).select_from(ArslanMessage).where(
                 ArslanMessage.conversation_id == conversation_id,
                 ArslanMessage.role == "user",
+                ArslanMessage.run_id.is_(None),       # K9b: a message read mid-turn is part of that turn
             )
         )).scalar_one()
+        n += int((await db.execute(undone_turns_clause(conversation_id))).scalar_one() or 0)
     return int(n)

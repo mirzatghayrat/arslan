@@ -60,11 +60,6 @@ async def _force_named(_msg, _sid):
     return True
 
 
-async def _fake_curate(need):
-    """Hermetic stub for equipment_service.curate (no outbound LLM call)."""
-    return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
-
-
 class _LLMResp:
     """Native LLMResponse stub: separate content (prose) + tool_calls (structured)."""
     def __init__(self, content=None, tool_calls=None):

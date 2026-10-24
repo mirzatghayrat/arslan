@@ -35,8 +35,6 @@ from server.db.models import (
 )
 from server.orchestrator import arslan
 from server.services import (
-    evolution_watcher,
-    replay_set,
     run_recorder,
     run_registry,
     scheduler,
@@ -356,29 +354,6 @@ async def _seed_scored_run(Session, *, spawn_id: int, kind: str, task: str,
                              score=8.0, comment="x"))
         await db.commit()
         return run.id
-
-
-async def test_scheduled_runs_never_enter_replay_corpus(memdb):
-    spawn_id = await _seed_spawn(memdb)
-    live_id = await _seed_scored_run(memdb, spawn_id=spawn_id, kind="live",
-                                     task="live-task", output="live-out")
-    await _seed_scored_run(memdb, spawn_id=spawn_id, kind="scheduled",
-                           task="sched-task", output="sched-out")
-    items = await replay_set.build(spawn_id)
-    assert [it["run_id"] for it in items] == [live_id]   # live in, scheduled out
-
-
-async def test_scheduled_runs_ignored_by_evolution_watcher_count(memdb):
-    spawn_id = await _seed_spawn(memdb)
-    await _seed_scored_run(memdb, spawn_id=spawn_id, kind="live",
-                           task="live-task", output="live-out")
-    for i in range(10):
-        await _seed_scored_run(memdb, spawn_id=spawn_id, kind="scheduled",
-                               task=f"sched-{i}", output="o")
-    async with memdb() as db:
-        count = await evolution_watcher._new_replayable_run_count(db, spawn_id, None)
-        assert count == 1                                # only the live run counts
-        assert await evolution_watcher._is_eligible(db, spawn_id) is False
 
 
 # ---------------------------------------------------------------------------

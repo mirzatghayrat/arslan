@@ -19,6 +19,7 @@ import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
+import SandboxGrantsPanel from './SandboxGrantsPanel';
 import TerminalRulesPanel from './TerminalRulesPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
@@ -58,6 +59,8 @@ export interface AdvancedSectionProps {
   /** Directory the file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   onWorkspaceDirChange: (value: string) => void;
+  /** S3b: the workspace is on another volume than Arslan's data: its changes can't be undone. */
+  workspaceOtherVolume?: boolean;
   /** May Arslan look at what is on the local network? Default OFF. */
   lanDiscoveryEnabled: boolean;
   onLanDiscoveryChange: (value: boolean) => void;
@@ -100,6 +103,7 @@ export default function AdvancedSection({
   onTaskUsdCapChange,
   workspaceDir,
   onWorkspaceDirChange,
+  workspaceOtherVolume = false,
   lanDiscoveryEnabled,
   onLanDiscoveryChange,
   defaultReadEnabled,
@@ -157,6 +161,9 @@ export default function AdvancedSection({
           <p className="text-[10.5px] text-subtle-foreground font-sans">
             {t('settings.workspaceDirHint')}
           </p>
+          {workspaceOtherVolume && <p className="text-[10.5px] text-warning font-sans" data-testid="settings-workspace-other-volume">
+            {t('settings.workspaceOtherVolume')}
+          </p>}
         </div>
     </>)],
     ['defaultRead', (<>
@@ -320,6 +327,19 @@ export default function AdvancedSection({
           <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
             <div>
               <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelShellConfirmPolicy')}</h4>
+              {/* v0.1.63: still selectable; its judgement of what is risky is completed in v0.1.64 (S2a-3). */}
+              {shellConfirmPolicy === 'ask_risky' && (
+                <p data-testid="shell-policy-risky-note" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+                  {t('settings.shellPolicyAskRiskyNote')}
+                </p>
+              )}
+              {/* v0.1.63 (the user's decision, F2 of its review): "In this conversation" still answers the same command text
+                  later, so "every command" means every new one, and the note says so. */}
+              {shellConfirmPolicy === 'ask_all' && (
+                <p data-testid="shell-policy-all-note" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+                  {t('settings.shellPolicyAskAllNote')}
+                </p>
+              )}
             </div>
             <Select
               id="settings-shell-policy"
@@ -353,6 +373,7 @@ export default function AdvancedSection({
           </div>
         )}
         {orchestratorShellEnabled && <TerminalRulesPanel />}
+        {orchestratorShellEnabled && <SandboxGrantsPanel />}
     </>)],
     ['budget', (<>
         {/* 0.1.43: where a background job stops gathering and writes up its result. */}

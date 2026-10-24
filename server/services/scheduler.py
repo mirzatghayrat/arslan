@@ -61,6 +61,7 @@ from server.db import session as db_session
 from server.db.models import ScheduledTask, ScheduledTaskRun
 from server.orchestrator import memory
 from server.services import recap_service, run_registry
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -389,13 +390,15 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
     🔴 Every confirm callback is deliberately omitted, and no card surface is
     bound (permissions.asking_with): that omission IS the safety property. It
-    runs only what needs no card (the read-only tools, "run"-level commands and
-    plain scripts inside the sandbox unless the user asks for every command,
-    writes in Arslan's own folder) and refuses anything that needs a card, at
-    once — it never waits:
-      - the tool loop refuses a command that needs a card, a write in the
-        user's folder, a schedule and another machine ("no callback" means
-        "refuse", P1); these refusals write no approvals ledger row yet;
+    runs only what needs no card (the read-only tools, writes in Arslan's own
+    folder) and refuses anything that needs a card, at once — it never waits:
+      - it runs no command at all (v0.1.63, the user's decision until S2a-3;
+        DELETE-BY: v0.1.64 with it and PR4): run_command is not offered, and
+        the tool loop refuses one before any rule, grant or "always" answer is
+        read, and lists it in the Inbox;
+      - the tool loop refuses a write in the user's folder, a schedule and
+        another machine ("no callback" means "refuse", P1), and since S1 (U14 c)
+        each writes the same policy row decide() writes, which the Inbox lists;
       - a permissions.decide request is refused with a ledger row
         (decided_by=policy), which the Inbox lists. Hands' cards are among
         them: they go through decide too (0.1.61).
@@ -514,7 +517,7 @@ async def watch_loop(*, interval: float = DEFAULT_INTERVAL,
             await asyncio.sleep(interval)
         else:
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval)
+                await within(stop_event.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 pass
 
@@ -535,7 +538,7 @@ async def stop() -> None:
         _stop_event.set()
     if _loop_task is not None:
         try:
-            await asyncio.wait_for(asyncio.shield(_loop_task), timeout=5.0)
+            await within(asyncio.shield(_loop_task), timeout=5.0)
         except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
         _loop_task = None

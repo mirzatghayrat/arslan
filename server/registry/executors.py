@@ -776,6 +776,18 @@ class RunCommandExecutor:
             cwd = await settings_service.workspace_dir(db)
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
             default_read = await settings_service.default_read_enabled(db)
+        # S1 (U14 b): a run with nobody to ask (a scheduled run) works in Arslan's own folder, whatever
+        # folder the user chose. Its commands always run in the sandbox (#308), so they write only there
+        # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7). Since v0.1.63 the
+        # tool loop refuses every command in such a run before it gets here; this stays as the second line.
+        from server.services import permissions
+        if permissions.current_asker() is None:
+            own = settings_service.default_workspace()
+            try:
+                own.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                return {"ok": False, "error": f"Arslan's own folder, where a scheduled run works, cannot be made: {exc}"}
+            cwd = own.resolve()
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
         # 0.1.59: "Desktop, Documents, Downloads: Off" closes them to commands too (only inside the
@@ -788,6 +800,10 @@ class RunCommandExecutor:
             readable = await _project_folders()
         # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
         # the loop says they clicked to let THIS command out (never the model's args).
+        # 0.1.63 S3: the run's first change saves the working folder first (only that folder: a
+        # command let out of the sandbox can change others, and those are not saved).
+        from server.services import checkpoints, execution_context
+        await checkpoints.ensure(execution_context.current_run_id(), [cwd])
         # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
         from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,

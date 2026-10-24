@@ -118,12 +118,17 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     return frame
 
 
+#: The most of a card's `detail` a propose_action frame carries. S1: an MCP call whose arguments are
+#: longer is refused rather than carded, since a cut card would hide what the yes covers.
+DETAIL_MAX = 4000
+
+
 def propose_action(call_id: str, kind: str, target: str, detail: str) -> dict[str, Any]:
     """0.1.45: a background job asks before it acts — kind is browser_site (first
     click/typing on a website), mac_shortcut (run a Shortcut) or mac_script (run an
     AppleScript, shown in full). Answered by confirm_action / cancel_action."""
     return {"type": "propose_action", "call_id": call_id, "kind": kind, "target": target[:300],
-            "detail": detail[:4000]}
+            "detail": detail[:DETAIL_MAX]}
 
 
 def card_resolved(call_id: str, outcome: str, by: str | None = None) -> dict[str, Any]:
@@ -136,11 +141,16 @@ def card_resolved(call_id: str, outcome: str, by: str | None = None) -> dict[str
     return frame
 
 
-def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:
+def propose_schedule(call_id: str, name: str, when: str, prompt: str = "") -> dict[str, Any]:
     """Arslan asks to create a recurring task — once per session (裁决①).
     Emitting this schedules NOTHING; only `confirm_schedule {call_id}` does.
-    The card shows the CADENCE, because that is what the cost depends on."""
-    return {"type": "propose_schedule", "call_id": call_id, "name": name, "when": when}
+    The card shows the CADENCE, because that is what the cost depends on, and (S1, U14 d) the text the
+    task runs each time. The phone's Bridge reads `name` and `when` only (FrameMapper, pinned by ①iOS's
+    test in #319); the tool loop refuses a prompt longer than DETAIL_MAX rather than cut it here."""
+    frame = {"type": "propose_schedule", "call_id": call_id, "name": name, "when": when}
+    if prompt:
+        frame["prompt"] = prompt[:DETAIL_MAX]
+    return frame
 
 
 def propose_capability(call_id: str, card: dict) -> dict[str, Any]:
@@ -170,8 +180,7 @@ def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
                         fingerprints: list[str]) -> dict[str, Any]:
     """Arslan proposes enrolling a machine (P3c). Emitting this enrolls NOTHING.
 
-    Same shape as propose_connect_mcp and for the same reason: the card is where
-    the person acts, and the write goes over REST from their click. Enrolment is
+    The card is where the person acts, and the write goes over REST from their click. Enrolment is
     the highest-consequence thing in this feature, so it must never be reachable
     as a side effect of Arslan having looked at a machine.
 
@@ -180,46 +189,6 @@ def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
     them a second time."""
     return {"type": "propose_enroll_node", "call_id": call_id, "name": name,
             "host": host, "user": user, "fingerprints": list(fingerprints)}
-
-
-def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
-                        command: str, argv: list[str], url: str | None,
-                        env_keys: list[dict], prerequisites: str = "",
-                        requires_path: bool = False,
-                        path_placeholder: str | None = None,
-                        label_key: str | None = None) -> dict[str, Any]:
-    """Arslan proposes connecting a preset MCP server. Emitting this frame connects
-    NOTHING — the frontend renders a confirm card; the user reviews prerequisites, enters
-    any required credentials (in the card's password fields, NEVER here), and the apply
-    runs over REST. `env_keys` carries credential NAMES + metadata only, never values.
-    `requires_path`/`path_placeholder` (Filesystem/Git) flag a local filesystem path the
-    card must collect in a PLAIN TEXT field (not a secret) and append to `argv` client-side
-    before connecting."""
-    return {"type": "propose_connect_mcp", "call_id": call_id, "key": key, "label": label,
-            **({"label_key": label_key} if label_key else {}),
-            "transport": transport, "command": command, "argv": argv, "url": url,
-            "env_keys": [{"name": str(e["name"]), "description": str(e.get("description", "")),
-                          "get_it_url": str(e.get("get_it_url", "")), "paid": bool(e.get("paid", False)),
-                          **({"description_key": e["description_key"]} if isinstance(e.get("description_key"), str) else {})}
-                         for e in env_keys],
-            "prerequisites": prerequisites,
-            "requires_path": requires_path,
-            "path_placeholder": path_placeholder}
-
-
-def mcp_connect_followup(*, server_id: int, tool_count: int, safe_count: int,
-                         restricted_count: int, assignable: bool,
-                         call_id: str | None = None) -> dict[str, Any]:
-    """Honest, tier-aware result after a connect card completed. assignable=False means
-    no tool is safe+wired → connected but must be reviewed in Settings before equipping.
-
-    `call_id` is the proposal's (`propose_connect_mcp`) — the card this answers. The frame is
-    fanned out to every window on the conversation, and only the window that connected the
-    server knows which card it was; naming it lets every window close its own copy. Absent
-    (an older client sent no id), the frame is what it always was and names only the server."""
-    return {"type": "mcp_connect_followup", "server_id": server_id, "tool_count": tool_count,
-            "safe_count": safe_count, "restricted_count": restricted_count, "assignable": assignable,
-            **({"call_id": call_id} if call_id else {})}
 
 
 def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:

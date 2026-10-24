@@ -16,12 +16,16 @@ from arslan.models import LLMResponse
 from server.db.models import ArslanMessage, CompanionTask
 from server.orchestrator import tool_loop
 from server.registry.task_tools import StartBackgroundWorkExecutor
-from server.services import (approvals, background_jobs, desktop_status, personal_context as pc, run_registry,
+from server.services import (approvals, background_jobs, permissions, desktop_status, personal_context as pc, run_registry,
                              runtime_messages,
                              task_context, task_service)
 
 CID = "conv-bg"
 PHRASE = "tidy-report-ready"
+
+
+async def _no_card(frame):
+    raise AssertionError("no card in this test")
 
 
 @pytest.fixture(autouse=True)
@@ -134,7 +138,8 @@ async def test_the_starting_turn_ends_before_the_job_and_shares_nothing_with_it(
 
     ctx = await task_context.load(CID, user_message="tidy my notes")
     with pc.bind(ctx):
-        await asyncio.wait_for(task_service.run_turn(turn, CID, "tidy my notes", lambda e: None), 3)
+        with permissions.asking_with(_no_card):     # S1 (R7): a turn someone can be asked in
+            await asyncio.wait_for(task_service.run_turn(turn, CID, "tidy my notes", lambda e: None), 3)
     result = seen["tool"]
     assert result["ok"] and result["job_id"].startswith("job-") and result["queued"] is False
     job = background_jobs._jobs[result["job_id"]]
@@ -225,7 +230,8 @@ async def test_background_tools_exist_only_in_a_turn_never_inside_a_job(executio
 
     ctx = await task_context.load(CID, user_message="x")
     with pc.bind(ctx):
-        await task_service.run_turn(turn, CID, "x", lambda e: None)
+        with permissions.asking_with(_no_card):     # S1 (R7): a turn someone can be asked in
+            await task_service.run_turn(turn, CID, "x", lambda e: None)
     assert keys <= seen["turn"]
     assert not keys & seen["job"] and not keys & seen["body"] and "ask_user_choice" not in seen["body"]
 
@@ -268,7 +274,7 @@ def _declining(asked: list, field: str):
     return window
 
 
-async def test_a_remote_job_command_always_asks(monkeypatch):
+async def test_a_remote_job_command_always_asks(execution_db, monkeypatch):
     # S2a-2: whether a local command needs a card is decided once, in the tool loop; the job's ladder
     # shows one whenever it is called. A remote command is never skipped, even a read-only one.
     from server.services import settings_service

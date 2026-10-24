@@ -51,37 +51,6 @@ async def seeded(tmp_path, monkeypatch):
     return maker
 
 
-async def test_search_returns_relevant_seed(seeded):
-    from server.services import persona_seed_service
-    hits = await persona_seed_service.search("game numerical balance", k=3)
-    assert any(h["slug"] == "game-economy-designer" for h in hits)
-    assert all(set(h.keys()) >= {"slug", "name", "raw"} for h in hits)
-
-
-async def test_search_empty_query_returns_empty(seeded):
-    from server.services import persona_seed_service
-    assert await persona_seed_service.search("", k=3) == []
-
-
-async def test_count_returns_seed_total(seeded):
-    from server.services import persona_seed_service
-    assert await persona_seed_service.count() == 2
-
-
-async def test_list_seeds_browse_returns_all_with_fields(seeded):
-    from server.services import persona_seed_service
-    seeds = await persona_seed_service.list_seeds()
-    assert len(seeds) == 2
-    assert {s["slug"] for s in seeds} == {"game-economy-designer", "seo-copywriter"}
-    assert all(set(s.keys()) == {"slug", "name", "division", "summary"} for s in seeds)
-
-
-async def test_list_seeds_query_filters(seeded):
-    from server.services import persona_seed_service
-    hits = await persona_seed_service.list_seeds("game balance")
-    assert [h["slug"] for h in hits] == ["game-economy-designer"]
-
-
 async def test_get_by_slugs_resolves_in_order_dropping_unknown(seeded):
     from server.services import persona_seed_service
     out = await persona_seed_service.get_by_slugs(

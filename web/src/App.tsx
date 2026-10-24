@@ -17,7 +17,7 @@ import { firstLiveThread } from './lib/threadLifecycle';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
-import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, distillConversation, deleteConversation } from './api/client';
+import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import Sidebar from './components/Sidebar';
@@ -39,6 +39,7 @@ import LegacyExperts from './components/companion/LegacyExperts';
 import { companionApi, type Project } from './api/companion';
 import { useActivityStore } from './stores/activityStore';
 import { OPEN_ACTIVITY_RUN_EVENT } from './components/reply/ReplyFooter';
+import { TURN_UNDONE_EVENT, showUndone, type TurnUndoneDetail } from './components/reply/UndoTurnSheet';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import Workbench from './components/workbench/Workbench';
@@ -296,8 +297,9 @@ export default function App() {
   }, [wsSend]);
 
   // Best-effort: flush a session_ended for the active thread if the page is closed/hidden
-  // without an explicit thread switch, so the last conversation still gets its background
-  // distill. pagehide fires on tab close and bfcache navigation; the WS send is best-effort.
+  // without an explicit thread switch, so the server can let go of it (a temporary
+  // conversation's state is cleared on it; session-end distillation went in C8-4).
+  // pagehide fires on tab close and bfcache navigation; the WS send is best-effort.
   useEffect(() => {
     const onPageHide = () => {
       if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
@@ -392,7 +394,7 @@ export default function App() {
       ...(projectId ? { projectId } : {}),
     };
 
-    // Signal the OLD conversation ended (backend may background-distill prefs).
+    // Signal the OLD conversation ended (the server clears a temporary conversation's state on it).
     // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
     if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
 
@@ -468,6 +470,12 @@ export default function App() {
     window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
     return () => window.removeEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
   }, []);
+  // 0.1.63 S3b: an undone turn's conversation, as the server now has it, replaces the open one's messages.
+  useEffect(() => {
+    const undone = (e: Event) => { showUndone((e as CustomEvent<TurnUndoneDetail>).detail, activeThreadId); };
+    window.addEventListener(TURN_UNDONE_EVENT, undone);
+    return () => window.removeEventListener(TURN_UNDONE_EVENT, undone);
+  }, [activeThreadId]);
 
   /** 移到项目… / 移出项目: the conversation's context carries the project (refused while it runs). */
   const handleMoveToProject = async (threadId: string, projectId: string | null) => {
@@ -483,24 +491,7 @@ export default function App() {
     }
   };
 
-  // ── Conversation row overflow actions (Distill / Archive / Delete) ──────────
-
-  // Distill: harvest this conversation's spawn chats into memory (backend call),
-  // then surface how many were distilled via the transient toast.
-  const handleDistillThread = async (id: string) => {
-    try {
-      const res = await distillConversation(id);
-      // `distilled_spawns` is a count of AGENTS folded into memory, NOT memory items.
-      // Zero producing spawns → a truthful no-op message instead of "distilled 0".
-      showToast(
-        res.distilled_spawns > 0
-          ? t('sidebar.distilled_toast', { count: res.distilled_spawns })
-          : t('sidebar.distilled_none'),
-      );
-    } catch {
-      showToast(t('sidebar.distill_failed'));
-    }
-  };
+  // ── Conversation row overflow actions (Archive / Delete) ──────────
 
   // Archive is purely client-side (persisted via sessionPersistence). If the
   // archived thread was active, hop to the first remaining non-archived thread
@@ -647,7 +638,6 @@ export default function App() {
           setActiveSection(section);
           setPanelView('default');
         }}
-        onDistillThread={handleDistillThread}
         onArchiveThread={handleArchiveThread}
         onUnarchiveThread={handleUnarchiveThread}
         onDeleteThread={handleDeleteThread}

@@ -10,6 +10,7 @@ from server.db.models import MemoryEntry, Project
 from server.services import personal_context as pc
 from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
+from tests.server.conftest import worker_scope
 
 
 @pytest.fixture
@@ -145,7 +146,7 @@ async def test_contextvars_do_not_leak_between_tasks_or_workers():
         with pc.bind(context(project_id=identity, explicit_save_ref="message-1", allow_global_save=True, allow_sensitive=True)):
             await asyncio.sleep(0)
             assert pc.current().project_id == identity
-            with pc.for_worker("expert-a"):
+            with worker_scope("expert-a"):
                 assert pc.current().expert_id == "expert-a"
                 assert pc.current().actor("worker").explicit_save_ref is None
                 assert not pc.current().allow_global_save

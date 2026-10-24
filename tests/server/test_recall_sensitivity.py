@@ -7,6 +7,7 @@ from server.orchestrator import memory
 from server.orchestrator.tool_caller import ToolCaller, reset_caller, set_caller
 from server.registry.memory_executors import RecallExecutor
 from server.services import personal_context as pc
+from tests.server.conftest import worker_scope
 
 
 async def _recall(actor, spawn_id=None):
@@ -45,7 +46,7 @@ def test_a_specialist_callers_context_is_the_worker_narrowing():
     try:
         with pc.bind(host):
             narrowed = _context(ToolCaller(actor="spawn", spawn_id=5, conversation_id="c"))
-            with pc.for_worker("5") as worker:
+            with worker_scope("5") as worker:
                 assert narrowed == worker == pc.worker_context(host, "5")
     finally:
         reset_caller(token)

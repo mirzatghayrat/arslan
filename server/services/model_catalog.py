@@ -17,7 +17,6 @@ Cache policy (model_catalog_cache, one row per provider config):
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from datetime import datetime
@@ -32,6 +31,7 @@ from arslan.llm import catalog
 from arslan.llm.presets import expand_preset
 from server.db.models import ModelCatalogCache, ProviderConfig
 from server.services import provider_config_service
+from arslan.aio import within
 
 TTL_FRESH_S = 300          # <5min: serve cache, no network
 TTL_STALE_OK_S = 86400     # <24h: settings-open does NOT auto-refetch; beyond it, does
@@ -298,7 +298,7 @@ async def get_models(db: AsyncSession, config_id: int, *, refresh: bool = False)
         # httpx timeouts are per-request; TOTAL_BUDGET_S caps the WHOLE fetch
         # (gemini pagination / ollama per-model /api/show) so Settings-open
         # degrades to stale/static instead of hanging for minutes.
-        models = await asyncio.wait_for(
+        models = await within(
             fetch_models(row.provider, base_url, api_key), timeout=TOTAL_BUDGET_S)
     except Exception as exc:  # noqa: BLE001 — degrade, never 500 the Settings page
         err = str(exc) or type(exc).__name__  # str(TimeoutError()) is ""

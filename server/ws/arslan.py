@@ -16,12 +16,9 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan
-from server.services import approvals, background_jobs, desktop_status, permissions
+from server.services import approvals, background_jobs, desktop_status, permissions, steering
 from server.services import (
-    distill_service,
-    mcp_service,
     run_registry,
-    settings_service,
     turn_journal,
 )
 from server.ws import protocol
@@ -34,9 +31,6 @@ _HEARTBEAT_INTERVAL_S = 30
 # (a model writing one long tool call sends nothing for minutes; the window's 90 s watchdog then
 # said "Interrupted" while the server was working — run 160). Module-level so tests can shrink it.
 _WORKING_BEAT_S = 15
-# 0.1.61: the longest card id a window may name in `confirm_connect_mcp`. The id is echoed to every window on the
-# conversation (the connect follow-up), so what is echoed has to look like an id; the server's own are 32 characters.
-_CARD_ID_MAX = 128
 
 # 0.1.59: one turn at a time per conversation. A message that arrives while another turn runs —
 # on the same socket or another window's — waits here and runs next ("queued"), instead of
@@ -238,16 +232,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         async with lock:
             if told:
                 await _send_or_gone({"type": "dequeued"})
-            yield
-
-    async def run_connect_mcp_followup(server_id: int, call_id: str | None = None) -> None:
-        """Task 3: after a connect card completes, report the honest tier split —
-        counts are ALWAYS recomputed from the DB here, never trusted from the client.
-        `call_id` is the proposal's: it rides in the frame so every window closes its copy of the card."""
-        async def _followup() -> None:
-            counts = await mcp_service.tier_counts(server_id)
-            emit(protocol.mcp_connect_followup(server_id=server_id, call_id=call_id, **counts))
-        await run_with_live_frames(_followup())
+            # K9b: while this turn runs, a message sent meanwhile reaches it at its next tool boundary;
+            # what it never took goes back to its sender's inbox, once (services/steering).
+            steering.open_box(conversation_id)
+            try:
+                yield
+            finally:
+                steering.close_box(conversation_id)
 
     import uuid
 
@@ -294,7 +285,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         await _send_or_gone(protocol.error(
                             "BUSY", "An action is awaiting your confirmation.", recoverable=True))
                         continue
-                if t == "user_message" and my_cards:
+                had_cards = bool(my_cards)         # before the awaits below (answering a card empties it)
+                if t == "user_message" and had_cards:
                     # 0.1.61 §A4: typing while this window's card waits answers it No, the message
                     # being the note; the message itself is queued below and runs next. The phone
                     # types on this socket during its turn: the card says the phone answered.
@@ -302,10 +294,22 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if t == "user_message" and _turn_lock(conversation_id).locked():
                     data = {**data, "_queued": True}
                     await _send_or_gone({"type": "queued"})
+                    # K9b: no card of this window waited (one that did keeps the rule above): the running
+                    # turn reads it at its next tool boundary, and tells this socket `dequeued` + inserted.
+                    if not had_cards and steering.insertable(data) and await steering.enabled() and steering.put(
+                            conversation_id, steering.Steer(str(data.get("content") or ""), message_source(data),
+                                                            data, _send_or_gone, inbox, sink)):
+                        continue
                 await inbox.put(data)
         except Exception:  # noqa: BLE001 — disconnect (or a closed socket): the loop ends after the turn
             socket_gone["yes"] = True
             gone.set()
+            # K9b: this socket's messages still waiting in the box run as turns of their own, as a queued
+            # message always has: into its inbox ahead of the close; so do the ones a turn took and ends
+            # without sending (review of #393).
+            for steer in steering.withdraw(conversation_id, inbox):
+                inbox.put_nowait(steer.frame)
+            await steering.settled(inbox)
             await inbox.put(_CLOSED)
 
     def _answered_by_typing(note: str, by: str) -> None:
@@ -336,16 +340,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             raise WebSocketDisconnect(1000)
         return data
 
-    async def _ask(frame: dict) -> dict:
-        """Show one card and wait for its answer (`_ask_everywhere`'s: approved, scope, note, by).
-
-        0.1.55: every card is registered in `approvals`, so the Inbox and the island
-        can answer it too (by call_id, through the same reply rule). A window's own
-        turn still sends the card to THIS socket only — other windows do not paint a
-        copy — and it is never journaled, so a reattaching socket cannot replay a dead
-        card. A turn the iPhone started shows it everywhere (`_ask_everywhere`)."""
-        return await _ask_everywhere(frame, broadcast=phone_turn["on"])
-
     async def _ask_everywhere(frame: dict, broadcast: bool = True) -> dict:
         """Wait for a registered card. A turn the iPhone started (`broadcast`) shows it
         on the phone (through this socket, the Bridge's) and in every Mac window open
@@ -360,8 +354,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             # A card earlier in this turn went unanswered: the person is away. This one does not
             # open and wait 30 minutes more; it reads as expired at once ("NOT a refusal"). Marked
             # "away", as a job's (approvals.BroadcastAsker): decide records it so, and the Inbox
-            # lists it with "Always allow" — not yet a plain card (leaving the sandbox, another
-            # machine), which writes no ledger row until it asks through decide (PR 3).
+            # lists it (with "Always allow" where its card offered one). The install card is the one
+            # that does not ask through decide: S7 gives it its row.
             approvals.LAST_OUTCOME.set("expired")
             return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
                     "extras": {}, "call_id": frame.get("call_id"), "away": True}
@@ -472,92 +466,27 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         except Exception:  # noqa: BLE001 — closed under us
             _window_gone(pending)
 
+    # The one ladder (S4a), on the card surface this turn bound (`_window_asker`): the three callbacks the tool
+    # loop expects are shells over it.
+    from server.services import command_confirm
+    ladder = command_confirm.Confirmations(conversation_id)
+
     async def confirm_workspace_write(action: str, path: str) -> bool:
-        """0.1.61: decided by permissions.decide on this turn's card surface. "In this
-        conversation" is a conversation grant for the folder: it holds across sockets and
-        reloads (it replaces the per-connection grant)."""
-        from server.services import settings_service
-        async with db_session.AsyncSessionLocal() as db:
-            ws_root = await settings_service.workspace_dir(db)
-        if ws_root is None:
-            permissions.LAST_DECISION.set(None)       # no card: the refusal is no earlier answer
-            approvals.LAST_OUTCOME.set(None)
-            return False                     # nothing to grant access to
-        # Decided with that session closed: decide opens its own, and a card may wait 30 minutes.
-        decision = await permissions.decide(permissions.Request(
-            kind="workspace_write", target=str(ws_root), title=f"Let Arslan write in {ws_root.name}?",
-            detail=path, frame=protocol.propose_workspace_write(uuid.uuid4().hex, str(ws_root), action, path)),
-            permissions.Context(conversation_id=conversation_id))
-        return decision.allowed
+        """0.1.61: "In this conversation" is a conversation grant for the folder: it holds across sockets
+        and reloads."""
+        return await ladder.workspace_write(action, path)
 
-    async def confirm_schedule(name: str, when: str) -> bool:
-        """0.1.61: decided by permissions.decide (P2 裁决①'s per-connection grant is now the
-        conversation's)."""
-        decision = await permissions.decide(permissions.Request(
-            kind="schedule", target="*", title=f"Schedule “{name}”?", detail=when,
-            frame=protocol.propose_schedule(uuid.uuid4().hex, name, when)),
-            permissions.Context(conversation_id=conversation_id))
-        return decision.allowed
-
-    async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict,
-                            network: bool = False) -> bool:
-        from server.services import command_sandbox
-        call_id = uuid.uuid4().hex
-        decision = await _ask(protocol.propose_run_command(
-            call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-            sandbox=sandbox, why=why, network=network))
-        if decision["approved"] and decision.get("remember"):
-            command_sandbox.grant(conversation_id)    # this conversation only, never saved
-        return bool(decision["approved"])
+    async def confirm_schedule(name: str, when: str, prompt: str = "") -> bool:
+        return await ladder.schedule(name, when, prompt)
 
     async def confirm_command(command: str, argv: list, *,
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
-                              sandbox: str | None = None, why: str = "", network: bool = False) -> bool:
-        """`sandbox` (0.1.51 P3): "outside" — the model asks to run this command
-        outside the workspace sandbox; "retry" — the sandbox stopped it and it would
-        run again outside, from the start. Either always shows a card; its checkbox
-        means "for the rest of this conversation" (memory only), never a saved rule.
-        `network` (S2a-2): the card also asks for the network, this time (`protocol.propose_run_command`)."""
-        from server.services import settings_service
-        # A remote command takes NONE of the shortcuts below. Not a grant, not ask_risky,
-        # not "remember this one" — because the local risk grade describes a binary on
-        # THIS machine, and `git` over there is not the same program (P3b 裁决③). Remote
-        # is HIGH, always, and its card is a plain one: nothing is ever remembered.
-        from server.services import terminal_policy
-        risk = effective_risk(remote_host, command, argv)
-        verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
-        if sandbox in ("outside", "retry"):
-            from server.services import command_sandbox
-            if command_sandbox.granted(conversation_id):
-                return True
-            return await _sandbox_card(command, argv, sandbox, why, verdict, network)
-        # S2a-2: called, a card is shown. Which commands need none (layer ③ in the sandbox) is the tool
-        # loop's to decide, once; a stored "Always" answers no command card any more.
-        if remote_host:
-            # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
-            decision = await _ask(protocol.propose_run_command(
-                uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                remote_host=remote_host, fingerprints=list(fingerprints or [])))
-            return bool(decision.get("approved"))
-        async with db_session.AsyncSessionLocal() as db:
-            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
-        shell = terminal_policy.as_shell(command, argv)
-        rules = sorted(terminal_policy.ask_rules(shell))
-        ctx = permissions.Context(conversation_id=conversation_id)
-        frame = protocol.propose_run_command(uuid.uuid4().hex, command, argv,
-                                             reason=verdict.reason or f"risk: {risk}",
-                                             rule=verdict.rule or None, network=network)
-        # On the turn's card surface (this window's cards: permissions.current_asker()).
-        decision = await permissions.decide(
-            approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                       unsandboxed=ask_all and await approvals.runs_unsandboxed(conversation_id)),
-            ctx)
-        return decision.allowed
-
-    # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
-    # loop honours it only for a callback that says so (never a job's, never no callback).
-    confirm_command.honours_session_grants = True
+                              sandbox: str | None = None, why: str = "", network: bool = False,
+                              host: str | None = None) -> bool:
+        """See `command_confirm.Confirmations.command`."""
+        return await ladder.command(command, argv, remote_host=remote_host, fingerprints=fingerprints,
+                                    sandbox=sandbox, why=why, network=network, host=host)
 
     async def confirm_capability(card: dict) -> dict:
         """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key).
@@ -675,43 +604,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
                 continue
 
-            if msg_type == "confirm_connect_mcp":
-                raw_id = data.get("server_id")
-                try:
-                    sid = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "server_id required"))
-                    continue
-                # The card this answers goes out to every window on the conversation, so it has to look like a
-                # card id (a string, not a long one; an empty one names no card — the frame leaves it out);
-                # anything else is dropped, and the follow-up still goes out naming only the server.
-                card = data.get("call_id")
-                await run_connect_mcp_followup(sid, card if isinstance(card, str) and len(card) <= _CARD_ID_MAX else None)
-                continue
-
             if msg_type == "session_ended":
-                old_cid = data.get("conversation_id")
-                if old_cid and (run_registry.active_for(str(old_cid))
-                                or turn_journal.active(str(old_cid))):
-                    # The conversation the user LEFT is still mid-run/mid-turn
-                    # (a thread switch fires session_ended immediately).
-                    # Distilling now would capture a half-written session and
-                    # roster-clear would yank membership from under the live
-                    # run — skip both; the next session_ended after the work
-                    # completes distills. Ack regardless: the client is waiting.
-                    logger.info("session_ended for %s deferred: run/turn in flight", old_cid)
-                    await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
-                    continue
-                if old_cid:
-                    # Best-effort: an optional feature must never suppress the ack or close the socket.
-                    try:
-                        async with db_session.AsyncSessionLocal() as _s:
-                            enabled = await settings_service.distill_enabled(_s)
-                        if enabled:
-                            asyncio.create_task(distill_service.distill_session(str(old_cid)))
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("session_ended distill trigger failed (non-fatal): %s", exc)
-                await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
+                # Ack only. Session-end distillation, the one thing this frame used to
+                # start, was removed in C8-4 (v0.1.63); clients still send the frame and
+                # wait for the ack, so the ack stays.
+                await ws.send_json({"type": "session_ended_ack",
+                                    "conversation_id": data.get("conversation_id")})
                 continue
 
             if msg_type != "user_message":
@@ -778,18 +676,4 @@ def _to_frame(ev: dict) -> dict:
     if t == "tool_result":
         return protocol.tool_result(ev.get("tool", ""), bool(ev.get("ok")),
                                     ev.get("summary", ""), ev.get("artifact"), ev.get("artifacts"))
-    if t == "propose_connect_mcp":
-        return protocol.propose_connect_mcp(
-            call_id=ev.get("call_id", ""), key=ev.get("key", ""), label=ev.get("label", ""),
-            label_key=ev.get("label_key"),
-            transport=ev.get("transport", ""), command=ev.get("command", ""),
-            argv=ev.get("argv") or [], url=ev.get("url"), env_keys=ev.get("env_keys") or [],
-            prerequisites=ev.get("prerequisites", ""),
-            requires_path=ev.get("requires_path", False),
-            path_placeholder=ev.get("path_placeholder"))
-    if t == "mcp_connect_followup":
-        return protocol.mcp_connect_followup(
-            server_id=ev.get("server_id"), tool_count=ev.get("tool_count", 0),
-            safe_count=ev.get("safe_count", 0), restricted_count=ev.get("restricted_count", 0),
-            assignable=bool(ev.get("assignable")), call_id=ev.get("call_id"))
     return ev  # stream_chunk / stream_end / error already match the wire shape

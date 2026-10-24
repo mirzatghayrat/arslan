@@ -32,6 +32,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
+from arslan.aio import within
 from server.services import approvals
 
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
@@ -87,10 +88,26 @@ def _not_run(result: dict) -> dict:
     return {**result, "executed": False}
 
 
-def _not_in_job() -> dict:
+# S1a (U14 a, #317): a scheduled run has nobody to ask, so permissions.decide refuses every action there, and R7
+# takes start_background_work out of it. Its refusals say what to do instead: tell the user.
+_SCHEDULED_INSTEAD = ("A scheduled run cannot act on this Mac: nobody is there to approve it. Tell the user what "
+                      "you would have done, so they can do it or ask you in a conversation.")
+
+
+async def _not_in_job(kind: str, target: str, title: str) -> dict:
+    if _scheduled_run() is not None:
+        return await _refused_unattended(kind, target, title)
     return _not_run({"ok": False, "external": False, "code": "act_in_background",
                      "error": "Acting in the browser and running Shortcuts or scripts happen in background work. "
                               "Call start_background_work with this goal; looking at pages is fine here."})
+
+
+async def _refused_unattended(kind: str, target: str, title: str) -> dict:
+    """S1b follow-up (cloud audit): a scheduled run's refusal leaves the row decide() leaves for want of someone
+    to ask (policy, deny, no "Always"), so the Inbox lists what the run could not do (S1b)."""
+    from server.services import permissions
+    await permissions.refuse_unattended(permissions.Request(kind=kind, target=target, title=title), _context())
+    return _not_run({"ok": False, "external": False, "code": "act_in_background", "error": _SCHEDULED_INSTEAD})
 
 
 def _unavailable() -> dict:
@@ -234,7 +251,8 @@ class _BrowserTool:
         if self.acts:
             _, job_id = _conversation_and_job()
             if job_id is None:
-                return _not_in_job()
+                where = _origin(agent_browser.current_url()) or "*"
+                return await _not_in_job("site", where, f"Act on {where}?")
             if self.action == "type" and _PASSWORD.search(str(args.get("element", ""))):
                 return _not_run({"ok": False, "external": False, "code": "no_passwords",
                                  "error": "Arslan never types passwords. Ask the user to log in themselves in "
@@ -336,10 +354,13 @@ async def _run(argv: list[str], *, timeout: float = 120) -> dict:
     process = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE,
                                                    stderr=asyncio.subprocess.PIPE)
     try:
-        out, err = await asyncio.wait_for(process.communicate(), timeout)
+        out, err = await within(process.communicate(), timeout)
     except TimeoutError:
-        process.kill()
         return {"ok": False, "external": False, "error": "timed out"}
+    finally:
+        # Past its limit, or its turn stopped: the command does not go on running after the turn has ended.
+        if process.returncode is None:
+            process.kill()
     text = out.decode(errors="replace")[:_OUTPUT_LIMIT]
     if process.returncode != 0:
         return {"ok": False, "external": False, "error": err.decode(errors="replace")[:1000] or "failed"}
@@ -364,7 +385,7 @@ class MacRunShortcutExecutor:
             return _bad_request("name required")
         job_id = _conversation_and_job()[1]
         if job_id is None:
-            return _not_in_job()
+            return await _not_in_job("shortcut", name, f"Run the Shortcut “{name}”?")
         if (stop := _stopped(job_id)) is not None:
             return stop
         text_input = (args or {}).get("input")
@@ -397,7 +418,7 @@ class MacAppleScriptExecutor:
             return _bad_request("script required (max 4000 characters)")
         job_id = _conversation_and_job()[1]
         if job_id is None:
-            return _not_in_job()
+            return await _not_in_job("app_risky", "AppleScript", "Run this AppleScript?")
         if (stop := _stopped(job_id)) is not None:
             return stop
         from server.services import hands_contract, hands_service
@@ -957,9 +978,10 @@ class DesktopTakeoverExecutor:
             return _bad_request("why (what you will do, in words) and minutes (1 to 30) are required")
         conversation_id, job_id = _conversation_and_job()
         if job_id is None:
+            if _scheduled_run() is not None:
+                return await _refused_unattended("takeover", "*", "Take over the screen?")
             return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                             "error": "Taking the screen over runs in background work only. Call "
-                                      "start_background_work."})
+                             "error": "Taking the screen over runs in background work only. Call start_background_work."})
         if not desktop_available():
             return _unavailable()
         if (stop := _stopped(job_id)) is not None:
@@ -1003,8 +1025,10 @@ class DesktopTakeoverExecutor:
 
 # Hands v2 §5.7, kept for scheduled runs only (⓪Plan on #290, 2026-10-21): U8 lifts the cap for chat
 # replies; a scheduled run acts with nobody at the Mac, and what scheduled runs may do is with the
-# audit. At most this many actions, all in one app, per run (a batch counts its steps). Removed, if
-# ever, by the user's decision after that audit — not by H3.
+# audit. At most this many actions, all in one app, per run (a batch counts its steps).
+# Defence in depth since S1a (U14 a, #317): permissions.decide refuses every action when no asker is bound, as
+# in a scheduled run, so this cap cannot be reached while that holds. DELETE-BY: v0.1.64 if M2 shows the policy
+# refusal holding (no scheduled run acted on the Mac).
 SCHEDULED_ACTIONS = 5
 _scheduled: dict[int, tuple[int, str]] = {}      # desktop_status work id → (actions, app)
 
@@ -1018,7 +1042,7 @@ def _scheduled_run() -> int | None:
 
 def _scheduled_refusal(why: str) -> dict:
     return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                     "error": f"{why} Call start_background_work with this goal; the work continues there."})
+                     "error": f"{why} {_SCHEDULED_INSTEAD}"})
 
 
 def _scheduled_full(run: int | None) -> dict | None:

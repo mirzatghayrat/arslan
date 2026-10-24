@@ -13,7 +13,7 @@ This walks you from a fresh clone to **a specialist spawn answering you in the c
 - **Toolchain:** Python 3.11+ (CI uses 3.12), [`uv`](https://docs.astral.sh/uv/), Node.js 22, and `git`.
 - **macOS is best-supported.** The kernel sandbox for generated-code execution is macOS-seatbelt-only. On Linux the app installs and the whole chat flow works; only *generated-code execution* fails closed. (Windows/Linux desktop builds come later via Tauri.)
 - **You need one BYOK LLM key.** Arslan runs against *your* provider key — nothing answers until you add one. This guide features **DeepSeek** (the first-run wizard's default), but any OpenAI-compatible / native Anthropic / Gemini key works.
-- **Dev + localhost is unauthenticated by design** — zero-friction local use. No bearer token here; tokens only apply when `ARSLAN_ENV=prod`. Don't expose this bind to an untrusted network (see [SECURITY.md](../SECURITY.md)).
+- **Dev + localhost is unauthenticated by design** — zero-friction local use. No bearer token here; the desktop app and non-loopback binds use one. Don't expose this bind to an untrusted network (see [SECURITY.md](../SECURITY.md)).
 
 ---
 

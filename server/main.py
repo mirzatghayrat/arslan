@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, WebSocket
@@ -23,6 +24,113 @@ class _QuietDesktopStatusPolls(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
 
+
+# The value after `token=` (any case): a quoted value whole, closing quote or not (`%r`, bytes, an f-string's
+# `!r`, #402 review 1), else up to the next query separator, whitespace or quote. Never a value already
+# `[redacted]`: a record on a uvicorn logger gets two passes, and the second must change nothing (re-check).
+_TOKEN_IN_LOG_LINE = re.compile(r"(token=)(?!\[redacted\])(?:b?'[^']*'?|b?\"[^\"]*\"?|[^&\s\"']*)",
+                                re.IGNORECASE)
+# An `Authorization: Bearer` header's value, as the websockets library dumps headers at DEBUG.
+_BEARER_IN_LOG_LINE = re.compile(r"(authorization:\s*bearer\s+)(?!\[redacted\])\S+", re.IGNORECASE)
+# A value still there after redaction (not the `[redacted]` this file writes).
+_SECRET_LEFT = re.compile(r"token=(?!\[redacted\])[^&\s]|authorization:\s*bearer\s+(?!\[redacted\])\S",
+                          re.IGNORECASE)
+
+
+def _secret_left(text: str) -> bool:
+    lowered = text.lower()      # most lines carry neither word: a substring test first (#402 re-check)
+    return ("token=" in lowered or "bearer" in lowered) and _SECRET_LEFT.search(text) is not None
+
+
+def _redact(text: str) -> str:
+    return _BEARER_IN_LOG_LINE.sub(r"\1[redacted]", _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", text))
+
+
+def _without_token(value: object) -> object:
+    """A string with every token value replaced, or `value` itself. Only strings are looked into here: anything
+    else (the ASGI scope `uvicorn.asgi` logs, an object whose str() raises or reaches a database) is left to the
+    finished-line check below, which renders it once, as the handler would."""
+    if not isinstance(value, str):
+        return value
+    lowered = value.lower()
+    return _redact(value) if "token=" in lowered or "bearer" in lowered else value
+
+
+class _RedactAccessTokens(logging.Filter):
+    """The access token travels as a `?token=` query parameter on the WebSocket handshake, and
+    uvicorn logs the request path with its query string at INFO (`uvicorn.error` for the WebSocket
+    lines, `uvicorn.access` for HTTP; `uvicorn.asgi` logs the whole scope at trace level). The
+    desktop app runs at INFO with stderr passed through, so without this every handshake wrote the
+    token to the log (C11b, #338 review F3). The path and the rest of the query stay readable;
+    only the value is replaced. The format string and each string argument are redacted in place,
+    and the arguments keep their count and order: uvicorn's AccessFormatter unpacks the five
+    access-line arguments itself, so a flattened record would be dropped with a logging error (C11b
+    review 1).
+
+    Then the finished line is checked (follow-up to the C11b re-check): a name and value passed in
+    separate arguments are only seen together there, a `token=%s` format string loses its
+    placeholder to the redaction, and a non-string argument is only rendered there. If the line
+    fails to format or a value is left, the record is flattened to its whole line, redacted; one
+    that never formats keeps its words and withholds its arguments, and so does a record this
+    filter cannot handle at all (#402 review 2)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg, args = record.msg, record.args
+        try:
+            record.msg = _without_token(msg)
+            if isinstance(args, tuple):
+                record.args = tuple(_without_token(a) for a in args)
+            elif isinstance(args, dict):
+                record.args = {key: _without_token(v) for key, v in args.items()}
+            if record.name == "uvicorn.access":
+                # Never flattened: AccessFormatter unpacks the five arguments, already redacted one by one, and a
+                # request could otherwise turn its own line into a logging error (`/?authorization:bearer` read,
+                # across the pieces, as a Bearer value left; #402 re-check).
+                return True
+            try:
+                finished = record.getMessage()
+            except Exception:
+                finished = None
+            if finished is None or _secret_left(finished):
+                try:
+                    whole = str(msg % args) if args else str(msg)
+                except Exception:         # it never formatted: keep the words, never the arguments' values
+                    whole = f"{msg} (unformattable arguments withheld)"
+                record.msg, record.args = _redact(whole), ()
+        except Exception:    # never drop the line, and never let its arguments out unredacted
+            record.args = ()
+            try:
+                record.msg = _redact(f"{msg} (unformattable arguments withheld)")
+            except Exception:
+                record.msg = "(a log line that could not be rendered was withheld)"
+        return True
+
+
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"):
+    logging.getLogger(_name).addFilter(_RedactAccessTokens())
+
+
+def _install_redacting_record_factory() -> None:
+    """Every record, from any logger, is redacted where it is made (#402 review): a logger's filters see only the
+    records that start on it, so a child logger (`uvicorn.error.child`) passed `uvicorn.error`'s untouched, and
+    FastMCP's root handler shows every other logger's records. Installed once, over whatever factory was set."""
+    previous = logging.getLogRecordFactory()
+    if getattr(previous, "arslan_redacts", False):
+        return
+    redactor = _RedactAccessTokens()
+
+    def make(*args, **kwargs):
+        record = previous(*args, **kwargs)
+        redactor.filter(record)
+        return record
+    make.arslan_redacts = True
+    logging.setLogRecordFactory(make)
+
+
+_install_redacting_record_factory()
+
+
+
 # Undecryptable-key canary message (module-level so tests can pin the guidance).
 # The last sentence points at the most common real-world cause since first-run
 # secret auto-generation landed: switching between an explicit ARSLAN_SECRET_KEY
@@ -42,16 +150,15 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
 
     Called at lifespan startup so it raises BEFORE the server serves any
     request. Guarantees:
-      - prod + missing ARSLAN_SECRET_KEY -> refuse to boot (RuntimeError).
-        The message names only what is missing; it never echoes any configured
-        secret value.
+      - ARSLAN_ENV set to anything but dev -> refuse to boot (prod mode is gone, C11).
+      - packaged + no secret (first-boot generation failed) -> refuse to boot
+        (RuntimeError). The message names only what is missing; it never echoes
+        any configured secret value.
       - dev + missing secret -> keep booting; crypto.py supplies a deterministic
         dev fallback key, so we only warn once.
-      - no ACTIVE token -> startup banner (all API/WS unauthenticated). In prod /
-        packaged / non-loopback binds ``server.token_bootstrap`` mints one before
-        this runs, so the banner only shows for the dev+localhost zero-friction
-        flow. (Prod used to refuse boot on an empty token; that hard failure is
-        superseded by the S1-3 bootstrap, which auto-generates + enforces one.)
+      - no ACTIVE token -> startup banner (all API/WS unauthenticated). In packaged /
+        non-loopback binds ``server.token_bootstrap`` mints one before this runs, so
+        the banner only shows for the dev+localhost zero-friction flow.
       - 0.0.0.0 bind (best-effort) + no active token -> network-exposure advisory.
 
     ``active_token`` is the effective token after bootstrap (explicit env token or
@@ -63,15 +170,26 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
     if active_token is None:
         active_token = cfg.api_token
 
+    # 0.1.63 C11: there is no prod mode any more. Refuse rather than quietly run with the dev
+    # defaults it used to harden: the desktop app is the supported way to run Arslan.
+    if os.environ.get("ARSLAN_ENV", "dev").strip().lower() not in ("", "dev"):
+        raise RuntimeError(
+            "ARSLAN_ENV is no longer supported (prod mode was removed in v0.1.63); "
+            "run the desktop app, or unset ARSLAN_ENV for a local dev server."
+        )
+
     # Stripped on purpose: crypto treats a whitespace-only secret as UNSET
-    # (server.crypto._active_secret), so booting prod with one would only defer
-    # the failure to the first encrypt(). Fail fast at boot instead.
-    if cfg.is_prod and not cfg.secret_key.strip():
+    # (server.crypto._active_secret), so booting with one would only defer the
+    # failure to the first encrypt(). The desktop app's server creates and saves
+    # its secret on first boot (server.secret_bootstrap); if that failed, it
+    # refuses to start rather than store API keys under the public dev key —
+    # whatever ARSLAN_ALLOW_INSECURE_SECRETS says (C11).
+    if cfg.packaged and not cfg.secret_key.strip():
         # NOTE: do not interpolate any configured secret (api_token/secret_key/
         # etc.) into this message — only name what is missing.
         raise RuntimeError(
-            "ARSLAN_ENV=prod requires ARSLAN_SECRET_KEY (a long random value); "
-            "refusing to start. Set it in the environment."
+            "No secret key: the desktop app could not create or read ~/.arslan/secret_key; "
+            "refusing to start. Check that the file is readable, or set ARSLAN_SECRET_KEY."
         )
 
     if not cfg.secret_key.strip():
@@ -82,7 +200,7 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
         )
 
     if not active_token:
-        # Only reachable in dev+localhost now — prod/packaged/non-loopback boots
+        # Only reachable in dev+localhost now — packaged/non-loopback boots
         # mint a token in token_bootstrap before this runs.
         log.warning(
             "⚠ ARSLAN_API_TOKEN not set: ALL API/WS endpoints are "
@@ -185,7 +303,7 @@ async def lifespan(app: FastAPI):
     from server.db.session import AsyncSessionLocal
 
     # S1-3: mint/load an access token when this deployment must be authenticated
-    # (prod / packaged / non-loopback bind) and no explicit ARSLAN_API_TOKEN was
+    # (packaged / non-loopback bind) and no explicit ARSLAN_API_TOKEN was
     # given. Dev+localhost stays zero-friction (no token, no file). Runs BEFORE
     # validation so the banner/advisory below reflect the effective token.
     token_bootstrap.bootstrap_api_token(settings)
@@ -268,8 +386,6 @@ async def lifespan(app: FastAPI):
         from server.services import background_jobs
         await background_jobs.report_interrupted()
         await run_reaper.reap_stuck_runs()
-        from server.services import recipes
-        await recipes.mark_interrupted()
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
 
@@ -287,33 +403,6 @@ async def lifespan(app: FastAPI):
             logger.warning(_UNDECRYPTABLE_KEYS_MSG, n_undecryptable)
     except Exception as exc:  # noqa: BLE001 — key canary must never block boot
         logger.warning("provider-key decryptability canary failed (non-fatal): %s", exc)
-
-    # E9 baseline canary: once the developer has declared a clean-corpus baseline, count LIVE
-    # runs created after it that STILL carry epoch=0. A non-zero count means some run-creation
-    # path is missing the epoch=1 stamp — those runs will never enter the corpus, silently
-    # starving evolution. Log a WARNING so the missed path is visible. Best-effort; never blocks.
-    try:
-        from server.services import replay_gate
-
-        async with AsyncSessionLocal() as db:
-            starved = await replay_gate.count_epoch0_after_baseline(db)
-        if starved > 0:
-            logger.warning(
-                "evolution canary: %d live runs created after baseline carry epoch=0 — a "
-                "run-creation path is missing epoch=1; corpus may be starved", starved)
-    except Exception as exc:  # noqa: BLE001 — canary must never block boot
-        logger.warning("evolution baseline canary failed (non-fatal): %s", exc)
-
-    # E5 evolution watcher: a supervised background loop that, per spawn, checks the
-    # trigger (new replayable runs since the last attempt >= the backoff threshold), runs
-    # attempts within the token budget, and refreshes living proposals. Best-effort start —
-    # never blocks boot; a long interval keeps it idle-cheap.
-    try:
-        from server.services import evolution_watcher
-
-        evolution_watcher.start()
-    except Exception as exc:  # noqa: BLE001 — watcher start must never block boot
-        logger.warning("evolution watcher start failed (non-fatal): %s", exc)
 
     # S3-M4 scheduler: a second supervised loop (60s tick, own task set — independent
     # of the evolution watcher's) that fires due scheduled tasks headless
@@ -339,16 +428,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — scheduler start must never block boot
         logger.warning("scheduler start failed (non-fatal): %s", exc)
 
-    # 整理层: a third supervised loop (15min tick) that distills conversations whose
-    # session_ended never fired. It waits INITIAL_DELAY before its first tick so a boot
-    # never immediately spends on LLM calls, and every tick re-reads BOTH kill switches
-    # (curation_enabled AND distill_on_session_end). Best-effort start.
+    # D5 retention for brain_usage_events (first pass after 5 min, then every 15 min).
+    # Not opt-in: brain_usage.record appends on every retrieval, so the log needs its
+    # bound on a default install. It rode on the curation loop (整理层) until C8-3
+    # (v0.1.63) deleted that loop.
     try:
-        from server.services import curation_loop
+        from server.services import usage_retention
 
-        curation_loop.start()
-    except Exception as exc:  # noqa: BLE001 — curation start must never block boot
-        logger.warning("curation loop start failed (non-fatal): %s", exc)
+        usage_retention.start()
+    except Exception as exc:  # noqa: BLE001 — retention start must never block boot
+        logger.warning("usage retention start failed (non-fatal): %s", exc)
 
     # 0.1.47 proactivity: a fourth supervised loop (10 min pass, first pass after 60 s).
     # Detectors are deterministic and free; it only stores inbox items, and never
@@ -377,14 +466,6 @@ async def _shutdown_services(app: FastAPI) -> None:
     app.state.shutdown_complete = False
     cleanup_complete = True
     try:
-        from server.services import evolution_watcher as _evo_watcher
-
-        await _evo_watcher.stop()
-    except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
-        cleanup_complete = False
-        logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
-
-    try:
         from server.services import scheduler as _scheduler
 
         await _scheduler.stop()
@@ -393,12 +474,12 @@ async def _shutdown_services(app: FastAPI) -> None:
         logger.warning("scheduler stop failed (non-fatal): %s", exc)
 
     try:
-        from server.services import curation_loop as _curation
+        from server.services import usage_retention as _retention
 
-        await _curation.stop()
-    except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
+        await _retention.stop()
+    except Exception as exc:  # noqa: BLE001 — retention stop must never block shutdown
         cleanup_complete = False
-        logger.warning("curation loop stop failed (non-fatal): %s", exc)
+        logger.warning("usage retention stop failed (non-fatal): %s", exc)
 
     try:
         from server.services import proactive_service as _proactive
@@ -428,7 +509,10 @@ def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     # C5b: the one app version (desktop/src-tauri/tauri.conf.json, read by server.config).
     from server.config import settings
-    app = FastAPI(title="Arslan Server", version=settings.app_version, lifespan=lifespan)
+    # The desktop app's server does not serve the API explorer or the schema: they describe every
+    # route to anyone on the machine and are not behind the token (C11b, #338 review F6). A dev run keeps them.
+    no_api_explorer = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.packaged else {}
+    app = FastAPI(title="Arslan Server", version=settings.app_version, lifespan=lifespan, **no_api_explorer)
 
     # S1 OSS safety: any secret-write path (provider api_key, settings secrets, MCP
     # env) that would encrypt under the PUBLIC dev fallback key raises
@@ -456,8 +540,8 @@ def create_app() -> FastAPI:
 
     # add_middleware wraps in reverse order → TrustedHost (added last) is outermost,
     # so a foreign Host is rejected before CORS/routing runs. CORS uses an explicit
-    # allowlist (dev: the vite dev server; prod: ARSLAN_ALLOWED_ORIGINS) — never
-    # '*' with credentials.
+    # allowlist (dev: the vite dev server, or ARSLAN_ALLOWED_ORIGINS; packaged: none, whatever the
+    # environment says) — never '*' with credentials.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=security.cors_allow_origins(),
@@ -487,25 +571,17 @@ def create_app() -> FastAPI:
 
     # Test-only helper to seed a spawn without going through the build socket.
     # It creates a spawn with NO auth, so gate it twice: it must be explicitly
-    # opted in via ARSLAN_TEST_ROUTES=1 AND never register in prod — even if the
-    # flag leaks into a prod deployment (defense in depth, P0-3).
+    # opted in via ARSLAN_TEST_ROUTES=1 AND never register in the desktop app's
+    # server — even if the flag leaks into it (defense in depth, P0-3; C11).
     import os
 
     from server.config import settings as _test_route_settings
 
     if (
         os.environ.get("ARSLAN_TEST_ROUTES") == "1"
-        and not _test_route_settings.is_prod
+        and not _test_route_settings.packaged
     ):
         _register_test_routes(app)
-
-    from server.api import templates as templates_api
-
-    app.include_router(templates_api.router, prefix="/api/v1")
-
-    from server.api import evolution as evolution_api
-
-    app.include_router(evolution_api.router, prefix="/api/v1")
 
     from server.api import facts as facts_api
 
@@ -515,17 +591,9 @@ def create_app() -> FastAPI:
 
     app.include_router(registry_api.router, prefix="/api/v1")
 
-    from server.api import create as create_api
-
-    app.include_router(create_api.router, prefix="/api/v1")
-
     from server.api import orchestrator as orchestrator_api
 
     app.include_router(orchestrator_api.router, prefix="/api/v1")
-
-    from server.api import seeds as seeds_api
-
-    app.include_router(seeds_api.router, prefix="/api/v1")
 
     from server.api import runs as runs_api
 
@@ -544,8 +612,6 @@ def create_app() -> FastAPI:
     app.include_router(lessons_api.router, prefix="/api/v1")
     from server.api import phone as phone_api
     app.include_router(phone_api.router, prefix="/api/v1")
-    from server.api import recipes as recipes_api
-    app.include_router(recipes_api.router, prefix="/api/v1")
     from server.api import browser as browser_api
     app.include_router(browser_api.router, prefix="/api/v1")
     from server.api import hands as hands_api  # 0.1.53 Arslan Hands (Mac apps)
@@ -712,7 +778,9 @@ def _register_test_routes(app: FastAPI) -> None:
     from server.db.session import get_session as _get_session
     from server.services import spawn_service as _spawn_service
 
-    @app.post("/api/v1/_test/seed_spawn")
+    # Behind the access token like every other route that writes (C11b, #338 review F7); with no
+    # token active (the dev harness) require_auth is a no-op, so the test fixtures are unchanged.
+    @app.post("/api/v1/_test/seed_spawn", dependencies=[_Depends(require_auth)])
     async def _seed_spawn(  # noqa: ANN202
         body: dict, session: _AsyncSession = _Depends(_get_session)
     ):

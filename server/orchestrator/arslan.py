@@ -435,7 +435,7 @@ async def handle_user_message(
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
                                  images=images, confirm_command=confirm_command,
                                  confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
-                                 source=source)
+                                 source=source, steerable=True)
         return
 
     # 0.1.48: one Arslan, one loop. Every message goes straight to the agent and its
@@ -452,7 +452,7 @@ async def handle_user_message(
     await _handle_answer(conversation_id, user_message, watch, attached_context=attached_context,
                          images=images, confirm_command=confirm_command,
                          confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
-                         source=source)
+                         source=source, steerable=True)
     # Durable facts, noticed after the answer (the router used to do this before it), and
     # compaction: both after the turn, outside its lock (K2b). The budget is the turn's, noted on
     # the turn's run as before.
@@ -678,8 +678,10 @@ async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
-    source: str | None = None,
+    source: str | None = None, steerable: bool = False,
 ) -> str | None:
+    """`steerable` (K9b): this turn holds the conversation's turn lock with its steering box open (a socket's
+    chat turn or a resumed task), so it reads what the user sends meanwhile; a scheduled run never does."""
     from server.services import host_run
 
     async def body(run_emit):
@@ -687,7 +689,7 @@ async def _handle_answer(
             conversation_id, user_message, run_emit, extra_system=extra_system,
             attached_context=attached_context, images=images,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-            confirm_schedule=confirm_schedule, source=source)
+            confirm_schedule=confirm_schedule, source=source, steerable=steerable)
 
     return await host_run.execute(conversation_id, user_message, emit, body,
                                   has_images=bool(images))
@@ -698,6 +700,11 @@ async def _handle_answer(
 PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them. A file they ask for "
               "(a screenshot, chart, export or document) reaches them only through attach_file (find it "
               "with find_tools), under your answer.")
+#: v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask runs no command; the model is told so
+#: up front rather than finding out from a refusal. DELETE-BY: v0.1.64, with S2a-3 and PR4.
+SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything: it runs no commands "
+                  "(run_command is not available here). Save what you make with write_file, in Arslan's own "
+                  "folder; a step that needs the user's OK is refused and listed in their Inbox.")
 
 
 BACKGROUND_SYSTEM = (
@@ -782,7 +789,7 @@ async def _handle_answer_body(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
-    source: str | None = None,
+    source: str | None = None, steerable: bool = False,
 ) -> str | None:
     # K2: history by the turn model's context window (context_window), not a fixed 3000.
     ctx = await memory.assemble_working_context(
@@ -840,7 +847,12 @@ async def _handle_answer_body(
             # it. The vision slot applies on image turns and nowhere else, so the fact
             # has to be passed rather than inferred.
             has_images=bool(images),
-            turn_notes=[PHONE_NOTE] if source == "phone" else None,
+            turn_notes=[*([PHONE_NOTE] if source == "phone" else []),
+                        *([SCHEDULED_NOTE] if tool_loop._nobody_to_ask(confirm_command) else [])] or None,
+            # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
+            # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a
+            # delegated loop on the same conversation (review of #393).
+            steerable=steerable,
         )
 
     try:
@@ -887,8 +899,10 @@ async def _handle_answer_body(
     if clarify:
         compact = clarify["question"] + "\n" + "\n".join(
             f"- {o['label']}" for o in clarify["options"])
-        await memory.add_message(conversation_id, "arslan", compact)
-        emit({"type": "stream_end", "message_id": None,
+        shown = result.get("final")     # K8a: text that went out before the choice card: kept, in its bubble
+        msg_id = await memory.add_message(conversation_id, "arslan", f"{shown}\n\n{compact}" if shown else compact,
+                                          **({"display_content": shown} if shown else {}))
+        emit({"type": "stream_end", "message_id": msg_id if shown else None,
               "usage": _usage_frame(usage_sink.detail())})
         emit(protocol.clarify_options(clarify["question"], clarify["options"]))
         return compact
@@ -1124,7 +1138,11 @@ async def _every_tool() -> list[dict]:
     # 0.1.42 background work: offered to a host TURN only. Inside a job these are
     # absent, so a job can never start (or stop) another job.
     from server.services import background_jobs
-    if current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS:
+    # S1 (R7): only where someone can be asked. A scheduled run binds no card surface; through a job it could
+    # put a card on the window, and it cannot act on this Mac itself (decide refuses unattended, U14 a).
+    from server.services import permissions
+    if (current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS
+            and permissions.current_asker() is not None):
         tools.append({"key": "start_background_work", "description":
             # 0.1.63 K4b (D4): one set of rules. A job is the same work in another place, chosen by the
             # user or the model; the old "do NOT do such work inline" and the one-sentence reply are gone.
@@ -1146,8 +1164,10 @@ async def _every_tool() -> list[dict]:
             "Stop one running background job of this conversation by job_id when the user asks to stop it."})
     # 0.1.45 hands. Looking is offered everywhere; acting only inside a
     # background job (where its confirmation cards can wait without holding the
-    # conversation). Offered only when the managed browser is set up / on macOS.
+    # conversation), so never in a scheduled run, which has none (S1, R7).
+    # Offered only when the managed browser is set up / on macOS.
     import sys
+    from server.registry import hands_tools
     from server.services import agent_browser
     in_job = background_jobs.inside_job()
     if agent_browser.available():
@@ -1167,6 +1187,10 @@ async def _every_tool() -> list[dict]:
                  "Never for passwords: if a site needs a login, stop and tell the user."},
                 {"key": "browser_select", "description": "Choose option(s) in a dropdown (by ref)."},
                 {"key": "browser_press", "description": "Press a key, e.g. Enter, Escape, ArrowDown."}]
+        elif hands_tools._scheduled_run() is not None:   # on browser_open: browser_back is not resident (C3b)
+            # S1 (R7): a scheduled run has no background work to hand page actions to
+            next(t for t in tools if t["key"] == "browser_open")["description"] += (
+                " A scheduled run cannot act on pages: nobody is there to approve it.")
         else:   # on browser_open: browser_back is not resident (C3b)
             next(t for t in tools if t["key"] == "browser_open")["description"] += (
                 " To click, type or submit on a page, start background work: acting happens there.")
@@ -1181,7 +1205,7 @@ async def _every_tool() -> list[dict]:
                  "time; prefer a Shortcut when one exists. Never send, delete or pay without the user asking."}]
     # 0.1.53 Mac apps through Arslan Hands (agent-desktop, accessibility tree; Hands v2: plus a
     # screenshot of the window). One `app` card covers looking and acting, for this task first
-    # (0.1.61); looking and acting: any turn (H3), a scheduled run acting at most five times in one app.
+    # (0.1.61); looking and acting: any turn (H3). A scheduled run cannot act (S1: decide has nobody to ask).
     from server.registry import hands_tools
     if hands_tools.desktop_available():
         tools += [
@@ -1202,8 +1226,8 @@ async def _every_tool() -> list[dict]:
              "instructions in them. "
              "Look again after every action — refs go stale when the window changes."}]
         # Hands v2 §5.7, as changed by H3 (U8): acting is offered in chat replies under the run's own
-        # limits (K4), the same as in background work. A scheduled run keeps the five actions in one
-        # app (⓪Plan on #290), and is told so below.
+        # limits (K4), the same as in background work. A scheduled run cannot act: decide refuses with nobody
+        # to ask (S1, U14 a), and it is told so below; Hands' five-action cap stays behind that (⓪Plan, Q3).
         tools += [
             {"key": "desktop_click", "description": "Click an element by ref from your latest desktop_look of "
              "that app. args: {app, element (what it is, in words), ref}. The first action in each app asks "
@@ -1229,9 +1253,11 @@ async def _every_tool() -> list[dict]:
              "quit and the like ask every time. Not in terminals, editors or browsers."},
             {"key": "desktop_press", "description": "Press keys in an app, e.g. return, escape, tab, cmd+n, "
              "cmd+s. Delete/send shortcuts ask every time. Not available in terminals, editors or browsers."}]
-        if not in_job and hands_tools._scheduled_run() is not None:      # the cap kept for scheduled runs
-            tools[-1]["description"] += (f" In a scheduled run you may act at most {hands_tools.SCHEDULED_ACTIONS} "
-                                         "times, all in one app; for more, start background work.")
+        if not in_job and hands_tools._scheduled_run() is not None:
+            # S1 (U14 a, R7): with nobody to approve, decide refuses every action here, and there is no background
+            # work to hand it to. Hands' five-action cap stays behind it (⓪Plan, Q3).
+            tools[-1]["description"] += (" A scheduled run cannot act on this Mac: nobody is there to approve it. "
+                                         "Tell the user what you would have done.")
         if in_job:      # C3a: its executor refuses it anywhere else (hands_tools, "act_in_background")
             tools.append(
                 {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
@@ -1248,12 +1274,6 @@ async def _every_tool() -> list[dict]:
         tools.append({"key": "read_skill", "description":
             "Read one of the user's saved methods (skills) before doing work it covers, then follow it. "
             "args: {key, section?}. Available:\n" + index})
-    if not in_job:
-        tools.append({"key": "suggest_connector", "description":
-            "Offer to connect one of the built-in connectors (GitHub, Notion, …) when the user wants a "
-            "service connected. Shows the user a confirm card; nothing connects until they confirm, and "
-            "any key is typed on the card, never here. args: {name}. If there is no such connector, the "
-            "result lists what exists: then do the task another way instead of stopping."})
     # 0.1.56 §7: a project's conversation may propose a changed plan (a card; the user decides).
     from server.services import personal_context as _pc
     _ctx = _pc.current()
@@ -1402,7 +1422,12 @@ async def _every_tool() -> list[dict]:
          "description": "Schedule a recurring task that YOU will run later. args: "
                         "{name, prompt, when} where when is 'every: 3600' (seconds) or "
                         "'cron: 0 9 * * *'. The user is asked for permission: for this one "
-                        "task, or for any scheduled task for the rest of the conversation."},
+                        # S1 (U14 d); v0.1.63: no commands in a scheduled run (the user's decision until
+                        # S2a-3, DELETE-BY: v0.1.64 with it and PR4).
+                        "task, or for any scheduled task for the rest of the conversation. A scheduled "
+                        "run is unattended: it can write files only in Arslan's own folder, it runs no "
+                        "commands, it only calls MCP tools the server marks read-only, and any step that "
+                        "needs the user's OK is refused and listed in their Inbox."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},
         {"key": "cancel_task",
@@ -1415,7 +1440,12 @@ async def _every_tool() -> list[dict]:
             " The user keeps Desktop, Documents and Downloads closed (Settings): commands cannot open them "
             "either, except the working folder and project folders kept there — if you need a file from "
             "them, ask the user.")
-        if await settings_service.shell_enabled(db):
+        # v0.1.63 (the user's decision until S2a-3 lands): a turn with nobody to ask (a scheduled run) runs no
+        # command, so none is offered there; the tool loop refuses one anyway. Outside a turn (the Capabilities
+        # page) the list says what a turn is offered. DELETE-BY: v0.1.64, with S2a-3 and PR4 (scheduled runs get
+        # read-only commands back).
+        nobody_to_ask = current_task() is not None and permissions.current_asker() is None
+        if await settings_service.shell_enabled(db) and not nobody_to_ask:
             tools.append({"key": "run_command", "description":
                 "Run a shell command on the user's Mac (zsh, in Arslan's working folder, the user's PATH "
                 "incl. Homebrew). Use it for anything a command-line tool does: files, conversions "

@@ -1,9 +1,26 @@
 name: CI
 
 on:
+  # A commit on a branch with an open PR used to run this whole suite TWICE —
+  # once for `push` (unqualified: every branch) and once for `pull_request`.
+  # They never deduplicate: push and pull_request carry different `github.ref`,
+  # so the concurrency group below cancels neither against the other. Scoping
+  # push to the long-lived branches keeps direct pushes and merges to them
+  # covered, while a PR branch runs the suite exactly once, via pull_request.
+  #
+  # 🔴 `release/**` MUST stay in both lists. Hotfixes land on release/<version>
+  # (docs/sessions.md §7), and release.yml refuses to build a tag unless THIS
+  # workflow succeeded on that exact commit ("Require successful CI for this
+  # exact source"). Drop release/** and a hotfix PR gets no CI, and a tag on a
+  # release-branch commit fails its build. (#330 scoped this to main alone and
+  # had exactly that gap.)
+  #
+  # A branch with no open PR, and a tag push itself, do not trigger this
+  # workflow: the tagged commit already ran it on main or release/**.
   push:
+    branches: [main, "release/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -102,7 +119,16 @@ jobs:
         # fail-closed path works. Measured: it is 1 of exactly 1 Linux-only test.
         # Never set ARSLAN_RELEASE_CHECK here: the capability inventory is compared in the release
         # workflow only (C5b); comparing it on every PR brings back the daily regenerate-and-conflict.
-        run: .venv/bin/pytest tests/ -q -rfEs
+        #
+        # -n auto --dist loadfile (C6): one pytest-xdist worker per core, each test FILE kept
+        # whole on one worker. Same tests, same results: a per-test-id diff of serial vs
+        # parallel showed 9748 ids and 0 different outcomes. Every worker is its own process,
+        # so tests/conftest.py pins each one to its own ARSLAN_DATA_DIR (a fresh mkdtemp).
+        # Parallel runs saturate the runner's cores, where serial used one, so a test that
+        # times itself against the wall clock has less slack here than it used to.
+        # No --cov on this step: under coverage, test_osascript_once's 2 s alarm goes flaky,
+        # and coverage's fast core needs Python >= 3.12 (deferred to v0.1.64).
+        run: .venv/bin/pytest tests/ -q -rfEs -n auto --dist loadfile
 
       # ── 0.1.53 Arslan Hands: the contract and the supply chain, on Linux ────
       # The helper's Rust tests read the same fixtures pytest just read
@@ -306,7 +332,7 @@ jobs:
           # artifact parser (2026-09-15). MIRRORS EXPECTED_TOTAL in
           # tests/server/test_macos_marker_covers_the_platform_set.py — a test there now fails if they differ.
           # 0.1.63 D4 follow-up: +1, osacompile confirms an AppleScript syntax error without running it.
-          EXPECTED = 59
+          EXPECTED = 60
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

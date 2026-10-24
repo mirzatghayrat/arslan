@@ -18,7 +18,6 @@ import Capabilities from "../components/Capabilities";
 import * as transport from "../lib/toolTransport";
 import "../i18n";
 
-vi.mock("../api/catalog", () => ({ getMcpCatalog: vi.fn(async () => []) }));
 vi.mock("../api/mcp", () => ({
   listMcpServers: vi.fn(async () => []),
   addMcpServer: vi.fn(),

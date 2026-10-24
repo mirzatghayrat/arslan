@@ -89,32 +89,55 @@ class Settings:
     static_dir: str = ""
     app_version: str = "unknown"
     attach_extract_char_limit: int = 12000
-    # Deployment mode. Code default is "dev" so local zero-config still boots.
-    # ARSLAN_ENV=prod turns a missing secret from a warning into a boot-fatal refusal
-    # (C10, v0.1.63: the Docker files that pinned it are gone; prod mode itself is left
-    # for the audit, U13 item 5).
-    env: str = "dev"
+    # The desktop app's server (ARSLAN_PACKAGED, set by packaging/server_entry.py): auth is enforced, a
+    # missing secret refuses boot, no cross-origin, no Origin-less WebSocket, no test routes. 0.1.63 C11:
+    # this replaced ARSLAN_ENV=prod, which only the deleted Docker image used; the desktop app is the
+    # one supported way to run Arslan outside a dev checkout.
+    packaged: bool = False
     # Advisory default bind host. The *true* bind is decided by the launcher's
     # `uvicorn --host`; this value only feeds launch scripts/docs and the
     # startup bind advisory — the app cannot force it.
     bind_host: str = "127.0.0.1"
     # Host/Origin trust policy (S1 OSS safety). `allowed_hosts` feeds Starlette's
     # TrustedHostMiddleware (rejects foreign `Host:` headers → DNS-rebinding);
-    # `allowed_origins` feeds CORSMiddleware + the WS Origin check. Dev defaults are
-    # localhost-only (+ test-harness hosts / the vite :5173 dev origin); prod reads
-    # ARSLAN_ALLOWED_HOSTS / ARSLAN_ALLOWED_ORIGINS. See load_settings + server.security.
+    # `allowed_origins` feeds CORSMiddleware + the WS Origin check. Defaults are
+    # localhost-only (+ test-harness hosts / the vite :5173 dev origin; no origin when packaged);
+    # in dev, ARSLAN_ALLOWED_HOSTS / ARSLAN_ALLOWED_ORIGINS replace them, and the desktop app ignores
+    # both. See load_settings + server.security.
     allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")
     allowed_origins: tuple[str, ...] = ()
-
-    @property
-    def is_prod(self) -> bool:
-        """True when running in production mode (ARSLAN_ENV=prod)."""
-        return self.env == "prod"
 
     @property
     def db_url(self) -> str:
         """Async SQLAlchemy URL for the SQLite database."""
         return f"sqlite+aiosqlite:///{self.db_path}"
+
+
+def _no_wildcard(variable: str, values: tuple[str, ...]) -> tuple[str, ...]:
+    """An entry carrying `*` would hand the Host check or CORS to every host or origin; the server
+    refuses to start instead of binding wide open (C11b, #338 review F5). Any `*` counts, not only a
+    bare one: server.security strips `:port`, so `*:8000` and `*:*` would become `*`, and `*.` matches
+    every name that ends in a dot (C11b review 4). Only a dev run reads these variables; a dev bind
+    names each host in full."""
+    for value in values:
+        if "*" in value:
+            raise ValueError(f"{variable} must name each host or origin in full; '*' is not accepted (got {value!r})")
+    return values
+
+
+def norm_origin(origin: str) -> str:
+    """An origin as it is compared everywhere (here and in server.security): trimmed, no trailing `/`, lower case."""
+    return origin.strip().rstrip("/").lower()
+
+
+def _no_null_origin(values: tuple[str, ...]) -> tuple[str, ...]:
+    """`null` is the Origin a sandboxed iframe, a `data:` page or a file sends, so any site can produce it;
+    allowing it would open CORS and the WebSocket to every one of them (follow-up to the C11b re-check). Compared
+    as server.security compares origins, so `null/` is refused too (#402 review 3)."""
+    for value in values:
+        if norm_origin(value) == "null":
+            raise ValueError(f"ARSLAN_ALLOWED_ORIGINS must name each origin in full; 'null' is not accepted (got {value!r})")
+    return values
 
 
 def load_settings() -> Settings:
@@ -126,41 +149,44 @@ def load_settings() -> Settings:
     # Shares one resolver with the live ``data_dir()`` accessor the subsystems use.
     data_dir = _resolve_data_dir()
     db_path = os.environ.get("ARSLAN_DB_PATH", str(data_dir / "arslan.db"))
-    spawns_dir = Path(os.environ.get("ARSLAN_SPAWNS_DIR", str(data_dir / "spawns")))
+    packaged = os.environ.get("ARSLAN_PACKAGED", "").strip().lower() in {"1", "true", "yes", "on"}
+    # The desktop app keeps spawns in its data dir whatever its environment says (0.1.63, after #364).
+    spawns_dir = (data_dir / "spawns" if packaged
+                  else Path(os.environ.get("ARSLAN_SPAWNS_DIR", str(data_dir / "spawns"))))
+    # Packaged, the frozen entry has set this to the bundle's own web folder and nothing else.
     static_dir = os.environ.get("ARSLAN_STATIC_DIR", str(Path(__file__).parent / "static"))
-    env = os.environ.get("ARSLAN_ENV", "dev").lower()
-    is_prod = env == "prod"
 
     # Trusted Host headers (Starlette matches on hostname only; ':port' forms are
-    # normalised away in server.security). Prod reads ARSLAN_ALLOWED_HOSTS
-    # (comma-separated) and otherwise fails closed to localhost-only — a packaged
-    # localhost service keeps working while a foreign Host (DNS-rebinding) is
-    # rejected. Dev/tests add the harness hosts: the Starlette TestClient uses
-    # 'testserver'; the httpx ASGI suites use 'test' / 't'. None of these are
-    # publicly registrable, so they add no DNS-rebinding surface.
+    # normalised away in server.security). The desktop app's server trusts localhost only and
+    # ignores ARSLAN_ALLOWED_HOSTS: it inherits whatever environment launched it, and a value
+    # left in a shell must not widen it (cloud audit on C11). In dev, ARSLAN_ALLOWED_HOSTS
+    # (comma-separated) replaces the default: localhost, plus the test harness hosts (the
+    # Starlette TestClient uses 'testserver'; the httpx ASGI suites use 'test' / 't'). None of
+    # these are publicly registrable, so they add no DNS-rebinding surface; a foreign Host is rejected.
     hosts_raw = os.environ.get("ARSLAN_ALLOWED_HOSTS", "").strip()
-    if hosts_raw:
-        allowed_hosts: tuple[str, ...] = tuple(h.strip() for h in hosts_raw.split(",") if h.strip())
-    elif is_prod:
-        allowed_hosts = ("localhost", "127.0.0.1")
+    if packaged:
+        allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")   # no test-harness host either (C11 review F1)
+    elif hosts_raw:
+        allowed_hosts = _no_wildcard("ARSLAN_ALLOWED_HOSTS",
+                                     tuple(h.strip() for h in hosts_raw.split(",") if h.strip()))
     else:
         allowed_hosts = ("localhost", "127.0.0.1", "testserver", "test", "t")
 
-    # Cross-origin allowlist for CORS + the WS Origin check. Prod reads
-    # ARSLAN_ALLOWED_ORIGINS (comma-separated) and otherwise allows none (only
-    # genuine same-origin gets through). Dev allows the vite dev server.
+    # Cross-origin allowlist for CORS + the WS Origin check. The desktop app's server allows
+    # none and ignores ARSLAN_ALLOWED_ORIGINS (only genuine same-origin gets through: its own
+    # page). In dev, ARSLAN_ALLOWED_ORIGINS (comma-separated) replaces the default, the vite dev server.
     origins_raw = os.environ.get("ARSLAN_ALLOWED_ORIGINS", "").strip()
-    if origins_raw:
-        allowed_origins: tuple[str, ...] = tuple(o.strip() for o in origins_raw.split(",") if o.strip())
-    elif is_prod:
-        allowed_origins = ()
+    if packaged:
+        allowed_origins: tuple[str, ...] = ()     # the app's own page is same-origin; nothing else may call it
+    elif origins_raw:
+        allowed_origins = _no_null_origin(_no_wildcard("ARSLAN_ALLOWED_ORIGINS",
+                                                       tuple(o.strip() for o in origins_raw.split(",") if o.strip())))
     else:
         allowed_origins = ("http://localhost:5173", "http://127.0.0.1:5173")
 
-    # Effective secret: explicit ARSLAN_SECRET_KEY > persisted dev file > first-boot
-    # auto-generation (dev-only; prod never touches the file). See server.secret_bootstrap.
+    # Effective secret: explicit ARSLAN_SECRET_KEY > persisted file > first-boot
+    # auto-generation. See server.secret_bootstrap.
     secret_key = secret_bootstrap.bootstrap_secret_key(
-        env=env,
         explicit=os.environ.get("ARSLAN_SECRET_KEY", ""),
         data_dir=data_dir,
     )
@@ -174,7 +200,7 @@ def load_settings() -> Settings:
         static_dir=static_dir,
         app_version=_app_version(),
         attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "12000")),
-        env=env,
+        packaged=packaged,
         bind_host=os.environ.get("ARSLAN_BIND_HOST", "127.0.0.1"),
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,

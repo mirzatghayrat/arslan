@@ -113,6 +113,15 @@ class TurnTracker:
     decline_rules: frozenset = frozenset()
     decline_note: str = ""
     idle_after_s: float = IDLE_AFTER_TURN_S
+    # K8's M1 (first-token latency): per turn, seconds from sending it to its first stream_chunk and
+    # to its first stream_end; None when the turn never got one.
+    timings: list = field(default_factory=list)
+    turn_started: float = 0.0
+    first_chunk_at: float | None = None
+    stream_end_at: float | None = None
+
+    def start_turn(self, now: float) -> None:
+        self.turn_started, self.first_chunk_at, self.stream_end_at = now, None, None
 
     def inside(self, path: str) -> bool:
         return bool(path) and (path.startswith(self.run_dir) or not path.startswith("/"))
@@ -125,8 +134,12 @@ class TurnTracker:
         self.last_activity = now
         if t == "stream_chunk":
             self.final_text.append(frame.get("content") or "")
+            if self.first_chunk_at is None and frame.get("content"):     # an empty chunk shows nothing yet
+                self.first_chunk_at = now
         elif t == "stream_end":
             self.turn_done = True
+            if self.stream_end_at is None:
+                self.stream_end_at = now
         elif t == "task_state" and frame.get("phase") in TERMINAL_TASK_PHASES:
             self.turn_done, self.task_open = True, False
             if frame.get("phase") != "succeeded":
@@ -169,7 +182,7 @@ class TurnTracker:
                 return {"type": "confirm_action", "call_id": frame["call_id"]}
             self.actions_declined += 1
             return {"type": "cancel_action", "call_id": frame["call_id"]}
-        elif t in ("propose_schedule", "propose_connect_mcp", "propose_enroll_node"):
+        elif t in ("propose_schedule", "propose_enroll_node"):
             self.approvals += 1
             return {"type": "cancel_schedule" if t == "propose_schedule" else "cancel_action", "call_id": frame["call_id"]}
         return None
@@ -207,6 +220,8 @@ class TurnTracker:
     def next_turn(self, now: float) -> str:
         """Close this turn and start the next; returns this turn's answer."""
         answer = "".join(self.final_text)
+        self.timings.append({key: None if at is None else round(at - self.turn_started, 2)
+                             for key, at in (("first_chunk_s", self.first_chunk_at), ("stream_end_s", self.stream_end_at))})
         self.final_text, self.turn_done, self.last_activity = [], False, now
         return answer
 
@@ -252,6 +267,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
             await ws.recv()                                     # history
             for n, prompt in enumerate(prompts, 1):
                 turn_started = time.monotonic()
+                tracker.start_turn(turn_started)
                 await ws.send(json.dumps({"type": "user_message", "content": prompt}))
                 while not tracker.finished(time.monotonic(), turn_started):
                     try:
@@ -270,7 +286,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
             "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
             "actions_declined": tracker.actions_declined,
-            "end": tracker.end_reason, "turns": len(replies),
+            "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
 
 
@@ -280,19 +296,33 @@ def provider_body(provider: str, model: str, base_url: str) -> dict:
     return {"label": "bench", "provider": provider, "model": model, "base_url": base_url, "api_key": "bench-dummy"}
 
 
+#: The bench asks only for risky commands unless a run says otherwise (BENCH_SHELL_POLICY=ask_all): v0.1.63 made
+#: "ask before every command" the app's default, and a bench round on it would no longer compare with M1B and
+#: the K rounds. The final M1 gates on ask_risky, with one ask_all run for reference.
+SHELL_POLICIES = ("ask_risky", "ask_all")
+
+
 def settings_body(run_dir: str) -> dict:
-    """The test instance's settings: its workspace is the run folder, plus BENCH_ARSLAN_SETTINGS, a JSON object of
-    plain settings for an A/B cell (e.g. {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63).
-    Values must be strings, as the settings API stores them; the workspace cannot be overridden."""
+    """The test instance's settings: its workspace is the run folder, its command policy BENCH_SHELL_POLICY
+    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell (e.g.
+    {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63). Values must be strings, as the
+    settings API stores them; the workspace and the policy cannot be set that way."""
     extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
     if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")
-    return {**extra, "workspace_dir": run_dir}
+    if "shell_confirm_policy" in extra:
+        raise ValueError("set the command policy with BENCH_SHELL_POLICY, not BENCH_ARSLAN_SETTINGS")
+    policy = os.environ.get("BENCH_SHELL_POLICY") or "ask_risky"
+    if policy not in SHELL_POLICIES:
+        raise ValueError(f"BENCH_SHELL_POLICY must be one of {', '.join(SHELL_POLICIES)}")
+    return {**extra, "shell_confirm_policy": policy, "workspace_dir": run_dir}
 
 
-def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> None:
-    """Point the test instance's model at the metering proxy and its workspace at the run folder."""
+def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> str:
+    """Point the test instance's model at the metering proxy and its workspace at the run folder. Returns the
+    command policy it set, which the run's record carries (v0.1.63)."""
     import httpx
+    settings = settings_body(run_dir)
     with httpx.Client(timeout=30) as c:
         cfgs = c.get(f"{api}/settings/provider-configs").json()
         cfg = next((x for x in cfgs if x["label"] == "bench"), None)
@@ -300,7 +330,8 @@ def configure(api: str, run_dir: str, base_url: str, model: str, provider: str =
         cfg = c.put(f"{api}/settings/provider-configs/{cfg['id']}", json=body).json() if cfg else \
             c.post(f"{api}/settings/provider-configs", json=body).json()
         c.patch(f"{api}/settings/provider-configs/{cfg['id']}/primary").raise_for_status()
-        c.put(f"{api}/settings", json=settings_body(run_dir)).raise_for_status()
+        c.put(f"{api}/settings", json=settings).raise_for_status()
+    return settings["shell_confirm_policy"]
 
 
 if __name__ == "__main__":
@@ -314,7 +345,7 @@ if __name__ == "__main__":
     ap.add_argument("--decline-rule", action="append", default=[], help="regular expression on the card's rule")
     ap.add_argument("--decline-note", default="")
     a = ap.parse_args()
-    configure(a.api, a.run_dir, a.base_url, a.model, a.provider)
+    policy = configure(a.api, a.run_dir, a.base_url, a.model, a.provider)
     out = asyncio.run(run(a.api, a.run_dir, load_prompts(a.prompt_file), a.run_dir.rstrip("/") + ".frames.jsonl",
                           decline_rules=frozenset(a.decline_rule), decline_note=a.decline_note))
-    print(json.dumps(out, ensure_ascii=False))
+    print(json.dumps({**out, "shell_policy": policy}, ensure_ascii=False))

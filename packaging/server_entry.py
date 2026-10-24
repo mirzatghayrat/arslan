@@ -52,7 +52,10 @@ def _sanitize_env() -> None:
     managing their own key and could make already-stored provider keys
     undecryptable.
     """
-    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH"):
+    # ARSLAN_ENV too (C11): the removed prod mode makes the server refuse to start when it is set,
+    # and it means nothing to the desktop app, so a value inherited from a shell must not stop it.
+    # ARSLAN_SPAWNS_DIR for the same reason as the data dir (0.1.63, after #364).
+    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_ENV", "ARSLAN_SPAWNS_DIR"):
         os.environ.pop(var, None)
 
     if getattr(sys, "frozen", False):
@@ -62,7 +65,8 @@ def _sanitize_env() -> None:
         # packaged app ran as "dev + localhost = unauthenticated", which the
         # spec forbids: 127.0.0.1 is reachable by every process on the machine,
         # and this server holds the user's whole brain plus their BYOK keys.
-        os.environ.setdefault("ARSLAN_PACKAGED", "1")
+        # Assigned, not setdefault (C11): an inherited ARSLAN_PACKAGED=0 must not turn auth off.
+        os.environ["ARSLAN_PACKAGED"] = "1"
 
         # An inherited env token would win over the persisted file
         # (token_bootstrap step 1) and NOTHING would be written to disk — but
@@ -71,6 +75,19 @@ def _sanitize_env() -> None:
         # a broken UI with no error pointing here. Auth stays ON either way;
         # this only forces the one token source the shell can actually see.
         os.environ.pop("ARSLAN_API_TOKEN", None)
+
+        # The desktop app's server allows no other origin and trusts localhost only; server.config
+        # ignores these two when packaged, and they are dropped here too so nothing it starts sees them.
+        for var in ("ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS"):
+            os.environ.pop(var, None)
+        # Developer and test overrides an inherited environment could use to move the desktop app
+        # (⓪Plan, after #364): another Python, run outside the sandbox and trusted for its read roots;
+        # another home folder for the file tools; other run budgets. The code that reads each one
+        # ignores it when packaged too.
+        for var in ("ARSLAN_SANDBOX_PYTHON", "ARSLAN_DEFAULT_WORKSPACE", "ARSLAN_MCP_SUPERVISOR",
+                    "ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS",
+                    *[key for key in os.environ if key.startswith("ARSLAN_RUN_MAX_")]):
+            os.environ.pop(var, None)
 
     _point_static_dir_into_the_bundle()
 
@@ -89,12 +106,15 @@ def _point_static_dir_into_the_bundle() -> None:
 
     arslan-server.spec stages web/dist at ``_internal/arslan_web``; point at it
     explicitly rather than relying on __file__ arithmetic, which does not
-    survive freezing. A user-supplied ARSLAN_STATIC_DIR still wins.
+    survive freezing.
+
+    Always the bundle's own (0.1.63, after #364): an inherited ARSLAN_STATIC_DIR
+    used to win, and what is served from here is the desktop app's own origin,
+    the page the shell hands the access token to.
     """
     if not getattr(sys, "frozen", False):
         return
-    if os.environ.get("ARSLAN_STATIC_DIR"):
-        return
+    os.environ.pop("ARSLAN_STATIC_DIR", None)
     bundled = pathlib.Path(getattr(sys, "_MEIPASS", "")) / "arslan_web"
     if bundled.is_dir():
         os.environ["ARSLAN_STATIC_DIR"] = str(bundled)
@@ -330,7 +350,6 @@ def selftest() -> int:
         "pptx",                         # the PIL casualty: python-pptx imports PIL
         "server.services.extract",
         "arslan.llm.adapter",
-        "arslan.spawn",
         "mcp",
         "aiosqlite",
         "sqlalchemy.dialects.sqlite.aiosqlite",  # resolved by name, not import
@@ -433,8 +452,6 @@ def selftest() -> int:
         # not in the bundle. collect_submodules does not collect these.
         for rel, why in (
             ("arslan/skills/bundled", "the bundled skills are missing"),
-            ("arslan/spawn/scaffold", "new skill-packs cannot be scaffolded"),
-            ("arslan/templates/official", "official templates are unavailable"),
         ):
             d = root / rel
             if not d.is_dir() or not any(d.rglob("*")):

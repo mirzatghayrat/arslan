@@ -664,3 +664,51 @@ async def test_credentials_never_reach_the_log(monkeypatch, caplog, scenario):
     token = base64.b64encode(f"user:{secret}".encode()).decode("ascii")
     assert _tunnel_log(caplog)                  # the tunnel did speak, so the check means something
     assert secret not in caplog.text and token not in caplog.text
+
+
+async def _stopped_as_the_upstream_connects(monkeypatch, upstream_port: int, request: bytes) -> asyncio.StreamWriter:
+    """Review F3 of #384: the tunnel's task is stopped just as its upstream connection completes. The stop
+    wins (arslan.aio.within) and that connection is closed (close_connection); the tunnel's own `finally`
+    cannot, since `upstream` was never assigned."""
+    original = asyncio.open_connection
+    opened = []
+    async with bp.PublicTunnel() as proxy:
+        reader, writer = await original("127.0.0.1", proxy.port)
+
+        async def connecting(*args, **kwargs):
+            pair = await original("127.0.0.1", upstream_port)
+            opened.append(pair[1])
+            for task in list(proxy.tasks):
+                task.cancel()                         # the stop, as the connection completes
+            return pair
+        monkeypatch.setattr(bp.asyncio, "open_connection", connecting)
+        writer.write(request)
+        await writer.drain()
+        for _ in range(100):
+            if opened and opened[0].is_closing():
+                break
+            await asyncio.sleep(0.01)
+        writer.close()
+    assert opened
+    return opened[0]
+
+
+async def test_a_direct_tunnel_stopped_as_it_connects_closes_that_connection(monkeypatch):
+    server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+    monkeypatch.setattr(bp, "_resolve_pinned", lambda _: ("93.184.216.34", "example.com", 443))
+    upstream = await _stopped_as_the_upstream_connects(monkeypatch, server.sockets[0].getsockname()[1],
+                                                       b"CONNECT example.com:443 HTTP/1.1\r\n\r\n")
+    assert upstream.is_closing()
+    server.close()
+    await server.wait_closed()
+
+
+async def test_a_chained_tunnel_stopped_as_it_connects_closes_that_connection(monkeypatch):
+    record: list[bytes] = []
+    server, port = await _upstream(record)
+    _system_proxy(monkeypatch, port)
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    upstream = await _stopped_as_the_upstream_connects(monkeypatch, port, b"CONNECT duckduckgo.com:443 HTTP/1.1\r\n\r\n")
+    assert upstream.is_closing()
+    server.close()
+    await server.wait_closed()

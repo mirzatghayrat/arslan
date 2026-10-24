@@ -1,24 +1,14 @@
 import { useAuthStore } from "../stores/authStore";
 import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
-import type { RunProcessOut, PhoneCode, PhoneStatus,
-  ArtifactReview,
+import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   AccessTokenInfo,
   AnomalyDto,
   AppSettings,
   CatalogEntry,
   CollectionOut,
-  ConfirmResult,
   ConversationUsage,
   EmbeddingStatus,
-  EvolutionStats,
-  EvolveEstimate,
-  EvolveEnqueued,
-  ProposalListItem,
-  ProposalDetail,
-  SpawnDiagnosis,
-  RefreshResult,
-  RollbackResult,
   IngestResult,
   KnowledgeSource,
   ModelListResult,
@@ -29,7 +19,6 @@ import type { RunProcessOut, PhoneCode, PhoneStatus,
   RegistryCatalog,
   SkillHealth,
   CuratorFlag,
-  DistillResult,
   DeleteResult,
   RunCatalogDto,
   RunVitalsDto,
@@ -42,15 +31,11 @@ import type { RunProcessOut, PhoneCode, PhoneStatus,
   ScheduledTaskDto,
   ScheduledTaskRunDto,
   ScheduledTaskUpdateBody,
-  SeedsResponse,
   SkillCandidate,
-  SkillEvaluateResult,
   SkillPromoteResult,
   SpawnDetail,
   SpawnSummary,
-  SuggestDraft,
   SuggestPrimaryResult,
-  TemplateInfo,
   UsageSummary,
   UserFact,
   SshAuditEntry,
@@ -331,26 +316,6 @@ export const api = {
   generateNotes: (topic: string) =>
     request<{ created: NoteDto[] }>("/brain/notes/generate", { method: "POST", body: JSON.stringify({ topic }) }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
-  draftSpawn: (description: string) =>
-    request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
-  createSpawn: (body: {
-    name: string;
-    domain: string;
-    capabilities: string[];
-    persona_role?: string | null;
-    persona_tone?: string | null;
-    seed_refs?: string[];
-    equipment?: { toolsets: string[]; skills: string[] };
-  }) =>
-    request<SpawnDetail>("/spawns", { method: "POST", body: JSON.stringify(body) }),
-  /** Browse / search the 249 persona seed identities. */
-  getSeeds: (query?: string, limit = 40, offset = 0) => {
-    const qs = new URLSearchParams();
-    if (query) qs.set("query", query);
-    qs.set("limit", String(limit));
-    qs.set("offset", String(offset));
-    return request<SeedsResponse>(`/seeds?${qs.toString()}`);
-  },
   getSpawn: (id: number) => request<SpawnDetail>(`/spawns/${id}`),
   deleteSpawn: (id: number) => request<void>(`/spawns/${id}`, { method: "DELETE" }),
   updateConfig: (id: number, body: Partial<SpawnDetail>) =>
@@ -358,16 +323,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  getEvolution: (id: number) => request<EvolutionStats>(`/spawns/${id}/evolution`),
-  sendFeedback: (
-    id: number,
-    body: { message_id?: number; user_action: string; edits?: Record<string, unknown> },
-  ) =>
-    request<void>(`/spawns/${id}/feedback`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  listTemplates: () => request<TemplateInfo[]>("/templates"),
   getSettings: () => request<AppSettings>("/settings"),
   /** Why stored secrets cannot be read. Verdict key + counts; never plaintext. */
   getCryptoHealth: () => request<CryptoHealth>("/settings/crypto-health"),
@@ -472,14 +427,6 @@ export const api = {
     if (!response.ok) throw new ApiError(`Download failed: HTTP ${response.status}`, response.status);
     return new Blob([await response.arrayBuffer()], { type: 'application/octet-stream' });
   },
-  /** Advisory source-review note for one saved artifact snapshot (0.1.41). */
-  getArtifactReview: (runId: number, filename: string) => {
-    if (!Number.isSafeInteger(runId) || runId <= 0 || !filename.startsWith(`run_${runId}_`)
-        || /[/\\\u0000]/.test(filename) || filename.includes('..')) {
-      return Promise.reject(new Error('Invalid artifact identity'));
-    }
-    return request<ArtifactReview>(`/runs/${runId}/artifacts/${encodeURIComponent(filename)}/review`);
-  },
   getRuns: (spawnId?: number, limit = 50, conversationId?: string) => {
     const qs = new URLSearchParams();
     if (spawnId != null) qs.set("spawn_id", String(spawnId));
@@ -500,6 +447,12 @@ export const api = {
   },
   /** 0.1.58 §1: what a reply did, in plain data (the list under its footer row). */
   runProcess: (runId: number) => request<RunProcessOut>(`/runs/${runId}/process`),
+  /** 0.1.63 S3: what undoing this turn would put back and take back. */
+  runCheckpoint: (runId: number) => request<RunCheckpoint>(`/runs/${runId}/checkpoint`),
+  /** S3b: `lastMessageId` is the newest message the box counted; a conversation that moved on is refused. */
+  undoTurn: (runId: number, what: "files" | "conversation" | "both", lastMessageId?: number) =>
+    request<TurnUndone>(`/runs/${runId}/checkpoint/restore`, { method: "POST",
+      body: JSON.stringify(what === "files" ? { what } : { what, last_message_id: lastMessageId }) }),
   getRunsSummary: () => request<RunSummary>("/runs/summary"),
   /** Per-spawn RED aggregate + fleet rollup, worst-first (diagnosis dashboard). */
   getRunCatalog: (range: string) => request<RunCatalogDto>(`/runs/catalog?range=${range}`),
@@ -586,34 +539,6 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ fact, ...identity }),
     }),
-  // S2 evolution (spec §E7). The old sync propose was replaced by a background job:
-  // GET the estimate, POST to enqueue (202), then review the resulting proposal in the inbox.
-  getEvolveEstimate: (spawnId: number) =>
-    request<EvolveEstimate>(`/spawns/${spawnId}/evolve/estimate`),
-  /** POST the manual trigger. The server gates a click that would re-run a corpus which
-   * already failed: it answers 409 with a structured detail, and only `force` proceeds.
-   * The gate is fail-closed, so omitting force is the safe default, not a shortcut. */
-  runEvolve: (spawnId: number, opts?: { force?: boolean }) =>
-    request<EvolveEnqueued>(`/spawns/${spawnId}/evolve`, {
-      method: "POST",
-      body: JSON.stringify({ force: opts?.force ?? false }),
-    }),
-  getEvolutionProposals: (status?: string) =>
-    request<ProposalListItem[]>(
-      `/evolution/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`,
-    ),
-  getProposalDetail: (proposalId: number) =>
-    request<ProposalDetail>(`/evolution/proposals/${proposalId}`),
-  getEvolutionDiagnosis: (spawnId: number) =>
-    request<SpawnDiagnosis>(`/spawns/${spawnId}/evolution/diagnosis`),
-  refreshProposal: (proposalId: number) =>
-    request<RefreshResult>(`/evolution/proposals/${proposalId}/refresh`, { method: "POST" }),
-  confirmProposal: (proposalId: number) =>
-    request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
-  rejectProposal: (proposalId: number) =>
-    request<ConfirmResult>(`/evolution/proposals/${proposalId}/reject`, { method: "POST" }),
-  rollbackProposal: (proposalId: number) =>
-    request<RollbackResult>(`/evolution/proposals/${proposalId}/rollback`, { method: "POST" }),
   listMcpServers: () =>
     request<
       Array<{
@@ -641,11 +566,6 @@ export const api = {
     const q = qs.toString();
     return request<SkillCandidate[]>(`/skills/candidates${q ? `?${q}` : ""}`);
   },
-  evaluateSkillCandidate: (id: number, body: { target_spawn_id: number; min_samples?: number }) =>
-    request<SkillEvaluateResult>(`/skills/candidates/${id}/evaluate`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
   promoteSkillCandidate: (id: number) =>
     request<SkillPromoteResult>(`/skills/candidates/${id}/promote`, { method: "POST" }),
   rejectSkillCandidate: (id: number) =>
@@ -658,7 +578,6 @@ export const api = {
       "/skills/curator/retire",
       { method: "POST", body: JSON.stringify({ key }) },
     ),
-  completeChat: (id: number) => request<{ ok: boolean; archived: number }>(`/spawns/${id}/complete-chat`, { method: "POST" }),
   extractAttachmentUrl: (url: string, compress = false) =>
     request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {
       method: "POST",
@@ -760,11 +679,7 @@ export const fetchProviderModels = (id: number, refresh = false) =>
 export const getCatalog = () =>
   request<CatalogEntry[]>("/settings/catalog");
 
-// ── Conversation actions: distill (harvest spawn chats) + delete ──────────────
-
-/** Distill a conversation's spawn chats into memory. Returns how many were distilled. */
-export const distillConversation = (id: string) =>
-  request<DistillResult>(`/conversations/${id}/distill`, { method: "POST" });
+// ── Conversation actions: delete ──────────────
 
 /** Permanently delete a conversation + its rows. Returns per-table delete counts. */
 export const deleteConversation = (id: string) =>

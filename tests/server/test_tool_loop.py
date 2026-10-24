@@ -133,7 +133,8 @@ async def test_budget_exhaustion_forces_final(monkeypatch):
     assert "Tool budget exhausted" not in adapter.calls[-1]["system"]
 
 
-async def test_final_answer_streams(monkeypatch):
+async def test_final_answer_goes_out_whole_when_not_streamed(monkeypatch):
+    # K8c: an endpoint that does not stream shows its answer in one piece (no simulated typing).
     adapter = _StreamAdapter(["hello world answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
@@ -141,8 +142,7 @@ async def test_final_answer_streams(monkeypatch):
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     assert out["final"] == "hello world answer"
-    assert len(chunks) > 1                       # genuinely streamed in pieces
-    assert "".join(chunks) == "hello world answer"
+    assert chunks == ["hello world answer"]
 
 
 async def test_tool_json_is_buffered_silently(monkeypatch):
@@ -428,8 +428,9 @@ async def test_unverified_claim_repair_is_bounded_and_never_accepts_the_lie(monk
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert "我搜索了" not in out["final"]
-    # K4a: the same refused answer is the same failing call; 3 of them stop the loop (was any 4 failures)
-    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 5
+    # K8a (⓪Plan Q4): guard bounces no longer count toward "no progress"; the answer is sent back at most
+    # _UNVERIFIED_BOUNCES times, then written without it (the repair path): the steps plus one salvage call.
+    assert len(adapter.calls) == tool_loop._UNVERIFIED_BOUNCES + 2
 
 
 async def test_forward_promise_retry_triggers_action(monkeypatch):
@@ -473,8 +474,9 @@ async def test_forward_promise_repair_is_bounded(monkeypatch):
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert "马上为您搜索" not in out["final"]
-    # K4a: the same refused answer is the same failing call; 3 of them stop the loop (was any 4 failures)
-    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 5
+    # K8a (⓪Plan Q4): guard bounces no longer count toward "no progress"; the answer is sent back at most
+    # _UNVERIFIED_BOUNCES times, then written without it (the repair path): the steps plus one salvage call.
+    assert len(adapter.calls) == tool_loop._UNVERIFIED_BOUNCES + 2
 
 
 def test_promises_action_matches_real_world_phrasings():

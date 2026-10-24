@@ -135,6 +135,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         taskUsdCap={localSettings.taskUsdCap ?? 2}
         onTaskUsdCapChange={(v) => saveField({ taskUsdCap: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
+        workspaceOtherVolume={localSettings.workspaceOtherVolume}
         onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}
         lanDiscoveryEnabled={localSettings.lanDiscoveryEnabled ?? false}
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
@@ -163,8 +164,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         providerConfigs={providerConfigs}
         embeddingConfigId={localSettings.embeddingConfigId ?? ''}
         onEmbeddingConfigIdChange={(v) => saveField({ embeddingConfigId: v })}
-        distillOnSessionEnd={localSettings.distillOnSessionEnd ?? true}
-        onDistillChange={(v) => saveField({ distillOnSessionEnd: v })}
         retentionDays={localSettings.runDebugRetentionDays ?? 30}
         onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
         memoryInConversations={localSettings.memoryInConversations ?? true}
@@ -272,10 +271,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpSpends')}>
       <AutomationSection
-        curationEnabled={localSettings.curationEnabled ?? false}
-        onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
-        researchReviewEnabled={localSettings.researchReviewEnabled ?? false}
-        onResearchReviewEnabledChange={(v) => saveField({ researchReviewEnabled: v })}
         heartbeatEnabled={localSettings.heartbeatEnabled ?? false}
         onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
         heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
@@ -300,7 +295,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     memory: (
       <div className="space-y-6">
         {intro('memory')}
-        <SettingsGroup title={t('settings.grpRemember')}>{memoryData(['remember', 'practices', 'distill'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpRemember')}>{memoryData(['remember', 'practices'])}</SettingsGroup>
         <SettingsGroup title={t('settings.grpData')}>
           {memoryData(['data', 'retention'])}
           <div className="mt-5">{advanced(['telemetry'])}</div>

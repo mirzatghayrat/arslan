@@ -8,7 +8,7 @@ const noop = () => {};
 const props: ComponentProps<typeof Sidebar> = {
   threads: [], activeThreadId: "", onSelectThread: noop, onAddThread: noop,
   activeSection: "arslan", onChangeSection: noop,
-  onDistillThread: noop, onArchiveThread: noop, onUnarchiveThread: noop,
+  onArchiveThread: noop, onUnarchiveThread: noop,
   onDeleteThread: noop, backendStatus: "online",
 };
 const labels = {
@@ -20,15 +20,25 @@ const labels = {
   fr: ["En ligne", "Hors ligne", "Connexion"],
 };
 
+/** The app's own word for the sandbox (runcmd.sandboxOutsideLabel; locale-parity.test.ts keeps the same table). */
+const SANDBOX: Record<string, string> = {
+  en: "sandbox", zh: "沙盒", ja: "サンドボックス", es: "entorno aislado", de: "Sandbox", fr: "bac à sable",
+};
+
 afterEach(async () => { cleanup(); await i18n.changeLanguage("en"); });
 
 describe("actual sidebar service status in six languages", () => {
   it.each(SUPPORTED_LANGUAGES)("has explicit execution posture labels in %s", async language => {
     await i18n.changeLanguage(language);
-    for (const key of ["executionOptions", "readOnlyAutomatic", "confirmCommands"]) {
+    for (const key of ["executionOptions", "readOnlyAutomatic", "confirmCommands", "harmlessRunUnasked"]) {
       expect(String(i18n.t(`workspace.${key}`))).not.toBe(`workspace.${key}`);
     }
     expect(i18n.t('workspace.confirmCommands')).not.toBe(i18n.t('workspace.readOnlyAutomatic'));
+    // v0.1.63 (#398 re-check, F5): the chat's line under "ask only for risky" is its own, not "read-only", and
+    // says the commands run in the sandbox, in the app's own word for it.
+    const line = String(i18n.t('workspace.harmlessRunUnasked'));
+    expect(line).not.toBe(String(i18n.t('workspace.readOnlyAutomatic')));
+    expect(line).toContain(SANDBOX[language]);
   });
   // 0.1.50 (user ruling): a permanent "Online" said nothing. Online shows no status
   // at all; offline and connecting show on the Activity row, in every language.

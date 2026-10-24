@@ -45,9 +45,10 @@ class StartBackgroundWorkExecutor:
     key = "start_background_work"
 
     async def execute(self, args: dict) -> dict:
-        from server.services import background_jobs
+        from server.services import background_jobs, permissions
         conversation_id = _conversation_id()
-        if conversation_id is None or background_jobs.inside_job():
+        # S1 (R7): never from a scheduled run, which binds no card surface (the tool is not offered there).
+        if conversation_id is None or background_jobs.inside_job() or permissions.current_asker() is None:
             return {"ok": False, "error_code": "background_unavailable"}
         goal, criteria = (args or {}).get("goal"), (args or {}).get("criteria") or []
         if not isinstance(goal, str) or not goal.strip() or not isinstance(criteria, list):

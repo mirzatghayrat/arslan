@@ -69,13 +69,20 @@ def _request_text(body: dict) -> str:
     return content if isinstance(content, str) else "".join(b.get("text", "") for b in content)
 
 
+async def _chat_card(command, argv, **kw):
+    """A chat turn's card callback (the window's): its presence is what makes this a turn with someone to ask, so it
+    carries no scheduled-run note (v0.1.63). No card is shown in these tests."""
+    raise AssertionError("no card in this test")
+
+
 async def test_system_and_tools_are_the_same_bytes_from_turn_to_turn(maker, monkeypatch):  # noqa: F811
     sent = _claude(monkeypatch)
     _vary(monkeypatch, facts="Known facts: likes tea", now="\n\nCurrent date: 2026-10-20 08:00 UTC (Tuesday).")
-    await arslan.handle_user_message("main", "Which book should I read next after this one?", lambda e: None)
+    await arslan.handle_user_message("main", "Which book should I read next after this one?", lambda e: None,
+                                     confirm_command=_chat_card)
     await settle_after_turn()
     _vary(monkeypatch, facts="Known facts: likes coffee", now="\n\nCurrent date: 2026-12-31 23:00 UTC (Thursday).")
-    await arslan.handle_user_message("main", "下一本读什么好?", lambda e: None)
+    await arslan.handle_user_message("main", "下一本读什么好?", lambda e: None, confirm_command=_chat_card)
     await settle_after_turn()
     first, second = sent
     assert json.dumps(first["system"]) == json.dumps(second["system"])

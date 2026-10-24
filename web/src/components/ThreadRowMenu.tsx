@@ -1,7 +1,6 @@
 // ThreadRowMenu — the per-conversation "⋯" overflow menu shown on each
 // sidebar thread row. Portalled and dismissable via the shared primitives, with
-// three actions:
-//   · Distill  — harvest this conversation's spawn chats into memory
+// two actions (plus moving it into or out of a project):
 //   · Archive  — hide it into the collapsible "Archived" section (client-side)
 //   · Delete   — opens an inline confirmation first, then removes it
 // In the archived variant, "Archive" is swapped for "Unarchive".
@@ -13,14 +12,13 @@ import { useTranslation } from "react-i18next";
 
 import { useDismissable } from "../hooks/useDismissable";
 import AnchoredPortal from "./AnchoredPortal";
-import { MoreHorizontal, Wand2, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder } from "lucide-react";
+import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder } from "lucide-react";
 import { confirmSheet } from "./kit";
 
 interface ThreadRowMenuProps {
   threadId: string;
   /** When true, the menu offers "Unarchive" instead of "Archive". */
   archived?: boolean;
-  onDistill: (id: string) => void;
   onArchive: (id: string) => void;
   onUnarchive?: (id: string) => void;
   onDelete: (id: string) => void;
@@ -33,7 +31,6 @@ interface ThreadRowMenuProps {
 export default function ThreadRowMenu({
   threadId,
   archived = false,
-  onDistill,
   onArchive,
   onUnarchive,
   onDelete,
@@ -112,19 +109,6 @@ export default function ThreadRowMenu({
                     <span>{t("sidebar.moveToProject")}</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={itemClass}
-                  onClick={() => {
-                    onDistill(threadId);
-                    close();
-                  }}
-                >
-                  <Wand2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                  <span>{t("sidebar.distill")}</span>
-                </button>
-
                 {archived ? (
                   <button
                     type="button"

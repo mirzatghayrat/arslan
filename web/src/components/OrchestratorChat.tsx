@@ -111,7 +111,7 @@ export default function OrchestratorChat({
   onSelectModel,
   conversationId,
   shellEnabled = false,
-  shellPolicy = 'ask_risky',
+  shellPolicy = 'ask_all',
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -186,6 +186,7 @@ export default function OrchestratorChat({
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
   const lastStepAt = useArslanStore((s) => s.lastStepAt);
   const queued = useArslanStore((s) => s.queued);
+  const inserted = useArslanStore((s) => s.inserted);
   // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
   // never message text), tick checkStall() so a turn whose frames stop arriving
   // for >90s renders a static 「已中断」 instead of an infinite pulse. Any new
@@ -965,6 +966,11 @@ export default function OrchestratorChat({
           <p className="pl-10 text-[11px] text-muted-foreground select-none" data-testid="queued-notice">
             {t('working.queued')}</p>
         )}
+        {/* 0.1.63 K9b: …or it was added to the reply that is running, which reads it at its next step. */}
+        {inserted && !queued && (
+          <p className="pl-10 text-[11px] text-muted-foreground select-none" data-testid="inserted-notice">
+            {t('working.inserted')}</p>
+        )}
 
       </div>
 
@@ -1032,11 +1038,13 @@ export default function OrchestratorChat({
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
           {/* The command-confirmation control lives in Settings → Advanced. Only the
-              non-default posture shows here, as one line. 0.1.48 flipped the default to
-              "ask only for risky commands", so the line now appears for "ask for every one". */}
-          {shellEnabled && shellPolicy === 'ask_all' && (
+              non-default posture shows here, as one line. v0.1.63 made "ask before every
+              command" the default, so the line now marks the looser "ask only for risky". */}
+          {shellEnabled && shellPolicy === 'ask_risky' && (
             <p className="max-w-4xl mx-auto mt-1.5 text-[11px] text-muted-foreground" data-testid="execution-options">
-              {t('workspace.confirmCommands')}
+              {/* Not "read-only": under ask_risky, edits, installs and builds the policy rates harmless run in
+                  the sandbox unasked too (re-check of the ask-every-command PR, F5). */}
+              {t('workspace.harmlessRunUnasked')}
             </p>
           )}
         </footer>

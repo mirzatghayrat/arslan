@@ -14,19 +14,25 @@ os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
 # server in the test's database). Supervisor tests drive their own Supervisor instances.
 os.environ["ARSLAN_MCP_SUPERVISOR"] = "0"
 
-import shutil
-from pathlib import Path
+# HOME is this session's own throwaway dir (tests/real_data_dir_guard.py), so no test reaches
+# the user's ~/Arslan through Path.home(). First, before any other import: the guard reads the
+# real home when it is imported, and nothing may resolve Path.home() before the pin.
+from tests import real_data_dir_guard
 
-import pytest
+_SUITE_HOME = real_data_dir_guard.pin_suite_home()
 
-from arslan.models import (
+import shutil  # noqa: E402 — after the HOME pin, on purpose
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+from arslan.models import (  # noqa: E402
     DomainInfo,
     PersonaSpec,
     RuntimeSpec,
     SpawnRequirements,
     ToolSpec,
 )
-from tests import real_data_dir_guard
 
 # No test may write into the user's real data dir (tests/real_data_dir_guard.py).
 # Pinned here for the same reason as the secret file above: before any server.*
@@ -34,6 +40,7 @@ from tests import real_data_dir_guard
 # made while test modules are collected are caught as well.
 _SUITE_DATA_DIR = real_data_dir_guard.pin_suite_data_dir()
 _REAL_DATA_DIR_AT_START = real_data_dir_guard.snapshot()
+_REAL_WORKSPACE_AT_START = real_data_dir_guard.workspace_snapshot()
 
 
 @pytest.fixture
@@ -389,6 +396,33 @@ def _real_data_dir_untouched():
             "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
             pytrace=False,
         )
+
+
+def pytest_unconfigure(config):
+    # A hook, not a session fixture: the xdist controller, which made the session home, runs
+    # no tests and so no fixtures.
+    real_data_dir_guard.remove_suite_home()
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Report, never fail, what appeared in the user's real ~/Arslan during the run.
+
+    HOME was this session's own dir throughout, so no test reached that folder through it;
+    what appears there is the running app's (an agent task, its databases' -wal/-shm) or
+    another process's. Failing on it (#380) failed every local run while the app was open."""
+    changed = real_data_dir_guard.created(_REAL_WORKSPACE_AT_START,
+                                          real_data_dir_guard.workspace_snapshot())
+    if not changed:
+        return
+    root = real_data_dir_guard.REAL_WORKSPACE_DIR
+    terminalreporter.write_sep("-", "the user's Arslan folder changed during this run (not a test)")
+    terminalreporter.write_line(
+        f"{len(changed)} new entr{'y' if len(changed) == 1 else 'ies'} in {root}. Tests ran with "
+        f"HOME at {_SUITE_HOME}, so this is the running app or another process. Reported only:")
+    for rel in changed[:20]:
+        terminalreporter.write_line(f"  {root / rel}")
+    if len(changed) > 20:
+        terminalreporter.write_line(f"  … and {len(changed) - 20} more")
 
 
 @pytest.fixture(autouse=True)

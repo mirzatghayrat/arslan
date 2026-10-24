@@ -1,5 +1,4 @@
 from arslan.core.chunking import chunk_text
-from server.services.persona_seed_service import _fts_query
 
 
 def test_paragraph_boundary_preferred():
@@ -54,9 +53,3 @@ def test_coverage_no_text_lost():
         prev_end = start + len(c)                             # no whitespace => strip is a no-op
         search_from = max(0, prev_end - overlap)              # next chunk's earliest start
     assert prev_end == len(text)                             # contiguous coverage to end-of-text
-
-
-def test_persona_seed_cjk_run_tokens():
-    q = _fts_query("猫粮政策")
-    assert '"猫粮政策"' in q                                 # 整串词元
-    assert '"猫" OR' not in q                                # 不再逐字

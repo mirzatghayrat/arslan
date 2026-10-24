@@ -1,19 +1,13 @@
-"""Playwright as a preset connector: hand-graded, contained, honestly described.
+"""Playwright's tools are hand-graded.
 
-Three things the brief made non-negotiable, and each is here because the
-obvious implementation gets it wrong:
+0.1.63 C9b removed Playwright as a preset connector (and with it the checks on
+its launch arguments and description). What stays is the grading of an
+installed Playwright server's tools.
 
-  1. TIERS ARE ASSIGNED BY HAND. The heuristic is a verb list, and not one of
-     snapshot / click / navigate / type is in it — so every playwright tool,
-     including the purely observational ones, comes back "orchestrator" and the
-     toolset has no safe tool to assign. Verified below rather than asserted.
-
-  2. CONTAINMENT IS IN THE ARGS. A note telling the user to be careful is not
-     containment. --isolated means the browser starts with no cookies and none
-     of their signed-in accounts, every time, whether or not anyone remembers.
-
-  3. THE DESCRIPTION DOES NOT OVERSELL. Action tools start restricted, so the
-     connector must not read as though it can drive anything out of the box.
+TIERS ARE ASSIGNED BY HAND. The heuristic is a verb list, and not one of
+snapshot / click / navigate / type is in it — so every playwright tool,
+including the purely observational ones, comes back "orchestrator" and the
+toolset has no safe tool to assign. Verified below rather than asserted.
 """
 from __future__ import annotations
 
@@ -30,22 +24,6 @@ class _Server:
 
 PLAYWRIGHT = _Server(["-y", "@playwright/mcp@latest", "--isolated"])
 MEMORY = _Server(["-y", "@modelcontextprotocol/server-memory"])
-
-
-def test_the_preset_exists_and_is_one_click():
-    c = catalog.find_connector("playwright")
-    assert c is not None, "playwright is not in the preset catalog"
-    assert c["one_click"] is True, "playwright needs no credentials; it must be one-click"
-
-
-def test_containment_is_in_the_launch_arguments():
-    """Not in a note, not in documentation — in the command that runs."""
-    c = catalog.find_connector("playwright")
-    assert "--isolated" in c["args"], (
-        "without --isolated the browser reuses the default profile, which means "
-        "the user's logged-in sessions. That is a different product decision "
-        "than the one this preset was approved for.")
-    assert c.get("containment"), "the containment choice must be stated to the user"
 
 
 # ---------------------------------------------------------------------------
@@ -105,12 +83,3 @@ def test_at_least_one_safe_tool_exists_so_a_spawn_can_be_assigned():
     safe = [t for t, tier in catalog.PLAYWRIGHT_TOOL_TIERS.items() if tier == "safe"]
     assert safe, "no safe tool — the toolset could not be assigned to any spawn"
 
-
-def test_the_description_does_not_promise_unrestricted_control():
-    """Action tools start restricted, so the copy must not read as though the
-    connector arrives able to drive anything."""
-    c = catalog.find_connector("playwright")
-    text = c["description"].lower()
-    assert "once you allow" in text or "you allow" in text, (
-        "the description must say that acting on the page is not on by default")
-    assert "no logged-in accounts" in text or "no logged-in" in text

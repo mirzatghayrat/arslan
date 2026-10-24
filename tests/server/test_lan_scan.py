@@ -190,3 +190,32 @@ def test_net_pin_still_refuses_private_addresses():
     existing. If someone 'fixes' the conflict by widening net_pin, this fails."""
     from server.registry import net_pin
     assert net_pin._is_private_host("http://192.168.1.8/") is True
+
+
+async def test_a_probe_stopped_as_it_connects_closes_that_connection(monkeypatch):
+    """Review F3 of #384: the stop wins (arslan.aio.within), and the connection that completed in that same
+    moment is closed (close_connection), never dropped open."""
+    import asyncio
+    original = asyncio.open_connection
+    server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    opened = []
+
+    async def connecting(host, port_):
+        pair = await original("127.0.0.1", port)
+        opened.append(pair[1])
+        probe.cancel()                                # the stop, as the connection completes
+        return pair
+    monkeypatch.setattr(lan_scan.asyncio, "open_connection", connecting)
+    probe = asyncio.create_task(lan_scan._probe("192.168.1.20", 22, 5))
+    try:
+        await probe
+    except asyncio.CancelledError:
+        pass
+    for _ in range(50):
+        if opened and opened[0].is_closing():
+            break
+        await asyncio.sleep(0.01)
+    assert opened and opened[0].is_closing()
+    server.close()
+    await server.wait_closed()

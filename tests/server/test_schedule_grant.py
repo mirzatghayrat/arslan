@@ -45,7 +45,7 @@ async def test_creating_when_declined_is_refused(monkeypatch):
     log = []
     monkeypatch.setitem(tool_loop.EXECUTORS, "schedule_task", _Stub(log))
 
-    async def deny(name, when):
+    async def deny(name, when, prompt=""):
         return False
     r = await _dispatch("schedule_task", {"name": "n", "when": "every: 3600"}, grant=deny)
     assert r["ok"] is False and "declined" in r["error"].lower() and log == []
@@ -56,7 +56,7 @@ async def test_creating_when_granted_runs_and_shows_the_card_the_real_schedule(m
     monkeypatch.setitem(tool_loop.EXECUTORS, "schedule_task", _Stub(log))
     asked = []
 
-    async def allow(name, when):
+    async def allow(name, when, prompt=""):
         asked.append((name, when))
         return True
     r = await _dispatch("schedule_task",
@@ -73,7 +73,7 @@ async def test_seeing_and_undoing_are_never_gated(monkeypatch, key, args):
     """A user must always be able to find and cancel what was created."""
     monkeypatch.setitem(tool_loop.EXECUTORS, key, _Stub([]))
 
-    async def explode(name, when):
+    async def explode(name, when, prompt=""):
         raise AssertionError("listing/cancelling must not ask for permission")
     r = await _dispatch(key, args, grant=explode)
     assert r["ok"] is True
@@ -84,7 +84,7 @@ async def test_the_three_gates_stay_independent(monkeypatch):
     log = []
     monkeypatch.setitem(tool_loop.EXECUTORS, "write_file", _Stub(log))
 
-    async def allow_schedule(name, when):
+    async def allow_schedule(name, when, prompt=""):
         return True
 
     trace, convo = [], []

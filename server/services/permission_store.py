@@ -17,8 +17,8 @@ from server.db.models import ApprovalEvent, PermissionGrant, PermissionRule
 
 #: Ledger rows are kept this long (spec §A8).
 LEDGER_DAYS = 90
-#: The ledger rows of what could not be asked, as (decided_by, decision): the Inbox lists them,
-#: each with "Always allow" for next time (§A4, `refused_groups`).
+#: The ledger rows of what could not be asked, as (decided_by, decision): the Inbox lists them, an
+#: away one with "Always allow" for next time (§A4, `refused_groups`), a scheduled run's never (S1).
 #: - ("policy", "deny"): refused because the run had nobody to ask (a scheduled run);
 #: - ("away", "expired"): a card that never opened because the person is away — an earlier card
 #:   of the same job or chat turn went unanswered (0.1.61, F3). An expiry, never a denial: a
@@ -106,6 +106,22 @@ async def add_grant(db, conversation_id: str, task_id: str, kind: str, target: s
         PermissionGrant.kind == kind, PermissionGrant.target == target))).scalar_one()
 
 
+async def list_conversation_grants(db, kind: str | None = None) -> list[PermissionGrant]:
+    """Every "in this conversation" grant (task_id ""), newest first; of one kind when `kind` is given.
+    A task's grants end with it, so they are not listed."""
+    query = select(PermissionGrant).where(PermissionGrant.task_id == "")
+    if kind is not None:
+        query = query.where(PermissionGrant.kind == kind)
+    return list((await db.execute(query.order_by(PermissionGrant.id.desc()))).scalars().all())
+
+
+async def delete_conversation_grant(db, grant_id: int) -> bool:
+    """Take back one "in this conversation" grant. A task's grant is not one: it ends with its task."""
+    result = await db.execute(delete(PermissionGrant).where(
+        PermissionGrant.id == grant_id, PermissionGrant.task_id == ""))
+    return bool(result.rowcount)
+
+
 async def delete_task_grants(db, task_id: str) -> int:
     """Every grant for this one task (a turn or a job). A conversation grant (task_id "") is never
     one of them, so an empty id deletes nothing."""
@@ -150,12 +166,14 @@ async def refused_groups(db, since: datetime, *, limit: int = 500
                          ) -> list[tuple[ApprovalEvent, int, datetime]]:
     """Boundaries that could not be asked (`NOT_ASKED`) since `since`: a run with nobody to ask (a
     scheduled run), or a card that never opened while the person was away. One entry per (kind,
-    target): its latest row, how many times it was refused, and when first — newest first, at most
-    `limit` groups. The Inbox offers "Always allow" for next time (spec §A4)."""
+    target, who refused it): its latest row, how many times it was refused, and when first — newest
+    first, at most `limit` groups. The Inbox offers "Always allow" for next time over an away entry
+    (spec §A4); never over a scheduled run's, which no "Always" answers (S1, ⓪Plan's review: grouped
+    together, an away row's set would have been offered over both)."""
     groups = (await db.execute(
         select(func.max(ApprovalEvent.id), func.count(), func.min(ApprovalEvent.created_at))
         .where(_not_asked(), ApprovalEvent.created_at >= since)
-        .group_by(ApprovalEvent.kind, ApprovalEvent.target)
+        .group_by(ApprovalEvent.kind, ApprovalEvent.target, ApprovalEvent.decided_by)
         .order_by(func.max(ApprovalEvent.id).desc()).limit(limit))).all()
     rows = {row.id: row for row in (await db.execute(select(ApprovalEvent).where(
         ApprovalEvent.id.in_([latest for latest, _, _ in groups])))).scalars().all()}

@@ -5,7 +5,7 @@
 | Path | Filesystem | Network | Approval / recovery |
 | --- | --- | --- | --- |
 | Generated Python | Runtime read-only; per-call workspace read/write; staged references read-only | Denied by macOS Seatbelt | No unsandboxed retry; unsupported platforms refuse |
-| Confirmed shell command | Host filesystem permissions, **not** a filesystem jail | Denied or restricted through the credential proxy | Existing per-command confirmation |
+| Confirmed shell command | Host filesystem permissions, **not** a filesystem jail | Denied or restricted | Existing per-command confirmation |
 | Configured MCP server | Server's own process/environment, **not** covered by Python Seatbelt | Server-specific | Install/connect only trusted servers; existing capability grants |
 | Task recipe | Same per-tool boundaries as an ordinary spawn | Same per-tool boundaries | Explicit start, optional step approvals, explicit unfinished-step retry |
 
@@ -20,7 +20,8 @@ One run — a chat turn or a background job, with its nested and parallel dispat
 shares one budget (K4a, v0.1.63). Its soft limits are the work budget tier picked in
 Settings → Advanced (lean / standard / ample; standard by default): reaching one switches
 the run to wrap-up, and 1.5× the tier stops a run that cannot stop itself. The standard
-tier and its environment overrides, which apply to every tier:
+tier and its environment overrides, which apply to every tier (dev and bench runs only: the desktop
+app ignores them and runs on the tier chosen in Settings):
 
 | Environment override | Standard | Meaning |
 | --- | --- | --- |
@@ -80,8 +81,8 @@ python -m scripts.backup_data restore --archive /safe/path/arslan-backup.zip --n
 If configured separately, supply `--db-path` and/or `--spawns-dir` when creating
 the backup. The archive contains a SQLite backup snapshot (salt and ciphertext
 together) plus `artifacts`, `spawns`, `skill_scripts`, and `uploads`. It excludes
-access tokens, the external secret, rebuildable Python environments, shell
-workspace and shell-proxy CA. Preserve any custom workspace separately if needed.
+access tokens, the external secret, rebuildable Python environments and the
+shell workspace. Preserve any custom workspace separately if needed.
 
 Restore verifies hashes, member paths, size limits and SQLite integrity before
 installing a new directory. It does not overwrite or merge existing data. Only

@@ -8,7 +8,7 @@ from server.auth import require_auth
 from server.db.models import SkillCandidate
 from pydantic import BaseModel
 
-from server.schemas import SkillCandidateOut, SkillEvaluateIn, SkillForgeIn
+from server.schemas import SkillCandidateOut, SkillForgeIn
 from server.services import curator, skill_forge
 
 
@@ -43,14 +43,6 @@ async def forge_skill(body: SkillForgeIn) -> SkillCandidateOut:
 async def list_skill_candidates(status: str | None = None) -> list[SkillCandidateOut]:
     cands = await skill_forge.list_candidates(status)
     return [_to_out(c) for c in cands]
-
-
-@router.post("/skills/candidates/{candidate_id}/evaluate")
-async def evaluate_skill_candidate(candidate_id: int, body: SkillEvaluateIn) -> dict:
-    """Paired-ReplayGate eval: observe -> evaluate (skill-ON vs skill-OFF) -> proposed.
-    Informs the human confirm. `min_samples` is gone (E8: the shared holdout gate replaced
-    the private observation gate); an extra `min_samples` in the body is harmlessly ignored."""
-    return await skill_forge.evaluate_candidate(candidate_id, body.target_spawn_id)
 
 
 @router.post("/skills/candidates/{candidate_id}/promote")

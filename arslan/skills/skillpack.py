@@ -1,9 +1,9 @@
 """The SKILL.md format: YAML frontmatter plus a Markdown body that carries ``## Trigger`` and
 ``## Decision Rules`` (the legacy Chinese decision heading is accepted too).
 
-C9 (v0.1.63): moved here from ``arslan/spawn/skillpack.py``, which C7 deletes with the rest of
-``arslan/spawn``. The seeder and skill_suggest read skills through it. The directory-level
-validator that only the expert spawns use stayed behind in ``arslan/spawn/skillpack.py``.
+C9 (v0.1.63): moved here from ``arslan/spawn/skillpack.py``. The seeder and skill_suggest read
+skills through it. The directory-level validator that only expert spawns used went with the rest
+of ``arslan/spawn`` in C7 (v0.1.63).
 """
 from __future__ import annotations
 

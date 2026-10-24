@@ -11,14 +11,17 @@ function responses carry the result itself, not the old "TOOL RESULT for X" text
 The legacy text rendering (trajectory.to_legacy) stays as the ARSLAN_TOOL_PROTOCOL=legacy
 rollback and the per-turn fallback after a protocol rejection; both go in v0.1.64, once
 v0.1.63 has run 7 days with no protocol-class 400 from Gemini in M2 and M1 holds.
-Streaming with tools remains explicitly unsupported; run_native uses chat().
+0.1.63 K8c: on Google's own host, chat(stream=True) reads the reply as SSE (gemini_stream) and hands
+the answer's text on as it arrives; the reply it returns is the same. chat_stream (text only, Ruling ④B)
+still refuses tools.
 """
 from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -61,6 +64,9 @@ def _parts(content: Any) -> list[dict[str, Any]]:
 
 # 0.1.62 F3: a position in the one functionDeclarations list (Gemini's wording not checked).
 _DECLARATION_INDEX = re.compile(r"function_?declarations\[(\d+)\]", re.I)
+
+
+_GOOGLE_HOST = "generativelanguage.googleapis.com"
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -107,6 +113,11 @@ class GeminiProvider(BaseLLMProvider):
 
     def supports_native_trajectory(self) -> bool:
         return True              # 0.1.63 K1
+
+    def streams_tool_calls(self) -> bool:
+        """0.1.63 K8c: Gemini on Google's own host streams its replies, function calls included, so the
+        answer is shown while it is written; any other base URL answers whole (⓪Plan's Q1)."""
+        return (urlparse(self.base_url).hostname or "").lower() == _GOOGLE_HOST
 
     APPENDS_STATUS = True        # the step status is its own part after the results, kept (K1)
 
@@ -192,7 +203,11 @@ class GeminiProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         tool_choice: str | None = None,
+        stream: bool = False,
+        on_text: Callable[[str], None] | None = None,
     ) -> LLMResponse:
+        """`stream` (K8c, `streams_tool_calls` endpoints): read as SSE and assembled into the same reply
+        (gemini_stream); `on_text` gets the answer's text as it arrives."""
         url = f"{self.base_url}/models/{self.model}:generateContent"
         # Use a generous read timeout — Gemini thinking models (e.g. 2.5 Pro) can
         # hold the connection for 120 s+ before returning the first token.
@@ -205,9 +220,39 @@ class GeminiProvider(BaseLLMProvider):
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
         from arslan.execution_checkpoint import save
         await save("before_model")
-        data = await param_heal.send(self.endpoint_fingerprint(), payload,
-                                     lambda p: self._post(url, p, timeout))
+        # A resend (param_heal) follows an error status, raised before any body is read: no text first.
+        if stream:
+            streamed = f"{self.base_url}/models/{self.model}:streamGenerateContent?alt=sse"
+            data = await param_heal.send(self.endpoint_fingerprint(), payload,
+                                         lambda p: self._chat_streamed(streamed, p, on_text))
+        else:
+            data = await param_heal.send(self.endpoint_fingerprint(), payload,
+                                         lambda p: self._post(url, p, timeout))
         return self._parse_response(data)
+
+    async def _chat_streamed(self, url: str, payload: dict[str, Any],
+                             on_text: Callable[[str], None] | None = None) -> dict[str, Any]:
+        """K8c: one streamed send, assembled into the reply a non-streamed send returns."""
+        from arslan.llm import gemini_stream
+        evidence = await request_evidence.begin(payload)
+        async with self._client() as client:
+            # The idle bound governs reads; httpx's own read timeout only backs it up.
+            async with client.stream("POST", url, json=payload, headers=self._headers(),
+                                     timeout=httpx.Timeout(connect=10.0, read=gemini_stream.IDLE_S + 60,
+                                                           write=10.0, pool=5.0)) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as _exc:
+                    raise httpx.HTTPStatusError(
+                        provider_errors.with_body(_exc),
+                        request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
+                if "text/event-stream" not in response.headers.get("content-type", ""):
+                    await response.aread()
+                    return response.json()
+                return await gemini_stream.assemble(response, on_text)
 
     async def _post(self, url: str, payload: dict[str, Any], timeout: httpx.Timeout) -> dict[str, Any]:
         """One non-streamed send; param_heal may resend a changed payload."""

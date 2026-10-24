@@ -1,7 +1,7 @@
 /** 0.1.61 §A4 (PR 2b Task 3, fix round 1, R4): every pending card stays answerable. The store keeps each kind's cards as a
  *  list keyed by call_id and the slot pages through all of them: a second card of a kind (a window's own run-command card and
  *  a job's, say) waits behind the first and never replaces it; an answer, card_resolved and expiry remove a card by its id
- *  only; each card runs out on its own clock. Enroll-node and connect-MCP cards are cards of the same slot (R5). */
+ *  only; each card runs out on its own clock. Enroll-node cards are cards of the same slot (R5). */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
@@ -30,7 +30,7 @@ type Make = (id: string, extra?: Record<string, unknown>) => Record<string, unkn
 interface Kind {
   name: string;
   /** the store's list for this kind, the card's test id, the frame for a card with this call id */
-  list: "pendingCommands" | "pendingWorkspaceWrites" | "pendingSchedules" | "pendingActions" | "pendingCapabilities" | "pendingEnrollNodes" | "pendingConnectMcps";
+  list: "pendingCommands" | "pendingWorkspaceWrites" | "pendingSchedules" | "pendingActions" | "pendingCapabilities" | "pendingEnrollNodes";
   card: string;
   make: Make;
   /** answers the card shown (a yes, or the one No that needs no server), and the frame that goes out for it (none: nothing is sent) */
@@ -58,13 +58,8 @@ const KINDS: Kind[] = [
   { name: "an enroll-node card", list: "pendingEnrollNodes", card: "enroll-node-card",
     make: (id, x) => ({ type: "propose_enroll_node", call_id: id, name: `mini-${id}`, host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"], ...x }),
     answer: click("enroll-cancel"), sent: null },
-  { name: "a connect-MCP card", list: "pendingConnectMcps", card: "connect-mcp-card",
-    make: (id, x) => ({ type: "propose_connect_mcp", call_id: id, key: "memory", label: `Memory ${id}`, transport: "stdio", command: "npx", argv: [],
-      url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null, ...x }),
-    answer: click("connect-mcp-cancel"), sent: null },
 ];
 const ids = (k: Kind) => (state()[k.list] as { callId: string }[]).map((c) => c.callId);
-const CONNECT = KINDS.find((k) => k.list === "pendingConnectMcps")!.make;
 
 describe.each(KINDS)("two $name cards", (k) => {
   it("wait together: the second never replaces the first, and the slot pages through both", () => {
@@ -259,92 +254,9 @@ describe("the cards of every kind, together", () => {
     for (const k of KINDS) expect(ids(k), k.name).toEqual([]);
   });
 
-  it("a proposal to connect a server waits behind every ask that needs an answer, however early it came", () => {
-    clock();
-    frame(KINDS[6].make("m1"));                                                       // the connect proposal arrives first ...
-    advance(1_000);
-    frame(KINDS[0].make("c1"));                                                       // ... then a command
+  it("an enroll-node card counts down to the 30 minutes it is held for", () => {
     render(<AskSlot send={vi.fn()} />);
-    expect(screen.getByTestId("runcmd-card")).toBeInTheDocument();
-    settle();
-    fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(screen.getByTestId("connect-mcp-card")).toBeInTheDocument();
-  });
-
-  it.each([["an enroll-node card", 5], ["a connect-MCP card", 6]])("%s counts down to the 30 minutes it is held for", (_name, at) => {
-    render(<AskSlot send={vi.fn()} />);
-    frame(KINDS[at].make("a"));
+    frame(KINDS[5].make("a"));
     expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^(30:00|29:\d\d)$/);
-  });
-});
-
-describe("a connect-MCP card closes when its follow-up arrives", () => {
-  // The follow-up is fanned out to every window on the conversation. It names the proposal's card (the server echoes the confirm's call_id), so a
-  // window that never connected anything closes its copy too (F3). A follow-up that names no card (an older server) names only the server: the slot
-  // records which card connected which server, and that card closes.
-  const FOLLOWUP = { type: "mcp_connect_followup", tool_count: 4, safe_count: 3, restricted_count: 1, assignable: true };
-
-  it("the follow-up names the card: it closes in a window that never connected it, and the other card stays in the slot", () => {
-    render(<AskSlot send={vi.fn()} />);
-    frame(CONNECT("m1"));
-    frame(CONNECT("m2"));
-    frame({ ...FOLLOWUP, server_id: 7, call_id: "m1" });                                    // nothing was marked in this window
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m2"]);
-    expect(screen.queryByTestId("ask-queue")).toBeNull();                                   // one left: no pager
-    expect(screen.getByTestId("connect-mcp-card")).toHaveTextContent("Memory m2");
-    expect(state().items.at(-1)?.content).toMatch(/3 ready/);                               // and the honest note is still added
-  });
-
-  it("the window that connected it closes the same card, by the same id", () => {
-    frame(CONNECT("m1"));
-    frame(CONNECT("m2"));
-    act(() => { state().markConnectApplied("m2", 7); });
-    frame({ ...FOLLOWUP, server_id: 7, call_id: "m2" });
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
-  });
-
-  it("it closes the card it names and only that one, whichever card was marked with the server", () => {
-    frame(CONNECT("m1"));
-    frame(CONNECT("m2"));
-    act(() => { state().markConnectApplied("m1", 7); });                                    // m1 has its own follow-up coming
-    frame({ ...FOLLOWUP, server_id: 7, call_id: "m2" });
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
-  });
-
-  it("a proposal sent again after its card was marked drops the mark, and the follow-up's id still closes the card", () => {
-    frame(CONNECT("m1"));
-    act(() => { state().markConnectApplied("m1", 7); });
-    frame(CONNECT("m1"));                                                                   // a replay: the same card, without the mark
-    expect(state().pendingConnectMcps[0]).not.toHaveProperty("appliedServerId");
-    frame({ ...FOLLOWUP, server_id: 7, call_id: "m1" });
-    expect(state().pendingConnectMcps).toEqual([]);
-  });
-
-  it("a follow-up that names no card closes the card that connected that server, not the other cards", () => {
-    frame(CONNECT("m1"));
-    frame(CONNECT("m2"));
-    act(() => { state().markConnectApplied("m2", 7); });
-    frame({ ...FOLLOWUP, server_id: 7 });
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
-    expect(state().items.at(-1)?.content).toMatch(/3 ready/);                                // and the honest note is still added
-  });
-
-  it("a follow-up for a server no card connected, naming no card, closes nothing", () => {
-    frame(CONNECT("m1"));
-    frame({ ...FOLLOWUP, server_id: 9 });
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
-  });
-
-  it("a follow-up that names a card this window does not hold closes nothing", () => {
-    frame(CONNECT("m1"));
-    frame({ ...FOLLOWUP, server_id: 9, call_id: "zzz" });
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
-  });
-
-  it("marking a card that is not pending marks nothing", () => {
-    frame(CONNECT("m1"));
-    act(() => { state().markConnectApplied("nope", 7); });
-    expect(state().pendingConnectMcps).toHaveLength(1);
-    expect(state().pendingConnectMcps[0]).not.toHaveProperty("appliedServerId");
   });
 });

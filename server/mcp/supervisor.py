@@ -34,6 +34,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,7 @@ from server.db import session as db_session
 from server.db.models import MCPServer, Tool
 from server.mcp import discovery, oauth_flow, spawn_env
 from server.mcp import session as mcp_session
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,10 @@ def ready_now(server_id: int, state: str | None) -> bool:
 
 
 def switched_on() -> bool:
-    """False when ARSLAN_MCP_SUPERVISOR is "0" (the test suite); on by default."""
+    """False when ARSLAN_MCP_SUPERVISOR is "0" (the test suite); on by default, and always in the desktop
+    app's frozen server, whatever its environment says (0.1.63, after #364)."""
+    if getattr(sys, "frozen", False):
+        return True
     return os.environ.get(SWITCH_ENV, "1") != "0"
 
 
@@ -445,7 +450,7 @@ class Supervisor:
             except asyncio.CancelledError:
                 current = asyncio.current_task()
                 if current is not None and current.cancelling():
-                    raise                         # the caller's own cancel (wait_for, shutdown)
+                    raise                         # the caller's own cancel (a limit, a stop, shutdown)
                 # The attempt was replaced by a fresh one (a drop, new folders): answer with the
                 # replacement's result. Switch-off, delete and give-up take the plan out of
                 # _inflight first, so they find nothing to follow and say "cancelled".
@@ -662,8 +667,8 @@ class Supervisor:
             current = asyncio.current_task()
             if current is None or current.cancelling():
                 # A real cancel (switch-off, delete, a new plan, shutdown) is never a cause — also
-                # when CPython 3.11's wait_for swallowed it (cancelled in the very iteration the
-                # open failed) and raised the open's own error in its place.
+                # when what ran under it turned the cancel into an error of its own (code awaited
+                # directly can; arslan.aio.within always ends in the stop).
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 raise asyncio.CancelledError() from exc
@@ -727,12 +732,12 @@ class Supervisor:
         self._notes[sid] = (f"downloading {'Node' if runtime == 'node' else 'uv'} {pin.version} "
                             f"({pin.size_mb} MB)")
         try:
-            await asyncio.wait_for(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
+            await within(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
             return True
         except Exception as exc:  # noqa: BLE001 — RuntimeFailure, TimeoutError, anything (ruling 8)
             current = asyncio.current_task()
             if current is not None and current.cancelling():
-                raise asyncio.CancelledError() from exc   # a cancel wait_for swallowed (3.11)
+                raise asyncio.CancelledError() from exc   # a stop turned into an error under it
             self._fetch_error[sid] = getattr(exc, "code", None) or type(exc).__name__
             logger.warning("mcp %s: could not fetch %s: %s", sid, runtime, exc)
             return False
@@ -741,7 +746,7 @@ class Supervisor:
         from server.services import capability_runtime
 
         try:
-            await asyncio.wait_for(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
+            await within(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
         except Exception as exc:  # noqa: BLE001 — next time, from the user's PATH again
             logger.info("mcp: background fetch of %s failed: %s", runtime, exc)
 

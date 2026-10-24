@@ -10,10 +10,10 @@ the shape that made it hard:
   runs.py             six sentences ASSEMBLED FROM NUMBERS. Keying them means
                       shipping the numbers separately, so the interface can
                       compose the sentence in the reader's language.
-  conversations.py    one composed sentence that is PERSISTED into
-                      ConversationEvent.summary. Rows already written keep their
-                      Chinese forever — the fix can only change what is written
-                      from now on, and the UI must render both shapes.
+  conversations.py    one composed sentence that was PERSISTED into
+                      ConversationEvent.summary by manual distill. That route
+                      went in C8-5 (v0.1.63), so nothing here writes one now;
+                      the module stays out of the allowlist.
   scheduled_tasks.py  API errors that reach the user through HTTPException
                       detail, which nothing translates. FastAPI allows a dict
                       there, and the client already parses structured details
@@ -79,29 +79,6 @@ async def test_every_anomaly_rule_emits_a_key(monkeypatch):
     for a in out:
         assert a.title_key, f"{a.kind} has no title_key"
         assert not CJK.search(a.title_key)
-
-
-# ---------------------------------------------------------------------------
-# conversations.py — structure in ref, and the persistence boundary
-# ---------------------------------------------------------------------------
-
-def test_the_distill_summary_is_a_key_with_counts_beside_it():
-    from server.api.conversations import _distill_event
-
-    key, ref = _distill_event(distilled=3, failed=0)
-    assert not CJK.search(key)
-    assert ref["distilled"] == 3 and ref["failed"] == 0
-
-
-def test_the_failed_case_is_distinguishable_from_the_clean_one():
-    """Two different sentences before; two different keys now. Collapsing them
-    into one key would lose the distinction the original wording carried."""
-    from server.api.conversations import _distill_event
-
-    clean_key, _ = _distill_event(distilled=3, failed=0)
-    failed_key, ref = _distill_event(distilled=3, failed=2)
-    assert clean_key != failed_key
-    assert ref["failed"] == 2
 
 
 # ---------------------------------------------------------------------------

@@ -2,11 +2,10 @@
  * ThreadRowMenu — the per-conversation "⋯" overflow menu in the sidebar.
  *
  * Coverage:
- *  1. Opening "⋯" reveals the three actions (distill / archive / delete).
+ *  1. Opening "⋯" reveals archive / delete. Distill is gone (C8-5, v0.1.63).
  *  2. Clicking Archive calls onArchive(threadId).
  *  3. Clicking Delete shows a confirmation; confirming calls onDelete(threadId);
  *     canceling does not.
- *  4. Clicking Distill calls onDistill(threadId).
  *
  * i18n is mocked to echo keys so assertions are locale-independent.
  */
@@ -23,7 +22,6 @@ vi.mock("react-i18next", () => ({
 function setup(overrides: Partial<React.ComponentProps<typeof ThreadRowMenu>> = {}) {
   const props = {
     threadId: "t1",
-    onDistill: vi.fn(),
     onArchive: vi.fn(),
     onDelete: vi.fn(),
     ...overrides,
@@ -33,14 +31,15 @@ function setup(overrides: Partial<React.ComponentProps<typeof ThreadRowMenu>> = 
 }
 
 describe("ThreadRowMenu", () => {
-  it("opening ⋯ reveals distill / archive / delete", () => {
+  it("opening ⋯ reveals archive / delete, and no Distill", () => {
     setup();
     // closed initially
-    expect(screen.queryByText("sidebar.distill")).toBeNull();
+    expect(screen.queryByText("sidebar.archive")).toBeNull();
     fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
-    expect(screen.getByText("sidebar.distill")).toBeTruthy();
     expect(screen.getByText("sidebar.archive")).toBeTruthy();
     expect(screen.getByText("sidebar.delete")).toBeTruthy();
+    // Manual distill was removed with its route (C8-5): the menu no longer offers it.
+    expect(screen.queryByText("sidebar.distill")).toBeNull();
   });
 
   it("clicking Archive calls onArchive(threadId)", () => {
@@ -48,13 +47,6 @@ describe("ThreadRowMenu", () => {
     fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
     fireEvent.click(screen.getByText("sidebar.archive"));
     expect(onArchive).toHaveBeenCalledWith("t1");
-  });
-
-  it("clicking Distill calls onDistill(threadId)", () => {
-    const { onDistill } = setup();
-    fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
-    fireEvent.click(screen.getByText("sidebar.distill"));
-    expect(onDistill).toHaveBeenCalledWith("t1");
   });
 
   it("Delete requires a confirmation before calling onDelete", async () => {

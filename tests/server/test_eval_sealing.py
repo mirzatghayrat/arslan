@@ -51,31 +51,24 @@
 # empty string as all non-hermetic.
 import json
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
 from server.db.models import Base
 from server.services import replay_safety
-from server.services.replay_run import REPLAY_CONVERSATION_ID
 from server.orchestrator import tool_loop
+
+# The replay sentinel replay_safety still seals (replay_run, which defined it, went in C7b-2).
+REPLAY_CONVERSATION_ID = "evolution-replay"
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def _isolated_db(tmp_path, monkeypatch):
-    """Autouse, file-scoped DB isolation.
-
-    The new test_dispatch_* tests (below) call dispatcher.dispatch() for a real
-    conversation_id with no other DB setup; on the live branch that reaches
-    memory.user_turn_count(), which reads server.db.session.AsyncSessionLocal
-    directly (bypassing FastAPI's dependency injection some other tests override).
-    Without this, those tests would hit whichever real DB ARSLAN_DATA_DIR happens
-    to resolve to in the ambient environment and fail with "no such table" on a
-    fresh checkout — unrelated to the behavior under test. Every other dispatcher
-    test file in this suite (e.g. test_dispatcher.py's `maker` fixture) sets up an
-    isolated schema-created engine the same way; this mirrors that convention as
-    an autouse fixture so the given test bodies stay untouched.
+    """Autouse, file-scoped DB isolation: every test here gets its own schema-created
+    SQLite behind db_session.AsyncSessionLocal, so nothing reaches whatever real DB
+    ARSLAN_DATA_DIR resolves to. (The dispatch tests that first needed it went with the
+    dispatcher in C7b-4; the isolation stays for the rest.)
     """
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'eval_seal.db'}")
     async with engine.begin() as conn:
@@ -95,47 +88,56 @@ def test_is_hermetic_context_matches_both_eval_sentinels():
     assert replay_safety.is_hermetic_context(None) is False
 
 
-def test_hermetic_set_covers_every_sentinel_a_dispatch_path_actually_uses():
-    """Pin the sentinels against the LIVE dispatch paths, not against themselves.
+def test_every_sentinel_in_product_code_is_sealed():
+    """Census, not a tautology over the set's own literals.
 
-    The old version of this test asserted `"evolution-eval" in _HERMETIC_CONVERSATION_IDS`
-    — a tautology over a literal that no dispatch path uses (repo-wide grep: the string
-    appears ONLY in replay_safety's own set). It could never fail. The real invariant is
-    that the sentinel each eval/replay entry point dispatches under is a member.
+    Every `evolution-*` conversation-id literal anywhere in server/ or arslan/ (outside
+    replay_safety, which DEFINES the set) must be a member of the hermetic set, and every
+    member must stay hermetic AND non-curatable. A new eval/replay entry point that
+    dispatches under a fresh sentinel without adding it to the set fails here.
+
+    Rewritten in C7b-2 (v0.1.63): the old version read the sentinel from
+    replay_run.REPLAY_CONVERSATION_ID, which went with replay_run. Kept after the
+    dispatcher went (C7b-4): tool_loop still seals on is_hermetic_context, so a new
+    unsealed sentinel would still matter. Goes with replay_safety (card step 3, v0.1.64).
     """
-    from server.services.replay_run import REPLAY_CONVERSATION_ID
+    import ast
+    import pathlib
+    import re
 
-    assert REPLAY_CONVERSATION_ID in replay_safety._HERMETIC_CONVERSATION_IDS
-    assert replay_safety.is_hermetic_context(REPLAY_CONVERSATION_ID) is True
+    root = pathlib.Path(replay_safety.__file__).resolve().parents[2]
+    sentinel = re.compile(r"^evolution-[a-z][a-z-]*$")
+    found: dict[str, list[str]] = {}
+    for top in ("server", "arslan"):
+        for path in (root / top).rglob("*.py"):
+            if path.name == "replay_safety.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and sentinel.match(node.value):
+                    found.setdefault(node.value, []).append(f"{path.relative_to(root)}:{node.lineno}")
+    unsealed = {s: where for s, where in found.items() if s not in replay_safety._HERMETIC_CONVERSATION_IDS}
+    assert not unsealed, f"sentinel conversation ids outside the hermetic set: {unsealed}"
+
+    assert replay_safety._HERMETIC_CONVERSATION_IDS          # the census has something to hold
+    for s in replay_safety._HERMETIC_CONVERSATION_IDS:
+        assert replay_safety.is_hermetic_context(s) is True
 
 
-# --------------------------------------------------------------------------- curation split
+# --------------------------------------------------------------------------- the hermetic set stays narrow
 
 
-def test_should_not_curate_covers_the_eval_sentinels():
-    """整理层: synthetic traffic must never be learned from."""
-    assert replay_safety.should_not_curate("evolution-replay") is True
-    assert replay_safety.should_not_curate("evolution-eval") is True
-
-
-def test_should_not_curate_leaves_real_and_live_work_curatable():
-    assert replay_safety.should_not_curate("conv_abc123") is False
-    assert replay_safety.should_not_curate("scheduled-7") is False   # real work
-    assert replay_safety.should_not_curate(None) is False
-
-
-def test_curation_ids_must_never_enter_the_hermetic_set():
-    """🔴 The split exists because is_hermetic_context is DUAL-purpose: besides marking
-    synthetic traffic it makes tool_loop's throat refuse every non-replay-safe tool
-    (tool_loop.py:335). Curation must be excluded from the corpus WITHOUT being sealed —
-    it has to write. Anyone who "simplifies" the two predicates back into one, or adds a
-    curation sentinel to the hermetic set, seals the curator's own writes; this test is
-    the tripwire."""
+def test_only_eval_sentinels_are_hermetic():
+    """🔴 is_hermetic_context makes tool_loop's throat refuse every non-replay-safe tool.
+    A real, scheduled or background conversation id in the hermetic set would seal that
+    work's own writes; this test is the tripwire. (Its sibling predicate,
+    should_not_curate, went with distill_service in C8-4, v0.1.63.)"""
     for cid in replay_safety._HERMETIC_CONVERSATION_IDS:
         assert cid.startswith("evolution-"), (
-            "only evolution eval/replay sentinels may be hermetic — a curation/background "
-            "id here would make tool_loop refuse the curator's own writes")
-    assert replay_safety.should_not_curate is not replay_safety.is_hermetic_context
+            "only evolution eval/replay sentinels may be hermetic — a real or background "
+            "id here would make tool_loop refuse that work's own writes")
+    assert replay_safety.is_hermetic_context("conv_abc123") is False
+    assert replay_safety.is_hermetic_context("scheduled-7") is False   # real work
+    assert replay_safety.is_hermetic_context(None) is False
 
 
 async def test_throat_refuses_nonsafe_tool_in_hermetic_context_even_if_resolver_leaks():
@@ -205,107 +207,6 @@ async def test_throat_allows_safe_tool_in_hermetic_context():
     assert out.get("ok") is True
 
 
-async def test_dispatch_defaults_to_hermetic_for_eval_sentinel(monkeypatch):
-    """An eval-sentinel conversation_id with no explicit replay flag routes to the
-    SEALED path (_dispatch_replay), not the live branch."""
-    from server.orchestrator import dispatcher
-
-    seen = {}
-
-    async def fake_dispatch_replay(conversation_id, **kw):
-        seen["sealed"] = True
-        return {"run_id": 1, "full_output": "ok"}
-
-    async def fake_load_spawn(sid):
-        return object()  # non-None; _dispatch_replay is faked so the object is unused
-
-    monkeypatch.setattr(dispatcher, "_dispatch_replay", fake_dispatch_replay)
-    monkeypatch.setattr(dispatcher, "_load_spawn", fake_load_spawn)
-
-    await dispatcher.dispatch("evolution-eval", spawn_id=1, task_brief="t")
-    assert seen.get("sealed") is True
-
-
-async def test_dispatch_replay_false_under_sentinel_still_sealed(monkeypatch):
-    """No opt-out: even an EXPLICIT replay=False under an eval sentinel is sealed (routes
-    to _dispatch_replay), because a safety control is no-override."""
-    from server.orchestrator import dispatcher
-
-    sealed = {"v": False}
-
-    async def fake_dispatch_replay(conversation_id, **kw):
-        sealed["v"] = True
-        return {"run_id": 1, "full_output": "ok"}
-
-    async def fake_load_spawn(sid):
-        return object()
-
-    monkeypatch.setattr(dispatcher, "_dispatch_replay", fake_dispatch_replay)
-    monkeypatch.setattr(dispatcher, "_load_spawn", fake_load_spawn)
-
-    await dispatcher.dispatch("evolution-eval", spawn_id=1, task_brief="t", replay=False)
-    assert sealed["v"] is True  # replay=False did NOT open a live dispatch under the sentinel
-
-
-async def test_dispatch_real_conversation_stays_live(monkeypatch):
-    """A real conversation id with no replay flag does NOT route to the sealed path."""
-    from server.orchestrator import dispatcher
-
-    sealed = {"v": False}
-
-    async def fake_dispatch_replay(conversation_id, **kw):
-        sealed["v"] = True
-        return {"run_id": 1, "full_output": "ok"}
-
-    async def fake_load_spawn(sid):
-        return object()
-
-    async def fake_build(*a, **k):
-        raise RuntimeError("LIVE_BRANCH_TAKEN")
-
-    monkeypatch.setattr(dispatcher, "_dispatch_replay", fake_dispatch_replay)
-    monkeypatch.setattr(dispatcher, "_load_spawn", fake_load_spawn)
-    monkeypatch.setattr(dispatcher, "build_spawn_system", fake_build)
-
-    with pytest.raises(RuntimeError, match="LIVE_BRANCH_TAKEN"):
-        await dispatcher.dispatch("conv_realuser", spawn_id=1, task_brief="t")
-    assert sealed["v"] is False  # real conversation stayed on the live branch
-
-
-async def test_evaluate_dispatches_hermetically_and_shares_one_ambient(monkeypatch):
-    """evaluate routes every candidate dispatch through run_arm with ONE shared ambient
-    snapshot (byte-identical arms), never a bare live dispatch."""
-    from server.services import evaluator, replay_run
-
-    snapshots = {"count": 0}
-    arm_calls = []
-
-    async def fake_snapshot(db, *, spawn_id, conversation_id, task=""):
-        snapshots["count"] += 1
-        return {"facts": "F", "kb_block": "K", "kb_sources": None}
-
-    async def fake_run_arm(db, *, spawn_id, task, system_prompt, ambient,
-                           conversation_id=replay_run.REPLAY_CONVERSATION_ID):
-        arm_calls.append({"ambient": ambient, "task": task})
-        return {"run_id": len(arm_calls), "output": "cand-out", "evidence": {}}
-
-    monkeypatch.setattr(replay_run, "snapshot_ambient", fake_snapshot)
-    monkeypatch.setattr(replay_run, "run_arm", fake_run_arm)
-
-    async def fake_scorer(*, task, persona, output_a, output_b, item):
-        return {"dimensions": {}, "overall": "b", "margin": 1.0}
-
-    items = [{"run_id": 1, "task": "t1", "baseline_output": "b1"},
-             {"run_id": 2, "task": "t2", "baseline_output": "b2"}]
-    res = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="CAND",
-                                   replay_items=items, scorer=fake_scorer)
-    assert len(arm_calls) == 2                       # both items via run_arm
-    assert snapshots["count"] == 1                   # ONE shared ambient for the eval
-    assert all(a["ambient"] == {"facts": "F", "kb_block": "K", "kb_sources": None}
-               for a in arm_calls)                   # byte-identical ambient
-    assert res["gate"]["passed"] is True
-
-
 def test_scheduled_and_real_conversation_ids_are_not_hermetic():
     """Guard against over-sealing — the biggest adjacent mis-seal surface is the S3-M4
     scheduler, which mints conversation ids as f"scheduled-{task_id}" (scheduler.py:330,480,
@@ -321,72 +222,6 @@ def test_scheduled_and_real_conversation_ids_are_not_hermetic():
 
 
 # ── Task 6: regression guard — end-to-end + the throat's run_python escape-valve gap ───────
-async def test_evolution_eval_never_exposes_mcp_tool_end_to_end(monkeypatch):
-    """End-to-end: an eval dispatch for a spawn wired with an MCP tool must narrow the
-    model's toolset to the replay-safe subset (MCP absent) AND, if the model somehow
-    calls it, the throat refuses execution (proven separately by the throat tests above).
-    This test asserts the seal at the build_spawn_system layer, exactly as it happens on
-    a real dispatch — no mocking of dispatcher internals.
-
-    Seeding: reused verbatim from tests/server/test_hermetic_replay.py's `seeded` fixture +
-    test_replay_no_mcp_tools (the existing convention in this suite for "a spawn wired with
-    an MCP tool") — seed_registry() for the universal safe/wired builtins (web_search,
-    web_extract, render_chart), then a hand-added MCPServer/Toolset/Tool row for the MCP
-    tool plus a Spawn equipped with that toolset via SpawnCapability(kind="toolset").
-    """
-    from server.db.models import MCPServer, Spawn, SpawnCapability, Tool, Toolset
-    from server.orchestrator import dispatcher
-    from server.registry.seeder import seed_registry
-
-    captured = {"wired_keys": None}
-
-    # Spy on build_spawn_system to capture what the model would SEE.
-    orig_build = dispatcher.build_spawn_system
-
-    async def spy_build(spawn, **kw):
-        system, wired = await orig_build(spawn, **kw)
-        captured["wired_keys"] = {t.get("key") for t in wired}
-        return system, wired
-
-    monkeypatch.setattr(dispatcher, "build_spawn_system", spy_build)
-
-    # Minimal real spawn wired with an MCP tool (+ the universal web_search from
-    # seed_registry), same pattern as test_hermetic_replay.py::test_replay_no_mcp_tools.
-    await seed_registry()
-    async with db_session.AsyncSessionLocal() as s:
-        s.add(MCPServer(id=1, label="msg", command="x", args=[], env=None, status="connected"))
-        s.add(Toolset(key="mcp_1", name="msg", description="d", tier="safe", status="wired"))
-        s.add(Tool(key="mcp_1__send_message", toolset_key="mcp_1", description="send a message",
-                   tier="safe", status="wired", input_schema={}, external_name="send_message"))
-        spawn = Spawn(name="EvalTarget", domain_category="x", system_prompt="BASE")
-        s.add(spawn)
-        await s.flush()
-        sid = spawn.id
-        s.add(SpawnCapability(spawn_id=sid, kind="toolset", ref_key="mcp_1"))
-        await s.commit()
-
-    # Deterministic adapter stub — answers immediately with no tool calls (same
-    # content/tool_calls shape as test_hermetic_replay.py's _NativeAdapter/_LLMResp).
-    class _LLMResp:
-        def __init__(self, content):
-            self.content = content
-            self.tool_calls = []
-
-    class _NativeAdapter:
-        async def chat(self, system, user, history=None, tools=None, temperature=0.7):
-            return _LLMResp("done")
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _NativeAdapter())
-
-    # Dispatch under the eval sentinel with NO explicit replay — relies on Task 3's
-    # structural default (dispatcher.dispatch: `if replay or is_hermetic_context(...)`).
-    await dispatcher.dispatch("evolution-eval", spawn_id=sid, task_brief="do it")
-
-    assert captured["wired_keys"] is not None
-    assert "mcp_1__send_message" not in captured["wired_keys"]   # filtered from the menu
-    assert captured["wired_keys"] <= replay_safety.REPLAY_SAFE_BUILTINS
-
-
 async def test_throat_refuses_run_python_when_unsandboxed_escape_valve_set(monkeypatch):
     """Task 2 review gap: the throat's run_python-specific branch (tool_loop.py:344-351)
     was untested — run_python IS replay-safe in general (it's in REPLAY_SAFE_BUILTINS), but

@@ -81,9 +81,9 @@ describe("what IS touched still travels correctly", () => {
   });
 
   it("carries several touched fields together", () => {
-    expect(toBackendSettingsPatch({ language: "ja", curationEnabled: true })).toEqual({
+    expect(toBackendSettingsPatch({ language: "ja", keepAwakeEnabled: false })).toEqual({
       language: "ja",
-      curation_enabled: true,
+      keep_awake_enabled: false,
     });
   });
 });
@@ -102,7 +102,6 @@ describe("every settings field the UI can edit is mappable", () => {
       githubToken: "",
       language: "en",
       llmStrategy: "single",
-      distillOnSessionEnd: true,
       orchestratorShellEnabled: false,
       shellConfirmPolicy: "ask_all",
       mcpServerEnabled: false,
@@ -114,7 +113,6 @@ describe("every settings field the UI can edit is mappable", () => {
       search_provider_role: { searchProviderRole: "backup" },
       language: { language: "en" },
       llm_strategy: { llmStrategy: "single" },
-      distill_on_session_end: { distillOnSessionEnd: true },
       orchestrator_shell_enabled: { orchestratorShellEnabled: false },
       shell_confirm_policy: { shellConfirmPolicy: "ask_all" },
       background_job_budget: { backgroundJobBudget: "lean" },
@@ -124,8 +122,6 @@ describe("every settings field the UI can edit is mappable", () => {
       compaction_config_id: { compactionConfigId: "1" },
       router_config_id: { routerConfigId: "1" },
       vision_config_id: { visionConfigId: "1" },
-      curation_enabled: { curationEnabled: true },
-      research_review_enabled: { researchReviewEnabled: true },
       keep_awake_enabled: { keepAwakeEnabled: false },
       desktop_notifications_enabled: { desktopNotificationsEnabled: false },
       island_enabled: { islandEnabled: false },
@@ -133,8 +129,6 @@ describe("every settings field the UI can edit is mappable", () => {
       memory_in_conversations: { memoryInConversations: false },
       learned_practices_take_effect: { learnedPracticesTakeEffect: false },
       phone_bridge_enabled: { phoneBridgeEnabled: true },
-      evolution_auto: { evolutionAuto: true },
-      evolution_max_dispatches: { evolutionMaxDispatches: 5 },
       ocr_languages: { ocrLanguages: "eng" },
       run_debug_retention_days: { runDebugRetentionDays: 30 },
       mcp_server_enabled: { mcpServerEnabled: true },

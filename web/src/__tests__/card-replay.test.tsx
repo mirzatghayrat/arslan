@@ -5,7 +5,7 @@
  *  own card is private until the server sees its old socket close, and is not replayed though the server still waits on it. So after the history
  *  frame the window asks the server which cards wait (GET /approvals/pending: private and shared) and drops the stale cards of the four shared
  *  kinds that it does not list; the 3 s timer is only the fallback for a server that cannot be asked. Only those four kinds: the proposals that are
- *  never replayed (a machine to enrol, a server to connect) and the window's own capability card are left alone. */
+ *  never replayed (a machine to enrol) and the window's own capability card are left alone. */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, cleanup } from "@testing-library/react";
 
@@ -43,8 +43,6 @@ const action = (id: string) => ({ type: "propose_action", call_id: id, kind: "ap
 const write = (id: string) => ({ type: "propose_workspace_write", call_id: id, workspace: "/w", action: "write_file", path: "a.md", options: ["once", "conversation"] });
 const schedule = (id: string) => ({ type: "propose_schedule", call_id: id, name: "Brief", when: "every: 3600", options: ["once", "conversation"] });
 const enroll = (id: string) => ({ type: "propose_enroll_node", call_id: id, name: "mini", host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"] });
-const connect = (id: string) => ({ type: "propose_connect_mcp", call_id: id, key: "memory", label: "Memory", transport: "stdio", command: "npx",
-  argv: [], url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null });
 const capability = (id: string) => ({ type: "propose_capability", call_id: id, name: "Maps", tools: [], keys: [], folders: [] });
 const waiting = () => [...state().pendingCommands, ...state().pendingActions, ...state().pendingWorkspaceWrites, ...state().pendingSchedules].map((c) => c.callId).sort();
 
@@ -83,12 +81,11 @@ describe("a reconnect drops the shared cards its replay no longer lists (the ser
 
   it("the proposals that are never replayed, and the window's own capability card, are left alone", async () => {
     render(<AskSlot send={vi.fn()} />);
-    frame(enroll("n1")); frame(connect("m1")); frame(capability("k1")); frame(cmd("c1"));
+    frame(enroll("n1")); frame(capability("k1")); frame(cmd("c1"));
     frame(HISTORY);
     await advance(REPLAY_SETTLE_MS);
     expect(waiting()).toEqual([]);
     expect(state().pendingEnrollNodes.map((c) => c.callId)).toEqual(["n1"]);
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
     expect(state().pendingCapabilities.map((c) => c.callId)).toEqual(["k1"]);
   });
 
@@ -214,13 +211,12 @@ describe("a reconnect asks the server which cards still wait, and drops exactly 
   });
 
   it("a server that lists nothing clears the stale cards at once; the proposals never replayed are left alone", async () => {
-    frame(cmd("c1")); frame(enroll("n1")); frame(connect("m1")); frame(capability("k1"));
+    frame(cmd("c1")); frame(enroll("n1")); frame(capability("k1"));
     answers();
     frame(HISTORY);
     await advance(0);
     expect(waiting()).toEqual([]);
     expect(state().pendingEnrollNodes.map((c) => c.callId)).toEqual(["n1"]);
-    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
     expect(state().pendingCapabilities.map((c) => c.callId)).toEqual(["k1"]);
     expect(state().cardExpired).toBe(false);
   });

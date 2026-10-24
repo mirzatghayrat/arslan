@@ -83,6 +83,14 @@ def test_the_webs_once_only_kinds_are_the_servers():
         f"askParts.tsx ONCE_ONLY_KINDS differs from permissions._ONCE_ONLY in {sorted(once ^ permissions._ONCE_ONLY)}")
 
 
+def test_the_webs_conversation_first_kinds_can_be_answered_for_the_conversation():
+    """S1: a card of one of these starts on "In this conversation" in the window. A kind the server answers
+    once only could never offer that, and the island and the phone keep the first option either way."""
+    first = _kinds(_read(ASK_PARTS), "CONVERSATION_FIRST_KINDS")
+    assert first == {"mcp_tool"}, f"askParts.tsx CONVERSATION_FIRST_KINDS is {sorted(first)}; S1 starts mcp_tool only"
+    assert first <= permissions.KINDS and not first & permissions._ONCE_ONLY
+
+
 def test_the_webs_window_only_kinds_are_the_servers():
     # A card of one of these is answered only where its whole card is shown (PR 2b final review, M6): the server swallows the phone's
     # yes and refuses the Inbox's and the island's (`approvals.window_only`), so the Inbox must not draw an Allow for it. A kind in one

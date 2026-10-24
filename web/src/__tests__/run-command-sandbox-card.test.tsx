@@ -1,7 +1,7 @@
 /**
  * 0.1.51 P3: the run_command card's two sandbox questions, and the Advanced switch.
- * Leaving the sandbox is always said first on the card; its checkbox means "for the
- * rest of this conversation", never "don't ask again for this kind of command".
+ * Leaving the sandbox is always said first on the card; its "In this conversation" (S4a) lets
+ * every command of the conversation out, never "don't ask again for this kind of command".
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
@@ -16,18 +16,16 @@ import AdvancedSection from "../components/settings/AdvancedSection";
 afterEach(() => cleanup());
 
 describe("RunCommandCard sandbox questions", () => {
-  it("a stopped command says so, offers a re-run outside, and the checkbox is for this conversation", () => {
+  it("a stopped command says so, offers a re-run outside, and its \"In this conversation\" is for this conversation", () => {
     const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c1" pretty="mv ~/Downloads/a.png ~/Pictures/" sandbox="retry"
-                           onConfirm={onConfirm} onCancel={vi.fn()} />);
+    render(<RunCommandCard callId="c1" pretty="mv ~/Downloads/a.png ~/Pictures/" sandbox="retry" permKind="outside"
+                           options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
     expect(screen.getByText("runcmd.sandboxRetryLabel")).toBeInTheDocument();
     expect(screen.getByTestId("runcmd-sandbox-note")).toHaveTextContent("runcmd.sandboxRetryNote");
-    expect(screen.getByText("runcmd.sandboxRemember")).toBeInTheDocument();
-    expect(screen.queryByText("runcmd.remember")).toBeNull();
-    fireEvent.click(screen.getByTestId("runcmd-remember"));
+    fireEvent.click(screen.getByTestId("runcmd-scope-conversation"));
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(screen.getByTestId("runcmd-run")).toHaveTextContent("runcmd.runOutside");
-    expect(onConfirm).toHaveBeenCalledWith("c1", true);
+    expect(onConfirm).toHaveBeenCalledWith("c1", "conversation");
   });
 
   it("asking up front shows Arslan's reason and the command's own reason", () => {
@@ -38,15 +36,14 @@ describe("RunCommandCard sandbox questions", () => {
     expect(screen.getByText("deletes files")).toBeInTheDocument();
   });
 
-  it("a background job's card has no checkbox, and an ordinary card is unchanged", () => {
-    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="retry" background
-                           onConfirm={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+  it("a background job's card offers this conversation too (S4a), and an ordinary card is unchanged", () => {
+    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="retry" background permKind="outside"
+                           options={["once", "conversation"]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByTestId("runcmd-scope-conversation")).toBeInTheDocument();
     cleanup();
     render(<RunCommandCard callId="c4" pretty="git status" onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText("runcmd.label")).toBeInTheDocument();
     expect(screen.queryByTestId("runcmd-sandbox-note")).toBeNull();
-    expect(screen.getByText("runcmd.remember")).toBeInTheDocument();
     expect(screen.getByTestId("runcmd-run")).toHaveTextContent("runcmd.run");
   });
 });

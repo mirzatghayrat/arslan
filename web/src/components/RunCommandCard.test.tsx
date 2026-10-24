@@ -4,21 +4,22 @@ import RunCommandCard from "./RunCommandCard";
 import "../i18n";
 
 describe("RunCommandCard", () => {
-  test("shows the full command and fires confirm with remember flag", () => {
+  test("shows the full command and fires confirm with the choice ticked", () => {
     const onConfirm = vi.fn();
     render(
       <RunCommandCard
         callId="c1"
         pretty="git status"
         reason="check repo"
+        options={["once", "conversation"]}
         onConfirm={onConfirm}
         onCancel={vi.fn()}
       />,
     );
     expect(screen.getByText("git status")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("runcmd-remember"));
+    fireEvent.click(screen.getByTestId("runcmd-scope-conversation"));
     fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(onConfirm).toHaveBeenCalledWith("c1", true);
+    expect(onConfirm).toHaveBeenCalledWith("c1", "conversation");
   });
 
   test("cancel fires onCancel", () => {
@@ -53,9 +54,9 @@ describe("RunCommandCard", () => {
     expect(screen.getByText("256 SHA256:abc123 (ED25519)")).toBeInTheDocument();
   });
 
-  test("a remote command offers no remember checkbox", () => {
-    // Not cosmetic: the backend refuses to honour "remember" for a remote
-    // command, so showing the box would be a promise broken in a safety dialog.
+  test("a remote command offers this time only", () => {
+    // Not cosmetic: the backend answers a remote command this time only (`remote` is once-only),
+    // so offering more would be a promise broken in a safety dialog.
     const onConfirm = vi.fn();
     render(
       <RunCommandCard
@@ -64,13 +65,15 @@ describe("RunCommandCard", () => {
         reason="risk: HIGH"
         remoteHost="me@192.168.1.8"
         fingerprints={["fp"]}
+        permKind="remote"
+        options={["once"]}
         onConfirm={onConfirm}
         onCancel={vi.fn()}
       />,
     );
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
     fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(onConfirm).toHaveBeenCalledWith("c9", false);
+    expect(onConfirm).toHaveBeenCalledWith("c9", "once");
   });
 
   test("a local command is not dressed up as a remote one", () => {
@@ -85,17 +88,15 @@ describe("RunCommandCard", () => {
     );
     expect(screen.queryByTestId("runcmd-remote-note")).toBeNull();
     expect(screen.queryByTestId("runcmd-fingerprints")).toBeNull();
-    expect(screen.getByTestId("runcmd-remember")).toBeInTheDocument();
   });
 
-  test("a background job's card says so and never offers remember", () => {
+  test("a background job's card says so", () => {
     const onConfirm = vi.fn();
     render(
       <RunCommandCard callId="bg1" pretty="ls" reason="" background onConfirm={onConfirm} onCancel={vi.fn()} />,
     );
     expect(screen.getByTestId("runcmd-background")).toBeInTheDocument();
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
     fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(onConfirm).toHaveBeenCalledWith("bg1", false);
+    expect(onConfirm).toHaveBeenCalledWith("bg1", undefined);
   });
 });

@@ -36,12 +36,6 @@ class SettingsIn(BaseModel):
     # in isolation with nothing testing the seam.
     github_token: str | None = None
     llm_strategy: str | None = None
-    distill_on_session_end: bool | None = None
-    # Sleep-time curation sweep. Opt-in: it spends, and its output is only visible
-    # once the proposal inbox has a UI.
-    curation_enabled: bool | None = None
-    # Advisory after-save source review of research reports. Opt-in: it spends.
-    research_review_enabled: bool | None = None
     # Desktop shell while its window is hidden (0.1.41). Default ON.
     keep_awake_enabled: bool | None = None
     desktop_notifications_enabled: bool | None = None
@@ -57,7 +51,6 @@ class SettingsIn(BaseModel):
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
     run_debug_retention_days: int | None = None
-    evolution_auto: str | None = None
     # 🔴 These two were in _PLAIN_KEYS (so update_settings would store them) but on
     # NEITHER schema, and the PUT route feeds update_settings `body.model_dump()` —
     # so pydantic dropped them and the write path was dead. The frontend has been
@@ -73,7 +66,6 @@ class SettingsIn(BaseModel):
     compaction_config_id: str | None = None
     router_config_id: str | None = None
     vision_config_id: str | None = None
-    evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool | None = None
     # Comma-separated BCP-47 tags for image text recognition. Empty string is a
     # MEANINGFUL value, not "unset": it restores "follow the interface language
@@ -85,6 +77,9 @@ class SettingsIn(BaseModel):
     projects_auto_advance: str | None = None
     show_technical_details: str | None = None
     tools_all_resident: str | None = None   # K7, no UI; DELETE-BY: v0.1.64
+    answer_when_complete: str | None = None   # K8a, no UI; DELETE-BY: v0.1.64
+    tools_serial: str | None = None   # K9a, no UI; DELETE-BY: v0.1.64
+    steering_off: str | None = None   # K9b, no UI; DELETE-BY: v0.1.64
     heartbeat_checklist: str | None = None
     heartbeat_interval_s: str | None = None
     lan_discovery_enabled: str | None = None
@@ -96,6 +91,8 @@ class SettingsIn(BaseModel):
 
 
 class SettingsOut(BaseModel):
+    #: S3b: the working folder is on another volume than Arslan's data, so its changes can't be undone.
+    workspace_other_volume: bool = False
     llm_provider: str = ""
     llm_model: str = ""
     llm_base_url: str = ""
@@ -119,9 +116,6 @@ class SettingsOut(BaseModel):
     search_api_key_status: str = "unset"
     github_token_status: str = "unset"
     llm_strategy: str = "single"
-    distill_on_session_end: bool = True
-    curation_enabled: bool = False
-    research_review_enabled: bool = False
     keep_awake_enabled: bool = True
     desktop_notifications_enabled: bool = True
     island_enabled: bool = True
@@ -136,7 +130,6 @@ class SettingsOut(BaseModel):
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
     run_debug_retention_days: int = 30
-    evolution_auto: str = "off"
     synthesis_config_id: str = ""
     compaction_model: str = ""
     synthesis_model: str = ""
@@ -146,7 +139,6 @@ class SettingsOut(BaseModel):
     compaction_config_id: str = ""
     router_config_id: str = ""
     vision_config_id: str = ""
-    evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool = False
 
     # Empty string = follow the interface language plus English (the default),
@@ -158,6 +150,9 @@ class SettingsOut(BaseModel):
     projects_auto_advance: str = ""
     show_technical_details: str = ""
     tools_all_resident: str = ""   # K7, no UI; DELETE-BY: v0.1.64
+    answer_when_complete: str = ""   # K8a, no UI; DELETE-BY: v0.1.64
+    tools_serial: str = ""   # K9a, no UI; DELETE-BY: v0.1.64
+    steering_off: str = ""   # K9b, no UI; DELETE-BY: v0.1.64
     heartbeat_checklist: str = ""
     heartbeat_interval_s: str = ""
     lan_discovery_enabled: str = ""
@@ -302,20 +297,6 @@ class SpawnDetailOut(SpawnOut):
     seeds: list[SeedRefOut] = []
 
 
-class DraftIn(BaseModel):
-    description: str
-
-
-class SpawnCreateIn(BaseModel):
-    name: str
-    domain: str  # free-form "category.subcategory"
-    capabilities: list[str] = []
-    seed_refs: list[str] = []   # persona-seed slugs this spawn is composed from
-    persona_role: str | None = None
-    persona_tone: str | None = None
-    equipment: dict | None = None
-
-
 class EquipmentUpdateIn(BaseModel):
     toolsets: list[str] = []
     skills: list[str] = []
@@ -326,31 +307,6 @@ class ConfigUpdateIn(BaseModel):
     persona_tone: str | None = None
     persona_role: str | None = None
     config: dict[str, Any] | None = None
-
-
-class TemplateOut(BaseModel):
-    name: str
-    domain: str
-    description: str = ""
-    tags: list[str] = []
-
-
-class FeedbackIn(BaseModel):
-    message_id: int | None = None
-    user_action: Literal["thumbs_up", "thumbs_down", "edit", "regenerate", "redo", "refine"]
-    edits: dict[str, Any] = {}
-
-
-class EvolutionRuleOut(BaseModel):
-    rule_type: str
-    rule: str
-    confidence: float
-    sample_size: int
-
-
-class EvolutionOut(BaseModel):
-    feedback_count: int
-    active_rules: list[EvolutionRuleOut]
 
 
 class FactIn(BaseModel):
@@ -576,204 +532,6 @@ class RunDetailOut(BaseModel):
     run: RunOut
     steps: list[RunStepOut]
     evaluations: list[RunEvaluationOut]
-
-
-class GateOut(BaseModel):
-    passed: bool
-    reason: str
-    aggregate: dict | None = None
-
-
-class ConfirmProposalOut(BaseModel):
-    ok: bool
-    reason: str | None = None
-    spawn_id: int | None = None
-    generation_level: int | None = None
-
-
-class EvolveRequest(BaseModel):
-    """Optional body for POST /spawns/{id}/evolve (批1 P5).
-
-    Both fields are optional and the whole body may be omitted — which is exactly why the
-    spend gate reads `force` as absent-means-False: an old client that sends nothing must
-    be gated, not exempted.
-    """
-
-    force: bool | None = None
-
-
-class EvolveEnqueuedOut(BaseModel):
-    """202 response for POST /spawns/{id}/evolve — the manual trigger is now a background
-    job (the old sync button was guaranteed to time out). attempt_id is None only when an
-    attempt is already running for this spawn (concurrency = 1)."""
-
-    attempt_id: int | None = None
-
-
-class EstimateOut(BaseModel):
-    """Cost estimate for one evolution attempt (GET /spawns/{id}/evolve/estimate).
-
-    🔴 Two sets of numbers, disagreeing on purpose — see evolution_estimate.py's module
-    docstring for why. The first block is the FROZEN count block, still wrong in the same
-    way: `dispatches` applies the optimizer's per-pair multiplier to the whole corpus. It
-    stays because the UI falls back to it (`dispatches_max ?? dispatches`) for an old
-    attempt row read by a new client. UI copy must not call it a floor.
-
-    `est_tokens` and `lower_bound` are GONE from this payload. They were kept because the
-    spend gate read `est_tokens`; it reads `dispatches_max` now, after which nothing read
-    either field and `lower_bound: True` was a hardcoded claim the estimator itself
-    contradicts. Do not re-add them: the honest token number is `tokens_projected`.
-    (`attempt.actual["est_tokens"]` is a DIFFERENT field — measured usage — and is not
-    affected.)
-
-    The second block is derived from the loop. `basis` describes the three COUNT fields and
-    NOTHING else — `tokens_projected` is mean-priced, not a bound.
-
-    🔴 Every field the service emits must be declared here. This model has no
-    `extra` config, so pydantic SILENTLY DROPS anything undeclared at the HTTP boundary —
-    a new field can pass every service-level test and never reach a client. That is why
-    the field-existence tests for this payload go through the endpoint, not the service.
-    """
-
-    # ── frozen ──
-    pairs: int
-    dispatches: int
-    judge_calls: int
-    optimizer_calls: int
-    synth_calls: int
-    # ── derived ceiling ──
-    propose_pairs: int
-    val_pairs: int
-    dispatches_max: int
-    judge_calls_max: int
-    optimizer_calls_max: int
-    basis: str
-    avg_replay_tokens: float | None = None
-    avg_replay_n: int = 0
-    tokens_projected: int | None = None
-    tokens_projected_unavailable_reason: str | None = None
-
-
-class BaselineDeclareOut(BaseModel):
-    """POST /evolution/baseline/declare — the just-declared clean-corpus start (ISO-8601 UTC)."""
-
-    baseline_started_at: str
-
-
-class BaselineStatusOut(BaseModel):
-    """GET /evolution/baseline — the declared clean-corpus start (null if never declared) plus
-    how many clean-corpus (kind='live', epoch>=1, created_at>=baseline) runs have accumulated
-    since, so the developer can watch the real corpus fill up (spec §E9)."""
-
-    baseline_started_at: str | None = None
-    epoch1_runs_after: int = 0
-
-
-class SpawnDiagnosisOut(BaseModel):
-    """GET /spawns/{id}/evolution/diagnosis — the read-only evolution eligibility diagnosis for
-    one spawn (E9-b). verdict_code is a stable machine code; verdict_params carries the numbers /
-    tool names / attempt id used to render the localized sentence in the inbox panel.
-
-    holdout_ceiling is the un-topped (read-only) holdout side; real_holdout is its truly-real
-    slice; effective_holdout projects what the mint=True synthetic top-up would reach at evolve
-    time (so the panel is honest that a thin real holdout is fillable, not a wall)."""
-
-    spawn_id: int
-    spawn_name: str
-    generation_level: int
-    total_scored: int
-    replayable: int
-    non_replayable: int
-    offending_tools: dict[str, int] = {}
-    baseline_started_at: str | None = None
-    scored_ge_baseline: int
-    corpus_total: int
-    holdout_ceiling: int
-    real_holdout: int
-    effective_holdout: int
-    propose_count: int
-    corpus_excluded: int
-    min_holdout_n: int
-    consecutive_fails: int
-    threshold: int
-    count_since_last_attempt: int
-    auto_eligible: bool
-    open_proposals: int
-    auto_on: bool
-    # Cap on PROJECTED DISPATCHES, not tokens. Replaced max_est_tokens: the token
-    # estimate over-states 3.7-5.2x, so a cap set from real spend refused everything.
-    max_dispatches: int | None = None
-    # Non-null only where an install had set the removed token cap. Its value is NOT
-    # carried over — the unit changed and any conversion would be invented — so this
-    # exists to say so out loud instead of dropping a user's spending limit in silence.
-    legacy_token_cap_dropped: str | None = None
-    last_attempts: list[dict] = []
-    verdict_code: str
-    verdict_params: dict = {}
-
-
-class ProposalListItemOut(BaseModel):
-    """One row of the evolution inbox (GET /evolution/proposals)."""
-
-    id: int
-    spawn_id: int
-    status: str
-    gate_passed: bool
-    base_prompt_sha: str | None = None
-    real_delta: dict | None = None
-    synthetic_delta: dict | None = None
-    evidence_tier: str | None = None
-    flags: list[str] = []
-    created_at: str | None = None
-    promoted_at: str | None = None
-
-
-class RefreshProposalOut(BaseModel):
-    """Response for POST /evolution/proposals/{id}/refresh."""
-
-    ok: bool
-    status: str | None = None
-    refreshed: bool = False
-    gate_passed: bool | None = None
-    flags: list[str] = []
-    reason: str | None = None
-    proposal_id: int | None = None
-    new_tasks: int | None = None
-
-
-class ProposalDetailOut(BaseModel):
-    """Full evidence for ONE proposal (GET /evolution/proposals/{id}) — the E7 promotion-card
-    payload. `evidence` is the holdout-only GateResult.user_facing() (real_delta/synthetic_delta
-    NEVER merged, pairs, excluded_count, flags, tier). `base_prompt` is the spawn's CURRENT
-    canonicalized system_prompt — the honest baseline the diff renders against; when `is_stale`
-    the gate's baseline (base_prompt_sha) has drifted from it, so the card must warn. estimate/
-    actual come from the matching EvolutionAttempt (None when there is no linked attempt)."""
-
-    id: int
-    spawn_id: int
-    spawn_name: str | None = None
-    status: str
-    gate_passed: bool
-    generation_level: int | None = None
-    base_prompt_sha: str | None = None
-    base_prompt: str | None = None
-    candidate_prompt: str
-    is_stale: bool = False
-    evidence: dict = {}
-    estimate: dict | None = None
-    actual: dict | None = None
-    created_at: str | None = None
-    promoted_at: str | None = None
-
-
-class RollbackProposalOut(BaseModel):
-    """Response for POST /evolution/proposals/{id}/rollback — revert a promoted proposal to the
-    previous generation (restores spawn.config['prompt_history'][-1], adjusts generation_level)."""
-
-    ok: bool
-    reason: str | None = None
-    spawn_id: int | None = None
-    generation_level: int | None = None
 
 
 class KnowledgeIn(BaseModel):
@@ -1005,13 +763,6 @@ class SkillForgeIn(BaseModel):
     description: str
     body: str
     source: str = "skill_creator"
-
-
-class SkillEvaluateIn(BaseModel):
-    # E8: min_samples removed — the candidate now runs the shared holdout ReplayGate
-    # (skill-ON vs skill-OFF), not a private min-samples observation gate. Pydantic
-    # ignores a stale `min_samples` field if an old client still sends one.
-    target_spawn_id: int
 
 
 class SkillCandidateOut(BaseModel):

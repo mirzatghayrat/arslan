@@ -1,8 +1,9 @@
 # Third-Party Notices
 
-Arslan bundles skill/persona content that originates from third-party open-source
+Arslan bundles or adapts content and code that originates from third-party open-source
 projects. Each retains its original license; this file provides the attribution those
-licenses require. Where a file was adapted (not copied verbatim), the change is noted in
+licenses require. It ships inside the app as `Arslan.app/Contents/Resources/THIRD_PARTY_NOTICES.md`
+(0.1.63+), beside Arslan's own `LICENSE`. Where a file was adapted (not copied verbatim), the change is noted in
 that file's `source:` frontmatter, and the significant-change requirement of Apache-2.0
 is satisfied here + there.
 
@@ -50,7 +51,8 @@ their sources' notices. A user's own and imported skills keep their own licences
 ### msitarzewski/agency-agents — MIT License (verified 2026-07-01)
 - Copyright (c) msitarzewski. <https://github.com/msitarzewski/agency-agents>
 - Source recorded in the DB as `agency-agents@<commit>`. MIT requires retaining the copyright +
-  permission notice — the same MIT text reproduced above (obra/superpowers) applies.
+  permission notice — the MIT text reproduced under Terminal command reading below applies,
+  with this project's copyright line.
 - Used as the persona-seed library (identity references composed into spawns; curation-only —
   imported into the `persona_seeds` table, never redistributed as standalone files).
 
@@ -73,22 +75,54 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
 
 ---
 
-## Terminal command safety — `arslan/vendor/hermes/` (0.1.48+)
+## Capability catalog — `server/registry/seed_catalog.py`
 
 ### NousResearch/hermes-agent — MIT License
-- <https://github.com/NousResearch/hermes-agent>, Copyright (c) 2025 Nous Research. The
-  MIT License text ships with the code as `arslan/vendor/hermes/LICENSE`.
+- <https://github.com/NousResearch/hermes-agent>, Copyright (c) 2025 Nous Research; the license
+  text is in the next section.
 - The capability catalog (`server/registry/seed_catalog.py`) began as Hermes' toolset catalog.
   Checked against `toolsets.py` and `website/docs/reference/toolsets-reference.md` at commit
   `f1d62772923e06faa5fbbaf4fa0b0589dbd75577` (2026-10-21, C9): what remains is shared tool
   names (`read_file`, `write_file`, `patch`, `search_files`, `session_search`, `skills_list`,
   `skill_view`, `skill_manage`, `todo`, `web_search`, `web_extract`) and how some of them are
   grouped. The toolset names and every description are Arslan's own wording.
-- Vendored: `tools/approval_detection.py` at commit
-  `6b2fe92af66a95ea6a5caa309e05c5643cdd79de` (main, 2026-10-01), with one change (the
-  `ansi_strip` import path), plus `ansi_strip.py`. They provide the dangerous-command
-  detection that `server/services/terminal_policy.py` uses for its ask and forbid answers;
-  Arslan's own outward-action and credential rules live in that policy file.
+- 0.1.48–0.1.63 vendored Hermes' `tools/approval_detection.py` and `ansi_strip.py` under
+  `arslan/vendor/hermes/`. 0.1.63 replaced them with Arslan's own `shell_text.py` (S2b-1) and
+  removed the copy (S2b-2).
+
+## Terminal command reading — `server/services/shell_text.py` (0.1.63+)
+
+### NousResearch/hermes-agent — MIT License (verified at the source 2026-10-22)
+- `server/services/shell_text.py` is adapted from Hermes Agent's `tools/approval_detection.py`
+  and `tools/ansi_strip.py` at commit `6b2fe92af66a95ea6a5caa309e05c5643cdd79de`: the quote-aware
+  shell scanner, command starts and command words, `-c` and program-option payloads, quote and
+  grep-pattern masks, and command-word deobfuscation. The hard floor in
+  `server/services/terminal_policy.py` (layer ①) is adapted from the same file's hardline rules.
+- The vendored copy (`arslan/vendor/hermes/`) was removed in 0.1.63; this notice stays.
+
+```
+MIT License
+
+Copyright (c) 2025 Nous Research
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Arslan Hands — `Arslan.app/Contents/Resources/hands/` (desktop 0.1.53+)
 

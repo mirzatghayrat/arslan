@@ -46,8 +46,8 @@ async def test_connect_lists_tools_with_suggested_tier(client, monkeypatch):
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]
         connected = (await c.post(f"/api/v1/mcp/servers/{sid}/connect")).json()
         tools = (await c.get(f"/api/v1/mcp/servers/{sid}/tools")).json()
-    # The old UI reads the Connect answer itself as McpTool[] (McpServers, ConnectMcpCard,
-    # RecommendedMcp) — 0.1.61 keeps that contract through the supervisor.
+    # The UI reads the Connect answer itself as McpTool[] (McpServers) — 0.1.61 keeps that
+    # contract through the supervisor.
     assert {t["name"]: t["suggested_tier"] for t in connected} == {"read_file": "safe",
                                                                    "delete_file": "orchestrator"}
     by = {t["name"]: t for t in tools}
@@ -75,7 +75,7 @@ async def test_expose_and_wire_open_the_choke_point(client, monkeypatch):
         ts = (await s.execute(select(Toolset).where(Toolset.key == f"mcp_{sid}"))).scalar_one()
         tool = (await s.execute(select(Tool).where(Tool.key == f"mcp_{sid}__read_file"))).scalar_one()
     assert ts.tier == "safe"                       # exposed → equippable
-    assert tool.tier == "safe" and tool.status == "wired"   # wired → reachable by wired_tools_for_spawn
+    assert tool.tier == "safe" and tool.status == "wired"
 
 
 async def test_host_toggle_endpoint(client, monkeypatch):

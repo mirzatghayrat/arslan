@@ -30,19 +30,6 @@ export function Fingerprints({ label, list, testId }: { label: string; list: str
   );
 }
 
-/** A checkbox option under the card ("don't ask again …"). */
-export function AskOption({ checked, onChange, label, testId }:
-  { checked: boolean; onChange: (v: boolean) => void; label: string; testId: string }) {
-  const guarded = useAnswerGuard();                           // a tick right after the card came up in a queue is not for it
-  return (
-    <label className="flex items-start gap-2 text-[13px] text-muted-foreground">
-      <input type="checkbox" data-testid={testId} checked={checked} onChange={(e) => { if (!guarded()) onChange(e.target.checked); }}
-        className="mt-[3px] accent-foreground" />
-      <span>{label}</span>
-    </label>
-  );
-}
-
 /** 0.1.61 §A4: the only scope ids a card answers with. */
 export const SCOPES = ["once", "task", "conversation", "always"] as const;
 
@@ -81,6 +68,12 @@ export const ONCE_ONLY_KINDS = new Set(["money", "app_risky", "capability", "oth
  *  so the Inbox draws "Open in Arslan" for it instead of Allow. Keep it equal to the server's `approvals.WINDOW_ONLY_KINDS`
  *  (tests/server/test_card_kinds.py). */
 export const WINDOW_ONLY_KINDS = new Set(["capability"]);
+
+/** S1: the kinds whose card starts on "In this conversation" in the window: an MCP tool is usually used again
+ *  in the same conversation. Only the window's starting choice: the options' order is the server's, and the island
+ *  and the phone still answer the first ("this time"). Checked against the server's kinds by
+ *  tests/server/test_card_kinds.py. */
+export const CONVERSATION_FIRST_KINDS = new Set(["mcp_tool"]);
 
 /** The choices a card is willing to offer. For a once-only kind that is the frame's first alone,
  *  whatever else it lists: the server already clamps, so this only keeps a mistaken frame from
@@ -121,7 +114,7 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, conversatio
 }
 
 /**
- * 0.1.61 §A4: while a card's own apply is in flight (connecting a server, enrolling a machine) its Allow, No and keys are off, and a REST call
+ * 0.1.61 §A4: while a card's own apply is in flight (enrolling a machine) its Allow, No and keys are off, and a REST call
  * has no client timeout. This is the way out that is not an answer: the apply goes on, the card leaves, and the chat says how it ended.
  */
 export function HideWhileBusy({ onHide, testId }: { onHide: () => void; testId: string }) {

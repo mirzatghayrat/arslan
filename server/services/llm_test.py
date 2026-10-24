@@ -13,6 +13,7 @@ import httpx
 
 from arslan.llm.adapter import LLMAdapter
 from arslan.llm.presets import expand_preset
+from arslan.aio import within
 
 # Smallest possible ping prompt — one token of output is enough.
 _PING_SYSTEM = "Reply with one word."
@@ -33,7 +34,6 @@ async def test_connection(
     This function MUST NOT raise — all exceptions are caught and returned as
     ``{ok: False, error: "…", latency_ms: None}``.
     """
-    import asyncio
 
     # Expand a preset name (e.g. "deepseek") into concrete provider/model/base_url.
     real_provider, real_model, real_base_url = expand_preset(provider, model, base_url)
@@ -42,7 +42,7 @@ async def test_connection(
 
     t0 = time.perf_counter()
     try:
-        await asyncio.wait_for(
+        await within(
             adapter.chat(_PING_SYSTEM, _PING_USER),
             timeout=_TIMEOUT_S,
         )

@@ -77,17 +77,17 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     language: backend.language ?? "en",
     // Routing strategy round-trips through the backend (default "single").
     llmStrategy: (backend.llm_strategy ?? "single") as AppSettings["llmStrategy"],
-    distillOnSessionEnd: backend.distill_on_session_end ?? true,
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.
-    // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON and ask_risky (0.1.48).
+    // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON (0.1.48) and ask_all (v0.1.63).
     orchestratorShellEnabled: backend.orchestrator_shell_enabled !== "false",
-    shellConfirmPolicy: backend.shell_confirm_policy === "ask_all" ? "ask_all" : "ask_risky",
+    shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
     // 0.1.43: budget tier for one background job; unknown → the server's default.
     backgroundJobBudget: backend.background_job_budget === "lean" || backend.background_job_budget === "ample"
       ? backend.background_job_budget : "standard",
     // Workspace for the file tools (P1). Empty = unset = tools not offered.
     workspaceDir: backend.workspace_dir ?? "",
+    workspaceOtherVolume: backend.workspace_other_volume ?? false,
     // Heartbeat: default OFF, and an empty checklist means no task at all.
     heartbeatEnabled: backend.heartbeat_enabled === "true",
     heartbeatChecklist: backend.heartbeat_checklist ?? "",
@@ -115,8 +115,6 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
   compactionModel: backend.compaction_model ?? "",
   routerModel: backend.router_model ?? "",
   visionModel: backend.vision_model ?? "",
-    curationEnabled: backend.curation_enabled ?? false,
-    researchReviewEnabled: backend.research_review_enabled ?? false,
     keepAwakeEnabled: backend.keep_awake_enabled ?? true,
     desktopNotificationsEnabled: backend.desktop_notifications_enabled ?? true,
     islandEnabled: backend.island_enabled ?? true,
@@ -150,7 +148,6 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   searchProviderRole: { key: "search_provider_role", to: (v) => (v as string) ?? "" },
   language: { key: "language" },
   llmStrategy: { key: "llm_strategy" },
-  distillOnSessionEnd: { key: "distill_on_session_end" },
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
   shellConfirmPolicy: { key: "shell_confirm_policy" },
   backgroundJobBudget: { key: "background_job_budget" },
@@ -175,8 +172,6 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   compactionModel: { key: "compaction_model", to: (v) => (v as string) ?? "" },
   routerModel: { key: "router_model", to: (v) => (v as string) ?? "" },
   visionModel: { key: "vision_model", to: (v) => (v as string) ?? "" },
-  curationEnabled: { key: "curation_enabled", to: (v) => (v as boolean) ?? false },
-  researchReviewEnabled: { key: "research_review_enabled", to: (v) => (v as boolean) ?? false },
   keepAwakeEnabled: { key: "keep_awake_enabled", to: (v) => (v as boolean) ?? true },
   desktopNotificationsEnabled: { key: "desktop_notifications_enabled", to: (v) => (v as boolean) ?? true },
   islandEnabled: { key: "island_enabled", to: (v) => (v as boolean) ?? true },

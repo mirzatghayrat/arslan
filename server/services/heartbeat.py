@@ -3,9 +3,10 @@
 A list the user writes; on a cadence, ONE Arslan turn reads it and decides
 whether anything on it needs doing right now. Implemented as an ordinary
 scheduled task with target="arslan", so it inherits that path's property
-wholesale: no socket, no confirm callbacks, and therefore no writes and no
-commands. A heartbeat can only come back as a MESSAGE. It proposes; the user
-decides.
+wholesale: no socket, no confirm callbacks, nobody to ask. It writes only in
+Arslan's own folder, runs no commands (v0.1.63, until S2a-3; DELETE-BY: v0.1.64
+with it and PR4), and any step that needs an OK is refused and listed in the
+Inbox (S1). What it brings the user is a MESSAGE. It proposes; the user decides.
 
 Stored in Settings, not in a workspace file (裁决②): a checklist in a file
 would make this feature require the workspace feature, coupling two things

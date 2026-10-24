@@ -144,6 +144,24 @@ def test_an_open_background_job_keeps_the_run_going_until_it_finishes():
     assert t.finished(now=100 + IDLE_AFTER_TURN_S, started=0)
 
 
+def test_each_turn_records_when_its_first_answer_text_and_its_end_arrived():
+    """K8's M1 is first-token latency per task: seconds from sending a turn to its first
+    stream_chunk, and to its stream_end. A turn that never streamed says so (None)."""
+    t = TurnTracker("/r")
+    t.start_turn(now=100)
+    t.on_frame({"type": "note", "content": "looking"}, now=101)          # narration is not the answer
+    t.on_frame({"type": "stream_chunk", "content": ""}, now=102)         # nor is an empty chunk (②Main's 🟡)
+    t.on_frame({"type": "stream_chunk", "content": "Hel"}, now=103.5)
+    t.on_frame({"type": "stream_chunk", "content": "lo"}, now=104)
+    t.on_frame({"type": "stream_end"}, now=108)
+    t.on_frame({"type": "stream_end"}, now=120)                          # a later end does not move it
+    assert t.next_turn(now=121) == "Hello"
+    t.start_turn(now=200)
+    t.on_frame({"type": "stream_end"}, now=203)
+    t.next_turn(now=204)
+    assert t.timings == [{"first_chunk_s": 3.5, "stream_end_s": 8.0}, {"first_chunk_s": None, "stream_end_s": 3.0}]
+
+
 def test_the_hard_timeout_always_ends_a_run():
     t = TurnTracker("/r")
     t.on_frame({"type": "stream_chunk", "content": "working"}, now=1)
@@ -395,6 +413,37 @@ def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
     assert len(waits) == 2 and all(ended > since > 0 for since, ended in waits)   # quiet counts from the exit
 
 
+def test_the_record_says_which_command_policy_the_run_used(tmp_path, monkeypatch):
+    """v0.1.63 (#398 review, F6): the driver prints the policy it set; the record carries it, so the final M1's
+    ask_all reference run is labelled."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
+    for policy in ("ask_risky", "ask_all"):
+        script = f"import json; print(json.dumps({{'end': 'done', 'final': 'ok', 'shell_policy': '{policy}'}}))"
+        monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+        rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
+        saved = json.loads(Path(tmp_path / "runs" / f"{rec['run']}.record.json").read_text())
+        assert rec["shell_policy"] == saved["shell_policy"] == policy
+
+
+def test_the_record_keeps_the_timing_the_driver_printed(tmp_path, monkeypatch):
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
+    script = ("import json; print(json.dumps({'end': 'done', 'final': 'ok', "
+              "'timing': [{'first_chunk_s': 2.5, 'stream_end_s': 9.0}]}))")
+    monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+    rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
+    assert rec["timing"] == [{"first_chunk_s": 2.5, "stream_end_s": 9.0}]
+    saved = json.loads(Path(tmp_path / "runs" / f"{rec['run']}.record.json").read_text())
+    assert saved["timing"] == rec["timing"]
+
+
 def test_the_round_is_in_the_run_label_so_a_later_round_starts_fresh(tmp_path, monkeypatch):
     """The meter caps a label over its whole life: a reused label was refused with 402 (K1 after-runs).
     The round names the label, its folder and the meter's key; T1's list carries the model once."""
@@ -539,6 +588,8 @@ def test_the_next_turn_is_sent_only_after_the_last_one_ended_and_the_folder_is_k
     first_end = next(i for i, f in enumerate(fake.delivered) if f["type"] == "stream_end")
     assert users[1][1] > first_end                    # turn 1's end was read before turn 2 went out
     assert out["replies"] == ["answer 1", "answer 2"] and out["final"] == "answer 2"
+    # each turn's clock starts when that turn is sent (K8's M1 reads these from the record)
+    assert len(out["timing"]) == 2 and all(0 <= t["first_chunk_s"] <= t["stream_end_s"] < 5 for t in out["timing"])
     assert (tmp_path / "arslan-T8-r1.turn1" / "report.md").read_text() == "turn 1\n"
     assert (run_dir / "report.md").read_text() == "turn 2\n"
 
@@ -790,9 +841,30 @@ def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
 
     from scripts.kernel_bench.arslan_driver import settings_body
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
-    assert settings_body("/run") == {"workspace_dir": "/run"}
+    monkeypatch.delenv("BENCH_SHELL_POLICY", raising=False)
+    assert settings_body("/run") == {"shell_confirm_policy": "ask_risky", "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": "true", "workspace_dir": "/elsewhere"}')
-    assert settings_body("/run") == {"tools_all_resident": "true", "workspace_dir": "/run"}
+    assert settings_body("/run") == {"tools_all_resident": "true", "shell_confirm_policy": "ask_risky",
+                                     "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": true}')
+    with pytest.raises(ValueError):
+        settings_body("/run")
+
+
+def test_the_bench_pins_its_command_policy(monkeypatch):
+    """v0.1.63: the app's default became ask_all; a bench round stays on ask_risky (comparable with M1B and the
+    K rounds) unless the run asks for ask_all, and only BENCH_SHELL_POLICY sets it."""
+    import pytest
+
+    from scripts.kernel_bench.arslan_driver import settings_body
+    monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
+    monkeypatch.setenv("BENCH_SHELL_POLICY", "ask_all")
+    assert settings_body("/run")["shell_confirm_policy"] == "ask_all"
+    for bad in ("ask_everything", "ASK_ALL"):
+        monkeypatch.setenv("BENCH_SHELL_POLICY", bad)
+        with pytest.raises(ValueError):
+            settings_body("/run")
+    monkeypatch.delenv("BENCH_SHELL_POLICY")
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"shell_confirm_policy": "ask_all"}')
     with pytest.raises(ValueError):
         settings_body("/run")

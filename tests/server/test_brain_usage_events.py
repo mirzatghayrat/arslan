@@ -234,47 +234,6 @@ async def test_unparsable_since_is_refused_not_ignored(usage_db):
     assert r.status_code == 422
 
 
-# ------------------------------------------------------------------- loop placement
-
-
-async def test_retention_runs_even_when_curation_is_switched_off(usage_db, monkeypatch):
-    """🔴 Tripwire. `tick()` opens with the opt-in `_enabled()` gate (both switches
-    default OFF); `brain_usage.record` appends UNCONDITIONALLY. If retention were moved
-    inside tick(), it would never run on a default install and the table would grow
-    forever — the "只增不减 换张表复活" failure the ceiling exists to prevent.
-
-    So: run watch_loop with both switches off and assert the prune still happened.
-    """
-    import asyncio
-
-    from server.services import curation_loop
-
-    await _seed_events(usage_db.db_maker, [
-        ("note", "note:1", datetime.utcnow() - timedelta(days=90))])
-
-    async def _off() -> bool:
-        return False
-
-    monkeypatch.setattr(curation_loop, "_enabled", _off)
-
-    stop = asyncio.Event()
-    calls: list[int] = []
-    real = curation_loop.prune_usage_events
-
-    async def _spy():
-        await real()
-        calls.append(1)
-        stop.set()
-
-    monkeypatch.setattr(curation_loop, "prune_usage_events", _spy)
-    await asyncio.wait_for(
-        curation_loop.watch_loop(interval=0.01, initial_delay=0, stop_event=stop),
-        timeout=5)
-
-    assert calls, "retention must not sit behind the curation opt-in switch"
-    assert await _count(usage_db.db_maker) == 0
-
-
 async def test_a_tz_aware_since_is_converted_not_stripped(usage_db):
     """🔴 Dropping the offset instead of converting it shifts the window by the
     caller's UTC offset, silently returning a DIFFERENT range than asked for.

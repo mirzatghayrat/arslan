@@ -57,8 +57,6 @@ def test_sampler_is_bounded_local_and_cleans_temporary_files(monkeypatch):
     blocks = build_user_blocks("inspect video", result["text"], result["images"])
     assert len([b for b in blocks if b["type"] == "image"]) == 3
     assert "test.mp4#t=1.000s" in blocks[3]["text"]
-    from server.orchestrator.dispatcher import with_images
-    assert "test.mp4#t=1.000s" in with_images("inspect video", result["images"])[3]["text"]
 
 
 def test_sampler_maps_the_probed_non_cover_stream(monkeypatch):

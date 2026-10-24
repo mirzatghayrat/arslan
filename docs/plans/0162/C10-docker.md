@@ -15,7 +15,7 @@
 
 - 仓库根目录的 `Dockerfile`、`docker-compose.yaml`、`.dockerignore`。
 - `README.md`、`README.zh-CN.md`、`README.ja.md`、`README.es.md`、`README.de.md`、`README.tr.md` 和 `docs/QUICKSTART.md` 里讲 Docker 的段落（⓪Plan 在 main 上查过，这 7 份都提到 Docker）。
-  - 只删这几段。其余对外文档等 v0.1.65 一次更新（U13 第 6 条）。这里提前改，是因为文件删了，这几段就成了错的。
+  - 只删这几段。其余对外文档等界面版之后一次更新（U13 第 6 条；原为 v0.1.65，用户 2026-10-22 挪后）。这里提前改，是因为文件删了，这几段就成了错的。
 - ⓪Plan 在 main 上查过：`.github/`、`scripts/`、`desktop/` 里都没有用到 Docker。所以 CI 和打包不受影响；开工时再查一遍，按字符串查。
 
 ## 不许碰（用户特别交代：不能影响现有能力，Hands、iPhone 都要在）

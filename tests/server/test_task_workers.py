@@ -2,6 +2,7 @@ import asyncio
 import json
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from arslan.execution_budget import current as budget
@@ -111,6 +112,51 @@ async def test_worker_cannot_bypass_tool_subset_or_delegate_recursively(executio
     monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)
     await run(lambda: task_workers.delegate(batch("first writer", "second writer"), tools))
     assert denials == ["worker_tool_scope_denied", "worker_tool_scope_denied"]
+
+
+#: The only tools a delegated worker may ever be given, spelled out here on purpose:
+#: checking READ_TOOLS against itself would pass whatever was added to it.
+WORKER_TOOLS_ALLOWED = frozenset({"web_search", "web_extract"})
+
+
+def test_a_worker_can_never_be_given_a_command_or_a_write():
+    """C7b-6 review (v0.1.63): the deleted spawn-gate tests were the nearest guard for this.
+    Both layers: the allowlist delegate() and each worker's resolver filter by, and the job
+    schema a model's delegate_work call is parsed into."""
+    assert task_workers.READ_TOOLS <= WORKER_TOOLS_ALLOWED
+    for forbidden in ("run_command", "write_file"):
+        assert forbidden not in task_workers.READ_TOOLS
+        with pytest.raises(ValidationError):
+            task_workers.Job(method="research", objective="x", tools=(forbidden,))
+
+
+async def test_delegate_refuses_a_command_or_a_write_even_when_the_host_has_it(execution_db, monkeypatch):
+    """As if the job schema had been widened: the host offers run_command and write_file, a
+    job asks for one, and delegate() still refuses, because it only grants READ_TOOLS. No
+    worker starts and no model request is made."""
+    async def wide_tools():
+        return [{"key": key, "description": "synthetic fixture"}
+                for key in ("web_search", "web_extract", "run_command", "write_file")]
+
+    class NoModel:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("a worker started with a forbidden tool")
+    monkeypatch.setattr(tool_loop, "_get_adapter", NoModel)
+
+    outcomes = []
+
+    async def body():
+        for forbidden in ("run_command", "write_file"):
+            job = task_workers.Job.model_construct(method="research", objective=forbidden, context="",
+                                                   tools=(forbidden,))
+            try:
+                await task_workers.delegate(task_workers.Batch.model_construct(jobs=(job,)), wide_tools)
+                outcomes.append("accepted")
+            except TaskError as exc:
+                outcomes.append(exc.code)
+        return "done"
+    await run(body)
+    assert outcomes == ["worker_tool_scope_denied", "worker_tool_scope_denied"]
 
 
 async def test_cancel_stops_active_and_queued_workers_without_restarting(execution_db, monkeypatch):

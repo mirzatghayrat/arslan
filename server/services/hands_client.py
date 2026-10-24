@@ -29,6 +29,8 @@ import time
 import uuid
 from pathlib import Path
 
+from arslan.aio import close_connection, within
+
 FOLDER_NAME = "Arslan Hands"
 APP_NAME = "Arslan Hands.app"
 START_TIMEOUT_S = 10.0
@@ -106,14 +108,15 @@ class _Lost(Exception):
 
 async def _exchange(doc: dict, request: dict, timeout: float) -> dict:
     try:
-        reader, writer = await asyncio.wait_for(asyncio.open_unix_connection(str(folder() / "s.sock"),
-                                                                             limit=MAX_REPLY), 5)
+        # A stop that lands as the connection opens wins, and the connection is closed, not left open (#384).
+        reader, writer = await within(asyncio.open_unix_connection(str(folder() / "s.sock"), limit=MAX_REPLY), 5,
+                                      dispose=close_connection)
     except (OSError, asyncio.TimeoutError) as exc:
         raise _NotSent(str(exc)) from None
     try:
         writer.write((json.dumps({**request, "token": doc["token"]}) + "\n").encode())
         await writer.drain()
-        line = await asyncio.wait_for(reader.readline(), timeout)
+        line = await within(reader.readline(), timeout)
     except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError) as exc:
         raise _Lost(str(exc) or type(exc).__name__) from None
     finally:

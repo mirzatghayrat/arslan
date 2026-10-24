@@ -1,4 +1,4 @@
-"""Thirty fixed deterministic acceptance contracts, not a live-agent quality score.
+"""Twenty-five fixed deterministic acceptance contracts, not a live-agent quality score.
 
 uv run python -m scripts.acceptance_contracts --output /path/to/new-results
 Uses synthetic test fixtures, a scrubbed environment and isolated storage.
@@ -34,11 +34,6 @@ CASES = [
     ("backup-live-wal", "backup", "snapshot_includes_committed_wal_while_writer_remains_open"),
     ("checkpoint-boot", "run_checkpoint", "boot_preserves_last_checkpoint_without_replaying_tools"),
     ("checkpoint-final", "run_checkpoint", "pending_checkpoint_cannot_overwrite_final_output"),
-    ("recipe-dependencies", "recipes", "dag_executes_parallel_then_dependency_with_shared_budget"),
-    ("recipe-approval-resume", "recipes", "approval_resume_reuses_completed_steps"),
-    ("recipe-failure", "recipes", "failure_blocks_dependents_and_requires_explicit_retry"),
-    ("recipe-parent-cancel", "recipes", "parent_run_cancel_stops_children_and_records_interruption"),
-    ("recipe-immutable-idempotent", "recipes", "versions_are_immutable_and_start_requests_idempotent"),
     ("auth-remote-http", "remote_auth_boundary", "remote_http_denied_without_token_even_with_local_host"),
     ("auth-remote-websocket", "remote_auth_boundary", "remote_websocket_denied_without_token"),
     ("browser-static-only", "managed_browser", "preview_only_static_operations_renderer_sandbox_on"),
@@ -46,9 +41,10 @@ CASES = [
     ("browser-private-network", "browser_proxy", "proxy_refuses_loopback_and_non_https"),
     ("provider-gemini-wire", "gemini_native_roundtrip", "signed_parallel_function_responses_roundtrip"),
     ("context-summary-cap", "context_budget", "compaction_second_oversized_cjk_summary_is_actually_bounded"),
-    ("context-fact-cap", "context_budget", "oversized_first_fact_cannot_bypass_budget"),
-    ("memory-spawn-scope", "retrieve_scoped", "partition_spawn_sees_well_and_bound_only"),
-    ("memory-host-scope", "retrieve_scoped", "partition_arslan_sees_all_collections_never_wells"),
+    # The last three IDs stay stable; their tests were rewritten for memory v2 in C2a (#237, #307).
+    ("context-fact-cap", "context_budget", "an_oversized_top_ranked_fact_cannot_bypass_budget"),
+    ("memory-spawn-scope", "retrieve_scoped", "no_context_no_project_or_another_expert_retrieves_nothing"),
+    ("memory-host-scope", "retrieve_scoped", "a_turn_sees_its_projects_collections_only_never_wells"),
 ]
 
 

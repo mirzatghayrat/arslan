@@ -31,9 +31,13 @@ def test_a_pptx_made_with_run_command_is_not_an_unverified_claim():
     assert tool_loop._unverified_claim("PPT 已生成，可直接下载 report.pptx。", trace, {"run_command"}) is None
 
 
-def test_a_zero_tool_turn_that_claims_a_deck_is_still_caught():
-    assert promise_guard._zero_tool_fabrication("PPT 已正式生成并交付，共10页。") == "claims:deck"
-    assert not hasattr(tool_loop, "_claims_deck") and not hasattr(tool_loop, "_CLAIMS_DECK_RE")
+def test_the_deck_claim_regex_is_gone_with_the_zero_tool_tier():
+    # C3a moved the deck regex from tool_loop to promise_guard's zero-tool (spawn) tier;
+    # C7b-5 (v0.1.63) deleted that tier with the dispatcher, its only caller. Chat turns
+    # never ran it: arslan.py calls only promise_guard.correct (find_promise).
+    for mod in (tool_loop, promise_guard):
+        assert not hasattr(mod, "_claims_deck") and not hasattr(mod, "_CLAIMS_DECK_RE")
+    assert not hasattr(promise_guard, "correct_zero_tool")
 
 
 def test_no_tool_list_still_names_render_deck():

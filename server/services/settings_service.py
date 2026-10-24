@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import select
@@ -18,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = (
-    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
+    "llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
                "search_provider_role",
-               "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
+               "llm_strategy", "orchestrator_shell_enabled",
                "shell_confirm_policy", "background_job_budget", "task_usd_cap", "synthesis_config_id",
                "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
@@ -31,7 +30,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                # 0.1.58 §6: one model of the slot's config (empty = the config's own model).
                "compaction_model", "synthesis_model", "router_model", "vision_model",
-               "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
+               "mcp_server_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
@@ -42,10 +41,22 @@ _PLAIN_KEYS = (
                # 0.1.63 K7: every tool on every request ("true" | "false"; default off). No UI: M1's A/B
                # and the rollback. DELETE-BY: v0.1.64 (see arslan.RESIDENT).
                "tools_all_resident",
+               # 0.1.63 K8a: show an answer only once it is complete ("true" | "false"; default off: answers
+               # go out as they are written). No UI yet. DELETE-BY: v0.1.64, when v0.1.63's M1 shows streaming
+               # no worse than buffering two rounds running and no issue was opened for it (card K8).
+               "answer_when_complete",
+               # 0.1.63 K9a: run every tool call one at a time ("true" | "false"; default off: consecutive reads
+               # run together). No UI: the rollback. DELETE-BY: v0.1.64, when v0.1.63's M1 shows parallel no
+               # worse than serial twice running and the pairing tests stay green (card K9).
+               "tools_serial",
+               # 0.1.63 K9b: a message sent while a turn runs waits for the next turn, as before K9b ("true" |
+               # "false"; default off: the running turn reads it at its next tool boundary). No UI: the rollback.
+               # DELETE-BY: v0.1.64, when M3 #10 passes and v0.1.63 has no steering issue (card K9).
+               "steering_off",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
-_INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
+_INT_KEYS = ("run_debug_retention_days",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
@@ -115,15 +126,6 @@ async def _set_raw(session: AsyncSession, key: str, value: str) -> None:
         session.add(Setting(key=key, value=value))
 
 
-async def _clear_raw(session: AsyncSession, key: str) -> None:
-    """Delete a setting outright. Distinct from storing "" — the boundary readers treat
-    an unparsable value as "not recorded", but leaving a blank row behind would make a
-    cleared boundary indistinguishable from a corrupt one in the DB."""
-    existing = await session.get(Setting, key)
-    if existing:
-        await session.delete(existing)
-
-
 def _truthy(value) -> bool:
     """The one place that decides what an incoming settings value means. Accepts real
     bools (the API) and the strings the DB round-trips."""
@@ -146,16 +148,6 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
         # (e.g. "sk-...9999" or "***") which must never replace the real key.
         if val and not _looks_masked(str(val)):
             await _set_raw(session, secret_key, crypto.encrypt(str(val)))
-
-    # 🔴 Turning curation OFF discards the backfill boundary, so a later re-enable
-    # records a FRESH one. The boundary belongs to the CURRENT enablement, not to the
-    # database: written once per DB, the most likely real sequence — enable, find it
-    # expensive, disable, use the app for months, enable again — would sweep the entire
-    # off-period, which is the mass historical backfill the gate exists to prevent.
-    # Cleared HERE rather than only in the loop because the toggle can happen while the
-    # app is down; the loop's own off-tick clearing is belt and braces for a direct DB edit.
-    if "curation_enabled" in data and not _truthy(data["curation_enabled"]):
-        await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
 
     await session.commit()
     if "language" in data and data["language"] is not None:
@@ -198,12 +190,11 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     # so on a fresh install the key is ABSENT from the response and SettingsOut's
     # pydantic default answers for it. That gave every bool TWO independent definitions
     # of its default (the accessor and the schema) with nothing asserting they agree.
-    # A change that moved only one of them — exactly what flipping curation_enabled
-    # would be — produces a UI reporting OFF while the loop runs, or the reverse.
+    # A change that moved only one of them produces a UI reporting OFF while the
+    # feature runs, or the reverse.
     # Asserted complete against _BOOL_KEYS by test_settings_bool_keys.
     for bool_key, accessor in _BOOL_ACCESSORS.items():
         out[bool_key] = await accessor(session)
-    out["evolution_auto"] = "on" if await evolution_auto(session) else "off"
     return out
 
 
@@ -216,29 +207,6 @@ async def get_decrypted(session: AsyncSession, key: str) -> str:
 async def get_decrypted_api_key(session: AsyncSession) -> str:
     """Return the plaintext LLM API key for making LLM calls (never exposed via API)."""
     return await get_decrypted(session, "llm_api_key")
-
-
-async def distill_enabled(session: AsyncSession) -> bool:
-    """Whether session-end distillation is on (default True; only an explicit 'false' disables)."""
-    raw = await _get_raw(session, "distill_on_session_end")
-    return raw is None or str(raw).strip().lower() != "false"
-
-
-async def curation_enabled(session: AsyncSession) -> bool:
-    """Whether the sleep-time curation loop may run.
-
-    🔴 Default OFF (opt-in), unlike every other toggle here. The loop SPENDS money, and
-    its output currently lands in the brain proposal inbox, which has no UI yet (that
-    is the F2 frontend round) — so a default-on sweep would burn tokens producing
-    something the user cannot see. Per the project's standing rule, the proposing side
-    is fail-open but the EXECUTING side (writes, tools, spend) is fail-closed. Flip the
-    default once the inbox is visible.
-
-    The loop ALSO requires distill_enabled: ignoring the user's session-end distill
-    switch would violate that consent and spend money doing it.
-    """
-    raw = await _get_raw(session, "curation_enabled")
-    return raw is not None and str(raw).strip().lower() == "true"
 
 
 async def keep_awake_enabled(session: AsyncSession) -> bool:
@@ -297,13 +265,24 @@ async def terminal_sandbox_enabled(session: AsyncSession) -> bool:
     return raw is None or str(raw).strip().lower() != "false"
 
 
-async def research_review_enabled(session: AsyncSession) -> bool:
-    """Whether a saved multi-source research report gets an advisory source
-    review after saving. Default OFF (user ruling 2026-09-26): it spends one
-    extra model request on the user's key per qualifying save, and its false-
-    positive rate is being calibrated. Never a gate on saving."""
-    raw = await _get_raw(session, "research_review_enabled")
-    return raw is not None and str(raw).strip().lower() == "true"
+async def answer_when_complete(session: AsyncSession) -> bool:
+    """K8a: answers shown only when complete, as before K8. Default off. DELETE-BY: v0.1.64 (card K8)."""
+    raw = await _get_raw(session, "answer_when_complete")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def tools_serial(session: AsyncSession) -> bool:
+    """K9a: every tool call one at a time, as before reads ran together. Default off. DELETE-BY: v0.1.64
+    (card K9)."""
+    raw = await _get_raw(session, "tools_serial")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def steering_off(session: AsyncSession) -> bool:
+    """K9b: messages sent during a turn wait for the next one, as before K9b. Default off. DELETE-BY: v0.1.64
+    (card K9)."""
+    raw = await _get_raw(session, "steering_off")
+    return str(raw).strip().lower() == "true" if raw is not None else False
 
 
 async def tools_all_resident(session: AsyncSession) -> bool:
@@ -326,7 +305,7 @@ async def default_read_enabled(session: AsyncSession) -> bool:
     configured workspace. Default **ON** (spec 2026-08-24, user ruling): the whole
     point is that a novice can 'look at my desktop' the moment they install. Only
     an explicit 'false' turns it off — the exit for a privacy-sensitive user, not
-    a gate for everyone. Mirrors distill_on_session_end's default-on shape.
+    a gate for everyone.
 
     This governs READS only. Writes stay workspace-bound and gated regardless."""
     raw = await _get_raw(session, "default_read_enabled")
@@ -366,11 +345,14 @@ async def heartbeat_interval_s(session: AsyncSession) -> int:
 
 def default_workspace():
     """Arslan's own folder: ~/Arslan (0.1.48). Tests point it elsewhere through
-    ARSLAN_DEFAULT_WORKSPACE so a test run never touches the user's home."""
+    ARSLAN_DEFAULT_WORKSPACE so a test run never touches the user's home; the desktop
+    app's frozen server ignores it (0.1.63, after #364). Frozen, not `packaged`: a test that
+    runs with the packaged configuration must still stay out of the real home folder."""
     import os
+    import sys
     from pathlib import Path
 
-    override = os.environ.get("ARSLAN_DEFAULT_WORKSPACE", "").strip()
+    override = "" if getattr(sys, "frozen", False) else os.environ.get("ARSLAN_DEFAULT_WORKSPACE", "").strip()
     return Path(override).expanduser() if override else Path.home() / "Arslan"
 
 
@@ -422,10 +404,12 @@ async def mcp_server_enabled(session: AsyncSession) -> bool:
 
 
 async def shell_confirm_policy(session: AsyncSession) -> str:
-    """'ask_risky' (0.1.48 default): harmless commands run, the rest show a card.
-    'ask_all': every command shows a card (only an explicit choice gives this)."""
+    """'ask_all' (v0.1.63 default, user's decision): every command shows a card.
+    'ask_risky': harmless commands run, the rest show a card; only an explicit choice gives it, as its judgement
+    of what is risky is completed in v0.1.64 (S2a-3). Only the exact value counts (what Settings writes); unset
+    or anything else reads as ask_all, the same rule migration 0070 used when it moved a stored ask_risky."""
     raw = await _get_raw(session, "shell_confirm_policy")
-    return "ask_all" if str(raw).strip().lower() == "ask_all" else "ask_risky"
+    return "ask_risky" if raw == "ask_risky" else "ask_all"
 
 
 async def background_job_budget(session: AsyncSession) -> str:
@@ -463,115 +447,6 @@ async def run_budget_from_settings():
     except Exception:  # noqa: BLE001 — a run must not fail to start over its budget tier
         logger.warning("work budget tier not read; using the default", exc_info=True)
         return run_budget()
-
-
-async def evolution_auto(session: AsyncSession) -> bool:
-    """Whether the background evolution watcher may run attempts for spawns.
-
-    🔴 Default OFF. It used to default ON, justified as "standing consent — the estimate
-    is visible in the inbox, and the budget cap + backoff prevent runaway spend". Both
-    halves of that justification turned out to be false:
-
-      * the budget cap did not exist at the time. `evolution_max_dispatches` now caps
-        projected DISPATCHES, but is still unset by default,
-        because the estimate it would gate on is a known over-estimate that grows with
-        the corpus (see evolution_estimate.py) — a fixed cap over a growing number is a
-        permanent kill switch, so no cap is set and nothing bounds the total;
-      * "visible in the inbox" is visible only to someone who already knows to look.
-        There was no Settings control for this at all, so a user could neither see that
-        it was running nor turn it off without calling the API by hand.
-
-    Which left: clone the repo, run it, and a background loop starts spending YOUR API
-    credits without being asked. That is not consent, standing or otherwise.
-
-    This is the same rule `curation_enabled` above already states — the proposing side is
-    fail-open, the EXECUTING side (writes, tools, spend) is fail-closed — applied to the
-    loop that spends two orders of magnitude more. It was written down there and not
-    applied here, because this default predates the discovery that its cap was fiction.
-
-    Only an explicit 'on'/'true'/'1'/'yes' enables it.
-    """
-    raw = await _get_raw(session, "evolution_auto")
-    if raw is None:
-        return False
-    return str(raw).strip().lower() in ("on", "true", "1", "yes")
-
-
-_LEGACY_TOKEN_CAP_KEY = "evolution_max_est_tokens"
-
-
-async def legacy_token_cap_if_set(session: AsyncSession) -> str | None:
-    """The pre-dispatch-cap key, if an install had actually set one.
-
-    🔴 fail-LOUD, not fail-silent. The replacement changed the UNIT, so the old value
-    cannot be carried over — any conversion would be invented, since tokens-per-dispatch
-    is exactly the figure this project does not reliably know. But a limit that vanishes
-    without a word is worse than one that is refused with an explanation: the user set a
-    spending limit and would go on believing it applied. Surfaced by the diagnostics
-    payload so it reaches a screen instead of a log line nobody reads."""
-    return await _get_raw(session, _LEGACY_TOKEN_CAP_KEY)
-
-
-async def evolution_max_dispatches(session: AsyncSession) -> int | None:
-    """Per-attempt cap on PROJECTED REPLAY DISPATCHES. Unset (None) = no cap, and that is
-    still the default: the `actual` ledger is empty on every install, so there is no
-    distribution to pick a number from.
-
-    🔴 Counts dispatches, not tokens, and it REPLACED `evolution_max_est_tokens` rather
-    than being renamed from it. Renaming while changing the unit is a silent-corruption
-    trap: a stored 30,000,000 would survive as a "30 million dispatch" cap — no cap at all
-    — and no conversion is honest, because tokens-per-dispatch is precisely the figure we
-    do not reliably know. The old key was verified unset before removal, and any install
-    that DID set it gets a warning rather than a silently dropped limit.
-
-    The unit changed because the old one gated on a number that over-states by 3.7-5.2x:
-    a user setting a cap from what evolution really costs would have had every attempt
-    refused. The gate failed in the direction where setting a limit switches the feature
-    off, with nothing on screen explaining why."""
-    raw = await _get_raw(session, "evolution_max_dispatches")
-    if raw is None:
-        return None
-    try:
-        return int(str(raw).strip())
-    except ValueError:
-        return None
-
-
-# S2 E9 — the developer-declared clean-corpus start (spec §E9 / audit #12).
-EVOLUTION_BASELINE_STARTED_AT_KEY = "evolution_baseline_started_at"
-
-
-def _parse_iso_utc(value: str | None) -> datetime | None:
-    """Parse an ISO-8601 timestamp to a NAIVE-UTC datetime — matching Run.created_at, which
-    is written via datetime.utcnow(). A tz-aware value is converted to UTC and stripped of
-    tzinfo so it compares directly against the naive DB column. Unparsable → None."""
-    if not value:
-        return None
-    s = value.strip()
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(s)
-    except (TypeError, ValueError):
-        return None
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
-
-async def get_baseline_started_at(session: AsyncSession) -> datetime | None:
-    """The clean-corpus start declared in E9. None = never declared → build_corpus /
-    replay_set apply no created_at floor (back-compat: every epoch>=1 live run is eligible)."""
-    return _parse_iso_utc(await _get_raw(session, EVOLUTION_BASELINE_STARTED_AT_KEY))
-
-
-async def set_baseline_started_at(session: AsyncSession, dt: datetime) -> None:
-    """Persist the clean-corpus start as an ISO-8601 string, stored naive-UTC (a tz-aware
-    dt is normalized first) so the round-trip and the DB comparison stay consistent."""
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    await _set_raw(session, EVOLUTION_BASELINE_STARTED_AT_KEY, dt.isoformat())
-    await session.commit()
 
 
 DEFAULT_RUN_DEBUG_RETENTION_DAYS = 30
@@ -629,7 +504,6 @@ async def brain_usage_event_max_rows(session: AsyncSession) -> int:
 #: (see the comment in get_settings). test_settings_int_keys pins the equality.
 _INT_ACCESSORS = {
     "run_debug_retention_days": run_debug_retention_days,
-    "evolution_max_dispatches": evolution_max_dispatches,
     "brain_usage_event_retention_days": brain_usage_event_retention_days,
     "brain_usage_event_max_rows": brain_usage_event_max_rows,
 }
@@ -637,8 +511,7 @@ _INT_ACCESSORS = {
 
 #: Read-path registry for the BOOL settings. Every entry in `_BOOL_KEYS` MUST appear
 #: here — a key that is writable but not readable reports the schema default forever
-#: (see the comment in get_settings). `evolution_auto` is deliberately absent: it is a
-#: bool in the service but a STRING ("on"/"off") on the wire, so it keeps its own line.
+#: (see the comment in get_settings).
 async def first_run_seen(session: AsyncSession) -> bool:
     """Whether onboarding was dismissed or completed. Default False."""
     return _truthy(await _get_raw(session, "first_run_seen"))
@@ -646,9 +519,6 @@ async def first_run_seen(session: AsyncSession) -> bool:
 
 _BOOL_ACCESSORS = {
     "first_run_seen": first_run_seen,
-    "distill_on_session_end": distill_enabled,
-    "curation_enabled": curation_enabled,
-    "research_review_enabled": research_review_enabled,
     "keep_awake_enabled": keep_awake_enabled,
     "desktop_notifications_enabled": desktop_notifications_enabled,
     "island_enabled": island_enabled,
@@ -662,31 +532,3 @@ _BOOL_ACCESSORS = {
 #: The bool keys this registry is responsible for.
 _BOOL_KEYS = tuple(_BOOL_ACCESSORS)
 
-
-#: The moment curation was switched on. Everything idle BEFORE it is history and is not
-#: swept; see curation_loop.ensure_backfill_boundary for why.
-CURATION_BACKFILL_FROM_KEY = "curation_backfill_from"
-
-
-async def curation_backfill_from(session: AsyncSession) -> datetime | None:
-    """When the curation sweep's scope begins. None = not recorded yet.
-
-    An UNPARSABLE stored value returns None rather than falling through to "no gate":
-    reopening the historical backfill is the expensive direction, and it would happen
-    invisibly. The loop treats None as "record a boundary now and sweep only forward",
-    so a corrupt value costs a small amount of scope, never a surprise bill.
-    """
-    return _parse_iso_utc(await _get_raw(session, CURATION_BACKFILL_FROM_KEY))
-
-
-async def clear_curation_backfill_from(session: AsyncSession) -> None:
-    """Forget the boundary, so the next enable records a fresh one."""
-    await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
-    await session.commit()
-
-
-async def set_curation_backfill_from(session: AsyncSession, dt: datetime) -> None:
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    await _set_raw(session, CURATION_BACKFILL_FROM_KEY, dt.isoformat())
-    await session.commit()

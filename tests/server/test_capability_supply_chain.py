@@ -23,8 +23,9 @@ from server.mcp import catalog
 from server.services import skill_import
 
 
-def test_mcp_connectors_come_from_the_static_catalog_only():
-    """CONNECTORS is data in the repository — versioned, reviewed, diffable.
+def test_the_mcp_tier_table_is_static_data_only():
+    """The hand-graded tier table is data in the repository — versioned, reviewed, diffable.
+    (0.1.63 C9b removed the preset connector list that used to live beside it.)
 
     Matched on IMPORT STATEMENTS, not on bare substrings. The first draft looked
     for the word "requests" anywhere in the file and went red the moment a
@@ -37,7 +38,7 @@ def test_mcp_connectors_come_from_the_static_catalog_only():
     roots = {name.split(".")[0] for name in imports}
     fetchers = roots & {"httpx", "requests", "urllib", "urllib3", "aiohttp", "socket"}
     assert not fetchers, (
-        f"the preset catalog imports {sorted(fetchers)} — the connector list must "
+        f"server/mcp/catalog.py imports {sorted(fetchers)} — the tier table must "
         "be static data, not something fetched at runtime")
 
 
@@ -79,23 +80,3 @@ def test_the_license_gate_is_server_side_and_not_advisory():
         "import_skill no longer consults the licence gate — a client could then "
         "import anything by calling the API directly")
 
-
-def test_the_catalog_entries_are_complete_enough_to_review():
-    """Every preset must carry what a reviewer needs, or 'reviewed registry' is
-    a phrase rather than a property."""
-    for c in catalog.CONNECTORS:
-        assert c.get("key") and c.get("label"), c
-        assert c.get("description"), f"{c['key']} has no description to review"
-        assert "transport" in c and "command" in c, f"{c['key']} hides how it runs"
-        # env is a list (possibly empty) — never absent, because "no credentials
-        # required" and "nobody recorded the credentials" must not look alike.
-        assert isinstance(c.get("env"), list), f"{c['key']} does not declare its credentials"
-
-
-def test_no_connector_smuggles_a_shell_pipeline():
-    """`command` is executed. A preset whose command is a shell one-liner would
-    make the reviewed-registry property meaningless at the last step."""
-    for c in catalog.CONNECTORS:
-        assert not re.search(r"[;&|`$]", str(c["command"])), c
-        for arg in c.get("args") or []:
-            assert not re.search(r"[;&|`]", str(arg)), (c["key"], arg)

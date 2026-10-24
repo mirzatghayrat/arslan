@@ -80,9 +80,10 @@ if sys.platform == "darwin":
 
 # collect_submodules finds MODULES. It does not find package DATA, and the
 # arslan package is mostly data at runtime: pyproject.toml's wheel-content
-# comment lists four kinds loaded via Path(__file__).parent — seed
-# skill-packs, scaffold templates, LLM capability profiles, official
-# templates. Without these the app boots, serves /api/v1/health 200, and then
+# comment lists two kinds loaded via Path(__file__).parent — bundled
+# skills and LLM capability profiles (the scaffold and official templates
+# went with arslan/spawn and arslan/templates in C7, v0.1.63). Without
+# these the app boots, serves /api/v1/health 200, and then
 # seeds ZERO of its six factory spawns, because every skill reports
 # "catalog-only (no method body yet) — not equippable": the SKILL.md files it
 # would read simply are not there. Measured on a real bundle; 67 files were

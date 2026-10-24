@@ -105,6 +105,33 @@ export interface ContextParts {
 }
 
 /** 0.1.58 §1: GET /runs/{id}/process. */
+/** 0.1.63 S3: what undoing a turn covers (GET /runs/{id}/checkpoint); S3b adds the conversation. */
+export interface RunCheckpoint {
+  exists: boolean;
+  changed?: number;
+  created?: number;
+  skipped?: { path: string; reason: string }[];
+  excluded?: string[];
+  later?: number[];
+  running?: boolean;
+  restored_at?: number | null;
+  conversation: boolean;
+  /** Why the conversation can't be undone: none | job | not_own_turn | already | summarised | running | finishing. */
+  reason: string | null;
+  /** The newest message the undo would take back: sent with it, so it is held to what was shown. */
+  last_message_id?: number;
+  messages_after?: number;
+  later_turns?: number;
+  facts?: number;
+}
+
+/** POST /runs/{id}/checkpoint/restore {what: "conversation" | "both"}: `history` is the conversation now. */
+export interface TurnUndone {
+  conversation?: { conversation_id: string; messages: number; later_turns: number; facts: number;
+    history: ArslanHistoryRow[] };
+  files?: { later: number[] };
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
@@ -286,22 +313,6 @@ export interface StoredArtifact {
   url: string;
 }
 
-/** Advisory source-review note stored beside one artifact snapshot (0.1.41). */
-export interface ArtifactReviewIssue {
-  claim: string;
-  quote: string;
-  reason: string;
-  source_id: string;
-  source_url: string;
-}
-
-export interface ArtifactReview {
-  status: "none" | "issues" | "no_objection" | "unavailable";
-  code?: string;
-  issues?: ArtifactReviewIssue[];
-  artifact_sha256?: string;
-}
-
 export interface SpawnSummary {
   id: number;
   name: string;
@@ -332,11 +343,6 @@ export interface SeedRef {
   summary: string;
 }
 
-export interface SeedsResponse {
-  seeds: SeedRef[];
-  total: number;
-}
-
 export interface SpawnDetail extends SpawnSummary {
   persona_role: string | null;
   persona_tone: string | null;
@@ -359,12 +365,12 @@ export interface AppSettings {
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   llm_strategy?: string;
-  distill_on_session_end?: boolean;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
   workspace_dir?: string;   // "" = unset = file tools not offered
+  workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
   projects_auto_advance?: string; // "true" | "false" (0.1.56)
@@ -386,10 +392,6 @@ export interface AppSettings {
   compaction_config_id?: string;
   router_config_id?: string;
   vision_config_id?: string;
-  /** Sleep-time curation sweep. Wire type is a real bool here (unlike
-   *  an "on"/"off" string), matching SettingsOut.curation_enabled. */
-  curation_enabled?: boolean;
-  research_review_enabled?: boolean;
   keep_awake_enabled?: boolean;
   desktop_notifications_enabled?: boolean;
   island_enabled?: boolean;
@@ -468,25 +470,6 @@ export interface ModelListResult {
   stale: boolean;
   error: string | null;
   source: string;
-}
-
-export interface TemplateInfo {
-  name: string;
-  domain: string;
-  description: string;
-  tags: string[];
-}
-
-export interface EvolutionRule {
-  rule_type: string;
-  rule: string;
-  confidence: number;
-  sample_size: number;
-}
-
-export interface EvolutionStats {
-  feedback_count: number;
-  active_rules: EvolutionRule[];
 }
 
 // WebSocket wire messages (server -> client)
@@ -689,7 +672,8 @@ export type ArslanServerMessage =
   | { type: "working"; elapsed_s: number }
   /** 0.1.59: this window's message waits for the conversation's current turn; then it starts. */
   | { type: "queued" }
-  | { type: "dequeued" }
+  // K9b: `inserted` — the message was added to the turn that is running (not a turn of its own).
+  | { type: "dequeued"; inserted?: boolean }
   // run_id (S3-M1): present only on recorded (spawn) runs — the cancel target for
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
@@ -719,27 +703,13 @@ export type ArslanServerMessage =
   | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
-  | ({ type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean } & CardV2Fields)
+  | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
   | ({ type: "propose_capability"; call_id: string } & CapabilityCard)
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
       detail: string; background?: boolean } & CardV2Fields)
-  // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
-  // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
-  // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
-  // local path the card must collect in a PLAIN TEXT field and append to argv itself.
-  | { type: "propose_connect_mcp"; call_id: string; key: string; label: string; transport: string;
-      label_key?: string;
-      command: string; argv: string[]; url: string | null; env_keys: McpConnectorEnvVar[];
-      prerequisites: string; requires_path: boolean; path_placeholder: string | null }
-  // Honest, tier-aware result after a connect card completed — counts are ALWAYS
-  // recomputed server-side from the DB, never trusted from the client's apply chain.
-  // `call_id` is the proposal's (the server echoes the confirm's): the card this answers, in every
-  // window on the conversation. An older server sends none, and the follow-up names only the server.
-  | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
-      restricted_count: number; assignable: boolean; call_id?: string }
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
@@ -880,210 +850,6 @@ export interface EvolveProposal {
   candidate_prompt: string | null;
   gate: EvolveGate;
   evidence: Record<string, unknown> | null;
-}
-export interface ConfirmResult {
-  ok: boolean;
-  reason?: string;
-  spawn_id?: number;
-  generation_level?: number;
-}
-
-/* ── S2 evolution: the promotion card + inbox (spec §E7) ──────────────────────
- * Mirrors the backend GateResult.user_facing() shape EXACTLY. real_delta and
- * synthetic_delta are the ONLY win-rate deltas — there is deliberately no merged
- * field, and the UI must never compute one (real/synthetic never merged). */
-
-/** One corpus's win/loss/tie + exact binomial p-value + Wilson 95% CI. */
-export interface DeltaStat {
-  wins: number;
-  losses: number;
-  ties: number;
-  n: number; // non-tie pairs (wins + losses)
-  win_rate: number; // 0..1
-  p_value: number;
-  ci95: [number, number];
-}
-
-/** One holdout pair's trace-linkable evidence row. `overall`/`per_dim` verdicts:
- * "b" = candidate won, "a" = baseline won (candidate lost), else tie. */
-export interface EvidencePair {
-  task_hash: string;
-  corpus_label: "real" | "synthetic";
-  source_ref: number | { synth_id: number; version: number } | null;
-  split_side: string;
-  baseline_run_id: number | null;
-  candidate_run_id: number | null;
-  base_out_len: number;
-  cand_out_len: number;
-  per_dim: Record<string, "a" | "b" | "tie">;
-  overall: "a" | "b" | "tie";
-  position_sensitive: boolean;
-}
-
-/** The holdout-only evidence payload (GateResult.user_facing). */
-export interface ProposalEvidence {
-  passed?: boolean;
-  reason?: string;
-  flags: string[];
-  real_delta: DeltaStat;
-  synthetic_delta: DeltaStat;
-  evidence_tier: "strong" | "medium" | "weak";
-  pairs: EvidencePair[];
-  excluded_count: number;
-  protected_run_ids?: number[];
-}
-
-/** One inbox row (GET /evolution/proposals) — summary only. */
-export interface ProposalListItem {
-  id: number;
-  spawn_id: number;
-  status: string; // open | proposed | promoted | rejected | stale
-  gate_passed: boolean;
-  base_prompt_sha: string | null;
-  real_delta: DeltaStat | null;
-  synthetic_delta: DeltaStat | null;
-  evidence_tier: string | null;
-  flags: string[];
-  created_at: string | null;
-  promoted_at: string | null;
-}
-
-/** Full card payload (GET /evolution/proposals/{id}). `base_prompt` is the spawn's
- * CURRENT canonical system_prompt — the honest diff base; `is_stale` = it has
- * drifted from the gate's baseline (base_prompt_sha). */
-export interface ProposalDetail {
-  id: number;
-  spawn_id: number;
-  spawn_name: string | null;
-  status: string;
-  gate_passed: boolean;
-  generation_level: number | null;
-  base_prompt_sha: string | null;
-  base_prompt: string | null;
-  candidate_prompt: string;
-  is_stale: boolean;
-  evidence: ProposalEvidence;
-  estimate: EvolveEstimate | null;
-  actual: Record<string, unknown> | null;
-  created_at: string | null;
-  promoted_at: string | null;
-}
-
-/** GET /spawns/{id}/evolve/estimate.
- *
- * Two blocks that disagree on purpose. The first is FROZEN and wrong — `dispatches`
- * over-states 3.7-5.2x — and stays only because it is what the historical attempt rows
- * carry. The second is derived from the loop; `basis: "max"` covers the COUNT ceilings
- * and nothing else. `tokens_projected` is mean-priced and is NOT a bound; it is null
- * until the `actual` ledger has entries, which today is every install.
- *
- * The `*_max` block is optional so a STORED estimate from before this schema still
- * typechecks — those rows exist and PromotionCard renders them.
- *
- * `est_tokens` / `lower_bound` are deliberately absent: the API stopped emitting them
- * once nothing read them, and `lower_bound: true` was false anyway. Stored rows may still
- * carry the keys; nothing may start reading them. The honest token number here is
- * `tokens_projected`. (`ActualUsage.est_tokens` is a different, MEASURED field.)
- */
-export interface EvolveEstimate {
-  pairs: number;
-  dispatches: number;
-  judge_calls: number;
-  optimizer_calls: number;
-  synth_calls: number;
-  propose_pairs?: number;
-  val_pairs?: number;
-  dispatches_max?: number;
-  judge_calls_max?: number;
-  optimizer_calls_max?: number;
-  basis?: string;
-  avg_replay_tokens?: number | null;
-  /** Pooled across ALL spawns, not this one — the ledger is too thin to slice. */
-  avg_replay_n?: number;
-  tokens_projected?: number | null;
-  tokens_projected_unavailable_reason?: string | null;
-}
-
-/** 202 response for POST /spawns/{id}/evolve (background job). */
-export interface EvolveEnqueued {
-  attempt_id: number | null;
-}
-
-/**
- * Stable machine verdict for the evolution eligibility diagnosis (E9-b). The panel maps each
- * to a localized `evolution.diag.verdict_${code}` sentence. `holdout_via_synthetic_topup` is
- * INFORMATIONAL — a thin real holdout is no longer a blocker; the mint=True top-up fills it at
- * evolve time. This union is the EXACT 1:1 set of codes the service can emit.
- */
-export type VerdictCode =
-  | "in_flight_hung"
-  | "drought_no_runs"
-  | "drought_non_replayable"
-  | "drought_too_few"
-  | "baseline_flooring"
-  | "holdout_via_synthetic_topup"
-  | "gate_failure"
-  | "skipped_budget"
-  | "eligible_looking";
-
-/** GET /spawns/{id}/evolution/diagnosis — read-only evolution eligibility for one spawn. */
-export interface SpawnDiagnosis {
-  spawn_id: number;
-  spawn_name: string;
-  generation_level: number;
-  total_scored: number;
-  replayable: number;
-  non_replayable: number;
-  offending_tools: Record<string, number>;
-  baseline_started_at: string | null;
-  scored_ge_baseline: number;
-  corpus_total: number;
-  holdout_ceiling: number;
-  real_holdout: number;
-  effective_holdout: number;
-  propose_count: number;
-  corpus_excluded: number;
-  min_holdout_n: number;
-  consecutive_fails: number;
-  threshold: number;
-  count_since_last_attempt: number;
-  auto_eligible: boolean;
-  open_proposals: number;
-  auto_on: boolean;
-  /** Cap on PROJECTED DISPATCHES (not tokens). null = no cap, which is the default. */
-  max_dispatches: number | null;
-  /** Set only where an install had the removed token cap; its value is NOT carried
-   * over (the unit changed). Surfaced so a dropped spending limit is never silent. */
-  legacy_token_cap_dropped?: string | null;
-  last_attempts: {
-    id: number;
-    outcome: string | null;
-    reason: string;
-    started_at: string | null;
-    finished_at: string | null;
-  }[];
-  verdict_code: VerdictCode;
-  verdict_params: Record<string, unknown>;
-}
-
-/** POST /evolution/proposals/{id}/refresh. */
-export interface RefreshResult {
-  ok: boolean;
-  status?: string | null;
-  refreshed?: boolean;
-  gate_passed?: boolean | null;
-  flags?: string[];
-  reason?: string | null;
-  proposal_id?: number | null;
-  new_tasks?: number | null;
-}
-
-/** POST /evolution/proposals/{id}/rollback. */
-export interface RollbackResult {
-  ok: boolean;
-  reason?: string | null;
-  spawn_id?: number | null;
-  generation_level?: number | null;
 }
 
 export interface RunListItem {
@@ -1240,21 +1006,6 @@ export interface SkillCandidate {
   promoted_at: string | null;
 }
 
-/** Gate result from evaluating a skill candidate against a target spawn. */
-export interface SkillGate {
-  passed: boolean;
-  reason: string;
-  aggregate: Record<string, unknown> | null;
-}
-
-/** Result of POST /skills/candidates/{id}/evaluate. */
-export interface SkillEvaluateResult {
-  ok: boolean;
-  status: string;
-  gate: SkillGate;
-  [key: string]: unknown;
-}
-
 /** Result of POST /skills/candidates/{id}/promote. */
 export interface SkillPromoteResult {
   ok: boolean;
@@ -1283,62 +1034,8 @@ export interface McpTool {
   host_enabled: boolean; // Arslan (host) may use this MCP tool
 }
 
-/** A required credential for a preset MCP connector (GET /mcp/catalog). */
-export interface McpConnectorEnvVar {
-  name: string;
-  description: string;
-  description_key?: string | null;
-  get_it_url: string;
-  paid: boolean;
-}
-
-/** How a connect card's apply chain ended (add -> connect -> expose -> wire). Kept in the store by call id while the card is paged away
- *  from, so the card that comes back knows whether it worked (see arslanStore `cardApply`). */
-export interface ApplyConnectMcpResult {
-  ok: boolean;
-  /** Present only on failure — the stage where the chain stopped. */
-  stage?: 'add' | 'connect' | 'expose' | 'wire';
-  serverId?: number;
-  /** Human-readable outcome: on failure, names the stopped state + where to fix it
-   *  (never a bare "failed"); on success, unset (the card renders its own copy from
-   *  the counts below). */
-  message?: string;
-  toolCount?: number;
-  safeCount?: number;
-  restrictedCount?: number;
-  /** False when NO tool was wired "safe" — connected but nothing is usable by a
-   *  spawn until a human reviews tiers in Connections & permissions. */
-  assignable?: boolean;
-}
-
-/** GET /mcp/catalog — the backend's single source of truth for preset MCP connectors
- * (feeds both the Settings recommended list and conversation-driven connect). Static,
- * versioned, reviewed data; `one_click` is true iff `env` is empty. `requires_path` is
- * orthogonal to `env`/`one_click` — Filesystem/Git need no credential but DO need a local
- * path (appended to `args` by the caller) before they can actually connect. */
-export interface McpConnector {
-  key: string;
-  /** Explicit auth category — replaces deriving it from `env`. "oauth" entries
-   *  render as an honest "not supported yet" card, never a Connect that can
-   *  only fail or a form collecting a key no service will issue. */
-  auth: 'none' | 'static_key' | 'oauth';
-  label: string;
-  label_key?: string | null;
-  description_key?: string | null;
-  transport: string;
-  command: string;
-  args: string[];
-  url: string | null;
-  runtime: string; // "node" | "python"
-  description: string;
-  one_click: boolean;
-  env: McpConnectorEnvVar[];
-  requires_path: boolean;
-  path_placeholder?: string | null;
-}
-
-/** Prefill payload for the MCP add-server form (built from a McpConnector or a saved
- * discovery candidate). `envKeys`, if present, seeds one env row per required credential —
+/** Prefill payload for the MCP add-server form (built from a saved discovery candidate
+ * or a dossier). `envKeys`, if present, seeds one env row per required credential —
  * it never auto-submits, the user reviews & supplies values before connecting. */
 export interface McpPrefill {
   label: string;
@@ -1355,8 +1052,6 @@ export interface NoteDto {
   backlinks?: { id: number; title: string }[];
 }
 
-/** Result of POST /conversations/{id}/distill — how many spawn chats were distilled. */
-export interface DistillResult { ok: boolean; distilled_spawns: number }
 /** Result of DELETE /conversations/{id} — per-table row counts removed. */
 export interface DeleteResult { ok: boolean; deleted: Record<string, number> }
 export interface NoteSuggestDto {

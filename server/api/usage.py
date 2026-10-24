@@ -40,11 +40,6 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 # LLM call sites NOT ledgered yet. Take a name off when its call site is wired to a
 # ledger scope or deleted.
 NOT_COVERED = [
-    "compare_judge",
-    "optimizer",
-    "synthetic_corpus",
-    "spawn_drafter",
-    "equipment_service",
     "ingest",
     "tool_intent",
     "mcp_suggest",

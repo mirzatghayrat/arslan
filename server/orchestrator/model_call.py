@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 import httpx
+from arslan.aio import within
 
 # Injectable for tests (fake clock / no real waiting).
 sleep = asyncio.sleep
@@ -57,6 +58,7 @@ class TurnRecovery:
     continuations: int = 0
     truncated_calls: int = 0
     capability_bounced: bool = False   # 0.1.50: one capability-truth correction per turn
+    unverified_bounces: int = 0        # K8a: unverified-answer corrections this turn (capped)
     images_read_locally: bool = False  # Hands v2 §4.4: one retry with screenshots read as text
 
     @property
@@ -106,6 +108,9 @@ def classify(exc: BaseException) -> tuple[str, int | None] | None:
         return "input", status
     if isinstance(exc, httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError):
         return "server", None
+    from arslan.llm.stream_assembly import UnreadableReply
+    if isinstance(exc, UnreadableReply):
+        return "unreadable", None              # K8b: never resent, the same stream would come back
     if isinstance(exc, TimeoutError):
         return "stall", None
     return None
@@ -146,7 +151,10 @@ async def call_with_recovery(request, state: TurnRecovery, *, remaining_s=None):
             limit = CALL_TIMEOUT_S
             if remaining_s is not None:
                 limit = max(1.0, min(limit, remaining_s()))
-            return await asyncio.wait_for(request(), timeout=limit)
+            # arslan.aio.within, not asyncio.wait_for: on 3.11 that drops a stop landing as the call completes
+            # (gh-86296). The call keeps a task of its own, so its checkpoint still ends a turn whose stop was
+            # lost elsewhere (#377's review), and a second stop never cuts its cleanup short (#384's review).
+            return await within(request(), limit)
         except Exception as exc:  # noqa: BLE001 — classified below; others re-raised untouched
             found = classify(exc)
             if found is None:

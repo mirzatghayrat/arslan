@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from server.db.models import Run, RunEvaluation
-from server.services import personal_context, replay_run, run_eval_service, run_recorder, run_reaper
+from server.services import personal_context, run_eval_service, run_recorder, run_reaper
 
 
 @pytest.mark.parametrize("flags", [
@@ -27,7 +27,6 @@ async def test_privacy_survives_detached_recording_and_background_reuse(executio
         row.status = "recorded"
         row.created_at = datetime.utcnow() - timedelta(hours=1)
         await db.commit()
-        assert not await replay_run.is_replayable(db, row.id)
     assert await run_reaper._reaper_candidates() == []
     await run_eval_service.score(recorder.run_id)
     async with execution_db() as db:

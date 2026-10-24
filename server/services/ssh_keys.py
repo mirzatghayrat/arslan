@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server import crypto
 from server.db.models import Setting
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ async def _generate() -> tuple[str, str]:
             "-f", str(target),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        _, err = await asyncio.wait_for(proc.communicate(), timeout=_KEYGEN_TIMEOUT_S)
+        _, err = await within(proc.communicate(), timeout=_KEYGEN_TIMEOUT_S)
         if proc.returncode != 0 or not target.exists():
             raise RuntimeError(f"ssh-keygen failed: {err.decode('utf-8', 'replace')[:200]}")
         return target.read_text(), (tmp / "id_ed25519.pub").read_text().strip()

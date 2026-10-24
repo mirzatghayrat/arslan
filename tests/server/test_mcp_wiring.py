@@ -512,6 +512,19 @@ async def test_switching_on_follows_the_state_not_only_a_cached_session(executio
     assert scheduled == []
 
 
+@pytest.fixture
+def _a_yes_to_every_card():
+    """S1: the tests that call the executor are about the call itself: every MCP card is answered yes
+    (test_s1_mcp_approval.py covers the cards)."""
+    from server.services import permissions
+
+    async def yes(frame):
+        return {"approved": True, "scope": "once", "note": "", "by": "mac"}
+    with permissions.asking_with(yes):
+        yield
+
+
+@pytest.mark.usefixtures("_a_yes_to_every_card")
 async def test_a_tool_error_echoing_the_servers_key_is_masked_wherever_it_goes(execution_db, monkeypatch):
     """F3 (review I-2, P4): the executor masks both failure texts — a tool's own error and a failed
     call — before it stores them and before the model reads them. The server's own key reaches
@@ -723,6 +736,7 @@ async def test_an_edit_during_a_connects_tool_write_is_followed_not_failed(execu
     assert (row.state, row.fail_count, row.next_retry_at) == ("ready", 0, None)
 
 
+@pytest.mark.usefixtures("_a_yes_to_every_card")
 async def test_a_key_straddling_the_6000_character_cut_never_reaches_the_model(execution_db, monkeypatch):
     """N-4 (re-review D4): the executor masks a tool's error before it cuts it to 6000 characters,
     so a key straddling the cut is masked whole — its head never reaches the tool result. The cut
@@ -800,6 +814,7 @@ async def test_an_http_start_whose_session_died_under_another_lister_says_the_co
     assert result.state == "failed" and row.last_error.startswith("the connection closed during start")
 
 
+@pytest.mark.usefixtures("_a_yes_to_every_card")
 async def test_a_key_straddling_the_500_character_stored_cut_never_reaches_last_error(execution_db, monkeypatch):
     """N-5 (re-review Q7): the stored copy is masked before it is cut to 500 characters — a key
     straddling that cut never leaves its head in last_error."""

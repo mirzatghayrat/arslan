@@ -59,9 +59,9 @@ REFUSED_GROUPS = 100
 @router.get("/approvals/refused")
 async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session)) -> list[dict]:
     """What could not be asked (`permission_store.NOT_ASKED`), the last `hours` (1 to 168): what
-    a run with nobody to ask refused (a scheduled run: `decided_by` policy), and the cards of a job
-    or a chat turn that never opened because an earlier one went unanswered (the person is away:
-    `decided_by` away, an expiry). One entry per kind and target — its latest row (`id` is what
+    a run with nobody to ask refused (a scheduled run: `decided_by` policy, `unattended` true), and the
+    cards of a job or a chat turn that never opened because an earlier one went unanswered (the person
+    is away: `decided_by` away, an expiry). One entry per kind, target and which of the two — its latest row (`id` is what
     "Always allow" sends back), how many times (`count`) and since when (`first_at`) — newest
     first, at most `REFUSED_GROUPS`. `always_ok`: the card would have offered "Always" (its row
     recorded the set). `always` (0.1.61, F2): what "Always allow" will store, exactly the rules
@@ -80,6 +80,7 @@ async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session))
         out.append({"id": row.id, "created_at": _utc(row.created_at), "first_at": _utc(first),
                     "count": count, "conversation_id": row.conversation_id, "kind": row.kind,
                     "target": row.target, "detail": row.detail, "always_ok": bool(always),
+                    "unattended": row.decided_by == "policy",
                     "always": [{"kind": kind, "target": target, "label": label}
                                for kind, target, label in always]})
         if len(out) == REFUSED_GROUPS:

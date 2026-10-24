@@ -149,55 +149,6 @@ async def conversation_recap(conversation_id: str) -> RecapOut:
     return RecapOut(**await recap_service.get_recap(conversation_id))
 
 
-
-def _distill_event(*, distilled: int, failed: int) -> tuple[str, dict]:
-    """(summary, ref) for a manual-distillation recap event.
-
-    The summary is a KEY and the counts live in `ref`, because this string is
-    PERSISTED (recap_service.log_event writes it to ConversationEvent.summary)
-    and rendered verbatim by the recap list. A Chinese sentence written here
-    stayed Chinese forever, in every interface language.
-
-    🔴 PARTIAL BY NATURE, and the other half cannot be fixed from here: rows
-    ALREADY written hold their original Chinese sentence. This changes what is
-    written from now on. The interface therefore has to render both shapes —
-    translate when the summary is a known key, show the stored text otherwise —
-    and that fallback is not temporary scaffolding, it is how old rows stay
-    readable.
-
-    Two keys rather than one: the original wording distinguished a clean run
-    from one with failures, and collapsing them would drop that distinction.
-    """
-    ref = {"manual": True, "distilled": distilled, "failed": failed}
-    key = "recap.distill.manual_with_failures" if failed else "recap.distill.manual"
-    return key, ref
-
-
-@router.post("/conversations/{conversation_id}/distill")
-async def conversation_distill(conversation_id: str) -> dict:
-    """Manually trigger the SAME session-end distill pipeline the orchestrator runs
-    on session-end (`distill_service.distill_session`): it selects only spawns that
-    produced a deliverable (`spawn_summary`), applies the empty-guard, folds each
-    into that spawn's memory_facts, and writes the per-(conversation, spawn) idempotency
-    marker. We reuse that function verbatim so the manual path can never diverge from
-    auto (no hand-rolled per-spawn loop). `distilled_spawns` is the honest count of
-    spawns ACTUALLY distilled this call — idle/already-distilled/failed spawns are
-    skipped, so it is NOT the roster size and NOT a memory-item count. A `distill`
-    growth event is logged for the recap. Auth-gated."""
-    from server.services import distill_service, recap_service
-
-    report = await distill_service.distill_session_detailed(conversation_id)
-    n = report.distilled
-    failed = [{"spawn_id": o.spawn_id, "reason": o.reason} for o in report.outcomes if o.failed]
-
-    summary, ref = _distill_event(distilled=n, failed=len(failed))
-    await recap_service.log_event(conversation_id, "distill", ref, summary)
-    # `distilled_spawns` stays an INT: the frontend toast reads it numerically
-    # (web/src/App.tsx) and client.types.ts types it that way. `failed_spawns` is
-    # additive — before it, a total failure and a clean no-op both reported 0.
-    return {"ok": True, "distilled_spawns": n, "failed_spawns": failed}
-
-
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,

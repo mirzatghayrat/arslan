@@ -30,7 +30,9 @@ from __future__ import annotations
 import pytest
 
 from server.orchestrator import tool_loop
-from server.services.replay_run import REPLAY_CONVERSATION_ID
+
+# The replay sentinel replay_safety still seals (replay_run, which defined it, went in C7b-2).
+REPLAY_CONVERSATION_ID = "evolution-replay"
 
 pytestmark = pytest.mark.asyncio
 
@@ -99,19 +101,6 @@ async def test_a_serial_attempt_still_gets_its_own_allowance():
     tool_loop.end_hermetic_attempt()
 
 
-async def test_a_raising_attempt_releases_its_claim():
-    """If the claim leaked, the allowance would never refresh again — the gate
-    would tighten silently over uptime, which the original comment calls worse
-    than no gate because it reads as a broken feature."""
-    import inspect
-
-    from server.services import evolution_watcher
-
-    src = inspect.getsource(evolution_watcher._perform_attempt)
-    assert "finally:" in src and "end_hermetic_attempt()" in src
-    assert tool_loop.hermetic_attempts_inflight() == 0
-
-
 async def test_a_reset_still_starts_a_fresh_allowance_for_a_new_attempt():
     """The fix must not turn the counter back into process-lifetime state.
 
@@ -125,18 +114,3 @@ async def test_a_reset_still_starts_a_fresh_allowance_for_a_new_attempt():
 
     tool_loop.reset_hermetic_fetch_budget(REPLAY_CONVERSATION_ID)
     assert await _spend(5) == 5, "a genuinely new attempt got no allowance"
-
-
-async def test_the_watcher_claims_rather_than_clears():
-    """The call site, not just the helper — a helper that CAN take an argument
-    but is called without one is exactly the bug this file is about."""
-    import inspect
-
-    from server.services import evolution_watcher
-
-    src = inspect.getsource(evolution_watcher._perform_attempt)
-    assert "reset_hermetic_fetch_budget" not in src, (
-        "the watcher still resets unconditionally — and passing the sentinel is "
-        "NOT a fix, since every hermetic dispatch shares that one key"
-    )
-    assert "begin_hermetic_attempt()" in src

@@ -16,7 +16,9 @@ whole, never left with its head in the text."""
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import uuid
 from datetime import datetime, timezone
 
 import httpx
@@ -26,6 +28,7 @@ from sqlalchemy import update
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool
 from server.mcp.session import CALL_TIMEOUT_S, NotStarted, is_dropped_error, manager
+from server.services.approvals import TIMEOUT_S as CARD_S
 
 logger = logging.getLogger(__name__)
 
@@ -212,12 +215,18 @@ async def _persist_last_error(server_id: int, err: str | None) -> None:
 
 
 class MCPProxyExecutor:
-    timeout_s = 130   # the tool loop's backstop: CALL_BOUND_S ends a stuck call first (0.1.61 §B1)
+    # The tool loop's backstop. S1: a call may first wait on its card (approvals.TIMEOUT_S), as Hands'
+    # do; then 130 s, which CALL_BOUND_S ends first for a stuck call (0.1.61 §B1).
+    timeout_s = CARD_S + 130
 
-    def __init__(self, server_id: int, external_name: str) -> None:
+    def __init__(self, server_id: int, external_name: str, *, key: str | None = None,
+                 annotations: dict | None = None) -> None:
+        from server.mcp.discovery import mcp_tool_key
         self.server_id = server_id
         self.external_name = external_name
-        self.key = f"mcp_{server_id}__{external_name}"
+        # The row's own key: names over 50 characters are hashed in it (mcp_tool_key).
+        self.key = key or mcp_tool_key(server_id, external_name)
+        self.annotations = annotations      # the hints the server declared (S1)
 
     async def _fail(self, err_text: str, prefix: str, server: dict) -> dict:
         from server.mcp.supervisor import mask_for
@@ -236,6 +245,50 @@ class MCPProxyExecutor:
         # NO external:False here so that framing applies.
         return {"ok": False, "error": prefix + err_text}
 
+    async def _approve(self, srv: MCPServer, args: dict) -> dict | None:
+        """S1 (R6): decided here, before the call leaves Arslan, by what the server says the tool does:
+        read-only runs (one ledger row, the mode let it); destructive asks every time, this time only;
+        anything else asks, this time or for this conversation. With nobody to ask (a scheduled run)
+        only read-only runs: the check above comes first (⓪Plan (i)). None means go ahead; otherwise
+        the refusal, which never reached the server (`executed: False`) and is Arslan's own words."""
+        from server.mcp.discovery import destructive, read_only
+        from server.services import background_jobs, permissions, personal_context
+        from server.ws import protocol
+        detail = json.dumps(args or {}, ensure_ascii=False)
+        target = f"{srv.label}/{self.external_name}"
+        current = personal_context.current()
+        ctx = permissions.Context(current.conversation_id if current else None,
+                                  job_id=background_jobs._inside_job.get())
+        title = f"Use {srv.label}\u2019s {self.external_name}?"
+        extra = {"mcp_server": srv.label, "mcp_tool": self.external_name}
+        if read_only(self.annotations):
+            await permissions.record_standing(permissions.Request(
+                kind="mcp_tool", target=self.key, title=title, detail=detail, extra=extra), ctx, by="mode")
+            return None
+        if len(detail) > protocol.DETAIL_MAX:
+            # ⓪Plan's review: a card shows at most DETAIL_MAX characters, so padding could push the real
+            # target off it and the yes would cover arguments nobody saw. Refused, never cut (not even
+            # under a grant: every call that is not read-only has arguments a card can show in full).
+            return {"ok": False, "external": False, "executed": False, "code": "too_long_to_show",
+                    "error": f"Not sent: the arguments of {srv.label}\u2019s {self.external_name} are "
+                             f"{len(detail)} characters, more than a card can show the user "
+                             f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed."}
+        frame = protocol.propose_action(uuid.uuid4().hex, "mcp_tool", target, detail)
+        if destructive(self.annotations):     # red on the web, never from the island, "delete" on the phone
+            req = permissions.Request(kind="destructive", target=self.key, title=title, detail=detail,
+                                      once_only=True, extra=extra, frame=frame)
+        else:
+            req = permissions.Request(kind="mcp_tool", target=self.key, title=title, detail=detail,
+                                      extra=extra, frame=frame)
+        decision = await permissions.decide(req, ctx)        # with nobody to ask: refused by policy (U14 a)
+        if decision.allowed:
+            return None
+        code = {"user": "declined", "expired": "no_answer", "policy": "no_one_to_ask"}.get(decision.by, "not_allowed")
+        error = (f"The user did not allow {srv.label}\u2019s {self.external_name}."
+                 f"{' They said: ' + decision.note if decision.note else ''} Do not retry; report it."
+                 if decision.by == "user" else decision.model_text or f"{title} was not allowed.")
+        return {"ok": False, "external": False, "executed": False, "code": code, "error": error}
+
     async def execute(self, args: dict) -> dict:
         async with db_session.AsyncSessionLocal() as db:
             srv = await db.get(MCPServer, self.server_id)
@@ -243,6 +296,15 @@ class MCPProxyExecutor:
             return {"ok": False, "error": f"MCP server {self.server_id} not found"}
         if srv.state != "ready":
             return not_ready_result(srv)
+        try:
+            refused = await self._approve(srv, args)
+        except Exception:  # noqa: BLE001 — a failed check is a refusal that never reached the server
+            logger.warning("mcp approval failed for %s", self.key, exc_info=True)
+            refused = {"ok": False, "external": False, "executed": False, "code": "not_allowed",
+                       "error": f"Not sent: Arslan could not check whether {srv.label}\u2019s "
+                                f"{self.external_name} may run. Tell the user."}
+        if refused is not None:
+            return refused
         from server.mcp.discovery import runtime_dict
         from server.mcp.supervisor import supervisor
         server = runtime_dict(srv)
@@ -314,4 +376,5 @@ async def build_mcp_executor(tool_key: str):
         server_id = int(tool.toolset_key.split("_", 1)[1])
     except (ValueError, IndexError):
         return None
-    return MCPProxyExecutor(server_id=server_id, external_name=tool.external_name or "")
+    return MCPProxyExecutor(server_id=server_id, external_name=tool.external_name or "", key=tool.key,
+                            annotations=tool.annotations)

@@ -1,4 +1,4 @@
-"""First-boot ARSLAN_SECRET_KEY bootstrap (dev-only, lock-and-box).
+"""First-boot ARSLAN_SECRET_KEY bootstrap (lock-and-box).
 
 A stranger's first ``uvicorn server.main:app`` used to require one manual
 ``python3 -c 'import secrets; ...'`` step — the only mandatory command in the
@@ -7,8 +7,9 @@ This module removes it n8n-style: a keyless DEV boot generates a secret once,
 persists it OUTSIDE the data dir, and reuses it on every later boot.
 
 Boundaries (approved spec):
-  * dev-only: ``ARSLAN_ENV=prod`` never reads or writes the file — prod keeps
-    the explicit-env-or-refuse-boot contract (``server.main._validate_settings``).
+  * every boot: the dev flow and the desktop app's server alike (0.1.63 C11 removed the prod mode that
+    skipped it). A packaged server that still ends up with no secret (one of the failures below)
+    refuses to start (``server.main._validate_settings``) instead of using the public dev key.
   * lock-and-box: the file lives OUTSIDE ``ARSLAN_DATA_DIR`` (default
     ``~/.arslan/secret_key``, override ``ARSLAN_SECRET_KEY_FILE``) so copying
     the data dir alone never ships the key next to the ciphertext. If the
@@ -28,10 +29,9 @@ Boundaries (approved spec):
     every stored provider key (crypto derives both MultiFernet keys from the
     CURRENT secret). Fail back to the dev fallback instead and say why.
 
-Ordering discipline (plan adversarial review): the prod and disabled gates run
-BEFORE any filesystem access, so prod boots and disabled runs (the test suites
-pin ``ARSLAN_SECRET_KEY_FILE=""`` at conftest module top) can never stat, read,
-or warn about the real ``~/.arslan``.
+Ordering discipline (plan adversarial review): the disabled gate runs BEFORE any
+filesystem access, so disabled runs (the test suites pin ``ARSLAN_SECRET_KEY_FILE=""``
+at conftest module top) can never stat, read, or warn about the real ``~/.arslan``.
 
 Import discipline: ``server.config`` imports this module at module-import time,
 so it must stay stdlib-only — importing anything under ``server.*`` here would
@@ -158,7 +158,7 @@ def _log_disclosure(path: Path, data_dir, *, log: logging.Logger) -> None:
 
 
 def bootstrap_secret_key(
-    *, env: str, explicit: str, data_dir=None, log: logging.Logger = logger
+    *, explicit: str, data_dir=None, log: logging.Logger = logger
 ) -> str:
     """Resolve the effective ARSLAN_SECRET_KEY for this boot (see module docstring).
 
@@ -171,16 +171,7 @@ def bootstrap_secret_key(
     """
     raw_override = os.environ.get(SECRET_FILE_ENV)
 
-    # Gate 1 — prod: never any filesystem access (explicit-or-refuse contract).
-    if env == "prod":
-        if raw_override and raw_override.strip():
-            log.info(
-                "ARSLAN_SECRET_KEY_FILE is dev-only and ignored in prod; "
-                "set ARSLAN_SECRET_KEY explicitly."
-            )
-        return explicit
-
-    # Gate 2 — set-but-empty override disables the feature (test suites / opt-out).
+    # Gate — set-but-empty override disables the feature (test suites / opt-out).
     if raw_override is not None and not raw_override.strip():
         return explicit
 

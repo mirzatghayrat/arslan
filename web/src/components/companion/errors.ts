@@ -34,6 +34,8 @@ export function taskErrorKey(code: string): string | null {
   if (code === "task_memory_check_failed") return "tasks.memoryCheckFailed";
   if (code === "task_local_model_required") return "tasks.localRequired";
   if (code === "task_project_changed") return "tasks.projectChanged";
+  // C7b-3 (v0.1.63): recipes were removed; an old recipe-driven task cannot be resumed.
+  if (code === "task_invalid_driver") return "tasks.cannotResume";
   if (code === "conversation_local_history") return "tasks.localHistory";
   if (code === "execution_failed" || code === "task_execution_failed") return "tasks.executionFailed";
   if (code === "task_version_conflict" || code === "task_attempt_stale") return "companion.conflict";

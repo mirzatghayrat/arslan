@@ -16,7 +16,7 @@ from server.schemas import (
     SpawnDetailOut,
     SpawnOut,
 )
-from server.services import chat_lifecycle, spawn_service
+from server.services import spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -131,14 +131,6 @@ async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
         await session.rollback()
         raise HTTPException(409 if exc.code == "memory_version_conflict" else 404, detail=exc.code) from exc
     return await get_preferences(spawn_id, session)
-
-
-@router.post("/spawns/{spawn_id}/complete-chat")
-async def complete_chat(spawn_id: int) -> dict:
-    n, distill_ok = await chat_lifecycle.complete_chat(spawn_id)
-    # `distilled` is additive: archived=0 alone cannot distinguish "no active chat"
-    # from "the distillation failed, so we deliberately kept your transcript".
-    return {"ok": True, "archived": n, "distilled": distill_ok}
 
 
 @router.delete("/spawns/{spawn_id}", status_code=status.HTTP_204_NO_CONTENT)

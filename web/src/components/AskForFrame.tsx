@@ -55,8 +55,10 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
       return <RunCommandCard callId={ask.call_id} pretty={str("pretty")} reason={str("reason")}
         remoteHost={str("remote_host")} fingerprints={(f.fingerprints as string[]) ?? []}
         background={f.background === true} why={str("why")} permKind={str("perm_kind") || undefined}
-        sandbox={f.sandbox === "outside" || f.sandbox === "retry" ? f.sandbox : undefined} noRemember {...v2}
-        {...common} onConfirm={(_id, _remember, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
+        sandbox={f.sandbox === "outside" || f.sandbox === "retry" ? f.sandbox : undefined} {...v2}
+        // S4a: only the window that asked lets a conversation's commands out of the sandbox; from here, this time.
+        options={f.perm_kind === "outside" ? v2.options?.slice(0, 1) : v2.options}
+        {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     case "propose_action":
       return <ActionApprovalCard kind={str("kind")} target={str("target")} detail={str("detail")} {...v2}
         title={str("title") || undefined} why={str("why") || undefined} permKind={str("perm_kind") || undefined}
@@ -67,7 +69,8 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
         path={str("path")} background={f.background === true} {...v2}
         {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     case "propose_schedule":
-      return <ScheduleGrantCard callId={ask.call_id} name={str("name")} when={str("when")} background={f.background === true} {...v2}
+      return <ScheduleGrantCard callId={ask.call_id} name={str("name")} when={str("when")} prompt={str("prompt")}
+        background={f.background === true} {...v2}
         {...common} onConfirm={(_id, scope) => yes(scope)} onCancel={(_id, note) => no(note)} />;
     default:
       return null;

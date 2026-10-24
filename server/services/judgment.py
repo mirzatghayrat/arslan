@@ -17,7 +17,6 @@ user already chose, with the same privacy.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -26,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from server.db import session as db_session
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
             # (official DeepSeek), temperature 0, bounded output — as research review.
             with critique_request():
                 async with usage_ledger.scope("judgment", conversation_id):
-                    response = await asyncio.wait_for(
+                    response = await within(
                         adapter.chat(system=build_cached_system(_SYSTEM, ""), user=user),
                         timeout=AFTER_TURN_TIMEOUT_S)
             parsed = parse(response.content)

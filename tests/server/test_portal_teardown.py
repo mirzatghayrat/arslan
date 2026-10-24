@@ -37,8 +37,11 @@ from tests.server.portal_teardown import drain_stragglers, shared_portal
 @pytest.fixture(autouse=True)
 def _leave_the_session_report_alone():
     """These tests provoke hangs on purpose. The session summary is for REAL
-    ones — a line that prints on every run is a line nobody reads."""
+    ones — a line that prints on every run is a line nobody reads. Each test
+    also starts with none, so ``last_report()`` is this test's own: a real
+    report from another file's portal in the same worker is not one of ours."""
     hangs, reports = portal_teardown._hangs, list(portal_teardown._reports)
+    portal_teardown._reports.clear()
     yield
     portal_teardown._hangs = hangs
     portal_teardown._reports[:] = reports

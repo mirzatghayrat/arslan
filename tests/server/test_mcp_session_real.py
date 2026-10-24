@@ -165,6 +165,23 @@ async def test_a_start_past_its_budget_leaves_no_process_behind(mgr):
     assert caught.value is not None
 
 
+async def test_a_stop_while_a_start_tears_down_past_its_budget_returns_at_once_and_ends_the_server(mgr):
+    """Review F1 of #384. The budget cancels the open, whose stdio teardown gives the process up to 2 s; a
+    switch-off, a delete or shutdown cancels the start meanwhile. The start must leave at once and the
+    teardown must not be cut, or anyio's Process.aclose() waits for a server that never exits by itself."""
+    loop = asyncio.get_running_loop()
+    start = asyncio.create_task(mgr.get_session(_server("slow_init", SLOW_INIT_S="30"), budget_s=0.5))
+    await asyncio.sleep(0.8)                     # past the budget, inside the open's teardown
+    assert not start.done()                      # still waiting for the teardown: the repro, not its end
+    stopped = loop.time()
+    start.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await start
+    assert loop.time() - stopped < 1.0
+    pid = _pid(mgr.stderr_tail(1, secrets=[]))
+    assert pid is not None and await _gone(pid, within=5.0)
+
+
 async def test_a_call_pending_when_its_session_is_dropped_ends_at_once_and_spares_the_next(
         mgr, monkeypatch):
     monkeypatch.setattr(sess, "CALL_TIMEOUT_S", 5.0)     # unwoken, the call would end at 5 s

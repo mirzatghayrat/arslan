@@ -4,7 +4,8 @@
   1. money — always a card, in every mode, never remembered;
   2. an "Always" rule for exactly this kind and target;
   3. a grant for this task or this conversation (a background job reads the grants of the
-     conversation that started it);
+     conversation that started it). 2 and 3 are read only where a card surface is bound: a
+     scheduled run reads neither (S1, U14 a);
   4. a card on the surface bound to this turn (`asking_with`): the chat window, a job's
      broadcast — or none, for a scheduled run, which has nobody to ask: the answer is no, at
      once (silence is not consent; Hermes resolves unattended runs from policy the same way).
@@ -29,6 +30,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 
 from server.db import session as db_session
+from server.db.models import PermissionRule
 from server.services import approvals, permission_store
 
 logger = logging.getLogger(__name__)
@@ -63,12 +65,26 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 #: rule lookup (`_standing`) all follow it.
 # S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
 # time or for this conversation, never "Always": outside content can steer what it sends.
+# S4a: "outside" (every command of a conversation out of the sandbox) is this time or this conversation,
+# never "Always": no rule, however it was stored, lets every command out for good.
 _NEVER_ALWAYS = (_ONCE_ONLY
-                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network"}))
+                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
+                              "mcp_tool", "outside"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
+# S4a (⓪Plan review, fix 1): kinds whose "In this conversation" only a Mac window may give. The Inbox lists every
+# conversation's cards, a background job's too: a click there must not let every later command of a conversation
+# the user is not looking at out of the sandbox, past a restart. Elsewhere such a yes is this time.
+_WINDOW_SCOPE_ONLY = frozenset({"outside"})
+# S4a (⓪Plan review, fix 3 and follow-up C): kinds that `decide` and `decide_many` always ask with a card, even where a
+# stored grant would answer: the caller reads the grant itself (`standing`) and writes its row when its step runs (the
+# tool loop's outside grant). Keyed on the kind, so no caller can forget it. The card's own choices are unchanged.
+_ALWAYS_ASKS = frozenset({"outside"})
+# S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
+# card, as before S4a. One click must not run the same remote command for two jobs.
+_NEVER_JOINED = frozenset({"outside", "remote"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
-if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
-    raise AssertionError(f"scope sets name unknown kinds: "
-                         f"{sorted((_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) - KINDS)}")
+_SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
+if not _SCOPE_SETS <= KINDS:
+    raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
 _EXTRA_MAX = 1024
 #: A ledger row's target is kept whole up to this: a bound, not a trim (a many-app card's target
 #: is every bundle id joined, and cutting it would cut an app in two).
@@ -83,8 +99,11 @@ ALWAYS_KEY = "always"
 
 _EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is NOT a refusal. Don't "
             "retry it in this turn. Finish what you can and tell the user what is waiting.")
-_NO_SURFACE = ("{title} needs the user's OK, and this run has nobody to ask (it runs on its "
-               "own). It was not done. Tell the user, so they can allow it for next time.")
+# S1 (U14 a): what a run with nobody to ask (a scheduled run) is told when it reaches a step that needs an
+# OK. No earlier answer counts there, so it is not told that an "Always" would help (⓪Plan, Q2).
+_UNATTENDED = ("{title} needs the user's OK, and this run has nobody to ask: a scheduled run never takes "
+               "such a step, and no earlier answer counts here. It was not done. Tell the user; they can do "
+               "it in a chat.")
 
 
 @dataclass(frozen=True)
@@ -176,7 +195,10 @@ async def decide(req: Request, ctx: Context) -> Decision:
     _check(req)
     ctx = _filled(ctx)
     mode = await _mode()
-    standing = await _standing(req, ctx, mode)
+    # S1 (U14 a): with nobody to ask (a scheduled run), nothing standing answers: an "Always" rule or a
+    # grant let a scheduled run act with nobody there. `_ask` then refuses by policy.
+    standing = (await _standing(req, ctx, mode)
+                if _ASKER.get() is not None and req.kind not in _ALWAYS_ASKS else None)
     if standing is not None:
         return _done(standing)
     return _done(await _ask(req, ctx, mode))
@@ -198,7 +220,10 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
         raise ValueError("decide_many needs one kind")
     ctx = _filled(ctx)
     mode = await _mode()
-    out: list[Decision | None] = [await _standing(r, ctx, mode) for r in reqs]
+    # S1 (U14 a): as in `decide`, nothing standing answers when nobody can be asked.
+    unattended = _ASKER.get() is None
+    out: list[Decision | None] = [None if unattended or r.kind in _ALWAYS_ASKS else await _standing(r, ctx, mode)
+                                  for r in reqs]
     shown = [r for r, d in zip(reqs, out) if d is None]
     decided = None
     if shown:
@@ -223,6 +248,46 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     return decisions
 
 
+@dataclass(frozen=True)
+class Standing:
+    """A standing answer `standing` found: the decision, and the rule or grant it stands on."""
+    decision: Decision
+    rule_id: int | None = None
+    grant_id: int | None = None
+
+
+async def standing(req: Request, ctx: Context) -> Standing | None:
+    """S4a: the stored rule or grant that answers `req` — what `decide` would find before any card —
+    or None, and then no card is shown: the caller decides what not having one means (the tool loop
+    runs a command in the sandbox). Nothing is written: the caller writes the ledger row with
+    `note_standing` once the step it answers goes ahead (⓪Plan, S4a Q2: the ledger never says "allowed
+    by a grant" for a step that did not run). As in `decide`, nothing stands where nobody can be asked
+    (S1, U14 a). It does not set `LAST_DECISION`: a card shown after it is a decision of its own."""
+    _check(req)
+    if _ASKER.get() is None:
+        return None
+    async with db_session.AsyncSessionLocal() as db:
+        decision, rule, grant = await _find_standing(db, req, _filled(ctx))
+    if decision is None:
+        return None
+    return Standing(decision, rule_id=rule.id if rule is not None else None,
+                    grant_id=grant.id if grant is not None else None)
+
+
+async def note_standing(req: Request, ctx: Context, found: Standing) -> None:
+    """The ledger row of a standing answer `standing` found, written when its step goes ahead. A
+    write that fails is logged; the step goes ahead (as `_note_standing_use`)."""
+    _check(req)
+    mode = await _mode()
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            rule = await db.get(PermissionRule, found.rule_id) if found.rule_id is not None else None
+            await _note_standing_use(db, req, _filled(ctx), mode, found.decision, rule=rule,
+                                     grant_id=found.grant_id)
+    except Exception:  # noqa: BLE001 — the row is a record of a yes already given, never the yes itself
+        logger.warning("approval ledger write failed", exc_info=True)
+
+
 #: Who may have decided a standing yes that `record_standing` writes, and the scope it records:
 #: an "Always" rule, or the mode (§A8's `decided_by`), which stores nothing and has no scope.
 _STANDING_BY = {"rule": "always", "mode": None}
@@ -237,6 +302,19 @@ async def record_standing(req: Request, ctx: Context, *, by: str = "rule") -> No
         raise ValueError(f"a standing answer is decided by a rule or the mode, not {by!r}")
     _check(req)
     await _record(req, _filled(ctx), await _mode(), Decision(True, by, _STANDING_BY[by]))
+
+
+async def record_card_outcome(req: Request, ctx: Context, *, approved: bool, expired: bool = False) -> None:
+    """S7: the ledger row of a card that does not ask through `decide` — the install-a-capability card,
+    which carries back the key the user typed and the folders they picked (0.1.57 §3.1), what `decide`
+    does not pass on. Decided by the user (allow, this time; or deny) or expired (nobody answered, never
+    a refusal; a yes is never one, whatever `expired` says). The row holds the request, never what the
+    answer carried: no key goes in. A kind outside
+    `KINDS` raises ValueError and writes nothing; a row that cannot be written is logged."""
+    _check(req)
+    decision = (Decision(True, "user", "once") if approved
+                else Decision(False, "expired") if expired else Decision(False, "user"))
+    await _record(req, _filled(ctx), await _mode(), decision)
 
 
 async def forget_task(task_id: str | None) -> int:
@@ -298,27 +376,31 @@ def _check(req: Request) -> None:
 # ── the ladder ────────────────────────────────────────────────────────────────
 
 async def _standing(req: Request, ctx: Context, mode: str) -> Decision | None:
-    if req.kind in _ONCE_ONLY or req.once_only:
-        return None
     async with db_session.AsyncSessionLocal() as db:
-        # Only a kind whose card offers "Always" has rules: a stray row for any other is not one.
-        rule = (await permission_store.find_rule(db, req.kind, req.target)
-                if req.kind not in _NEVER_ALWAYS else None)
-        if rule is not None:
-            decision = Decision(True, "rule", "always")
-            await _note_standing_use(db, req, ctx, mode, decision, rule=rule)
-            return decision
-        grant = await permission_store.find_grant(db, ctx.conversation_id, ctx.task_id,
-                                                  req.kind, req.target)
-        if grant is not None:
-            decision = Decision(True, "grant", "task" if grant.task_id else "conversation")
-            await _note_standing_use(db, req, ctx, mode, decision, grant=grant)
-            return decision
-    return None
+        decision, rule, grant = await _find_standing(db, req, ctx)
+        if decision is not None:
+            await _note_standing_use(db, req, ctx, mode, decision, rule=rule,
+                                     grant_id=grant.id if grant is not None else None)
+    return decision
+
+
+async def _find_standing(db, req: Request, ctx: Context):
+    """(decision, rule, grant) of the rule or grant that answers `req`, or (None, None, None)."""
+    if req.kind in _ONCE_ONLY or req.once_only:
+        return None, None, None
+    # Only a kind whose card offers "Always" has rules: a stray row for any other is not one.
+    rule = (await permission_store.find_rule(db, req.kind, req.target)
+            if req.kind not in _NEVER_ALWAYS else None)
+    if rule is not None:
+        return Decision(True, "rule", "always"), rule, None
+    grant = await permission_store.find_grant(db, ctx.conversation_id, ctx.task_id, req.kind, req.target)
+    if grant is not None:
+        return Decision(True, "grant", "task" if grant.task_id else "conversation"), None, grant
+    return None, None, None
 
 
 async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision: Decision, *,
-                             rule=None, grant=None) -> None:
+                             rule=None, grant_id: int | None = None) -> None:
     """The rule or grant has decided. Counting its use and writing the ledger row come after, and
     a failure there (a locked database, a full disk) must not turn a standing yes into an
     exception: the write is rolled back, logged, and the yes stands. (The lookup above is not
@@ -327,8 +409,7 @@ async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision
         if rule is not None:
             await permission_store.touch_rule(db, rule)
         await _record_in(db, req, ctx, mode, decision,
-                         rule_id=rule.id if rule is not None else None,
-                         grant_id=grant.id if grant is not None else None)
+                         rule_id=rule.id if rule is not None else None, grant_id=grant_id)
         await db.commit()
     except Exception:  # noqa: BLE001 — see above
         logger.warning("approval ledger write failed", exc_info=True)
@@ -336,21 +417,30 @@ async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision
             await db.rollback()
 
 
+async def refuse_unattended(req: Request, ctx: Context) -> str:
+    """S1 (U14 c): a step the tool loop refuses because nobody can be asked (it has no card callback in a
+    scheduled run) never reaches decide(). It writes the row decide() writes there: policy, deny, no
+    "Always" set (Q2), so the Inbox lists it. Returns what the model is told, as decide() would."""
+    _check(req)
+    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+    await _record(req, _filled(ctx), await _mode(), decision)
+    return decision.model_text
+
+
 async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     asker = _ASKER.get()
     opts = options_for(req)
     if asker is None:
-        decision = Decision(False, "policy", model_text=_NO_SURFACE.format(title=req.title))
-        # What "Always" on this card would have stored, for the Inbox's "Always allow" (§A4);
-        # nothing when the card would not have offered it.
-        await _record(req, ctx, mode, decision,
-                      always=_always_set(req) if "always" in opts else None)
+        # S1 (U14 a, ⓪Plan Q2): refused by policy, and no "Always" set is recorded: the Inbox never offers
+        # an "Always" that would read as fixing the scheduled run, which reads no rule.
+        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+        await _record(req, ctx, mode, decision)
         return decision
     base = dict(req.frame) if req.frame else _generic_frame(req)
     call_id = base.get("call_id") or uuid.uuid4().hex
     frame = {**base, "call_id": call_id, "title": req.title, "options": opts,
              "always_label": req.always_label if "always" in opts else "",
-             "perm_kind": req.kind, "dedupe": _dedupe(req),
+             "perm_kind": req.kind, "dedupe": call_id if req.kind in _NEVER_JOINED else _dedupe(req),
              "expires_at": time.time() + approvals.TIMEOUT_S}
     if req.why and "why" not in frame:
         frame["why"] = req.why[:300]
@@ -374,6 +464,8 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
         scope = answer.get("scope") if answer.get("scope") in opts else opts[0]
         if answer.get("by") in approvals.FIRST_CHOICE_ONLY:
             scope = opts[0]                    # the phone and the island answer once only (§A4)
+        elif req.kind in _WINDOW_SCOPE_ONLY and answer.get("by") != "mac":
+            scope = opts[0]                    # only a Mac window gives this kind more than this time
         decision = Decision(True, "user", scope)
     else:
         decision = Decision(False, "user", note=note, model_text=_declined_text(req.title, note))
@@ -487,8 +579,8 @@ async def _mode() -> str:
     try:
         async with db_session.AsyncSessionLocal() as db:
             policy = await settings_service.shell_confirm_policy(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default
-        return "standard"
+    except Exception:  # noqa: BLE001 — an unreadable setting is the default (ask_all since v0.1.63)
+        return "careful"
     return "careful" if policy == "ask_all" else "standard"
 
 

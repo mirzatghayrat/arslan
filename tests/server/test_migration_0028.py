@@ -130,19 +130,6 @@ async def _seed_run(Session, *, kind: str, epoch: int, spawn_id: int, spawn_name
 
 
 @pytest.mark.asyncio
-async def test_replay_run_is_not_a_replay_set_candidate(memdb):
-    from server.services import replay_set
-
-    live_id = await _seed_run(memdb, kind="live", epoch=1, spawn_id=1, spawn_name="Bot")
-    await _seed_run(memdb, kind="replay", epoch=1, spawn_id=1, spawn_name="Bot")   # excluded: kind
-    await _seed_run(memdb, kind="live", epoch=0, spawn_id=1, spawn_name="Bot")      # excluded: epoch=0
-
-    items = await replay_set.build(1)
-    ids = [it["run_id"] for it in items]
-    assert ids == [live_id]
-
-
-@pytest.mark.asyncio
 async def test_replay_run_absent_from_catalog(client):
     async with client.db_maker() as db:
         for kind, name in (("live", "LiveBot"), ("replay", "ReplayBot")):

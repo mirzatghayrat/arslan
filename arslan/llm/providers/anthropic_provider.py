@@ -29,14 +29,15 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import AsyncIterator, Mapping
+import sys
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence, tool_schema, trajectory
+from arslan.llm import anthropic_stream, param_heal, request_evidence, tool_schema, trajectory
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
@@ -70,6 +71,10 @@ _THINKING_OFF = {
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
 _DROP_BLOCK = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
 _FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-")
+# 0.1.63 K8b: the short update these models write before a tool call (what they found, what they do next)
+# comes back as a thinking block, empty unless the request asks for `display: "updates"` (claude-api
+# model-migration guide, read 2026-10-22: Opus and Sonnet 5.5, Fable 5 and 5.1, Mythos 5.1).
+UPDATES_BETA = "thinking-display-updates-2026-08-18"
 # Marks the system entry of a message list built by build_trajectory_messages (never sent).
 _TRAJECTORY = "_trajectory"
 _HISTORY_END = "_history_end"
@@ -95,7 +100,10 @@ _OFFICIAL_HOST = "api.anthropic.com"
 
 
 def _first_party_hosts(env: Mapping[str, str] | None = None) -> frozenset[str]:
-    """host:port entries of ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS (comma-separated, lower-cased)."""
+    """host:port entries of ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS (comma-separated, lower-cased). A bench knob:
+    the desktop app's frozen server never takes it from its environment (0.1.63, after #364)."""
+    if env is None and getattr(sys, "frozen", False):
+        return frozenset()
     raw = (os.environ if env is None else env).get("ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS", "")
     return frozenset(item.strip().lower() for item in raw.split(",") if item.strip())
 
@@ -227,9 +235,6 @@ class AnthropicProvider(BaseLLMProvider):
             return {}
         return _THINKING_OFF.get(model[model.find("claude-"):])
 
-    def supports_bounded_critique(self) -> bool:
-        return self._thinking_off() is not None
-
     def supports_native_trajectory(self) -> bool:
         return True
 
@@ -240,6 +245,24 @@ class AnthropicProvider(BaseLLMProvider):
         host = (url.hostname or "").lower()
         return self._is_claude() and (host == _OFFICIAL_HOST
                                       or (f"{host}:{url.port}" if url.port else host) in _FIRST_PARTY_HOSTS)
+
+    def writes_updates(self) -> bool:
+        """K8b: requests ask for Claude's progress updates: a model that writes them, on Anthropic's host or a
+        listed first-party proxy (never a beta header to another router, ⓪Plan's Q4), unless it refused them."""
+        model = self.model.lower()
+        version, family = _claude_version(model), _FAMILY.search(model)
+        if version is None or family is None or not self._clears_server_side() \
+                or param_heal.refused(self.endpoint_fingerprint(), "display"):
+            return False
+        name = family.group(1)
+        return ((name in ("opus", "sonnet") and version >= (5, 5)) or (name == "fable" and version >= (5, 0))
+                or (name == "mythos" and version >= (5, 1)))
+
+    def streams_tool_calls(self) -> bool:
+        """0.1.63 K8b: Claude on Anthropic's host (or a listed first-party proxy) streams its replies, tool calls
+        included, so the answer is shown while it is written. Another Anthropic-protocol endpoint answers whole:
+        its streamed tool calls are not known to be complete. The same test as context editing (⓪Plan's Q1)."""
+        return self._clears_server_side()
 
     def trims_context_server_side(self) -> bool:
         """The API clears old tool results itself: Claude on Anthropic's host, unless it refused."""
@@ -470,6 +493,11 @@ class AnthropicProvider(BaseLLMProvider):
                         **({"exclude_tools": kept} if (kept := [n for n in _KEEP_RESULTS if n in names]) else {})}
                 payload["context_management"] = {"edits": [edit]}
                 betas.append(CONTEXT_BETA)
+            thinking = payload.get("thinking") or {"type": "adaptive"}
+            if self.writes_updates() and thinking.get("type") == "adaptive":
+                # K8b: shown as notes before the calls they introduce; reasoning itself stays hidden.
+                payload["thinking"] = {**thinking, "display": "updates"}
+                betas.append(UPDATES_BETA)
             if betas:
                 payload["_betas"] = betas
         return payload
@@ -510,9 +538,13 @@ class AnthropicProvider(BaseLLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         tool_choice: str | None = None,
+        stream: bool = False,
+        on_text: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         """`max_tokens` raises this one request after a length cut. `tool_choice="none"`: the
-        forced wrap-up step keeps the same tools (same prefix) and may not call one (K1)."""
+        forced wrap-up step keeps the same tools (same prefix) and may not call one (K1).
+        `stream` (K8b, `streams_tool_calls` endpoints): read as SSE under the idle watchdog and assembled
+        into the same reply (anthropic_stream); `on_text` gets the answer's text as it arrives."""
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
         if tool_choice == "none" and payload.get("tools"):
@@ -522,8 +554,14 @@ class AnthropicProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
-        data = await param_heal.send(self.endpoint_fingerprint(), payload, self._post)
+        # A resend (param_heal) follows an error status, raised before any body is read: no text first.
+        send = (lambda p: self._chat_streamed(p, on_text)) if stream else self._post
+        data = await param_heal.send(self.endpoint_fingerprint(), payload, send)
         response = self._parse_response(data)
+        # K8b: the request that was answered asked for progress updates (param_heal may have dropped them on
+        # the way): its thinking blocks are updates, never reasoning. tool_loop shows them only then.
+        if response.continuation is not None and (payload.get("thinking") or {}).get("display") == "updates":
+            response.continuation["updates"] = True
         native = any(m.get(_TRAJECTORY) for m in messages if m.get("role") == "system")
         _note_context(response.input_transformations, data.get("context_management"),
                       clearing_off=native and self._clears_server_side() and not self.trims_context_server_side(),
@@ -553,6 +591,33 @@ class AnthropicProvider(BaseLLMProvider):
                     request=_exc.request, response=_exc.response) from None
             await request_evidence.acknowledge(evidence)
             return response.json()
+
+    async def _chat_streamed(self, payload: dict[str, Any],
+                             on_text: Callable[[str], None] | None = None) -> dict[str, Any]:
+        """K8b: one streamed send, assembled into the reply a non-streamed send returns."""
+        from arslan.llm import stream_assembly
+        betas = payload.get("_betas") or []
+        payload = {k: v for k, v in payload.items() if k != "_betas"}
+        evidence = await request_evidence.begin(payload)
+        async with self._client() as client:
+            # The idle watchdog governs reads; httpx's own read timeout only backs it up.
+            async with client.stream("POST", f"{self.base_url}/messages", json={**payload, "stream": True},
+                                     headers=self._headers(betas),
+                                     timeout=httpx.Timeout(connect=15.0, read=stream_assembly.IDLE_S * 2,
+                                                           write=60.0, pool=15.0)) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as _exc:
+                    raise httpx.HTTPStatusError(
+                        provider_errors.with_body(_exc),
+                        request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
+                if "text/event-stream" not in response.headers.get("content-type", ""):
+                    await response.aread()
+                    return response.json()
+                return await anthropic_stream.assemble(response, on_text)
 
     async def chat_stream(
         self,
@@ -661,7 +726,9 @@ class AnthropicProvider(BaseLLMProvider):
         stop = data.get("stop_reason")
         # 0.1.63 K1: the whole assistant content, order unchanged, for replay within this turn to
         # this endpoint+model+key only (thinking blocks must come back byte for byte).
-        replay = any(b.get("type") in ("tool_use", "thinking", "redacted_thinking") for b in blocks)
+        # K8b: never a streamed reply whose blocks may not be as the API produced them (anthropic_stream).
+        replay = any(b.get("type") in ("tool_use", "thinking", "redacted_thinking") for b in blocks) \
+            and not data.get(anthropic_stream.NOT_VERBATIM)
         transformations = data.get("input_transformations")
         return LLMResponse(
             role=data.get("role", "assistant"),

@@ -528,6 +528,9 @@ async def effect_of(tool_key: str, arguments: dict) -> str:
             tool = await db.get(Tool, tool_key)          # long names are hashed in the key
             srv = await db.get(MCPServer, server_id)
         name = (tool.external_name if tool is not None else None) or tool_key.split("__", 1)[1]
+        from server.mcp.discovery import read_only
+        if tool is not None and read_only(tool.annotations):     # S1: the server says it only reads
+            return "read"
         if srv is not None and suggested_tier_for(srv, name) == "safe":
             return "read"
     return "external_write"
@@ -857,7 +860,7 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             # The same re-delivered cancel (③Hands' review): the stop checkpoint is kept and shielded, and
             # the bookkeeping below runs whatever the await raised. The runtime closes when that
             # checkpoint is done, since a closed runtime refuses it.
-            stopping = _kept(_after(recording, runtime.checkpoint("attempt_stopped", retain_stopped=True)),
+            stopping = _kept(_after(recording, lambda: runtime.checkpoint("attempt_stopped", retain_stopped=True)),
                              "Task final checkpoint failed")
             try:
                 await asyncio.shield(stopping)
@@ -894,7 +897,11 @@ def _kept(coroutine, failure: str) -> asyncio.Task:
 
 
 async def _after(first: asyncio.Task | None, then):
-    """`then` once `first` (the cancel record) is done: both advance the task's version, so they run in turn."""
+    """`then()` once `first` (the cancel record) is done: both advance the task's version, so they run in turn.
+
+    `then` is a factory, not a coroutine: if this step is cancelled before it gets there (while
+    waiting on `first`, or before it starts at all), nothing was built, so no checkpoint coroutine
+    is left never awaited."""
     if first is not None:
         try:
             await first
@@ -903,7 +910,7 @@ async def _after(first: asyncio.Task | None, then):
                 raise                  # this step itself is cancelled (loop shutdown), not the record
         except Exception:  # noqa: BLE001 — its failure is logged by _kept; the checkpoint still runs
             pass
-    return await then
+    return await then()
 
 
 async def _record_cancel(task_id: str) -> dict:
@@ -941,16 +948,17 @@ def checked_driver(driver: dict | None) -> dict:
     # "expert" is still accepted so a task saved before 0.1.44 can be read and resumed
     # (resume_turn hands it to Arslan). Remove it with the README §8 "expert-era REST"
     # item, after a migration marks leftover expert tasks ended.
+    # "recipe" is NOT accepted since C7b-3 (v0.1.63): recipes were removed, so an old
+    # recipe-driven task fails closed here with task_invalid_driver — prepare_resume calls
+    # this before it starts an attempt, so the task is left exactly as it was.
     driver = {"kind": "host"} if driver is None else driver
     if not isinstance(driver, dict):
         raise TaskError("task_invalid_driver")
     if driver in ({"kind": "host"}, {"kind": "background"}):
         return dict(driver)
-    if (driver.get("kind") not in {"expert", "recipe"} or
+    if (driver.get("kind") != "expert" or
             type(driver.get("id")) is not int or driver["id"] < 1 or
             set(driver) - {"kind", "id", "version_id"}):
-        raise TaskError("task_invalid_driver")
-    if driver["kind"] == "recipe" and (type(driver.get("version_id")) is not int or driver["version_id"] < 1):
         raise TaskError("task_invalid_driver")
     return dict(driver)
 
@@ -965,6 +973,15 @@ async def _note_project_activity(project_id: str) -> None:
             await db.commit()
     except Exception:  # noqa: BLE001 — bookkeeping only
         logger.warning("project activity not recorded", exc_info=True)
+
+
+# K8a (⓪Plan Q1): this turn's acceptance is only the default "an answer was delivered" (run_turn was given
+# none). Its answer may go out as it is written; work with criteria of its own is shown when complete.
+_answer_only: ContextVar[bool] = ContextVar("answer_only", default=False)
+
+
+def answer_only() -> bool:
+    return _answer_only.get()
 
 
 async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
@@ -1008,7 +1025,11 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         value = await repo.start(spec.id, created["version"])
     async def body(sink):
         return await function(conversation_id, user_message, sink, *args, **kwargs)
-    result = await _launch(value, emit, body, context=ctx)
+    token = _answer_only.set(_acceptance is None)
+    try:
+        result = await _launch(value, emit, body, context=ctx)
+    finally:
+        _answer_only.reset(token)
     if ctx.project_id:
         _project_evidence_later(ctx.project_id, conversation_id, user_message)
     return result
@@ -1040,11 +1061,6 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
         saved_driver = checked_driver(ceiling.get("driver"))
         if driver is not None and checked_driver(driver) != saved_driver:
             raise TaskError("task_goal_changed")
-        if saved_driver["kind"] == "recipe":
-            from server.db.models import RecipeExecution
-            recipe = await repo.db.get(RecipeExecution, saved_driver["id"])
-            if recipe is None or recipe.recipe_id != saved_driver["version_id"] or recipe.input != spec.instruction:
-                raise TaskError("task_goal_changed")
         saved = await repo.latest_checkpoint(task_id)
         value = await repo.start(task_id, expected_version, explicit_resume=True)
         # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
@@ -1089,12 +1105,9 @@ async def resume_turn(task_id: str, expected_version: int, conversation_id: str,
     async def body(sink):
         # 0.1.63 (C1): a pre-0.1.44 expert task ({"kind": "expert"}) resumes as an
         # Arslan turn below; experts are no longer a runtime path.
-        if driver["kind"] == "recipe":
-            from server.services import recipes
-            return await recipes.execute(driver["id"])
         return await arslan._handle_answer(conversation_id, spec.instruction, sink, extra_system=extra,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-            confirm_schedule=confirm_schedule)
+            confirm_schedule=confirm_schedule, steerable=True)      # K9b: inside the socket's turn lock
     return await _launch(value, emit, body, progress=progress, context=ctx)
 
 

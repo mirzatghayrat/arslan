@@ -24,6 +24,7 @@ import httpx
 
 from server.services import github_eval
 from server.services.skill_import import ALLOWED_LICENSES
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ async def words_for(text: str) -> list[str]:
         from server.services import usage_ledger
         async with usage_ledger.scope("capability_search", None):
             adapter = await _words_adapter()
-            response = await asyncio.wait_for(adapter.chat(system=_WORDS_SYSTEM, user=text[:300]), 15)
+            response = await within(adapter.chat(system=_WORDS_SYSTEM, user=text[:300]), 15)
         return keywords("", [w for w in _json_array(response.content or "") if isinstance(w, str)])
     except Exception as exc:  # noqa: BLE001 — no model, a timeout or a bad reply: no words
         logger.info("capability search words: %s", type(exc).__name__)
@@ -413,7 +414,7 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
 
         async def guarded(name, coro):
             try:
-                return await asyncio.wait_for(coro, budgets[name] + 2)
+                return await within(coro, budgets[name] + 2)
             except Exception as exc:  # noqa: BLE001 — one source never stops the others
                 logger.info("capability search %s failed: %s", name, type(exc).__name__)
                 if name != "registry_lookup" and f"{name}_unavailable" not in notes:
@@ -444,7 +445,7 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
     found = merge(found)
     unread = [c for c in found if c.source == "registry" and c.repo and c.license["verdict"] == "unknown"]
     try:
-        await asyncio.wait_for(enrich_batch(unread), TIMEOUT_S + 2)
+        await within(enrich_batch(unread), TIMEOUT_S + 2)
     except Exception as exc:  # noqa: BLE001 — unread licenses stay "unknown" (not installable)
         logger.info("capability search enrich: %s", type(exc).__name__)
     return {"words": words, "candidates": [c.view() for c in rank(found, words)[:MAX_RESULTS]], "notes": notes}

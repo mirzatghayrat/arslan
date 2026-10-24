@@ -8,19 +8,28 @@ measured on real deltas only (reasoning, content, tool-call arguments); SSE
 comments such as ": keep-alive" and empty frames are not progress.
 
 run_native still receives one complete reply: nothing executes from a partial
-stream, so a stalled or interrupted stream is simply re-sent (and billed).
+stream. Since 0.1.63 K8a the answer's text is also handed on as it arrives
+(`on_text`, content deltas only: never reasoning or tool-call arguments), so a
+reply is shown while it is written; the loop decides what of it goes out.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 
 IDLE_S = 90.0                 # no real delta for this long = stalled
 monotonic = time.monotonic    # injectable for tests
+
+
+class UnreadableReply(Exception):
+    """0.1.63 K8b: a streamed reply this version cannot read for sure (a delta or a line it does not know)
+    that calls a tool: the call is not run on it. model_call classifies it as `unreadable` and never resends
+    it (the same stream would come back the same); once text went out, the turn ends interrupted."""
 
 
 class StreamStalled(TimeoutError):
@@ -31,7 +40,8 @@ class StreamStalled(TimeoutError):
 class StreamAssembler:
     """Fold chat.completion.chunk frames into a non-streamed response dict."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_text: Callable[[str], None] | None = None) -> None:
+        self.on_text = on_text                      # K8a: each content delta, as it arrives
         self.content: list[str] = []
         self.reasoning: list[str] = []
         self.reasoning_alt: list[str] = []          # OpenRouter "reasoning"
@@ -57,6 +67,8 @@ class StreamAssembler:
                 if isinstance(piece, str) and piece:
                     sink.append(piece)
                     progress = True
+                    if key == "content" and self.on_text is not None:
+                        self.on_text(piece)
             details = delta.get("reasoning_details")
             if isinstance(details, list) and details:
                 self.reasoning_details.extend(details)
@@ -93,9 +105,9 @@ class StreamAssembler:
                 "usage": self.usage}
 
 
-async def assemble(response: httpx.Response) -> dict[str, Any]:
-    """Read an SSE body to completion under the idle watchdog."""
-    assembler = StreamAssembler()
+async def assemble(response: httpx.Response, on_text: Callable[[str], None] | None = None) -> dict[str, Any]:
+    """Read an SSE body to completion under the idle watchdog; `on_text` gets each content delta."""
+    assembler = StreamAssembler(on_text)
     lines = response.aiter_lines().__aiter__()
     last_progress = monotonic()
     while True:
@@ -103,7 +115,10 @@ async def assemble(response: httpx.Response) -> dict[str, Any]:
         if budget <= 0:
             raise StreamStalled(f"no model output for {IDLE_S:.0f}s (stream stalled)")
         try:
-            raw = await asyncio.wait_for(lines.__anext__(), timeout=budget)
+            # Never asyncio.wait_for here: on Python 3.11 it drops a cancellation that lands as a line
+            # arrives (gh-86296), and a stream that never pauses then outlives the turn's cut or a stop.
+            async with asyncio.timeout(budget):
+                raw = await lines.__anext__()
         except StopAsyncIteration:
             break
         except TimeoutError:

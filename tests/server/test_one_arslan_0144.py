@@ -1,6 +1,7 @@
 """0.1.44 one Arslan: with experts switched off (the product default), nothing is
 ever handed to an expert — Arslan answers itself — and phases an earlier version
-parked in a conversation cannot fire."""
+parked in a conversation cannot fire. Since C7b-4 (v0.1.63) there is no dispatcher left
+to hand anything to; these keep checking that Arslan answers and the parked row is inert."""
 import pytest
 
 import server.db.session as db_session
@@ -9,22 +10,8 @@ from tests.server.test_promise_guard import _SeqAdapter, maker  # noqa: F401
 
 
 
-@pytest.fixture
-def no_dispatch(monkeypatch):
-    """0.1.63 (C1): the expert entry point is gone from arslan; the one place an
-    expert turn could still start is dispatcher.dispatch, so refuse it there."""
-    from server.orchestrator import dispatcher
-    dispatched = []
-
-    async def refuse(*args, **kwargs):
-        dispatched.append(args)
-        raise AssertionError("an expert was dispatched")
-    monkeypatch.setattr(dispatcher, "dispatch", refuse)
-    return dispatched
-
-
 @pytest.mark.asyncio
-async def test_naming_an_expert_still_gets_arslan_answering(maker, no_dispatch, monkeypatch):  # noqa: F811
+async def test_naming_an_expert_still_gets_arslan_answering(maker, monkeypatch):  # noqa: F811
     # 0.1.48: there is no router left to suggest a route; the @-name is just text.
     adapter = _SeqAdapter(["Here is the outline I made myself."])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -34,11 +21,10 @@ async def test_naming_an_expert_still_gets_arslan_answering(maker, no_dispatch, 
     assert "outline I made myself" in streamed
     kinds = {e["type"] for e in events}
     assert not kinds & {"routing", "suggest_create", "suggest_update", "propose_invite", "propose_staffing"}
-    assert no_dispatch == []
 
 
 @pytest.mark.asyncio
-async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, no_dispatch, monkeypatch):  # noqa: F811
+async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, monkeypatch):  # noqa: F811
     # 0.1.63 (C1c-1): phase_service is gone; park the row the way it used to write it.
     import json
 
@@ -53,7 +39,6 @@ async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, no_dis
 
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _SeqAdapter(["Sure."]))
     await arslan.handle_user_message("main", "好", lambda e: None)   # a bare confirm used to accept it
-    assert no_dispatch == []
     # 0.1.63 (C1): the turn no longer clears the parked row (nothing reads it any more);
     # what matters is that it did not fire.
     async with db_session.AsyncSessionLocal() as db:
@@ -125,27 +110,15 @@ async def test_arslan_is_offered_read_skill_only_when_skills_exist(execution_db)
     assert "weekly-report — Weekly report" in offered["description"]
 
 
-@pytest.mark.asyncio
-async def test_background_evolution_never_spends_while_experts_are_off(execution_db, monkeypatch):
-    """0.1.46: a user who had auto-evolution switched on before experts were removed
-    must not keep paying to rewrite prompts nothing reads."""
-    from server.db.models import Setting, Spawn
-    from server.services import evolution_watcher
-    async with execution_db() as db:
-        db.add(Spawn(id=6, name="Old expert", domain_category="x", system_prompt="You are an old expert. " * 10))
-        db.add(Setting(key="evolution_auto", value="true"))
-        await db.commit()
-    started = []
-
-    async def enqueue(spawn_id, manual=False):
-        started.append(spawn_id)
-        return 1
-    monkeypatch.setattr(evolution_watcher, "enqueue_attempt", enqueue)
-
-    async def eligible(db, spawn_id):
-        return True
-    monkeypatch.setattr(evolution_watcher, "_is_eligible", eligible)
-    assert await evolution_watcher.trigger_spawn(6) is None and started == []
+def test_background_evolution_has_no_automatic_entry():
+    """0.1.46: a user who had auto-evolution switched on before experts were removed must
+    not keep paying to rewrite prompts nothing reads. C2b-2 removed the watch loop, its
+    trigger and the run-recorder ping; C7b-1 (v0.1.63) removed the evolution modules
+    themselves, so no code path is left that could start an attempt."""
+    import importlib.util
+    for mod in ("evolution_watcher", "evolution_loop", "evolution_service",
+                "evolution_estimate"):
+        assert importlib.util.find_spec(f"server.services.{mod}") is None, f"{mod} is back"
 
 
 @pytest.mark.asyncio

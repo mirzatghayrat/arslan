@@ -115,14 +115,16 @@ class DistilledSession(Base):
     spawn_id = Column(Integer, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     # NULL = a normal distillation marker. "curation_gave_up" = the background sweep
-    # permanently abandoned this pair after repeated failures; writing a real row is
-    # what makes the give-up terminal (the sweep anti-joins this table) and restart-safe.
-    # The INTERACTIVE path deliberately ignores a give-up row and upserts it back to
-    # NULL on success — a background give-up must never silence a user's manual retry.
+    # permanently abandoned this pair after repeated failures.
+    # Nothing writes either any more: distill_service stopped writing markers with the
+    # memory v2 path (C2a-2a), and the sweep was deleted in C8-3 (v0.1.63). Old rows
+    # stay; deleting a conversation still purges them.
+    # DELETE-BY: v0.1.65, with this table (the "review every N turns" card retires it).
     reason = Column(String(30), nullable=True)
 
 
 class Setting(Base):
+    """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once."""
     __tablename__ = "settings"
 
     key = Column(String(100), primary_key=True)
@@ -133,6 +135,9 @@ class ArslanMessage(Base):
     """The orchestrator conversation (Layer 1). display != memory at the row level."""
 
     __tablename__ = "arslan_messages"
+    # An id is never handed out twice (0069, v0.1.63 S3b): undoing a turn deletes the newest rows, and the
+    # phone, the window's resume and summaries remember ids.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String(50), nullable=False, index=True)
@@ -250,8 +255,8 @@ class SkillPack(Base):
 class SkillCandidate(Base):
     """An authored-but-not-yet-live skill draft awaiting human confirm.
 
-    Slice 1 lifecycle: observing -> promoted | rejected (Slice 2 adds an eval
-    gate before "proposed"; observing -> proposed -> promoted/rejected/retired).
+    Lifecycle: authored ("observing") -> human confirm -> promoted | rejected (| retired).
+    "proposed" exists only on legacy rows (the eval gate that set it was removed in C7a).
     On promote we INSERT a live SkillPack row (tier=safe, status=registered) which
     is what makes the skill listed + equippable via the registry choke point.
     """
@@ -844,7 +849,7 @@ class BrainUsageEvent(Base):
 
     🔴 BOUNDED BY CONSTRUCTION. An append-only log with no ceiling is exactly the
     unbounded growth the counter design avoided. `brain_usage.prune_events` enforces a
-    двойной gate (age + row count) from the curation loop's heartbeat, batched so a
+    двойной gate (age + row count) from `usage_retention`'s heartbeat, batched so a
     backlog cannot lock the DB in one transaction. Do not add a writer to this table
     without checking that the pruner still bounds it.
     """

@@ -79,7 +79,7 @@ describe("the sidebar with conversation data", () => {
   const props = {
     threads: [{ id: "chat-1", title: "护照材料" }, { id: "task-1", title: "Q3 报告" }, { id: "pocket", title: "在干嘛" }],
     activeThreadId: "chat-1", onSelectThread: () => {}, onAddThread: () => {}, activeSection: "arslan" as const,
-    onChangeSection: () => {}, onDistillThread: vi.fn(), onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(),
+    onChangeSection: () => {}, onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(),
     onDeleteThread: vi.fn(), backendStatus: "online" as const,
     meta: { pocket: meta({ kind: "remote", origin: "phone" }),
             "task-1": meta({ kind: "task", state: "working", origin: "phone", job: { id: "j", step: "", done: 1, total: 2 } }),

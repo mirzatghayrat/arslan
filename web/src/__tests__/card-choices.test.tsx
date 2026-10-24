@@ -23,11 +23,25 @@ describe("a rule card (run a command)", () => {
     const onConfirm = vi.fn();
     render(<RunCommandCard callId="c1" pretty="rm -rf build" reason="deletes files" background
       options={["once", "conversation", "always"]} alwaysLabel="deletes files" onConfirm={onConfirm} onCancel={vi.fn()} />);
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     expect((screen.getByTestId("runcmd-scope-once") as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByLabelText('kit.scope.always:{"label":"deletes files"}'));
     fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(onConfirm).toHaveBeenCalledWith("c1", false, "always");
+    expect(onConfirm).toHaveBeenCalledWith("c1", "always");
+  });
+
+  it("S4a: the card to leave the sandbox says what its \"In this conversation\" lets out, and answers with it", () => {
+    const onConfirm = vi.fn();
+    render(<RunCommandCard callId="c5" pretty="mv a ~/b" sandbox="retry" permKind="outside"
+      options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('kit.scope.conversationFor:{"label":"runcmd.sandboxConversation"}'));
+    fireEvent.click(screen.getByTestId("runcmd-run"));
+    expect(onConfirm).toHaveBeenCalledWith("c5", "conversation");
+    cleanup();
+    // Another kind's card keeps the plain choice: the label is the outside card's own.
+    render(<RunCommandCard callId="c6" pretty="ls" permKind="network" options={["once", "conversation"]}
+      onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByLabelText("kit.scope.conversation")).toBeInTheDocument();
   });
 
   it("No with a note sends it; No without one sends none", () => {
@@ -44,22 +58,13 @@ describe("a rule card (run a command)", () => {
     expect(onCancel.mock.calls.at(-1)).toStrictEqual(["c2"]);                     // the plain No button
   });
 
-  it("an old frame (no options) keeps the tick, answers (callId, remember) and has no note", () => {
+  it("S4a: a frame without choices shows no tick and answers with no scope (its first choice)", () => {
     const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c3" pretty="git status" onConfirm={onConfirm} onCancel={vi.fn()} />);
+    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="retry" onConfirm={onConfirm} onCancel={vi.fn()} />);
     expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(screen.queryByText("kit.noteLink")).toBeNull();
-    fireEvent.click(screen.getByTestId("runcmd-remember"));
+    expect(screen.queryByRole("checkbox")).toBeNull();
     fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(onConfirm).toHaveBeenCalledWith("c3", true);
-  });
-
-  it("in the Inbox an old frame's tick is not offered: the server never keeps it there", () => {
-    const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c4" pretty="mv a b" sandbox="retry" noRemember onConfirm={onConfirm} onCancel={vi.fn()} />);
-    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
-    fireEvent.click(screen.getByTestId("runcmd-run"));
-    expect(onConfirm).toHaveBeenCalledWith("c4", false);
+    expect(onConfirm).toHaveBeenCalledWith("c3", undefined);
   });
 });
 
@@ -122,15 +127,15 @@ interface Row {
   /** the arguments a yes carries for a scope, and a No for a note (none typed = a plain No) */
   yesArgs: (scope: string) => unknown[];
   noArgs: (note?: string) => unknown[];
-  /** the arguments of a yes on a card with no choices: what an old card has always sent. Only the command card still
-   *  takes an old frame; the write, schedule and action cards always come with options (C2c: permissions.decide). */
+  /** the arguments of a yes on a card with no choices. Every card's frame comes with options (C2c, and S4a for the
+   *  command card); one without them answers with no scope, its first choice. */
   oldYesArgs?: unknown[];
 }
 
 const CARDS: Row[] = [
   { name: "run a command", choices: "runcmd-scope", note: "runcmd-note", allow: "runcmd-run", deny: "runcmd-cancel",
     mount: (p) => <RunCommandCard callId="r1" pretty="rm a" {...p} />,
-    yesArgs: (scope) => ["r1", false, scope], noArgs: (note) => (note ? ["r1", note] : ["r1"]), oldYesArgs: ["r1", false] },
+    yesArgs: (scope) => ["r1", scope], noArgs: (note) => (note ? ["r1", note] : ["r1"]), oldYesArgs: ["r1", undefined] },
   { name: "write", choices: "wswrite-scope", note: "wswrite-note", allow: "wswrite-allow", deny: "wswrite-deny",
     mount: (p) => <WorkspaceWriteCard callId="w1" workspace="/w" action="write_file" path="a.md" {...p} />,
     yesArgs: (scope) => ["w1", scope], noArgs: (note) => (note ? ["w1", note] : ["w1"]) },
@@ -277,7 +282,7 @@ describe.each(CARDS)("the $name card", (row) => {
 const KINDED = [
   { name: "run a command", choices: "runcmd-scope", allow: "runcmd-run",
     mount: (permKind: string | undefined, m: Mount) => <RunCommandCard callId="r1" pretty="rm a" permKind={permKind} {...m} />,
-    yesArgs: (scope: string) => ["r1", false, scope] },
+    yesArgs: (scope: string) => ["r1", scope] },
   { name: "action", choices: "action-scope", allow: "action-allow",
     mount: (permKind: string | undefined, m: Mount) => (
       <ActionApprovalCard kind="app" target="com.example.App" detail="" title="Use App?" permKind={permKind} {...m} />),

@@ -34,6 +34,7 @@ import httpx
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer
 from server.services import capability_runtime
+from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ async def _run(argv: list[str], *, cwd: Path, env: dict) -> str:
     proc = await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=env, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.STDOUT)
     try:
-        out, _ = await asyncio.wait_for(proc.communicate(), STEP_TIMEOUT_S)
+        out, _ = await within(proc.communicate(), STEP_TIMEOUT_S)
     except TimeoutError:
         proc.kill()
         raise InstallFailure("step_timeout", " ".join(argv[:3])) from None
@@ -317,17 +318,18 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
         raise
 
 
-def to_trash(path: Path) -> Path | None:
-    """Move a capability's folder to the user's Trash (never deleted outright)."""
-    if not path.exists():
+def to_trash(path: Path, prefix: str = "Arslan capability") -> Path | None:
+    """Move a capability's folder (or, for S3's undo, any path) to the user's Trash, never deleted
+    outright. A link is moved itself, never followed."""
+    if not os.path.lexists(path):
         return None
     trash = Path.home() / ".Trash"
     trash.mkdir(parents=True, exist_ok=True)
-    target = trash / f"Arslan capability {path.name}"
+    target = trash / f"{prefix} {path.name}"
     n = 1
-    while target.exists():
+    while os.path.lexists(target):
         n += 1
-        target = trash / f"Arslan capability {path.name} {n}"
+        target = trash / f"{prefix} {path.name} {n}"
     shutil.move(str(path), str(target))
     return target
 

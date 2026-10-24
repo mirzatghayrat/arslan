@@ -560,8 +560,7 @@ async def brain_usage_events(
         # (datetime.utcnow()), so stripping "+08:00" would compare a Beijing wall
         # clock against UTC and shift the window by 8 hours — silently returning a
         # DIFFERENT range than asked for, which is exactly what refusing an
-        # unparsable `since` two lines up exists to prevent. Same normalization
-        # settings_service._parse_iso_utc already does.
+        # unparsable `since` two lines up exists to prevent.
         window_start = (parsed.astimezone(timezone.utc).replace(tzinfo=None)
                         if parsed.tzinfo else parsed)
 

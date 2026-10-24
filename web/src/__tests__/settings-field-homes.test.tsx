@@ -90,7 +90,7 @@ describe("settings section registry", () => {
     // Split across sections is how someone turns on the second spend control
     // without seeing the first one's warning. Since 0.1.55 they all live in
     // "Background", the place for things Arslan does when nobody asked.
-    const spenders = ["curation.enabled", "research_review.enabled", "proactive.diagnosis_cap",
+    const spenders = ["proactive.diagnosis_cap",
       "advanced.background_job_budget"];
     for (const f of spenders) {
       expect(FIELD_HOMES[f], `${f} is not in background`).toBe("background");
@@ -129,17 +129,6 @@ describe("0.1.55: seven places", () => {
 });
 
 describe("no control was lost in the redesign", () => {
-  it("the curation toggle exists in the UI, not only in the API", () => {
-    // The whole point of the four-angle sweep. `curation_enabled` shipped in
-    // SettingsIn/SettingsOut and is documented as spending, and the frontend
-    // had ZERO references to it — a background loop that spends, with no way
-    // for the user to see or stop it. A component-only reading of the settings
-    // code could never have found that, because there was nothing to read.
-    expect(FIELD_HOMES["curation.enabled"]).toBe("background");
-    const src = read("components/settings/AutomationSection.tsx");
-    expect(src).toMatch(/curationEnabled/);
-  });
-
   it("the spend controls moved out of Advanced and left nothing behind", () => {
     const advanced = read("components/settings/AdvancedSection.tsx");
     expect(advanced).not.toMatch(/labelEvolutionAuto/);
