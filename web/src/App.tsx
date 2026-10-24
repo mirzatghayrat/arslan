@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
 import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
+import ShellPolicySwitchNotice from "./components/ShellPolicySwitchNotice";
 import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
@@ -853,6 +854,7 @@ export default function App() {
       {/* 0.1.55 surface kit: the one toast stack and the one confirm sheet. */}
       <ToastHost />
       <ConfirmHost />
+      <ShellPolicySwitchNotice />
 
     </div>
   );

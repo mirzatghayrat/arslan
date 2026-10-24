@@ -217,6 +217,12 @@ def apply_pending(conn) -> list[str]:
     return done
 
 
+#: ``conn.info`` key: whether the database existed before this boot (True) or create_all is making it now (False).
+#: Set with the marker below, so on the first call of a boot, which comes before create_all; a migration that
+#: must tell an upgraded install from a new one reads it (0070).
+EXISTED_BEFORE_THIS_BOOT = "database_existed_before_this_boot"
+
+
 def prepare_upgrade_backup(conn) -> None:
     """Called before create_all AND defensively by apply_pending. Read-only first.
 
@@ -230,6 +236,7 @@ def prepare_upgrade_backup(conn) -> None:
     marker = (frozenset(applied), head())
     if conn.info.get("upgrade_backup_prepared") == marker:
         return
+    conn.info[EXISTED_BEFORE_THIS_BOOT] = bool(tables)
     pending = any(vid not in applied for vid, _ in MIGRATIONS)
     if tables and pending and conn.dialect.name == "sqlite":
         from pathlib import Path

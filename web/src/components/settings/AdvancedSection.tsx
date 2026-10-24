@@ -16,6 +16,7 @@ import { LANGUAGE_OPTIONS } from '../../lib/languages';
 import { VOICE_LOCALE_BY_CODE } from '../../lib/speech';
 import { AlertTriangle, Sliders } from 'lucide-react';
 import Select from '../Select';
+import { confirmSheet } from '../kit';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
@@ -328,11 +329,15 @@ export default function AdvancedSection({
             <div>
               <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelShellConfirmPolicy')}</h4>
               {/* v0.1.63: still selectable; its judgement of what is risky is completed in v0.1.64 (S2a-3). */}
-              {shellConfirmPolicy === 'ask_risky' && (
+              {shellConfirmPolicy === 'ask_risky' && (<>
                 <p data-testid="shell-policy-risky-note" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
                   {t('settings.shellPolicyAskRiskyNote')}
                 </p>
-              )}
+                {/* R63 (user 10-24): where to take a turn back, beside the looser choice. */}
+                <p data-testid="shell-policy-undo-pointer" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+                  {t('settings.shellPolicyUndoPointer')}
+                </p>
+              </>)}
               {/* v0.1.63 (the user's decision, F2 of its review): "In this conversation" still answers the same command text
                   later, so "every command" means every new one, and the note says so. */}
               {shellConfirmPolicy === 'ask_all' && (
@@ -344,7 +349,16 @@ export default function AdvancedSection({
             <Select
               id="settings-shell-policy"
               value={shellConfirmPolicy}
-              onChange={(v) => onShellConfirmPolicyChange(v as ShellConfirmPolicy)}
+              onChange={async (v) => {
+                // R63 (user 10-24): switching to the looser choice names v0.1.63's known issue first.
+                // DELETE-BY: v0.1.64, when S2a-3 and #406 land (or ask_risky is disabled until they do).
+                if (v === 'ask_risky' && shellConfirmPolicy !== 'ask_risky' && !(await confirmSheet({
+                  title: t('settings.askRiskyConfirmTitle'), body: t('settings.askRiskyConfirmBody'),
+                  action: t('settings.askRiskyConfirmAction'), cancel: t('settings.askRiskyConfirmCancel'),
+                  destructive: false,
+                }))) return;
+                onShellConfirmPolicyChange(v as ShellConfirmPolicy);
+              }}
               options={[
                 { value: 'ask_all', label: t('settings.shellPolicyAskAll') },
                 { value: 'ask_risky', label: t('settings.shellPolicyAskRisky') },
