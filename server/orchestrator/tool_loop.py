@@ -1203,6 +1203,29 @@ async def _unattended(error: str, req, conversation_id: str | None) -> str:
         req, permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
 
 
+def _nobody_to_ask(confirm_command) -> bool:
+    """A run with no card callback and no card surface: a scheduled run (the heartbeat is one)."""
+    from server.services import permissions
+    return confirm_command is None and permissions.current_asker() is None
+
+
+#: What the model is told when a run with nobody to ask names run_command (v0.1.63; DELETE-BY: v0.1.64, with
+#: S2a-3 and PR4).
+SCHEDULED_COMMAND_NOTE = ("Scheduled runs don't run commands. Save what you found with write_file (it writes in "
+                          "Arslan's own folder), or tell the user what to run themselves.")
+
+
+async def _scheduled_command_refused(args: dict, conversation_id: str | None) -> dict:
+    """The refusal of a command in a run with nobody to ask, listed in the Inbox as the card would have read under
+    "ask for every command" (U14 c): policy, deny, no "Always"."""
+    from server.services import approvals, terminal_policy
+    command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
+    return {"ok": False, "error": await _unattended("a scheduled run runs no commands",
+                                                    approvals._command_request(command, [], None, ask_all=True),
+                                                    conversation_id),
+            "note": SCHEDULED_COMMAND_NOTE}
+
+
 def _outside_request(command: str):
     """S4a: what running `command` outside the sandbox asks: every command of the conversation may (`outside`
     / `*`), the card's "In this conversation" (command_confirm)."""
@@ -1376,6 +1399,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
           # "now doing" line and the phone's step titles. Never framed to a window.
           "target": desktop_status.step_target(tool_key, args)})
     desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
+
+    # v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask (a scheduled run) runs no command
+    # at all, whatever rule, grant or "always" answer stands. Refused here, before whether this turn could run it
+    # is read: run_command is not offered there, and naming it anyway (or through use_tool) must still be listed in
+    # the Inbox and explained, not answered "not available". DELETE-BY: v0.1.64, with S2a-3 and PR4.
+    if tool_key == "run_command" and _nobody_to_ask(confirm_command):
+        return _record_tool_result(tool_key, args, await _scheduled_command_refused(args, conversation_id), emit,
+                                   tool_trace, assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
 
     # K7: what this turn can run is settled before any card or file I/O (⓪Plan, Q4): a call to a tool
     # the turn cannot run never shows the user an approval card. The set is every reachable tool,
@@ -3297,7 +3328,12 @@ async def _run_native(
                                                  convo)
                     policy.observe(name, args, result)
                     continue
-                if "use_tool" in wired_keys and (name == "use_tool" or name not in wired_keys):
+                if (name == "use_tool" and str(args.get("name") or "").strip() == "run_command"
+                        and _nobody_to_ask(confirm_command)):
+                    # v0.1.63: refused (and listed) as a direct call is, not "no tool named run_command".
+                    inner = args.get("arguments")
+                    name, args = "run_command", inner if isinstance(inner, dict) else {}
+                elif "use_tool" in wired_keys and (name == "use_tool" or name not in wired_keys):
                     reachable = {t["key"]: t for t in await resolve_callable()}
                     if name == "use_tool" or name in reachable:
                         wanted = args if name == "use_tool" else {"name": name, "arguments": args}

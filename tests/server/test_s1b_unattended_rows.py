@@ -44,17 +44,15 @@ async def _ask(frame):
     raise AssertionError("no card in this test")
 
 
-async def test_a_command_that_needs_a_card_is_listed(tmp_path):
-    out = await _dispatch("run_command", {"command": "git push origin main"})
+@pytest.mark.parametrize("args", [{"command": "git push origin main"}, {"command": "ls"},
+                                  {"command": "ls", "outside_sandbox": True}])
+async def test_a_command_is_listed(tmp_path, args):
+    """v0.1.63: a scheduled run runs no command at all (test_scheduled_run_no_command); each is listed as the
+    card would have read under "ask for every command"."""
+    out = await _dispatch("run_command", args)
     [row] = await _rows()
     assert out["ok"] is False and "nobody to ask" in out["error"]
-    assert _policy(row, "command") and row.target == "rules:git-push" and row.detail == "git push origin main"
-
-
-async def test_a_command_asked_to_run_outside_the_sandbox_is_listed():
-    out = await _dispatch("run_command", {"command": "ls", "outside_sandbox": True})
-    [row] = await _rows()
-    assert out["ok"] is False and _policy(row, "outside") and row.target == "*"      # S4a: its own kind
+    assert _policy(row, "command") and row.target == "text:" + args["command"] and row.detail == args["command"]
 
 
 @pytest.mark.parametrize("key,args", [("write_file", {"path": "a.md", "content": "x"}),

@@ -390,15 +390,15 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
     🔴 Every confirm callback is deliberately omitted, and no card surface is
     bound (permissions.asking_with): that omission IS the safety property. It
-    runs only what needs no card (the read-only tools, "run"-level commands and
-    plain scripts inside the sandbox unless the user asks for every command,
-    writes in Arslan's own folder) and refuses anything that needs a card, at
-    once — it never waits:
-      - the tool loop refuses a command that needs a card, a write in the
-        user's folder, a schedule and another machine ("no callback" means
-        "refuse", P1), and since S1 (U14 c) each writes the same policy row
-        decide() writes, which the Inbox lists; its commands work in Arslan's
-        own folder (U14 b);
+    runs only what needs no card (the read-only tools, writes in Arslan's own
+    folder) and refuses anything that needs a card, at once — it never waits:
+      - it runs no command at all (v0.1.63, the user's decision until S2a-3;
+        DELETE-BY: v0.1.64 with it and PR4): run_command is not offered, and
+        the tool loop refuses one before any rule, grant or "always" answer is
+        read, and lists it in the Inbox;
+      - the tool loop refuses a write in the user's folder, a schedule and
+        another machine ("no callback" means "refuse", P1), and since S1 (U14 c)
+        each writes the same policy row decide() writes, which the Inbox lists;
       - a permissions.decide request is refused with a ledger row
         (decided_by=policy), which the Inbox lists. Hands' cards are among
         them: they go through decide too (0.1.61).

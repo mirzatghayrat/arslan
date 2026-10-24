@@ -86,9 +86,16 @@ async def test_declining_the_rerun_leaves_it_stopped_with_the_note(monkeypatch):
     assert cards.calls[-1]["sandbox"] == "retry"
 
 
-async def test_without_a_window_a_stop_is_final(monkeypatch):
+async def test_without_a_window_a_stop_is_final(execution_db, monkeypatch):
+    """A turn with someone to ask but no card callback for the rerun: the sandbox's stop stands. (A run with
+    nobody to ask at all, a scheduled one, runs no command since v0.1.63: test_scheduled_run_no_command.)"""
+    from server.services import permissions
+
+    async def no_card(frame):
+        raise AssertionError("no card in this test")
     ex = _Exec()
-    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None)
+    with permissions.asking_with(no_card):
+        r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None)
     assert ex.outside == [False] and r["sandbox_denied"] is True
 
 

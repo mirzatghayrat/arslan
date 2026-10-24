@@ -1407,7 +1407,7 @@
     "every_minute": "jede Minute",
     "every_n_minutes": "alle {{count}} Minuten",
     "prompt": "Was sie jedes Mal tut:",
-    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird abgelehnt und im Posteingang aufgeführt. Sie können nachschlagen und Dateien schreiben oder Befehle in der Sandbox ausführen, aber nur in Arslans eigenem Arbeitsordner (und in temporären und Cache-Ordnern).",
+    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird abgelehnt und im Posteingang aufgeführt. Sie können nachschlagen und Dateien schreiben, aber nur in Arslans eigenem Arbeitsordner; Befehle führen sie nicht aus.",
     "anyTask": "beliebige geplante Aufgaben anlegen"
   },
   "enroll": {

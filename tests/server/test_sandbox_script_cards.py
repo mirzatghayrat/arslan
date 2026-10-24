@@ -145,5 +145,5 @@ async def test_where_seatbelt_cannot_start_layer_three_asks_and_nobody_to_ask_re
     assert ex.outside == []
 
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    ex = await _dispatch(monkeypatch, "ls -la", None)        # with the sandbox, layer ③ needs nobody
-    assert ex.outside == [False]
+    ex = await _dispatch(monkeypatch, "ls -la", None)        # v0.1.63: no command at all, sandbox or not
+    assert ex.outside == []

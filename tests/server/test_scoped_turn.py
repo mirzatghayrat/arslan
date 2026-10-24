@@ -19,7 +19,10 @@ async def test_precise_output_uses_one_actual_model_call_and_no_memory(execution
             return LLMResponse(content="YES", usage={}, tool_calls=[])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: Adapter())
     events = []
-    await arslan.handle_user_message("exact-output-conversation", "Reply only YES", events.append)
+    async def chat_card(command, argv, **kw):   # a chat turn's card callback: someone to ask, so no scheduled-run note
+        raise AssertionError("no card in this test")
+    await arslan.handle_user_message("exact-output-conversation", "Reply only YES", events.append,
+                                     confirm_command=chat_card)
     assert len(calls) == 1
     # K3: the request is the turn's reference block (time, reply language) and then the words as sent.
     request = calls[0][1]

@@ -1407,7 +1407,7 @@
     "every_minute": "every minute",
     "every_n_minutes": "every {{count}} minutes",
     "prompt": "What it will do each time:",
-    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is refused and listed in your Inbox. They can look things up, and write files or run commands in the sandbox only in Arslan's own working folder (and temporary and cache folders).",
+    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is refused and listed in your Inbox. They can look things up and write files only in Arslan's own working folder; they don't run commands.",
     "anyTask": "creating any scheduled task"
   },
   "enroll": {
