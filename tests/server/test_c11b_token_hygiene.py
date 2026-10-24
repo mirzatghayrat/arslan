@@ -230,25 +230,21 @@ def test_a_bearer_header_in_a_debug_dump_is_redacted(caplog):
     assert "Authorization: Bearer [redacted]" in caplog.text
 
 
-def test_the_packaged_app_never_runs_the_websockets_logger_at_debug(monkeypatch):
-    """#402 review: whatever the root level (FastMCP reads FASTMCP_LOG_LEVEL from the environment the app
-    inherits), the desktop app's server keeps the websockets library at INFO or above."""
-    ws_logger, root = logging.getLogger("websockets"), logging.getLogger()
-    previous = (ws_logger.level, root.level)
-    try:
-        ws_logger.setLevel(logging.NOTSET)
-        root.setLevel(logging.DEBUG)
-        _config(monkeypatch, ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32, ARSLAN_API_TOKEN=FAKE_TOKEN)
-        import server.security as security
-        importlib.reload(security)
-        import server.main as main
-        main.create_app()
-        assert ws_logger.getEffectiveLevel() >= logging.INFO
-    finally:
-        ws_logger.setLevel(previous[0])
-        root.setLevel(previous[1])
-        _config(monkeypatch)
-        importlib.reload(security)
+def test_a_request_cannot_turn_its_own_access_line_into_a_logging_error(uvicorn_lines):
+    """#402 re-check: a query ending in `authorization:bearer` read, across the line's pieces, as a Bearer value
+    left in the finished line; the record was flattened and AccessFormatter, which unpacks five arguments, printed
+    a logging error instead of the line. An access line is never flattened: its arguments are redacted one by one."""
+    logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:50011", "GET",
+                                             "/?authorization:bearer", "1.1", 200)
+    assert uvicorn_lines == ['INFO:     127.0.0.1:50011 - "GET /?authorization:bearer HTTP/1.1" 200 OK']
+
+
+def test_a_second_pass_leaves_a_redacted_value_as_it_is(uvicorn_lines):
+    """#402 re-check: a record on a uvicorn logger is redacted twice (where it is made, and by the logger's filter);
+    the second pass must not eat what follows `[redacted]`."""
+    logging.getLogger("uvicorn.error").info("%s", f"Foo(token='{FAKE_TOKEN}', other=1)")
+    (line,) = uvicorn_lines
+    assert line.endswith("Foo(token=[redacted], other=1)")
 
 
 def test_a_line_with_no_token_is_logged_as_it_was(uvicorn_lines):

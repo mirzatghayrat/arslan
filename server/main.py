@@ -26,13 +26,20 @@ logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
 
 
 # The value after `token=` (any case): a quoted value whole, closing quote or not (`%r`, bytes, an f-string's
-# `!r`, #402 review 1), else up to the next query separator, whitespace or quote.
-_TOKEN_IN_LOG_LINE = re.compile(r"(token=)(?:b?'[^']*'?|b?\"[^\"]*\"?|[^&\s\"']*)", re.IGNORECASE)
+# `!r`, #402 review 1), else up to the next query separator, whitespace or quote. Never a value already
+# `[redacted]`: a record on a uvicorn logger gets two passes, and the second must change nothing (re-check).
+_TOKEN_IN_LOG_LINE = re.compile(r"(token=)(?!\[redacted\])(?:b?'[^']*'?|b?\"[^\"]*\"?|[^&\s\"']*)",
+                                re.IGNORECASE)
 # An `Authorization: Bearer` header's value, as the websockets library dumps headers at DEBUG.
-_BEARER_IN_LOG_LINE = re.compile(r"(authorization:\s*bearer\s+)\S+", re.IGNORECASE)
+_BEARER_IN_LOG_LINE = re.compile(r"(authorization:\s*bearer\s+)(?!\[redacted\])\S+", re.IGNORECASE)
 # A value still there after redaction (not the `[redacted]` this file writes).
 _SECRET_LEFT = re.compile(r"token=(?!\[redacted\])[^&\s]|authorization:\s*bearer\s+(?!\[redacted\])\S",
                           re.IGNORECASE)
+
+
+def _secret_left(text: str) -> bool:
+    lowered = text.lower()      # most lines carry neither word: a substring test first (#402 re-check)
+    return ("token=" in lowered or "bearer" in lowered) and _SECRET_LEFT.search(text) is not None
 
 
 def _redact(text: str) -> str:
@@ -75,11 +82,16 @@ class _RedactAccessTokens(logging.Filter):
                 record.args = tuple(_without_token(a) for a in args)
             elif isinstance(args, dict):
                 record.args = {key: _without_token(v) for key, v in args.items()}
+            if record.name == "uvicorn.access":
+                # Never flattened: AccessFormatter unpacks the five arguments, already redacted one by one, and a
+                # request could otherwise turn its own line into a logging error (`/?authorization:bearer` read,
+                # across the pieces, as a Bearer value left; #402 re-check).
+                return True
             try:
                 finished = record.getMessage()
             except Exception:
                 finished = None
-            if finished is None or _SECRET_LEFT.search(finished):
+            if finished is None or _secret_left(finished):
                 try:
                     whole = str(msg % args) if args else str(msg)
                 except Exception:         # it never formatted: keep the words, never the arguments' values
@@ -117,15 +129,6 @@ def _install_redacting_record_factory() -> None:
 
 _install_redacting_record_factory()
 
-
-def _no_header_dumps_when_packaged(settings) -> None:
-    """The desktop app's server never runs the websockets library at DEBUG, where it dumps each handshake's
-    headers, `Authorization: Bearer …` among them (#402 review). Set explicitly, after FastMCP has configured the
-    root logger: FastMCP reads FASTMCP_LOG_LEVEL from the environment the app inherits."""
-    if settings.packaged:
-        websockets_logger = logging.getLogger("websockets")
-        if websockets_logger.getEffectiveLevel() < logging.INFO:
-            websockets_logger.setLevel(logging.INFO)
 
 
 # Undecryptable-key canary message (module-level so tests can pin the guidance).
@@ -692,7 +695,6 @@ def create_app() -> FastAPI:
     from server.mcp_server.server import build_mcp_server
 
     mcp_server = build_mcp_server()
-    _no_header_dumps_when_packaged(settings)     # FastMCP has just configured the root logger
     app.state.mcp_server = mcp_server
     _mcp_app = mcp_server.streamable_http_app()  # lazily creates session_manager
     app.mount("/mcp-server", McpServerGate(_mcp_app))
