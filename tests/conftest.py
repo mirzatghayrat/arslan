@@ -20,6 +20,7 @@ os.environ["ARSLAN_MCP_SUPERVISOR"] = "0"
 from tests import real_data_dir_guard
 
 _SUITE_HOME = real_data_dir_guard.pin_suite_home()
+real_data_dir_guard.forbid_real_secret_folder()   # no open under the real ~/.arslan (incident 2026-10-24)
 
 import shutil  # noqa: E402 — after the HOME pin, on purpose
 from pathlib import Path  # noqa: E402
@@ -151,6 +152,23 @@ def _data_dir_pin_survives():
         pytest.fail(f"this test changed {changed} in os.environ and did not restore it "
                     "(repaired now); later tests would resolve the real data dir",
                     pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _real_secret_folder_never_opened():
+    """Fail the test during which the guard refused an open under the real ~/.arslan (incident 2026-10-24).
+
+    The refusal is a PermissionError, an OSError, and the code under test may catch it (the secret bootstrap does),
+    so a refusal the test never saw still fails it. One left from before the test (collection, an earlier
+    fixture) is named as such. A test that refuses on purpose takes its own with
+    `real_data_dir_guard.take_secret_refusals()`."""
+    earlier = real_data_dir_guard.take_secret_refusals()
+    yield
+    refused = real_data_dir_guard.take_secret_refusals()
+    if earlier or refused:
+        lines = [f"  - before this test: {path}" for path in earlier] + [f"  - {path}" for path in refused]
+        pytest.fail("the guard (tests/real_data_dir_guard.py) refused an open of the real secret folder; tests "
+                    "use their own HOME and ARSLAN_SECRET_KEY_FILE=\"\":\n" + "\n".join(lines), pytrace=False)
 
 
 @pytest.fixture(autouse=True)
