@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, WebSocket
@@ -22,6 +23,47 @@ class _QuietDesktopStatusPolls(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
+
+
+# The value after `token=` up to the next query separator, whitespace or quote.
+_TOKEN_IN_LOG_LINE = re.compile(r"(token=)[^&\s\"']*")
+
+
+def _without_token(value: object) -> object:
+    """`value` with every `token=` value replaced, or `value` itself when it carries none. A
+    non-string is rendered with str() first, so a dict such as the ASGI scope that
+    `uvicorn.asgi` logs at trace level (its query_string is bytes) is covered too."""
+    text = value if isinstance(value, str) else str(value)
+    if "token=" not in text:
+        return value
+    return _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", text)
+
+
+class _RedactAccessTokens(logging.Filter):
+    """The access token travels as a `?token=` query parameter on the WebSocket handshake, and
+    uvicorn logs the request path with its query string at INFO (`uvicorn.error` for the WebSocket
+    lines, `uvicorn.access` for HTTP; `uvicorn.asgi` logs the whole scope at trace level). The
+    desktop app runs at INFO with stderr passed through, so without this every handshake wrote the
+    token to the log (C11b, #338 review F3). The path and the rest of the query stay readable;
+    only the value is replaced. The format string and each argument are redacted in place, and
+    the arguments keep their count and order: uvicorn's AccessFormatter unpacks the five access-line
+    arguments itself, so a flattened record would be dropped with a logging error (C11b review 1)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.msg = _without_token(record.msg)
+            args = record.args
+            if isinstance(args, tuple):
+                record.args = tuple(_without_token(a) for a in args)
+            elif isinstance(args, dict):
+                record.args = {key: _without_token(v) for key, v in args.items()}
+        except Exception:    # a record that cannot be rendered is the handler's problem, not a reason to drop it
+            pass
+        return True
+
+
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"):
+    logging.getLogger(_name).addFilter(_RedactAccessTokens())
 
 # Undecryptable-key canary message (module-level so tests can pin the guidance).
 # The last sentence points at the most common real-world cause since first-run
@@ -401,7 +443,10 @@ def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     # C5b: the one app version (desktop/src-tauri/tauri.conf.json, read by server.config).
     from server.config import settings
-    app = FastAPI(title="Arslan Server", version=settings.app_version, lifespan=lifespan)
+    # The desktop app's server does not serve the API explorer or the schema: they describe every
+    # route to anyone on the machine and are not behind the token (C11b, #338 review F6). A dev run keeps them.
+    no_api_explorer = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.packaged else {}
+    app = FastAPI(title="Arslan Server", version=settings.app_version, lifespan=lifespan, **no_api_explorer)
 
     # S1 OSS safety: any secret-write path (provider api_key, settings secrets, MCP
     # env) that would encrypt under the PUBLIC dev fallback key raises
@@ -667,7 +712,9 @@ def _register_test_routes(app: FastAPI) -> None:
     from server.db.session import get_session as _get_session
     from server.services import spawn_service as _spawn_service
 
-    @app.post("/api/v1/_test/seed_spawn")
+    # Behind the access token like every other route that writes (C11b, #338 review F7); with no
+    # token active (the dev harness) require_auth is a no-op, so the test fixtures are unchanged.
+    @app.post("/api/v1/_test/seed_spawn", dependencies=[_Depends(require_auth)])
     async def _seed_spawn(  # noqa: ANN202
         body: dict, session: _AsyncSession = _Depends(_get_session)
     ):

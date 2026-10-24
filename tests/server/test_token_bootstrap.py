@@ -92,8 +92,9 @@ async def test_packaged_no_token_generates_and_enforces(monkeypatch, tmp_path, c
     tf = tmp_path / "api_token"
     assert tf.exists() and tf.read_text().strip() == token
     assert stat.S_IMODE(tf.stat().st_mode) == 0o600  # not world/group readable
-    # Printed once at boot so a packaged user can copy it.
-    assert any("access token" in r.message.lower() and token in r.message for r in caplog.records)
+    # The banner says where the token is stored; its value never reaches the log (C11b review 2).
+    assert any("access token" in r.message.lower() and str(tf) in r.message for r in caplog.records)
+    assert token not in caplog.text
 
     # Enforcement is now live: token-less request rejected, bootstrapped token accepted.
     assert auth.active_token() == token
