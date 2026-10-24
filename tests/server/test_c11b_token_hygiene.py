@@ -144,6 +144,27 @@ def test_the_http_access_line_is_logged_without_the_token(uvicorn_lines):
     assert line.endswith('127.0.0.1:50004 - "GET /api/v1/health?a=1&token=[redacted]&b=2 HTTP/1.1" 200 OK')
 
 
+@pytest.mark.parametrize("fmt,args", [
+    ("%s=%s", ("token", FAKE_TOKEN)),                 # name and value in separate arguments
+    ("handshake token=%s from %s", (FAKE_TOKEN, "127.0.0.1")),   # the value fills a `token=%s` placeholder
+], ids=["split across arguments", "placeholder after token="])
+def test_a_token_however_the_call_spells_it_is_logged_redacted(uvicorn_lines, fmt, args):
+    """Follow-up to the C11b re-check: each piece redacted alone left two call shapes. A `token=%s` format string
+    lost its placeholder to the redaction, so the line failed to format and logging would print the arguments,
+    token and all; a name and value passed apart were never seen together. The finished line is checked too."""
+    logging.getLogger("uvicorn.error").info(fmt, *args)
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and "token=[redacted]" in line
+
+
+def test_a_call_that_never_formats_keeps_its_words_and_withholds_its_arguments(uvicorn_lines):
+    """A logging error would print the arguments as they were (`Arguments: (...)`), a token among them; the line is
+    kept with its words and without them."""
+    logging.getLogger("uvicorn.error").info("handshake with %s", FAKE_TOKEN, "one argument too many")
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and line.endswith("handshake with %s (unformattable arguments withheld)")
+
+
 def test_a_line_with_no_token_is_logged_as_it_was(uvicorn_lines):
     logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:50005", "GET", "/api/v1/health",
                                              "1.1", 200)
@@ -261,6 +282,14 @@ def test_a_non_ascii_websocket_token_closes_the_handshake_with_4001(tmp_path, mo
 def test_a_wildcard_allowlist_refuses_to_start(monkeypatch, variable, value):
     with pytest.raises(ValueError, match=f"{variable}.*'\\*' is not accepted"):
         _config(monkeypatch, **{variable: value})
+
+
+@pytest.mark.parametrize("value", ["null", "https://a.example, null", "NULL", " Null "])
+def test_a_null_origin_refuses_to_start(monkeypatch, value):
+    """Follow-up to the C11b re-check: `null` is the Origin a sandboxed iframe, a `data:` page or a file sends,
+    so any site can produce it; allowing it would open CORS and the WebSocket to them all."""
+    with pytest.raises(ValueError, match="ARSLAN_ALLOWED_ORIGINS.*'null' is not accepted"):
+        _config(monkeypatch, ARSLAN_ALLOWED_ORIGINS=value)
 
 
 def test_an_explicit_allowlist_still_loads(monkeypatch):

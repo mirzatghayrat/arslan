@@ -27,6 +27,8 @@ logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
 
 # The value after `token=` up to the next query separator, whitespace or quote.
 _TOKEN_IN_LOG_LINE = re.compile(r"(token=)[^&\s\"']*")
+# A `token=` whose value is still there (not the `[redacted]` this file writes).
+_TOKEN_LEFT = re.compile(r"token=(?!\[redacted\])[^&\s\"']")
 
 
 def _without_token(value: object) -> object:
@@ -47,16 +49,31 @@ class _RedactAccessTokens(logging.Filter):
     token to the log (C11b, #338 review F3). The path and the rest of the query stay readable;
     only the value is replaced. The format string and each argument are redacted in place, and
     the arguments keep their count and order: uvicorn's AccessFormatter unpacks the five access-line
-    arguments itself, so a flattened record would be dropped with a logging error (C11b review 1)."""
+    arguments itself, so a flattened record would be dropped with a logging error (C11b review 1).
+
+    Then the finished line is checked (follow-up to the C11b re-check): a name and value passed in
+    separate arguments are only seen together there, and a `token=%s` format string loses its
+    placeholder to the redaction, so the line would fail to format and logging would print the
+    arguments, token and all. Either way the record is flattened to its whole line, redacted."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            record.msg = _without_token(record.msg)
-            args = record.args
+            msg, args = record.msg, record.args
+            record.msg = _without_token(msg)
             if isinstance(args, tuple):
                 record.args = tuple(_without_token(a) for a in args)
             elif isinstance(args, dict):
                 record.args = {key: _without_token(v) for key, v in args.items()}
+            try:
+                finished = record.getMessage()
+            except Exception:
+                finished = None
+            if finished is None or _TOKEN_LEFT.search(finished):
+                try:
+                    whole = str(msg % args) if args else str(msg)
+                except Exception:         # it never formatted: keep the words, never the arguments' values
+                    whole = f"{msg} (unformattable arguments withheld)"
+                record.msg, record.args = _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", whole), ()
         except Exception:    # a record that cannot be rendered is the handler's problem, not a reason to drop it
             pass
         return True
