@@ -89,7 +89,8 @@ async def test_inventory_is_bounded_and_source_truncation_remains_visible(monkey
     assert "Enough native source" in body
     monkeypatch.setattr(extract, "settings", SimpleNamespace(attach_extract_char_limit=80))
     text, partial = await extract.extract_text(filename="many.pdf", data=data)
-    assert len(text) == 80 and partial
+    kept, note = text.split("\n\n[Only the first 80 of ", 1)          # D9: the cut is said after it
+    assert len(kept) == 80 and partial and note.endswith("only the beginning was read.]")
 
 
 async def test_inventory_cannot_be_rewritten_by_compression(monkeypatch, execution_db):

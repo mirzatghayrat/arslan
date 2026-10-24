@@ -16,7 +16,7 @@ async def test_extract_truncates_to_limit(monkeypatch):
     fake_settings.attach_extract_char_limit = 10
     monkeypatch.setattr(extract, "settings", fake_settings)
     text, truncated = await extract.extract_text(filename="a.txt", data=b"x")
-    assert len(text) == 10
+    assert text.startswith("A" * 10 + "\n\n[Only the first 10 of 50 characters")   # D9: the cut is said
     assert truncated is True
 
 

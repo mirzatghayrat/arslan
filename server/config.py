@@ -88,7 +88,7 @@ class Settings:
     data_dir: Path = Path("data")
     static_dir: str = ""
     app_version: str = "unknown"
-    attach_extract_char_limit: int = 12000
+    attach_extract_char_limit: int = 40000   # D9 (v0.1.63): was 12,000
     # The desktop app's server (ARSLAN_PACKAGED, set by packaging/server_entry.py): auth is enforced, a
     # missing secret refuses boot, no cross-origin, no Origin-less WebSocket, no test routes. 0.1.63 C11:
     # this replaced ARSLAN_ENV=prod, which only the deleted Docker image used; the desktop app is the
@@ -199,7 +199,7 @@ def load_settings() -> Settings:
         data_dir=data_dir,
         static_dir=static_dir,
         app_version=_app_version(),
-        attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "12000")),
+        attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "40000")),
         packaged=packaged,
         bind_host=os.environ.get("ARSLAN_BIND_HOST", "127.0.0.1"),
         allowed_hosts=allowed_hosts,
