@@ -73,6 +73,7 @@ describe("locale parity", () => {
         expect(d.runcmd.sandboxOutsideNote).toContain(folder);
         expect(d.schedgrant.unattended).toContain(folder);
         // v0.1.63: a scheduled run runs no command (until S2a-3), so the card no longer offers the sandbox.
+        // DELETE-BY: v0.1.64, with S2a-3 and PR4.
         expect(d.schedgrant.unattended).not.toContain(sandbox);
       });
     }

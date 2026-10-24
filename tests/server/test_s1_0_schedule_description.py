@@ -10,5 +10,7 @@ from server.orchestrator import arslan
 
 async def test_schedule_task_does_not_claim_scheduled_runs_are_read_only(execution_db):
     desc = {t["key"]: t["description"] for t in await arslan._callable_tools()}["schedule_task"]   # K7: on demand
-    assert "read-only" not in desc and "cannot write files" not in desc
+    assert "runs are read-only" not in desc and "cannot write files" not in desc
+    # v0.1.63: the sentence S1 settled says what a scheduled run may do; "read-only" there names MCP tools only.
+    assert "only calls MCP tools the server marks read-only" in desc
     assert "The user is asked for permission" in desc      # the rest of the description stays

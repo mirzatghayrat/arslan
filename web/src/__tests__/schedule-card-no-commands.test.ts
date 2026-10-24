@@ -10,6 +10,7 @@ import zh from "../locales/zh.json";
  * v0.1.63 (the user's decision until S2a-3 lands in v0.1.64): a scheduled run runs no command
  * (tests/server/test_scheduled_run_no_command.py). The schedule card's line about what an unattended
  * run may do says so in every language, and no longer offers commands in the sandbox.
+ * DELETE-BY: v0.1.64, with S2a-3 and PR4 (scheduled runs get read-only commands back).
  */
 const said: Record<string, [string, string]> = {
   en: [en.schedgrant.unattended, "don't run commands"],

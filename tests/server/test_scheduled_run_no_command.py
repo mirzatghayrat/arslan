@@ -95,6 +95,20 @@ async def test_a_scheduled_run_never_starts_a_command_whatever_answer_stands(ran
     assert permission_store.could_not_ask(row) and not (row.extra or {}).get(permissions.ALWAYS_KEY)
 
 
+@pytest.mark.parametrize("command", ["sudo rm -rf /", "osascript -l JavaScript -e 'Application(\"Notes\")'"],
+                         ids=["forbidden", "JXA"])
+async def test_the_refusal_comes_before_every_other_check(ran, monkeypatch, command):
+    """Before the forbid and JXA checks and before the conversation's outside grant is read (#399 review, 5): in a
+    run with nobody to ask, no other answer about a command is ever reached."""
+    async def grant_read(*_a, **_k):
+        raise AssertionError("the outside grant is never read in a scheduled run")
+    monkeypatch.setattr(tool_loop, "_outside_grant", grant_read)
+    out = await _dispatch(command)
+    [row] = await _rows()
+    assert ran == [] and out["ok"] is False and "nobody to ask" in out["error"]
+    assert "never runs this" not in out["error"] and (row.kind, row.target) == ("command", "text:" + command)
+
+
 async def test_asked_to_run_outside_the_sandbox_it_is_refused_the_same_way(ran):
     await _stand("this conversation, outside the sandbox", "ls")
     out = await _dispatch("ls", outside_sandbox=True)
@@ -130,27 +144,32 @@ async def test_run_command_is_offered_only_where_someone_can_be_asked():
 class _CallsACommand:
     """A model that asks for `ls` once, then answers; keeps what it was offered and told."""
 
-    def __init__(self):
+    def __init__(self, through: str = "run_command"):
         self.offered: list[set] = []
         self.inputs: list[str] = []
+        self.through = through
 
     async def chat(self, system, user, history=None, tools=None, temperature=0.7, **kwargs):
         self.offered.append({str((t.get("function") or t).get("name") or t.get("key")) for t in tools or []})
         self.inputs.append(json.dumps([*(history or []), {"role": "user", "content": user}], default=str))
         if len(self.inputs) == 1:
-            return LLMResponse(content="", usage={}, tool_calls=[
-                {"id": "c1", "type": "function", "function": {"name": "run_command", "arguments": {"command": "ls"}}}])
+            call = ({"name": "run_command", "arguments": {"command": "ls"}} if self.through == "run_command" else
+                    {"name": "use_tool", "arguments": {"name": "run_command", "arguments": {"command": "ls"}}})
+            return LLMResponse(content="", usage={}, tool_calls=[{"id": "c1", "type": "function", "function": call}])
         return LLMResponse(content="done", tool_calls=[], usage={})
 
 
-@pytest.mark.parametrize("offered", [False, True], ids=["as offered", "offered by mistake"])
-async def test_a_real_scheduled_turn_with_every_standing_answer_runs_no_command(ran, monkeypatch, offered):
+@pytest.mark.parametrize("offered,through", [(False, "run_command"), (False, "use_tool"), (True, "run_command")],
+                         ids=["as offered", "through use_tool", "offered by mistake"])
+async def test_a_real_scheduled_turn_with_every_standing_answer_runs_no_command(ran, monkeypatch, offered, through):
     """The scheduler's own path (run_arslan_turn: no callbacks, no card surface), with every answer that would
-    let `ls` run in a chat turn standing at once. As offered, the model never sees run_command and naming it
-    anyway is "not available"; were it offered by mistake, the tool loop still refuses it. Nothing starts."""
+    let `ls` run in a chat turn standing at once. The model is told up front that commands are off; run_command
+    is not offered; naming it anyway, directly or through use_tool (or were it offered by mistake), starts
+    nothing, tells the model why, and is listed in the Inbox (#399 review, 1)."""
+    from server.orchestrator.arslan import SCHEDULED_NOTE
     for answer in STANDING[1:]:
         await _stand(answer, "ls")
-    model = _CallsACommand()
+    model = _CallsACommand(through)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
     if offered:
         for name in ("_arslan_tools", "_callable_tools"):
@@ -163,4 +182,17 @@ async def test_a_real_scheduled_turn_with_every_standing_answer_runs_no_command(
     await _in_a_turn(lambda: scheduler.run_arslan_turn(CID, "list the folder"))
     assert ran == [] and len(model.inputs) == 2
     assert ("run_command" in model.offered[0]) is offered
-    assert ("nobody to ask" if offered else "tool_unavailable") in model.inputs[1]
+    assert json.dumps(SCHEDULED_NOTE)[1:-1] in model.inputs[0]                    # told before it tries
+    assert "nobody to ask" in model.inputs[1] and "tool_unavailable" not in model.inputs[1]
+    [row] = await _rows()
+    assert (row.kind, row.target, row.decided_by, row.decision) == ("command", "text:ls", "policy", "deny")
+
+
+async def test_a_turn_with_someone_to_ask_is_not_told_commands_are_off(monkeypatch):
+    from server.orchestrator.arslan import SCHEDULED_NOTE
+    model = _CallsACommand()
+    model.inputs.append("")                       # answer at once: no tool call
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    with permissions.asking_with(_ask):
+        await _in_a_turn(lambda: arslan_mod._handle_answer(CID, "hello", lambda e: None, confirm_command=_yes))
+    assert json.dumps(SCHEDULED_NOTE)[1:-1] not in model.inputs[1]

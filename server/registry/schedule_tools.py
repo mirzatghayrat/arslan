@@ -8,8 +8,9 @@ a threshold is a second thing to drift.
 
 spawn_id is always None: a task Arslan schedules runs as Arslan (P2 §1.1),
 which also means it runs with no confirm callbacks and nobody to ask: it writes
-files only in Arslan's own folder, runs no commands (v0.1.63, until S2a-3), and
-any step that needs an OK is refused and listed in the Inbox (S1, U14 b–c) —
+files only in Arslan's own folder, runs no commands (v0.1.63, until S2a-3;
+DELETE-BY: v0.1.64 with it and PR4), and any step that needs an OK is refused
+and listed in the Inbox (S1, U14 b–c) —
 scheduling cannot be used to escape the interactive gates.
 """
 from __future__ import annotations

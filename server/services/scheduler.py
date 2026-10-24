@@ -392,9 +392,10 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     bound (permissions.asking_with): that omission IS the safety property. It
     runs only what needs no card (the read-only tools, writes in Arslan's own
     folder) and refuses anything that needs a card, at once — it never waits:
-      - it runs no command at all (v0.1.63, the user's decision until S2a-3):
-        run_command is not offered, and the tool loop refuses one before any
-        rule, grant or "always" answer is read;
+      - it runs no command at all (v0.1.63, the user's decision until S2a-3;
+        DELETE-BY: v0.1.64 with it and PR4): run_command is not offered, and
+        the tool loop refuses one before any rule, grant or "always" answer is
+        read, and lists it in the Inbox;
       - the tool loop refuses a write in the user's folder, a schedule and
         another machine ("no callback" means "refuse", P1), and since S1 (U14 c)
         each writes the same policy row decide() writes, which the Inbox lists;

@@ -74,7 +74,8 @@ export default function ScheduleGrantCard({ callId, name, when, prompt, backgrou
           <CodeBox code={prompt} numbered={false} /></div> : null}</>}
       context={[{ icon: lineIcon(CalendarClock), text: humanCadence(when, t) },
                 // The choice says how long the yes lasts; this line says what an unattended run may do (S1:
-                // a step that needs you is refused and listed; writes and sandboxed commands only in ~/Arslan).
+                // a step that needs you is refused and listed; writes only in ~/Arslan; v0.1.63: no commands,
+                // DELETE-BY: v0.1.64 with S2a-3 and PR4).
                 { icon: lineIcon(Eye), text: <span data-testid="schedule-unattended">{t("schedgrant.unattended")}</span> }]}
       // "In this conversation" lets it create ANY scheduled task here without asking (the grant's target is every schedule).
       options={<ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}

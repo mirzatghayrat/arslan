@@ -700,6 +700,11 @@ async def _handle_answer(
 PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them. A file they ask for "
               "(a screenshot, chart, export or document) reaches them only through attach_file (find it "
               "with find_tools), under your answer.")
+#: v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask runs no command; the model is told so
+#: up front rather than finding out from a refusal. DELETE-BY: v0.1.64, with S2a-3 and PR4.
+SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything: it runs no commands "
+                  "(run_command is not available here). Save what you make with write_file, in Arslan's own "
+                  "folder; a step that needs the user's OK is refused and listed in their Inbox.")
 
 
 BACKGROUND_SYSTEM = (
@@ -842,7 +847,8 @@ async def _handle_answer_body(
             # it. The vision slot applies on image turns and nowhere else, so the fact
             # has to be passed rather than inferred.
             has_images=bool(images),
-            turn_notes=[PHONE_NOTE] if source == "phone" else None,
+            turn_notes=[*([PHONE_NOTE] if source == "phone" else []),
+                        *([SCHEDULED_NOTE] if tool_loop._nobody_to_ask(confirm_command) else [])] or None,
             # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
             # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a
             # delegated loop on the same conversation (review of #393).
@@ -1420,8 +1426,8 @@ async def _every_tool() -> list[dict]:
                         # S2a-3, DELETE-BY: v0.1.64 with it and PR4).
                         "task, or for any scheduled task for the rest of the conversation. A scheduled "
                         "run is unattended: it can write files only in Arslan's own folder, it runs no "
-                        "commands, and any step that needs the user's OK is refused and listed in their "
-                        "Inbox."},
+                        "commands, it only calls MCP tools the server marks read-only, and any step that "
+                        "needs the user's OK is refused and listed in their Inbox."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},
         {"key": "cancel_task",

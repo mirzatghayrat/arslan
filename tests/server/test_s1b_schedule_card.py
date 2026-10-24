@@ -8,8 +8,8 @@ so a yes covered a prompt nobody saw. Now:
   any other key; ①iOS's FrameMapper test pins that side;
 - a prompt longer than a card shows is refused, never cut (as an MCP call's arguments, ⓪Plan's review of
   S1a): not even under a grant;
-- the model is told the bounds a scheduled run has (unattended; writes and sandboxed commands only in
-  Arslan's own folder, and temporary and cache folders; steps that need an OK are refused and listed).
+- the model is told the bounds a scheduled run has (unattended; writes only in Arslan's own folder; no commands
+  in v0.1.63; only MCP tools the server marks read-only; steps that need an OK are refused and listed).
 """
 from server.orchestrator import arslan, tool_loop
 from server.services import approvals, permissions
@@ -71,3 +71,4 @@ async def test_the_model_is_told_what_a_scheduled_run_may_do(execution_db, monke
     # v0.1.63: no commands in a scheduled run (until S2a-3); writes only in Arslan's own folder.
     assert "Arslan's own folder" in text and "runs no commands" in text and "refused" in text and "Inbox" in text
     assert "sandboxed commands" not in text
+    assert "only calls MCP tools the server marks read-only" in text      # R63's audited clause (mcp/executor)
