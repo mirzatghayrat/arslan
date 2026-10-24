@@ -11,6 +11,10 @@ A choice made after this runs is kept: the runner records 0070 and never runs it
 actions write the key. Idempotent (a second run finds nothing to move); a database without the table is left
 alone. It matches exactly what the reader counts as ask_risky (settings_service.shell_confirm_policy: the exact
 value, what Settings writes); any other spelling already reads as ask_all.
+
+When it moves a stored value it also leaves `shell_policy_switch_notice = pending`: the window tells that user once
+that they were switched, how to switch back, and the known issue (R63, the user's decision on 10-24). Nobody it did
+not move gets the notice. DELETE-BY: v0.1.64, with the notice (once S2a-3 lands its text is no longer true).
 """
 from __future__ import annotations
 
@@ -19,9 +23,12 @@ def upgrade_sync(connection) -> None:
     tables = {row[0] for row in connection.exec_driver_sql(
         "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     if "settings" in tables:
-        connection.exec_driver_sql(
+        moved = connection.exec_driver_sql(
             "UPDATE settings SET value = 'ask_all'"
-            " WHERE key = 'shell_confirm_policy' AND value = 'ask_risky'")
+            " WHERE key = 'shell_confirm_policy' AND value = 'ask_risky'").rowcount
+        if moved:
+            connection.exec_driver_sql(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('shell_policy_switch_notice', 'pending')")
 
 
 def downgrade_sync(connection) -> None:

@@ -22,6 +22,9 @@ _PLAIN_KEYS = (
                "search_provider_role",
                "llm_strategy", "orchestrator_shell_enabled",
                "shell_confirm_policy", "background_job_budget", "task_usd_cap", "synthesis_config_id",
+               # v0.1.63 (R63): "pending" when migration 0070 switched this user from ask_risky; the window shows a
+               # one-time notice and writes "seen". DELETE-BY: v0.1.64, with the notice.
+               "shell_policy_switch_notice",
                "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
                # pydantic schemas — being on only one is how github_token became

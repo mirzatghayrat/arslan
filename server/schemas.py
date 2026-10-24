@@ -48,6 +48,7 @@ class SettingsIn(BaseModel):
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
+    shell_policy_switch_notice: str | None = None   # v0.1.63: "pending" / "seen" (migration 0070's notice)
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
     run_debug_retention_days: int | None = None
@@ -127,6 +128,7 @@ class SettingsOut(BaseModel):
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
+    shell_policy_switch_notice: str = ""            # v0.1.63: "pending" after 0070 switched this user, then "seen"
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
     run_debug_retention_days: int = 30

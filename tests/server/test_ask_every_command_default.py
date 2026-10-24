@@ -144,10 +144,10 @@ def test_0070_twice_moves_nothing_more(tmp_path):
         with engine.begin() as conn:
             m0070.upgrade_sync(conn)
             m0070.upgrade_sync(conn)
-            rows = conn.execute(sa.text("SELECT key, value FROM settings")).all()
+            rows = conn.execute(sa.text("SELECT key, value FROM settings ORDER BY key")).all()
     finally:
         engine.dispose()
-    assert [tuple(row) for row in rows] == [("shell_confirm_policy", "ask_all")]
+    assert [tuple(row) for row in rows] == [("shell_confirm_policy", "ask_all"), ("shell_policy_switch_notice", "pending")]
 
 
 def test_0070_leaves_a_database_without_settings_alone(tmp_path):
@@ -205,3 +205,64 @@ async def test_the_bench_instance_asks_as_the_run_said(client, monkeypatch):
         assert (await client.put("/api/v1/settings", json=body)).status_code == 200
         async with db_session.AsyncSessionLocal() as session:
             assert await settings_service.shell_confirm_policy(session) == (asked or "ask_risky")
+
+
+def _notice(db_path) -> str | None:
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            return conn.execute(sa.text("SELECT value FROM settings WHERE key = 'shell_policy_switch_notice'")).scalar()
+    finally:
+        engine.dispose()
+
+
+async def test_a_user_0070_moves_gets_a_one_time_notice(tmp_path):
+    """R63 (user 10-24): everyone 0070 switched from "Ask only for risky commands" is told once, after the
+    upgrade: 0070 leaves the notice pending when, and only when, it moves a stored ask_risky."""
+    db = tmp_path / "moved.db"
+    _before_0070(db)
+    _store(db, "ask_risky")
+    await _boot(db)
+    assert _notice(db) == "pending"
+
+
+@pytest.mark.parametrize("stored", [None, "ask_all", " ASK_RISKY ", "garbage"])
+async def test_nobody_0070_did_not_move_gets_the_notice(tmp_path, stored):
+    db = tmp_path / "not-moved.db"
+    _before_0070(db)
+    if stored is not None:
+        _store(db, stored)
+    await _boot(db)
+    assert _notice(db) is None
+
+
+async def test_a_new_install_gets_no_notice(tmp_path):
+    db = tmp_path / "new.db"
+    await _boot(db)
+    assert _notice(db) is None
+
+
+async def test_the_notice_once_seen_stays_seen_across_restarts(tmp_path):
+    db = tmp_path / "seen.db"
+    _before_0070(db)
+    _store(db, "ask_risky")
+    await _boot(db)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db}")
+    try:
+        async with async_sessionmaker(engine, class_=AsyncSession)() as session:
+            await settings_service.update_settings(session, {"shell_policy_switch_notice": "seen"})
+            assert (await settings_service.get_settings(session))["shell_policy_switch_notice"] == "seen"
+    finally:
+        await engine.dispose()
+    await _boot(db)
+    await _boot(db)
+    assert _notice(db) == "seen"
+
+
+async def test_the_settings_api_carries_the_notice(client):
+    from server.db import session as db_session
+    async with db_session.AsyncSessionLocal() as session:
+        await settings_service.update_settings(session, {"shell_policy_switch_notice": "pending"})
+    assert (await client.get("/api/v1/settings")).json()["shell_policy_switch_notice"] == "pending"
+    assert (await client.put("/api/v1/settings", json={"shell_policy_switch_notice": "seen"})).status_code == 200
+    assert (await client.get("/api/v1/settings")).json()["shell_policy_switch_notice"] == "seen"
