@@ -1,6 +1,6 @@
 # Generated capability inventory
 
-Desktop configuration version: `0.1.62`.
+Desktop configuration version: `0.1.63`.
 
 Generated in the release PR; between two releases it may not match the code.
 
@@ -22,16 +22,9 @@ credentials, proves external availability, nor guarantees live task success.
 | file_operations | `read_file` | safe | registered | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | file_operations | `search_files` | safe | registered | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | file_operations | `write_file` | orchestrator | registered | [server/registry/file_tools.py](../server/registry/file_tools.py) |
-| file_operations | `patch` | orchestrator | registered | Not in built-in registry |
-| session_search | `session_search` | safe | registered | Not in built-in registry |
-| skills_management | `skills_list` | safe | registered | Not in built-in registry |
-| skills_management | `skill_view` | safe | registered | Not in built-in registry |
-| skills_management | `skill_manage` | orchestrator | registered | Not in built-in registry |
-| task_planning | `todo` | safe | registered | Not in built-in registry |
 | charting | `render_chart` | safe | wired | [server/registry/executors.py](../server/registry/executors.py) |
 | code_sandbox | `run_python` | safe | wired | [server/registry/executors.py](../server/registry/executors.py) |
 | code_sandbox | `read_skill` | safe | wired | [server/registry/executors.py](../server/registry/executors.py) |
-| deck | `render_deck` | safe | wired | [server/registry/executors.py](../server/registry/executors.py) |
 | second_brain | `recall` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
 | second_brain | `remember` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
 | second_brain | `conversation_search` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
@@ -122,14 +115,14 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `9dca112e47ee673aca19ceb7f7ff2b4da34a900249d77604767693a50d972309` |
-| `server/registry/file_tools.py` | `7d07642d4e8585e2922f401ad128d8c20e9c79a0cdb327751a1cf7bea62d2c41` |
-| `server/registry/hands_tools.py` | `212715bb18c3744bf04c98595a02803f3bbac5a232da7c7373ece29c935684ac` |
+| `server/registry/executors.py` | `42d8c90960a66c51cdb4712682a988cde46c5c7a7f00d36ac60459cf887cb62c` |
+| `server/registry/file_tools.py` | `96dadaf8aa60ddc58bcb3be4eeae2281873eb28a2059adf68b1c9c639c0f18dd` |
+| `server/registry/hands_tools.py` | `619468d32a364b53d8bf5fdd10ae8471ebfa0bc32ab7bc7147a2cce58af6f7c3` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
-| `server/registry/memory_executors.py` | `ac4c597d236a3b83420996758bef9003a9e1f0cf26eff2787e4c79c1a391ee1b` |
-| `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |
-| `server/registry/seed_catalog.py` | `12132e54d9e76aa1e10a437ed99bfc2c03257a485602874089b3e2f31a504b6e` |
+| `server/registry/memory_executors.py` | `bd82b710e3f3bfbade8e00301115eb4a09ba2d5a45152d6614cad0b275d63269` |
+| `server/registry/schedule_tools.py` | `c11d786317d7c67c243d625878d2f0015a368677aadf31828c0ec1d1ab31890a` |
+| `server/registry/seed_catalog.py` | `e53b1aaa0b0213d1156e44e3fd7fb9b1e12b7423b859ecde3990b953d650fda7` |
 | `server/registry/ssh_tools.py` | `a31f56ef47fb8559e0595ab7e0365a3582f3e5b417071bee9b4c072cebd9ce5a` |
-| `server/registry/task_tools.py` | `2704f466610532134da5c639370eedb21bd5d08d51b679fe0190aaa32da6c447` |
+| `server/registry/task_tools.py` | `19a8b1fc427589b300fb51d4fddc8051f66dbf8b5eb00c523e44a1a1c3d9e42c` |
 | `server/resources/browser_runtime/package-lock.json` | `6b772b55920dfd4e4aa81b55e6721d7ffb80dc0ea59579d86906fb1f6a9b8de1` |
 | `server/services/capability_fitness.py` | `5251e4b3644d359fab91b8f3bf4d9ec6cea8dce3ebe6695217755deda959202a` |
