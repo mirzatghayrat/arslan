@@ -79,28 +79,54 @@ _owned: list[Path] = []
 
 #: The real secret folder (``~/.arslan``, the dev secret key's home). Nothing in a test run may open it.
 REAL_SECRET_DIR = os.path.join(str(REAL_HOME), ".arslan")
+#: Every open the guard refused in this process, in order. tests/conftest.py fails the test that left one here:
+#: the refusal is a PermissionError, and the code under test may swallow it (the secret bootstrap catches OSError).
+_secret_refusals: list[str] = []
+
+
+def secret_folder_hook(secret_dir: str, refusals: list[str]):
+    """An audit hook that refuses, and records in ``refusals``, any open of ``secret_dir`` or anything under it.
+
+    Compared after resolving links, both the folder's own (``~/.arslan`` may itself be a link: the secret bootstrap
+    opens the resolved path) and the opened path's, and with ``..`` and a trailing slash normalised; case-folded on
+    macOS, whose default file system ignores case. Each open costs an ``lstat`` per path component.
+
+    NOT covered: CHILD PROCESSES (``cat`` of the file runs outside this interpreter and its hooks); a relative path
+    opened against a directory descriptor (``dir_fd``), which the audit event does not carry; a descriptor opened
+    before the hook was installed. A net under the suite's HOME and secret-file pins, not a sandbox."""
+    fold = str.casefold if sys.platform == "darwin" else str
+    roots = {fold(os.path.abspath(secret_dir)), fold(os.path.realpath(secret_dir))}
+    prefixes = tuple(root + os.sep for root in roots)
+
+    def hook(event: str, args: tuple) -> None:
+        if event != "open" or not args or isinstance(args[0], int):
+            return
+        try:
+            text = os.path.abspath(os.fsdecode(os.fspath(args[0])))
+        except TypeError:
+            return
+        for candidate in (text, os.path.realpath(text)):
+            folded = fold(candidate)
+            if folded in roots or folded.startswith(prefixes):
+                refusals.append(text)
+                raise PermissionError(f"a test opened the real secret folder ({text}); tests use their own HOME")
+    return hook
 
 
 def forbid_real_secret_folder() -> None:
-    """Make any open under the real ``~/.arslan`` fail for the rest of this process (incident 2026-10-24,
-    docs/incidents/2026-10-24-dev-secret-read.md). The suite already pins ``ARSLAN_SECRET_KEY_FILE=""`` and a HOME
-    of its own; this holds even for code that builds the path from the real home some other way. An audit hook
-    stays for the life of the process, which is what a test run wants; it costs one string compare per open."""
-    prefix = REAL_SECRET_DIR + os.sep
+    """Refuse any open under the real ``~/.arslan`` for the rest of this process (incident 2026-10-24,
+    docs/incidents/2026-10-24-dev-secret-read.md), on top of the suite's ``ARSLAN_SECRET_KEY_FILE=""`` and HOME
+    pins: it holds for code that builds the path from the real home some other way. See :func:`secret_folder_hook`
+    for what it does not cover. An audit hook stays for the life of the process, which is what a test run wants."""
+    sys.addaudithook(secret_folder_hook(REAL_SECRET_DIR, _secret_refusals))
 
-    def hook(event: str, args: tuple) -> None:
-        if event != "open" or not args:
-            return
-        path = args[0]
-        if isinstance(path, int):
-            return
-        try:
-            text = os.path.abspath(os.fsdecode(os.fspath(path)))
-        except TypeError:
-            return
-        if text == REAL_SECRET_DIR or text.startswith(prefix):
-            raise PermissionError(f"a test opened the real secret folder ({text}); tests use their own HOME")
-    sys.addaudithook(hook)
+
+def take_secret_refusals() -> list[str]:
+    """The opens the guard refused since the last call, and forget them. A test that refuses on purpose takes its
+    own, so that tests/conftest.py does not fail it."""
+    taken = list(_secret_refusals)
+    _secret_refusals.clear()
+    return taken
 
 
 def pin_suite_home() -> Path:
