@@ -25,18 +25,35 @@ class _QuietDesktopStatusPolls(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
 
 
-# The value after `token=` up to the next query separator, whitespace or quote.
-_TOKEN_IN_LOG_LINE = re.compile(r"(token=)[^&\s\"']*")
+# The value after `token=` (any case): a quoted value whole, closing quote or not (`%r`, bytes, an f-string's
+# `!r`, #402 review 1), else up to the next query separator, whitespace or quote. Never a value already
+# `[redacted]`: a record on a uvicorn logger gets two passes, and the second must change nothing (re-check).
+_TOKEN_IN_LOG_LINE = re.compile(r"(token=)(?!\[redacted\])(?:b?'[^']*'?|b?\"[^\"]*\"?|[^&\s\"']*)",
+                                re.IGNORECASE)
+# An `Authorization: Bearer` header's value, as the websockets library dumps headers at DEBUG.
+_BEARER_IN_LOG_LINE = re.compile(r"(authorization:\s*bearer\s+)(?!\[redacted\])\S+", re.IGNORECASE)
+# A value still there after redaction (not the `[redacted]` this file writes).
+_SECRET_LEFT = re.compile(r"token=(?!\[redacted\])[^&\s]|authorization:\s*bearer\s+(?!\[redacted\])\S",
+                          re.IGNORECASE)
+
+
+def _secret_left(text: str) -> bool:
+    lowered = text.lower()      # most lines carry neither word: a substring test first (#402 re-check)
+    return ("token=" in lowered or "bearer" in lowered) and _SECRET_LEFT.search(text) is not None
+
+
+def _redact(text: str) -> str:
+    return _BEARER_IN_LOG_LINE.sub(r"\1[redacted]", _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", text))
 
 
 def _without_token(value: object) -> object:
-    """`value` with every `token=` value replaced, or `value` itself when it carries none. A
-    non-string is rendered with str() first, so a dict such as the ASGI scope that
-    `uvicorn.asgi` logs at trace level (its query_string is bytes) is covered too."""
-    text = value if isinstance(value, str) else str(value)
-    if "token=" not in text:
+    """A string with every token value replaced, or `value` itself. Only strings are looked into here: anything
+    else (the ASGI scope `uvicorn.asgi` logs, an object whose str() raises or reaches a database) is left to the
+    finished-line check below, which renders it once, as the handler would."""
+    if not isinstance(value, str):
         return value
-    return _TOKEN_IN_LOG_LINE.sub(r"\1[redacted]", text)
+    lowered = value.lower()
+    return _redact(value) if "token=" in lowered or "bearer" in lowered else value
 
 
 class _RedactAccessTokens(logging.Filter):
@@ -45,25 +62,74 @@ class _RedactAccessTokens(logging.Filter):
     lines, `uvicorn.access` for HTTP; `uvicorn.asgi` logs the whole scope at trace level). The
     desktop app runs at INFO with stderr passed through, so without this every handshake wrote the
     token to the log (C11b, #338 review F3). The path and the rest of the query stay readable;
-    only the value is replaced. The format string and each argument are redacted in place, and
-    the arguments keep their count and order: uvicorn's AccessFormatter unpacks the five access-line
-    arguments itself, so a flattened record would be dropped with a logging error (C11b review 1)."""
+    only the value is replaced. The format string and each string argument are redacted in place,
+    and the arguments keep their count and order: uvicorn's AccessFormatter unpacks the five
+    access-line arguments itself, so a flattened record would be dropped with a logging error (C11b
+    review 1).
+
+    Then the finished line is checked (follow-up to the C11b re-check): a name and value passed in
+    separate arguments are only seen together there, a `token=%s` format string loses its
+    placeholder to the redaction, and a non-string argument is only rendered there. If the line
+    fails to format or a value is left, the record is flattened to its whole line, redacted; one
+    that never formats keeps its words and withholds its arguments, and so does a record this
+    filter cannot handle at all (#402 review 2)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        msg, args = record.msg, record.args
         try:
-            record.msg = _without_token(record.msg)
-            args = record.args
+            record.msg = _without_token(msg)
             if isinstance(args, tuple):
                 record.args = tuple(_without_token(a) for a in args)
             elif isinstance(args, dict):
                 record.args = {key: _without_token(v) for key, v in args.items()}
-        except Exception:    # a record that cannot be rendered is the handler's problem, not a reason to drop it
-            pass
+            if record.name == "uvicorn.access":
+                # Never flattened: AccessFormatter unpacks the five arguments, already redacted one by one, and a
+                # request could otherwise turn its own line into a logging error (`/?authorization:bearer` read,
+                # across the pieces, as a Bearer value left; #402 re-check).
+                return True
+            try:
+                finished = record.getMessage()
+            except Exception:
+                finished = None
+            if finished is None or _secret_left(finished):
+                try:
+                    whole = str(msg % args) if args else str(msg)
+                except Exception:         # it never formatted: keep the words, never the arguments' values
+                    whole = f"{msg} (unformattable arguments withheld)"
+                record.msg, record.args = _redact(whole), ()
+        except Exception:    # never drop the line, and never let its arguments out unredacted
+            record.args = ()
+            try:
+                record.msg = _redact(f"{msg} (unformattable arguments withheld)")
+            except Exception:
+                record.msg = "(a log line that could not be rendered was withheld)"
         return True
 
 
 for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"):
     logging.getLogger(_name).addFilter(_RedactAccessTokens())
+
+
+def _install_redacting_record_factory() -> None:
+    """Every record, from any logger, is redacted where it is made (#402 review): a logger's filters see only the
+    records that start on it, so a child logger (`uvicorn.error.child`) passed `uvicorn.error`'s untouched, and
+    FastMCP's root handler shows every other logger's records. Installed once, over whatever factory was set."""
+    previous = logging.getLogRecordFactory()
+    if getattr(previous, "arslan_redacts", False):
+        return
+    redactor = _RedactAccessTokens()
+
+    def make(*args, **kwargs):
+        record = previous(*args, **kwargs)
+        redactor.filter(record)
+        return record
+    make.arslan_redacts = True
+    logging.setLogRecordFactory(make)
+
+
+_install_redacting_record_factory()
+
+
 
 # Undecryptable-key canary message (module-level so tests can pin the guidance).
 # The last sentence points at the most common real-world cause since first-run

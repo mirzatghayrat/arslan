@@ -85,7 +85,7 @@ def cors_allow_origins() -> list[str]:
 
 
 def _norm(origin: str) -> str:
-    return origin.strip().rstrip("/").lower()
+    return config.norm_origin(origin)       # one rule with the config's `null` check (#402 review 3)
 
 
 def ws_origin_allowed(origin: str | None, host: str | None = None) -> bool:

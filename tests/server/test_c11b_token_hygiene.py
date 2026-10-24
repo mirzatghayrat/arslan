@@ -144,6 +144,109 @@ def test_the_http_access_line_is_logged_without_the_token(uvicorn_lines):
     assert line.endswith('127.0.0.1:50004 - "GET /api/v1/health?a=1&token=[redacted]&b=2 HTTP/1.1" 200 OK')
 
 
+@pytest.mark.parametrize("fmt,args", [
+    ("%s=%s", ("token", FAKE_TOKEN)),                 # name and value in separate arguments
+    ("handshake token=%s from %s", (FAKE_TOKEN, "127.0.0.1")),   # the value fills a `token=%s` placeholder
+    ("%s=%r", ("token", FAKE_TOKEN)),                 # split, and the value quoted (#402 review 1)
+], ids=["split across arguments", "placeholder after token=", "split and quoted"])
+def test_a_token_however_the_call_spells_it_is_logged_redacted(uvicorn_lines, fmt, args):
+    """Follow-up to the C11b re-check: each piece redacted alone left two call shapes. A `token=%s` format string
+    lost its placeholder to the redaction, so the line failed to format and logging would print the arguments,
+    token and all; a name and value passed apart were never seen together. The finished line is checked too."""
+    logging.getLogger("uvicorn.error").info(fmt, *args)
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and "token=[redacted]" in line
+
+
+def test_a_call_that_never_formats_keeps_its_words_and_withholds_its_arguments(uvicorn_lines):
+    """A logging error would print the arguments as they were (`Arguments: (...)`), a token among them; the line is
+    kept with its words and without them."""
+    logging.getLogger("uvicorn.error").info("handshake with %s", FAKE_TOKEN, "one argument too many")
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and line.endswith("handshake with %s (unformattable arguments withheld)")
+
+
+@pytest.mark.parametrize("fmt,args", [
+    ("token=%r", (FAKE_TOKEN,)),                                  # a repr fills the placeholder: quotes
+    ("token=%s", (FAKE_TOKEN.encode(),)),                         # bytes: b'…'
+    ("%s", (f"api_token={FAKE_TOKEN!r}",)),                       # an f-string's !r
+    ('%s', (f'token="{FAKE_TOKEN}"',)),                           # double quotes
+    ("%s", (f"/ws?Token={FAKE_TOKEN}",)),                         # any case
+    ("%s", (f"/ws?TOKEN={FAKE_TOKEN}",)),
+], ids=["repr", "bytes", "f-string repr", "double quotes", "Token=", "TOKEN="])
+def test_a_quoted_or_differently_cased_token_is_logged_redacted(uvicorn_lines, fmt, args):
+    """#402 review, 1: the value stopped at a quote, so `token=[redacted]'<token>'` was left; and `Token=` was not
+    seen at all."""
+    logging.getLogger("uvicorn.error").info(fmt, *args)
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and "=[redacted]" in line
+
+
+class _Unprintable:
+    def __str__(self):
+        raise RuntimeError("no text for this one")
+
+    __repr__ = __str__
+
+
+def test_an_argument_that_cannot_be_rendered_never_lets_the_others_out(uvicorn_lines):
+    """#402 review, 2: an argument whose __str__ raises left every argument as it was, and logging's error path
+    would print them, a token among them."""
+    logging.getLogger("uvicorn.error").info('%s - "WebSocket %s" %s', "127.0.0.1:50009", f"/ws?token={FAKE_TOKEN}",
+                                            _Unprintable())
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and "(unformattable arguments withheld)" in line
+
+
+def test_a_message_that_cannot_be_rendered_withholds_the_whole_line(uvicorn_lines):
+    """The last resort (#402 review 2): when even the message cannot be turned into text, the arguments are never
+    let out as they were; a fixed line says something was withheld."""
+    logging.getLogger("uvicorn.error").info(_Unprintable(), f"/ws?token={FAKE_TOKEN}")
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and line.endswith("(a log line that could not be rendered was withheld)")
+
+
+def test_a_child_loggers_line_is_redacted_too(uvicorn_lines):
+    """#402 review: a logger's filters see only records that start on it; one from a child logger reached
+    `uvicorn.error`'s handler untouched. Every record is redacted where it is made."""
+    logging.getLogger("uvicorn.error.child").info('%s - "WebSocket %s" [accepted]', "127.0.0.1:50010",
+                                                  f"/ws?token={FAKE_TOKEN}")
+    (line,) = uvicorn_lines
+    assert FAKE_TOKEN not in line and "token=[redacted]" in line
+
+
+def test_any_loggers_line_is_redacted_before_any_handler_sees_it(caplog):
+    """#402 review: FastMCP's root handler shows every logger's records, and none was filtered."""
+    import server.main  # noqa: F401  (installs the redaction at import)
+    logging.getLogger("server.some.module").warning("fetched %s", f"https://x.example/?a=1&token={FAKE_TOKEN}")
+    assert "token=[redacted]" in caplog.text            # the autouse check asserts the token is nowhere
+
+
+def test_a_bearer_header_in_a_debug_dump_is_redacted(caplog):
+    """#402 review: the websockets library dumps each handshake's headers at DEBUG, `Authorization: Bearer …`
+    among them."""
+    import server.main  # noqa: F401
+    logging.getLogger("websockets.server").debug("< Authorization: Bearer %s", FAKE_TOKEN)
+    assert "Authorization: Bearer [redacted]" in caplog.text
+
+
+def test_a_request_cannot_turn_its_own_access_line_into_a_logging_error(uvicorn_lines):
+    """#402 re-check: a query ending in `authorization:bearer` read, across the line's pieces, as a Bearer value
+    left in the finished line; the record was flattened and AccessFormatter, which unpacks five arguments, printed
+    a logging error instead of the line. An access line is never flattened: its arguments are redacted one by one."""
+    logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:50011", "GET",
+                                             "/?authorization:bearer", "1.1", 200)
+    assert uvicorn_lines == ['INFO:     127.0.0.1:50011 - "GET /?authorization:bearer HTTP/1.1" 200 OK']
+
+
+def test_a_second_pass_leaves_a_redacted_value_as_it_is(uvicorn_lines):
+    """#402 re-check: a record on a uvicorn logger is redacted twice (where it is made, and by the logger's filter);
+    the second pass must not eat what follows `[redacted]`."""
+    logging.getLogger("uvicorn.error").info("%s", f"Foo(token='{FAKE_TOKEN}', other=1)")
+    (line,) = uvicorn_lines
+    assert line.endswith("Foo(token=[redacted], other=1)")
+
+
 def test_a_line_with_no_token_is_logged_as_it_was(uvicorn_lines):
     logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:50005", "GET", "/api/v1/health",
                                              "1.1", 200)
@@ -261,6 +364,14 @@ def test_a_non_ascii_websocket_token_closes_the_handshake_with_4001(tmp_path, mo
 def test_a_wildcard_allowlist_refuses_to_start(monkeypatch, variable, value):
     with pytest.raises(ValueError, match=f"{variable}.*'\\*' is not accepted"):
         _config(monkeypatch, **{variable: value})
+
+
+@pytest.mark.parametrize("value", ["null", "https://a.example, null", "NULL", " Null ", "null/", "NULL//"])
+def test_a_null_origin_refuses_to_start(monkeypatch, value):
+    """Follow-up to the C11b re-check: `null` is the Origin a sandboxed iframe, a `data:` page or a file sends,
+    so any site can produce it; allowing it would open CORS and the WebSocket to them all."""
+    with pytest.raises(ValueError, match="ARSLAN_ALLOWED_ORIGINS.*'null' is not accepted"):
+        _config(monkeypatch, ARSLAN_ALLOWED_ORIGINS=value)
 
 
 def test_an_explicit_allowlist_still_loads(monkeypatch):

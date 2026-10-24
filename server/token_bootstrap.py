@@ -23,7 +23,7 @@ This module closes that gap *without* adding friction for developers:
   * ``bootstrap_api_token(cfg)`` (called once at boot):
       - explicit non-empty ``ARSLAN_API_TOKEN`` -> use it, persist nothing;
       - else needs-token + no persisted file -> mint ``secrets.token_urlsafe(32)``,
-        persist to ``data_dir/api_token`` (0o600), print it ONCE;
+        persist to ``data_dir/api_token`` (0o600), log where it is stored (never its value, C11b);
       - else needs-token + persisted file -> load it (never regenerate);
       - else (dev+localhost) -> stay open, no file written.
     The effective token is handed to ``server.auth`` so the REST/WS guards enforce

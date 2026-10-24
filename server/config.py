@@ -125,6 +125,21 @@ def _no_wildcard(variable: str, values: tuple[str, ...]) -> tuple[str, ...]:
     return values
 
 
+def norm_origin(origin: str) -> str:
+    """An origin as it is compared everywhere (here and in server.security): trimmed, no trailing `/`, lower case."""
+    return origin.strip().rstrip("/").lower()
+
+
+def _no_null_origin(values: tuple[str, ...]) -> tuple[str, ...]:
+    """`null` is the Origin a sandboxed iframe, a `data:` page or a file sends, so any site can produce it;
+    allowing it would open CORS and the WebSocket to every one of them (follow-up to the C11b re-check). Compared
+    as server.security compares origins, so `null/` is refused too (#402 review 3)."""
+    for value in values:
+        if norm_origin(value) == "null":
+            raise ValueError(f"ARSLAN_ALLOWED_ORIGINS must name each origin in full; 'null' is not accepted (got {value!r})")
+    return values
+
+
 def load_settings() -> Settings:
     """Build a Settings instance from current environment variables."""
     # Root data dir. UNSET -> stable per-platform app-data dir (so a stranger keeps
@@ -164,8 +179,8 @@ def load_settings() -> Settings:
     if packaged:
         allowed_origins: tuple[str, ...] = ()     # the app's own page is same-origin; nothing else may call it
     elif origins_raw:
-        allowed_origins = _no_wildcard("ARSLAN_ALLOWED_ORIGINS",
-                                       tuple(o.strip() for o in origins_raw.split(",") if o.strip()))
+        allowed_origins = _no_null_origin(_no_wildcard("ARSLAN_ALLOWED_ORIGINS",
+                                                       tuple(o.strip() for o in origins_raw.split(",") if o.strip())))
     else:
         allowed_origins = ("http://localhost:5173", "http://127.0.0.1:5173")
 
