@@ -1115,7 +1115,8 @@
     "stalled": "Contact perdu avec Arslan — il travaille peut-être encore. Rouvrez cette conversation pour vérifier.",
     "thinking": "Réflexion…",
     "long": "Toujours au travail — une longue réponse peut prendre quelques minutes",
-    "queued": "Arslan lira ceci dès qu’il aura fini la réponse en cours"
+    "queued": "Arslan lira ceci dès qu’il aura fini la réponse en cours",
+    "inserted": "Ajouté à la réponse en cours d’Arslan — il le lit avant sa prochaine étape"
   },
   "runcmd": {
     "sandboxOutsideLabel": "Exécuter ceci hors du bac à sable ?",

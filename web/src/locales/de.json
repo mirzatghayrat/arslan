@@ -1115,7 +1115,8 @@
     "stalled": "Verbindung zu Arslan verloren – es arbeitet vielleicht noch. Öffne diesen Chat erneut, um nachzusehen.",
     "thinking": "Denkt nach…",
     "long": "Arbeitet noch – eine lange Antwort kann ein paar Minuten dauern",
-    "queued": "Arslan liest das, sobald die aktuelle Antwort fertig ist"
+    "queued": "Arslan liest das, sobald die aktuelle Antwort fertig ist",
+    "inserted": "Zur Antwort hinzugefügt, an der Arslan gerade arbeitet — sie liest das vor dem nächsten Schritt"
   },
   "runcmd": {
     "sandboxOutsideLabel": "Diesen Befehl außerhalb der Sandbox ausführen?",

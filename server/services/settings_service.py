@@ -49,6 +49,10 @@ _PLAIN_KEYS = (
                # run together). No UI: the rollback. DELETE-BY: v0.1.64, when v0.1.63's M1 shows parallel no
                # worse than serial twice running and the pairing tests stay green (card K9).
                "tools_serial",
+               # 0.1.63 K9b: a message sent while a turn runs waits for the next turn, as before K9b ("true" |
+               # "false"; default off: the running turn reads it at its next tool boundary). No UI: the rollback.
+               # DELETE-BY: v0.1.64, when M3 #10 passes and v0.1.63 has no steering issue (card K9).
+               "steering_off",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
@@ -271,6 +275,13 @@ async def tools_serial(session: AsyncSession) -> bool:
     """K9a: every tool call one at a time, as before reads ran together. Default off. DELETE-BY: v0.1.64
     (card K9)."""
     raw = await _get_raw(session, "tools_serial")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def steering_off(session: AsyncSession) -> bool:
+    """K9b: messages sent during a turn wait for the next one, as before K9b. Default off. DELETE-BY: v0.1.64
+    (card K9)."""
+    raw = await _get_raw(session, "steering_off")
     return str(raw).strip().lower() == "true" if raw is not None else False
 
 
