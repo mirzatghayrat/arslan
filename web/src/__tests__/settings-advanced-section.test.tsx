@@ -11,7 +11,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("react-i18next", () => ({
@@ -23,6 +23,7 @@ vi.mock("../components/BrowserPanel", () => ({
 }));
 
 import AdvancedSection from "../components/settings/AdvancedSection";
+import { ConfirmHost } from "../components/kit";
 
 type Props = React.ComponentProps<typeof AdvancedSection>;
 
@@ -83,16 +84,40 @@ describe("AdvancedSection", () => {
     expect(props.onOrchestratorShellChange).toHaveBeenCalledWith(true);
   });
 
-  it("fires onShellConfirmPolicyChange when a policy option is picked", async () => {
+  async function pick(label: RegExp) {
     const user = userEvent.setup();
-    const props = setup({ orchestratorShellEnabled: true });
     await user.click(document.getElementById("settings-shell-policy") as HTMLButtonElement);
-    const risky = screen
-      .getAllByRole("option")
-      .find((o) => /shellPolicyAskRisky/.test(o.textContent ?? ""));
-    expect(risky).toBeTruthy();
-    await user.click(risky as HTMLElement);
-    expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky");
+    const option = screen.getAllByRole("option").find((o) => label.test(o.textContent ?? ""));
+    expect(option).toBeTruthy();
+    await user.click(option as HTMLElement);
+  }
+
+  it("fires onShellConfirmPolicyChange with ask_risky once the known-issue sheet is confirmed (R63)", async () => {
+    render(<ConfirmHost />);
+    const props = setup({ orchestratorShellEnabled: true });
+    await pick(/shellPolicyAskRisky$/);
+    expect(await screen.findByTestId("confirm-sheet")).toBeTruthy();
+    expect(screen.getByTestId("confirm-sheet").textContent).toContain("settings.askRiskyConfirmBody");
+    expect(props.onShellConfirmPolicyChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("confirm-action"));
+    await waitFor(() => expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky"));
+  });
+
+  it("cancelling the known-issue sheet keeps asking before every command (R63)", async () => {
+    render(<ConfirmHost />);
+    const props = setup({ orchestratorShellEnabled: true });
+    await pick(/shellPolicyAskRisky$/);
+    fireEvent.click(await screen.findByTestId("confirm-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("confirm-sheet")).toBeNull());
+    expect(props.onShellConfirmPolicyChange).not.toHaveBeenCalled();
+  });
+
+  it("going back to asking before every command needs no sheet", async () => {
+    render(<ConfirmHost />);
+    const props = setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
+    await pick(/shellPolicyAskAll$/);
+    expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_all");
+    expect(screen.queryByTestId("confirm-sheet")).toBeNull();
   });
 
   it("asking before every command says it means every new command (#398 F2), and no risky note", () => {
@@ -105,6 +130,16 @@ describe("AdvancedSection", () => {
     setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
     expect(screen.getByTestId("shell-policy-risky-note").textContent).toBe("settings.shellPolicyAskRiskyNote");
     expect(screen.queryByTestId("shell-policy-all-note")).toBeNull();
+  });
+
+  it("beside ask_risky, one sentence says where to undo a turn (R63); not beside ask_all", () => {
+    setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
+    expect(screen.getByTestId("shell-policy-undo-pointer").textContent).toBe("settings.shellPolicyUndoPointer");
+  });
+
+  it("asking before every command shows no undo pointer", () => {
+    setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
+    expect(screen.queryByTestId("shell-policy-undo-pointer")).toBeNull();
   });
 
   it("offers the three voice modes and reports the pick", () => {
