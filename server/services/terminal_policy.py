@@ -376,11 +376,23 @@ def _outside_target(word: str) -> bool:
     return ".." in word.replace("\\", "/").split("/")
 
 
+# S2a-3 e (⓪Plan, the final M1 of v0.1.63): a relative operand is judged against the command's own folder,
+# so a command that changes folder anywhere (cd, chdir, pushd, popd, also through builtin / command, in a
+# subshell or a script; env -C / --chdir) leaves its deletes' targets unknown, and they ask. Even `cd sub`:
+# the text alone cannot say where a name under CDPATH or a link leads.
+_CHANGES_FOLDER = re.compile(
+    r"(?:^|[\n;&|(`{'\"]|\$\()" + _H + r"*(?:(?:builtin|command)" + _H + r"+)?(?:cd|chdir|pushd|popd)" + _END
+    + r"|\benv\b[^\n;&|]*\s(?:-[a-zA-Z]*C|--chdir)\b")
+
+
 def _deletes_outside(texts: tuple[str, ...]) -> bool:
+    moved = any(_CHANGES_FOLDER.search(text) for text in texts)
     for text in texts:
         for match in _DELETE_LINE.finditer(text):
             if re.search(r"\bxargs\b", match.group(0), re.I):
                 return True                     # xargs adds what it reads to the targets: unknown
+            if moved:
+                return True                     # relative to a folder the command moved to: unknown
             try:
                 words = shlex.split(match.group(2), comments=False, posix=True)
             except ValueError:
@@ -390,7 +402,7 @@ def _deletes_outside(texts: tuple[str, ...]) -> bool:
                 return True
         for match in _FIND_DELETE.finditer(text):
             starts = match.group(1).split()
-            if not starts or starts[0].startswith("-") or _outside_target(starts[0]):
+            if moved or not starts or starts[0].startswith("-") or _outside_target(starts[0]):
                 return True
     return False
 
