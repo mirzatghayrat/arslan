@@ -1509,7 +1509,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         from server.services import command_sandbox, terminal_policy
         command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
         argv = []
-        verdict = terminal_policy.assess(command)
+        # S2a-3 c: read off the event loop, within a time limit. Every later call for this command (the card,
+        # the approvals, the Island) gets this same answer from terminal_policy's cache.
+        verdict = await terminal_policy.assess_async(command)
         if verdict.level == "forbid":
             result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
                       "note": "Tell the user what you wanted to do and let them run it themselves."}

@@ -334,7 +334,10 @@ def _runs_bare_for(app: str) -> bool:
 
 
 def unwrapped_once(command: str) -> bool:
+    from server.services import shell_grammar
     from server.services.hands_service import never_touched, script_apps, script_kind
+    if not shell_grammar.read(command).understood:
+        return False                         # S2a-3: no sandbox at all only for text that is read whole
     script = _inline_osascript(command)
     if script is not None:
         if any(never_touched(app) for app in script_apps(script)):

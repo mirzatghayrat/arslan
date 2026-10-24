@@ -758,7 +758,7 @@ class RunCommandExecutor:
         from server.db import session as db_session
         from server.services import settings_service, terminal_exec, terminal_policy
         command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
-        verdict = terminal_policy.assess(command)
+        verdict = await terminal_policy.assess_async(command)     # S2a-3 c: off the event loop
         if verdict.level == "forbid":
             return {"ok": False, "error": f"Arslan never runs this: {verdict.reason}"}
         # 0.1.62 F1: never past what the turn or job has left, so the command's own limit stops
