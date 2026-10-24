@@ -404,10 +404,12 @@ async def mcp_server_enabled(session: AsyncSession) -> bool:
 
 
 async def shell_confirm_policy(session: AsyncSession) -> str:
-    """'ask_risky' (0.1.48 default): harmless commands run, the rest show a card.
-    'ask_all': every command shows a card (only an explicit choice gives this)."""
+    """'ask_all' (v0.1.63 default, user's decision): every command shows a card.
+    'ask_risky': harmless commands run, the rest show a card; only an explicit choice gives it, as its judgement
+    of what is risky is completed in v0.1.64 (S2a-3). Only the exact value counts (what Settings writes); unset
+    or anything else reads as ask_all, the same rule migration 0070 used when it moved a stored ask_risky."""
     raw = await _get_raw(session, "shell_confirm_policy")
-    return "ask_all" if str(raw).strip().lower() == "ask_all" else "ask_risky"
+    return "ask_risky" if raw == "ask_risky" else "ask_all"
 
 
 async def background_job_budget(session: AsyncSession) -> str:

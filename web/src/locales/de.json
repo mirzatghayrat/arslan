@@ -504,7 +504,9 @@
     "orchestratorShellDesc": "Arslan erledigt Dinge im Terminal: lesen, umwandeln, bauen, Skripte ausführen. Alles, was sendet, veröffentlicht, löscht, installiert oder eine andere App steuert, fragt vorher. Passwörter aus dem Schlüsselbund lesen, sudo und Systemordner löschen ist nie erlaubt.",
     "labelShellConfirmPolicy": "Wann fragen",
     "shellPolicyAskAll": "Vor jedem Befehl fragen",
+    "shellPolicyAskAllNote": "Jeder neue Befehl fragt zuerst. Einen Befehl, den du „In diesem Gespräch“ erlaubt hast, führt Arslan in diesem Gespräch ohne erneute Frage wieder aus.",
     "shellPolicyAskRisky": "Nur bei riskanten Befehlen fragen",
+    "shellPolicyAskRiskyNote": "Arslans Einschätzung, welche Befehle riskant sind, wird noch vervollständigt (v0.1.64). Bis dahin ist es sicherer, vor jedem Befehl zu fragen.",
     "labelMcpServer": "MCP-Server (eingehend)",
     "mcpServerDesc": "Erlaubt externen MCP-Clients (Claude Code, Codex) den Aufruf schreibgeschützter Tools. Standardmäßig deaktiviert; erfordert ein generiertes MCP-Token. Nur localhost.",
     "mcpToken": {

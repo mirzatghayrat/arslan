@@ -504,7 +504,9 @@
     "orchestratorShellDesc": "Arslan utilise le terminal pour faire les choses : lire, convertir, compiler, lancer des scripts. Tout ce qui envoie, publie, supprime, installe ou pilote une autre app demande d’abord. Lire les mots de passe du trousseau, sudo et supprimer des dossiers système n’est jamais permis.",
     "labelShellConfirmPolicy": "Quand demander",
     "shellPolicyAskAll": "Demander avant chaque commande",
+    "shellPolicyAskAllNote": "Chaque nouvelle commande demande d’abord. Une commande autorisée « Dans cette conversation » s’exécute de nouveau dans cette conversation sans redemander.",
     "shellPolicyAskRisky": "Demander seulement pour les commandes risquées",
+    "shellPolicyAskRiskyNote": "Le jugement d'Arslan sur les commandes à risque est encore en cours de finalisation (v0.1.64). D'ici là, il est plus sûr de demander avant chaque commande.",
     "labelMcpServer": "Serveur MCP (entrant)",
     "mcpServerDesc": "Permet aux clients MCP externes (Claude Code, Codex) d'appeler des outils en lecture seule. Désactivé par défaut ; nécessite un jeton MCP généré. Localhost uniquement.",
     "mcpToken": {

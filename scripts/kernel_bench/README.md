@@ -76,6 +76,10 @@ scripts/kernel_bench/start_proxy.sh anthropic     # keep running too, for Claude
 .venv/bin/python -m scripts.kernel_bench.report --offpeak
 ```
 
+The test instance asks only for risky commands (`shell_confirm_policy=ask_risky`), as every round before
+v0.1.63 did; the app's own default is now "ask before every command". `BENCH_SHELL_POLICY=ask_all` runs a round
+on that default instead (the final M1 records one such DeepSeek run for reference).
+
 ## Tasks
 
 | id | task | checker |

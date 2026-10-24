@@ -504,7 +504,9 @@
     "orchestratorShellDesc": "Arslan usa la terminal para hacer las cosas: leer, convertir, compilar, ejecutar scripts. Todo lo que envía, publica, borra, instala o controla otra app pregunta antes. Leer contraseñas del llavero, sudo y borrar carpetas del sistema nunca se permite.",
     "labelShellConfirmPolicy": "Cuándo preguntar",
     "shellPolicyAskAll": "Preguntar antes de cada comando",
+    "shellPolicyAskAllNote": "Cada comando nuevo pregunta primero. Uno que permitiste «En esta conversación» vuelve a ejecutarse en esa conversación sin preguntar.",
     "shellPolicyAskRisky": "Preguntar solo en comandos arriesgados",
+    "shellPolicyAskRiskyNote": "El criterio de Arslan para saber qué comandos son arriesgados aún se está completando (v0.1.64). Hasta entonces, es más seguro preguntar antes de cada comando.",
     "labelMcpServer": "Servidor MCP (entrante)",
     "mcpServerDesc": "Permite que clientes MCP externos (Claude Code, Codex) llamen a herramientas de solo lectura. Desactivado por defecto; requiere un token MCP generado. Solo localhost.",
     "mcpToken": {

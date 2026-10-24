@@ -504,7 +504,9 @@
     "orchestratorShellDesc": "Arslan uses the terminal to get things done: reading, converting, building, running scripts. Anything that sends, posts, deletes, installs or controls another app asks first. Reading passwords from the keychain, sudo and deleting system folders are never allowed.",
     "labelShellConfirmPolicy": "When to ask",
     "shellPolicyAskAll": "Ask before every command",
+    "shellPolicyAskAllNote": "Every new command asks first. One you allowed “In this conversation” runs again in that conversation without asking.",
     "shellPolicyAskRisky": "Ask only for risky commands",
+    "shellPolicyAskRiskyNote": "Arslan's judgement of which commands are risky is still being completed (v0.1.64). Until then, asking before every command is safer.",
     "labelMcpServer": "MCP server (inbound)",
     "mcpServerDesc": "Let external MCP clients (Claude Code, Codex) call read-only tools. Off by default; requires a generated MCP token. Localhost only.",
     "mcpToken": {

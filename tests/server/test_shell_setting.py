@@ -43,23 +43,23 @@ async def test_shell_enabled_when_true(maker):
 
 
 @pytest.mark.asyncio
-async def test_confirm_policy_defaults_to_asking_only_for_risky(maker):
-    # 0.1.48: harmless commands run; the rest show a card.
+async def test_confirm_policy_defaults_to_asking_before_every_command(maker):
+    # v0.1.63 (the user's decision): every command shows a card unless the user chose otherwise.
     from server.services import settings_service
 
     async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_risky"
+        assert await settings_service.shell_confirm_policy(s) == "ask_all"
 
 
 @pytest.mark.asyncio
-async def test_asking_for_everything_is_an_explicit_choice_that_persists(maker):
+async def test_asking_only_for_risky_commands_is_an_explicit_choice_that_persists(maker):
     from server.services import settings_service
 
     async with maker() as s:
-        await settings_service.update_settings(s, {"shell_confirm_policy": "ask_all"})
+        await settings_service.update_settings(s, {"shell_confirm_policy": "ask_risky"})
     async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_all"
+        assert await settings_service.shell_confirm_policy(s) == "ask_risky"
     async with maker() as s:
         await settings_service.update_settings(s, {"shell_confirm_policy": "garbage"})
     async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_risky"
+        assert await settings_service.shell_confirm_policy(s) == "ask_all"

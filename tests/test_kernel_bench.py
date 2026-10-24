@@ -413,6 +413,22 @@ def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
     assert len(waits) == 2 and all(ended > since > 0 for since, ended in waits)   # quiet counts from the exit
 
 
+def test_the_record_says_which_command_policy_the_run_used(tmp_path, monkeypatch):
+    """v0.1.63 (#398 review, F6): the driver prints the policy it set; the record carries it, so the final M1's
+    ask_all reference run is labelled."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
+    for policy in ("ask_risky", "ask_all"):
+        script = f"import json; print(json.dumps({{'end': 'done', 'final': 'ok', 'shell_policy': '{policy}'}}))"
+        monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+        rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
+        saved = json.loads(Path(tmp_path / "runs" / f"{rec['run']}.record.json").read_text())
+        assert rec["shell_policy"] == saved["shell_policy"] == policy
+
+
 def test_the_record_keeps_the_timing_the_driver_printed(tmp_path, monkeypatch):
     import sys
     from scripts.kernel_bench import runner
@@ -825,9 +841,30 @@ def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
 
     from scripts.kernel_bench.arslan_driver import settings_body
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
-    assert settings_body("/run") == {"workspace_dir": "/run"}
+    monkeypatch.delenv("BENCH_SHELL_POLICY", raising=False)
+    assert settings_body("/run") == {"shell_confirm_policy": "ask_risky", "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": "true", "workspace_dir": "/elsewhere"}')
-    assert settings_body("/run") == {"tools_all_resident": "true", "workspace_dir": "/run"}
+    assert settings_body("/run") == {"tools_all_resident": "true", "shell_confirm_policy": "ask_risky",
+                                     "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": true}')
+    with pytest.raises(ValueError):
+        settings_body("/run")
+
+
+def test_the_bench_pins_its_command_policy(monkeypatch):
+    """v0.1.63: the app's default became ask_all; a bench round stays on ask_risky (comparable with M1B and the
+    K rounds) unless the run asks for ask_all, and only BENCH_SHELL_POLICY sets it."""
+    import pytest
+
+    from scripts.kernel_bench.arslan_driver import settings_body
+    monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
+    monkeypatch.setenv("BENCH_SHELL_POLICY", "ask_all")
+    assert settings_body("/run")["shell_confirm_policy"] == "ask_all"
+    for bad in ("ask_everything", "ASK_ALL"):
+        monkeypatch.setenv("BENCH_SHELL_POLICY", bad)
+        with pytest.raises(ValueError):
+            settings_body("/run")
+    monkeypatch.delenv("BENCH_SHELL_POLICY")
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"shell_confirm_policy": "ask_all"}')
     with pytest.raises(ValueError):
         settings_body("/run")
