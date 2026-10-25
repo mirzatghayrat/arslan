@@ -5,12 +5,15 @@ On the user's Mac an environment Arslan made, not named venv or .venv, held 29,1
 anything. A folder holding `pyvenv.cfg` (PEP 405) is now left out like node_modules, by one rule everywhere:
 - the count and the copy leave it out, and the manifest records it (`marked`);
 - `finish` leaves out the same folders on both sides, also when the run deleted the marker, so its files are
-  never taken for files the run made;
-- a restore never trashes or writes into one, except a file write_file saved on its own;
+  never taken for files the run made; one the run made is left out and listed too;
+- a folder that was saved stays undoable when the run makes it an environment (`python -m venv` in a
+  project), its `.git` too (⓪Plan's review: a marker found later never cancels a saved folder's undo);
+- a restore never trashes, writes or makes or removes folders in one, except a file write_file saved on its own;
 - write_file and edit_file under one save that file on its own, as under node_modules;
 - the marker is never read through a link, a linked environment is never followed, and inside `.git`
   nothing is left out.
 """
+import os
 from pathlib import Path
 
 import pytest
@@ -105,21 +108,55 @@ async def test_an_environment_the_run_makes_is_left_out_and_never_trashed(ws, tm
     await _run(5, ws, change)
     [root] = checkpoints.manifest(5)["roots"]
     assert not any(rel.startswith("made-env") for rel in root["finished"]) and "made-env" not in root["folders_made"]
+    assert "made-env" in root["excluded"] and "made-env" in root["marked"]          # the undo window lists it
     await checkpoints.restore_files(5)
     assert (ws / "made-env" / "lib" / "x.py").exists() and _trash(tmp_path) == []
 
 
-async def test_a_saved_folder_that_becomes_an_environment_is_left_out_on_both_sides(ws):
-    """Copied at the save, marked by the run: `finish` leaves it out of the copy's side too (the copy has no
-    marker of its own), so its files are not listed as deleted by the run."""
-    (ws / "plain" / "pkg").mkdir(parents=True)
-    (ws / "plain" / "pkg" / "a.py").write_text("a")
+async def test_a_saved_project_the_run_makes_an_environment_stays_undoable(ws, tmp_path):
+    """`python -m venv` in a project during the run: the project was saved, so its files and its own `.git`
+    still go back; only what the run made (the marker) goes to the Trash."""
+    proj = ws / "proj"
+    (proj / "pkg").mkdir(parents=True)
+    (proj / "pkg" / "a.py").write_text("a")
+    (proj / ".git").mkdir()
+    (proj / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
 
     def change():
-        (ws / "plain" / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        (proj / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        (proj / "pkg" / "a.py").write_text("changed")
+        (proj / ".git" / "HEAD").write_text("ref: refs/heads/other\n")
     await _run(6, ws, change)
     [root] = checkpoints.manifest(6)["roots"]
-    assert not any(rel.startswith("plain/") for rel in root["finished"]) and root["folders_removed"] == []
+    assert {"proj/pkg/a.py", "proj/.git/HEAD", "proj/pyvenv.cfg"} <= set(root["finished"]) and "proj" not in root["marked"]
+    out = await checkpoints.restore_files(6)
+    assert (proj / "pkg" / "a.py").read_text() == "a"
+    assert (proj / ".git" / "HEAD").read_text() == "ref: refs/heads/main\n"
+    assert not (proj / "pyvenv.cfg").exists() and out["runs"][0]["failed"] == []
+
+
+async def test_the_working_folder_itself_made_an_environment_stays_undoable(ws):
+    (ws / ".git").mkdir()
+    (ws / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+
+    def change():
+        (ws / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        (ws / "notes.md").write_text("after")
+        (ws / ".git" / "HEAD").write_text("ref: refs/heads/other\n")
+    await _run(12, ws, change)
+    out = await checkpoints.restore_files(12)
+    assert (ws / "notes.md").read_text() == "before" and out["runs"][0]["git"] == "restored"
+    assert (ws / ".git" / "HEAD").read_text() == "ref: refs/heads/main\n"
+
+
+async def test_a_git_folder_holding_the_marker_is_never_left_out(ws):
+    (ws / ".git").mkdir()
+    (ws / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    (ws / ".git" / "pyvenv.cfg").write_text("odd but possible\n")
+    await checkpoints.ensure(13, [ws])
+    [root] = checkpoints.manifest(13)["roots"]
+    assert ".git" not in root["marked"] and ".git" not in root["excluded"]
+    assert (checkpoints.clone_of(13, ws) / ".git" / "HEAD").read_text() == "ref: refs/heads/main\n"
 
 
 async def test_a_marker_that_is_a_link_is_not_one(ws):
@@ -163,6 +200,49 @@ async def test_inside_git_a_marker_leaves_nothing_out(ws):
     clone = checkpoints.clone_of(9, ws)
     assert (clone / ".git" / "hooks" / "pre-commit").exists()
     assert checkpoints.manifest(9)["roots"][0]["marked"] == ["tools-env"]
+
+
+async def test_a_restore_never_makes_or_removes_folders_in_an_environment_a_manifest_names(ws):
+    (ws / "tools-env" / "empty").mkdir()
+    await _run(14, ws, lambda: (ws / "notes.md").write_text("after"))
+    data = checkpoints.manifest(14)
+    data["roots"][0]["folders_removed"].append("tools-env/brought-back")
+    data["roots"][0]["folders_made"].append("tools-env/empty")
+    checkpoints._save(14, data)
+    await checkpoints.restore_files(14)
+    assert not (ws / "tools-env" / "brought-back").exists() and (ws / "tools-env" / "empty").is_dir()
+
+
+async def test_a_file_written_in_an_environment_the_run_made_keeps_the_rest_of_it(ws, tmp_path):
+    """The run makes an environment, then write_file changes a file in it: that one file goes back, and the
+    environment is recorded at that write, so the rest of it is never trashed."""
+    await checkpoints.ensure(15, [ws])
+    new = ws / "made-env"
+    (new / "lib").mkdir(parents=True)
+    (new / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (new / "lib" / "keep.py").write_text("keep")
+    (new / "lib" / "edit.py").write_text("before the edit")
+    await checkpoints.ensure(15, [ws], written=new / "lib" / "edit.py")
+    (new / "lib" / "edit.py").write_text("after the edit")
+    await checkpoints.finish(15)
+    [root] = checkpoints.manifest(15)["roots"]
+    assert "made-env" in root["marked"] and root["written"] == ["made-env/lib/edit.py"]
+    await checkpoints.restore_files(15)
+    assert (new / "lib" / "edit.py").read_text() == "before the edit"
+    assert (new / "lib" / "keep.py").exists() and (new / "pyvenv.cfg").exists() and _trash(tmp_path) == []
+
+
+def test_what_a_plain_copy_holds_counts_a_file_saved_on_its_own_once(ws):
+    """`_own_bytes` for a plain copy (no clonefile): every file of the copy once; one write_file saved in an
+    environment lives there too, and is not counted twice."""
+    import asyncio
+    asyncio.run(checkpoints.ensure(16, [ws]))
+    asyncio.run(checkpoints.ensure(16, [ws], written=ws / "tools-env" / "lib" / "site" / "m3.py"))
+    data = checkpoints.manifest(16)
+    data["roots"][0]["method"] = "copy"
+    clone = checkpoints._run_dir(16) / data["roots"][0]["clone"]
+    every = sum(os.lstat(os.path.join(top, name)).st_size for top, _, names in os.walk(clone) for name in names)
+    assert checkpoints._own_bytes(16, data) == every > 0
 
 
 async def test_a_restore_never_writes_into_an_environment_a_manifest_names(ws, tmp_path):

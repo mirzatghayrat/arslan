@@ -13,8 +13,10 @@ saves the working folder first, once; the earliest copy is the one an undo goes 
   can be rebuilt are left out and listed: by name (EXCLUDED), and any folder holding a `pyvenv.cfg`, a
   Python environment whatever its name (M3 #8). One rule everywhere (count, copy, finish, per-file saves,
   restore): such a folder is left out when it held the marker at the save (recorded as `marked`, so a run
-  that deletes the marker does not turn its files into "made by the run") or holds it now; the marker is
-  never read through a link, and nothing in `.git` is left out. So are Arslan's own paths, and secret-shaped files (`.env`, keys:
+  that deletes the marker does not turn its files into "made by the run"), or holds it now and the copy does
+  not hold it (an environment the run made; a folder that was saved stays undoable even if the run makes it
+  an environment, ⓪Plan's review). One the run made is recorded too, at its first write_file or at `finish`.
+  The marker is never read through a link, `.git` is never left out, nor anything in it. So are Arslan's own paths, and secret-shaped files (`.env`, keys:
   never copied into checkpoints, so never undone, ⓪Plan's review). FIFOs,
   sockets, devices and symlinks are never opened or copied, only listed (a FIFO froze the backend once).
   Every folder kept is recreated, empty ones too: a folder missing from the copy is one the run made.
@@ -212,16 +214,25 @@ def _marked_at(root: Path, rel: str) -> bool:
     return os.path.realpath(folder) == str(folder) and _marked(folder)
 
 
-def _left_out(parts: tuple[str, ...], root: Path | None = None, marked: frozenset[str] = frozenset()) -> bool:
-    """Under a folder the copy leaves out, met before any `.git`: a rebuildable name, or a Python environment
-    (recorded in `marked` at the save, or holding the marker under `root` now)."""
+def _left_out_at(parts: tuple[str, ...], root: Path | None = None, marked: frozenset[str] = frozenset(),
+                 copy: Path | None = None) -> str | None:
+    """The folder of `parts` the copy leaves out, met before any `.git`, or None: a rebuildable name, or a
+    Python environment, recorded in `marked` or holding the marker under `root` now where `copy` (the saved
+    copy) does not hold it. A folder that was saved stays in, marker or not."""
     for i, part in enumerate(parts):
         if part == ".git":
-            return False
+            return None
         rel = "/".join(parts[:i + 1])
-        if part in EXCLUDED or rel in marked or (root is not None and _marked_at(root, rel)):
-            return True
-    return False
+        if part in EXCLUDED or rel in marked:
+            return rel
+        if root is not None and _marked_at(root, rel) and not (copy is not None and os.path.isdir(copy / rel)):
+            return rel
+    return None
+
+
+def _left_out(parts: tuple[str, ...], root: Path | None = None, marked: frozenset[str] = frozenset(),
+              copy: Path | None = None) -> bool:
+    return _left_out_at(parts, root, marked, copy) is not None
 
 
 def _in_git(rel: str) -> bool:
@@ -243,13 +254,14 @@ def _under(rel: str, folders: list[str]) -> bool:
 
 def _walk(root: Path, protected: list[Path], excluded: set[str], not_regular: list[str],
           folders: list[str] | None = None, git: bool = False, unreadable: list[str] | None = None,
-          marked: frozenset[str] = frozenset(), found: list[str] | None = None, marker_root: Path | None = None):
+          marked: frozenset[str] = frozenset(), found: list[str] | None = None, copy: Path | None = None,
+          live: bool = True):
     """(relative path, absolute path, lstat) for each regular file under `root`, never following a link.
     Skipped directories go into `excluded`, everything that is not a regular file into `not_regular`,
     every directory kept into `folders`, and what could not be read into `unreadable`, when given.
-    `git`: `root` is a `.git`. A Python environment is skipped too: a folder in `marked` (recorded at the
-    save), or one holding the marker now, looked up under `marker_root` when `root` is a copy (a copy has no
-    marker of its own); those found by the marker go into `found`."""
+    `git`: `root` is a `.git`. A Python environment is skipped too, never `.git` or anything in it: a folder in
+    `marked`, or, when `live`, one holding the marker now that `copy` (the saved copy) does not hold; those
+    found by the marker go into `found`. A walk of the copy itself passes `live=False`: it has no markers."""
     def cannot_read(exc: OSError) -> None:
         if unreadable is not None and exc.filename:
             unreadable.append(str(Path(exc.filename).relative_to(root)))
@@ -264,7 +276,8 @@ def _walk(root: Path, protected: list[Path], excluded: set[str], not_regular: li
                 not_regular.append(rel)
             elif _skip_dir(path, name, protected, in_git):
                 excluded.add(name if name in EXCLUDED else rel)
-            elif not in_git and (rel in marked or (_marked_at(marker_root, rel) if marker_root else _marked(path))):
+            elif not in_git and name != ".git" and (rel in marked or (
+                    live and _marked(path) and not (copy is not None and os.path.isdir(copy / rel)))):
                 excluded.add(rel)
                 if found is not None and rel not in marked:
                     found.append(rel)
@@ -443,9 +456,16 @@ def _save_written(run_id: int, data: dict, path: Path) -> bool:
         if entry["skipped"] is not None or not path.is_relative_to(root):
             continue
         rel = path.relative_to(root)
-        if not _contained(str(rel)) or str(rel) in entry["written"] \
-                or not _left_out(rel.parts[:-1], root, frozenset(entry.get("marked", []))):
+        marked = entry.setdefault("marked", [])
+        left = _left_out_at(rel.parts[:-1], root, frozenset(marked), _run_dir(run_id) / entry["clone"]) \
+            if _contained(str(rel)) else None
+        if left is None or str(rel) in entry["written"]:
             return False
+        if Path(left).name not in EXCLUDED and left not in marked:
+            # An environment the run made: recorded before its folder appears in the copy, so `finish`, the
+            # copy's walk and a restore keep leaving it out.
+            marked.append(left)
+            entry["excluded"] = sorted(set(entry["excluded"]) | {left})
         entry["written"].append(str(rel))
         try:
             st = os.lstat(path)
@@ -495,8 +515,13 @@ def _finish_root(run_id: int, entry: dict) -> None:
     saved_folders: list[str] = []
     now_folders: list[str] = []
     marked = frozenset(entry.get("marked", []))   # both sides leave out the same environments
-    saved = {rel: st for rel, _, st in _walk(clone, [], set(), [], saved_folders, marked=marked, marker_root=root)}
-    now = {rel: st for rel, _, st in _walk(root, protected, set(), [], now_folders, marked=marked)}
+    saved = {rel: st for rel, _, st in _walk(clone, [], set(), [], saved_folders, marked=marked, live=False)}
+    made: list[str] = []                          # environments the run made, found by their marker
+    now = {rel: st for rel, _, st in _walk(root, protected, set(), [], now_folders, marked=marked, found=made,
+                                           copy=clone)}
+    if made:                                      # the undo window lists them; a restore leaves them out
+        entry["marked"] = sorted(marked | set(made))
+        entry["excluded"] = sorted(set(entry["excluded"]) | set(made))
     for rel in entry["written"]:  # under left-out folders, which neither walk enters
         if not _contained(rel):
             continue
@@ -569,7 +594,7 @@ def _own_bytes(run_id: int, data: dict) -> int:
         clone = _run_dir(run_id) / entry["clone"]
         if entry["method"] == "copy":
             rels = [rel for rel, _, _ in _walk(clone, [], set(), [], marked=frozenset(entry.get("marked", [])),
-                                               marker_root=Path(entry["path"]))] + entry["written"]
+                                               live=False)] + entry["written"]
         else:
             rels = [rel for rel, left in entry["finished"].items() if left["saved"] is not None]
         for rel in rels:
@@ -731,7 +756,7 @@ def _restore_root(run_id: int, entry: dict, out: dict, done: set[str]) -> None:
     clone = _run_dir(run_id) / entry["clone"]
     marked = frozenset(entry.get("marked", []))
     for rel in entry["folders_removed"]:
-        if _contained(rel):
+        if _contained(rel) and not _left_out(Path(rel).parts, root, marked, clone):
             with contextlib.suppress(OSError):
                 os.close(_open_folder(root, Path(rel).parts))
     for rel, left in finished.items():
@@ -742,7 +767,7 @@ def _restore_root(run_id: int, entry: dict, out: dict, done: set[str]) -> None:
             continue
         # Never into a folder the copy left out, unless write_file saved that file on its own (M3 #8):
         # `finish` lists none, so one here comes from a manifest written since; the folder is left as it is.
-        if rel not in entry["written"] and _left_out(Path(rel).parts[:-1], root, marked):
+        if rel not in entry["written"] and _left_out(Path(rel).parts[:-1], root, marked, clone):
             out["not_saved"].append(rel)
             continue
         if _fingerprint(root / rel) != left["now"]:
@@ -758,7 +783,7 @@ def _restore_root(run_id: int, entry: dict, out: dict, done: set[str]) -> None:
         except (OSError, ValueError):
             out["failed"].append(rel)
     for rel in sorted(entry["folders_made"], reverse=True):  # deepest first, and only when empty
-        if not _contained(rel):
+        if not _contained(rel) or _left_out(Path(rel).parts, root, marked, clone):
             continue
         with contextlib.suppress(OSError):
             fd = _open_folder(root, Path(rel).parts[:-1], create=False)
