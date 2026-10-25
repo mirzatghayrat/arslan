@@ -299,6 +299,14 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
 - 灵动岛加输入，回合中也能从灵动岛插话（K9；今天灵动岛没有输入，更正 E12）。
 - iPhone 在插话被并入当前回合后，步骤行仍显示「Queued behind the current turn」，直到下一条工具行出现；要改成「已加入当前回合」，是 Mac 端 Bridge（`desktop/bridge/Sources/BridgeCore/FrameMapper.swift:133-134`）的改动，iPhone 不用改；动 Bridge 文件前先问 ①iOS（①iOS 2026-10-18 核 K9 时提出）。
 - iPhone 的实时对话里看不到 Mac 窗口在回合中插进来的话：Bridge 只在 `stream_start` 时读一次 Mac 端的消息，回合中途存进来的插话要等下一轮才出现在手机上。要改是 Mac 端 Bridge 的改动；动 Bridge 文件前先问 ①iOS（K9b #393 审查时发现，2026-10-24）。
+- **iPhone 1.0 要的 Mac 端字段（①iOS 2026-10-26 提；用户已定 iPhone 1.0 要等整套改版才送审，所以送审卡在这几项上）：**设计已批，在 iOS 仓库 `arslan-ios-core-loop` 的 `0fddad1`，`docs/superpowers/specs/2026-10-18-iphone-mac-card-rail-files-design.md` §5、§4.6。全是新增字段，不改已有字段；Bridge 和服务端归 ②Main，字段名由 ②Main 定，共享向量放 `spec/mobile-bridge` ↔ BridgeKit SharedVectors；①iOS 做 BridgeKit 模型、测试和界面。
+  - `StatusSnapshot` 加 Mac 状态：电量（是否在充、剩余分钟）、CPU（现在和最近一小时 12 个 5 分钟平均）、内存（用量、总量、macOS 内存压力）、磁盘（剩余、总量）、网络（类型和质量，**不带 Wi-Fi 名**：隐私，新版 macOS 还要定位权限）、睡眠（Arslan 是否在防睡眠）、系统版本。
+  - 每个对话的 `HistoryResult` 加：环境（模型、文件夹的显示路径、模式名）、上下文（已用和窗口 token，按系统 / 工具 / 聊天分）、这个对话的连接器（名字、种类、开关）、改动过的文件（整段对话净增减行数、最后一次改动的 run 和步骤；要 Mac 端算，因为 run 只给 40 步、历史只给 200 条，手机算会少）。
+  - 从手机开新对话：Mac 建一个普通对话、按第一条消息起标题、跑这条消息，回新对话的 id（可能要加帧字段，形状由 ②Main 定）。
+  - `hello` 里加能力标记（Mac 状态、对话详情、新对话），老 Mac 上手机把这几块藏起来、照旧用「New Task」。
+  - 隐私页加一句：Mac 的电量、CPU、内存、磁盘、网络状态经你自己的 iCloud 同步到你的 iPhone；随 v0.1.64 上线。
+  - 线上的名字是 `status.snapshot` 和 `chat.history.result`（②Main 核）。**这一批要改 Bridge 帧，开工前要用户明确点头**（用户的长期规矩：不改 Bridge 的帧格式，要改先停下来问）。
+  - 同一窗口里已经在单子上的两项一起做：Bridge 标明自己的连接、只在 Mac 上答的卡保留「不」（②Main 10-20）；手机上显示定时卡的 `prompt`（S1b）。上面两条 Bridge 回合中的显示问题，也是同一批文件，先问 ①iOS。
 - 聊天回合也开 Arslan 光标会话：今天光标只跟后台任务走，聊天里 Hands 动作变多以后看不出在点哪里（H1 回答第 5 条）。
 - 聊天窗口自己的「停止」也给 Hands 发 `stop`：今天只有 Hands 的 Stop 发，窗口停止后正在跑的那一步会跑完（≤30 秒），要改 `server/api/runs.py`（H1 回答第 5 条）。
 - 从真实失败里挑题，建私有题库（领先路线 §6 第 3 项；审查 §5）。
