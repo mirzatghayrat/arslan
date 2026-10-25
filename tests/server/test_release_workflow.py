@@ -194,3 +194,40 @@ def test_the_updater_pubkey_has_not_changed():
         "and must be reinstalled by hand — see docs/RELEASE_KEYS.md — and this "
         f"pin becomes {actual}. If it was not deliberate, do not ship."
     )
+
+
+def _rustc_lookup() -> str:
+    """build_dmg.sh's own lines that find rustc and the host arch, run on their own below."""
+    script = (_WORKFLOWS.parents[1] / "packaging/build_dmg.sh").read_text().splitlines()
+    lines = [line for line in script if line.startswith(("RUSTC=", 'command -v "$RUSTC"', "ARCH="))]
+    assert len(lines) == 3, lines
+    return "\n".join(lines) + '\necho "$ARCH"\n'
+
+
+def _fake_rustc(folder, host: str):
+    folder.mkdir(parents=True, exist_ok=True)
+    rustc = folder / "rustc"
+    rustc.write_text(f"#!/bin/sh\necho 'rustc 1.0.0'\necho 'host: {host}'\n")
+    rustc.chmod(0o755)
+
+
+def test_build_dmg_finds_rustc_on_path_when_cargo_home_has_none(tmp_path):
+    """GitHub's macos-26 runner image of 2026-10-21 installs rustup from its package manager: rustc is on PATH
+    and ~/.cargo/bin is empty. Release run 40220041558 failed there (`~/.cargo/bin/rustc: No such file`)."""
+    _fake_rustc(tmp_path / "bin", "aarch64-apple-darwin")
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin", "CARGO_HOME": str(tmp_path / "empty-cargo"),
+           "HOME": str(tmp_path)}
+    out = subprocess.run(["bash", "-euo", "pipefail", "-c", _rustc_lookup()], env=env, capture_output=True,
+                         text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "aarch64"
+
+
+def test_build_dmg_still_prefers_rustups_own_rustc(tmp_path):
+    _fake_rustc(tmp_path / "bin", "x86_64-apple-darwin")                     # a different rustc on PATH
+    _fake_rustc(tmp_path / "cargo" / "bin", "aarch64-apple-darwin")         # rustup's own, under CARGO_HOME
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin", "CARGO_HOME": str(tmp_path / "cargo"), "HOME": str(tmp_path)}
+    out = subprocess.run(["bash", "-euo", "pipefail", "-c", _rustc_lookup()], env=env, capture_output=True,
+                         text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "aarch64"
