@@ -36,7 +36,11 @@ APP="Arslan"
 # Single source of truth for the version — the same file the release workflow
 # checks the git tag against.
 VERSION="$(node -p "require('$TAURI/tauri.conf.json').version")"
-ARCH="$("${CARGO_HOME:-$HOME/.cargo}/bin/rustc" -vV | sed -n 's/host: //p' | cut -d- -f1)"
+# rustup's own install puts rustc in ~/.cargo/bin. A runner image whose rustup comes from its package manager
+# (GitHub's macos-26 image of 2026-10-21) has nothing there, so fall back to PATH, as hands/build_hands.sh does.
+RUSTC="${CARGO_HOME:-$HOME/.cargo}/bin/rustc"
+command -v "$RUSTC" >/dev/null 2>&1 || RUSTC=rustc
+ARCH="$("$RUSTC" -vV | sed -n 's/host: //p' | cut -d- -f1)"
 
 step() { echo ""; echo "==> $*"; }
 
