@@ -306,6 +306,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
   - 从手机开新对话：Mac 建一个普通对话、按第一条消息起标题、跑这条消息，回新对话的 id（可能要加帧字段，形状由 ②Main 定）。
   - `hello` 里加能力标记（Mac 状态、对话详情、新对话），老 Mac 上手机把这几块藏起来、照旧用「New Task」。
   - 隐私页加一句：Mac 的电量、CPU、内存、磁盘、网络状态经你自己的 iCloud 同步到你的 iPhone；随 v0.1.64 上线。
+  - **①iOS 的字段提案（2026-10-26）：**iOS 仓库 `arslan-ios-core-loop` 的 `claude/core-loop` 分支，`docs/protocol/2026-10-26-mac-0164-fields-proposal.md`。比上面多了几样，全是可选新增：状态里加一周统计（7 天的回复、任务、卡片数）和结果统计（今天、本周任务结果，每个任务的验收是否全过、花了多少钱、要你出手几次）；`history.result` 里加这个对话的花费；从手机开新对话用 `hello` 能力 `new_conversation` 加 `ChatSend.new_conversation_id`；想要但不急：`conversation.rename`，对话列表分页（before / has_more）。用户已批 iPhone 改版第二轮（概览 + 左侧栏 + 全屏详情，去掉 Files 页和 New Task）；手机端已做好、等 Mac 有数据就亮。
   - 线上的名字是 `status.snapshot` 和 `chat.history.result`（②Main 核）。**这一批要改 Bridge 帧，开工前要用户明确点头**（用户的长期规矩：不改 Bridge 的帧格式，要改先停下来问）。
   - 同一窗口里已经在单子上的两项一起做：Bridge 标明自己的连接、只在 Mac 上答的卡保留「不」（②Main 10-20）；手机上显示定时卡的 `prompt`（S1b）。上面两条 Bridge 回合中的显示问题，也是同一批文件，先问 ①iOS。
 - 聊天回合也开 Arslan 光标会话：今天光标只跟后台任务走，聊天里 Hands 动作变多以后看不出在点哪里（H1 回答第 5 条）。
