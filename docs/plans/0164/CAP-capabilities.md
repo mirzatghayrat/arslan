@@ -257,6 +257,7 @@
 ### CAP6a 技能目录当来源，加一次性导出
 
 - 按用户定的第 3 条：Arslan 装的技能落到 `~/.agents/skills/<名字>/`（开放标准）。
+- **不能比今天松（③Hands 复审 #434）：** 今天技能脚本在数据目录里（`skill_import.py:281`），数据目录在 `arslan_protected` 里（`command_sandbox.py:101`）：沙箱里的命令永远不能读写它（`:121-124` 的 `default_protected`），跑到沙箱外的命令最小 profile 也拒读拒写（`:197-198`）。挪到 `~/.agents/skills` 和数据目录外的插件目录，这两层就没了。所以 `~/.agents/skills` 和插件目录要**同时**进 `default_protected` 和最小 profile，**拒读也拒写**（SKILL.md 走 `read_skill`，脚本走 `run_python`）。**CAP6a 依赖 CAP6b / SBX 的这一步，不能比它先合。**
 - 每个文件的哈希记在 Arslan 的数据目录里，不放在技能文件夹里。
 - **注册表今天直接读 `SkillPack`**（`skill_forge.py:9-11`）。所以这个 PR 要让技能目录成为一个来源：启动时、以及每次 `read_skill` 时读目录，核哈希。哈希对不上（文件被改过）就停用并重新出卡。
 - **别的工具放进来的技能**，显示「来自其他工具」，只给开关、不给删除，第一次启用前出卡（卡面同 CAP4）。
@@ -266,7 +267,8 @@
 ### CAP6b 模型不可写（并进 SBX 的受保护写入）
 
 - 技能目录、插件目录、MCP 配置对模型的所有写路径都是硬拒，用户点头也不行。MCP 配置今天是数据库里的 `mcp_servers` 表（`capability_install.py:300-310`），所以要护的就是数据目录。
-- 这几个目录加进 SBX 的受保护写入，和 `checkpoints/` 同一处。
+- 这几个目录加进 SBX 的受保护写入，和 `checkpoints/` 同一处；技能目录和插件目录还要拒读（见 CAP6a 第二条）。
+- **内核拦不住的两条（③Hands 复审 #434）：** U11 批准过的单纯 osascript 和 `shortcuts run` 不套任何 profile（`terminal_exec.py:176-178` 遇到 `unwrapped` 不加包装，判断在 `task_service.unwrapped_once`）；Hands 在访达或编辑器里点按也不经过 seatbelt。卡里写明这是例外，「用户点头也不行」对这两条做不到。这两条的测试测兜底，不测拒写：文件被改了，下一次读时哈希对不上就停用并重新出卡；新冒出来的技能文件夹第一次启用前先出卡。
 - 跑到沙箱外的命令用 S2a-1 的最小 profile（`command_sandbox.py:93-96` 的 `arslan_protected`、`:187` 的 `minimal_profile`），把这几个目录加进它的禁写。
 - `capability_sandbox` 即使用户授权了上层文件夹，也排除这几个目录。
 - **测试覆盖每一条写路径，各打一次：**
