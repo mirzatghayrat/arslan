@@ -151,7 +151,7 @@
 - 删：
   - 服务端：`server/services/task_workers.py` 整个文件；`server/registry/task_tools.py:21-33`（`DelegateWorkExecutor`）；`arslan.py:1118-1123`；`tool_loop.py` 里 `delegate_work` 的 schema（`:2042` 一带）和超时（`:1791`）；`server/registry/seed_catalog.py:26`；`server/services/task_service.py:42` 里的名字；`server/services/task_repository.py:328-329`、`:500-501`；`server/services/task_restore.py` 里的 `TaskWorker`；`server/api/tasks.py:11` 的导入、`:73` 的 `present_worker`、`:75-76` 的查询；`server/db/models.py:1067` 导出的 `TaskWorker`；`parallel_reads.py:31` 的注释；S64-0 在 `untrusted.py` 里加的两处名字；
   - web：`web/src/components/companion/TaskWorkers.tsx`，以及它在 `TaskPanel.tsx:9` 和 `ProfessionalMethods.test.tsx` 里的引用；`web/src/api/tasks.ts:29`（`workers?`）、`:34`（`TaskWorker` 类型）；`web/src/lib/toolWords.json:16`；`web/src/locales/process.ts` 里 6 种语言的 `t_delegate_work`。
-- **`TaskWorker` 这个类先不能整个删：** 迁移 `_0052_task_workers.py:5` 导入它，新装的机器跑迁移会坏。二选一：类留在 `server/db/worker_models.py` 只给 0052 用（注释写 `DELETE-BY:`，随 SUB7 删）；或者把表的定义内联进 0052。⓪Plan 建议后者，SUB7 就不用再回来改。
+- **`TaskWorker` 这个类先不能整个删：** 迁移 `_0052_task_workers.py:5` 导入它，新装的机器跑迁移会坏。二选一：类留在 `server/db/worker_models.py` 只给 0052 用（注释写 `DELETE-BY: v0.1.64`，条件是 SUB7 这一版把表内联进 0052；做不到就写明顺延到哪一版）；或者把表的定义内联进 0052。⓪Plan 建议后者，SUB7 就不用再回来改。
 - 要先查的：`WorkerBrief` 和 `shared_budget_id`（`contracts.py:203`）还有没有别人用；`professional_methods`（`research`、`apple-growth`、`product-design`）除了帮手还有能力页在用（`web/src/components/Capabilities.tsx:13`），**不跟着删**，删不删另问用户；`personal_context.worker_context` 还被 `memory_tools_v2.py:21` 用，留着。
 - **S64-0 的测试不删：** 改成测子会话的汇报（帮手 → 子会话，父回合 → 汇总回合），断言不变：汇报加框；汇总回合里 `memory_note` 不自动生效、要联网的命令出卡。
 - 量级：产品代码约 −550 行（整份删除，照总计划 U2 的例外不受 800 行限制）。
@@ -260,7 +260,7 @@ README 里「开工前要先想好」的另外两条：
 - **风险：违反 sessions §11 第 3 条。** 子会话是新子系统：v0.1.63 排了的删除没合完之前不开，同一时间只做一个新子系统。和 Q1、CAP、INB 谁先谁后，用户定。S64-0 是安全修复，不受这条限制。
 - **旧路径：**
   - S64-0 之后、SUB6 之前的 `delegate_work`：代码注释写 `DELETE-BY: v0.1.64`（随 SUB6 删）；
-  - SUB6 若把 `TaskWorker` 类留给迁移 0052：注释写 `DELETE-BY: v0.1.64`（随 SUB7 删）。
+  - SUB6 若把 `TaskWorker` 类留给迁移 0052：注释写 `DELETE-BY: v0.1.64`，前提是 SUB7 这一版把表内联进 0052 并删掉这个类；SUB7 赶不上就改写成它真正会删的版本。
 - **回退：**
   - SUB2：revert 后子对话重新出现在列表里；迁移不回退（列留着，没人读）。
   - SUB3–SUB5：按倒序 revert，工具从工具表里消失；已经建出来的子对话变成普通对话（`kind` 还是 `sub`，但没人特殊处理），列表过滤要跟着 SUB2 一起撤。
