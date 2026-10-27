@@ -27,6 +27,7 @@ from arslan.llm import prices
 from server.auth import require_auth
 from server.db import session as db_session
 from server.db.models import Run, UsageLedger
+from server.run_kinds import USER_RUN_KINDS
 from server.schemas import (
     UsageBinOut,
     UsageDailyPointOut,
@@ -53,7 +54,7 @@ _BIN = {"24h": timedelta(hours=1), "7d": timedelta(hours=6), "30d": timedelta(da
 # Upper bounds (ms) of the duration bands; the last band is open-ended.
 DURATION_BANDS = ((10_000, "<10s"), (30_000, "10–30s"), (60_000, "30s–1m"), (180_000, "1–3m"),
                   (600_000, "3–10m"), (None, ">10m"))
-_RUN_KINDS = ("live", "host", "scheduled")
+_RUN_KINDS = USER_RUN_KINDS        # the weekly report counts the same kinds (scripts/usage_report.py)
 _DONE = {"completed", "recorded", "scored"}
 _STOPPED = {"cancelled", "interrupted"}
 

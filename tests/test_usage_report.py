@@ -1,7 +1,9 @@
 """0.1.62 M2: the weekly usage report reads a synthetic DB read-only and prints numbers only.
 
 Every table holds only the columns the script reads, plus free-text columns seeded with
-"SECRET" strings it must never print. Rows sit on Wednesday noon UTC, so the week they
+"SECRET" strings it must never print. Runs are mostly 'host' (chat turns, fires and background jobs since
+2026-09-14), with an old 'scheduled' and an old 'live' one; a 'replay' and a 'worker' run are there to be
+left out. Rows sit on Wednesday noon UTC, so the week they
 fall in is the same in every time zone; the one local-time test sets TZ itself.
 """
 from __future__ import annotations
@@ -71,12 +73,16 @@ def make_db(path, *, wal=False, keep_open=False):
     # registered tools: a seeded catalog tool that is not a built-in executor, and an MCP tool
     con.executemany("INSERT INTO tools VALUES (?, ?)", [
         ("todo", "hermes_core"), ("web_search", "web"), ("mcp_6__inspect_page", "mcp_6")])
-    runs = [(1, "live", A, None, None), (2, "live", A, "ModelCallError", ANTHROPIC_400),
-            (3, "live", A, "ModelCallError", OTHER_400), (4, "live", A, "ModelCallError", RATE_429),
-            (5, "replay", A, "ModelCallError", ANTHROPIC_400),
-            (6, "live", B, "ModelCallError", DEEPSEEK_400), (7, "live", B, None, None),
-            (8, "live", B, "RuntimeError", ANTHROPIC_400),
-            (9, "live", BEFORE, None, None), (10, "live", AFTER, "ModelCallError", ANTHROPIC_400)]
+    runs = [(1, "host", A, None, None),
+            (2, "host", A, "HostError", ANTHROPIC_400),      # a chat turn: the error frame's text
+            (3, "live", A, "ModelCallError", DEEPSEEK_400),  # a chat turn before 2026-09-14
+            (4, "scheduled", A, "HostError", OTHER_400), (13, "host", A, "HostError", RATE_429),
+            (5, "replay", A, "ModelCallError", ANTHROPIC_400),   # the gate's evidence: never counted
+            (11, "worker", A, "HostError", ANTHROPIC_400),       # a helper run: never counted
+            (6, "host", B, "HostError", DEEPSEEK_400), (7, "host", B, None, None),
+            (8, "host", B, "RuntimeError", ANTHROPIC_400),
+            (12, "host", B, "HostError", "Stopped: HTTP 400 tools.3 input_schema SECRET"),  # no model call
+            (9, "host", BEFORE, None, None), (10, "host", AFTER, "HostError", ANTHROPIC_400)]
     con.executemany("INSERT INTO runs VALUES (?, ?, ?, 'SECRET-USER-MESSAGE', ?, ?)", runs)
     steps = [  # (run, kind, tool, ok, error, ms)
         (1, "tool_call", "read_file", True, None, 40),
@@ -92,6 +98,8 @@ def make_db(path, *, wal=False, keep_open=False):
         (1, "route", "read_file", False, None, 10),                  # not a tool call
         (1, "escalation", "run_command", False, CUT, 20000),         # not a tool call
         (5, "tool_call", "run_command", False, CUT, 20000),          # replay run
+        (11, "tool_call", "run_command", False, OUTER, 600000),      # helper run
+        (11, "tool_call", "mcp_6__inspect_page", False, "SECRET", 900),
         (7, "tool_call", "run_command", False, OUTER, 615000),
         (7, "tool_call", "run_command", False, CUT, 19800),
         (7, "tool_call", "web_search", True, None, 2000),
@@ -198,8 +206,9 @@ def test_weeks_are_monday_to_sunday_and_since_snaps_back():
 def test_runs_tasks_and_waiting_reasons(db):
     data = collect(db)
     weekly = data["weekly"]
-    # live runs only: the replay arm and the runs outside the window are not counted
-    assert [w["runs"] for w in weekly] == [4, 3]
+    # the user's runs (host, the old scheduled and live): not the replay arm, not the helper run,
+    # and not the runs outside the window
+    assert [w["runs"] for w in weekly] == [5, 4]
     assert [(w["tasks"], w["waiting"]) for w in weekly] == [(5, 3), (4, 1)]
     # only tasks waiting on the user; free text is never printed as a reason
     assert data["waiting_reasons"] == {
@@ -219,6 +228,42 @@ def test_tool_failures_fold_mcp_and_skip_other_step_kinds(db):
                              "web_search": [(0, 0), (1, 0)], "other": [(0, 0), (2, 2)]}
 
 
+def test_the_report_counts_the_run_kinds_the_usage_page_counts():
+    """One constant for both (server/run_kinds.py): the report counted only 'live' for weeks after chat
+    turns became 'host', and every run-based table read 0."""
+    from server.api import usage
+    assert usage._RUN_KINDS is usage_report.USER_RUN_KINDS
+
+
+def test_a_chat_turn_is_recorded_under_a_kind_the_report_counts():
+    """Chat turns, scheduled fires (Arslan turns since C1) and background jobs all go through
+    host_run.execute's default kind."""
+    import inspect
+    from server.services import host_run
+    assert inspect.signature(host_run.execute).parameters["kind"].default in usage_report.USER_RUN_KINDS
+    assert "replay" not in usage_report.USER_RUN_KINDS and "worker" not in usage_report.USER_RUN_KINDS
+
+
+async def test_a_schema_refusal_on_a_chat_turn_is_counted_from_the_products_own_text(tmp_path):
+    """The text a host run stores for a provider's tool-schema refusal is the error frame's message
+    (host_run.py:71); built here by the product itself, so the report and the product cannot drift."""
+    from server.orchestrator import llm_errors, model_call
+    texts = []
+    for excerpt in ("tools.0.custom.input_schema: input_schema does not support anyOf",
+                    "Invalid schema for function 'mcp_3__find': '^[a-z]+$' is not a regex"):
+        exc = model_call.ModelCallError("input", status=400, excerpt=excerpt, attempts=1, waited_s=0,
+                                        recoveries=[])
+        texts.append((await llm_errors.error_frame(exc))["message"])
+    path = tmp_path / "arslan.db"
+    con = sqlite3.connect(path)
+    con.executescript(SCHEMA)
+    con.executemany("INSERT INTO runs (kind, started_at, error_kind, error_text) VALUES ('host', ?, "
+                    "'HostError', ?)", [(A, text) for text in texts])
+    con.commit()
+    con.close()
+    assert [w["mcp_turns_by_text"] for w in collect(path)["weekly"]] == [2, 0]
+
+
 def test_the_built_in_tool_list_covers_every_executor():
     """A built-in tool missing from BUILT_IN_TOOLS would print as `other`: add it there."""
     from server.registry.executors import EXECUTORS
@@ -234,8 +279,10 @@ def test_run_command_time_limits_by_fixed_text_and_by_duration(db):
 
 def test_mcp_whole_turn_failures_by_text_and_by_event(db):
     weekly = collect(db)["weekly"]
-    # HTTP 400 with a tool-schema shape, on a live run that failed with ModelCallError
-    assert [w["mcp_turns_by_text"] for w in weekly] == [1, 1]
+    # HTTP 400 with a tool-schema shape, on a run that failed on a model call: the old live run's
+    # ModelCallError and a host run's HostError with ModelCallError's text both count; a HostError
+    # with other text, a replay and a helper run don't
+    assert [w["mcp_turns_by_text"] for w in weekly] == [2, 1]
     assert [w["mcp_relaxed"] for w in weekly] == [0, 2]
 
 
@@ -260,7 +307,7 @@ def test_the_printed_tables(db, capsys):
     cards = table(out, "## Cards")
     assert cards[0][1:] == ["Ledger: cards shown", "Ledger: auto-decided"]
     assert row(cards, WEEK_A) == ["3", "4"]
-    assert row(table(out, "## Runs and tasks"), WEEK_A) == ["4", "5", "3", "60%"]
+    assert row(table(out, "## Runs and tasks"), WEEK_A) == ["5", "5", "3", "60%"]
     assert row(table(out, "## Tool calls"), WEEK_B) == ["5", "4", "80%", "0", "0"]
     assert row(table(out, "## run_command time limits"), WEEK_A) == ["3", "1", "1", "0", "≈1"]
     assert row(table(out, "## MCP whole-turn failures"), WEEK_B) == ["≈1", "2"]
@@ -303,7 +350,7 @@ def test_a_closed_wal_database_gains_no_side_files(tmp_path, capsys):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["arslan.db"]   # the app is closed
     before = os.stat(path)
     out = run(path, capsys)
-    assert row(table(out, "## Runs and tasks"), WEEK_A)[0] == "4"
+    assert row(table(out, "## Runs and tasks"), WEEK_A)[0] == "5"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["arslan.db"]
     after = os.stat(path)
     assert (after.st_mtime_ns, after.st_size) == (before.st_mtime_ns, before.st_size)
@@ -317,7 +364,7 @@ def test_reads_a_wal_database_while_the_app_holds_it_open(tmp_path, capsys):
         before = os.stat(path)
         wal = os.stat(f"{path}-wal").st_size
         out = run(path, capsys)
-        assert row(table(out, "## Runs and tasks"), WEEK_A)[0] == "4"     # rows still in the WAL
+        assert row(table(out, "## Runs and tasks"), WEEK_A)[0] == "5"     # rows still in the WAL
         assert os.stat(path).st_mtime_ns == before.st_mtime_ns          # no checkpoint
         assert os.stat(f"{path}-wal").st_size == wal
         assert sorted(p.name for p in tmp_path.iterdir()) == listing
@@ -363,3 +410,18 @@ def test_weeks_are_cut_at_local_midnight(tmp_path, monkeypatch):
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+def test_the_report_loads_nothing_of_the_server_but_the_run_kinds():
+    """It runs read-only against the user's real database: importing it must not build the settings,
+    the secret bootstrap or anything else (server.config); only the import-free constant module."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    code = ("import sys, scripts.usage_report; "
+            "print(sorted(m for m in sys.modules if m.split('.')[0] in ('server', 'arslan')))")
+    out = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, timeout=60,
+                         env={**os.environ, "PYTHONPATH": str(root)})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "['server', 'server.run_kinds']"
