@@ -322,10 +322,10 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
   - 为什么：Remote 是固定、永不删的一个对话（`server/services/phone_reads.py:22` `REMOTE_ID = "pocket"`；协议 `docs/specs/mobile-bridge-protocol.md:400`），手机上每个问题都进它，前面的话题带进后面。实证：M3 第 10b 条（run 362）第二次问同类问题，模型第一句就当成了上一个的追问。
   - 用户定的：去掉 Remote，iPhone 首页顶部一个输入框；「＋ New conversation」照旧开普通对话。快问只给只读工具（`web_search`、`web_extract`、`recall`、`conversation_search`），不出卡，不进对话列表，另有可搜的「快问记录」；回答短、附来源。「转成对话」一键把这条快问连同内容变成普通对话、工具全开。建议快问不自动写记忆。
   - 上下文（用户定）：每条新快问不带别的快问；追问时限 35 分钟，时限内回到快问显示上一段、打字就是追问；时限内随时能点「＋ 新问题」开全新的一条；过了时限点最近 3–5 条的小标签接着问；是不是追问只由用户的操作定，不让模型猜；记录保留。
-  - Mac 要改（②Main）：`chat.send` 在已计划的 `new_conversation_id`（上面 ①iOS 的字段提案）旁边加快问标记（例如 `conversation_kind: "quick"`）和对应的 `hello` 能力；快问对话用只读工具集，`conversations.result` 的 kind 加 `quick`；「转成对话」把 kind 从 quick 改成 chat；pocket 改成普通对话「Remote（旧）」，不删记录，协议里「`pocket` 永不删除」那条跟着改；没有这个能力的手机照旧落到 pocket。注意 `server/api/phone.py:39` 的 `SEARCH_TOOLS` 只管吉祥物的表情，不是工具集，别拿它当快问的白名单。**改 Bridge 帧，开工前要用户明确点头**（和上面那批字段一起问）。
+  - Mac 要改（②Main，2026-10-27 在 #425 上核过、都能做）：`chat.send` 在已计划的 `new_conversation_id`（上面 ①iOS 的字段提案）旁边加快问标记（例如 `conversation_kind: "quick"`）和对应的 `hello` 能力；kind 在新建时存一次（现有的 context PUT，加一个迁移存 kind 列）。快问对话的工具按后台任务的做法收窄（`arslan.py:721-728`），不写记忆用现有的 `no_learning`。快问**不进**普通的 `conversations.result`（不然占掉列表的 20 条上限，旧手机还会当成普通对话）：`conversations.list` 加可选的 `kind: "quick"`，只列快问，给「快问记录」用；不带时不列，Mac 侧栏和 `/phone/live` 也照这个默认。「转成对话」没有现成的帧能用（`chat.send` 要用户打字），加一个新帧 `conversation.update {conversation_id, kind?: "chat", title?}` → `conversation.updated`，顺带满足 ①iOS 要的 `conversation.rename`，所以这批只多一个类型；回合进行中 Mac 拒（409 → `mac_busy`），手机等回答完再试。pocket 只对 `hello` 里说了 quick 的手机显示成「Remote（旧）」，没说的照旧是 Remote；协议里「`pocket` 永不删除」那条跟着改（删了也安全，旧手机下次发消息 Bridge 会重建）。注意 `server/api/phone.py:39` 的 `SEARCH_TOOLS` 只管吉祥物的表情，不是工具集，别拿它当快问的白名单。**改 Bridge 帧，开工前要用户明确点头**（和上面那批字段一起问）。
   - iOS（①iOS）：跟 B 段一起做（首页输入框、快问页、快问记录、转成对话；Mac 没有能力时落到 Remote 并用一行灰字说明），iOS 不会因此多等一版。
   - 要先知道：小红书大多要登录，通用搜索抓不全，上线前用真实问题实测，别先对外承诺；35 分钟内在旧页面直接问不相干的问题还是会带上前一段，靠显眼的「＋ 新问题」缓解。
-  - 还待用户定：快问用哪个模型；快问记录保留多久、能不能逐条删；Mac 快捷键小窗是否进 v0.1.65（不在 v0.1.64）。
+  - 还待用户定：快问用哪个模型；快问记录保留多久、能不能逐条删；Mac 快捷键小窗是否进 v0.1.65（不在 v0.1.64）；快问出不出现在 Mac 自己的侧栏（②Main 建议不出现）；`conversation_search` 能不能搜到快问（②Main 建议不能，和「新快问不带别的快问」一致；但 ④参谋 的方案里写的是用户说「上次问的拉面」时能找回来，两者要用户选）。
 - 聊天回合也开 Arslan 光标会话：今天光标只跟后台任务走，聊天里 Hands 动作变多以后看不出在点哪里（H1 回答第 5 条）。
 - 聊天窗口自己的「停止」也给 Hands 发 `stop`：今天只有 Hands 的 Stop 发，窗口停止后正在跑的那一步会跑完（≤30 秒），要改 `server/api/runs.py`（H1 回答第 5 条）。
 - 从真实失败里挑题，建私有题库（领先路线 §6 第 3 项；审查 §5）。
