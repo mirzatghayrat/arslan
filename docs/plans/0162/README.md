@@ -301,7 +301,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
   | import-agent：导入 Claude Code / Codex 的设置 | 一部分已在计划里（读 `~/.agents/skills` 和 Claude Code 插件目录） | v0.1.64，顺手把 MCP 配置也导进来 |
   | 自己写技能、自己维护（学习循环） | 一半：有 `create_skill` 工具和自带的 `skill-creator`；缺「复杂任务后自动写技能」和「定期整理」 | v0.1.65，并进「每 N 轮后台回顾一次」 |
   | lsp：跳转到定义、找引用 | 没有（只有 `search_files` / `read_file` / `edit_file`） | 以后，做成按需装的能力 |
-  | worktree：清理 git 工作目录和已合并的分支 | 没有 | 以后，可以并进「Mac 管家」 |
+  | worktree：清理 git 工作目录和已合并的分支 | 没有 | 以后，可以并进「Mac 管家」能力（④参谋 的说法，还没有这张卡） |
 
   - 这几项都会跑陌生代码、联网，或者给 Arslan 自己加技能，所以一律排在 v0.1.64 默认拒绝沙箱之后。
   - Hermes 据说是 MIT 许可；真要搬它的代码，先回源核许可证。
