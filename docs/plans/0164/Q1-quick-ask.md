@@ -145,3 +145,19 @@
 4. **pocket（Remote）给旧手机留到哪一版。** iPhone 1.0 还没送审（README §8），用旧版的只有 TestFlight 上的人。一种：留到 v0.1.65，代码里写 `DELETE-BY: v0.1.65`；另一种：这一版就删，旧版手机升级前用不了 Remote。
 5. **「快问记录」怎么搜。** 一种：手机只在最近 100 条里自己筛（今天的上限）。另一种：给 `conversations.list` 加翻页（①iOS 提过 before / has_more），或者加一个服务端搜索的帧。后两种也是帧的改动，和第 1 条一起问。
 6. **分级和分道：** ⓪Plan 建议「必须」，Mac 端 ②Main、iPhone 端 ①iOS；随 v0.1.64 的范围一起定。
+
+## ①iOS 审阅的结论（2026-10-29 夜，经 ⓪Plan 转记；①iOS 没能把审阅贴到 PR 上，全文在 iOS 仓库，贴不贴由用户定）
+
+- **帧能并成一份清单：** ①iOS 起草了一份 13 项的清单，全是可选字段或新帧，不升 `Wire.version`。建议：
+  - 快问标记只在带了 `new_conversation_id` 时才有效；Mac 说了 `quick`，就意味着也支持新对话；
+  - `conversations.list` 的 `before` / `has_more` 翻页这一版就做（上面第 5 条）：快问记录永久保留，很快就会超过 100 条；
+  - `conversation.update` 这一版不带 `title`（上面第 2 条），原来提的 `conversation.rename` 一起撤掉。
+- **「Remote（旧）」由 iPhone 自己显示：** 条件是 Mac 的 `hello` 里有没有 `quick`，不看手机支不支持；Mac 端什么都不用改。
+- **10-26 §4b 的两点还要 ②Main 定：** 新对话的第一条带附件时 `file.offer` 用 `phone-<uuid>`；`outcomes` 只放已经结束的任务。
+- **INB 和 SUB 在手机上的部分：**
+  - 「做完未看」（`done_unseen`）进 v0.1.64，但要按手机的能力降级：手机的 `hello` 里说了 `done_unseen` 才发新值，否则发 `done`。旧版手机会把不认识的状态当成 idle，做完了却显示灰点。
+  - 进展的四行简报在手机上顺延 v0.1.65：它会拖慢 iPhone 1.0 送审；字段是可选的，Mac 可以先发。
+  - 子会话上手机放 v0.1.65。
+  - notify 收窄（INB 第 5 条）会改变所有手机（包括旧版）收到的推送，单独让用户定。
+
+⓪Plan：这几条都是建议，进了上面「开工前要用户定的」第 1、2、5 条，最后由用户在帧那一次决定里一起点头。
