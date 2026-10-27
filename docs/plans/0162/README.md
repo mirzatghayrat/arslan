@@ -160,6 +160,7 @@ C1 → K1 → K2 → K3 → K4a → K4b → K5 → K7 → K8a → K8b → K8c �
 | ②Main | F5a、F1、F2、F3、F4a、F4b、FR、F5b；全部 C、K、S 卡（C6 移给 ⑤，C7、C8 移给 ⑥，10-22）；R63 的发版准备；合并队列、本表的「状态」列、迁移号登记、CI 健康 | `server/**`、`arslan/**`、`web/**`、`.github/**`、`packaging/**`、`docs/releases/**`、`docs/CAPABILITY_INVENTORY.md`。<br>以下除外：③Hands 的文件；Bridge 契约文件的帧格式 | ③Hands 的文件（要改须由 ③Hands 审，例如 F5b、C2c 里 AppleScript 那两行）；Bridge 帧格式 |
 | ③Hands | H1、H2、H3、H4；审 F5b 和任何改 Hands 文件的卡；U13 / U14 起另做 D7、D8、D9、C9、C10、C11；10-21 晚起另做 S2a-2、S2b、S4a、S7（这几张卡改到的文件，期间 ②Main 不碰） | `desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` | 其他所有文件。本轮不新增 Hands 能力 |
 | ①iOS | 无 | iOS 仓库 | 本轮 Mac 端不改 Bridge 帧格式（`desktop/bridge/**`、`server/ws/bridge.py`、`spec/mobile-bridge/**`）。哪张卡如果发现需要改（最可能是 K9），先停下来找 ②Main 和 ①iOS |
+| Codex（外部审查工具，不是会话；用户 10-27 定） | v0.1.64 安全审查的外部审查、日常安全面和大 PR 的独立审查、卡住时 debug（§8「安全审查路径」） | 无：只读，结论由用户贴到 PR 上 | 推送、合并、main；用户的家目录、Arslan 的数据、`~/.arslan`、跑分原始记录、真密钥 |
 | C 线试点会话 | v0.1.62 发布后的 C 卡（§9） | 同 ②Main 的 C 卡 | 同 ②Main；不装 superpowers |
 | ⑤C6 | C6（2026-10-22 从 ②Main 移来，用户同意加开会话） | `.github/workflows/ci.yml`、pytest 的配置和依赖（`pyproject.toml` 的测试部分、`uv.lock`） | 其他所有文件；改动跑哪些测试之前先问 ⓪Plan。删 macOS 计数那两条测试留给 ②Main |
 | ⑥C7 | C7 第一、二步（v0.1.63 的部分），之后 C8（2026-10-22 从 ②Main 移来） | 这两张卡要删的文件，加上 `compact_saved_context` 搬去的新位置 | K8 的流式文件、S3b 的文件、③Hands 的文件、Bridge 帧格式；碰到权限或沙箱的路径先停下来问 ⓪Plan |
@@ -277,7 +278,20 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
 - **同一个文件出两张卡（M3 第 12 条）：** `write_file`、`edit_file` 写文件时存一份这轮的快照（`file_tools.py:306`、`:353` 的 `_snapshot_write`），`attach_file` 又把同一个文件存一份（`artifact_store.store_bytes`），两边不认是同一个文件，名字也可能不同（文件名对 `attach_file` 的 title）。修法：同一轮同一个文件只出一张卡（`attach_file` 换掉快照那张，或快照不单独出卡），Mac 和 iPhone 一起测。
 - **本版该删、顺延到 v0.1.64 的两处（用户 2026-10-27 逐条同意，见 `R63-verdict.md`「删除期限」）：** ① `arslan/__init__.py` 的 `__version__`，跟 C5b 的同类清理一起删；② 专家时代的 REST 接口（`spawns.py` 的 `GET`/`DELETE /spawns/{id}`、`PUT …/config`、`…/preferences`，`knowledge.py`、`collections.py` 的 `/spawns/{id}/…`），并进 C7c；`GET /spawns/{id}/knowledge` 只有一个网页单元测试在调，跟它一起删，仓库卡还在用的 `POST /spawns/{id}/knowledge` 先换掉调用方再删。
 
-- **v0.1.64 的安全审查路径（用户 2026-10-24 定）：** S2a-3（#375、#376、#378）、PR3（#396）和默认拒绝沙箱的安全审查用付费的外部审查工具，用哪家由用户和 ⓪Plan、云端审计再定；默认拒绝沙箱仍排 v0.1.64 第一。
+- **v0.1.64 的安全审查路径（用户 2026-10-24 定）：** S2a-3（#375、#376、#378）、PR3（#396）和默认拒绝沙箱的安全审查用付费的外部审查工具；默认拒绝沙箱仍排 v0.1.64 第一。**10-27 用户定：用 Codex**（见下）。
+  - **外部审查用 Codex（用户 10-27 定；用户开了 ChatGPT Plus，④参谋 转）：** Codex 审完，安全相关的结论再拿给云端审计会话看一遍；各会话 effort=max 的审查照旧。S2a 卡的「谁来审」和验收已改成指向这里。
+    - **S2a-3 的顺序（③Hands 提）：** 默认拒绝沙箱先合 → ③Hands rebase #375、#376、#378（#396 由写它的会话 rebase；要跟上 `assess_async` 改用 `within()`、PR4 改写的 SECURITY.md 句子、沙箱改动的那一层）→ Codex 审 rebase 之后的头 → 云端审计看结论。不审 10-22 的旧头，额度不花在旧代码上。#406（S2a-3 e，已关）重开的话也在范围里；PR4（f）碰安全面，按下面的日常规则也要审。
+    - **交给 Codex 的材料：** S2a 卡「谁来审」下的那份清单，再加上 10-24 的事故记录（`docs/incidents/2026-10-24-dev-secret-read.md`）。
+  - **日常 PR 也加 Codex 当一个独立审查员，只审两类：** 碰安全面的；产品代码超过约 400 行的。「安全面」指：权限和确认卡、沙箱、命令判定、令牌和鉴权、密钥、Bridge 帧、SECURITY.md。只改文档的不审；按 U2 整份删除的 PR 虽然大，风险低，不碰安全面就不审（⓪Plan 定的，可以改）。Plus 有用量上限，只留给最值得审的地方。它的结论和「他会话审」对照着看，不顶替（U9 照旧）。
+  - **卡住时帮着 debug：** 比如 CI 上复现不了的问题、bench 里的回退。
+  - **边界（③Hands 审 #430 时补全）：** Codex 是外部服务，它读到的东西都会发给 OpenAI。10-24 那次事故能定成「没有外泄」，靠的是「模型能看到的只有会话记录」，换成 Codex 这个前提就不成立了。所以：
+    - **只看公开仓库。** 两种跑法：在 GitHub 或它自己的云端环境上跑；或者在新克隆里跑，用隔离的 HOME，那台机器上没有 `~/.arslan`。
+    - **绝不让它碰：** 用户的家目录、Arslan 的数据文件夹、`~/.arslan`、跑分的原始记录、④参谋 的 M3 记录（里面有用户的真实数据）、任何真密钥或令牌。它要跑的命令照旧走 `scripts/dev/probe.sh` 或 pytest。PR3（#396）的真 shell 对照只在一次性 CI 虚拟机里跑，或者在不配任何密钥的云端环境里跑，绝不在任何人的 Mac 上跑（S2a 卡 10-24 的条件照样适用）。
+    - **「只读」靠设置做到，不只靠一句话：** 本地用只读沙箱；连 GitHub 时不给仓库写权限。把 Codex 接到这个仓库算改仓库设置，由用户来做。Codex 不推送，不合并，不碰 main。
+    - **结论写明模型：** 写明 Codex 的版本、模型和推理档位；Plus 到上限换了模型就标出来，并请 ②Main 或 ⓪Plan 复核那部分。
+    - **结论怎么用：** 它说「没问题」不算证据；它提出的每一条，合并前都要在 PR 上回应，要么修好并加测试，要么拿证据反驳。合并前照旧要有 CI run id 和复现步骤。
+    - **结论怎么到 PR 上：** Codex 不评论，由用户把结论原样贴到 PR 上（带模型那一行），各会话再逐条回应。具体的危险命令照旧只写在测试和 PR 评论里。Claude 会话处理 Codex 的结论时被安全检查拦下，照旧停下、不换说法重试；Codex 不是绕过它的路。
+    - **额度：** 用 Plus 不另花钱。安全审查做到一半额度用完，就等额度恢复，不跳过这道审查；要不要改用 API（那是 DeepSeek 以外的钱）由用户定。
 - **v0.1.64 的排序（用户 2026-10-22 定）：** ① 沙箱默认拒绝（含沙箱合一）→ ② 按需装能力（装进合一后的沙箱）→ ③ 本机代理加网站名单（产能允许时）。小模型先读网页移到 v0.1.65 之后。理由和验收见领先路线 §0.6。
 - 旧的扁平 `llm_*` 设置键：要先写数据迁移才能删（C2c 发现）。
 - **按需加能力（v0.1.64，替换能力发现中心；用户 2026-10-21 定，U13 第 2 条）：** 和「读 `~/.agents/skills` 加 Claude Code 插件目录」（总计划 §3.1）合起来做一张卡。
@@ -306,7 +320,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
   - 这几项都会跑陌生代码、联网，或者给 Arslan 自己加技能，所以一律排在 v0.1.64 默认拒绝沙箱之后。
   - Hermes 据说是 MIT 许可；真要搬它的代码，先回源核许可证。
   - **用户 10-27 定的两条**（④参谋 提的建议，⓪Plan 问的）：
-    - **跑分在 v0.1.64 加一类「代码审查」题**：给一个埋了 bug 的 PR，数抓出几个，和 Claude Code 并排比。先出 3 题（不同语言，每题埋几个已知 bug），Arslan 和 Claude Code 两边都跑在 DeepSeek 上（R63 里 Claude Code 的数字是在 Claude 上跑的，`R63-gate-report.md`，这批成绩不能直接和那些比）；Codex 要另花钱，等用户批了再加。用户说过：Arslan 审得好、自己有信心，就让它做这类活。这批数据就是用来判断这件事的。
+    - **跑分在 v0.1.64 加一类「代码审查」题**：给一个埋了 bug 的 PR，数抓出几个，和 Claude Code 并排比。先出 3 题（不同语言，每题埋几个已知 bug），Arslan 和 Claude Code 两边都跑在 DeepSeek 上（R63 里 Claude Code 的数字是在 Claude 上跑的，`R63-gate-report.md`，这批成绩不能直接和那些比）；Codex 用用户的 Plus 也加进来（用户 10-27 定，不另花 API 的钱），但它跑的是自己的模型，所以只当参考线，不和 DeepSeek 上的两组算同一个比法。用户说过：Arslan 审得好、自己有信心，就让它做这类活。这批数据就是用来判断这件事的。
     - **v0.1.64「对 Hermes」的门槛**：同样的题，Arslan 三次全过的题数不少于 Hermes，只比两边都能跑的那批题。v0.1.63 的算法是 Hermes 不支持的题记 0 分，按它两边持平；只比同一批题，Arslan 少 1 题（R63 判定 §5.1）。所以 v0.1.64 至少要再多过 1 题。
 - `click`、`rich` 两个依赖只有旧命令行在用（C2d 发现），删旧命令行后可以去掉。
 - ~~专家时代剩下的 REST 接口~~：并进 C7 第二步，v0.1.63 做（U13）。
