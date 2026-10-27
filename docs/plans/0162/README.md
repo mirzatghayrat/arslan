@@ -327,13 +327,13 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
       - **v0.1.64 到 ④ 落地之前的过渡（②Main 提，⓪Plan 同意，用户可以改）：** 在对话里说「存成技能」时出一张卡，卡上是完整的 SKILL.md，用户点「可以」才启用；带脚本的直接拒，等 v0.1.65 的「待你看」。这样模型写的技能在任何时候都要过人这一关。
       - **① 还会去掉三样没列出来的：**
         - FoundRail：后台找到的能力今天落在这里（`capability_flow.py:6-7`），要换个地方放；
-        - #62 那个筛「已经有的东西」的过滤框（CapabilityFilter）：「不放搜索框」算不算它，**问用户**；
-        - 发现接口按调用方拆：**删** search、evaluate、目录那几个路由、`skill/generate`、`skill`，以及 `discovery_service`、`mcp_suggest`、`repo_overview`、`skill_suggest` 和 `DiscoveryCandidate` 表；**留** `skills/scan`、`skills/import`（保留的导入面板在用）和 `github_eval`。名字陷阱：`server/mcp/discovery.py` 是列出 MCP 服务器工具的，和这个无关，`git grep` 查残留时不能只搜「discovery」。
+        - #62 那个筛「已经有的东西」的过滤框（CapabilityFilter）：**用户 10-28 定留着**，只筛已装的，不联网、不推荐；「不放搜索框」指的是去网上找新东西的那个框；
+        - 发现接口按调用方拆：**删** search、evaluate、目录那几个路由、`skill/generate`、`skill`，以及 `discovery_service`、`mcp_suggest`、`repo_overview`、`skill_suggest` 和 `DiscoveryCandidate` 表（删表要写迁移）；**留** `skills/scan`、`skills/import`（保留的导入面板在用）和 `github_eval`。名字陷阱：`server/mcp/discovery.py` 是列出 MCP 服务器工具的，和这个无关，`git grep` 查残留时不能只搜「discovery」。
       - **A 要补四条规矩：**
         1. 来源白名单按插件自己的仓库查，不按市场查；插件里各部分取最严的，有一部分不过就整个插件改为「请手动安装」。
-        2. 钉版本：整个插件用 commit sha 加每个文件的哈希，放在一个文件夹里（因为 `${CLAUDE_PLUGIN_ROOT}`），路径不能跑出插件文件夹。
-        3. 只删 Arslan 自己装的。从 Claude Code 文件夹读来的插件只给开关、不给删除，Arslan 第一次启用它之前照样出卡。
-        4. 工具列表的哈希变了，整个插件停用；许可证复用 `skill_import` 的检查；不覆盖已有的钥匙。
+        2. 钉版本：整个插件用 commit sha 加每个文件的哈希，放在一个文件夹里（因为 `${CLAUDE_PLUGIN_ROOT}`），路径不能跑出插件文件夹；插件 `.mcp.json` 里没钉版本的 `npx` 要钉上固定版本，钉不了就拒装。
+        3. 只删 Arslan 自己装的。从 Claude Code 文件夹读来的插件只给开关、不给删除，Arslan 第一次启用它之前照样出卡；这些插件带钩子的照样拒；别的工具放在 `~/.agents/skills` 里的技能也一样，只给开关、不给删除。
+        4. 工具列表的哈希变了，整个插件停用；许可证复用 `skill_import` 的检查；插件里的技能和已有技能重名就拒装，不覆盖；插件带的 MCP 显示在插件下面，不进手动添加的那张表。
       - **A 还开着的：** 斜杠命令和 agent 定义在 C 之前不支持，按允许清单收，插件里有认不出的部分就整个不装。默认拒绝沙箱要让技能目录、插件目录和 MCP 配置对模型不可写。
       - **⑤ 要改 Bridge 帧：** 今天能力卡根本不发到手机（协议 `:283`）。要显示就得改帧，归用户点头；Mac 端还要拒绝手机发来的批准。
       - **钩子（②Main 同意排在 v0.1.65 之后）：** 先要有默认拒绝沙箱；对照表加上工具名和参数的对应（Claude Code 的钩子按它自己的工具名和参数匹配）；钩子只能让规则更严，不能替用户批准任何卡。
