@@ -29,7 +29,7 @@ from server.run_kinds import USER_RUN_KINDS   # imports nothing: the report neve
 
 WEEK = timedelta(days=7)
 # Before F1 (v0.1.62) the loop cut run_command at 20 s with this text. Since F1 a run_command over its
-# limit reports OUTER_LIMIT (tool_loop.py:1856); this text is now only another tool's timeout.
+# limit reports OUTER_LIMIT (tool_loop.py:1856), and no tool produces this text any more.
 CUT_TEXT = "tool 'run_command' timed out"
 OWN_LIMIT = "stopped after %"                 # terminal_exec.py:149: the command's own limit
 OUTER_LIMIT = "stopped by the time limit; no output was captured%"   # F1's outer limit, tool_loop.py:1856
@@ -77,8 +77,9 @@ def _week(col: str) -> str:
 
 
 def _users_runs(col: str) -> str:
-    """The user's own runs (server/run_kinds.py), as the usage page counts them: chat turns, fires and
-    background jobs ('host'; older rows 'live' and 'scheduled'); never replay or helper runs."""
+    """The user's own runs (server/run_kinds.py), as the usage page counts them: chat turns, fires,
+    background jobs and browser previews ('host'; older rows 'live' and 'scheduled'); never replay or
+    helper runs."""
     return f"{col} IN ({', '.join(map(_lit, USER_RUN_KINDS))})"
 
 
@@ -239,7 +240,7 @@ def render(weeks: list[date], data: dict) -> str:
 
     weekly("## Runs and tasks", ["Runs", "Tasks", "Waiting on you", "Share"],
            lambda w: [w["runs"], w["tasks"], w["waiting"], _pct(w["waiting"], w["tasks"])],
-           "Chat turns, scheduled fires and background jobs by start (run kinds " +
+           "Chat turns, scheduled fires, background jobs and browser previews by start (run kinds " +
            ", ".join(USER_RUN_KINDS) + "; never replay or helper runs). Tasks by the week they were "
            "created, counted by the phase they are in now.")
     split("### Waiting on you, by reason", plain(data["waiting_reasons"]))
