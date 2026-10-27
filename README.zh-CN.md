@@ -53,14 +53,13 @@
 
 就这样。不用注册账号，也没有 Arslan 服务器。
 
-## 0.1.60 新功能：Hands v2
+## 0.1.63 新功能：回复中途改变方向、回答随书写显示、撤回一轮
 
-Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，它还可以看它正在操作的那一个窗口的画面——从不截整个屏幕，也从不保存。同一个应用里的几个步骤一批完成，菜单项直接选择，应用在后台打开。一张卡片可以覆盖多个应用，你信任的应用可以在 设置 › Hands 里永久允许；删除、发送、付款和提交仍然每次都问。有些操作只有应用在前台才能完成时，Arslan 会借用前台约一秒（屏幕边缘亮起蓝光，这期间你按的键会先保留、之后补上）；窗口在另一个桌面上时，它会过去、做完再回来。较长的工作，它可以接管屏幕最多 30 分钟——只有你同意才会开始，你一碰键盘或鼠标它就暂停。首次设置现在是一段简短的影片。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Arslan 工作时你可以接着输入消息，它会在下一步就到达这条回复；回答随模型书写即时显示；最多四个读取同时进行；在某一轮第一次改动你的工作文件夹之前，Arslan 会保存一个检查点，所以“撤回这一轮”能把文件放回去。你要的文件会以附件形式返回，iPhone 上也一样。有两项安全方面的改变要先说：**每条新的终端命令现在都会在运行前先问你**（可在 设置 › Arslan 能做什么 › 终端 里切回去），以及**定时任务在这一版里不运行任何命令**——需要命令的步骤会被跳过，并列在你的收件箱里。每条回复和每个后台任务默认也会在模型花费 $2 时停止，专家时代的代码也已删除（产品代码比 0.1.62 少 12,514 行）。说明里还列出了挪到 0.1.64 的事项，以及我们没有达到的两项发布前标准。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.63)
 
 最近几版：
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)**——对话跟得上：长回答不再显示“已中断”，第二条消息排队等待，Arslan 用你写的语言回答，“桌面、文稿、下载：关”对命令同样生效。
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)**——回复读得懂、文件打得开：做过的事收成安静的一行，写出的文件以卡片返回，工作台里有阅读器，每个对话可以选任意服务商的任意模型。
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)**——能力自己长：缺工具时 Arslan 会去找、问你、固定版本并在沙箱里安装、测试后重试那一步。
+- **[0.1.62](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)**——长命令能跑完：命令按它自己的上限运行（默认 2 分钟，最多 10 分钟），只有确实可能发生了什么时才“需要你检查”，MCP 工具描述不会再让聊天失败，写文件也绝不会顺着链接跑出你的工作文件夹。
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)**——各处同一张审批卡（聊天、收件箱、Island、iPhone），MCP 服务自行启动，被拒绝 `temperature` 设置之后 Claude 重新可用。
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">
@@ -90,8 +89,8 @@ Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，�
 |---|---|---|
 | **消息** | 来自窗口、iPhone 或语音——同一个对话，同一条回路 | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **回路** | 原生工具调用；计划由宿主保管；回复被截断时接着写而不是猜；每次模型调用上限 75 秒 | `server/orchestrator/tool_loop.py` |
-| **策略** | `run` · `ask` · `forbid`，命令文本的纯函数 | `server/services/terminal_policy.py`（危险命令检测取自 Hermes Agent，MIT） |
-| **沙箱** | macOS seatbelt：命令只能写工作文件夹、临时目录和缓存；SSH 密钥、钥匙串和 Arslan 数据一律关闭；模型 key 永远不会交给命令；每次工具调用上限 20 秒 | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **策略** | `run` · `ask` · `forbid`，命令文本的纯函数 | `server/services/terminal_policy.py`（命令读取与安全底线改编自 Hermes Agent，MIT） |
+| **沙箱** | macOS seatbelt：命令只能写工作文件夹、临时目录和缓存；SSH 密钥、钥匙串和 Arslan 数据一律关闭；模型 key 永远不会交给命令；命令按它自己的上限运行，默认 2 分钟，最多 10 分钟 | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **结果** | 包裹成不可信数据、检查后才给你；没真正做过的事被确定性守卫拦下 | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## 闸门
@@ -106,7 +105,7 @@ Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，�
 | **ask** | 有破坏性，或以你的名义对外动作 | `rm -rf build/` · `git push --force` · `curl … \| sh` · `osascript …` · `brew install jq` · `mail -s …` · `scp … mac-mini:` |
 | **forbid** | 永远不行，勾了“不再询问”也不行 | `security find-generic-password … -w` · `cat ~/.arslan/secret_key` · `rm -rf ~` · `sudo …` · `shutdown` |
 
-“不再询问”按命令种类记住，可在 设置 › 高级 里查看；forbid 的规则永远记不住。闸门防的是失误和网页里夹带的指令——不是牢笼：你放行的命令会以你的权限运行。在[官网](https://aralem.dev/arslan/#gate)试试 64 条命令。
+“不再询问”按命令种类记住，可在 设置 › 高级 里查看；forbid 的规则永远记不住。闸门防的是失误和网页里夹带的指令——不是牢笼：你放行的命令会以你的权限运行。自 0.1.63 起，新命令默认先问，不论它在上表中属于哪一行。在[官网](https://aralem.dev/arslan/#gate)试试 64 条命令。
 
 ## Hands、后台任务与 iPhone
 
@@ -138,7 +137,8 @@ iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iClo
 - **自带模型 key。** Arslan 用你的账户跑，费用由你的服务商结算。原生工具调用已实现并对 OpenAI 兼容、Anthropic、Gemini 三条路径做了协议测试——这不等于每个模型或端点都经过实测。
 - **Hands 还不能按屏幕位置点击或拖拽。**另一个桌面上的窗口要短暂过去才能操作（需开启借用前台）。应用跳到前台的约 50 毫秒内按下的键会进入那个应用；大窗口（比如笔记很多的备忘录）读一次要 10–20 秒。
 - **Arslan for iPhone 即将上架 App Store**，Mac 端已随 0.1.53 发布。
-- **会自己按时花钱的功能，出厂一律关闭。** 后台记忆整理要在 设置 › 自动化 里手动打开才会调用你的模型；仍建议在服务商的账单后台设个硬上限。
+- **花费有默认上限，但不是保证。** 每条回复和每个后台任务在模型花费 $2 时停止（设置 › 后台），只计入价格已知的模型；仍建议在服务商的账单后台设个硬上限。
+- **默认每条新命令都先问，定时任务不运行命令**（0.1.63）。
 - v1 之前，API、数据结构和默认值都可能变化。
 
 ## 社区

@@ -1,5 +1,5 @@
 <section class="chapter" id="mobile"><h2><span class="num">10 / iPhone 与 Mac Bridge</span>手机负责交代和查看，Mac 负责执行</h2>
-<p>移动桥接让已经配对的 iPhone 查看 Mac 的任务、发起工作、回答审批并读取结果。执行仍由 Mac 上的 Arslan 完成；手机既不是另一套云端 Agent 服务，也不直接暴露或调用 Mac 的 HTTP 接口。<strong>本章以 Mac v0.1.60 的公开协议和源码为基准。</strong>该版本已经包含 Mac Bridge；其公开发行说明仍将 iPhone App 标为即将上架，本文不据此声称已完成 App Store 发布或完整生产链路验收。</p>
+<p>移动桥接让已经配对的 iPhone 查看 Mac 的任务、发起工作、回答审批并读取结果。执行仍由 Mac 上的 Arslan 完成；手机既不是另一套云端 Agent 服务，也不直接暴露或调用 Mac 的 HTTP 接口。<strong>本章以 Mac v0.1.63 的公开协议和源码为基准。</strong>Mac Bridge 在更早的版本中已经发布；其公开发行说明仍将 iPhone App 标为即将上架，本文不据此声称已完成 App Store 发布或完整生产链路验收。自 0.1.60 以来的变化会在出现之处标明版本；0.1.61 的说明称 Mac 端可与 Arslan for iPhone 1.0 配合使用，而该 App 仍被描述为即将上架。</p>
 <div class="flow"><div class="flow-step"><b>iPhone</b><span>SwiftUI 页面与本机认证<br>加密、发件箱、状态视图</span></div><div class="flow-step"><b>CloudKit</b><span>私有数据库 ArslanBridge zone<br>异步保存密文信封</span></div><div class="flow-step"><b>Mac Bridge</b><span>验证、解密与协议映射<br>本地 HTTP / WebSocket</span></div><div class="flow-step"><b>Arslan 后端</b><span>任务、工具、审批与产物<br>结构化结果沿原路返回</span></div></div>
 <h3>CloudKit 是信箱，设备身份仍由协议确认</h3>
 <p>v1 使用同一 Apple ID 下的 CloudKit 私有数据库。Mac 必须开机、在线并处于可运行状态；否则消息等待处理，手机并不能让一台已经关机的 Mac 继续工作。局域网 Bonjour 是后续方向，不是本版的备用直连通道。Mac helper 是随应用运行的独立 <code>ArslanBridge.app</code>，通过 stdin 获得本地 API token，再连接后端；手机不持有该 token，也不接收模型 API key。</p>
@@ -17,12 +17,22 @@
 <tr><th>持久化与同包重试</th><td>重试复用同一信封 ID、seq 和密文；序号等关键状态先保存，避免网络失败导致状态倒退。</td><td>投递日志不能代替外部业务系统的事务。</td></tr>
 <tr><th>重放窗口</th><td>按发送者保留最近 1,024 个序号，接收窗口内的新乱序包，拒绝重复或过旧包。</td><td>合法新序号不一定代表业务状态更新，旧进度也可能较晚才发送。</td></tr>
 <tr><th>ACK</th><td>确认信封投递；重复包可再次得到 ACK。原记录确认后删除，ACK 自身不再被 ACK。</td><td>ACK 不表示任务成功，也不表示审批动作执行完成。</td></tr>
-<tr><th>业务标识与结果</th><td><code>client_msg_id</code>、<code>client_task_id</code> 用于防重；<code>approval.result</code>、任务事件和结果承载业务状态。</td><td>v0.1.60 的业务 ID 映射有内存状态，不能承诺任意崩溃下的全局 exactly-once。</td></tr>
+<tr><th>业务标识与结果</th><td><code>client_msg_id</code>、<code>client_task_id</code> 用于防重；<code>approval.result</code>、任务事件和结果承载业务状态。</td><td>v0.1.63 的业务 ID 映射有内存状态，不能承诺任意崩溃下的全局 exactly-once。</td></tr>
 </tbody></table></div>
 <p>Mac 状态快照只列仍在运行的任务；正常心跳间隔为 60 秒，手机按 90 秒未见更新判断离线。进度会节流合并，终态应及时发送。客户端因此既要处理消息重复和乱序，也要让任务列表、审批卡与历史记录收敛；不能只用“最后收到的文本覆盖前一条”维护状态。</p>
 <p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|序号、处理记录、ACK 与清理}}；{{source:desktop/bridge/Sources/BridgeCore/ConversationLinks.swift|业务防重与结果映射}}；{{source:desktop/bridge/Sources/BridgeCore/StatusReporter.swift|快照与心跳}}。</p>
 <h3>手机审批复用 Mac 的授权与执行链</h3>
 <p>手机展示具体 action、target 和 risk。批准需要本机生物识别，拒绝不需要；发送回答后还要等待 Mac 的 <code>approval.result</code>。Mac 检查卡片是否仍有效，映射为原来的 confirm / cancel 操作，手机不会授予命令“永远允许”。语音入口可以形成待确认的文字，不能代替批准。</p>
+<p>自 0.1.61 起，各处都是同一张审批卡（聊天窗口、收件箱、Island 和 iPhone）。手机显示卡片自己的问题（取自卡片的标题）以及它的“是”所涵盖的范围。它只回答一次，或者在卡片的第一个选项是“本任务内”时对本任务生效（针对应用、站点或快捷指令的卡片：此时标题以“（本任务内）”结尾），绝不提供“本对话内”或“始终”。卡片在 Mac 上等待 30 分钟（0.1.61 之前是 5 分钟）；超时会以 <code>expired</code> 报告，Arslan 把它当作没有人回答，而不是拒绝。要求安装新能力的卡片永远不会到达手机。当 Mac 先回答时（在窗口、收件箱或 Island 中），手机的 <code>approval.result</code> 会带上 <code>answered_on_mac</code>。</p>
 <div class="note important"><strong>版本边界：</strong>自 v0.1.54 起，Mac 只在带有 <code>faceid</code> 或 <code>touchid</code> 标记（iPhone SE 用 Touch ID）时把回答算作批准，并在能力声明中告知手机；其他标记一律视为拒绝。0.1.54 之前，Touch ID 的批准会被当作取消。协议中的 <code>high_risk_mac_only</code> 在此版固定为 false，尚不是用户可配置的开关。共享协议与测试向量能验证互操作和负例，不能替代最终分发包、真实 iCloud、推送与设备认证的端到端验收。</div>
-<p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/FrameMapper.swift|批准标记与原有动作的映射}}；{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|移除或重新配对手机时的清理}}；{{source:server/api/phone.py|状态与功能字段}}；{{source:spec/mobile-bridge/reference.py|独立协议参考实现}}；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54">0.1.54 公开交付状态</a>。</p>
+<h3>文件、实时对话和从手机改变方向</h3>
+<p>这些是新增的协议类型（协议文档第 5.7 节）；没有它们的 Mac 会回答 <code>unknown_type</code>，而 Mac 只会把新事件发给其 <code>hello</code> 能力声明里要求了它们的手机。</p>
+<ul>
+<li><strong>来自手机的文件（0.1.61）。</strong>从 Arslan for iPhone 发来的文件或照片（最大 20 MiB，每条消息最多 10 个）会像其他资源一样被检查，并保存在 Mac 上工作文件夹的 <code>Inbox/iPhone</code> 下，每个日期一个文件夹。Arslan 会连同消息一起读取它；图片可以作为图像交给模型。如果一条消息的文件没有在 120 秒内全部到达，这条消息就不会运行，手机可以再次发送。</li>
+<li><strong>实时对话（0.1.61）。</strong>Mac 把最新的 20 个对话，以及任何有任务在运行的对话，保持为关联状态，所以手机会列出它们，并在 Arslan 工作时跟随回答、进度和卡片。手机可以删除一个对话（Remote 对话永远不会被删除）。历史太长、一条消息放不下时，会丢掉最早的消息，并说明已被截断。</li>
+<li><strong>回答随书写显示（0.1.63）。</strong>对要求了它的手机，回复以 <code>partial</code> 事件到达，每个事件带着到目前为止的整条回复，最多每秒一次，且不超过 100 KB；最终消息会取代它们。在 Mac 上输入的文字会显示在手机上，并标明来自 Mac，且绝不会让手机响铃。</li>
+<li><strong>改变方向（0.1.63）。</strong>回复运行期间发出的消息，会在那条回复的下一步就到达它，而不必等待；iPhone、Mac 窗口和按住说话都是如此。回复正在写最终答案时已经没有下一步，所以这条消息在它之后立即运行。0.1.63 中已知的限制：在回复期间于 Mac 窗口中追加的消息，只会从下一条回复起显示在 iPhone 上；iPhone 自己的消息被追加之后，它仍然显示“排在当前回合之后”。</li>
+<li><strong>发到手机的文件（0.1.63）。</strong>当你要一个文件（截图、图表、导出文件、文档）时，Arslan 会把它附在回答上：Mac 窗口里是一张文件卡片，iPhone 上是文件本身，不超过 20 MiB 的限制。</li>
+</ul>
+<p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/FrameMapper.swift|批准标记与原有动作的映射}}；{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|移除或重新配对手机时的清理}}；{{source:server/api/phone.py|状态、功能字段、手机文件和实时对话的收件箱}}；{{source:desktop/bridge/Sources/BridgeCore/ConversationLinks.swift|实时关联、来自手机的文件和部分回复}}；{{source:spec/mobile-bridge/reference.py|独立协议参考实现}}；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54">0.1.54 公开交付状态</a>。</p>
 </section>

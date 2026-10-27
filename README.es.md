@@ -53,14 +53,13 @@ Sigues hablando mientras trabaja. Todo lo que borra, envía, instala o toca otra
 
 Y ya está. Sin cuenta, sin registro, sin servidor de Arslan.
 
-## Novedades de 0.1.60 — Hands v2
+## Novedades de 0.1.63 — cambiar el rumbo a mitad de respuesta, respuestas a medida que se escriben, deshacer un turno
 
-Arslan usa las apps de tu Mac más como lo harías tú. Además del texto de una ventana, puede ver una imagen de la única ventana en la que trabaja — nunca la pantalla entera, nunca guardada. Varios pasos en una app se ejecutan como un lote, los elementos de menú se eligen directamente y las apps se abren en segundo plano. Una tarjeta puede cubrir varias apps, y las apps en las que confías se pueden permitir para siempre en Ajustes › Hands; borrar, enviar, pagar y confirmar un envío siguen preguntando siempre. Cuando algo solo funciona con la app al frente, Arslan toma prestado el primer plano durante un segundo aproximadamente (el borde de la pantalla brilla en azul; las teclas que pulses mientras tanto se guardan y se devuelven después), y si la ventana está en otro escritorio, va allí y vuelve. Para trabajos más largos puede tomar el control de la pantalla hasta 30 minutos — solo con tu sí, y se pausa en cuanto tocas el teclado o el ratón. La configuración es ahora un breve vídeo de primer inicio. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Escribe un mensaje mientras Arslan trabaja y llegará a la respuesta en su siguiente paso; las respuestas aparecen a medida que el modelo las escribe; se ejecutan hasta cuatro lecturas a la vez; y antes de que un turno cambie por primera vez tu carpeta de trabajo, Arslan guarda un punto de control, así que «Deshacer este turno» devuelve los archivos a su sitio. Los archivos que pides vuelven como adjuntos, también en el iPhone. Primero van dos cambios de seguridad: **cada comando de terminal nuevo ahora pregunta antes de ejecutarse** (vuelve atrás en Ajustes › Qué puede hacer Arslan › Terminal), y **las tareas programadas no ejecutan comandos** en esta versión — un paso que necesita uno se omite y aparece en tu Inbox. Además, cada respuesta y cada tarea en segundo plano se detiene por defecto en 2 $ de gasto en el modelo, y el código de la era de los expertos ha desaparecido (12.514 líneas de producto menos que en 0.1.62). Las notas también enumeran lo que pasó a 0.1.64 y dos listones previos al lanzamiento que no alcanzamos. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.63)
 
 Recientemente:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — un chat que no se queda atrás: una respuesta larga ya no aparece como «Interrumpida», un segundo mensaje espera su turno, Arslan responde en el idioma en que escribes y «Escritorio, Documentos, Descargas: desactivado» las cierra también a los comandos.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — respuestas que se leen y archivos que se abren: una línea discreta con lo que hizo Arslan, archivos de vuelta como tarjetas, un lector en el banco de trabajo y cualquier modelo de cualquier proveedor en cada conversación.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capacidades que crecen: Arslan encuentra una herramienta que falta, pregunta, la instala fijada y en un sandbox, la prueba y reintenta el paso.
+- **[0.1.62](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)** — los comandos largos terminan: un comando se ejecuta hasta su propio límite (2 minutos por defecto, 10 como máximo), «necesita tu revisión» solo cuando algo puede haber ocurrido de verdad, las descripciones de herramientas MCP ya no pueden romper un chat, y escribir un archivo nunca sigue un enlace fuera de tu carpeta de trabajo.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — una tarjeta de aprobación en todas partes (chat, Inbox, Island, iPhone), servidores MCP que se inician solos, y Claude vuelve a funcionar tras un ajuste `temperature` rechazado.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan en un Mac — un trabajo en segundo plano reúne facturas — y Arslan para iPhone con una aprobación pendiente" width="100%">
@@ -90,8 +89,8 @@ Recientemente:
 |---|---|---|
 | **Mensaje** | Desde la ventana, tu iPhone o tu voz — una conversación, un bucle | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Bucle** | Llamadas nativas a herramientas; el plan lo guarda el host; una respuesta cortada continúa en vez de adivinar; 75 s por llamada al modelo | `server/orchestrator/tool_loop.py` |
-| **Política** | `run` · `ask` · `forbid`, una función pura del texto del comando | `server/services/terminal_policy.py` (detección de comandos destructivos tomada de Hermes Agent, MIT) |
-| **Sandbox** | Seatbelt de macOS: los comandos solo escriben en la carpeta de trabajo, temporales y cachés; claves SSH, llavero y datos de Arslan quedan cerrados; las claves del modelo nunca llegan a un comando; 20 s por llamada a herramienta | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Política** | `run` · `ask` · `forbid`, una función pura del texto del comando | `server/services/terminal_policy.py` (lectura de comandos y suelo inamovible adaptados de Hermes Agent, MIT) |
+| **Sandbox** | Seatbelt de macOS: los comandos solo escriben en la carpeta de trabajo, temporales y cachés; claves SSH, llavero y datos de Arslan quedan cerrados; las claves del modelo nunca llegan a un comando; un comando se ejecuta hasta su propio límite, 2 min por defecto, 10 como máximo | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Resultado** | Envuelto como no confiable y revisado antes de llegarte; un guardián determinista detecta afirmaciones de trabajo que nunca se hizo | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## La puerta
@@ -106,7 +105,7 @@ Recientemente:
 | **ask** | Destructivo, o actuar hacia fuera en tu nombre | `rm -rf build/` · `git push --force` · `curl … \| sh` · `osascript …` · `brew install jq` · `mail -s …` · `scp … mac-mini:` |
 | **forbid** | Nunca, ni con «no volver a preguntar» | `security find-generic-password … -w` · `cat ~/.arslan/secret_key` · `rm -rf ~` · `sudo …` · `shutdown` |
 
-«No volver a preguntar» se recuerda por tipo de comando y aparece en Ajustes › Avanzado; las reglas forbid nunca se pueden recordar. La puerta protege de errores e instrucciones coladas — no es una jaula: un comando que permites se ejecuta con tus permisos. Prueba 64 comandos en el [sitio del proyecto](https://aralem.dev/arslan/#gate).
+«No volver a preguntar» se recuerda por tipo de comando y aparece en Ajustes › Avanzado; las reglas forbid nunca se pueden recordar. La puerta protege de errores e instrucciones coladas — no es una jaula: un comando que permites se ejecuta con tus permisos. Desde 0.1.63 un comando nuevo pregunta primero por defecto, diga lo que diga su fila de arriba. Prueba 64 comandos en el [sitio del proyecto](https://aralem.dev/arslan/#gate).
 
 ## Manos, trabajo en segundo plano y el iPhone
 
@@ -138,7 +137,8 @@ Reconocimiento de texto en imágenes y PDF escaneados, la postura de seguridad c
 - **Tu propia clave de modelo.** Arslan funciona con tu cuenta; te factura tu proveedor. El transporte nativo de herramientas está implementado y probado a nivel de protocolo para rutas compatibles con OpenAI, Anthropic y Gemini — no es una certificación en vivo de cada modelo o endpoint.
 - **Hands aún no puede hacer clic en una posición de la pantalla ni arrastrar.** Llega a una ventana de otro escritorio yendo allí un momento (mientras tomar prestado el primer plano esté activado). Una tecla pulsada en los ~50 ms en que una app salta al frente va a esa app, y una ventana grande (Notas con muchas notas) puede tardar 10–20 segundos en leerse.
 - **Arslan para iPhone llega pronto a la App Store.** La parte de Mac está en 0.1.53.
-- **Lo que gasta según su propio horario viene apagado.** La curación de memoria en segundo plano solo llama a tu modelo si la activas en Ajustes › Automatización; aun así, pon un límite duro en la facturación de tu proveedor.
+- **El gasto tiene un límite por defecto, no una garantía.** Cada respuesta y cada tarea en segundo plano se detiene en 2 $ de gasto en el modelo (Ajustes › Segundo plano), contando solo los modelos con precio conocido; pon aun así un límite duro en la facturación de tu proveedor.
+- **Por defecto cada comando nuevo pregunta primero, y las tareas programadas no ejecutan comandos** (0.1.63).
 - Las API, esquemas y valores predeterminados pueden cambiar antes de v1.
 
 ## Comunidad

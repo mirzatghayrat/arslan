@@ -15,11 +15,15 @@
 <tr><th>Cosine similarity</th><td>Comparing whether vectors point the same way</td><td>One way of measuring similarity for semantic search</td></tr>
 <tr><th>RRF</th><td>Merging several retrieval results by rank</td><td>Fuses FTS and vector rankings without mixing scores in different units</td></tr>
 <tr><th>Skill</th><td>A reusable "how to do it" guide</td><td>SKILL.md with optional scripts and references; not another model</td></tr>
-<tr><th>MCP</th><td>A standard interface between an agent and external tools</td><td>Connects external capabilities over stdio or HTTP; the app still controls authorisation</td></tr>
+<tr><th>MCP</th><td>A standard interface between an agent and external tools</td><td>Connects external capabilities over stdio or HTTP; the app still controls authorisation. Since 0.1.63 a tool its server marks read-only runs without a card, a destructive one asks every time, and the rest ask once per conversation</td></tr>
+<tr><th>On-demand tools</th><td>Tools that are not sent with every request but looked up when needed</td><td>Since 0.1.63 rarely used tools and MCP tools are not in every request; the model finds them (<code>find_tools</code>) and calls them (<code>use_tool</code>) under their real names, with the same approvals</td></tr>
+<tr><th>Streaming</th><td>Showing an answer as the model writes it</td><td>Since 0.1.63 for OpenAI-compatible providers, Claude and Gemini; if a stream breaks halfway, what you saw is kept and the reply is marked interrupted. Checks that used to hold the answer back now add a correction after it</td></tr>
+<tr><th>Steering</th><td>Redirecting a task while it is running</td><td>Since 0.1.63 a message typed during a reply reaches it at its next step; one sent while the final answer is being written runs right after it</td></tr>
+<tr><th>Dollar limit per task</th><td>A cap on model spend for one task</td><td>On by default since 0.1.63: $2 per chat reply or background task, wrapping up at about two thirds; only models with a known price count; changed in Settings › Background</td></tr>
 <tr><th>BYOK</th><td>Bring your own model API key</td><td>You choose the provider and pay for the model calls</td></tr>
 <tr><th>Prompt injection</th><td>Web or tool content disguised as new instructions for the agent</td><td>External content is treated as data, and practices influenced by it without confirmation usually become proposals; this is not proof of immunity</td></tr>
 <tr><th>Learned practice</th><td>A method noted down from a correction or a detour that worked</td><td>"AppleScript doesn't work on this Mac — try EventKit"; model weights are not changed</td></tr>
-<tr><th>Shadow mode</th><td>Recording a judgement without letting it change behaviour yet</td><td>The judgement layer can record an approval suggestion; the real card still waits for your click</td></tr>
+<tr><th>Shadow mode</th><td>Recording a judgement without letting it change behaviour yet</td><td>The judgement layer keeps its ledger for small decisions; the shadow approval suggestion for command cards was removed in 0.1.63, and every card waits for your click</td></tr>
 <tr><th>Held-out evaluation</th><td>Testing on questions not used to tune the prompt</td><td>A historical design from early expert evolution, not a fixed step in today's turns</td></tr>
 </tbody></table></div>
 <h3>Software architecture, state and reliability</h3><div class="table-wrap"><table><thead><tr><th>Term</th><th>In plain words</th><th>How Arslan uses it</th></tr></thead><tbody>
@@ -31,7 +35,7 @@
 <tr><th>Async I/O</th><td>Yielding the event loop while waiting on I/O so other work can proceed</td><td>Python asyncio, async APIs and database access; not unlimited parallel CPU work</td></tr>
 <tr><th>Schema / Contract</th><td>An explicit agreement on inputs, outputs and valid states</td><td>Pydantic, tool arguments and task acceptance contracts</td></tr>
 <tr><th>State machine</th><td>Describing how far a process has got with a finite set of states</td><td>queued, running, waiting_user, verifying, succeeded and so on</td></tr>
-<tr><th>Checkpoint</th><td>A record of where things are, what was done and what is left</td><td>Resuming uses references, evidence and budget; unknown side effects are not blindly replayed</td></tr>
+<tr><th>Checkpoint</th><td>A record of where things are, what was done and what is left</td><td>Resuming uses references, evidence and budget; unknown side effects are not blindly replayed. A second kind since 0.1.63: a saved copy of the working folder taken before a turn first changes it, which "Undo this turn" restores (only for a folder of at most 20,000 files and 5 GB; otherwise the undo window says "Not saved")</td></tr>
 <tr><th>Attempt</th><td>One run of a task</td><td>Resuming creates a new attempt; old async results cannot overwrite the new round's state</td></tr>
 <tr><th>Optimistic concurrency</th><td>Checking before writing that the data is still the version you saw</td><td>Row version and attempt ID stop old results overwriting a cancellation or update</td></tr>
 <tr><th>Idempotency</th><td>A repeated request should not cause an unintended repeated action</td><td>Message and task IDs prevent duplicates; unknown external effects still need checking</td></tr>

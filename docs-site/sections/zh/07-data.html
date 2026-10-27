@@ -17,13 +17,13 @@
 <rect x="20" y="338" width="937" height="72" rx="9" class="planned"/><text x="39" y="368" class="boxtext">经验只能改善方法，不能增加权限。</text><text x="39" y="394" class="small">删除不只是 UI 隐藏：要处理旧修订、来源、摘要与删除账本，防止旧状态重新引入已删内容。</text>
 </svg><p class="diagram-caption">图 3 · 记忆闭环。纯文本：来源 → 判断 → 生效／提案 → 保存 → 按范围与权限过滤 → 召回 → 记录使用；记住“用 EventKit”不等于获得提醒事项权限。</p></div>
 <h3>数据对象按职责分层</h3>
-<div class="table-wrap"><table><thead><tr><th>数据组</th><th>主要对象</th><th>回答的问题</th></tr></thead><tbody><tr><td>对话与运行</td><td><code>ArslanMessage</code>、<code>ArslanSummary</code>、<code>Run</code>、<code>RunStep</code>、<code>UsageLedger</code></td><td>用户说了什么、调用过什么、消耗了多少。</td></tr><tr><td>持久任务</td><td><code>companion_tasks</code>、<code>task_revisions</code>、<code>task_attempts</code>、<code>task_checkpoints</code>、<code>task_events</code>、<code>task_actions</code></td><td>任务采用哪版约定、处于哪次尝试、有哪些动作与证据。</td></tr><tr><td>个人记忆</td><td><code>memory_entries</code>、<code>memory_revisions</code>、<code>memory_sources</code></td><td>记住哪条信息、当前是哪一版、依据来自哪里。</td></tr><tr><td>使用与删除记录</td><td><code>context_receipts</code>、<code>memory_deletions</code>、<code>memory_suppressions</code></td><td>哪版记忆进入过上下文，以及哪些删除需要继续生效。</td></tr><tr><td>资料与经验</td><td><code>KnowledgeChunk</code>、<code>Lesson</code>、<code>Judgment</code></td><td>可检索的资料、可复用的经验及小判断的结果。</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>数据组</th><th>主要对象</th><th>回答的问题</th></tr></thead><tbody><tr><td>对话与运行</td><td><code>ArslanMessage</code>、<code>ArslanSummary</code>、<code>Run</code>、<code>RunStep</code>、<code>UsageLedger</code></td><td>用户说了什么、调用过什么、消耗了多少。</td></tr><tr><td>持久任务</td><td><code>companion_tasks</code>、<code>task_revisions</code>、<code>task_attempts</code>、<code>task_checkpoints</code>、<code>task_events</code>、<code>task_actions</code></td><td>任务采用哪版约定、处于哪次尝试、有哪些动作与证据。</td></tr><tr><td>个人记忆</td><td><code>memory_entries</code>、<code>memory_revisions</code>、<code>memory_sources</code></td><td>记住哪条信息、当前是哪一版、依据来自哪里。</td></tr><tr><td>使用与删除记录</td><td><code>context_receipts</code>、<code>memory_deletions</code>、<code>memory_suppressions</code></td><td>哪版记忆进入过上下文，以及哪些删除需要继续生效。</td></tr><tr><td>权限与审批</td><td><code>permission_rules</code>、<code>permission_grants</code>、<code>approval_events</code></td><td>有哪些长期生效的回答（“始终”）和按任务或按对话的回答，以及每一次越过边界的决定：谁做出的、卡片等了多久。</td></tr><tr><td>资料与经验</td><td><code>KnowledgeChunk</code>、<code>Lesson</code>、<code>Judgment</code></td><td>可检索的资料、可复用的经验及小判断的结果。</td></tr></tbody></table></div>
 <p>任务表保存当前状态，修订表保存任务约定，attempt 表记录执行尝试，event 表提供有序事件，action 表记录实际动作及效果状态。它们共同支撑检查和恢复。个人记忆则把稳定身份、内容修订和来源拆开，便于编辑、溯源与删除；它没有直接复用全部聊天内容作为永久记忆。</p>
 <p class="evidence">源码：{{source:server/db/session.py|SQLite 连接}}；{{source:server/db/models.py|运行、资料与配置模型}}；{{source:server/db/task_models.py|任务模型}}；{{source:server/db/companion_models.py|个人上下文与记忆模型}}。</p>
 
 <h3>工作上下文：控制本轮输入，保留原始历史</h3>
-<p>模型每次能接收的内容有限，Arslan 会用有上限的滚动摘要加上近期消息构成工作上下文。该历史窗口的默认估算预算为 3,000 token，摘要本身也受长度限制。这是历史装配的预算，不代表整个模型请求只有 3,000 token：系统指令、工具 schema、资料和结果还会占用其他空间。</p>
-<p>对话变长后，旧消息可以被概括为摘要，近期消息保留原文。压缩影响下一次装配哪些内容，不等于删除数据库中的完整会话；压缩失败也会保留原始记录。过长工具输出另有落盘机制：模型得到头尾摘要和文件路径，需要时再分段读取，完整输出按保留策略清理。</p>
+<p>模型每次能接收的内容有限，Arslan 会用有上限的滚动摘要加上近期消息构成工作上下文。自 v0.1.63 起，历史窗口的大小按这一回合所用的模型来定：估算为其上下文窗口的 40%，但不低于 3,000、不高于 24,000 token（未知模型按 32,000 计，本地模型按 8,192 计），摘要本身也受长度限制。这是历史装配的预算，不代表整个模型请求只有 3,000 token：系统指令、工具 schema、资料和结果还会占用其他空间。</p>
+<p>对话变长后，最近四个用户回合保留原文（只要它们能放进预算的一半），较早回合的工具摘要最先被遮蔽，这不花任何代价；一旦历史超过其预算的四分之三，较早的消息就被折叠进摘要，摘要保留“目标、进展、决定、涉及的文件、下一步”这几节。逐回合变化的内容（事实、摘要、资料、回复语言）放在该回合请求开头的一个参考块里，而不是系统提示中，也绝不会被存成用户说的话。压缩影响下一次装配哪些内容，不等于删除数据库中的完整会话；压缩失败也会保留原始记录。过长工具输出另有落盘机制：模型得到头尾摘要和文件路径，需要时再分段读取，完整输出按保留策略清理。</p>
 <p>这种分层让模型优先看到当前任务所需的信息，同时给后续核对留下原始依据。摘要只是已有内容的压缩表示，不能代替某个外部动作的真实回执。</p>
 
 <h3>个人记忆：先决定能不能用，再决定是否相关</h3>
@@ -32,26 +32,26 @@
 <p>“关于你”和“Mac 笔记”有受限的基础注入，其余内容按相关性选择。自 v0.1.52 起，默认开启的“记住我并在对话中使用”可允许普通、<code>cloud_allowed</code> 条目用于已配置的云模型。敏感内容还需要额外许可；<code>local_only</code> 不会因为总开关开启而变成可上云内容。</p>
 <p><code>ContextReceipt</code> 记录使用了哪些条目和修订、为何使用以及估算计数，不复制记忆正文。用户能追溯一次上下文选择的依据，系统也不必为此再制造一份敏感内容副本。</p>
 <p>编辑记忆会产生新的修订，条目的当前修订指针随之更新；来源记录继续说明这版内容是如何形成的。暂停、过期、被替代和删除等状态，也会影响是否进入后续上下文。版本化有利于核对变化，但删除流程会清除需要抹去的正文，所以不能把它理解成所有历史内容永久不可删除的事件库。</p>
-<p class="evidence">源码：{{source:server/orchestrator/memory.py|历史与摘要}}；{{source:server/services/tool_outputs.py|长工具输出}}；{{source:server/services/task_context.py|会话许可}}；{{source:server/services/personal_context.py|范围与隐私过滤、回执}}。</p>
+<p class="evidence">源码：{{source:server/orchestrator/memory.py|历史与摘要}}；{{source:server/services/tool_outputs.py|长工具输出}}；{{source:server/orchestrator/context_window.py|按模型窗口确定历史大小}}；{{source:server/orchestrator/turn_context.py|逐回合的参考块}}；{{source:server/services/task_context.py|会话许可}}；{{source:server/services/personal_context.py|范围与隐私过滤、回执}}。</p>
 
 <h3>资料检索：关键词与向量可以组合使用</h3>
 <p>知识资料的检索模块支持 SQLite FTS5 全文搜索和向量余弦相似度搜索。前者找词面匹配，后者利用 embedding 寻找语义相关片段；两路都可用时，通过 RRF 把排名融合。RRF 比较的是排名位置，不直接混用不同量纲的原始分数。未配置 embedding 或缺少向量时，仍可走全文检索。</p>
-<p>检索所得片段附带来源进入模型上下文，由模型结合当前问题组织答复，这就是此处的 RAG。记忆 v2 启用后，资料检索只在绑定了资料集的项目中进行；使用云模型时，还需该对话单独开启云端记忆许可（默认的“记住我”开关不覆盖资料）。结果作为 recall 工具的返回值进入上下文。它无需修改基础模型权重，也不依赖单独部署的向量数据库。个人记忆 v2 的选择主要使用权限过滤、全文与本地相关性逻辑，不能据此推断所有记忆都经过同一套向量管线。</p>
+<p>检索所得片段附带来源进入模型上下文，由模型结合当前问题组织答复，这就是此处的 RAG。资料检索只在绑定了资料集的项目中进行；使用云模型时，还需该对话单独开启云端记忆许可（默认的“记住我”开关不覆盖资料）。结果作为 recall 工具的返回值进入上下文。它无需修改基础模型权重，也不依赖单独部署的向量数据库。个人记忆 v2 的选择主要使用权限过滤、全文与本地相关性逻辑，不能据此推断所有记忆都经过同一套向量管线。</p>
 
 <h3>经验学习：把纠正变成可审阅的规则</h3>
 <p><code>Lesson</code> 用于保存用户纠正、失败后成功的绕行方法以及机器环境特点。例如，某个命令在当前 Mac 上需要不同参数，可以形成有来源的经验，供相似任务参考。召回最多 5 条、总计约 800 字符，放入动态的 agent status，不污染稳定系统前缀；召回、遵循、成功与失败都有计数。</p>
 <p>是否值得保存、是否与已有内容重复或冲突，可以由 judgment 层提出范围很小的判断，并记录概率与后续结果。用户纠正或未受外部内容影响的经验，在设置允许且判断有价值时可以直接生效；其他需要审阅的内容进入提案。含凭证的候选会被直接丢弃；“推断出的敏感信息需要审阅”这条规则属于个人记忆，而不是经验。判断缺失或超时时有回退路径。</p>
 <p>自 0.1.55 起，纠正必须针对 Arslan 在对话里先前做过的事才算纠正：第一条消息是请求，不会被当成纠正。与同一轮里刚刚成功的路线相矛盾的纠正，不会立即生效，而是变成等你同意的提案；需要用户自己解决的失败（例如 macOS 拒绝授权）也不会被学成改走别的路线的理由。Arslan 在对话中保存记忆时，会在对话里说明，并提供撤销。</p>
-<p>这些机制修改应用保存与召回的知识，不训练模型权重。judgment 的启用范围也各不相同：例如工具审批判断处于 shadow 模式时只记录建议，仍由真实授权流程决定能否执行。</p>
+<p>这些机制修改应用保存与召回的知识，不训练模型权重。judgment 的启用范围也各不相同：记忆、经验和项目这几个判断点在回答之后运行，而一个已登记的判断点（回合完成）处于关闭状态。没有任何判断会决定一条命令能否运行：命令卡片的影子判断已在 v0.1.63 中移除，只有授权流程来决定。</p>
 <p class="evidence">源码：{{source:server/services/knowledge.py|混合资料检索}}；{{source:server/services/lessons.py|经验提取与召回}}；{{source:server/services/judgment.py|小判断与运行模式}}。</p>
 
 <h3>删除需要跨过摘要和旧备份</h3>
-<p>删除一条记忆时，系统会提高 deletion epoch，清除该条的旧修订正文与来源，并清空所有会话的滚动摘要和运行记录中缓存的提示词，防止旧的派生内容把已删记忆带回来。删除记录只保留用于匹配的内容指纹（本地密钥 HMAC）和范围等元数据，避免在账本里重新保存已删除正文；suppression 记录防止仍在聊天历史中的同一来源再次自动生成这条记忆。删除记忆与删除原始会话是不同的数据操作。</p>
+<p>删除一条记忆时，系统会提高 deletion epoch，清除该条的旧修订正文与来源，并清空所有会话的滚动摘要和运行记录中缓存的提示词，防止旧的派生内容把已删记忆带回来。删除记录只保留用于匹配的内容指纹（本地密钥 HMAC）和范围等元数据，避免在账本里重新保存已删除正文；suppression 记录防止仍在聊天历史中的同一来源再次自动生成这条记忆。删除记忆与删除原始会话是不同的数据操作。“撤回这一轮”是第三种更窄的操作：它删除所有来源都是被撤销回合的条目（另有其他来源支撑的条目只失去这些来源），不留下文本墓碑，并保留摘要。</p>
 <p>独立删除账本和删除清单用于在启动及恢复路径继续落实删除。恢复旧备份前，系统检查存储身份，在激活数据前对照删除信息整理暂存数据，降低旧备份让已删除记忆重新出现的可能。这个保证依赖恢复流程与可用删除记录，不能解释成能撤回所有已经导出到外部的副本。</p>
 <p>备份里的其余记忆也不会立即恢复全部使用许可：恢复处理会将其隔离待审，收紧使用策略，清掉缓存上下文，停用全部定时任务，并收回会话级的云端与敏感许可、归档进行中的项目。恢复数据与重新批准使用数据分开完成，避免旧会话许可在新的运行环境中静默生效。</p>
 
 <h3>迁移先完成，应用再开始使用数据</h3>
-<p>当前数据库升级使用显式迁移 runner：检查 schema 版本、准备升级备份、创建缺少的表、按顺序执行待运行迁移，然后处理密钥兼容和记忆 v2 激活。未知或过新的 schema 会被拒绝，避免较旧程序盲目修改较新数据。v0.1.60 的显式登记已到 <code>0066</code>；早期 Alembic 历史不应当作当前运行机制。</p>
+<p>当前数据库升级使用显式迁移 runner：检查 schema 版本、准备升级备份、创建缺少的表、按顺序执行待运行迁移，然后处理密钥兼容和记忆 v2 激活。未知或过新的 schema 会被拒绝，避免较旧程序盲目修改较新数据。v0.1.63 的显式登记已到 <code>0070</code>；早期 Alembic 历史不应当作当前运行机制。自 v0.1.60 起新增了 <code>0067</code>（权限表）、<code>0068</code>（每个 MCP 服务一个状态以及每个工具的提示）、<code>0069</code>（消息 id 绝不重复使用，因此撤销一个回合不会把已删除的 id 再发出去）和 <code>0070</code>（已存的“只对有风险的命令询问”一次性改为“每条命令前都询问”）。</p>
 <p>记忆 v2 激活时，旧事实与学习表改名为 legacy 表并加只读触发器，兼容视图将旧读入口映射到新结构，全文索引也在这一过程中建立。模型 API 密钥、MCP 环境变量与 OAuth 令牌、SSH 密钥等秘密字段使用 Fernet 字段级加密（PBKDF2 + 每次安装独立的盐值）；普通会话和任务表并未因此变成整库加密。持久化、秘密保护与备份恢复各有具体边界。</p>
-<p class="evidence">源码：{{source:server/services/memory_repository.py|记忆删除与版本}}；{{source:server/services/memory_deletion_ledger.py|删除账本}}；{{source:server/services/memory_deletion_manifest.py|恢复前删除核对}}；{{source:server/services/backup.py|备份恢复协调}}；{{source:server/services/memory_restore.py|恢复数据隔离}}；{{source:server/services/storage_boot.py|存储启动顺序}}；{{source:server/db/migrations/runner.py|显式迁移}}；{{source:server/services/memory_activation.py|记忆结构激活}}；{{source:server/crypto.py|密钥字段保护}}。</p>
+<p class="evidence">源码：{{source:server/services/memory_repository.py|记忆删除与版本}}；{{source:server/services/permission_store.py|长期回答与按任务的回答}}；{{source:server/services/turn_undo.py|撤销一个回合}}；{{source:server/services/memory_deletion_ledger.py|删除账本}}；{{source:server/services/memory_deletion_manifest.py|恢复前删除核对}}；{{source:server/services/backup.py|备份恢复协调}}；{{source:server/services/memory_restore.py|恢复数据隔离}}；{{source:server/services/storage_boot.py|存储启动顺序}}；{{source:server/db/migrations/runner.py|显式迁移}}；{{source:server/db/migrations/versions/_0067_permissions.py|权限表}}；{{source:server/services/memory_activation.py|记忆结构激活}}；{{source:server/crypto.py|密钥字段保护}}。</p>
 </section>
