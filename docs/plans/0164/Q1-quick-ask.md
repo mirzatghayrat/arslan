@@ -28,7 +28,7 @@
 
 1. **「按后台任务的做法收窄」：** 后台任务的做法是**去掉**四个只在聊天里有用的工具（`server/orchestrator/arslan.py:718-728`，`_LIVE_TURN_ONLY`），其余全留。快问要的是反过来：**只留**四个（允许清单，不是黑名单）。而且要同时收窄两份：给模型看的（`resolve_tools`）和能调用的（`resolve_callable`）。今天聊天回合两份分别是 `_arslan_tools` 和 `_callable_tools`（`arslan.py:839`），后者就是全部工具（`arslan.py:1070-1071`）；只收窄前者，模型照样能靠 `find_tools` / `use_tool` 调到别的。K7 的回退开关 `tools_all_resident` 打开时给全部工具（`arslan.py:1045-1050`、`:1059-1060`），快问也不能跟着放开。
 2. **「现有的 context PUT」：** `PUT /conversations/{id}/context`（`server/api/companion.py:250`）要带 `expected_version` 和整套隐私开关（`:149-156`），而 Bridge 访问 Mac 后端只有 GET、POST、DELETE 和上传文件四种（`desktop/bridge/Sources/BridgeCore/BackendReads.swift:9-16`），没有 PUT。所以要么 Bridge 加 PUT，要么加一个手机专用的小接口（建议后者，见「怎么做」）。
-3. **`kind` 这个名字已经有人用了：** `conversations.result` 每一条已经带 `kind`，取值 `remote` / `chat` / `task` / `scheduled`，是**每次现算的**（`server/schemas.py:826-827`；`server/services/phone_reads.py:263-270`），协议里也写了（`docs/specs/mobile-bridge-protocol.md:303`）。快问要的是**存下来的**标记。两者要合成一个意思：存下来的 `quick` 优先，其余照旧现算。README §6 写的「对话表加 `kind` 列」：没有对话表，对话只是消息行加上 `conversation_contexts`（`server/db/companion_models.py:16-29`），列加在后者上。
+3. **`kind` 这个名字已经有人用了：** `conversations.result` 每一条已经带 `kind`，取值 `remote` / `chat` / `task` / `scheduled`，是**每次现算的**（`server/schemas.py:826-827`；`server/services/phone_reads.py:263-270`），协议里也写了（`docs/specs/mobile-bridge-protocol.md:303`）。快问要的是**存下来的**标记。两者要合成一个意思：存下来的 `quick` 优先，其余照旧现算。README §6 写的「对话表加 `kind` 列」：没有对话表，对话只是消息行加上 `conversation_contexts`（`server/db/companion_models.py:16-29`），列加在后者上。**不是每个对话都有这一行：** 只有设过隐私开关、项目这类的对话才有（`list_conversations` 是另外查这张表的，查不到就当没有，`server/api/conversations.py:97-101`）。所以新列（`kind`、SUB 的父对话 id、以后可能的标题）的每个读的地方，都要把「没有这一行」当成 `chat`（其余照旧现算）。要写这些列时没有这一行，就新建一行（新建快问、转成对话、以后的改名都一样）。
 4. **「`conversation.update` 顺带满足 rename」：** Mac 服务端今天不存标题。列表里的标题是第一句用户消息现截的（`server/api/conversations.py:84`；`server/schemas.py:815-817` 写明「title is DERIVED, not stored」），Mac 窗口里的标题存在网页自己的本地存储里（`web/src/App.tsx:265-280`）。要改名就得多存一列标题，Mac 侧栏也不会自动跟着变。所以「只多一个类型」只对 `kind` 成立；`title` 要不要这一版做，列在「开工前要用户定的」第 2 条。
 5. **「pocket 只对说了 quick 的手机显示成 Remote（旧）」：** 名字 Remote 是服务端在列表里统一换上的（`server/api/conversations.py:106-107`），服务端不知道是哪台手机在问；各台手机说了什么能力只有 Bridge 知道（`Mailbox.has`，`desktop/bridge/Sources/BridgeCore/Mailbox.swift:350`）。建议让 iPhone 自己显示「Remote（旧）」，Mac 不改名。
 6. **对的，但要守住：** 「不写记忆用 `no_learning`」是对的，**不能用 `no_memory`**。`conversation_search` 会跳过 `no_memory` 和临时对话（`server/services/conversation_search.py:43-45`），工具本身在这种对话里也直接拒绝（`server/registry/memory_executors.py:109-110`），用错了快问就搜不到了（违反第 ⑤ 条）。`no_learning` 已经挡住：回合后的事实提取（`arslan.py:513`）、学做法（`server/services/lessons.py:405`）、`remember` 和 `memory_note`（`server/services/memory_tools_v2.py:48-49`、`:126-127`）；`recall` 不受影响。
@@ -39,7 +39,7 @@
 
 ### Q1a（②Main，Mac 服务端）
 
-- **迁移**（一个，和 SUB 共用）：`conversation_contexts` 加 `kind` 列（可空，空 = 照旧现算；这一版只写 `quick` 和 `chat`）。SUB 要的父对话 id 同一次加。要不要加标题列看第 2 条决定。按 `docs/sessions.md` §4 同改四处：`server/db/migrations/versions/_00NN_*.py`、`server/db/migrations/runner.py`、`tests/server/test_migration_runner.py`、`server/db/companion_models.py`（§4 写的是 `server/db/models.py`；这张表的模型在 `companion_models.py`）。
+- **迁移**（一个，和 SUB 共用；Q1a 的第一个提交，**只加不减**：只加可空的列，不删列、不改列、不搬数据）：`conversation_contexts` 加 `kind` 列（可空，空 = 照旧现算；这一版只写 `quick` 和 `chat`）。没有这一行的对话读成 `chat`（见上面第 3 条）。SUB 要的父对话 id 同一次加。要不要加标题列看第 2 条决定。按 `docs/sessions.md` §4 同改四处：`server/db/migrations/versions/_00NN_*.py`、`server/db/migrations/runner.py`、`tests/server/test_migration_runner.py`、`server/db/companion_models.py`（§4 写的是 `server/db/models.py`；这张表的模型在 `companion_models.py`）。
 - `server/orchestrator/arslan.py`：
   - 加 `_QUICK_TOOLS = {"web_search", "web_extract", "recall", "conversation_search"}`，以及快问用的 `resolve_tools` / `resolve_callable`：都从全部工具里**按允许清单取**，不带 `find_tools`、`use_tool`，不看 `tools_all_resident`。
   - `handle_user_message`（`:407`）读这个对话存着的 `kind`：是 `quick` 就用上面两份，提示换成快问的一句（不加 `PHONE_NOTE`）。
@@ -49,7 +49,10 @@
   - `/phone/conversations` 加可选 `kind=quick`，原样传给列表函数。
 - `server/api/conversations.py` 的 `list_conversations`（`:33`）：默认不列 `kind = quick`；带 `kind=quick` 时只列快问。Mac 侧栏（`web/src/App.tsx:176`、`web/src/hooks/useConversationIndex.ts:19`）、手机列表（`server/api/phone.py:106-113`）、`/phone/live`（`server/api/phone.py:288-300`）都走这个函数，一处改三处跟着变。
 - `server/services/phone_reads.py` 的 `describe`（`:263-270`）：存着的 `quick` 优先，返回 `kind: "quick"`。
-- **网页：** 预计不改。快问不进 `/conversations`，Mac 侧栏自然看不到；转成对话以后，侧栏的轮询会把它当成「别处开的对话」加进来，标题取服务端的（`web/src/lib/sessionPersistence.ts:222-236`）。开工时核一遍，要改就写进 PR。
+- **网页（要改，量很小）：**
+  - 快问本身不用改网页：快问不进 `/conversations`，Mac 侧栏自然看不到；转成对话以后，侧栏的轮询会把它当成「别处开的对话」加进来，标题取服务端的（`web/src/lib/sessionPersistence.ts:222-236`）。
+  - 但网页自己写死了 pocket：`web/src/lib/threadTitles.ts:11` 把它显示成 Remote；`web/src/lib/conversationMeta.ts:19`（`REMOTE_ID`）、`:27`（服务端没给 `kind` 时也当 `remote`）、`:41-44`（`remoteFirst`，`web/src/components/Sidebar.tsx:65` 用它把 Remote 钉在侧栏最上面）。pocket 留着的这一版，这几处行为不变，只加 `DELETE-BY:` 注释（见「怎么做」第 7 条）；pocket 删的那一版，这几处跟着删。
+  - `conversationMeta.ts:20` 的 `KINDS` 没有 `quick`：快问默认不进 Mac 侧栏，碰不到；不加。
 - **测试：** 见「验收」。
 
 ### Q1b（②Main 写，①iOS 审；Bridge 和契约）
@@ -87,7 +90,11 @@
 4. **出错时宁关：** 存 `quick` 失败，Bridge 拒这条消息；不能退回成普通对话去跑（第一回合会拿到全部工具）。
 5. 转成对话只把 `kind` 改成 `chat`。之后要不要开始学东西，看「开工前要用户定的」第 3 条。
 6. 快问的回答「短、附来源」写在快问那一句提示里，不改系统提示（K3 的缓存要它不变）。
-7. 旧路径：pocket 留给没说 `quick` 的旧手机。Bridge 里那几处 pocket 的分支（`ConversationLinks.swift:403`、`:414`、`:434`）和服务端的 `REMOTE_ID` 分支（`server/api/conversations.py:106-107`、`server/services/phone_reads.py:263-264`）都写上 `DELETE-BY:`，版本由用户定（第 4 条）。
+7. 旧路径：pocket 留给没说 `quick` 的旧手机。下面每一处都写上 `DELETE-BY:`，版本由用户定（第 4 条）：
+   - Bridge：`desktop/bridge/Sources/BridgeCore/ConversationLinks.swift:33`（`pocket` 常量）、`:231`（`linkLive` 跳过 pocket）、`:403`（`chat.send` 没带 id 进 pocket）、`:414`（不许删 pocket）、`:434`（`chat.history` 没带 id 读 pocket）；
+   - 服务端：`server/services/phone_reads.py:22-23`（`REMOTE_ID`、`REMOTE_TITLE`）、`:263-264`（现算成 `remote`）、`server/api/conversations.py:106-107`（列表里改名 Remote）；
+   - 网页：`web/src/lib/threadTitles.ts:11`、`web/src/lib/conversationMeta.ts:19`、`:27`、`:41-44`（`remoteFirst`）。
+   - 开工时再 `git grep -n 'pocket\|REMOTE_ID\|remoteFirst\|sidebar.remote'` 一遍，列全了再写注释。翻译键 `sidebar.remote` 也算：它在 6 种语言的 `web/src/locales/*.json` 里是嵌套的 `remote`，上面那条 `git grep` 查不到，要另查。删的那一版用同一条 `git grep` 查不到为证。
 8. PR 描述写完成证据四项（`docs/sessions.md` §8）。
 
 ## 验收
@@ -99,6 +106,7 @@
 - 快问回合结束后不提取事实、不学做法（普通对话同一回合会）。
 - `conversation_search` 能返回快问里的消息（第 ⑤ 条的通路）。mutation：把快问建成 `no_memory`，这条要红。
 - 列表：默认不含快问；`kind=quick` 只含快问；`/phone/conversations`、`/phone/live` 跟着默认走；普通对话的结果和改之前一样。
+- 没有 `conversation_contexts` 行的对话：列表里读成 `chat`、照旧出现，回合拿到全部工具（mutation：把「没有这一行」当成别的值，这条要红）。新建快问、转成对话在没有这一行时会新建一行。
 - 新建快问：对已有消息的 id 返回 409。转成对话：之后拿到全部工具；回合进行中返回 409。
 - 迁移：从 0070 升上来；`test_migration_runner.py` 的 id 列表。
 - Bridge：带快问标记的 `chat.send` 先建快问再发消息；建快问失败时拒绝、后端没收到消息；`hello` 带 `quick`；`conversations.list` 把 `kind` 转过去；`conversation.update` 回 `conversation.updated`，409 回 `mac_busy`；只有说了 `quick` 的手机能删 pocket；没说 `quick` 的旧手机所有行为不变（照旧进 Remote）。共享向量重新生成，`VectorTests` 过。
@@ -128,7 +136,8 @@
 - **风险：** 改 `server/orchestrator/arslan.py` 容易和 K 线冲突。排在当时打开的 K 线 PR 后面，rebase 两边都留。
 - **风险：** 快问记录越积越多，手机一次最多拿 100 条（`ConversationLinks.swift:429`）。见第 5 条。
 - **留下的旧路径：** pocket（Remote）留给旧手机，`DELETE-BY:` 的版本由用户定（第 4 条）。
-- **回退：** Q1b 整个 revert：Mac 不再说 `quick`，新 iPhone 自己落到 Remote（Q1c 的兜底）。Q1a 在发版前 revert 没有影响；发版以后迁移号冻结，列留着，revert 代码即可（空列 = 照旧现算）。
+- **回退：** Q1b 整个 revert：Mac 不再说 `quick`，新 iPhone 自己落到 Remote（Q1c 的兜底）。Q1a 的代码可以单独 revert：迁移只加可空的列，代码没了，空列 = 照旧现算，什么都不坏。迁移本身发版以后号冻结，列留着。
+- **表的改动的规矩（②Main 审 #434 时提出）：** revert 代码恢复不了一张表。所以减表、减列、搬数据，各自单独一个 PR，排在用到它的代码已经删掉之后。Q1 的迁移只加不减，用不上这条；以后 pocket 删的那一版也不动表（pocket 只是一个对话 id，没有自己的表）。
 
 ## 开工前要用户定的
 
