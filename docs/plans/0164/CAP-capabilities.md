@@ -103,7 +103,7 @@
 | CAP3b | 迁移：删 `professional_methods`、`professional_method_versions`（SUB 还在用就改成写 DELETE-BY） | 否 | CAP3a；SUB | 约 40 |
 | CAP4 | 安装卡的安全底线（一）：卡面只写事实、域名白名单、来源核对、锁文件在出卡前、在钉的版本上读许可证和扫描 | 是 | CAP1a | 约 +700 |
 | CAP5 | 安全底线（二）：运行时补洞（名字、工具哈希、技能脚本专用路径、缓存、钉版本、导入补扫描） | 是 | CAP4；**SBX**；**#432** | 约 +500 |
-| CAP6a | 技能目录：`~/.agents/skills` 当技能来源，加已有技能的一次性导出 | 是 | CAP4 | 约 +700 |
+| CAP6a | 技能目录：`~/.agents/skills` 当技能来源，加已有技能的一次性导出 | 是 | CAP4；CAP6b / SBX（目录先拒读拒写，不能比今天松） | 约 +700 |
 | CAP6b | 技能、插件、MCP 配置目录对模型不可写（并进 SBX 的受保护写入） | 是 | **SBX**（并进它） | 约 +200 |
 | CAP7a | 迁移：重建 `capability_sources`，`kind` 加 `plugin` | 否 | CAP6a | 约 80 |
 | CAP7b | 插件包：拆出技能和连接，带钩子的不装 | 是 | CAP4、CAP5、CAP6a/b、CAP7a | 约 +700 |
