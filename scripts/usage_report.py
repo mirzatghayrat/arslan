@@ -25,10 +25,14 @@ from contextlib import closing
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
+from server.run_kinds import USER_RUN_KINDS   # imports nothing: the report never loads the server
+
 WEEK = timedelta(days=7)
-CUT_TEXT = "tool 'run_command' timed out"     # tool_loop.py:1303: the loop's 20 s cut
+# Before F1 (v0.1.62) the loop cut run_command at 20 s with this text. Since F1 a run_command over its
+# limit reports OUTER_LIMIT (tool_loop.py:1856); this text is now only another tool's timeout.
+CUT_TEXT = "tool 'run_command' timed out"
 OWN_LIMIT = "stopped after %"                 # terminal_exec.py:149: the command's own limit
-OUTER_LIMIT = "stopped by the time limit; no output was captured%"   # F1's outer limit
+OUTER_LIMIT = "stopped by the time limit; no output was captured%"   # F1's outer limit, tool_loop.py:1856
 CUT_MS = (19_500, 21_500)                     # a failed run_command that ran about 20 s
 SHOWN = "('user', 'expired')"                 # approval_events.decided_by: the card opened
 # Tool names the product defines but never stores in `tools`: every key of
@@ -72,18 +76,29 @@ def _week(col: str) -> str:
     return f"datetime({col}) >= ? AND datetime({col}) < ?"
 
 
+def _users_runs(col: str) -> str:
+    """The user's own runs (server/run_kinds.py), as the usage page counts them: chat turns, fires and
+    background jobs ('host'; older rows 'live' and 'scheduled'); never replay or helper runs."""
+    return f"{col} IN ({', '.join(map(_lit, USER_RUN_KINDS))})"
+
+
 TOOL, ERROR = _json("s.ref", "tool"), _json("s.detail", "error")   # run_recorder.py:241, :485-487
 FAILED = _json("s.ref", "ok") + " = 0"
 IS_MCP = f"substr({TOOL}, 1, 4) = 'mcp_'"
 REGISTERED = (f"({TOOL} IN ({', '.join(map(_lit, sorted(BUILT_IN_TOOLS)))}) "
               f"OR {TOOL} IN (SELECT key FROM tools))")
 STEPS = ("FROM run_steps s JOIN runs r ON r.id = s.run_id "
-         f"WHERE s.kind = 'tool_call' AND r.kind = 'live' AND {_week('r.started_at')}")
+         f"WHERE s.kind = 'tool_call' AND {_users_runs('r.kind')} AND {_week('r.started_at')}")
 CUT, OWN = f"{ERROR} = {_lit(CUT_TEXT)}", f"{ERROR} LIKE {_lit(OWN_LIMIT)}"
 OUTER, NEAR_20S = f"{ERROR} LIKE {_lit(OUTER_LIMIT)}", "s.duration_ms BETWEEN %d AND %d" % CUT_MS
 # A provider refusing a tool's parameter schema (the 2026-10-14 MCP incident): Anthropic says
 # `tools.<n>.custom.input_schema: ...`, OpenAI-compatible ones `Invalid schema for function`.
-SCHEMA_400 = ("error_kind = 'ModelCallError' AND instr(error_text, 'HTTP 400') > 0 AND ("
+# A run recorded the failure as ModelCallError before host runs; a host run (every chat turn since
+# 2026-09-14) records HostError with the error frame's text (host_run.py:71), which for a provider error
+# the frame does not translate is ModelCallError's own message (llm_errors.error_frame, model_call.py:88).
+MODEL_CALL_FAILED = ("(error_kind = 'ModelCallError' OR (error_kind = 'HostError' "
+                     "AND instr(error_text, 'Model request failed (') = 1))")
+SCHEMA_400 = (MODEL_CALL_FAILED + " AND instr(error_text, 'HTTP 400') > 0 AND ("
               "instr(error_text, 'input_schema') > 0"
               " OR instr(lower(error_text), 'invalid schema') > 0"
               " OR instr(error_text, 'is not a regex') > 0 OR error_text GLOB '*tools.[0-9]*'"
@@ -94,7 +109,7 @@ FACTS, SUMMARY = "scope = 'memory_facts'", "scope = 'memory'"
 
 # (sql, names): one row of counts per week. Every `?` pair is the week's (start, end).
 WEEKLY = [
-    (f"SELECT COUNT(*), {_n(SCHEMA_400)} FROM runs WHERE kind = 'live' "
+    (f"SELECT COUNT(*), {_n(SCHEMA_400)} FROM runs WHERE {_users_runs('kind')} "
      f"AND {_week('started_at')}", ("runs", "mcp_turns_by_text")),
     (f"SELECT COUNT(*), {_n(WAITING)} FROM companion_tasks WHERE {_week('created_at')}",
      ("tasks", "waiting")),
@@ -224,13 +239,14 @@ def render(weeks: list[date], data: dict) -> str:
 
     weekly("## Runs and tasks", ["Runs", "Tasks", "Waiting on you", "Share"],
            lambda w: [w["runs"], w["tasks"], w["waiting"], _pct(w["waiting"], w["tasks"])],
-           "Live runs by start. Tasks by the week they were created, counted by the phase "
-           "they are in now.")
+           "Chat turns, scheduled fires and background jobs by start (run kinds " +
+           ", ".join(USER_RUN_KINDS) + "; never replay or helper runs). Tasks by the week they were "
+           "created, counted by the phase they are in now.")
     split("### Waiting on you, by reason", plain(data["waiting_reasons"]))
     weekly("## Tool calls", ["Calls", "Failed", "Failure rate", "MCP calls", "MCP failed"],
            lambda w: [w["calls"], w["failed"], _pct(w["failed"], w["calls"]), w["mcp_calls"],
                       w["mcp_failed"]],
-           "Tool steps of live runs, by the run's start. Every mcp_<server>__<name> tool is "
+           "Tool steps of those runs, by the run's start. Every mcp_<server>__<name> tool is "
            "one `mcp` row; a name the product never registered is `other`.")
     split("### Tool calls by tool (failed/calls)",
           [[code, *(f"{c[1]}/{c[0]}" for c in cells)] for code, cells in _ordered(data["tools"])])
@@ -238,13 +254,15 @@ def render(weeks: list[date], data: dict) -> str:
            ["Failed", "20 s cut", "Own limit", "Outer limit (F1)", "Ran 19.5–21.5 s"],
            lambda w: [w["rc_failed"], w["rc_cut"], w["rc_own_limit"], w["rc_outer_limit"],
                       f"≈{w['rc_cut_by_ms']}"],
-           "Columns 2-4 match the product's own fixed error text (`tool 'run_command' timed "
-           "out`, `stopped after N s`, F1's `stopped by the time limit`: 0 until F1 merges). "
-           "≈ by duration: failed run_command steps that ran 19.5–21.5 s, evidence for the cut.")
+           "Columns 2-4 match the product's own fixed error text: `tool 'run_command' timed "
+           "out` (the 20 s cut before F1, v0.1.62; 0 in later weeks), `stopped after N s` and "
+           "F1's `stopped by the time limit`. ≈ by duration: failed run_command steps that ran "
+           "19.5–21.5 s, evidence for the old cut.")
     weekly("## MCP whole-turn failures", ["HTTP 400 tool schema", "mcp_schema_relaxed events"],
            lambda w: [f"≈{w['mcp_turns_by_text']}", w["mcp_relaxed"]],
-           "≈ by text: live turns that failed with ModelCallError, HTTP 400 and a tool-schema "
-           "refusal (input_schema, invalid schema, not a regex, tools.<n>, mcp_<id>__). "
+           "≈ by text: turns that failed on a model call (ModelCallError, or a host run's "
+           "HostError carrying its message) with HTTP 400 and a tool-schema refusal "
+           "(input_schema, invalid schema, not a regex, tools.<n>, mcp_<id>__). "
            "mcp_schema_relaxed events start with F3.")
     weekly("## Cards", ["Ledger: cards shown", "Ledger: auto-decided"],
            lambda w: [w["cards_shown"], w["cards_auto"]],
