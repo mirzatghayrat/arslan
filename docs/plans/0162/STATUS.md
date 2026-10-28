@@ -35,7 +35,7 @@
 
 先读：
 1. PR 描述（里面有「完成证据四项」：做了什么验证、覆盖到哪、没覆盖到哪、还剩什么风险）和 diff 全文。
-2. docs/sessions.md 的 §5、§8、§9（PR 大小、完成证据、留着的旧路径要写删除条件）。
+2. docs/sessions.md 的 §5、§8、§9（PR 大小、完成证据、留着的旧路径要写删除条件）。 Also §12 (no over-defence).
 3. SECURITY.md：Arslan 对用户承诺了哪些保护。
 4. 这个 PR 额外要看的：<额外要看的>
 
@@ -44,6 +44,7 @@
 - 沙箱、确认卡、命令判定、令牌、密钥有没有绕过的路；出错、超时、限流时是放行还是拒绝（应该是拒绝或出卡）。
 - 测试有没有测后果，而不只是看代码写了；把修复删掉，测试会不会变红。
 - PR 描述说修了、代码里其实没修的；没写删除条件的旧路径或兜底。
+- Over-defence (docs/sessions.md §12): unnecessary defensive code outside the security boundaries, the same validation repeated in several layers, single-use helpers or abstractions, and broad `except` blocks that swallow errors without a comment saying why.
 
 不要：运行任何命令或测试，只读代码（你在用户的个人电脑上，不在隔离环境里）；不访问家目录、~/.arslan、Arslan 的数据文件夹或任何密钥；攻击写法只写到能证明问题为止。
 
