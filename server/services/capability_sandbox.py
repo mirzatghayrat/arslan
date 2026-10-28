@@ -11,8 +11,8 @@ reading and writing the granted folder worked; listing ~/Documents, ~/.ssh and ~
 EPERM; a TCP connect and a DNS lookup failed. HOME and TMPDIR point into the server's own
 folder, so "~" inside the server is never the user's home.
 
-Rules match real paths (every path resolved first) and are JSON-quoted (valid SBPL), so a
-folder name cannot inject rules. Seatbelt applies the LAST matching rule; the user's
+Rules match real paths (every path resolved first) and are written as SBPL strings
+(`sandbox_profile`), so a folder name cannot inject rules. Seatbelt applies the LAST matching rule; the user's
 protected paths from command_sandbox close last, even inside a granted folder.
 """
 from __future__ import annotations

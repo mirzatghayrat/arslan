@@ -96,13 +96,12 @@ def test_commands_profile_plain_and_empty(T, A):
 """
 
 
-def test_a_non_ascii_name_is_written_as_json_escapes_today(T, A):
-    """Pins today's bytes: `json.dumps` writes a CJK name as \\uXXXX escapes, which seatbelt does not
-    decode, so this rule matches no real folder (#471's review). The SBPL string encoder that follows
-    SBX-1 changes this text on purpose, to the name's own UTF-8."""
+def test_a_non_ascii_name_is_written_as_its_own_characters(T, A):
+    """SBX-1b: a CJK name is written as itself. Until SBX-1b it was `\\u5de5\\u4f5c\\u533a`
+    (json.dumps), which seatbelt does not decode, so the rule matched no real folder (#471's review)."""
     name = "工作区"           # a working folder named in Chinese
     assert _shown(command_sandbox.profile([A / name], []), T).splitlines()[-1] == \
-        '(allow file-write* (subpath "<T>/\\u5de5\\u4f5c\\u533a"))'
+        f'(allow file-write* (subpath "<T>/{name}"))'
 
 
 def test_outside_floor(T, A, monkeypatch):

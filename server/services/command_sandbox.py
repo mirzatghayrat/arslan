@@ -9,7 +9,7 @@ host anyway, so nothing is promised about the network.
 
 Seatbelt applies the LAST matching rule (measured 2026-10-03): the protected
 paths come last, so they stay closed even inside a writable folder. It matches
-real paths, so every path is resolved first, and JSON-quoted (valid SBPL) so a
+real paths, so every path is resolved first, and written as an SBPL string so a
 folder name cannot inject rules. The text is written with `sandbox_profile` (SBX-1).
 
 A Unix socket is reached with connect(), which the file rule does not cover
