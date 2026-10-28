@@ -967,66 +967,6 @@
       "matched_tools": "contiene {{tools}}"
     }
   },
-  "forge": {
-    "intro": "Empaqueta tus propios métodos como habilidades. Un candidato se observa, se somete a la puerta frente a las ejecuciones puntuadas de un spawn real y luego lo promueves tú — eres la puerta que lo pone en vivo. Estas habilidades de autoría propia se unen a la biblioteca.",
-    "create": {
-      "title": "Crear habilidad",
-      "submit": "Forjar candidato",
-      "ok": "«{{name}}» forjado — en observación abajo."
-    },
-    "fields": {
-      "key": "Clave",
-      "name": "Nombre",
-      "category": "Categoría",
-      "description": "Descripción",
-      "descriptionHint": "descripción de una línea",
-      "body": "Cuerpo SKILL.md",
-      "bodyHint": "Necesita metadatos y las secciones ## Trigger y ## Decision Rules (reglas de decisión). Máx. 15 KB.",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
-    },
-    "list": {
-      "title": "Candidatos ({{count}})",
-      "refresh": "Actualizar",
-      "empty": "Aún no hay candidatos — forja uno arriba."
-    },
-    "status": {
-      "observing": "en observación",
-      "proposed": "propuesto",
-      "promoted": "promovido",
-      "rejected": "rechazado",
-      "liveLabel": "Habilidad en vivo"
-    },
-    "promote": {
-      "button": "Promover",
-      "confirm": "Confirmar — poner en vivo",
-      "cancel": "Cancelar",
-      "hint": "Promover es la puerta humana: registra este candidato como una habilidad asignable en vivo en la biblioteca.",
-      "ok": "Promovido — en vivo como «{{key}}».",
-      "blocked": "Promoción bloqueada."
-    },
-    "reject": {
-      "button": "Rechazar"
-    },
-    "curator": {
-      "usage": "{{usage}} ejecuciones desde la promoción",
-      "score": "media {{score}}/10",
-      "noScore": "aún no hay ejecuciones evaluadas",
-      "flagUnused": "⚠ sin usar",
-      "flagUnderperforming": "⚠ bajo rendimiento",
-      "retire": "Retirar",
-      "retireConfirm": "Retirar y desasignar de todos",
-      "cancel": "Cancelar",
-      "retireHint": "marcado para revisión; retirarlo elimina todas las asignaciones e impide nuevas",
-      "retired": "Se retiró «{{key}}» y se desasignó de {{count}} expertos."
-    },
-    "modes": {
-      "title": "Dos formas de empezar",
-      "a_title": "A · Pegar un SKILL.md",
-      "a_desc": "Pega el contenido de un SKILL.md existente en el formulario para crear un candidato.",
-      "b_title": "B · Creación guiada",
-      "b_desc": "Describe el método por campos: clave, nombre, categoría, descripción y un cuerpo con ## Trigger y reglas de decisión. Los candidatos se evalúan con ejecuciones reales y tú decides su promoción."
-    }
-  },
   "msg": {
     "expand": "Mostrar más",
     "collapse": "Mostrar menos",

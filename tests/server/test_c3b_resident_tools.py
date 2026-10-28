@@ -8,8 +8,9 @@
 - **SSH with no enrolled machine** offers `ssh_probe` and `enroll_node` only. Enrolling pins the host key
   before a first command runs, and the Capabilities page says the same. ssh_run itself works on any
   host, so this changes first use. ⓪Plan's call (A) on the user's card U3.
-- `suggest_connector` is gone (C9b), and `run_python`, `create_skill` and `propose_plan_change`
-  were never resident; only the last is pinned here.
+- `suggest_connector` is gone (C9b), and `run_python` and `propose_plan_change` were never
+  resident; only the last is pinned here. `create_skill` is offered since v0.1.64 CAP2a (a card),
+  found on demand, never resident.
 """
 import sys
 
@@ -56,9 +57,15 @@ async def test_a_chat_turn_is_still_told_where_page_actions_happen(execution_db,
     assert "To click, type or submit on a page, start background work" in desc["browser_open"]
 
 
-async def test_run_python_create_skill_and_project_proposals_are_not_resident(execution_db, mac):
-    keys = await _keys(arslan._every_tool)
-    assert not {"run_python", "create_skill", "propose_plan_change"} & keys
+async def test_run_python_and_project_proposals_are_not_offered_and_create_skill_is_found_on_demand(execution_db, mac):
+    from server.orchestrator import on_demand, tool_loop
+    every = {t["key"]: t for t in await arslan._every_tool()}
+    assert not {"run_python", "propose_plan_change"} & set(every)
+    assert "create_skill" in every and not arslan._resident("create_skill")
+    assert "create_skill" not in await _keys(arslan._arslan_tools)
+    found = on_demand.find("save as skill", [every["create_skill"], every["whats_new"], every["find_capability"]],
+                           tool_loop._tool_params)
+    assert found["tools"][0]["name"] == "create_skill"
 
 
 async def _ssh_on(execution_db, *, machines: int):

@@ -6,6 +6,7 @@ import CapabilityProposeCard from "./capabilities/CapabilityProposeCard";
 import EnrollNodeCard from "./EnrollNodeCard";
 import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
+import SkillSaveCard from "./capabilities/SkillSaveCard";
 import WorkspaceWriteCard from "./WorkspaceWriteCard";
 import { AnswerGuardScope, AskQueue, CARD_MS, Notice, scopeToSend, useAnswerGuardState, type AskQueuePosition, type QueuedAsk } from "./kit";
 
@@ -140,7 +141,13 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         expiresAt={expires(s)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_schedule', callId, s, scope); clearPendingSchedule(s.callId); }}
         onCancel={(callId, note) => { no('cancel_schedule', callId, note); clearPendingSchedule(s.callId); }} />) })),
-    ...pendingCapabilities.map((k) => ({ seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingCapabilities.map((k) => ({ seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => k.kind === "authored" ? (
+      // v0.1.64 CAP2a: a skill Arslan wrote, to save; the same frame and answers, with nothing to carry.
+      <SkillSaveCard card={k} callId={k.callId}
+        expiresAt={expires(k)} queue={queue}
+        onConfirm={(callId) => { send({ type: 'confirm_capability', call_id: callId }); clearPendingCapability(k.callId); }}
+        onCancel={(callId) => { send({ type: 'cancel_capability', call_id: callId }); clearPendingCapability(k.callId); }} />
+    ) : (
       <CapabilityProposeCard card={k} callId={k.callId}
         expiresAt={expires(k)} queue={queue}
         onConfirm={(callId, keys, folders) => { send({ type: 'confirm_capability', call_id: callId, keys, folders }); clearPendingCapability(k.callId); }}

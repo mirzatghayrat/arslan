@@ -55,7 +55,8 @@ ANSWERS = {
     "confirm_capability": True, "cancel_capability": False,   # 0.1.57 install and retry
 }
 #: Kinds approved only in the Arslan window that asked (never the Inbox, the phone or the
-#: island): the card may carry a key typed on it, and installing code wants the whole card.
+#: island): the card may carry a key typed on it, and installing code wants the whole card (as does saving
+#: a skill's whole text, v0.1.64 CAP2a).
 WINDOW_ONLY = {"propose_capability"}
 #: The permission kinds whose card is answered only where its whole card is shown, whatever type of frame carries it (0.1.57: installing
 #: code wants the whole card). The web names the same kinds (`WINDOW_ONLY_KINDS`, askParts.tsx); tests/server/test_card_kinds.py keeps them equal.

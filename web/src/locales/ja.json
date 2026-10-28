@@ -967,66 +967,6 @@
       "matched_tools": "{{tools}} を含む"
     }
   },
-  "forge": {
-    "intro": "自分の手法をスキルとしてパッケージ化します。候補はまず観察され、実在のスパーンの採点済み実行に対してゲートを通過し、その後あなたが昇格させます——ライブにするゲートはあなた自身です。こうして自作したスキルはライブラリに加わります。",
-    "create": {
-      "title": "スキルを作成",
-      "submit": "候補を鍛造",
-      "ok": "「{{name}}」を鍛造しました——下で観察中です。"
-    },
-    "fields": {
-      "key": "キー",
-      "name": "名前",
-      "category": "カテゴリ",
-      "description": "説明",
-      "descriptionHint": "1行の説明",
-      "body": "SKILL.md 本文",
-      "bodyHint": "メタデータと ## Trigger、## Decision Rules（判断ルール）の見出しが必要です。最大 15 KB。",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
-    },
-    "list": {
-      "title": "候補（{{count}}）",
-      "refresh": "更新",
-      "empty": "候補はまだありません——上で鍛造してください。"
-    },
-    "status": {
-      "observing": "観察中",
-      "proposed": "提案済み",
-      "promoted": "昇格済み",
-      "rejected": "却下",
-      "liveLabel": "ライブスキル"
-    },
-    "promote": {
-      "button": "昇格",
-      "confirm": "確認——ライブにする",
-      "cancel": "キャンセル",
-      "hint": "昇格は人間によるゲートです：この候補をライブで割り当て可能なスキルとしてライブラリに登録します。",
-      "ok": "昇格しました——「{{key}}」としてライブです。",
-      "blocked": "昇格がブロックされました。"
-    },
-    "reject": {
-      "button": "却下"
-    },
-    "curator": {
-      "usage": "昇格後 {{usage}} 回実行",
-      "score": "平均 {{score}}/10",
-      "noScore": "採点済みの実行はありません",
-      "flagUnused": "⚠ 未使用",
-      "flagUnderperforming": "⚠ 性能が低い",
-      "retire": "廃止",
-      "retireConfirm": "廃止して全割り当てを解除",
-      "cancel": "キャンセル",
-      "retireHint": "要確認です。廃止すると全割り当てが解除され、再割り当てできなくなります",
-      "retired": "「{{key}}」を廃止し、{{count}} 件のエキスパートから割り当てを解除しました。"
-    },
-    "modes": {
-      "title": "2 つの作成方法",
-      "a_title": "A · SKILL.md を貼り付け",
-      "a_desc": "既存の SKILL.md の本文を下のフォームに貼り付け、候補として作成できます。",
-      "b_title": "B · ガイド付きで作成",
-      "b_desc": "キー、名前、カテゴリー、説明、本文の順に方法を記述します。本文には ## Trigger と判断ルールを含めます。候補は実際の実行で評価され、あなたが昇格を決めます。"
-    }
-  },
   "msg": {
     "expand": "続きを表示",
     "collapse": "折りたたむ",

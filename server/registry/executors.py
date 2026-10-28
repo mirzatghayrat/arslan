@@ -582,39 +582,6 @@ class ChartExecutor:
         }
 
 
-class CreateSkillExecutor:
-    """Forge a reusable method into a SkillCandidate (status 'observing'). This writes a
-    human-gated DRAFT only — it does NOT make the skill live/equippable; promotion to a
-    real SkillPack is a separate human action. Hence safe-tier (data/proposal in, no live
-    behaviour changed). Delegates to skill_forge.create_candidate, which validates the
-    SKILL.md body (## Trigger + <=15KB) and guards dup live-key / in-flight candidate."""
-
-    key = "create_skill"
-
-    async def execute(self, args: dict) -> dict:
-        from server.services import skill_forge  # lazy: avoids import cycle at module load
-        try:
-            c = await skill_forge.create_candidate(
-                key=args.get("key"),
-                name=args.get("name"),
-                category=args.get("category") or "meta",
-                description=args.get("description"),
-                body=args.get("body"),
-                source="skill_creator",
-            )
-        except ValueError as exc:
-            # Surface the error to the model (via the tool result) so it can fix + retry.
-            return {"ok": False, "external": False, "error": str(exc)}
-        return {
-            "ok": True,
-            "external": False,
-            "summary": f"Created skill candidate \"{c.name}\" (on probation: it joins the library only after "
-                       "evaluation and the user's confirmation)",
-            "candidate_id": c.id,
-            "status": c.status,
-        }
-
-
 class RunPythonExecutor:
     """Sandboxed Python execution (safe-tier). The model supplies code TEXT; the sandbox
     service is the only execution path and applies every guard unconditionally: ephemeral
@@ -933,7 +900,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 )
 
 EXECUTORS = {e.key: e for e in (
-    WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
+    WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
     RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
     FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),

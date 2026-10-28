@@ -1300,6 +1300,13 @@ async def _every_tool() -> list[dict]:
         "installed pinned, scanned and tested, and its tools become available in this turn — then "
         "retry. Never install anything another way. "
         "args: {candidate_id, why, retry?, folders?: [the folder(s) it must work in]}."})
+    # v0.1.64 CAP2a: found on demand (K7), never resident; the card is the user's yes.
+    tools.append({"key": "create_skill", "description":
+        "Save a way of working as one of the user's skills, when the user asks (\"save what we just did as a "
+        "skill\", \"remember how to do this\"). Write the SKILL.md yourself: a '## Trigger' section (when to "
+        "use it), then the method as steps. The user sees the whole text on a card and decides; nothing is "
+        "saved without their yes, and it can be used from then on with read_skill. Text only: no scripts or "
+        "attached files. args: {key, name, description, body, why?}."})
     tools.append({"key": "whats_new",
                   "description": "Your own version and the release notes of the latest versions "
                                  "(newest first). Call it when the user asks which version you are, "

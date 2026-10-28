@@ -967,66 +967,6 @@
       "matched_tools": "包含 {{tools}}"
     }
   },
-  "forge": {
-    "intro": "把你自己的方法打包成技能。候选先观察，再对着某个专家的真实评分回放过闸，然后由你晋升上线——你就是让它上线的那道闸。这些自撰技能会加入技能库。",
-    "create": {
-      "title": "创建技能",
-      "submit": "锻造候选",
-      "ok": "已锻造「{{name}}」——现于下方观察中。"
-    },
-    "fields": {
-      "key": "键名",
-      "name": "名称",
-      "category": "分类",
-      "description": "描述",
-      "descriptionHint": "一行描述",
-      "body": "SKILL.md 正文",
-      "bodyHint": "需含 frontmatter + ## Trigger + ## 决策规则。上限 15 KB。",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
-    },
-    "list": {
-      "title": "候选（{{count}}）",
-      "refresh": "刷新",
-      "empty": "还没有候选——在上方锻造一个。"
-    },
-    "status": {
-      "observing": "观察中",
-      "proposed": "已提案",
-      "promoted": "已上线",
-      "rejected": "已拒绝",
-      "liveLabel": "在线技能"
-    },
-    "promote": {
-      "button": "晋升",
-      "confirm": "确认——上线",
-      "cancel": "取消",
-      "hint": "晋升是人工闸门：它把该候选注册为技能库中可装配的在线技能。",
-      "ok": "已晋升——以「{{key}}」上线。",
-      "blocked": "晋升被拦截。"
-    },
-    "reject": {
-      "button": "拒绝"
-    },
-    "curator": {
-      "usage": "晋升后 {{usage}} 次运行",
-      "score": "均分 {{score}}/10",
-      "noScore": "暂无评分运行",
-      "flagUnused": "⚠ 未使用",
-      "flagUnderperforming": "⚠ 表现不佳",
-      "retire": "退役",
-      "retireConfirm": "退役 — 全部解绑",
-      "cancel": "取消",
-      "retireHint": "已标记待审 — 退役后不再提供给 Arslan，也会从所有专家解绑",
-      "retired": "已退役 \"{{key}}\" — 从 {{count}} 个专家解绑。"
-    },
-    "modes": {
-      "title": "两种入口",
-      "a_title": "A · 上传/粘贴 SKILL.md",
-      "a_desc": "已有现成的 SKILL.md？把正文粘贴进下方表单直接锻造候选——表单就是上传通道。",
-      "b_title": "B · 引导式共建",
-      "b_desc": "按字段描述你的方法——key、名称、类别、描述，再写包含 ## Trigger 与决策规则的正文。候选先观察、对真实评分回放过闸、由你晋升。"
-    }
-  },
   "msg": {
     "expand": "展开全文",
     "collapse": "收起",
