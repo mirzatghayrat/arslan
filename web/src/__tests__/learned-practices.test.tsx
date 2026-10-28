@@ -130,6 +130,33 @@ describe("Brain › learned practices", () => {
     fireEvent.click(screen.getByTestId("confirm-action"));
     await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active"));
   });
+  it("Restore goes through the same sheet: a retired practice may never have been in effect (#460 review, F1)", async () => {
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([
+      lesson({ id: 3, status: "archived", text: "Calendar → AppleScript", situation: "Calendar", advice: "AppleScript",
+        not_in_effect: "outside_content", evidence: { not_in_effect: "outside_content" } }),
+      lesson({ id: 9, status: "archived", text: "Old way", not_in_effect: "retired" }),
+    ]);
+    const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
+    render(<><MemoryList /><ConfirmHost /></>);
+    fireEvent.click(await screen.findByText("companion.practiceRetired"));
+    const never = screen.getByTestId("practice-3");
+    expect(never).toHaveTextContent("companion.whyShort_outside_content");
+    expect(screen.getByTestId("practice-9")).not.toHaveTextContent("companion.whyShort_");
+    const restore = within(never).getByText("companion.practiceRestore");
+    await waitFor(() => expect(restore).not.toBeDisabled());          // the page has finished loading
+    fireEvent.click(restore);
+    const sheet = await screen.findByTestId("practice-open-sheet");
+    expect(sheet).toHaveTextContent("AppleScript");
+    expect(sheet).toHaveTextContent("companion.practiceWhyNot:companion.why_outside_content");
+    fireEvent.click(screen.getByText("companion.practiceNotNow"));
+    await waitFor(() => expect(screen.queryByTestId("practice-open-sheet")).toBeNull());
+    expect(set).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByTestId("practice-9")).getByText("companion.practiceRestore"));
+    expect(await screen.findByTestId("practice-open-sheet")).toHaveTextContent("companion.practiceWhyNot:companion.why_retired");
+    fireEvent.click(screen.getByTestId("confirm-action"));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(9, "active"));
+    expect(set).toHaveBeenCalledTimes(1);
+  });
   it("retire, pin and delete call the API; delete asks first", async () => {
     vi.spyOn(lessonsApi, "list").mockResolvedValue([lesson({ id: 4, text: "in use" })]);
     const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);

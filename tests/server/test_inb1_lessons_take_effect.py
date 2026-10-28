@@ -52,6 +52,12 @@ def _correction(advice, situation="Reading calendar events", **kw):
     return lessons.candidate(situation, advice, source="user_correction", **kw)
 
 
+async def _recalled(query):
+    """The ids recall() hands this turn's model (a local model, memory on)."""
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c", model_is_local=True)):
+        return [item["id"] for item in await lessons.recall(query)]
+
+
 # -- what Memory shows: every lesson that is not in effect says why ------------------------------
 
 async def _setting_off(db):
@@ -88,6 +94,7 @@ async def test_every_lesson_that_does_not_take_effect_is_listed_with_its_reason(
     assert learned["status"] == "proposed" and learned["not_in_effect"] == reason
     listed = {row.id: lessons.present(row) for row in await _rows(execution_db)}
     assert listed[learned["id"]]["not_in_effect"] == reason
+    assert learned["id"] not in await _recalled("reading calendar events with icalBuddy or AppleScript")
 
 
 async def test_a_lesson_in_effect_has_no_reason(execution_db, judge):
@@ -168,10 +175,12 @@ async def test_turning_a_lesson_on_in_memory_clears_why_it_waited(client):
                          evidence={lessons.NOT_IN_EFFECT: "conflicts", lessons.CONFLICTS_WITH: 7, "seen": 2})
     stopped = await _seed(db_session.AsyncSessionLocal, status="stale",
                           evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly", lessons.FAIL_STREAK: 3})
+    assert await _recalled("adding reminders with swift") == []
     for lesson_id in (waited, stopped):
         item = (await client.post(f"/api/v1/lessons/{lesson_id}/status", json={"status": "active"})).json()
         assert item["status"] == "active" and item["not_in_effect"] is None
         assert not {lessons.NOT_IN_EFFECT, lessons.CONFLICTS_WITH, lessons.FAIL_STREAK} & set(item["evidence"])
+    assert sorted(await _recalled("adding reminders with swift")) == sorted([waited, stopped])
     listed = {item["id"]: item for item in (await client.get("/api/v1/lessons?status=active")).json()}
     assert listed[waited]["evidence"] == {"seen": 2}                 # only the bookkeeping keys go
 
@@ -195,3 +204,30 @@ async def test_a_correction_against_a_pinned_lesson_waits_in_the_users_words(exe
     assert kept["evidence"][lessons.CONFLICTS_WITH] == first["id"]
     pinned, waiting, mine = await _rows(execution_db)
     assert (pinned.status, waiting.status, waiting.advice) == ("active", "proposed", "use AppleScript")
+
+
+# -- a retired lesson keeps saying why it was not in effect (#460 review, F1) -----------------------
+
+async def test_a_retired_lesson_that_never_took_effect_still_says_why(client):
+    """Memory's "Restore" switches a retired practice on, so it goes through the same sheet and needs
+    the same reason. A retired row may never have been in effect: a waiting one a conflicting
+    correction of the user's retired, or one the user declined before v0.1.64."""
+    from server.db import session as db_session
+    never = await _seed(db_session.AsyncSessionLocal, status="archived",
+                        evidence={lessons.NOT_IN_EFFECT: "outside_content"})
+    retired = await _seed(db_session.AsyncSessionLocal, status="archived", evidence={"seen": 2})
+    listed = {item["id"]: item for item in (await client.get("/api/v1/lessons?status=archived")).json()}
+    assert listed[never]["not_in_effect"] == "outside_content"
+    assert listed[retired]["not_in_effect"] == "retired"     # nobody knows whether it ever was in effect
+
+
+async def test_a_waiting_lesson_the_users_correction_retires_keeps_its_reason(execution_db, judge):
+    judge.answers.update({"memory.merge": False, "memory.conflict": False})
+    [outside] = await lessons.capture([_detour("use AppleScript")], external_seen=True)
+    judge.answers["memory.conflict"] = True
+    [mine] = await lessons.capture([_correction("use icalBuddy")], external_seen=False)
+    rows = {row.id: row for row in await _rows(execution_db)}
+    assert (rows[outside["id"]].status, rows[mine["id"]].status) == ("archived", "active")
+    assert lessons.present(rows[outside["id"]])["not_in_effect"] == "outside_content"
+    assert outside["id"] not in await _recalled("reading calendar events with AppleScript")
+

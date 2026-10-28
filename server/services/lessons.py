@@ -104,14 +104,19 @@ def render(lesson) -> str:
 
 
 def not_in_effect(row) -> str | None:
-    """Why a lesson is not in effect, as Memory shows it (INB1); None when it is active or the user
-    retired it. A waiting one with no reason written (learned before v0.1.64) counts as outside
-    content: nobody knows, so the safe answer."""
+    """Why a lesson is not in effect, as Memory shows it (INB1); None while it is active. A waiting
+    one with no reason written (learned before v0.1.64) counts as outside content: nobody knows, so
+    the safe answer. A retired one keeps the reason it never took effect for, when one is written
+    (a waiting lesson a conflicting correction of the user's retired): "Restore" switches it on, so
+    Memory shows that reason first (#460 review, F1). With none written it says "retired": it may
+    have been in effect, or declined by the user before v0.1.64."""
     reason = (row.evidence or {}).get(NOT_IN_EFFECT)
     if row.status == "proposed":
         return reason or "outside_content"
     if row.status == "stale":
         return reason or "failed_repeatedly"
+    if row.status == "archived":
+        return reason or "retired"
     return None
 
 

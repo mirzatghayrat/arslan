@@ -139,7 +139,8 @@ function IndexLine() {
  *  v0.1.64 (INB1): by state, each with why. In use; not in effect (read outside content, conflicts with
  *  another, the setting was off, …); stopped (followed in three failed turns in a row); retired (folded).
  *  Nothing waits for an OK: one that is not in effect is switched on here, after its full text and the
- *  reason are shown. */
+ *  reason are shown. "Restore" on a retired one goes through the same sheet: it may never have been
+ *  in effect (#460 review, F1). */
 function LearnedPractices({ lessons, busy, change }: {
   lessons: Lesson[]; busy: boolean; change: (operation: () => Promise<unknown>) => Promise<void>;
 }) {
@@ -151,9 +152,10 @@ function LearnedPractices({ lessons, busy, change }: {
   const retired = lessons.filter(lesson => lesson.status === "archived");
   const source = { user_correction: "companion.sourceUser", detour: "companion.sourceDetour", machine_quirk: "companion.sourceQuirk" } as const;
   // A waiting one learned before v0.1.64 has no reason written: the server counts it as outside content,
-  // and the page says it was not recorded.
+  // and the page says it was not recorded. A retired one with no reason written says "retired".
   const reasonOf = (lesson: Lesson) => lesson.status === "proposed" && !lesson.evidence?.not_in_effect ? "legacy"
-    : lesson.not_in_effect || (lesson.status === "stale" ? "failed_repeatedly" : "outside_content");
+    : lesson.not_in_effect || (lesson.status === "stale" ? "failed_repeatedly"
+      : lesson.status === "archived" ? "retired" : "outside_content");
   const remove = async (lesson: Lesson) => {
     if (await confirmSheet({ title: t("memoryPage.deletePracticeTitle"), body: t("memoryPage.deletePracticeBody"), action: t("companion.remove") }))
       await change(() => lessonsApi.remove(lesson.id));
@@ -179,21 +181,20 @@ function LearnedPractices({ lessons, busy, change }: {
       await change(() => lessonsApi.setStatus(lesson.id, "active"));
   };
   const row = (lesson: Lesson) => {
-    const inEffect = lesson.status === "active" || lesson.status === "archived";
+    const switchedOn = lesson.status === "active";
+    const reasonTag = !switchedOn && reasonOf(lesson) !== "retired";
     return <div key={lesson.id} data-testid={`practice-${lesson.id}`} className="memory-row group flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="break-words text-[14px] leading-snug">{lesson.text}</span>
         <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle-foreground">
-          {!inEffect && <Tag tone={lesson.status === "stale" ? "danger" : "ask"}>{t(`companion.whyShort_${reasonOf(lesson)}`)}</Tag>}
+          {reasonTag && <Tag tone={lesson.status === "stale" ? "danger" : "ask"}>{t(`companion.whyShort_${reasonOf(lesson)}`)}</Tag>}
           <Tag>{t(source[lesson.source])}</Tag>{lesson.pinned ? <Tag>{t("companion.practiceUnpin")}</Tag> : null}
           <span>{t("companion.practiceCounts", { recalled: lesson.recalled, followed: lesson.followed, succeeded: lesson.succeeded, failed: lesson.failed })}</span>
         </span>
       </div>
       <HoverActions>
-        {!inEffect ? <button className={actionClass} disabled={busy} onClick={() => void turnOn(lesson)}>{t("companion.practiceViewAndTurnOn")}</button>
-          : lesson.status === "archived"
-          ? <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "active"))}>{t("companion.practiceRestore")}</button>
-          : <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "archived"))}>{t("companion.practiceRetire")}</button>}
+        {switchedOn ? <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "archived"))}>{t("companion.practiceRetire")}</button>
+          : <button className={actionClass} disabled={busy} onClick={() => void turnOn(lesson)}>{t(lesson.status === "archived" ? "companion.practiceRestore" : "companion.practiceViewAndTurnOn")}</button>}
         {lesson.status === "active" && <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.pin(lesson.id, !lesson.pinned))}>{t(lesson.pinned ? "companion.practiceUnpin" : "companion.practicePin")}</button>}
         <button className={`${actionClass} !text-destructive`} disabled={busy} onClick={() => void remove(lesson)}>{t("companion.remove")}</button>
       </HoverActions>
