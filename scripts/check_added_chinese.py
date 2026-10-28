@@ -95,6 +95,9 @@ TRANSLATION_PATHS = (
     "server/services/project_templates.py",
     "README.*.md",
     "docs-site/**",
+    # The published copy docs-site/build.py writes: /docs/ in English, /docs/<lang>/ for the
+    # rest; every page's language menu names "简体中文" and "日本語" (main CI 40716975056, #428).
+    "docs/docs/**",
 )
 # §6 "data that has to match Chinese input" and "tests, evals and fixtures
 # whose input is Chinese". Markdown here is prose (a README in evals/ is a
