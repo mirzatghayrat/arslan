@@ -21,8 +21,8 @@
 | D4 | 聊天与后台 | **同一套规矩**，去掉「多步骤别在本轮做」。Hands 聊天 5 步上限：先请 ③Hands 说明它防什么，再定放宽多少 |
 | D5 | 跑分 | **v0.1.63：** M1 加 Claude Code 参赛（约 $25–50 / 轮）。<br>**v0.1.64 起：** 私下跑 Terminal-Bench 2.1 与 MacAgentBench，每版一次完整，平时抽样 |
 | D6 | 守卫 | **先全保留、不再拦流式**，由跑分决定哪些只对弱模型开 |
-| D7 | AI 审批员 | **v0.1.65 做窄版，默认关。** 只审本来就要问用户的卡；看不到工具结果；连续 3 次拒绝交还用户；出错不放行 |
-| D8 | ⓪Plan 提案 §7 第 1 条 | **撤回 10-11 的决定②「替我审批」**（整套）；删影子评判 |
+| D7 | AI 审批员 | **v0.1.65 做窄版，默认关。** 只审本来就要问用户的卡；看不到工具结果；连续 3 次拒绝交还用户；出错不放行。**Superseded 2026-10-28 (user):** the classifier moves into v0.1.64 as a "must", after SBX; D7's constraints all stay as launch conditions (see D8 and `docs/plans/0162/README.md` §8, #432). |
+| D8 | ⓪Plan 提案 §7 第 1 条 | **撤回 10-11 的决定②「替我审批」**（整套）；删影子评判。**Reversed 2026-10-28 by the user, with conditions** (after the cloud audit's Opus 5.5 rerun on #432): a classifier "yes" is recorded `by="reviewer"`, covers this one time, stores no rule or grant; it never approves layer ②'s "send it out" or network cards; background jobs only with the user's own opening message (`Job.origin`), otherwise off; launch gates a, b, c, d, h, g each with tests; D7's constraints; a ledger and a one-click off; pass lines for misses and false blocks written by the user before measuring. If any one is unmet, the classifier does not ship. The shadow judge stays deleted. |
 | D9 | ⓪Plan 提案 §7 第 2 条 | **保留「完全访问」**，只作为模式设置里的一个值（S5） |
 | D10 | ⓪Plan 提案 §7 第 3 条 | **降级 SSH：** 没登记机器时，不把远程工具给模型（折中见 U3） |
 | D11 | ⓪Plan 提案 §7 第 4 条 | **冻结项目**（两层）：本版不动、不加 |
