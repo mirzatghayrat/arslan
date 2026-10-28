@@ -8,6 +8,11 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
+| #453 | M64 hand check of r64-m64-base: missing keywords, one T15 extra; generic T2 words left out | `8532152f` (main CI 40723824079 running; it covers #470, #468, #469 and #465 too, whose own runs were cancelled by the next merge) |
+| #465 | Codex only for what a Claude review cannot cover | `579c606d` |
+| #469 | STY2 card: Arslan's working method, deeper not bigger | `4081d6d7` |
+| #468 | sessions.md §6: a new card has four lines | `756dd841` |
+| #470 | LANG1: exempt the published docs site under `docs/docs/` (fixes main's red `language` job) | `55582c65` |
 | #428 | Docs, site and READMEs to v0.1.63 | `319eef0e` |
 | #454 | STY 20-reply read test (prompts, fixture, blind side-by-side page) | `1a8d010f` |
 | #457 | CAP1b: migration 0074 drops `discovery_candidates` | `01354ad6` |
@@ -42,13 +47,9 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #462 (BR1): ①iOS found a gap after testing build 25 (once Allow was clicked the Bridge dropped to the 10 s pace before the new phone's first hello); ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. ①iOS rechecked it: OK (read the diff, relied on that CI run; no frame change). ①iOS does not post on PRs; its verdict is recorded here.
 - #456 (F5b-2): ②Main confirmed at `54805cfd`, CI 40677484593 success. After it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, with the Cua lines already planned after #428.
 - #443 (S64-0b): written by ③Hands; independent review by ②Main with its effort=max reviewer, OK at `390aa048`. Main merged in at `d2ab87e5`; CI 40712453311 success. No Astra under the new rule.
-- #453 (M64 hand-check fix): ⑥Helper OK at `a3a127f7` after dropping the generic T2 keywords; the rescore with those checks gives identical per-run verdicts (the table holds).
 - #458 (this page, SIDE card): ⑥Helper OK at `4cd3a0c0` (facts checked against GitHub); later commits only update this page.
 - #463 (BR2): ①iOS OK at `609de05d`, covering `d01381ec` (main merged in, one test line for C5b's renamed edit_file arguments); CI 40713934590 success. Bridge surface: the user merges.
 - #467 (who merges, sessions.md §5): ⑥Helper OK at `276c2afc`; `24020153` is its own nit (the authoring session watches main's CI).
-- #468 (a new card has four lines, sessions.md §6): ⑥Helper OK at `3a149de3`.
-- #469 (STY2 card: Arslan's working method, deeper not bigger): ⑥Helper OK at `74dd64f7`.
-- #470 (LANG1 fix: exempt the published site pages `docs/docs/**`): ⓪Plan OK at `63d35f47` (posted on the PR); CI 40719825007 success. It changes the language check's own exceptions, so the user merges it.
 - #471 (SBX-1: one profile builder, all five profiles on it): ③Hands, head `86e29b72`, CI 40720179706 success; byte-for-byte check 0 of 32 differ under hash seeds 0 and 1. ②Main's independent effort=max reviewer is on it. Security surface: the user merges, after #447.
 - #472 (CAP2a: the save-a-skill card; deletes Skill Forge, the curator and candidates): security surface; an independent effort=max review by ⓪Plan's reviewer is running. User merges.
 - #473 (CAP1c: migration 0075 drops `capability_finds`): ⑥Helper OK at `a09b0392`; ⑤CAP fills in the CI run id and the backup note (last three archives). Drops data, so the user merges.
@@ -56,9 +57,8 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 
 **Waiting for CI or a re-OK:**
 - #464 (code rules, sessions.md §12, card EXC1): ③Hands OK at `057fe7a6` on the PR; `b7059ff3` is its own wording; ③Hands posts that the OK covers it. Best merged after #447 (lane table moves SBX to ③Hands).
-- #465 (Codex only when a Claude review is blocked): ③Hands OK at `7c93e2ec`; one pointer added at `e075d479` (no recheck needed, per ③Hands).
 - #447 (SBX card): the user answered its seven questions (2026-10-28, ~15:20 UTC), written into the card at `18c88202`; ③Hands posted that the decisions section matches. `cac07791` adds one line from ③Hands' SBX-1 check (SBX-4 sorts `computation_profile`'s set-order lines). Decisions: network N-a (a minimal local proxy, no site list) if SBX-M's breakage is acceptable, otherwise the numbers go back to the user before N-b; manually added MCP servers stay unsandboxed and the form says so; reads stay open minus the protected and closed folders; keep today's card when the sandbox cannot start; "ask only when risky" stays off until S2a-3 and S5a; the re-run share is only recorded; `ssh_exec` onto the builder in SBX-1.
-- #466 (INB1 follow-ups F2, F4): the same effort=max reviewer rechecked `774f522c` (CI 40718871172 success): **Merge**. All fixes and the new 422 rule (`status=active` needs `expected_updated_at`) verified by mutation. One low item left: stopped rows share the 500-row scan window, so with more than 500 lessons an old active rival can be pushed out; a three-line fix is with ②Main to fold in before the merge. The conditional UPDATE (finding 4) is the user's call. Learned-practice write: the user merges.
+- #466 (INB1 follow-ups F2, F4): the same effort=max reviewer rechecked twice; at `759a6bb2` (the scan-window fix and the F2 test nit added): **merge** once CI 40723524451's macos job is green (the other four passed). The conditional UPDATE (finding 4) is the user's call. Learned-practice write: the user merges.
 
 ## In progress
 
@@ -76,7 +76,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - Two classifier pass lines in #444: X% of the approvable scope (⓪Plan suggests ≥ 70%) and the failure fallback cap (≤ 5%).
 - C7c questions 1, 2, 3 (DELETE-BY move for `/brain/proposals*`), 4.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md` (#447).
-- Making the `language` CI job a required check (branch protection). **Wait for ⑥Helper's fix first:** main's `language` job is red on `319eef0e` (CI 40716975056) because the published site pages `docs/docs/zh/` and `docs/docs/ja/` from #428 are not in the exceptions; ⑥Helper adds them (#428 itself is right; no revert).
+- Making the `language` CI job a required check (branch protection). The fix for main's red `language` job (#470) is merged; check main CI 40723824079 is green before making it required.
 - The side-chat mock (SIDE-0), when it comes.
 
 ## Spend
