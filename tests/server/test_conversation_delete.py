@@ -1,5 +1,5 @@
 """REST API tests for DELETE /conversations/{id} — purge a conversation's OWN
-rows while deliberately KEEPING runs + router_decisions (audit/diagnosis data)."""
+rows while deliberately KEEPING runs (audit/diagnosis data)."""
 from __future__ import annotations
 
 import importlib
@@ -14,7 +14,6 @@ from server.db.models import (
     ArslanMessage,
     Base,
     ConversationEvent,
-    RouterDecision,
     Run,
 )
 from server.services import permission_store
@@ -59,7 +58,6 @@ async def test_delete_purges_own_rows_keeps_runs(client):
         db.add(ArslanMessage(conversation_id=cid, role="arslan", content="hello"))
         db.add(ConversationEvent(conversation_id=cid, kind="distill", summary="grew"))
         db.add(Run(conversation_id=cid, user_message="hi", status="recorded"))
-        db.add(RouterDecision(conversation_id=cid, user_message="hi", action="answer"))
         await db.commit()
 
     r = await client.delete(f"/api/v1/conversations/{cid}", headers=AUTH)
@@ -81,7 +79,6 @@ async def test_delete_purges_own_rows_keeps_runs(client):
         assert await _count(ConversationEvent) == 0
         # audit/diagnosis rows deliberately KEPT
         assert await _count(Run) == 1
-        assert await _count(RouterDecision) == 1
 
 
 async def test_delete_drops_the_conversations_permission_grants_and_keeps_the_ledger(client):
