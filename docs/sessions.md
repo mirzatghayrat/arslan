@@ -63,10 +63,29 @@
   - K 线 PR 要贴跑分的前后对比，没有对比不合。
 - **合并顺序**由依赖图决定，不是先到先得。顺序表在当轮 README。
 - **Who merges (user, 2026-10-28; relayed by ④参谋 and confirmed by the user in ⓪Plan's chat; replaces U9 for merging):**
-  - **Not on the security surface** (docs, plan cards, bench scripts, deletion-only PRs, tests): once the PR has another session's OK **at its current head** and green CI on that head, the authoring session enables GitHub auto-merge (`ccd_pr` `set_auto_merge`). GitHub merges when the required checks pass. A plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user; don't work around it or ask another session to do it.
-  - **On the security surface** (the outside-content mark, the sandbox, the classifier, command policy, permissions and confirm cards, the five modes, Bridge frames): the user merges.
+  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session's OK **at the current head**, and **every** check on that head green (not only the required ones; the `language` job, for example, is not required yet). The authoring session enables auto-merge with `ccd_pr` `set_auto_merge`; GitHub merges when the required checks pass.
+  - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping) unless the user says otherwise. The security surface here means:
+    - the outside-content mark;
+    - the sandbox;
+    - the classifier;
+    - command policy;
+    - permissions and confirm cards;
+    - the five modes;
+    - the Bridge (pairing, keys, frames, what it offers the phone);
+    - secrets and credential storage;
+    - network egress checks (`net_pin`, the SSRF allowlist);
+    - capability and MCP install checks;
+    - memory and learned-practice writes;
+    - Hands' policy;
+    - CI and repository settings (`.github/workflows/`, branch protection, required checks);
+    - dependency and lock changes (`pyproject.toml`, `uv.lock`, `package.json` and lockfiles);
+    - migrations that drop data.
+
+    Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
+  - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
-  - **Whoever merged watches main's CI** for that merge commit. If it goes red, revert the merge in a new PR, enable auto-merge on the revert, and say so in STATUS and to the author.
+  - **Whoever merged watches main's CI** for that merge commit. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the merger may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
+  - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
   - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
 - **rebase 纪律：**
   - 开 PR 前和合并前，各 rebase 一次到最新的目标分支（一般是 main；热修线是 `release/0.1.62`，见 §7）；
