@@ -182,18 +182,20 @@ CAP 有 17 个 PR，单开一个会话（像 v0.1.63 的 ⑤C6、⑥C7），本 
 
 main 上最新是 0070。这一版预计要的（开工时向 ②Main 申请、在这里登记）。**每个删表的迁移单独一个 PR，排在用到它的代码删掉之后**：代码能回退，表回退不了（②Main）。
 
-| 卡 | 要的迁移 |
-|---|---|
-| Q1 + SUB | `conversation_contexts` 加存下来的 `kind`（今天 `conversations.result` 里的 `kind` 是每次读时算出来的）、父对话 id、标题（①iOS 建议这一版先不改名）；一次迁移，两张卡共用，Q1 先申请，下一个可用号是 0071。**不是每段对话都有 `conversation_contexts` 这一行**：读的地方一律把没有这一行当作 `chat` |
-| C7c | 旧专家数据转换，删专家表、记忆 v1 旧表、`router_decisions` |
-| CAP1 | 删 `discovery_candidates`、`capability_finds`（`models.py:401`） |
-| CAP2 | 删候选表 `skill_candidates`（要先改 `seeder.py:85-95` 和 `run_redact` 里对它的依赖） |
-| CAP7 | 重建 `capability_sources`：它有 `CHECK (kind IN ('mcp','skill'))`（`models.py:364`，0064 建的），插件要加一种 |
-| CAP3 / SUB | 专业工作方法并进技能的话，`professional_methods`、`professional_method_versions` 两张表也删，或者写 `DELETE-BY` |
-| INB4 | 「做完未看」的已读标记（新表，名字以 INB 卡为准） |
-| INB2、INB6 | 记忆提案挪到「待整理」（INB2 可能要一个迁移）；进展页缺的运行数据（INB6，如果要加列） |
-| SUB6 | 删 `task_workers` 表；迁移 0052 今天 import 了 `TaskWorker`，删类之前要让 0052 在新装上照样能跑 |
-| S2a 跟进 | 清理旧的 `legacy_rule` 权限行 |
+| 卡 | 要的迁移 | Number |
+|---|---|---|
+| Q1 + SUB | `conversation_contexts` 加存下来的 `kind`（今天 `conversations.result` 里的 `kind` 是每次读时算出来的）、父对话 id、标题（①iOS 建议这一版先不改名）；一次迁移，两张卡共用，Q1 先申请，下一个可用号是 0071。**不是每段对话都有 `conversation_contexts` 这一行**：读的地方一律把没有这一行当作 `chat` | 0071 (Q1) |
+| C7c | 旧专家数据转换，删专家表、记忆 v1 旧表、`router_decisions` | 0073 (C7c-2; must use `DROP TABLE IF EXISTS`: on a fresh database the table is already absent) |
+| CAP1 | 删 `discovery_candidates`、`capability_finds`（`models.py:401`） | 0074 (CAP1b), 0075 (CAP1c) |
+| CAP2 | 删候选表 `skill_candidates`（要先改 `seeder.py:85-95` 和 `run_redact` 里对它的依赖） | — |
+| CAP7 | 重建 `capability_sources`：它有 `CHECK (kind IN ('mcp','skill'))`（`models.py:364`，0064 建的），插件要加一种 | — |
+| CAP3 / SUB | 专业工作方法并进技能的话，`professional_methods`、`professional_method_versions` 两张表也删，或者写 `DELETE-BY` | — |
+| INB4 | 「做完未看」的已读标记（新表，名字以 INB 卡为准） | — |
+| INB2、INB6 | 记忆提案挪到「待整理」（INB2 可能要一个迁移）；进展页缺的运行数据（INB6，如果要加列） | 0072 (INB2) |
+| SUB6 | 删 `task_workers` 表；迁移 0052 今天 import 了 `TaskWorker`，删类之前要让 0052 在新装上照样能跑 | — |
+| S2a 跟进 | 清理旧的 `legacy_rule` 权限行 | — |
+
+Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0074 CAP1b, 0075 CAP1c. The next free number is 0076; a card that needs one asks ②Main and logs it here.
 
 ## 7. 门槛（R64，草稿）
 

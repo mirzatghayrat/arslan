@@ -1,6 +1,6 @@
 # SBX: a default-deny sandbox, and one sandbox for everything
 
-> Draft by ⓪Plan, 2026-10-28, for the v0.1.64 plan (`docs/plans/0164/README.md` §3.2, row SBX). Code read on `origin/main`: `3759f57b` for the code (unchanged at `11f05434`, which only adds #432's text to `docs/plans/0162/README.md` and `STATUS.md`). Every `file:line` below was read for this card. The #432 text is cited at `11f05434` (`docs/plans/0162/README.md:326-370`), because it is not in `3759f57b`'s copy of that file.
+> Draft by ⓪Plan, 2026-10-28, for the v0.1.64 plan. Revised the same day after ②Main's and ③Hands' reviews on #447 (issuecomment-6465940944, issuecomment-6466034420); their additions are marked "(②Main)" or "(③Hands)". Plan row: `docs/plans/0164/README.md` §3.2, SBX. Code read on `origin/main`: `3759f57b` for the code (unchanged at `11f05434`, which only adds #432's text to `docs/plans/0162/README.md` and `STATUS.md`). Every `file:line` below was read for this card. The #432 text is cited at `11f05434` (`docs/plans/0162/README.md:326-370`), because it is not in `3759f57b`'s copy of that file.
 
 | Item | Content |
 |---|---|
@@ -8,16 +8,16 @@
 | Version | v0.1.64 |
 | Tier | Must (user, 2026-10-22, lead roadmap §0.6 item 1; again 2026-10-28, `docs/plans/0164/README.md:43`) |
 | Depends on | Nothing in the security chain comes before it. #432 is decided (`docs/plans/0164/README.md:41-43`). S64-0 (#438) is independent. SBX-M (the measurement on a Mac) needs the user at the Mac only to start it; it uses no keys. |
-| Merge position | First in the security chain (`docs/plans/0164/README.md:158-164`). **All SBX code PRs merge before ③Hands rebases S2a-3** (#375 / #376 / #378 / #396). S5a comes after SBX and S3 undo. HR comes after SBX and S2a-3. CAP's untrusted-code parts (CAP5, CAP6a, CAP7b, CAP10) and SUB come after SBX; CAP6b is part of SBX. L6 comes after SBX. Any PR that touches `tool_loop.py` goes after the open K-line PRs (`docs/sessions.md` §3). The aim is for SBX not to touch `tool_loop.py` at all (see "Files to change"). |
+| Merge position | First in the security chain (`docs/plans/0164/README.md:158-164`). **All SBX code PRs merge before ③Hands rebases S2a-3** (#375 / #376 / #378 / #396). S5a comes after SBX and S3 undo. HR comes after SBX and S2a-3. CAP's untrusted-code parts (CAP5, CAP6a, CAP7b, CAP10) and SUB come after SBX; CAP6b is part of SBX. L6 comes after SBX. Any PR that touches `tool_loop.py` goes after the open K-line PRs (`docs/sessions.md` §3). The aim is for SBX not to touch `tool_loop.py` at all (see "Files to change"). Why S2a-3 waits, and which of its PRs really depend on SBX: "Order with S2a-3" below. |
 | Gates it moves | Lead roadmap §0.6 item 1 (`docs/plans/2026-10-17-0162-lead-roadmap.md:83-85`). Row D "sandbox" (`lead-roadmap.md:249`). It is the precondition for "ask only when risky" coming back, for the classifier's baseline (CLS, S5b), for S5a, for HR, and for CAP's untrusted-code PRs. R64's security gate. |
-| Branches | `claude/0164-sbx1-profile-builder`, `claude/0164-sbx2-deny-default-base`, `claude/0164-sbx3-commands`, `claude/0164-sbx4-python-mcp-checks`, `claude/0164-sbx5-run-later-and-cap6b`, `claude/0164-sbx6-proxy-port` (only if the user picks option N-a in Q1), `claude/0164-sbx7-counts`, `docs/0164-sbx-measurement` (SBX-M and SBX-8 reports) |
-| Migration | None expected. The ledger already has a JSON `extra` column (`server/db/models.py:493-517`, field `extra` at `:509`). The local denial count is derived from what is recorded (SBX-7). If SBX-7 finds it needs a column, it asks ②Main for the next free number (0071 is Q1's, `docs/plans/0164/README.md:187`). |
+| Branches | `claude/0164-sbx1-profile-builder`, `claude/0164-sbx2-deny-default-base`, `claude/0164-sbx3-commands`, `claude/0164-sbx4-python-mcp-checks`, `claude/0164-sbx5-cap6b-caches`, `claude/0164-sbx6-proxy-port` (only if the user picks option N-a in Q1), `claude/0164-sbx7-counts`, `docs/0164-sbx-measurement` (SBX-M and SBX-8 reports) |
+| Migration | None expected. The ledger already has a JSON `extra` column (`server/db/models.py:493-517`, field `extra` at `:509`). The local denial count is derived from what is recorded (SBX-7). If SBX-7 finds it needs a column, it asks ②Main for the next free number, which comes after 0075 (0071 Q1, 0072 INB2, 0073 C7c-2, 0074 CAP1b, 0075 CAP1c; `docs/plans/0164/README.md` §6). |
 
 ## Goal
 
 1. **One default-deny profile** shared by commands (`run_command`), `run_python`, installed MCP servers and artifact checks. It is one base with the same text everywhere. Each surface adds only its own parameters: writable roots, readable extras, and network mode.
-2. **System services pass only through an allowlist** (mach services, preferences, signals, IPC). This is the layer that holds the daemon-mediated escape class (correction A).
-3. **Network only to the local proxy port**, plus whatever S2a-1's rules allow. S2a-1's cut stays: after outside content, commands run offline unless the user's click says otherwise (`server/orchestrator/tool_loop.py:1245-1291`). Whether a proxy exists in v0.1.64 is Q1.
+2. **System services pass only through an allowlist** (mach services, unix-domain sockets, preferences, signals, POSIX IPC and shared memory, XPC, ptys, `/dev` entries). This is the layer that holds the daemon-mediated escape class (correction A).
+3. **Network only to the local proxy port**, plus whatever S2a-1's rules allow, plus loopback for local dev servers (never Arslan's own port; listening on localhost only; §3). S2a-1's cut stays: after outside content, commands run offline unless the user's click says otherwise (`server/orchestrator/tool_loop.py:1245-1291`). Whether a proxy exists in v0.1.64 is Q1.
 4. **Measure on a real Mac** before anything relies on it. Then bring back "ask only when risky" and measure the cards again. That number is the classifier's baseline, not a go/no-go (user, 2026-10-28, `docs/plans/0162/README.md:359` at `11f05434`).
 5. **Record two numbers** from SBX onward:
    - the local count of sandbox denials (never uploaded);
@@ -54,7 +54,7 @@
 
 ### Writable and protected paths
 
-- Writable roots: the working folder, the temp roots, `/dev` (all of it), `~/Library/Caches`, `~/.cache` and `~/.npm` (`command_sandbox.py:79-82`). The whole cache folders are writable.
+- Writable roots: the working folder, the temp roots, `/dev` (all of it), `~/Library/Caches`, `~/.cache` and `~/.npm` (`command_sandbox.py:79-82`). The whole cache folders and the whole of `/dev` are writable.
 - **"Temp" today is shared, not per run:**
   - `temp_roots()` (`command_sandbox.py:67-76`) takes the **parent** of `$TMPDIR`'s `T`, which is the per-user `/var/folders/…/` folder holding both `T` and the user cache `C` (docstring `:68-69`, code `:70-71`);
   - it adds macOS's own per-user folder (`:56-64`, `:73-75`), which is the same parent;
@@ -65,6 +65,9 @@
 - **Paths are resolved before they go into the profile** (`command_sandbox.py:10-13`, `_real` at `:49-50`, `_resolved` at `:85-91`), because seatbelt matches real paths.
 - Protected (no read or write, files and sockets, last rule wins): Arslan's data, `~/Library/Application Support/Arslan`, `~/.arslan`, the updater key, the signing backup and Hands' folder (`command_sandbox.py:94-104`), plus the user's secrets: `.ssh`, `Library/Keychains`, cloud CLIs, `.netrc`, `.npmrc`, `.pypirc`, `.gnupg`, browser profiles, cookies (`:109-118`). Combined at `:121-124`.
 - **What runs later is not in the kernel's list at all** (input for HR, which owns e). Shell startup files, `~/.gitconfig`, `Library/LaunchAgents`, and other agents' settings (`.claude/`, `.codex/` …) are guarded only by the parser's `protected-write` rule (`server/services/terminal_policy.py:121-133`, `:185-192`). In the kernel they are protected only by not being in a writable root. When the working folder is wide (for example `~`, which `server/registry/file_tools.py:407` mentions as possible), all of them are writable to a sandboxed command. Inside any working folder, the files on HR's list (git hooks and config, editor tasks, agent files, package-manager configs, CI workflows) are always writable.
+- **Unix-domain sockets outside the protected roots are reachable** under `(allow default)`: only sockets under protected paths are closed (`command_sandbox.py:161-164`). Commands do not inherit `SSH_AUTH_SOCK` (`server/mcp/spawn_env.py:23-31`, not in `_AMBIENT_KEYS`), but with reads open an agent socket is easy to find (launchd's ssh-agent socket under `/private/tmp/com.apple.launchd.*/`, third-party agents under `~/Library/Group Containers/`, `gpg-agent`, Docker's socket). So a sandboxed command can use the user's ssh keys through the agent although `.ssh` itself is protected (inference, ②Main and ③Hands; not measured).
+- **Loopback is open:** a sandboxed command can reach every local TCP service, including Arslan's own API port and a local database or Docker API (②Main). The API token is not in a command's environment (`spawn_env.py:26-31`) and its file is in the protected data folder. Listening is not limited to localhost either, so a sandboxed server can be reachable from the LAN (③Hands).
+- **Commands inherit Arslan's TCC grants** (③Hands, inference). If the user gave Arslan Full Disk Access, open reads reach Mail, Messages, Safari and Photos data. Today only Desktop / Documents / Downloads can be closed, and only when the user turns them off (`server/registry/executors.py:792-799`, `command_sandbox.py:21-26`).
 - Skill scripts live in the data folder (CAP card, citing `skill_import.py:281`), so `arslan_protected` covers them today. `~/.agents/skills` and a plugin folder do not exist yet (CAP6a / CAP7 create them).
 - `write_file` / `edit_file` are confined to the working folder (`server/services/workspace_paths.py:52-99`). They do **not** consult `default_protected()`. Its only consumers are `attach_file` (`file_tools.py:408`), `capability_sandbox` (`:63`) and checkpoints (`server/services/checkpoints.py:194`).
 
@@ -73,6 +76,7 @@
 - In the sandbox the network is open (`(allow default)`). After outside content, S2a-1 runs commands offline under the kernel rule, inside the sandbox and under the outside floor. A command that visibly reaches the network asks first (`tool_loop.py:1245-1291`). The text detector is `_NETWORK_COMMAND` (`server/orchestrator/untrusted.py:84-86`).
 - **No local proxy exists for commands.** The proxy code in `server/` is the browser's CONNECT tunnel (`server/services/browser_proxy.py:1-25`, public destinations, port 443, chains through a system HTTP proxy) and MCP env proxy resolution (`server/mcp/proxy_resolve.py:1-7`).
 - Seatbelt can confine a port but not a host. `(remote tcp "<ip>:22")` is rejected ("host must be * or localhost"), while `*:22` and `localhost:<port>` are accepted (`ssh_exec.py:9-23`, measured 2026-08-21). So "only the local proxy port" is expressible.
+- **Measured by ③Hands on this Mac (macOS 26.6.2, build 25G83, arm64), 2026-10-28:** today's offline profile (`(allow default)(deny network*)`) **also blocks name resolution**. `dscacheutil -q host` returns no address and `nc`'s `getaddrinfo` fails; the control without the deny resolves and connects. So S2a-1's offline cut does not leak through the system resolver on macOS 26.6.2. Measured with `sandbox-exec` directly (`env -i`, scratch HOME), not through Arslan's wrapper; SBX-M repeats it on the new base in each network mode.
 
 ### The command layers and "ask"
 
@@ -97,16 +101,17 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 | File | Which PR | What |
 |---|---|---|
 | `server/services/sandbox_profile.py` (new) | SBX-1, SBX-2 | The one SBPL builder: base (deny default, the system-service allowlist, system reads), per-surface parameters (writable roots, readable extras, protected, closed / reopened, network mode: none / proxy port / any-declared / port 22), JSON-quoted paths, last-rule-wins ordering, protected last |
-| `server/services/command_sandbox.py` | SBX-1, SBX-3, SBX-5 | Becomes the commands' preset on the builder; `available()` probes the real profile; denial detection beyond EPERM; the private TMPDIR replaces `temp_roots()` (`:67-76`); the tagged writable-root list and the resolved `in_scope()` helper for CLS (§1b); the `deny_write_after_roots` parameter HR fills (§e); CAP6b paths |
+| `server/services/command_sandbox.py` | SBX-1, SBX-3, SBX-5 | Becomes the commands' preset on the builder; `available()` probes the real profile; denial detection beyond EPERM; the private TMPDIR replaces `temp_roots()` (`:67-76`); the tagged writable-root list and the resolved `in_scope()` helper for CLS (§1b); the `deny_write_after_roots` parameter HR fills (§e); the narrowed `/dev` list; the closed app-data folders (§1); CAP6b paths |
 | `server/services/code_sandbox.py`, `server/services/artifact_validation.py` | SBX-4 | `computation_profile` becomes the strictest preset on the same base (no network, no services beyond the base); delete `_SEATBELT_PROFILE` (§11: replaced, so removed) |
 | `server/services/capability_sandbox.py` | SBX-4, SBX-5 | Drop `(allow mach-lookup)` (`:49`) for the shared allowlist; network = proxy port (or as today, per Q1); exclude the CAP6b folders even inside granted folders |
-| `server/services/ssh_exec.py` | SBX-1 only | The same text produced by the builder, byte for byte (no behaviour change; Q9) |
+| `server/services/ssh_exec.py` | SBX-1 only | The same text produced by the builder, byte for byte (no behaviour change; Q7) |
 | `server/services/terminal_exec.py` | SBX-3, SBX-7 | `TMPDIR` = the run's private folder instead of the process temp (`:165-168`); denial code on the result; "unavailable" handling unchanged |
 | `server/services/execution_context.py` (or wherever a Run's lifetime ends) | SBX-3 | Create and remove the run's private TMPDIR |
-| `server/services/command_confirm.py` | SBX-7 | `Request.extra = {"sandbox": "retry" | "outside"}` so the ledger row says which card it was |
+| `server/services/command_confirm.py` | SBX-7 | `Request.extra = {"sandbox": "retry" | "outside"}` so the ledger row says which card it was. `permissions.py` does not change: `_record_in` already writes `req.extra` into the row (`server/services/permissions.py:609-620`; ②Main) |
 | `server/services/sandbox_proxy.py` (new) | SBX-6 (only with Q1 option N-a) | A minimal local forward / CONNECT proxy on a loopback port, no site list (NET adds the list), chaining through the system proxy as `browser_proxy` does |
 | `scripts/usage_report.py` | SBX-7 | Two rows: sandbox denials per week, re-run cards per week (counts only, as the file's rules say, `:10-17`) |
-| `scripts/kernel_bench/arslan_driver.py`, `scripts/kernel_bench/report.py` | SBX-7 | Split `sandbox_cards` into `outside_cards` and `retry_cards`; report the retry share |
+| `scripts/kernel_bench/arslan_driver.py`, `scripts/kernel_bench/report.py` | SBX-7 | Split `sandbox_cards` into `outside_cards` and `retry_cards`; report the retry share (overlaps: "File overlaps" below) |
+| Cache redirection (in `terminal_exec.py`'s child environment and the MCP preset's env) | SBX-5 | Arslan-owned cache folders for sandboxed tools (§1c) |
 | `tests/server/sbx/` (new, marker `macos` plus a new `sbx_mac` marker for the corpus) | SBX-2 … SBX-7 | Golden profile texts, real-seatbelt behaviour tests (macOS CI job, `.github/workflows/ci.yml:189-190`, `:307`), the SBX-M corpus |
 | `docs/plans/0164/SBX-measurement.md` (new) | SBX-M, SBX-8 | The measurement report (exactly what was measured, on which macOS, which profile hash) |
 | `SECURITY.md`, `docs/ARCHITECTURE.md` | SBX-3, SBX-4 | The sentences about the command sandbox and MCP sandbox, in the words of the code (#298b rewrites the command section later; SBX only stops the docs promising something false) |
@@ -132,11 +137,16 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - `signal` to the same sandbox only;
   - `sysctl-read`;
   - the system-service allowlist (§2);
+  - **IPC, named in the base, not left to `allow default`** (②Main, ③Hands): POSIX shared memory and semaphores (`ipc-posix-shm*`, `ipc-posix-sem*`; Python `multiprocessing`, node workers) only for names the run itself creates, by a per-run prefix where seatbelt can filter by name, never shared with other processes; XPC only to services on the allowlist; ptys (`pseudo-tty`, the `file-ioctl` they need) for tools that open one;
+  - **`/dev` narrowed** (②Main, ③Hands): writable only `/dev/null`, `/dev/zero`, `/dev/tty`, the pty devices, `/dev/fd/*`, `/dev/stdout`, `/dev/stderr`, and `/dev/dtracehelper` if the corpus needs it; instead of all of `/dev` (`command_sandbox.py:81`). The list is written into §1b's `device` tag;
+  - **unix-domain sockets by allowlist only** (§2);
+  - **loopback by the rule in §3**;
   - writes only to the preset's writable roots.
 
-  Protected paths are always the last rules. Reads stay open on purpose: default-deny reads would break most toolchains (Homebrew, pyenv, nvm, Xcode), and today's protection model is the protected list. Q4 asks the user to confirm.
+  Protected paths are always the last rules. Reads stay open on purpose: default-deny reads would break most toolchains (Homebrew, pyenv, nvm, Xcode), and today's protection model is the protected list. Q3 asks the user to confirm.
+- **Closed app data, whatever Arslan was granted** (③Hands; part of Q3): commands inherit Arslan's TCC grants, so with Full Disk Access open reads would reach other apps' private data. The commands preset closes Mail, Messages, Safari and Photos data folders to reads and writes, the same way the 0.1.59 Desktop / Documents / Downloads closure works (`command_sandbox.py:21-26`, `:152-160`), except that these are always closed, not only when a setting is off. The outside floor does not close them: outside is the user's click, as today. The exact folder list is fixed in SBX-3 and tested by path (Mail's, Messages', Safari's and the Photos library's locations under `~/Library`).
 - Presets:
-  - commands: working folder, the run's private TMPDIR (§1a), and the caches as Q5 decides;
+  - commands: working folder, the run's private TMPDIR (§1a), and Arslan-owned caches (§1c);
   - outside floor: unchanged plus CAP6b;
   - `run_python` / artifact checks: today's computation profile, with reads narrowed exactly as today;
   - MCP: its own root and the user's granted folders;
@@ -146,12 +156,20 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 ### 1a. A private TMPDIR per run
 
-- Each Run (`execution_context`) gets its own temp folder: created with `0700` under Arslan's own temp area, resolved, and removed when the run ends. Commands get it as `TMPDIR` (and bash here-documents land there after S2a-3 a).
+- Each Run (`execution_context`) gets its own temp folder: created with `0700`, resolved, and handed to commands as `TMPDIR` (bash here-documents land there after S2a-3 a, which honours `TMPDIR`).
+- **Location: outside every protected root** (③Hands). Arslan's data folder is protected and the last rule wins, so a TMPDIR under it would be denied. It goes under the per-user `T` folder, with only that sub-folder writable (not `T` itself).
+- **Lifetime** (②Main, ③Hands): a run can hold several commands at once, and a command can leave a process running (`cmd &`, `nohup`, a dev server; L6's background processes later). Every command of the run shares the run's folder. It is removed only after the run's process groups are gone: SBX-3 removes it when the run ends and no process started in the run is left; otherwise it stays, and the next start of Arslan sweeps folders whose run is over and whose processes are gone. A process that outlives its temp folder is a compatibility issue, not a security one. Tested with a backgrounded child.
 - The commands preset makes that folder writable **instead of** today's temp roots:
   - no shared per-user `/var/folders/…/` parent (so not the shared `C` cache);
   - no `/private/tmp`;
   - no `/private/var/tmp`.
-- macOS tools that write to the Darwin per-user cache whatever `TMPDIR` says (`command_sandbox.py:56-59`: swift) are measured in SBX-M. If one needs it, only its sub-folder is reopened, and it counts as a shared cache (outside the classifier's scope), not as temp.
+- **Tools that ignore `TMPDIR`** (②Main, ③Hands), measured in SBX-M:
+  - hardcoded `/tmp` in scripts and tools (`/tmp/foo` written directly): seatbelt cannot remap paths, so these fail once `/private/tmp` is not writable. **Expected to be the largest source of re-run cards** (Risks);
+  - `mktemp` with and without `-t`, Python `tempfile` (should follow `TMPDIR`; checked);
+  - Apple frameworks and `confstr(_CS_DARWIN_USER_TEMP_DIR)` users, which write to `T` itself;
+  - tools that write the Darwin per-user cache `C` whatever `TMPDIR` says (`command_sandbox.py:56-59`: swift).
+
+  If one of these is needed, only its sub-folder is reopened, and it counts as a shared cache (outside the classifier's scope), not as temp.
 - S3's checkpoint does not cover temp (`checkpoints.py:3-5`). A private, per-run folder that is deleted at the end means nothing the run left in temp outlives it. The card states this, so "undo" is not read as covering temp.
 
 ### 1b. Writable roots and the classifier's scope
@@ -159,14 +177,22 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 - The builder returns, with each commands profile, a typed list of its writable roots, each tagged as one of:
   - `in_scope` (the work folder, the run's private TMPDIR);
   - `shared_cache` (`~/.npm`, `~/.cache`, `~/Library/Caches`, and any reopened Darwin cache sub-folder);
-  - `device` (`/dev` entries).
+  - `device` (the narrowed `/dev` entries, §1).
 - CLS reads only `in_scope` (`docs/plans/0164/README.md:80`: "allow" only for effects inside the sandbox's writable area). A write that lands in a shared cache is outside the scope, so no classifier "yes" covers it.
 - **Scope checks run on resolved paths.** Every root is stored resolved (`_real`, `command_sandbox.py:49-50`). The helper CLS calls (`in_scope(path)`) resolves its argument the same way before comparing, so a symlink in the work folder that points elsewhere is judged by where it points. Tests: a link to a shared cache, a link to `~`, `/var` vs `/private/var`, a `..` path, a missing tail segment.
+- **Hard links** (③Hands): resolving does not help with a hard link, which is a second name for the same file. A real-seatbelt test creates, inside the work folder, a hard link to a same-volume scratch file outside the writable roots (a stand-in for a shell startup file) and checks that creating the link, or writing through it, is refused. If seatbelt lets the write through, the work folder is a write path to any same-volume file the user owns, and no path rule in HR can close it. SBX-M then says so, and the fix becomes a kernel-side rule or a check before running (a follow-up decided with ③Hands).
 - SBX only provides and tests the list and the helper. How CLS uses them is CLS's card.
+
+### 1c. Arslan-owned caches (a requirement, settled by ③Hands' review; it was a question)
+
+- A writable shared cache is "written now, run later": a tampered package in the user's `~/.npm`, a pip cache under `~/Library/Caches` or a Homebrew cache is installed later by an unsandboxed process (a manually added MCP server started through `npx`, the user's own terminal). If shared caches stayed writable they would have to go on HR's e list.
+- So sandboxed tools get Arslan-owned cache folders (outside the protected roots, as for TMPDIR), through environment variables that redirect them reliably (②Main): `npm_config_cache`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `XDG_CACHE_HOME`, `GOCACHE`, and others SBX-M confirms.
+- The user's `~/.npm`, `~/.cache` and `~/Library/Caches` become read-only to the sandbox. A tool that cannot be redirected and needs to write its shared cache is listed by SBX-M with its card cost; it is not reopened by default.
+- Cost: cold caches, more downloads on first use (measured in SBX-M).
 
 ### 2. The system-service allowlist (correction A)
 
-- **Allowed:** only what the corpus in §M shows is needed. Candidates: directory services for user lookup, logging, notifications, preference **reads** (`user-preference-read`), the certificate trust service, FSEvents, the DNS service only when network mode is not "proxy". These are not yet verified names; SBX-M fixes the final list.
+- **Allowed:** only what the corpus in §M shows is needed. Candidates: directory services for user lookup, logging, preference **reads** (`user-preference-read`), the certificate trust service, FSEvents, the DNS service only when network mode is not "proxy". These are not yet verified names; SBX-M fixes the final list. **Notifications are not a candidate** (③Hands): a sandboxed command that can post a user notification can pose as Arslan ("tap to approve"). Denied unless a corpus item needs it, and then only after review.
 - **Denied, and each denial tested:**
   - launch-item submission and the launchd job APIs;
   - LaunchServices (open an app or a link);
@@ -175,6 +201,9 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - TCC;
   - preference **writes** (`user-preference-write`);
   - the security server (the keychain, f);
+  - user notifications (impersonation, above);
+  - **daemons that do network work for the caller**, for example background URL sessions (`nsurlsessiond`), **in every network mode** (③Hands): the daemon does the I/O, so a request to it would get past both the proxy port and S2a-1's offline cut (inference; SBX-M checks reachability);
+  - **unix-domain sockets not on the allowlist** (②Main, ③Hands): the ssh agent (launchd's and third-party ones), `gpg-agent`, Docker's socket, other user daemons' sockets. Consequence, stated as an expected card cost: **ssh-based git remotes need the re-run card** (git over https through the keychain helper is a separate case, f);
   - Apple Events (already denied, `command_sandbox.py:146`).
 - **Never `(allow mach-lookup)` wholesale** (`capability_sandbox.py:49` is the counter-example, `docs/plans/0162/README.md:336` at `11f05434`).
 - A denied service shows up as a tool failure, not a card. When the tool needs that service, the model gets the existing note (`command_sandbox.py:241-250`) and may ask to run outside the sandbox. That is the re-run card the second number counts.
@@ -188,6 +217,12 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the proxy has no site list (NET adds it later, `lead-roadmap.md:87-91`). Its value in v0.1.64 is that the kernel lets out nothing else (no raw sockets, no DNS channel) and the proxy can log host names locally;
   - S2a-1's offline rule becomes `(deny network*)` including the proxy port, as today.
 - Mode "as today" (Q1 option N-b): network open in the sandbox, S2a-1 cut unchanged; proxy-only moves to NET (v0.1.65).
+- **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not.
+  - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
+  - allow outbound to `localhost:*`;
+  - then deny Arslan's own API port (and Hands' and the Bridge's local ports, if any are TCP) after it, since the last rule wins. The port is known to the server when it builds the profile;
+  - corpus items: a dev server bound and fetched on localhost, a local test database, Arslan's port refused, a bind to all interfaces refused.
+- **DNS:** today's offline profile already blocks resolution on macOS 26.6.2 (③Hands' measurement, above). SBX-M repeats it on the new base in each mode. In proxy mode DNS from inside is denied by design.
 - In both modes: `run_python` stays offline. MCP keeps "network only when declared", in proxy mode via the proxy. ssh stays port 22.
 
 ### e. Files written now and run later: HR owns it, not SBX
@@ -207,7 +242,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the home-level files are kernel-protected today only by not being writable roots, which fails with a wide work folder (see "Writable and protected paths");
   - inside the work folder nothing on HR's list is kernel-protected;
   - a plain deny on a repository's config or hooks folder may break repository creation and cloning (not measured; SBX-M can run HR's probes if HR asks, but the rule is HR's).
-- **Shared caches are not e and not in the classifier's scope** (§1b). Whether SBX keeps them writable or gives sandboxed tools Arslan-owned caches is Q5.
+- **Shared caches are not on e's list** because SBX makes them read-only to the sandbox (§1c). They are also outside the classifier's scope (§1b).
 
 ### CAP6b: skill, plugin and MCP config folders are not writable by the model
 
@@ -219,6 +254,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 - **Read-denied** in the commands preset and the outside floor, as CAP6a requires (`docs/plans/0164/CAP-capabilities.md:261`): `~/.agents/skills` and the plugin folder. `SKILL.md` is read through `read_skill`, and scripts run only through `run_python`. The MCP config needs no new rule: it is in the data folder, already closed to reads.
 - **Outside the kernel** (CAP card `:270`): the U11 bare run and Hands clicks. Their tests check the fallback (a hash mismatch disables the item and asks again), not a refusal.
 - `write_file` / `edit_file` refuse these folders even when the working folder contains them (they do not consult `default_protected()` today). One small check in `workspace_paths`, owned by SBX-5.
+- **Symlink test** (③Hands): `~/.agents` made a symlink into a writable root (the work folder). The write-deny applies to the real path (`_real`, `command_sandbox.py:49-50`), and a real-seatbelt test proves a write through either name is refused.
 
 ### M. The measurement on a real Mac (SBX-M)
 
@@ -228,8 +264,14 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - throw away any output;
   - under today's profile (the baseline), never write;
   - under the new profile, try the write only where it is expected to be refused. If it ever succeeds, the probe removes what it made at once and the report says so.
+- **Four safety details** (③Hands):
+  - **git credential helper:** `GIT_TERMINAL_PROMPT=0` and a non-interactive `GIT_ASKPASS`, so a missing credential never opens a prompt;
+  - **pasteboard:** never read the general pasteboard (it can hold the user's secrets); use a private named pasteboard, or reachability only;
+  - **screen:** reachability only, never a capture (a capture opens a TCC prompt);
+  - **launch-job write probe** (new profile only): a job whose program is `/usr/bin/true`, with no `RunAtLoad` and no `KeepAlive`, removed at once whether or not it was accepted.
+- **Order:** SBX-2's corpus runs on macOS CI first (free; it catches profile-syntax and toolchain-on-VM issues), then on the user's Mac (②Main). CI does not replace SBX-M.
 - **Corpus** (each item under today's commands profile, the new profile, and, where it matters, the outside floor):
-  - git: init, add, commit, branch, log in a scratch repository; clone of a small public repository over https (network); `ls-remote` through the keychain credential helper against a host that has no stored credential (reachability of the helper and the security server, f); the e options (i)–(iii).
+  - git: init, add, commit, branch, log in a scratch repository; clone of a small public repository over https (network); `ls-remote` through the keychain credential helper against a host that has no stored credential (reachability of the helper and the security server, f); an ssh remote (expected: needs the re-run card, §2).
   - python: `-c` compute, venv creation in the working folder, `pip download --no-deps` of one small package (network, certificates).
   - node: run a script, `fs.watch` on a scratch folder (file watching / FSEvents), `npm view` of one package (network).
   - swift / Xcode toolchain: `xcrun --show-sdk-path`, `swiftc` hello world, `swift build` of a tiny package (SwiftPM starts its own sandbox for manifests, and seatbelt does not nest, so this is the most likely break), the module cache in the per-user Darwin folder (`command_sandbox.py:56-64`).
@@ -239,6 +281,14 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - launchd / LaunchServices / cfprefsd under default-deny: launch-job reachability and submission, LaunchServices reachability (unhandled scheme), preference read (needed) and write (refused), pasteboard and screen reachability, TCC reachability.
   - Keychain (f): security-server reachability from inside (`Library/Keychains` file denies do not cover a daemon read, `docs/plans/0162/README.md:344` at `11f05434`); the git credential helper inside vs outside.
   - Shells: `zsh -c` as on main today, and `bash -p -c` (S2a-3 a, which lands after SBX).
+  - Loopback (§3): a dev server bound and fetched on localhost; a local test database; Arslan's own port refused; a bind to all interfaces refused.
+  - Unix sockets (§2): a listener the test creates outside the writable roots, standing in for an agent socket, cannot be connected to; reachability of the real ssh-agent, `gpg-agent` and Docker sockets, connect only, nothing sent.
+  - Daemons that do network work (§2): reachability of background URL sessions in each network mode.
+  - IPC and ptys (§1): a `multiprocessing.Pool`, a node worker-thread pool, a tool that opens a pty.
+  - `/dev` (§1): which entries the corpus actually opens.
+  - Temp (§1a): a shell script writing `/tmp/x`, `mktemp` with and without `-t`, Python `tempfile`, an Apple-framework tool writing to `T`; a backgrounded child after the run ends.
+  - Caches (§1c): first and second runs of `pip`, `npm`, `uv` with the redirected caches; any tool that ignores the redirection.
+  - Hard links (§1b) and the closed app-data folders (§1).
 - **The report** (`docs/plans/0164/SBX-measurement.md`) names:
   - the macOS version and build, the hardware, and the git / python / node / swift / brew versions;
   - the profile text's hash per preset;
@@ -265,7 +315,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 - On the merged SBX stack, run the bench twice on the same tasks, once with "ask for every command" and once with "ask only when risky" (a bench setting; no product change). Record the cards per task.
 - **That card count is the classifier's baseline** (user, 2026-10-28): how many more cards CLS must save than "ask only when risky" alone (pass line "saves cards against 'ask only when risky' alone", `docs/plans/0164/README.md:80`). It is not a go/no-go for SBX or for CLS.
-- SBX-8 does not change Settings or the default. Re-offering "ask only when risky" without the known-issue sheet belongs to S2a-3's rebase (its `DELETE-BY` names S2a-3 and #406, `AdvancedSection.tsx:353-354`) and S5a, after B-1's measurement exists (Q7).
+- SBX-8 does not change Settings or the default. Re-offering "ask only when risky" without the known-issue sheet belongs to S2a-3's rebase (its `DELETE-BY` names S2a-3 and #406, `AdvancedSection.tsx:353-354`) and S5a, after B-1's measurement exists (Q5).
 
 ## PR split (each ≤ ~800 product lines, `docs/sessions.md:58`)
 
@@ -274,21 +324,27 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 | **SBX-1** | `sandbox_profile.py` builder; today's five profiles reproduced **byte for byte** as presets; no behaviour change | +320 / −200 | +250 (golden texts) | — |
 | **SBX-2** | Default-deny base + service allowlist as a preset, not wired; the macOS behaviour tests; the corpus harness | +250 | +450 (corpus, macOS-marked) | SBX-1 |
 | **SBX-M** | Measurement on a Mac, report only; may tune SBX-2's allowlist in a follow-up of ≤ 50 lines | 0 (docs) | — | SBX-2 |
-| **SBX-3** | Commands use the default-deny preset; `available()` probes it; private TMPDIR per run instead of the shared temp roots; tagged writable roots + resolved `in_scope()` for CLS; `deny_write_after_roots` parameter for HR; denial detection beyond EPERM; SECURITY.md sentences | +260 / −70 | +450 | SBX-M |
+| **SBX-3** | Commands use the default-deny preset (IPC, ptys, narrowed `/dev`, unix-socket allowlist, loopback rule with Arslan's port denied, closed app data); `available()` probes it; private TMPDIR per run (location, lifetime, boot sweep); tagged writable roots + resolved `in_scope()` for CLS; `deny_write_after_roots` parameter for HR; denial detection beyond EPERM; SECURITY.md sentences | +340 / −70 | +600 | SBX-M |
 | **SBX-4** | `run_python`, artifact checks, MCP onto the shared base; delete `_SEATBELT_PROFILE`; drop wholesale `mach-lookup` from MCP | +150 / −120 | +300 | SBX-3 |
-| **SBX-5** | CAP6b (skill, plugin, MCP config folders; outside floor write-deny; MCP grant exclusion; `write_file` refusal); caches per Q5. **Not e** (HR) | +200 | +400 (every write path, CAP card `:276-282`) | SBX-3, SBX-M |
+| **SBX-5** | CAP6b (skill, plugin, MCP config folders; outside floor write-deny; MCP grant exclusion; `write_file` refusal; symlink test); Arslan-owned caches (§1c). **Not e** (HR) | +240 | +450 (every write path, CAP card `:276-282`) | SBX-3, SBX-M |
 | **SBX-6** | Only with Q1 option N-a: local proxy, proxy-port-only network, DNS denied inside | +450 | +300 | SBX-3 |
-| **SBX-7** | The two numbers: ledger `extra.sandbox`, denial code and counts, `usage_report.py` rows, bench driver split | +130 (+100 scripts) | +250 | SBX-3 |
+| **SBX-7** | The two numbers: ledger `extra.sandbox` (no `permissions.py` change), denial code and counts, `usage_report.py` rows, bench driver split | +130 (+100 scripts) | +250 | SBX-3; after #436 (see "File overlaps") |
 | **SBX-8** | Bench rounds: retry share before / after; ask-all vs ask-risky cards (the classifier's baseline); report | 0 (docs) | — | SBX-3 … SBX-7 |
 
-Total ≈ 1,760 product lines added, ≈ 390 removed (≈ 1,310 without SBX-6), in 7 code PRs and 2 report PRs. "SBX merged", for the order chart, means SBX-1 to SBX-7 (SBX-6 only if chosen). ③Hands' S2a-3 rebase starts after SBX-7.
+Total ≈ 1,880 product lines added, ≈ 390 removed (≈ 1,430 without SBX-6), in 7 code PRs and 2 report PRs. "SBX merged", for the order chart, means SBX-1 to SBX-7 (SBX-6 only if chosen). ③Hands' S2a-3 rebase starts after SBX-7.
 
 ## Acceptance
 
-- **One sandbox:** the base block is identical across commands, `run_python`, artifact checks and MCP (test). No preset contains `(allow default)`, wholesale `(allow mach-lookup)` or `user-preference-write` (test over every preset's text). Only the outside floor and ssh keep `(allow default)`, by design (correction B; Q9).
+- **One sandbox:** the base block is identical across commands, `run_python`, artifact checks and MCP (test). No preset contains `(allow default)`, wholesale `(allow mach-lookup)` or `user-preference-write` (test over every preset's text). Only the outside floor and ssh keep `(allow default)`, by design (correction B; Q7).
 - **Services:** every denied service in §2 is refused from inside the commands preset in a real-seatbelt test on macOS CI, and in SBX-M on the user's Mac. Every allowed one is justified by a named corpus item.
-- **Network:** proxy mode: a non-proxy connection and a DNS lookup fail inside; the proxy port works; S2a-1 offline closes the proxy too. "As today" mode: unchanged S2a-1 tests pass.
-- **Private TMPDIR:** two runs get different `TMPDIR`s; a sandboxed command cannot write the shared per-user `/var/folders/…/` parent, its `C` cache, `/private/tmp` or `/private/var/tmp` (real-seatbelt tests); the folder is gone after the run ends, including after a cancel and a timeout.
+- **Network:** proxy mode: a non-proxy connection and a DNS lookup fail inside; the proxy port works; S2a-1 offline closes the proxy too. "As today" mode: unchanged S2a-1 tests pass. Both modes: daemons that do network work for the caller are unreachable.
+- **Loopback:** a localhost dev server can be bound and fetched; Arslan's own port is refused; a bind to all interfaces is refused (real-seatbelt tests).
+- **Unix sockets:** a stand-in agent socket outside the writable roots cannot be connected to. SBX-M reports the real ssh-agent, `gpg-agent` and Docker sockets as unreachable, and ssh git remotes as a re-run card.
+- **IPC, ptys, `/dev`:** the corpus's `multiprocessing`, worker and pty items pass; only the listed `/dev` entries are writable.
+- **Closed app data:** Mail, Messages, Safari and Photos data are refused to reads and writes in the commands preset, whatever Arslan's TCC grants.
+- **Caches:** the user's shared caches are read-only inside; redirected tools write only Arslan-owned caches.
+- **Hard links:** creating, or writing through, a hard link in the work folder to a same-volume file outside the writable roots is refused, or SBX-M records that it is not and the follow-up is opened before SBX-3 merges.
+- **Private TMPDIR:** two runs get different `TMPDIR`s; a sandboxed command cannot write the shared per-user `/var/folders/…/` parent, its `C` cache, `/private/tmp` or `/private/var/tmp` (real-seatbelt tests); the folder sits outside every protected root; it is gone after the run ends, including after a cancel and a timeout, and is kept while a backgrounded child of the run is alive, then removed by the boot sweep.
 - **Classifier scope (§1b):** the commands profile's root list tags only the work folder and the private TMPDIR `in_scope`; `in_scope()` answers on resolved paths (tests: symlink to a shared cache, to `~`, `/var` vs `/private/var`, `..`, missing tail).
 - **e:** not accepted here; HR's card holds it. SBX's only test for it is the ordering of `deny_write_after_roots` (golden text).
 - **CAP6b:** every write path in CAP card `:276-282` is refused (tests), with the two stated exceptions tested as fallbacks.
@@ -298,18 +354,21 @@ Total ≈ 1,760 product lines added, ≈ 390 removed (≈ 1,310 without SBX-6), 
 - **Compatibility:** the corpus in §M passes under the new profile, or each failure is listed in the report with its card cost. The bench "waiting for you" count does not rise (DeepSeek round, M64's rules).
 - **Evidence, four items per PR** (`docs/sessions.md` §8). macOS CI run id plus conclusion for every real-seatbelt claim.
 - **Review:**
-  - ③Hands + an effort=max reviewer + Codex GPT-6 Astra at the highest level, on every SBX code PR;
+  - ③Hands + an effort=max reviewer + Codex GPT-6 Astra at the highest level, on every SBX code PR. Codex reviews SBX-1 and SBX-2 together (no behaviour change, plus a harness), then SBX-3 … SBX-7 one by one (②Main; Q10 settled);
   - Codex's points each answered on the PR;
   - safety conclusions shown to the cloud audit (`docs/plans/0162/README.md` §8, review path).
 
 ## Size
 
-About 1,300–1,750 product lines added and 380 removed across 7 code PRs, plus ≈ 2,300 test lines. Two report PRs. One session (②Main) at effort=max, with the user at the Mac for SBX-M (≈ 1 hour, no keys) and again for SBX-8's bench rounds (costs within the bench caps).
+About 1,430–1,880 product lines added and 390 removed across 7 code PRs, plus ≈ 2,600 test lines. Two report PRs. One session (②Main) at effort=max, with the user at the Mac for SBX-M (≈ 1 hour, no keys) and again for SBX-8's bench rounds (costs within the bench caps).
 
 ## Risks and rollback
 
 - **Too tight → more re-run cards → users click "in this conversation"** (the reason for number 2, `lead-roadmap.md:84`). Mitigation: SBX-M before SBX-3. If SBX-8's retry share is high, the allowlist is widened by measured item (never wholesale), in a follow-up of ≤ 50 lines.
 - **A toolchain breaks under default-deny** (SwiftPM's nested sandbox is the likely one). Mitigation: the corpus names it, and the report lists it with its card cost.
+- **Hardcoded `/tmp` is the main expected source of re-run cards** (②Main): scripts and tools that write `/tmp/...` directly fail once `/private/tmp` is not writable, and seatbelt cannot remap paths. SBX-M counts how much of the corpus does this, so the re-run share has its explanation ready. No reopening of `/private/tmp` without a decision.
+- **ssh-based git remotes cost a re-run card** once agent sockets are closed (§2). Expected and stated, not a regression to fix inside the sandbox.
+- **A process outlives its run** (`&`, `nohup`, a dev server, L6 later): its TMPDIR stays until the process is gone and the boot sweep removes it (§1a). Compatibility, not security.
 - **Profile fails to start on another macOS version.** `available()` probes the real profile, so it reads as "unavailable". Today's card path applies (`unsandboxed:*`), and CLS / S5b's "no sandbox, no approvals" holds.
 - **Denial undercount** (non-EPERM failures): stated in the report. Number 1 is a floor, not exact, until tagged reporting is measured.
 - **Temp is not undone:** S3's checkpoint covers only the work folder (`checkpoints.py:3-5`). With a private TMPDIR that is removed at the end, nothing a run left in temp outlives it; shared caches stay outside both undo and the classifier's scope.
@@ -331,13 +390,36 @@ About 1,300–1,750 product lines added and 380 removed across 7 code PRs, plus 
 - S3 undo's status: `checkpoints.py` exists on main (`server/services/checkpoints.py:1`); its card's closure was not checked.
 - The reference profiles (Codex's seatbelt base policy, Anthropic's sandbox-runtime) were not read in this checkout. If SBX adapts either, it reads it at source and records the license (`THIRD_PARTY_NOTICES.md`), as `terminal_policy.py:21-25` does for Hermes.
 - That the working folder can be set to `~` in Settings (only the comment at `file_tools.py:407` says so).
+- Loopback reachability (dev server, Arslan's port) under each mode; whether seatbelt can limit `network-bind` to localhost.
+- Unix-socket reachability today (ssh agent, `gpg-agent`, Docker): inferred by ②Main and ③Hands, not measured.
+- That daemons doing network work for the caller (`nsurlsessiond`) are reachable and bypass the network rules: inference.
+- That commands inherit Arslan's TCC grants (Full Disk Access) inside seatbelt: inference; the exact app-data folder paths.
+- Which `/dev` entries, POSIX IPC names and pty operations the corpus really needs; whether seatbelt can filter POSIX IPC by name prefix.
+- How much of the corpus writes to `/tmp` directly; which tools ignore `TMPDIR`.
+- What a backgrounded child does after its run's TMPDIR goes, and where the run-end hook lives.
+- Whether seatbelt refuses creating or writing through a hard link to a file outside the writable roots.
+- Which cache-redirect variables each tool honours.
+
+## Order with S2a-3 (③Hands)
+
+- **#378 (S2a-3 b) really depends on SBX:** its two-tier list is judged against SBX-M's allowlist, so it needs SBX-M and SBX-3.
+- **#375 / #376 (the grammar, `bash -p`) do not depend on SBX in meaning.** They conflict with SBX only as text in `terminal_exec.py`: `bash -p` and the `TMPPREFIX` removal sit next to SBX-3's private `TMPDIR` and SBX-7's denial code. S2a-3 a must point bash's here-document temp at the private `TMPDIR`, which it does by honouring `TMPDIR`.
+- **The card keeps one rebase after SBX-7** (option a in ③Hands' review): simplest, one rebase instead of two, and SBX-M already measures both `zsh -c` and `bash -p -c`, so S2a-3 a's shell switch is measured either way. If the schedule gets tight, option b is open: #375 / #376 rebase once after SBX-3, and #378 after SBX-M's report.
+
+## File overlaps (②Main)
+
+- **SBX-7 vs M64 (#436, open):** both touch `scripts/kernel_bench/report.py`; #436 also touches `runner.py`. #436 merges first, then SBX-7 rebases.
+- **SBX-7 vs S2a-3 two-tiers:** both edit `scripts/kernel_bench/arslan_driver.py`. SBX-7 merges first (the S2a-3 rebase follows SBX anyway).
+- **SBX-7 vs INB2:** INB2 records per run whether it read outside content (migration 0072, or JSON); SBX-7 stores a denial code on the run step's `ref` in `run_recorder`. If either touches `run_recorder.py` or the `Run` model, the second one rebases. If SBX-7 needs a column after all, its number comes after 0075.
+- **SBX-5 vs CAP:** `capability_sandbox.py` is SBX's; CAP7 passes the plugin path as a parameter; CAP5 / CAP7b come after SBX.
+- **No shared files** with INB1, C7c or Q1 (C7c-4 touches `server/mcp_server/tools.py`, the inbound MCP server, not `server/mcp/session.py`).
 
 ## Where the code and the plan docs disagree
 
 1. **"Both touch `command_sandbox.py` and `terminal_policy.py`"** (`docs/plans/0164/README.md:78`; `docs/plans/0162/README.md` §8 review path). The S2a-3 branches do not touch `command_sandbox.py`. The shared files are `terminal_exec.py` (S2a-3 a's shell switch, next to SBX's wrapper and denial code) and `tool_loop.py`. The order still holds, for a different reason: #432 makes the parser the second line after SBX, and S2a-3 b's list is judged against SBX-M's allowlist.
 2. **Network "only to the local proxy port"** (`lead-roadmap.md:83`) assumes a proxy. No command proxy exists (`browser_proxy.py`, `proxy_resolve.py` only), and NET is a "deferred candidate" (`docs/plans/0164/README.md:86`). Row D also says "default offline" for v0.1.65 (`lead-roadmap.md:249`), a third model. Q1.
-3. **"'Ask only when risky' stays disabled"** (`docs/plans/0164/README.md:21`). It is not disabled. It is off by default and selectable behind a known-issue sheet (`settings_service.py:409-415`; `AdvancedSection.tsx:353-355`). B-1's "stays off" is therefore a default plus a warning, not a lock. Q7.
-4. **"One sandbox for commands, `run_python`, installed MCPs"**: there are five profiles (table above). The list omits `ssh_exec`'s `(allow default)` profile (`ssh_exec.py:89-94`). Manually added and remote MCP servers have no sandbox (`session.py:349-351`). Q2, Q9.
+3. **"'Ask only when risky' stays disabled"** (`docs/plans/0164/README.md:21`). It is not disabled. It is off by default and selectable behind a known-issue sheet (`settings_service.py:409-415`; `AdvancedSection.tsx:353-355`). B-1's "stays off" is therefore a default plus a warning, not a lock. Q5.
+4. **"One sandbox for commands, `run_python`, installed MCPs"**: there are five profiles (table above). The list omits `ssh_exec`'s `(allow default)` profile (`ssh_exec.py:89-94`). Manually added and remote MCP servers have no sandbox (`session.py:349-351`). Q2, Q7.
 5. **S2a card: keep `_SEATBELT_PROFILE` for `SeatbeltBackend.wrapper()` without a profile** (`S2a-command-three-layers.md:47`). No product caller does that, so it is unreachable; SBX-4 deletes it.
 6. **The two numbers assume they can be read.** Re-run and ask-up-front cards are the same ledger request (`command_confirm.py:84-94`). The bench counts them together (`arslan_driver.py:203-205`). Denials are not counted anywhere (`terminal_exec.py:237-239`). SBX-7 exists for this.
 7. **CAP6b "with `checkpoints/` in the same place"** (`CAP-capabilities.md:271`): there is no separate checkpoints entry. Checkpoints are protected because they live in the data folder (`checkpoints.py:7-8`, `command_sandbox.py:101`). CAP's `:93-96` citation for `arslan_protected` is `:94-104` on main.
@@ -348,17 +430,16 @@ About 1,300–1,750 product lines added and 380 removed across 7 code PRs, plus 
 
 ## Questions for the user
 
-1. **Network in v0.1.64.**
-   - (N-a) SBX ships a minimal local proxy with no site list, so the kernel allows only that port and no DNS from inside. Tools that ignore proxy settings fail and ask for a re-run.
-   - (N-b) Network stays open in the sandbox as today, plus S2a-1's cut; proxy-only comes with NET in v0.1.65.
+1. **Network in v0.1.64.** The measurement decides; the two views:
+   - **(N-a) a minimal local proxy, no site list** (⓪Plan's lean): the kernel allows only that port plus loopback, and no DNS from inside, so no raw sockets and no DNS channel. Tools that ignore proxy settings fail and ask for a re-run.
+   - **(N-b) network open in the sandbox as today, plus S2a-1's cut; proxy-only comes with NET in v0.1.65** (②Main's lean, unless SBX-M shows the proxy is cheap): without a site list the proxy still lets HTTP(S) out to anywhere, so its v0.1.64 value is mainly "no raw sockets or DNS channel"; it costs ≈ +450 lines, a new component, and breakage from tools that ignore proxy settings; the loopback and unix-socket rules give most of the protection either way; NET brings the site list, where a proxy pays off.
 
-   ⓪Plan suggests N-a, with SBX-M's corpus deciding. If the proxy breaks a large share of the corpus, fall back to N-b and say so.
-2. **Manually added MCP servers:** stay unsandboxed as the user configured them (like Claude Code), or go into the same sandbox with the folders and network the form names? ⓪Plan suggests leaving them for v0.1.64 and saying so on the form.
-3. **Temp vs caches in the classifier's scope:** the scope is the work folder plus the private TMPDIR (③Hands). Should SBX also keep the user's shared caches writable at all (see Q5)? If yes, they stay outside the scope, and a classifier "yes" never covers a write there.
-4. **Reads:** keep reads open (minus protected and closed folders), as today and as Codex does, or default-deny reads too? ⓪Plan suggests open in v0.1.64.
-5. **Caches:** Arslan-owned caches for sandboxed tools (safer, slower first builds), or keep the user's caches writable? ⓪Plan suggests Arslan-owned.
-6. **Sandbox cannot start:** keep today's card (`unsandboxed:*`), or refuse to run (row D)? ⓪Plan suggests keeping the card in v0.1.64; CLS / S5b approve nothing without a sandbox anyway.
-7. **"Ask only when risky" after SBX-8:** it stays default-off with its warning until S2a-3 and S5a. SBX only measures. Confirm.
-8. **A ceiling for the re-run share** before SBX-3 merges (for example ≤ 5% of sandboxed command calls on the bench, and "waiting for you" not higher)? Or record only?
-9. **`ssh_exec`:** move it onto the builder byte for byte (no behaviour change) in SBX-1, or leave it out of "one sandbox"?
-10. **Codex review granularity:** each SBX code PR separately, or SBX-1 + SBX-2 together and SBX-3 … SBX-7 one by one?
+   SBX-M runs the corpus in both modes and reports the breakage, so the user picks with numbers.
+2. **Manually added MCP servers:** stay unsandboxed as the user configured them (like Claude Code), or go into the same sandbox with the folders and network the form names? ⓪Plan and ②Main suggest leaving them for v0.1.64 and saying so on the form.
+3. **Reads:** keep reads open (minus protected and closed folders, now including Mail, Messages, Safari and Photos data, §1), as today and as Codex does, or default-deny reads too? ⓪Plan, ②Main and ③Hands suggest open in v0.1.64.
+4. **Sandbox cannot start:** keep today's card (`unsandboxed:*`), or refuse to run (row D)? ⓪Plan suggests keeping the card in v0.1.64; CLS / S5b approve nothing without a sandbox anyway.
+5. **"Ask only when risky" after SBX-8:** it stays default-off with its warning until S2a-3 and S5a. SBX only measures. Confirm.
+6. **A ceiling for the re-run share:** ②Main suggests recording only in v0.1.64 and setting a ceiling after SBX-8 has a baseline. Confirm, or name a ceiling now.
+7. **`ssh_exec`:** onto the builder byte for byte in SBX-1 (②Main: yes), or left out of "one sandbox"?
+
+Settled by the reviews (no longer questions): caches are Arslan-owned (§1c, ③Hands); the classifier's scope is the work folder plus the private TMPDIR (§1b); Codex reviews SBX-1 + SBX-2 together, then the rest one by one.
