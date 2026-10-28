@@ -81,14 +81,19 @@
 
 ### What changes
 
-The working method in `_ARSLAN_SYSTEM` (`server/orchestrator/arslan.py:124-140`, added by K5 in v0.1.63) gets four points. Three of them extend lines that are already there. Following `docs/sessions.md` §12 rule 3, they are merged into those lines rather than added as a second list.
+The working method lives in `_CAPABILITY_SELF` ("How you work", starting at `server/orchestrator/arslan.py:113`). K5 added it in v0.1.63, at `:124-140`. Line numbers here are **on main before STY**; #452 moves them by 9. So the PR quotes the lines' text rather than trusting the numbers. Three of the four points extend lines that are already there; following `docs/sessions.md` §12 rule 3, they are folded into those lines instead of becoming a second list.
 
-1. **Go deeper, not bigger.** Before starting a task, consider what a top professional would do here. Do what fits the request well. List anything beyond the request as a suggestion at the end; don't widen the scope on your own. (New line.)
-2. **Start from the raw material.** Read the real file, data or original page, not memory, a summary or someone's retelling. Citations point back to the source. This extends `:127` ("Read before you change") and `:135` ("cite only sources you actually read").
-3. **Use the right tools.** Run what can be run (the tests, the command, opening the produced file) instead of reasoning that it should work. This extends `:128` ("Check after you change").
-4. **External evidence before "done".** Saying it is done needs evidence beyond Arslan's own word: a passing test, command output, the file existing, the source matching. Say plainly what was not verified. This lines up with INB9's acceptance sheet (`docs/plans/0164/INB-inbox-progress.md:375`): ✅ needs evidence, and claims backed only by the model never go in ✅. It also extends `:128`.
+1. **Go deeper, not bigger.** Before starting a task, consider what a top professional would do here. Do what fits the request well. List anything beyond the request as a suggestion at the end; don't widen the scope on your own. (A new line.)
+2. **Start from the raw material.** Read the real file, data or original page, not memory, a summary or someone's retelling. Citations point back to the source. This extends "Read before you change: look at a file or the current state before editing it." (`:127`) and "In research, cite only sources you actually read in this turn…" (`:135`).
+3. **Use the right tools.** Run what can be run (the tests, the command, opening the produced file) instead of reasoning that it should work. This extends "Check after you change: read back what you wrote, or run it, before you say it is done." (`:128`).
+4. **External evidence before "done".** Saying it is done needs evidence beyond Arslan's own word: a passing test, command output, the file existing, the source matching. Say plainly what was not verified. It matches INB9's acceptance sheet: ✅ means checked by Arslan, with evidence (`docs/plans/0164/INB-inbox-progress.md:387`), and claims backed only by the model never go in ✅ (`:395`, `contracts.py:117-125`). It also extends `:128`.
 
-**Background jobs:** `BACKGROUND_SYSTEM` gets the same four points in one line. STY already changes its ending.
+**Background jobs:** STY (#452) already ends `BACKGROUND_SYSTEM` in three parts:
+1. what you checked yourself, with the evidence;
+2. what the user should look at;
+3. what you did not check.
+
+That ending already covers point 4. So the one STY2 line in `BACKGROUND_SYSTEM` carries points 1–3 only and leaves point 4 to STY's ending. **Extras from point 1** go in a short fourth part, "Suggestions, not done". They don't go in the second part, which is kept for at most one or two things that need the user's judgment.
 
 **Plan mode (S5a):** the plan shows these four as its sections:
 - references, plus "what a pro would add, for you to pick";
@@ -96,7 +101,7 @@ The working method in `_ARSLAN_SYSTEM` (`server/orchestrator/arslan.py:124-140`,
 - method;
 - how it will be verified.
 
-The acceptance sheet at the end is checked against these sections. This is UI, so a clickable demo mock goes to the user before any UI code (user, 2026-10-28). It belongs to S5a's PR, not to this card's prompt PR.
+The acceptance sheet at the end is checked against them. This is UI, so a clickable demo mock goes to the user before any UI code (user, 2026-10-28). It belongs to S5a's PR, not to this card's prompt PR.
 
 ### The four card lines (`docs/sessions.md` §6, after #468)
 
@@ -108,26 +113,29 @@ The acceptance sheet at the end is checked against these sections. This is UI, s
    The PR links the exact passages it read. **Listed for the user, not built:** a per-task "professional checklist" (by task type) that Arslan fills in before starting. It is bigger than four lines in a prompt and would need its own card.
 2. **Raw material:**
    - the current prompt text at `server/orchestrator/arslan.py:124-140` and `BACKGROUND_SYSTEM`;
-   - the M64 bench transcripts of tasks where Arslan said "done" without checking, read on this Mac;
+   - the kernel bench transcripts (tool traces and final replies) of the 27 tasks, read on this Mac;
    - the card records only the counts and the task ids.
 3. **Method:**
    - prompt text first;
-   - a pytest that pins that the four points are in the working method and that the chit-chat part (`:45-48`) is unchanged;
-   - the M64 bench before and after, on the same tasks (DeepSeek);
+   - a pytest that pins two things: the four points are in `_CAPABILITY_SELF`'s working method, and the chit-chat part is unchanged from **what STY left it** (STY rewrites `:45-48`, so the pin is against STY's text);
+   - the kernel bench before and after;
    - STY's 20-reply read for tone;
    - a mutation check: remove the new lines and the pin test goes red.
 4. **External evidence:**
-   - **Bench:** Pass rate does not drop, "waiting for you" does not rise, no new error types (K5's gate style), and the cache hit rate does not drop.
-   - **Count from the bench transcripts:** "done" claims without a check or test run in the same turn, before vs after. Target: fewer, not zero.
-   - **Tone:** the user's read of STY's 20 replies shows no colder chit-chat.
+   - **Bench:** the same 27-task kernel bench K5 and K7 were gated on (K5: passed 20/27, correct 20/27, "waiting for you" 1; baseline 18/19/4; `docs/plans/0162/README.md:75`), on DeepSeek, before and after. M64 (T13–T17) can also run, but it is mostly code review and split tasks, where unchecked "done" claims are rare, so it is not enough alone.
+   - **"Done without evidence" count**, counted by a script, the same way before and after. A run counts when both hold:
+     - its final reply claims completion: a fixed phrase list, English and Chinese, kept in the script;
+     - its tool trace has a write with no later read-back, run or test call before the reply.
+   - **Cache hit rate**, measured with `scripts/kernel_bench/meter.py` from each run's second request on. Every first request misses after a prompt change.
+   - **Tone:** the user's read of STY's 20 replies.
    - CI run ids on the PR.
 
 ### Acceptance
 
-- The four points are in the working method; three are folded into K5's lines, with no duplicate list.
-- BACKGROUND_SYSTEM gets the same one line.
-- Bench gate as above.
-- The "done without evidence" count does not rise, and the PR reports it.
+- The four points are in the working method. Three are folded into K5's lines; there is no duplicate list.
+- `BACKGROUND_SYSTEM` gets one line for points 1–3 plus the "Suggestions, not done" part.
+- 27-task bench gate, K5 style: passed and correct do not drop, "waiting for you" does not rise, no new error types, and the cache hit rate (from the second request on) does not drop.
+- The "done without evidence" count **does not rise**. That is the gate. The PR reports the before and after numbers, which is where a drop would show.
 - STY's read still passes.
 
 ### Size

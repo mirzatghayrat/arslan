@@ -142,7 +142,7 @@ The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as fi
 
 | Card | What | Lane | Tier | Notes |
 |---|---|---|---|---|
-| **STY2** | "Deeper, not bigger": four points in Arslan's working method (go deeper not bigger, extras listed for the user; start from raw material; use the right tools; external evidence before "done"). Mostly folded into K5's existing lines. Card: STY card, section STY2 | STY's writer (⑥Helper) | must (with STY) | After STY's prompt PR (same lines). M64 before/after gate as K5; STY's read for tone. The plan-mode sections belong to S5a, behind a demo mock. |
+| **STY2** | "Deeper, not bigger": four points in Arslan's working method (go deeper not bigger, extras listed for the user; start from raw material; use the right tools; external evidence before "done"). Mostly folded into K5's existing lines. Card: STY card, section STY2 | STY's writer (⑥Helper) | must (with STY) | After STY's prompt PR (same lines). 27-task kernel bench before/after as K5, plus a scripted "done without evidence" count that must not rise; STY's read for tone. The plan-mode sections belong to S5a, behind a demo mock. |
 
 ## 4. 合并顺序
 
