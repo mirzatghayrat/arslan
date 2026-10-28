@@ -43,6 +43,8 @@ _BATTERIES = ("numpy", "pandas", "matplotlib")
 
 # Legacy command profile: network isolation ONLY. Commands require separate user approval.
 # Python uses computation_profile below; cwd/HOME are never filesystem security boundaries.
+# No product caller reaches it: every one passes its own profile to _seatbelt_wrapper.
+# DELETE-BY: v0.1.64 (SBX-4, with computation_profile's move onto the default-deny base).
 _SEATBELT_PROFILE = "(version 1)\n(allow default)\n(deny network*)\n"
 
 # Module cache: resolved sandbox interpreter + one-line env note. Tests may preset this.
@@ -156,7 +158,8 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
         rules.allow("file-read*", literal(path))
     # These two loops write in set order, which follows the hash seed: with a linked interpreter
     # (a venv) the two process-exec lines, and the two pyvenv.cfg lines, swap between processes
-    # (seen in SBX-1's check). Both are allows, so the policy is the same; SBX-1 keeps the bytes.
+    # (seen in SBX-1's check). Both are allows, so the policy is the same; SBX-1 keeps the bytes,
+    # and SBX-4, which rewrites this profile on the default-deny base, writes them sorted.
     for path in {executable, resolved}:
         rules.allow("process-exec", literal(path))
     # Python uses pyvenv.cfg to locate the base stdlib; this does not grant sibling reads.

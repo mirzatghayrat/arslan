@@ -2,7 +2,10 @@
 
 The texts were recorded from main before SBX-1 moved the profiles onto `sandbox_profile`, and
 this file passes on both. Later SBX PRs that change a profile change its text here, so the
-change is visible line by line in review. Paths under the test's folder are written as <T>.
+change is visible line by line in review.
+
+Every input path goes through `A`, a link to the test's folder, so the texts also pin that each
+profile resolves what it is given. The test's folder, resolved, is written as <T>.
 """
 import os
 from pathlib import Path
@@ -14,7 +17,7 @@ from server.services import capability_sandbox, code_sandbox, command_sandbox, s
 
 @pytest.fixture
 def T(tmp_path):
-    """The test's folder, with the files, folders and a link the profiles below are given."""
+    """The test's folder, with the files, folders and links the profiles below are given."""
     for folder in ("ws", "closed/ws", "closed/proj", "other", "prot", "data", "granted", "runtimes", "mcp",
                    "work", "refs", "py/bin", "py/lib", "venv/bin", "venv/lib"):
         (tmp_path / folder).mkdir(parents=True)
@@ -26,14 +29,22 @@ def T(tmp_path):
     return tmp_path
 
 
+@pytest.fixture
+def A(T):
+    """The way in: a link to the test's folder (inside it, so a path not resolved reads <T>/alias/…)."""
+    alias = Path(os.path.realpath(T)) / "alias"
+    alias.symlink_to(os.path.realpath(T))
+    return alias
+
+
 def _shown(text: str, T: Path) -> str:
     return text.replace(os.path.realpath(T), "<T>")
 
 
-def test_commands_profile_with_every_part(T):
+def test_commands_profile_with_every_part(T, A):
     text = command_sandbox.profile(
-        [T / "link", T / "notes.txt", T / "missing", T / "closed/ws"], [T / "prot", T / "prot.key"], offline=True,
-        closed=[T / "closed"], readable=[T / "closed/proj", T / "other", T / "closed/ws"], copies=[T / "copy.txt"])
+        [A / "link", A / "notes.txt", A / "missing", A / "closed/ws"], [A / "prot", A / "prot.key"], offline=True,
+        closed=[A / "closed"], readable=[A / "closed/proj", A / "other", A / "closed/ws"], copies=[A / "copy.txt"])
     assert _shown(text, T) == """\
 (version 1)
 (allow default)
@@ -50,9 +61,27 @@ def test_commands_profile_with_every_part(T):
 """
 
 
-def test_commands_profile_plain_and_empty(T):
-    quoted = T / 'a") (allow default) ("'
-    assert _shown(command_sandbox.profile([T / "ws", quoted], []), T) == """\
+def test_a_closed_folder_with_nothing_to_reopen_stays_closed(T, A):
+    """The default case for closed folders: Desktop, Documents and Downloads closed (the setting
+    off), with no working or project folder inside them. Nothing is reopened after the deny."""
+    expected = """\
+(version 1)
+(allow default)
+(deny appleevent-send)
+(deny file-write* (subpath "/"))
+(allow file-write* (subpath "<T>/ws"))
+(deny file-read* file-write* (subpath "<T>/closed"))
+(deny file-read* file-write* (subpath "<T>/prot"))
+(deny network-outbound (subpath "<T>/prot"))
+"""
+    assert _shown(command_sandbox.profile([A / "ws"], [A / "prot"], closed=[A / "closed"]), T) == expected
+    assert _shown(command_sandbox.profile([A / "ws"], [A / "prot"], closed=[A / "closed"],
+                                          readable=[A / "other"]), T) == expected
+
+
+def test_commands_profile_plain_and_empty(T, A):
+    quoted = A / 'a") (allow default) ("'
+    assert _shown(command_sandbox.profile([A / "ws", quoted], []), T) == """\
 (version 1)
 (allow default)
 (deny appleevent-send)
@@ -67,10 +96,20 @@ def test_commands_profile_plain_and_empty(T):
 """
 
 
-def test_outside_floor(T, monkeypatch):
+def test_a_non_ascii_name_is_written_as_json_escapes_today(T, A):
+    """Pins today's bytes: `json.dumps` writes a CJK name as \\uXXXX escapes, which seatbelt does not
+    decode, so this rule matches no real folder (#471's review). The SBPL string encoder that follows
+    SBX-1 changes this text on purpose, to the name's own UTF-8."""
+    name = "工作区"           # a working folder named in Chinese
+    assert _shown(command_sandbox.profile([A / name], []), T).splitlines()[-1] == \
+        '(allow file-write* (subpath "<T>/\\u5de5\\u4f5c\\u533a"))'
+
+
+def test_outside_floor(T, A, monkeypatch):
+    # arslan_protected() returns resolved paths; the floor writes them as given.
     ours = [Path(os.path.realpath(T / "data")), Path(os.path.realpath(T / "updater.key"))]
     monkeypatch.setattr(command_sandbox, "arslan_protected", lambda: ours)
-    assert _shown(command_sandbox.minimal_profile(offline=True, copies=[T / "copy.txt"]), T) == """\
+    assert _shown(command_sandbox.minimal_profile(offline=True, copies=[A / "copy.txt"]), T) == """\
 (version 1)
 (allow default)
 (deny appleevent-send)
@@ -94,10 +133,10 @@ def _between_system_and_usr(T: Path) -> None:
     assert Path("/System") < Path(os.path.realpath(T)) < Path("/usr"), os.path.realpath(T)
 
 
-def test_run_python_and_artifact_checks(T):
+def test_run_python_and_artifact_checks(T, A):
     _between_system_and_usr(T)
     python = os.path.join(os.path.realpath(T), "py/bin/python3")
-    text = code_sandbox.computation_profile(python, T / "work", T / "refs")
+    text = code_sandbox.computation_profile(python, A / "work", A / "refs")
     assert _shown(text, T) == """\
 (version 1)
 (deny default)
@@ -123,12 +162,13 @@ def test_run_python_and_artifact_checks(T):
 (deny file-write* (subpath "<T>/refs"))
 """
     # The artifact checks pass no references: the same text without the last rule.
-    assert code_sandbox.computation_profile(python, T / "work") == text[:text.rindex("(deny file-write*")]
+    assert code_sandbox.computation_profile(python, A / "work") == text[:text.rindex("(deny file-write*")]
 
 
 def _seed_free(text: str) -> str:
     """With a linked interpreter, computation_profile writes its process-exec lines and its pyvenv.cfg
-    lines in set order, which follows the hash seed (SBX-1's check found this on main). Sort each run."""
+    lines in set order, which follows the hash seed (SBX-1's check found this on main; SBX-4 sorts
+    them). Sort each run of them here."""
     lines = text.splitlines()
     for marker in ("(allow process-exec ", "pyvenv.cfg"):
         at = [i for i, line in enumerate(lines) if marker in line]
@@ -137,10 +177,11 @@ def _seed_free(text: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def test_run_python_in_a_venv(T):
+def test_run_python_in_a_venv_reached_through_a_link(T, A):
+    """The interpreter as given (not resolved) and as resolved are both allowed to run; their
+    lib and bin folders are read as resolved."""
     _between_system_and_usr(T)
-    python = os.path.join(os.path.realpath(T), "venv/bin/python")
-    assert _seed_free(_shown(code_sandbox.computation_profile(python, T / "work"), T)) == """\
+    assert _seed_free(_shown(code_sandbox.computation_profile(str(A / "venv/bin/python"), A / "work"), T)) == """\
 (version 1)
 (deny default)
 (allow sysctl-read)
@@ -160,10 +201,10 @@ def test_run_python_in_a_venv(T):
 (allow file-read* (literal "/dev/random"))
 (allow file-read* (literal "/dev/urandom"))
 (allow file-read* (literal "/private/etc/localtime"))
+(allow process-exec (literal "<T>/alias/venv/bin/python"))
 (allow process-exec (literal "<T>/py/bin/python3"))
-(allow process-exec (literal "<T>/venv/bin/python"))
+(allow file-read* (literal "<T>/alias/venv/pyvenv.cfg"))
 (allow file-read* (literal "<T>/py/pyvenv.cfg"))
-(allow file-read* (literal "<T>/venv/pyvenv.cfg"))
 (allow file-read* file-write* (subpath "<T>/work"))
 (allow file-write* (literal "/dev/null"))
 """
@@ -185,11 +226,10 @@ _MCP_HEAD = """\
 """
 
 
-def test_installed_mcp_server(T, monkeypatch):
-    monkeypatch.setattr(command_sandbox, "default_protected",
-                        lambda: [Path(os.path.realpath(T / "prot")), Path(os.path.realpath(T / "prot.key"))])
-    text = capability_sandbox.profile(root=T / "mcp", folders=[str(T / "granted"), str(T / "link-granted")],
-                                      network=True, read=[str(T / "runtimes")])
+def test_installed_mcp_server(T, A, monkeypatch):
+    monkeypatch.setattr(command_sandbox, "default_protected", lambda: [A / "prot", A / "prot.key"])
+    text = capability_sandbox.profile(root=A / "mcp", folders=[str(A / "granted"), str(A / "link-granted")],
+                                      network=True, read=[str(A / "runtimes")])
     # A protected file is a subpath here, unlike in the commands profile; a granted link appears twice.
     assert _shown(text, T) == _MCP_HEAD + """\
 (allow network* system-socket)
@@ -198,7 +238,7 @@ def test_installed_mcp_server(T, monkeypatch):
 (allow file-read* (subpath "<T>/runtimes"))
 (allow file-read* file-write* (subpath "<T>/mcp"))
 """
-    assert _shown(capability_sandbox.profile(root=T / "mcp", folders=[], network=False, read=[]), T) == _MCP_HEAD + """\
+    assert _shown(capability_sandbox.profile(root=A / "mcp", folders=[], network=False, read=[]), T) == _MCP_HEAD + """\
 (deny file-read* file-write* network-outbound (subpath "<T>/prot") (subpath "<T>/prot.key"))
 (allow file-read* file-write* (subpath "<T>/mcp"))
 """

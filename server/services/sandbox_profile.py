@@ -1,18 +1,25 @@
 """Writing seatbelt profiles: the one place Arslan turns paths and permissions into SBPL (SBX-1, v0.1.64).
 
-Every profile Arslan starts a process under is written with this module: commands in and out of
+The profiles Arslan starts processes under are written with this module: commands in and out of
 the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the artifact checks
 (`code_sandbox.computation_profile`), installed MCP servers (`capability_sandbox.profile`) and
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
 written here without changing a byte of what they produce. SBX-2 adds the default-deny base that
-SBX-3 and SBX-4 move them onto (docs/plans/0164/SBX-sandbox.md).
+SBX-3 and SBX-4 move them onto (docs/plans/0164/SBX-sandbox.md). Two texts are still written by
+hand: `command_sandbox.available()`'s probe, which SBX-3 replaces with the real commands profile,
+and `code_sandbox._SEATBELT_PROFILE`, which no product caller reaches and SBX-4 deletes.
 
 What every profile relies on:
 
 - Seatbelt applies the LAST matching rule (measured 2026-10-03), so the order of the rules is the
   policy: a deny written after an allow wins over it, and the other way round.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
-- Paths are written as JSON strings, which are valid SBPL strings, so a folder name cannot add rules.
+- Paths are written with `json.dumps`, which escapes `"` and `\\`, so a folder name cannot add
+  rules. It also writes every non-ASCII character as `\\uXXXX`, which seatbelt does NOT decode
+  (②Main, measured on macOS 26.6.2 in #471's review): a rule on a path with a CJK or accented name
+  lands on a path that does not exist. A deny on such a protected folder misses, and an allow on
+  such a working folder refuses its writes. Main wrote paths this way before SBX-1 too; SBX-1 keeps
+  the bytes, and an SBPL string encoder (raw UTF-8) replaces `json.dumps` in the next PR.
 - A rule without a filter matches everything: `(allow file-read*)` opens every file. So `allow_paths`
   leaves the rule out when its list is empty, instead of writing it bare. A deny is written as the
   profile asks: over no paths it denies everything, which fails closed.
