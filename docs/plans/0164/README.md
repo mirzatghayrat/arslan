@@ -211,7 +211,7 @@ main 上最新是 0070。这一版预计要的（开工时向 ②Main 申请、�
 | SUB6 | 删 `task_workers` 表；迁移 0052 今天 import 了 `TaskWorker`，删类之前要让 0052 在新装上照样能跑 |
 | S2a 跟进 | 清理旧的 `legacy_rule` 权限行 |
 
-**Numbers assigned (②Main, 2026-10-29).** One migration per PR. Each lands in ascending order on main, and a drop PR lands after the code that used the table is gone. Ask ②Main before taking a number.
+**Numbers assigned (②Main, 2026-10-29).** One migration per PR. Numbers are unique and never reused; they may land out of order (`apply_pending` is set-based), but a drop PR lands after the code that used the table is gone. Ask ②Main before taking a number.
 
 | Number | Card | What | Where |
 |---|---|---|---|
