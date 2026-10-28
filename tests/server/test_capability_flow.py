@@ -98,19 +98,20 @@ async def test_the_card_is_built_from_the_search_result_not_the_models_words(exe
     assert [k["name"] for k in card["keys"]] == ["EXCEL_TOKEN"] and card["retry"] == "read the formulas"
 
 
-async def test_nobody_to_ask_records_a_find_instead(execution_db):
-    from server.db.models import CapabilityFind
+async def test_nobody_to_ask_adds_nothing_and_says_what_is_missing(execution_db):
+    """CAP1a: no "found for later" rail any more; the model names what is missing in its answer."""
+    from server.db.models import CapabilitySource
     shown("c-job", CAND)
     out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "formulas"}, conversation_id="c-job",
                                         ask=None, emit=lambda e: None)
-    assert out["recorded"] is True and out["ok"] is False
+    assert out["ok"] is False and out["not_added"] is True and "recorded" not in out
+    assert "'excel-mcp-server' is missing" in out["note"] and "asking for it in a conversation" in out["note"]
     async with execution_db() as db:
-        [find] = (await db.execute(select(CapabilityFind))).scalars().all()
-    assert (find.why, find.need, find.candidate["name"], find.state) == ("job", "formulas", "excel-mcp-server", "open")
+        assert (await db.execute(select(CapabilitySource))).scalars().all() == []
 
 
-async def test_a_decline_records_a_find_and_installs_nothing(execution_db, monkeypatch):
-    from server.db.models import CapabilityFind
+async def test_a_decline_installs_nothing(execution_db, monkeypatch):
+    from server.db.models import CapabilitySource
     installs = []
 
     async def install(*a, **k):
@@ -121,7 +122,7 @@ async def test_a_decline_records_a_find_and_installs_nothing(execution_db, monke
                                         ask=_ask(approved=False), emit=lambda e: None)
     assert out["declined"] is True and installs == []
     async with execution_db() as db:
-        assert [f.why for f in (await db.execute(select(CapabilityFind))).scalars().all()] == ["declined"]
+        assert (await db.execute(select(CapabilitySource))).scalars().all() == []
 
 
 async def test_an_approved_install_that_tests_well_is_on_and_the_loop_refreshes(execution_db, monkeypatch):
@@ -327,7 +328,7 @@ async def test_in_a_background_job_the_card_is_never_shown(monkeypatch):
 
     async def propose(args, *, conversation_id, ask, emit):
         asks.append(ask)
-        return {"ok": False, "recorded": True}
+        return {"ok": False, "not_added": True}
     monkeypatch.setattr(capability_flow, "propose", propose)
 
     async def resolve():

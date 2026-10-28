@@ -395,36 +395,6 @@ class CapabilitySource(Base):
     installed_at = Column(DateTime, nullable=True)
 
 
-class CapabilityFind(Base):
-    """0.1.57 §4 "Arslan 找到的": a need Arslan met and what it found, kept for later. Never a
-    notification, never an Inbox item."""
-    __tablename__ = "capability_finds"
-    __table_args__ = (
-        CheckConstraint("why IN ('declined','job','project_level')", name="ck_capability_find_why"),
-        CheckConstraint("state IN ('open','dismissed','installed')", name="ck_capability_find_state"),
-    )
-    id = Column(String(36), primary_key=True)
-    owner_id = Column(String(100), nullable=False, default="local")
-    need = Column(String(300), nullable=False)
-    why = Column(String(16), nullable=False)
-    conversation_id = Column(String(50), nullable=True)
-    project_id = Column(String(36), nullable=True)
-    level_id = Column(String(36), nullable=True)
-    candidate = Column(JSON, nullable=False)
-    state = Column(String(10), nullable=False, default="open")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-
-
-class DiscoveryCandidate(Base):
-    __tablename__ = "discovery_candidates"
-
-    id = Column(Integer, primary_key=True)
-    full_name = Column(String(140), nullable=False, unique=True)   # owner/repo
-    html_url = Column(String(500), nullable=True)
-    snapshot = Column(JSON, nullable=False)                        # {repo, trust, suggestion}
-    saved_at = Column(DateTime, default=datetime.utcnow)
-
-
 class ProviderConfig(Base):
     """Multi-key BYOK provider configuration (one row per configured LLM provider key)."""
 

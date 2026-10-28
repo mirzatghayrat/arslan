@@ -883,15 +883,11 @@
     "empty_no_spawns_action": "创建专家"
   },
   "capabilities": {
-    "title": "能力库",
-    "subtitle": "发现、安装、管理工具、技能与 MCP 服务器。",
     "tabs": {
-      "discover": "发现",
       "tools": "工具",
       "skills": "技能",
       "forge": "技能锻造",
-      "mcps": "MCP",
-      "saved": "已存"
+      "mcps": "MCP"
     },
     "chips": {
       "all": "全部",
@@ -911,13 +907,9 @@
       "filtered_clear": "显示全部"
     },
     "hero": {
-      "placeholder": "贴一个 GitHub 链接，或搜索…",
-      "research": "研究",
-      "hint": "仓库链接会生成完整档案（许可证、类型、价值）；其他内容会搜索 GitHub。",
       "results": "搜索结果",
       "evaluate": "评估",
       "save": "收藏",
-      "researching": "研究中…",
       "kind": {
         "all": "全部",
         "mcp": "MCP",
@@ -930,53 +922,7 @@
       "import_skills": "从仓库导入技能"
     },
     "dossier": {
-      "no_license": "无许可证",
-      "license_ok": "许可证可用",
-      "license_learn": "仅可学习",
-      "type": {
-        "mcp": "MCP 服务器",
-        "skill": "技能仓库",
-        "agent": "Agent 项目",
-        "other": "其他"
-      },
-      "value_label": "对 Arslan 的价值",
-      "actions": {
-        "register_skill": "注册为 Skill",
-        "add_mcp": "接入为 MCP",
-        "distill": "蒸馏为参考笔记",
-        "save": "存入候选目录"
-      },
-      "saved_ok": "已存入候选目录。",
-      "scan": {
-        "title": "SKILL.md 文件（原文导入，许可证门控）",
-        "none": "未找到 SKILL.md 文件。",
-        "import": "导入",
-        "imported": "已导入"
-      },
-      "mcp": {
-        "title": "建议启动命令（可检查修改）",
-        "add": "添加为 MCP 服务器",
-        "added": "MCP 服务器已添加并锁定，请在“连接与权限”中审核和连接。"
-      },
-      "note": {
-        "title": "参考笔记（可检查修改）",
-        "fallback": "LLM 蒸馏不可用——已改用评估摘要。",
-        "pick_spawn": "选择专家…",
-        "ingest": "喂给专家知识库",
-        "ingest_ok": "已存入 {{name}} 的知识库。",
-        "create_skill": "注册为技能",
-        "create_ok": "已加入技能库（safe）。"
-      },
-      "manifest": {
-        "title": "作者自带配置",
-        "add": "添加此服务器",
-        "added": "已添加服务器，请在“连接与权限”中连接。",
-        "import_skill": "导入技能",
-        "imported": "技能已导入",
-        "expose_hint": "作者建议在“连接与权限”中允许专家使用。这只是建议，不代表授权。",
-        "error": "插件清单无效"
-      },
-      "overview_label": "这是什么"
+      "value_label": "对 Arslan 的价值"
     },
     "equip": {
       "action": "装备给专家…",
@@ -1004,7 +950,6 @@
       "missing": "缺失文件",
       "orphaned": "游离文件"
     },
-    "skill_body_label": "SKILL.md 正文（必须包含 ## Trigger 和 ## 决策规则）",
     "import": {
       "subtitle": "标准 SKILL.md,逐字导入——许可证把关。",
       "repo_placeholder": "owner/repo",
@@ -1549,8 +1494,6 @@
     "memoryTitle": "删除这条记忆？",
     "memoryBody": "Arslan 会忘掉它，也不会再从旧对话里学回来。",
     "unsavedTitle": "不保存就离开？",
-    "unsavedBody": "这篇笔记的改动会丢失。",
-    "deleted": "已删除",
-    "undo": "撤销"
+    "unsavedBody": "这篇笔记的改动会丢失。"
   }
 }

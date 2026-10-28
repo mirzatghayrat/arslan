@@ -305,9 +305,10 @@ async def test_usage_summary_not_covered_footnote(client):
     assert "learning_service" not in nc
     # fact_classify LEFT it in 0.1.63 (C2a-2): the v1 classifier was deleted.
     # optimizer LEFT it in C7b-1, compare_judge and synthetic_corpus in C7b-2: deleted.
-    for gone in ("optimizer", "compare_judge", "synthetic_corpus"):
+    # mcp_suggest and skill_suggest LEFT it in v0.1.64 CAP1a: deleted with the discovery centre.
+    for gone in ("optimizer", "compare_judge", "synthetic_corpus", "mcp_suggest", "skill_suggest"):
         assert gone not in nc
-    assert len(nc) == 5
+    assert len(nc) == 3
 
 
 # ---------------------------------------------------------------------------

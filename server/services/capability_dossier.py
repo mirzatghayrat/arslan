@@ -1,78 +1,28 @@
-"""The Capabilities page's side of the loop (0.1.57 §4, §7, §8): what Arslan found for later,
-each capability's dossier, installing from the page, the folders it may touch, updates, and
-using a candidate in a project.
+"""What Arslan installed, on the Capabilities page (0.1.57 §7): each capability's dossier, the
+folders it may touch, updates, and removal.
 
-Installing from the page is the user naming the source (a click on that candidate's dossier),
-so it goes through the same install → scan → test → switch-on as the in-chat card. A page
-candidate must be one the page's own search returned (kept server-side under PAGE).
+Installing happens only from the card in a conversation (capability_flow). v0.1.64 CAP1a removed
+the page's own search, install and "found for later" rail.
 """
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
 
 import httpx
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import CapabilityFind, CapabilitySource, MCPServer
+from server.db.models import CapabilitySource, MCPServer
 from server.services import capability_flow, capability_install, capability_search
 
 logger = logging.getLogger(__name__)
-
-PAGE = "capabilities-page"          # the "conversation" the page's searches are remembered under
-FIND_DAYS = 30
 
 
 class DossierError(Exception):
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
-
-
-# ── what Arslan found ────────────────────────────────────────────────────────
-
-def _find(row: CapabilityFind) -> dict:
-    return {"id": row.id, "need": row.need, "why": row.why, "conversation_id": row.conversation_id,
-            "project_id": row.project_id, "level_id": row.level_id, "candidate": row.candidate,
-            "created_at": row.created_at.isoformat() + "Z"}
-
-
-async def finds(owner_id: str = "local") -> list[dict]:
-    """Open finds of the last 30 days, newest first; one per candidate."""
-    since = datetime.utcnow() - timedelta(days=FIND_DAYS)
-    async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.execute(select(CapabilityFind).where(
-            CapabilityFind.owner_id == owner_id, CapabilityFind.state == "open", CapabilityFind.created_at >= since,
-        ).order_by(CapabilityFind.created_at.desc()).limit(60))).scalars().all()
-    out, seen = [], set()
-    for row in rows:
-        key = (row.candidate or {}).get("id")
-        if key in seen:
-            continue
-        seen.add(key)
-        capability_search.remember(PAGE, {"candidates": [row.candidate]})   # installable from the page
-        out.append(_find(row))
-    return out[:30]
-
-
-async def dismiss(find_id: str, owner_id: str = "local") -> None:
-    async with db_session.AsyncSessionLocal() as db:
-        row = await db.get(CapabilityFind, find_id)
-        if row is None or row.owner_id != owner_id:
-            raise DossierError("find_not_found")
-        row.state = "dismissed"
-        await db.commit()
-
-
-async def _mark_installed(candidate_id: str, owner_id: str) -> None:
-    async with db_session.AsyncSessionLocal() as db:
-        for row in (await db.execute(select(CapabilityFind).where(
-                CapabilityFind.owner_id == owner_id, CapabilityFind.state == "open"))).scalars().all():
-            if (row.candidate or {}).get("id") == candidate_id:
-                row.state = "installed"
-        await db.commit()
 
 
 # ── dossiers ─────────────────────────────────────────────────────────────────
@@ -104,41 +54,6 @@ async def source(source_id: str, owner_id: str = "local") -> CapabilitySource:
     if row is None or row.owner_id != owner_id:
         raise DossierError("source_not_found")
     return row
-
-
-async def check(candidate_id: str) -> dict:
-    """A candidate's dossier before install (§7): the license read from the source file
-    itself (not the search's reading), and what it would need."""
-    cand = capability_search.seen(PAGE, candidate_id)
-    if cand is None:
-        raise DossierError("unknown_candidate")
-    if cand["kind"] == "skill" and cand.get("source") == "library":
-        verified = cand["license"]                      # read from the skill's own file at its commit
-    else:
-        spdx, path = await capability_install.source_license(cand.get("repo"))
-        verified = {"spdx": spdx, "read_from": path,
-                    "verdict": capability_search.license_verdict(spdx, proprietary=bool(path) and spdx is None)}
-        cand = {**cand, "license": verified}
-        capability_search.remember(PAGE, {"candidates": [cand]})
-    return {"candidate": cand, "installable": capability_flow.installable(cand) is None,
-            "why_not": capability_flow.installable(cand)}
-
-
-async def install(candidate_id: str, *, folders: list[str], keys: dict, owner_id: str = "local") -> dict:
-    """"加进能力库" on a dossier: the same install → scan → test → switch-on as the card."""
-    cand = capability_search.seen(PAGE, candidate_id)
-    if cand is None:
-        raise DossierError("unknown_candidate")
-    problem = capability_flow.installable(cand)
-    if problem:
-        raise DossierError(problem)
-    if cand["kind"] == "mcp":
-        result = await capability_flow.install_mcp(cand, folders=folders, keys=keys)
-    else:
-        result = await capability_flow.install_skill(cand)
-    if result["state"] == "on":
-        await _mark_installed(candidate_id, owner_id)
-    return result
 
 
 async def set_folders(source_id: str, folders: list[str]) -> dict:
@@ -239,42 +154,3 @@ async def check_candidate_license(cand: dict) -> dict:
     spdx, path = await capability_install.source_license(cand.get("repo"))
     return {"spdx": spdx, "read_from": path,
             "verdict": capability_search.license_verdict(spdx, proprietary=bool(path) and spdx is None)}
-
-
-# ── using a candidate in a project (§8) ──────────────────────────────────────
-
-async def as_material(project_id: str, candidate_id: str, owner_id: str = "local") -> dict:
-    """"当资料": its description and README go into the project's materials (its first
-    collection, made if it has none). Reference data for Arslan; nothing is installed."""
-    from server.db.models import Collection, Project
-    from server.services import ingest
-    cand = capability_search.seen(PAGE, candidate_id)
-    if cand is None:
-        raise DossierError("unknown_candidate")
-    readme = ""
-    if cand.get("repo"):
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            for name in ("README.md", "readme.md", "README"):
-                r = await client.get(f"https://raw.githubusercontent.com/{cand['repo']}/HEAD/{name}")
-                if r.status_code == 200:
-                    readme = r.text[:12000]
-                    break
-    async with db_session.AsyncSessionLocal() as db:
-        project = await db.get(Project, project_id)
-        if project is None or project.owner_id != owner_id:
-            raise DossierError("project_not_found")
-        ids = list(project.collection_ids or [])
-        collection_id = ids[0] if ids else None
-        if collection_id is None:
-            col = Collection(name=f"{project.name} · materials"[:100], description="Added from Capabilities")
-            db.add(col)
-            await db.flush()
-            collection_id = col.id
-            # Not a project edit: projects.version (which pins running tasks) is left alone.
-            project.collection_ids = [collection_id]
-        await db.commit()
-    text = f"{cand['name']} — {cand.get('summary') or ''}\nSource: {cand.get('source_url') or ''}\n" \
-           f"License: {(cand.get('license') or {}).get('spdx')}\n\n{readme}"
-    chunks = await ingest.ingest_text(None, f"{cand['name']} ({cand.get('source_url') or 'capability'})", text,
-                                      collection_id=collection_id)
-    return {"collection_id": collection_id, "chunks": chunks}

@@ -8,7 +8,8 @@
 # all three audited callers below: SEALED-BY-TASK-3 or OUT-OF-SCOPE. No production code
 # change was required — this task adds only the audit record + the boundary test below.
 #
-# 1. server/api/discovery.py:33-34 `POST /discovery/evaluate` → discovery_service.evaluate_ref
+# 1. (Removed in v0.1.64 CAP1a, with the rest of the discovery centre; kept as the record.)
+#    server/api/discovery.py:33-34 `POST /discovery/evaluate` → discovery_service.evaluate_ref
 #    (server/services/discovery_service.py:15) → github_eval.fetch_repo/fetch_readme +
 #    mcp_suggest.classify_and_suggest (server/services/mcp_suggest.py:16, ONE non-tool-calling
 #    adapter.chat() classification call). VERDICT: OUT OF SCOPE, not merely "intentionally
