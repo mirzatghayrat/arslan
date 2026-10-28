@@ -6,7 +6,7 @@ The gate itself (outside content, merges) is S64-0's and its tests are there; th
 side: the reason Memory shows, the badge, three failures in a row, turning one on by hand, and a
 correction against a pinned lesson that must not get lost.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -248,9 +248,9 @@ async def test_a_stopped_practice_learned_again_by_arslan_counts_up_and_stays_st
     stopped = await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly",
                                                                    lessons.FAIL_STREAK: 3})
     judge.answers.update({"memory.merge": True, "memory.conflict": False})
-    learned = await lessons.capture([lessons.candidate("Adding reminders",
+    learned = await lessons.capture([lessons.candidate("Adding reminders with a due date",
                                                        "use Swift with EventKit, then run the script from the page",
-                                                       source=source)], external_seen=external_seen)
+                                                       source=source, polarity="avoid")], external_seen=external_seen)
     [row] = await _rows(execution_db)
     assert learned == []
     assert (row.id, row.status, row.situation, row.advice, row.polarity) == (
@@ -274,6 +274,29 @@ async def test_stopped_practices_never_push_an_active_rival_out_of_the_conflict_
                                                          source="detour")], external_seen=False)
     assert (learned["status"], learned["not_in_effect"]) == ("proposed", "conflicts")
     assert learned["evidence"][lessons.CONFLICTS_WITH] == rival
+
+
+async def test_stopped_practices_never_push_an_active_rival_out_of_the_rows_read(execution_db, judge):
+    """#466 recheck: the rows read before scoring are the SCAN_LIMIT most recently changed. Newer stopped rows
+    filled that window and pushed out an older practice in use, so a route that contradicts it became active
+    beside it. Stopped rows are read on their own."""
+    old, now = datetime.utcnow() - timedelta(days=30), datetime.utcnow()
+    async with execution_db() as session:
+        rival = Lesson(situation="Adding reminders", advice="use the Reminders shortcut", polarity="do",
+                       source="detour", status="active", created_at=old, updated_at=old)
+        session.add(rival)
+        session.add_all(Lesson(situation=f"Unrelated chore {i}", advice="xyzzy", polarity="do", source="detour",
+                               status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly",
+                                                         lessons.FAIL_STREAK: 3}, created_at=now, updated_at=now)
+                        for i in range(lessons.SCAN_LIMIT))
+        await session.commit()
+        rival_id = rival.id
+    judge.answers.update({"memory.merge": False,
+                          "memory.conflict": lambda pair: "Reminders shortcut" in pair["existing"]})
+    [learned] = await lessons.capture([lessons.candidate("Adding reminders", "run osascript with AppleScript",
+                                                         source="detour")], external_seen=False)
+    assert (learned["status"], learned["not_in_effect"]) == ("proposed", "conflicts")
+    assert learned["evidence"][lessons.CONFLICTS_WITH] == rival_id
 
 
 async def test_a_new_route_that_conflicts_with_a_stopped_practice_does_not_wait_on_it(execution_db, judge):
