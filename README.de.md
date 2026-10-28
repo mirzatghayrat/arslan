@@ -53,14 +53,13 @@ Du redest weiter, während er arbeitet. Alles, was löscht, sendet, installiert 
 
 Das war's. Kein Konto, keine Anmeldung, kein Arslan-Server.
 
-## Neu in 0.1.60 — Hands v2
+## Neu in 0.1.63 — mitten in der Antwort umlenken, Antworten beim Schreiben, einen Zug rückgängig machen
 
-Arslan bedient deine Mac-Apps jetzt mehr so, wie du es tun würdest. Neben dem Text eines Fensters kann es ein Bild des einen Fensters ansehen, in dem es arbeitet — nie den ganzen Bildschirm, nie gespeichert. Mehrere Schritte in einer App laufen als ein Stapel, Menüpunkte werden direkt gewählt, und Apps öffnen sich im Hintergrund. Eine Karte kann mehrere Apps abdecken, und Apps, denen du vertraust, lassen sich unter Einstellungen › Hands dauerhaft erlauben; Löschen, Senden, Bezahlen und Absenden fragen weiterhin jedes Mal. Geht etwas nur mit der App im Vordergrund, leiht sich Arslan den Vordergrund für etwa eine Sekunde (der Bildschirmrand leuchtet blau; Tasten, die du in der Zeit drückst, werden gehalten und danach nachgereicht), und liegt das Fenster auf einem anderen Schreibtisch, geht es dorthin und kommt zurück. Für längere Arbeit kann es den Bildschirm bis zu 30 Minuten übernehmen — nur mit deinem Ja, und es hält an, sobald du Tastatur oder Maus berührst. Die Einrichtung ist jetzt ein kurzer Film beim ersten Start. [Alle Release Notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Tippe eine Nachricht, während Arslan arbeitet, und sie erreicht die Antwort bei ihrem nächsten Schritt; Antworten erscheinen, während das Modell sie schreibt; bis zu vier Lesevorgänge laufen gleichzeitig; und bevor ein Zug deinen Arbeitsordner erstmals ändert, sichert Arslan einen Checkpoint, sodass „Diesen Zug rückgängig machen“ die Dateien zurückspielt. Dateien, um die du bittest, kommen als Anhänge zurück, auch auf dem iPhone. Zwei Sicherheitsänderungen vorweg: **Jeder neue Terminalbefehl fragt jetzt, bevor er läuft** (zurückstellen unter Einstellungen › Was Arslan darf › Terminal), und **geplante Aufgaben führen in dieser Version keine Befehle aus** — ein Schritt, der einen braucht, wird übersprungen und in deinem Posteingang aufgeführt. Jede Antwort und jede Hintergrundaufgabe hält außerdem standardmäßig bei 2 $ Modellausgaben an, und der Code aus der Expertenzeit ist weg (12.514 Produktzeilen weniger als in 0.1.62). Die Notes nennen auch, was auf 0.1.64 verschoben wurde, und zwei Hürden vor dem Release, die wir verfehlt haben. [Alle Release Notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.63)
 
 Zuletzt:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — ein Chat, der mithält: eine lange Antwort ist nicht mehr „Unterbrochen“, eine zweite Nachricht wartet, bis sie dran ist, Arslan antwortet in der Sprache, in der du schreibst, und „Schreibtisch, Dokumente, Downloads: Aus“ sperrt sie auch für Befehle.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — Antworten, die man lesen kann, Dateien, die man öffnen kann: eine ruhige Zeile mit dem, was Arslan getan hat, Dateien als Karten, ein Reader in der Werkbank und jedes Modell jedes Anbieters pro Unterhaltung.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — Fähigkeiten, die wachsen: Arslan findet ein fehlendes Werkzeug, fragt, installiert es gepinnt und in einer Sandbox, testet es und wiederholt den Schritt.
+- **[0.1.62](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)** — lange Befehle werden fertig: Ein Befehl läuft bis zu seinem eigenen Limit (standardmäßig 2 Minuten, höchstens 10), „braucht deine Prüfung“ nur, wenn wirklich etwas passiert sein könnte, MCP-Werkzeugbeschreibungen können keinen Chat mehr brechen, und das Schreiben einer Datei folgt nie einem Link aus deinem Arbeitsordner hinaus.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — eine Freigabekarte überall (Chat, Posteingang, Island, iPhone), MCP-Server, die sich selbst starten, und Claude funktioniert wieder nach einer abgelehnten `temperature`-Einstellung.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan auf dem Mac — ein Hintergrundauftrag sammelt Rechnungen — und Arslan für iPhone mit einer wartenden Freigabe" width="100%">
@@ -90,8 +89,8 @@ Zuletzt:
 |---|---|---|
 | **Nachricht** | Aus dem Fenster, vom iPhone oder per Stimme — eine Unterhaltung, eine Schleife | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Schleife** | Native Tool-Calls; der Plan liegt beim Host; eine abgeschnittene Antwort wird fortgesetzt statt erraten; 75 s pro Modellaufruf | `server/orchestrator/tool_loop.py` |
-| **Policy** | `run` · `ask` · `forbid`, eine reine Funktion des Befehlstexts | `server/services/terminal_policy.py` (Erkennung destruktiver Befehle aus Hermes Agent, MIT) |
-| **Sandbox** | macOS-Seatbelt: Befehle schreiben nur in den Arbeitsordner, Temp und Caches; SSH-Schlüssel, Schlüsselbund und Arslans Daten bleiben zu; Modellschlüssel erreichen nie einen Befehl; 20 s pro Tool-Aufruf | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Policy** | `run` · `ask` · `forbid`, eine reine Funktion des Befehlstexts | `server/services/terminal_policy.py` (Befehlserkennung und harte Untergrenze angepasst aus Hermes Agent, MIT) |
+| **Sandbox** | macOS-Seatbelt: Befehle schreiben nur in den Arbeitsordner, Temp und Caches; SSH-Schlüssel, Schlüsselbund und Arslans Daten bleiben zu; Modellschlüssel erreichen nie einen Befehl; ein Befehl läuft bis zu seinem eigenen Limit, standardmäßig 2 Min., höchstens 10 | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Ergebnis** | Als nicht vertrauenswürdig verpackt und geprüft, bevor es dich erreicht; Behauptungen über nie erledigte Arbeit fängt ein deterministischer Wächter ab | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## Das Tor
@@ -106,7 +105,7 @@ Zuletzt:
 | **ask** | Destruktiv oder nach außen in deinem Namen | `rm -rf build/` · `git push --force` · `curl … \| sh` · `osascript …` · `brew install jq` · `mail -s …` · `scp … mac-mini:` |
 | **forbid** | Nie, auch nicht mit „nicht mehr fragen“ | `security find-generic-password … -w` · `cat ~/.arslan/secret_key` · `rm -rf ~` · `sudo …` · `shutdown` |
 
-„Nicht mehr fragen“ wird pro Befehlsart gemerkt und unter Einstellungen › Erweitert aufgelistet; forbid-Regeln lassen sich nie merken. Das Tor schützt vor Fehlern und eingeschmuggelten Anweisungen — es ist kein Käfig: ein freigegebener Befehl läuft mit deinen Rechten. Probiere 64 Befehle auf der [Projektseite](https://aralem.dev/arslan/#gate).
+„Nicht mehr fragen“ wird pro Befehlsart gemerkt und unter Einstellungen › Erweitert aufgelistet; forbid-Regeln lassen sich nie merken. Das Tor schützt vor Fehlern und eingeschmuggelten Anweisungen — es ist kein Käfig: ein freigegebener Befehl läuft mit deinen Rechten. Seit 0.1.63 fragt ein neuer Befehl standardmäßig zuerst, was auch immer seine Zeile oben sagt. Probiere 64 Befehle auf der [Projektseite](https://aralem.dev/arslan/#gate).
 
 ## Hände, Hintergrundarbeit und das iPhone
 
@@ -138,7 +137,8 @@ Texterkennung in Bildern und gescannten PDFs, die vollständige Sicherheitslage,
 - **Eigener Modellschlüssel.** Arslan läuft über dein Konto; dein Anbieter rechnet ab. Nativer Tool-Transport ist für OpenAI-kompatible, Anthropic- und Gemini-Pfade implementiert und protokollgetestet — das ist keine Live-Zertifizierung jedes Modells oder Endpunkts.
 - **Hands kann noch nicht an eine Bildschirmposition klicken oder ziehen.** Ein Fenster auf einem anderen Schreibtisch erreicht es, indem es kurz dorthin geht (solange das Ausleihen des Vordergrunds an ist). Eine Taste, die in den ~50 ms gedrückt wird, in denen eine App nach vorn springt, landet in dieser App, und ein großes Fenster (Notizen mit vielen Notizen) braucht zum Lesen 10–20 Sekunden.
 - **Arslan für iPhone kommt bald in den App Store.** Die Mac-Seite ist in 0.1.53 enthalten.
-- **Was nach eigenem Zeitplan Geld ausgibt, ist ab Werk aus.** Die Hintergrund-Pflege des Gedächtnisses ruft dein Modell erst auf, wenn du sie unter Einstellungen › Automatisierung einschaltest; setze trotzdem ein hartes Limit im Abrechnungsbereich deines Anbieters.
+- **Ausgaben haben ein Standardlimit, keine Garantie.** Jede Antwort und jede Hintergrundaufgabe hält bei 2 $ Modellausgaben an (Einstellungen › Hintergrund); es zählen nur Modelle mit bekanntem Preis. Setze trotzdem ein hartes Limit im Abrechnungsbereich deines Anbieters.
+- **Standardmäßig fragt jeder neue Befehl zuerst, und geplante Aufgaben führen keine Befehle aus** (0.1.63).
 - APIs, Schemata und Voreinstellungen können sich vor v1 ändern.
 
 ## Community

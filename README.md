@@ -54,14 +54,13 @@ You keep talking while it works. Anything that deletes, sends, installs or touch
 
 That's it. No account, no sign-up, no Arslan server.
 
-## What's new in 0.1.60 — Hands v2
+## What's new in 0.1.63 — change course mid-reply, answers as they are written, undo a turn
 
-Arslan uses your Mac apps more like you would. Besides a window's text, it can look at a picture of the one window it works in — never the whole screen, never saved. Several steps in one app run as one batch, menu items are chosen directly and apps open in the background. One card can cover several apps, and apps you trust can be allowed for good in Settings › Hands; deleting, sending, paying and submitting still ask every time. When something only works with the app in front, Arslan borrows the front for about a second (the screen edge glows blue; the keys you press meanwhile are held and given back), and if the window is on another desktop it goes there and comes back. For longer work it can take over the screen for up to 30 minutes — only with your yes, and it pauses the moment you touch the keyboard or mouse. Setting up is now a short first-run film. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Type a message while Arslan works and it reaches the reply at its next step; answers appear as the model writes them; up to four reads run at once; and before a turn first changes your working folder Arslan saves a checkpoint, so "Undo this turn" puts the files back. Files you ask for come back as attachments, on the iPhone too. Two safety changes come first: **every new terminal command now asks before it runs** (switch back in Settings › What Arslan may do › Terminal), and **scheduled tasks run no commands** in this version — a step that needs one is skipped and listed in your Inbox. Each reply and each background task also stops at $2 of model spend by default, and the expert-era code is gone (12,514 fewer product lines than 0.1.62). The notes also list what moved to 0.1.64 and two pre-release bars we missed. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.63)
 
 Recently:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — a chat that keeps up: a long answer is not "Interrupted", a second message waits its turn, Arslan answers in the language you write in, and "Desktop, Documents, Downloads: Off" closes them to commands too.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — replies you can read and files you can open: one quiet line of what Arslan did, files back as cards, a reader in the workbench, and any model of any provider for each conversation.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capabilities that grow: Arslan finds a missing tool, asks, installs it pinned and sandboxed, tests it and retries the step.
+- **[0.1.62](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)** — long commands finish: a command runs to its own limit (2 minutes by default, 10 at most), "needs your check" only when something may really have happened, MCP tool descriptions can no longer break a chat, and writing a file never follows a link out of your working folder.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — one approval card everywhere (chat, Inbox, island, iPhone), MCP servers that start themselves, and Claude works again after a rejected `temperature` setting.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">
@@ -91,8 +90,8 @@ Recently:
 |---|---|---|
 | **Message** | From the window, your iPhone or your voice — one conversation, one loop | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Loop** | Native tool calls; the plan is kept by the host; a cut-off reply continues instead of guessing; 75 s per model call | `server/orchestrator/tool_loop.py` |
-| **Policy** | `run` · `ask` · `forbid`, a pure function of the command text | `server/services/terminal_policy.py` (destructive-command detection vendored from Hermes Agent, MIT) |
-| **Sandbox** | macOS seatbelt: commands write only to the working folder, temp and caches; SSH keys, keychain and Arslan's data stay closed; model keys never reach a command; 20 s per tool call | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Policy** | `run` · `ask` · `forbid`, a pure function of the command text | `server/services/terminal_policy.py` (command reading and the hard floor adapted from Hermes Agent, MIT) |
+| **Sandbox** | macOS seatbelt: commands write only to the working folder, temp and caches; SSH keys, keychain and Arslan's data stay closed; model keys never reach a command; a command runs to its own limit, 2 min by default, 10 at most | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Result** | Wrapped as untrusted data and checked before it reaches you; claims of work that never ran are caught by a deterministic guard | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## The gate
@@ -107,7 +106,7 @@ Recently:
 | **ask** | Destructive, or acting outward in your name | `rm -rf build/` · `git push --force` · `curl … \| sh` · `osascript …` · `brew install jq` · `mail -s …` · `scp … mac-mini:` |
 | **forbid** | Never, even with “don't ask again” | `security find-generic-password … -w` · `cat ~/.arslan/secret_key` · `rm -rf ~` · `sudo …` · `shutdown` |
 
-“Don't ask again” is remembered per kind of command and listed in Settings › Advanced; forbidden rules can never be remembered. The gate guards against mistakes and smuggled instructions — it is not a cage: a command you allow runs with your permissions. Try 64 commands on the [project site](https://aralem.dev/arslan/#gate).
+“Don't ask again” is remembered per kind of command and listed in Settings › Advanced; forbidden rules can never be remembered. The gate guards against mistakes and smuggled instructions — it is not a cage: a command you allow runs with your permissions. Since 0.1.63 a new command asks first by default, whatever its row above says. Try 64 commands on the [project site](https://aralem.dev/arslan/#gate).
 
 ## Hands, background work and the iPhone
 
@@ -226,7 +225,8 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 - **Bring your own model key.** Arslan runs against your account; your provider bills you. Native tool transport is implemented and wire-tested for OpenAI-compatible, Anthropic and Gemini paths — that is not live certification of every model or endpoint.
 - **Hands can't click at a screen position or drag yet.** A window on another desktop is reached by going there for a moment (while borrowing the front is on). A key typed in the ~50 ms while an app jumps forward goes to that app, and a large window (Notes with many notes) can take 10–20 seconds to read.
 - **Arslan for iPhone is coming to the App Store.** The Mac side ships in 0.1.53.
-- **Anything that spends on its own schedule ships off.** Background memory curation calls your model when you turn it on in Settings › Automation; keep a hard limit in your provider's billing dashboard.
+- **Spending has a default limit, not a guarantee.** Each reply and each background task stops at $2 of model spend (Settings › Background), counting only models with a known price; keep a hard limit in your provider's billing dashboard.
+- **By default every new command asks first, and scheduled tasks run no commands** (0.1.63).
 - APIs, schemas and defaults may change before v1.
 
 ## Community
