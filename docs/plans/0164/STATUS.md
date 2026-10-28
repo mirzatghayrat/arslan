@@ -30,10 +30,10 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444~~ (merged) → #454 → #428. ④参谋 checked every open PR at ~15:10 UTC (heads, reviews on GitHub, overlap with main):
 
-- **Ready now:** #457 (CAP1b, ③Hands OK at `d8372fd4`), #454 (STY read test, ①iOS OK at `48f3083e`), #428 (docs/site, ①iOS OK at `bde88795`), #461 (CAP F3; ⓪Plan's max reviewer at `1188c10d`, the later commit `9ec18990` is test-only, noted on the PR), #462 (BR1; ①iOS OK at `cd60c056`, recorded here because ①iOS does not post on PRs).
+- **Ready now:** #457 (CAP1b, ③Hands OK at `d8372fd4`), #454 (STY read test, ①iOS OK at `48f3083e`), #428 (docs/site, ①iOS OK at `bde88795`), #461 (CAP F3; ⓪Plan's max reviewer at `1188c10d`, the later commit `9ec18990` is test-only, noted on the PR), #462 (BR1; ①iOS OK at `cd60c056`, recorded here because ①iOS does not post on PRs), #456 (F5b-2; ②Main confirmed at `54805cfd`, CI 40677484593 success; after it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, together with the Cua lines already planned after #428).
 - **Rechecks of a newer head:** #463 (BR2; ①iOS's OK was at `c443a7d8`; ⑥Helper merges main in, ①iOS rechecks), #464 (③Hands posts a line that its OK covers `b7059ff3`).
 - **Fresh CI first:** #443 (S64-0b; main merged in at `d2ab87e5`, CI 40712453311 running).
-- **No review on GitHub yet:** #459 PRJ0 (⑤CAP), #456 F5b-2 (②Main's confirmation), #453 and #458 (⑥Helper), #465 (③Hands OK at `7c93e2ec`, one pointer added after at `e075d479`).
+- **No review on GitHub yet:** #459 PRJ0 (⑤CAP), #453 and #458 (⑥Helper), #465 (③Hands OK at `7c93e2ec`, one pointer added after at `e075d479`).
 - **#447** (SBX card): main merged in at `0c1454fc` (it was conflicting); the user's answers to its seven questions come through ④参谋.
 
 **Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
