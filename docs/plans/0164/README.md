@@ -38,12 +38,16 @@
 - **开工顺序：** 用户点合并本 PR 后，能同时开的一起开：先合 C7c、C5b、F5b-2，再开 CAP1–CAP3、Q1、STY、INB1 起。M64 和 S64-0 现在就能开。SBX 卡等 #432 定了再写。
 - **Codex：** 用户在 ChatGPT 桌面版的 Code Review 里连上 GitHub，只用「Review with Codex」（在聊天里审，不发到 GitHub），不开自动审查。待审的 PR 和能直接粘的提示在 `docs/plans/0162/STATUS.md`「Codex 待审」。
 
+### 1.2 #432 decided by the user on 2026-10-28 (after the cloud audit's 5.5 rerun; relayed by ④参谋)
+
+Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one go" is the goal, so **SBX and the classifier are both "must" in v0.1.64**, SBX first and the classifier after (a safety precondition, not a schedule choice). The audit's "SBX → measure → bring back 'ask only when risky' → measure cards" steps still run, but only to set the classifier's baseline. **All five modes** ship: S5a after SBX and S3, S5b after the classifier. **D8 is reversed** with the audit's conditions (B, C gates a/b/c/d/h/g, D7's constraints, ledger, one-click off); if any one is unmet the classifier does not ship. Pass lines are written by the user before measuring. **S64-0b** takes two more mark leaks. **If the classifier's review is blocked, v0.1.64 waits** rather than shipping without it. So case B in §4 is the order; case A is dropped.
+
 ## 2. 还要用户定的
 
 按要紧程度排：
 
-1. **#432：安全模型怎么改**，等云端审计（5.5，A–F）回来。定了以后才知道：沙箱默认拒绝还是不是第一；S2a-3 四个 PR 留、改还是关；S5 是否扩成五档权限模式；D7、D8 怎么改（D8 要用户明确推翻）。
-2. **S64-0 要不要并进另外三处标记漏洞**：等云端审计 E 题。
+1. **Pass lines for the classifier (user, before anything is measured):** pick from the three candidates in `docs/plans/0162/README.md` §8 (#432), or write your own. ⓪Plan suggests option 2. #432 itself was decided on 2026-10-28 (§1.2).
+2. ~~S64-0 and the extra mark leaks~~: decided 2026-10-28 (§1.2): #438 merges as planned, two leaks go to S64-0b, `run_command` reading files is a known limit.
 3. **推送只推「要你做」的**（INB 第 5 条）：会影响所有手机，单独问。
 4. **#375 约 1,060 行要不要拆**（超过 §5 的约 800 行）。按云端审计的意见 S2a-3 的解析器要留，这一问照样要答。
 5. **R63 判定里没有记录的两半**（M3 第 7 条 Mac 那半、第 12 条截屏那半）：v0.1.64 冒烟时补测，还是放下。
@@ -71,8 +75,13 @@
 
 | 卡 | 做什么 | 建议分级 | 说明 |
 |---|---|---|---|
-| **SBX** | 沙箱默认拒绝 + 沙箱合一（领先路线 §0.6 第 1 条，含兼容性回归和两个要量的数） | 必须 | 等 #432 定了再写。#432 选三层的话，SBX 就是其中「沙箱」那一层。 |
-| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406、还没人接的 PR4） | 看 #432 | Codex 审 rebase 之后的头（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
+| **SBX** | 沙箱默认拒绝 + 沙箱合一（领先路线 §0.6 第 1 条，含兼容性回归和两个要量的数） | 必须 | **Unblocked (user, 2026-10-28):** it is the "sandbox" layer. Includes the audit's B-1 (system-service allowlist, measured on a Mac before "run directly in the sandbox" opens), e (files written now and run later become a hard rule) and f (keychain, in the measurements). Then: measure on a Mac, bring back "ask only when risky", measure cards again; that number is the classifier's baseline. Card written by ⓪Plan after this PR merges; lane ②Main; effort=max plus Codex. |
+| **HR** | Hard rules tidy-up: the daemon-escape class, S2a-1's network cut and the never-approve list (layer ②'s "send it out" and network cards) as one written set, each with a test | must | After SBX and S2a-3. Lane ③Hands; effort=max plus Codex. |
+| **CLS** | The classifier ("auto" mode's reviewer) | must (user, 2026-10-28) | After SBX, HR, S64-0 and S64-0b. Launch gates a, b, c, d, h, g each with tests; "yes" recorded `by="reviewer"`, this time only, no rule or grant; never layer ② or network cards; background jobs only with the user's own opening message (`Job.origin`); D7's constraints; ledger; one-click off; off by default, on after the user agrees. Must meet the user's pass lines (§2 item 1) and save cards against "ask only when risky" alone. Test set stays on this Mac (gate g). Open audit question: classifier reads only the user's own words and the pending action, so outside content need not switch it off (`docs/plans/0162/README.md` §8). If its review is blocked, v0.1.64 waits. Lane ③Hands; effort=max plus Codex. |
+| **S5a** | Modes: plan / ask every step / auto-edit / full access; current mode next to the input box, one click, per conversation; Settings keeps only the default for new conversations; plan's "start" returns to the previous mode; sub-sessions inherit only | must | After SBX, e and S3 undo. Clickable demo to the user before UI code. Lane ②Main. |
+| **S5b** | The "auto" mode on top of S5a | must | After CLS. Lane ②Main. |
+| **S64-0b** | Two more mark leaks from the audit's E: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words (framed and marked when the job read outside content) | must (user, 2026-10-28) | After #438. About 20 product lines each; tests check outcomes (network command gets a card, `memory_note` does not take effect at once). `run_command` reading files stays a known limit. Lane ③Hands; effort=max plus Codex. |
+| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406、还没人接的 PR4） | must (user, 2026-10-28: keep the parser, drop "complete the list") | Codex 审 rebase 之后的头（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
 | **ACM** | 卡片界面与文案大合并（领先路线 D 行「审批策略与作用域」；§8 和别处叫它 D1，和 v0.1.63 的 D1 卡不是一回事） | 必须 | INB、STY、S4a 跟进、S6 都挂在它上面。等 #432（权限模式会改卡片）。 |
 | **NET** | 本机代理加网站名单（§0.6 第 3 条） | 顺延候选 | 原定「产能允许时」。 |
 | 其余「执行领先」行 | L1 薄循环 + ACP、L2 内置工具按需 + 参数修复、L3 边流式边执行、L4 进度流到灵动岛和 iPhone、L6 后台进程与进程工具、L7 目标模式、L8 存记忆 + 服务端压缩、L11 文件夹规矩、L12 评审选项 + iPhone 批准、L14 公开 Terminal-Bench + Mac 题库 | 用户 10-28 已定 | L11 + K10「应该」（都小）。**L6 后台进程、L7 目标模式留在 v0.1.64，标「应该」**：L6 是新的安全面，排在 SBX 之后；L7 改主循环，跑分（M64 那套）不退步才合。其余顺延 v0.1.65。L6、L7 的卡开工时由 ②Main 写。 |
@@ -138,25 +147,19 @@ The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as fi
 - 跑陌生代码的（CAP 的 verify 和插件脚本、CAP5 的命令边界、CAP6b、SUB）都排在 SBX 后面。
 - **L6 后台进程**排在 SBX 后面；**L7 目标模式**跑分（M64 那套）不退步才合（用户 10-28）。
 
-**情况 A：#432 不采纳，照 10-22 的顺序。**
+**Case A (#432 not adopted) is dropped: the user adopted #432 on 2026-10-28.**
 
-```
-M64、S64-0（互不等）→ INB1 → INB2
-C7c、C5b、F5b-2（在任何新子系统之前）
-CAP1–CAP3、Q1（Bridge 帧点头后）、STY、INB3–INB9
-SBX ──→ S2a-3（Codex 审 rebase 后的头）──→ CAP4 起 ──→ SUB
-  ├──→ ACM
-  └──→ L6
-L7：随时可做，跑分不退步才合
-```
-
-**情况 B：#432 采纳（三层 + 模式）。云端审计（#432 上，Opus 4.8，待复核）的意见：分类器只是「少出卡」的体验层，不是安全边界，必须排在 SBX 之后；S2a-3 的解析器留下，只放弃「把清单补全」。②Main 带一位 effort=max 的独立审查员复核后更正：经系统守护进程在沙箱外生效的那一类命令，**靠 SBX 默认拒绝的 profile 加系统服务允许清单挡，不靠解析器**（解析器看不见脚本、编出来的程序、git 钩子这类间接调用）；分类器说「行」要记成 `by="reviewer"`、只管这一次、不存规则和授权；分类器永远不批沙箱外的动作。这条提议还会顶替总计划的 D7、D8，D8 要用户明确推翻。详见 #432。**
+**Case B, adopted by the user on 2026-10-28.** Earlier notes: 云端审计（#432 上，Opus 4.8，待复核）的意见：分类器只是「少出卡」的体验层，不是安全边界，必须排在 SBX 之后；S2a-3 的解析器留下，只放弃「把清单补全」。②Main 带一位 effort=max 的独立审查员复核后更正：经系统守护进程在沙箱外生效的那一类命令，**靠 SBX 默认拒绝的 profile 加系统服务允许清单挡，不靠解析器**（解析器看不见脚本、编出来的程序、git 钩子这类间接调用）；分类器说「行」要记成 `by="reviewer"`、只管这一次、不存规则和授权；分类器永远不批沙箱外的动作。这条提议还会顶替总计划的 D7、D8，D8 要用户明确推翻。详见 #432。**
 
 ```
 M64、S64-0（互不等）→ INB1 → INB2
 C7c、C5b、F5b-2（在任何新子系统之前）
 CAP1–CAP3、Q1、STY、INB3–INB9
-SBX ──→ S2a-3（rebase，Codex 审，不再要求清单补全）──→ 硬规则整理 ──→ 分类器（先量漏放和误拦）──→ 模式（S5 扩写）──→ ACM
+SBX ──→ measure on a Mac ──→ "ask only when risky" back ──→ measure cards (= the classifier's baseline)
+SBX ──→ S2a-3 (rebase, Codex, no "complete the list") ──→ HR
+SBX + S3 ──→ S5a ──→ ACM
+S64-0 (#438) ──→ S64-0b
+HR + S64-0b + pass lines written by the user ──→ CLS (gates a/b/c/d/h/g) ──→ S5b
 SBX ──→ CAP 里跑陌生代码的部分 ──→ SUB
 SBX ──→ L6
 L7：随时可做，跑分不退步才合
@@ -167,9 +170,9 @@ L7：随时可做，跑分不退步才合
 | 道 | 卡 |
 |---|---|
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
-| ②Main | SBX、INB（含 MEM1）、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
+| ②Main | SBX、S5a、S5b、INB（含 MEM1）、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
 | 新开一个会话（用户 10-28 定，为了并行） | CAP |
-| ③Hands | **S64-0（effort=max 写）**；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
+| ③Hands | **S64-0（effort=max 写）**；S64-0b；HR；CLS；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |
 | Codex（外部工具，不是会话） | 安全面和大 PR 的独立审查（§8 安全审查路径） |
 
