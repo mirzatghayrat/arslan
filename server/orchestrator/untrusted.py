@@ -10,6 +10,7 @@ cannot reach the execution tier.
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import re
 
@@ -49,12 +50,14 @@ def wrap_tool_output(text: str) -> str:
     return f"{TOOL_OPEN}\n{_strip_injection(text)}\n{TOOL_CLOSE}"
 
 
-_WEB_TOOLS = ("web_search", "web_extract", "find_capability")
+# S64-0: delegate_work's results are what its helpers read on the web (web_search, web_extract).
+_WEB_TOOLS = ("web_search", "web_extract", "find_capability", "delegate_work")
 
 
 def from_the_web(tool_key: str, args: dict | None) -> bool:
     """A result read from the network (web search and pages, the browser, MCP servers, a command that
-    reaches the network): framed as web content. Everything else a tool returns is tool output."""
+    reaches the network, a helper's report): framed as web content. Everything else a tool returns is
+    tool output."""
     if tool_key in _WEB_TOOLS or tool_key.startswith(("browser_", "mcp_")):
         return True
     return tool_key == "run_command" and bool(_NETWORK_COMMAND.search(str((args or {}).get("command") or "")))
@@ -69,8 +72,14 @@ def from_the_web(tool_key: str, args: dict | None) -> bool:
 # run_native for one turn; outside a turn the answer is "yes" (the safe side).
 
 _EXTERNAL: contextvars.ContextVar[dict | None] = contextvars.ContextVar("turn_external_seen", default=None)
+# S64-0: delegate_work (its helpers read the web) and task_progress (a task's earlier outputs, which
+# carry old replies, like conversation_search).
 _OUTSIDE_TOOLS = ("web_search", "web_extract", "read_file", "search_files", "conversation_search", "recall",
-                  "find_capability")
+                  "find_capability", "delegate_work", "task_progress")
+# S64-0: outside content already in a run's inputs before its first step: a background job whose goal
+# a turn wrote after reading some (or that no turn started), a resumed task's saved progress. Every
+# turn of that run starts as having read it (`carried`).
+_CARRIED: contextvars.ContextVar[bool] = contextvars.ContextVar("external_carried", default=False)
 _NETWORK_COMMAND = re.compile(
     r"\b(?:curl|wget|http|https|nc|ncat|ssh|scp|rsync|git\s+(?:clone|pull|fetch)|pip3?\s+download"
     r"|requests|urllib\d?|httpx|aiohttp|fetch)\b|https?://", re.I)
@@ -90,7 +99,19 @@ def reaches_network(command: str) -> bool:
 
 
 def track_turn() -> contextvars.Token:
-    return _EXTERNAL.set({"seen": False})
+    """A turn's holder. It starts clean unless its run carries outside content in (`carried`)."""
+    return _EXTERNAL.set({"seen": _CARRIED.get()})
+
+
+@contextlib.contextmanager
+def carried(seen: bool):
+    """Every turn started inside starts as having read outside content when `seen`. An inner
+    `carried(False)` never clears what an outer one carries."""
+    token = _CARRIED.set(_CARRIED.get() or seen)
+    try:
+        yield
+    finally:
+        _CARRIED.reset(token)
 
 
 def end_turn(token: contextvars.Token) -> bool:

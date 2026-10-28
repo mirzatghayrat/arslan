@@ -217,14 +217,15 @@ async def test_today_is_counted_by_hour_and_kind(client, artifacts):
 async def test_a_task_from_the_phone_gets_its_own_conversation_and_a_job(client, monkeypatch):
     started = {}
 
-    async def fake_start(cid, goal, criteria, *, origin="mac"):
-        started.update(cid=cid, goal=goal, criteria=criteria, origin=origin)
+    async def fake_start(cid, goal, criteria, *, origin="mac", outside_seen=None):
+        started.update(cid=cid, goal=goal, criteria=criteria, origin=origin, outside_seen=outside_seen)
         return SimpleNamespace(job_id="job-1")
     monkeypatch.setattr(background_jobs, "start", fake_start)
     got = (await client.post("/api/v1/phone/tasks", json={"goal": "  把发票整理成表  ", "criteria": ["每张一行", " ", "按月小计", "a", "b"]})).json()
     assert got["job_id"] == "job-1" and got["conversation_id"].startswith("task-")
     assert started == {"cid": got["conversation_id"], "goal": "把发票整理成表",
-                       "criteria": [{"description": "每张一行"}, {"description": "按月小计"}, {"description": "a"}], "origin": "phone"}
+                       "criteria": [{"description": "每张一行"}, {"description": "按月小计"}, {"description": "a"}], "origin": "phone",
+                       "outside_seen": False}      # S64-0: the user's own words start clean
     async with client.db_maker() as db:
         from sqlalchemy import select
         msg = (await db.execute(select(ArslanMessage).where(ArslanMessage.conversation_id == got["conversation_id"]))).scalar_one()

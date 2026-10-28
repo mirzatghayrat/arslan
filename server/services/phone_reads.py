@@ -343,7 +343,8 @@ async def start_task(goal: str, criteria: list[str]) -> dict:
     conversation_id = TASK_PREFIX + uuid.uuid4().hex[:12]
     await memory.add_message(conversation_id, "user", goal, source="phone")
     wanted = [{"description": " ".join(str(c).split())[:300]} for c in criteria if str(c).strip()][:MAX_CRITERIA]
-    job = await background_jobs.start(conversation_id, goal, wanted, origin="phone")
+    # S64-0: the goal is the user's own words, as a chat turn's message is: the job starts clean.
+    job = await background_jobs.start(conversation_id, goal, wanted, origin="phone", outside_seen=False)
     return {"conversation_id": conversation_id, "job_id": job.job_id}
 
 

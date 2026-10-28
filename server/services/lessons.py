@@ -43,6 +43,11 @@ MAX_DETOURS = 2
 MAX_SITUATION = 300
 MAX_ADVICE = 400
 SCAN_LIMIT = 500
+# S64-0: `evidence[NOT_IN_EFFECT]` says why a learned practice waits, written when it is learned:
+# outside_content, setting_off, no_judgement, not_a_correction or conflicts. A waiting one with
+# none written (learned before v0.1.64) counts as outside content. Either way a merge never
+# activates a waiting lesson in its own words (_capture); Brain shows the reason (INB1).
+NOT_IN_EFFECT = "not_in_effect"
 
 # Failures that were never a real try of a route: refused by the user or the host,
 # malformed, or not run at all.
@@ -275,13 +280,16 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         if worth is False or (worth is None and cand.source != "user_correction"):
             continue
         immediate = bool(worth) and take_effect and (cand.source == "user_correction" or not external_seen)
+        # S64-0: why it does not take effect, written when it is learned (NOT_IN_EFFECT).
+        why = None if immediate else ("outside_content" if external_seen and cand.source != "user_correction"
+                                      else "setting_off" if not take_effect else "no_judgement")
         if cand.source == "user_correction" and immediate:
             # L1 (0.1.55): a correction must answer something Arslan did earlier in the
             # conversation — a first message is a request, never a correction — and it
             # must not go against the route that just worked. Otherwise it is a proposal.
             if (cand.evidence.get("answers_earlier_reply") is False
                     or await _contradicts_what_worked(text, conversation_id)):
-                immediate = False
+                immediate, why = False, "not_a_correction"
         merged = conflicting = None
         for row in await _nearest(text):
             pair = {"candidate": text, "existing": render(row)}
@@ -297,9 +305,12 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                 row = await db.get(Lesson, merged.id)
                 evidence = dict(row.evidence or {})
                 evidence["seen"] = int(evidence.get("seen") or 1) + 1
-                row.evidence = evidence
-                if cand.source == "user_correction" and immediate:
+                # S64-0: a waiting lesson's words may come from a turn that read outside content.
+                # It takes effect only in the words of the turn that may make it take effect.
+                if immediate and (cand.source == "user_correction" or row.status == "proposed"):
                     row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
+                    evidence.pop(NOT_IN_EFFECT, None)
+                row.evidence = evidence
                 if immediate and row.status == "proposed":
                     row.status = "active"
                 row.updated_at = now
@@ -311,9 +322,10 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                 if cand.source == "user_correction" and immediate and not old.pinned:
                     old.status, old.updated_at = "archived", now     # the user's newer words win
                 else:
-                    status = "proposed"                              # the user decides between the two
+                    status, why = "proposed", why or "conflicts"     # the user decides between the two
+            evidence = dict(cand.evidence) | ({NOT_IN_EFFECT: why} if status == "proposed" else {})
             row = Lesson(situation=cand.situation, advice=cand.advice, polarity=cand.polarity, source=cand.source,
-                         evidence=cand.evidence, status=status, created_at=now, updated_at=now)
+                         evidence=evidence, status=status, created_at=now, updated_at=now)
             db.add(row)
             await db.commit()
             learned.append(present(row))

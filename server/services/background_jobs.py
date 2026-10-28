@@ -49,6 +49,8 @@ class Job:
     tool_calls_seen: int = 0
     run_id: int | None = None         # its recorded run: the phone reviews the steps by it
     origin: str = "mac"               # "phone": started from the paired iPhone
+    # S64-0: the goal was written after outside content, or nobody knows (the safe side).
+    outside_seen: bool = True
     results: dict = field(default_factory=dict)   # check_id -> status
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -149,12 +151,17 @@ def active() -> list[Job]:
     return sorted((job for job in _jobs.values() if job.phase != "finished"), key=lambda job: job.started_at)
 
 
-async def start(conversation_id: str, goal: str, criteria: list[dict], *, origin: str = "mac") -> Job:
+async def start(conversation_id: str, goal: str, criteria: list[dict], *, origin: str = "mac",
+                outside_seen: bool | None = None) -> Job:
+    from server.orchestrator import untrusted
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
+    # S64-0: the job runs in a clean context, but its goal is the starting turn's words. Whether that
+    # turn had read outside content is taken now; started outside any turn (an Inbox proposal), yes.
     job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
-              acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac")
+              acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
+              outside_seen=untrusted.external_seen() if outside_seen is None else outside_seen)
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
@@ -210,6 +217,7 @@ def _job_sink(job: Job, downstream):
 
 
 async def _run(job: Job) -> None:
+    from server.orchestrator import untrusted
     global _slots
     if _slots is None:
         _slots = asyncio.Semaphore(MAX_CONCURRENT)
@@ -219,7 +227,8 @@ async def _run(job: Job) -> None:
         async with _slots:
             job.phase = "running"
             _emit(job)
-            final_text, phase, reason = await _execute(job)
+            with untrusted.carried(job.outside_seen):    # S64-0: each of its turns starts from it
+                final_text, phase, reason = await _execute(job)
     except asyncio.CancelledError:
         phase, reason = "cancelled", None
     except Exception as exc:  # noqa: BLE001 — a job failure is reported, never raised into the loop
