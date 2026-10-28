@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "iPhone から",
     "learned": "学びました：{{text}}",
-    "wantsToLearn": "Arslan がやり方を覚えたいと言っています：{{text}}",
     "learnedUndo": "取り消す",
-    "learnedKeep": "覚える",
-    "learnedSkip": "いいえ",
+    "learnedNotInEffect": "やり方を1つ学びました（有効になっていません）：{{reason}}",
+    "learnedSeeInMemory": "「メモリー」で見る",
     "learnedUndone": "取り消しました",
-    "learnedKept": "覚えました",
     "title": "{{name}} とチャット",
     "placeholder": "メッセージを入力…",
     "send": "送信",
@@ -883,15 +881,11 @@
     "empty_no_spawns_action": "スポーンを作成"
   },
   "capabilities": {
-    "title": "機能ライブラリ",
-    "subtitle": "ツール、スキル、MCP サーバーを探して追加・管理します。",
     "tabs": {
-      "discover": "探す",
       "tools": "ツール",
       "skills": "スキル",
       "forge": "スキル鍛造",
-      "mcps": "MCPs",
-      "saved": "保存済み"
+      "mcps": "MCPs"
     },
     "chips": {
       "all": "すべて",
@@ -911,13 +905,9 @@
       "filtered_clear": "すべて表示"
     },
     "hero": {
-      "placeholder": "GitHub リンクを貼り付けるか検索…",
-      "research": "調べる",
-      "hint": "リポジトリのリンクはライセンス・種類・用途を詳しく調べます。それ以外は GitHub を検索します。",
       "results": "検索結果",
       "evaluate": "評価",
       "save": "保存",
-      "researching": "調査中…",
       "kind": {
         "all": "すべて",
         "mcp": "MCP",
@@ -930,53 +920,7 @@
       "import_skills": "リポジトリからスキルをインポート"
     },
     "dossier": {
-      "no_license": "ライセンスなし",
-      "license_ok": "ライセンス確認済み — 利用可能",
-      "license_learn": "学習用のみ",
-      "type": {
-        "mcp": "MCP サーバー",
-        "skill": "スキルのリポジトリ",
-        "agent": "エージェントのプロジェクト",
-        "other": "その他"
-      },
-      "value_label": "Arslan での用途",
-      "actions": {
-        "register_skill": "スキルとして登録",
-        "add_mcp": "MCP として追加",
-        "distill": "ノートに要約",
-        "save": "カタログに保存"
-      },
-      "saved_ok": "カタログに保存しました。",
-      "scan": {
-        "title": "SKILL.md ファイル（ライセンス確認後に原文をインポート）",
-        "none": "SKILL.md ファイルが見つかりませんでした。",
-        "import": "インポート",
-        "imported": "インポート済み"
-      },
-      "mcp": {
-        "title": "推奨起動コマンド（確認・編集）",
-        "add": "MCP サーバーとして追加",
-        "added": "MCP サーバーをロック状態で追加しました。「接続と権限」で確認して接続してください。"
-      },
-      "note": {
-        "title": "参考ノート（確認・編集）",
-        "fallback": "モデルによる要約を利用できないため、評価概要を表示しています。",
-        "pick_spawn": "エキスパートを選択…",
-        "ingest": "エキスパートの知識に追加",
-        "ingest_ok": "{{name}} の知識ベースに追加しました。",
-        "create_skill": "スキルとして登録",
-        "create_ok": "スキルライブラリに追加しました（低リスク）。"
-      },
-      "manifest": {
-        "title": "作者同梱の設定",
-        "add": "このサーバーを追加",
-        "added": "サーバーを追加しました。「接続と権限」で接続してください。",
-        "import_skill": "スキルを取り込む",
-        "imported": "スキルを取り込みました",
-        "expose_hint": "作者は「接続と権限」でエキスパートへのアクセス許可を推奨しています。これは提案であり、承認ではありません。",
-        "error": "プラグインマニフェストが無効です"
-      },
-      "overview_label": "これは何か"
+      "value_label": "Arslan での用途"
     },
     "equip": {
       "action": "エキスパートに装備…",
@@ -1004,7 +948,6 @@
       "missing": "欠落ファイル",
       "orphaned": "孤立ファイル"
     },
-    "skill_body_label": "SKILL.md 本文（## Trigger と ## Decision Rules が必要です）",
     "import": {
       "subtitle": "標準 SKILL.md をそのまま取り込み — ライセンス審査あり。",
       "repo_placeholder": "owner/repo",
@@ -1511,11 +1454,9 @@
     "keepLocal": "残す（ローカルモデルのみ）",
     "drop": "いらない",
     "apply": "適用",
-    "use": "使う",
     "source": {
       "memory": "あなたについて",
-      "curation": "整理",
-      "lesson": "学んだやり方"
+      "curation": "整理"
     },
     "sensitive": "機微"
   },
@@ -1549,8 +1490,6 @@
     "memoryTitle": "この記憶を削除しますか？",
     "memoryBody": "Arslan はこれを忘れ、古い会話から学び直すこともありません。",
     "unsavedTitle": "保存せずに移動しますか？",
-    "unsavedBody": "このノートの変更は失われます。",
-    "deleted": "削除しました",
-    "undo": "元に戻す"
+    "unsavedBody": "このノートの変更は失われます。"
   }
 }

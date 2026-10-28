@@ -42,7 +42,7 @@ export default function InboxMemory({ max = 3, onCount }: { max?: number; onCoun
               meta={<><Tag>{t(`pendingMemory.source.${item.source}`)}</Tag>{item.sensitive ? <Tag tone="danger">{t("pendingMemory.sensitive")}</Tag> : null}</>}
               actions={<>
                 <Button size="sm" tone="primary" disabled={busy === item.key} onClick={() => void act(item, item.accept)}>
-                  {item.source === "curation" ? t("pendingMemory.apply") : item.source === "lesson" ? t("pendingMemory.use")
+                  {item.source === "curation" ? t("pendingMemory.apply")
                     : item.sensitive ? t("pendingMemory.keepLocal") : t("pendingMemory.keep")}
                 </Button>
                 <Button size="sm" disabled={busy === item.key} onClick={() => void act(item, item.reject)}>{t("pendingMemory.drop")}</Button>

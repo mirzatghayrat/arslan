@@ -9,7 +9,6 @@ from server.db.models import (
     ArslanSummary,
     Base,
     Feedback,
-    RouterDecision,
     Spawn,
     UserFact,
 )
@@ -53,11 +52,9 @@ async def test_user_fact_defaults(session):
 
 
 @pytest.mark.asyncio
-async def test_router_decision_and_summary(session):
-    session.add(RouterDecision(conversation_id="main", user_message="hi", action="answer"))
+async def test_a_summary_keeps_its_cutoff(session):
     session.add(ArslanSummary(conversation_id="main", summary="...", up_to_message_id=5))
     await session.commit()
-    assert (await session.execute(select(RouterDecision))).scalar_one().action == "answer"
     assert (await session.execute(select(ArslanSummary))).scalar_one().up_to_message_id == 5
 
 

@@ -6,7 +6,8 @@ it was written:
 - installed through Capabilities: source_id set (capability_flow);
 - authored and promoted: a SkillCandidate of that key with promoted_at, whatever its status since
   (skill_forge, expert_conversion; the curator retires it, reject_candidate overwrites any status);
-- made from a GitHub repo in Discover: its key starts with "gh-" (discovery_service).
+- made from a GitHub repo in Discover before v0.1.64: its key starts with "gh-" (the discovery
+  centre, removed in CAP1a; its rows stay).
 
 In each case a seed row with another retired key, in the same database, is still deleted."""
 from datetime import datetime
@@ -101,5 +102,5 @@ async def test_seed_rows_on_the_list_are_still_deleted(db):
 
 
 def test_no_retired_key_can_be_a_discover_skill():
-    # discovery_service._skill_key makes every Discover skill "gh-…"; a retired key never is.
+    # The removed discovery centre made every Discover skill "gh-…"; a retired key never is.
     assert not [key for key in seeder.RETIRED_SKILL_KEYS if key.startswith("gh-")]

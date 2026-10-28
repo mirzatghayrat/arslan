@@ -12,7 +12,7 @@
 
 use serde::Deserialize;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -37,17 +37,57 @@ const RELEASE_AFTER_FAILURES: u32 = 3;
 pub enum CloseAction {
     /// Hide the window; the backend keeps running.
     Hide,
+    /// FS1 (v0.1.64): the main window is in macOS full screen, which is a
+    /// Space of its own. Hidden there, it leaves that Space empty and the
+    /// screen black until Arslan quits (user report, 2026-10-28). Leave full
+    /// screen first, and hide once AppKit says the exit has finished.
+    LeaveFullScreenThenHide,
     /// Let the window close as it always did.
     Close,
 }
 
 /// Only the main window hides. The launch screen and recovery windows close
 /// normally, so a failed boot still quits when its window is closed.
-pub fn close_action(label: &str) -> CloseAction {
-    if label == crate::MAIN_LABEL {
-        CloseAction::Hide
+pub fn close_action(label: &str, full_screen: bool) -> CloseAction {
+    match (label == crate::MAIN_LABEL, full_screen) {
+        (false, _) => CloseAction::Close,
+        (true, true) => CloseAction::LeaveFullScreenThenHide,
+        (true, false) => CloseAction::Hide,
+    }
+}
+
+/// FS1: what to do with a close that left full screen and waits to hide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingHide {
+    Hide,
+    /// No close is waiting, or this signal belongs to an earlier close.
+    Ignore,
+    /// Still in full screen at the deadline: stop waiting and leave the window
+    /// shown. Hiding it now would bring the black screen back; the user can
+    /// close it again.
+    GiveUp,
+}
+
+/// AppKit finished taking the main window out of full screen. `pending` is the
+/// id of the close that waits (0: none). The user leaving full screen with the
+/// green button posts the same notification, with nothing waiting.
+pub fn after_full_screen_exit(pending: u64) -> PendingHide {
+    if pending == 0 {
+        PendingHide::Ignore
     } else {
-        CloseAction::Close
+        PendingHide::Hide
+    }
+}
+
+/// The deadline armed by close `armed` has passed. A later close re-arms its
+/// own deadline, and opening the window again clears `pending`.
+pub fn at_deadline(pending: u64, armed: u64, still_full_screen: bool) -> PendingHide {
+    if pending == 0 || pending != armed {
+        PendingHide::Ignore
+    } else if still_full_screen {
+        PendingHide::GiveUp
+    } else {
+        PendingHide::Hide // out of full screen, but the notification never came
     }
 }
 
@@ -226,12 +266,129 @@ fn fetch_status(port: u16, token: Option<&str>, after: u64) -> Option<Status> {
 }
 
 /// Show and focus the main window (Dock click, menu-bar "Open", notification click).
+/// FS1: a close from full screen hides the window only after it has left full
+/// screen, so it comes back as an ordinary window on the current desktop.
 pub fn show_main(app: &tauri::AppHandle) {
+    // The user wants the window: a close still waiting to hide it is void.
+    PENDING_HIDE.store(0, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window(crate::MAIN_LABEL) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+// ── FS1: closing from full screen ────────────────────────────────────────────
+
+/// How long a close waits for macOS to finish leaving full screen; the exit
+/// animation takes about a second.
+const FULL_SCREEN_EXIT_DEADLINE: Duration = Duration::from_secs(3);
+/// The id of the close waiting to hide the main window; 0 when none is.
+static PENDING_HIDE: AtomicU64 = AtomicU64::new(0);
+static NEXT_CLOSE: AtomicU64 = AtomicU64::new(1);
+
+/// Whether the window is in macOS full screen (always false elsewhere).
+pub fn in_full_screen(window: &tauri::Window) -> bool {
+    full_screen::is_on(window)
+}
+
+/// Main thread, from CloseRequested. Leave full screen now; hide when AppKit
+/// reports the exit finished (`full_screen::watch`), or at the deadline.
+pub fn leave_full_screen_then_hide(window: &tauri::Window) {
+    let id = NEXT_CLOSE.fetch_add(1, Ordering::SeqCst);
+    PENDING_HIDE.store(id, Ordering::SeqCst);
+    let _ = window.set_fullscreen(false);
+    let window = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(FULL_SCREEN_EXIT_DEADLINE);
+        let app = window.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            let pending = PENDING_HIDE.load(Ordering::SeqCst);
+            finish_pending_hide(&window, at_deadline(pending, id, in_full_screen(&window)));
+        });
+    });
+}
+
+/// Main thread, once the main window exists: follow its full-screen exits.
+pub fn watch_main_full_screen(app: &tauri::AppHandle) {
+    if let Some(main) = app.get_webview_window(crate::MAIN_LABEL) {
+        full_screen::watch(&main.as_ref().window());
+    }
+}
+
+fn full_screen_exited(window: &tauri::Window) {
+    finish_pending_hide(
+        window,
+        after_full_screen_exit(PENDING_HIDE.load(Ordering::SeqCst)),
+    );
+}
+
+fn finish_pending_hide(window: &tauri::Window, step: PendingHide) {
+    match step {
+        PendingHide::Ignore => {}
+        PendingHide::GiveUp => PENDING_HIDE.store(0, Ordering::SeqCst),
+        PendingHide::Hide => {
+            PENDING_HIDE.store(0, Ordering::SeqCst);
+            let _ = window.hide();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod full_screen {
+    use block2::RcBlock;
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::{NSWindow, NSWindowDidExitFullScreenNotification, NSWindowStyleMask};
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+    use std::ptr::NonNull;
+
+    fn ns_window(window: &tauri::Window) -> Option<&NSWindow> {
+        let ptr = window.ns_window().ok()? as *const NSWindow;
+        // Owned by the tauri window, which outlives every main-thread call here.
+        unsafe { ptr.as_ref() }
+    }
+
+    /// AppKit's own flag, not tao's: tao clears its flag the moment an exit is
+    /// requested, so `is_fullscreen()` already says false during the exit
+    /// animation, while the window is still on its full-screen Space.
+    pub fn is_on(window: &tauri::Window) -> bool {
+        ns_window(window).is_some_and(|ns| ns.styleMask().contains(NSWindowStyleMask::FullScreen))
+    }
+
+    /// Call back when AppKit has finished taking the window out of full screen
+    /// (NSWindowDidExitFullScreenNotification: the end of the animation, not the
+    /// request, and not a resize during it).
+    pub fn watch(window: &tauri::Window) {
+        let Some(ns) = ns_window(window) else {
+            return;
+        };
+        let object: &AnyObject = ns.as_ref();
+        let owner = window.clone();
+        let block =
+            RcBlock::new(move |_: NonNull<NSNotification>| super::full_screen_exited(&owner));
+        let center = NSNotificationCenter::defaultCenter();
+        // SAFETY: a notification name and the window it is about; with no
+        // queue the block runs on the posting thread, which for window
+        // notifications is the main thread.
+        let observer = unsafe {
+            center.addObserverForName_object_queue_usingBlock(
+                Some(NSWindowDidExitFullScreenNotification),
+                Some(object),
+                None,
+                &block,
+            )
+        };
+        // The main window lives as long as the app, and so does this observer.
+        std::mem::forget(observer);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod full_screen {
+    pub fn is_on(window: &tauri::Window) -> bool {
+        window.is_fullscreen().unwrap_or(false)
+    }
+    pub fn watch(_window: &tauri::Window) {}
 }
 
 pub struct TrayStatus(pub tauri::menu::MenuItem<tauri::Wry>);
@@ -622,9 +779,38 @@ mod tests {
 
     #[test]
     fn only_the_main_window_hides() {
-        assert_eq!(close_action(crate::MAIN_LABEL), CloseAction::Hide);
-        assert_eq!(close_action(crate::SPLASH_LABEL), CloseAction::Close);
-        assert_eq!(close_action("recovery"), CloseAction::Close);
+        assert_eq!(close_action(crate::MAIN_LABEL, false), CloseAction::Hide);
+        assert_eq!(close_action(crate::SPLASH_LABEL, false), CloseAction::Close);
+        assert_eq!(close_action("recovery", false), CloseAction::Close);
+    }
+
+    #[test]
+    fn a_full_screen_main_window_leaves_full_screen_before_it_hides() {
+        // FS1: hiding it in place left a black full-screen Space.
+        assert_eq!(
+            close_action(crate::MAIN_LABEL, true),
+            CloseAction::LeaveFullScreenThenHide
+        );
+        assert_eq!(close_action(crate::SPLASH_LABEL, true), CloseAction::Close);
+        assert_eq!(close_action("recovery", true), CloseAction::Close);
+    }
+
+    #[test]
+    fn the_exit_notification_hides_only_a_waiting_close() {
+        assert_eq!(after_full_screen_exit(7), PendingHide::Hide);
+        // The green button posts the same notification with nothing waiting.
+        assert_eq!(after_full_screen_exit(0), PendingHide::Ignore);
+    }
+
+    #[test]
+    fn the_deadline_never_hides_a_window_still_in_full_screen() {
+        assert_eq!(at_deadline(7, 7, true), PendingHide::GiveUp);
+        assert_eq!(at_deadline(7, 7, false), PendingHide::Hide);
+        // Already hidden by the notification, or reopened by the user.
+        assert_eq!(at_deadline(0, 7, false), PendingHide::Ignore);
+        // An earlier close's deadline does not decide a later close.
+        assert_eq!(at_deadline(8, 7, false), PendingHide::Ignore);
+        assert_eq!(at_deadline(8, 7, true), PendingHide::Ignore);
     }
 
     #[test]

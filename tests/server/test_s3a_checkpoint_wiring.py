@@ -20,6 +20,14 @@ from tests.server.test_file_tools import ws  # noqa: F401 — the workspace fixt
 
 
 @pytest.fixture(autouse=True)
+def _plenty_of_disk(monkeypatch):
+    # What a save holds is tested here, not free space. CI's /tmp is a small tmpfs that
+    # fills as the suite runs; below MIN_FREE every save in this file would be skipped as
+    # low_disk. The low-disk case has its own test in test_s3a_checkpoint_save.py.
+    monkeypatch.setattr(checkpoints, "_free_bytes", lambda path: 2 * checkpoints.MIN_FREE)
+
+
+@pytest.fixture(autouse=True)
 def _data(tmp_path, monkeypatch):
     data = tmp_path / "data"
     data.mkdir()

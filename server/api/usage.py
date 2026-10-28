@@ -43,8 +43,6 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 NOT_COVERED = [
     "ingest",
     "tool_intent",
-    "mcp_suggest",
-    "skill_suggest",
     "note_service",
 ]
 

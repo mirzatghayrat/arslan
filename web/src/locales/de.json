@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "vom iPhone",
     "learned": "Gelernt: {{text}}",
-    "wantsToLearn": "Arslan möchte sich eine Vorgehensweise merken: {{text}}",
     "learnedUndo": "Rückgängig",
-    "learnedKeep": "Merken",
-    "learnedSkip": "Nein danke",
+    "learnedNotInEffect": "Eine Vorgehensweise gelernt, nicht wirksam: {{reason}}",
+    "learnedSeeInMemory": "Im Gedächtnis ansehen",
     "learnedUndone": "Rückgängig gemacht",
-    "learnedKept": "Gemerkt",
     "title": "Mit {{name}} chatten",
     "placeholder": "Nachricht eingeben …",
     "send": "Senden",
@@ -883,15 +881,11 @@
     "empty_no_spawns_action": "Spawn erstellen"
   },
   "capabilities": {
-    "title": "Fähigkeitenbibliothek",
-    "subtitle": "Werkzeuge, Fertigkeiten und MCP-Server finden, installieren und verwalten.",
     "tabs": {
-      "discover": "Entdecken",
       "tools": "Werkzeuge",
       "skills": "Fertigkeiten",
       "forge": "Skill-Schmiede",
-      "mcps": "MCPs",
-      "saved": "Gespeichert"
+      "mcps": "MCPs"
     },
     "chips": {
       "all": "Alle",
@@ -911,13 +905,9 @@
       "filtered_clear": "Alle anzeigen"
     },
     "hero": {
-      "placeholder": "GitHub-Link einfügen oder suchen…",
-      "research": "Recherchieren",
-      "hint": "Ein Repository-Link liefert Details zu Lizenz, Typ und Nutzen; anderer Text wird auf GitHub gesucht.",
       "results": "Suchergebnisse",
       "evaluate": "Bewerten",
       "save": "Speichern",
-      "researching": "Recherchiere…",
       "kind": {
         "all": "Alle",
         "mcp": "MCP",
@@ -930,53 +920,7 @@
       "import_skills": "Fertigkeiten aus Repository importieren"
     },
     "dossier": {
-      "no_license": "Keine Lizenz",
-      "license_ok": "Lizenz geeignet – nutzbar",
-      "license_learn": "Nur zum Lernen",
-      "type": {
-        "mcp": "MCP-Server",
-        "skill": "Fertigkeitsrepository",
-        "agent": "Agentenprojekt",
-        "other": "Andere"
-      },
-      "value_label": "Nutzen für Arslan",
-      "actions": {
-        "register_skill": "Als Fertigkeit registrieren",
-        "add_mcp": "Als MCP hinzufügen",
-        "distill": "Als Notiz zusammenfassen",
-        "save": "Im Katalog speichern"
-      },
-      "saved_ok": "Im Katalog gespeichert.",
-      "scan": {
-        "title": "SKILL.md-Dateien (unveränderter Import nach Lizenzprüfung)",
-        "none": "Keine SKILL.md-Dateien gefunden.",
-        "import": "Importieren",
-        "imported": "Importiert"
-      },
-      "mcp": {
-        "title": "Vorgeschlagener Startbefehl (prüfen und bearbeiten)",
-        "add": "Als MCP-Server hinzufügen",
-        "added": "MCP-Server gesperrt hinzugefügt. Unter Verbindungen & Rechte prüfen und verbinden."
-      },
-      "note": {
-        "title": "Referenznotiz (prüfen und bearbeiten)",
-        "fallback": "Modellzusammenfassung nicht verfügbar – stattdessen wird die Bewertungsübersicht angezeigt.",
-        "pick_spawn": "Experten wählen…",
-        "ingest": "Zum Expertenwissen hinzufügen",
-        "ingest_ok": "Zur Wissensbasis von {{name}} hinzugefügt.",
-        "create_skill": "Als Fertigkeit registrieren",
-        "create_ok": "Zur Fertigkeitenbibliothek hinzugefügt (risikoarm)."
-      },
-      "manifest": {
-        "title": "Vom Autor mitgelieferte Konfiguration",
-        "add": "Diesen Server hinzufügen",
-        "added": "Server hinzugefügt – unter Verbindungen & Rechte verbinden.",
-        "import_skill": "Skill importieren",
-        "imported": "Skill importiert",
-        "expose_hint": "Der Autor empfiehlt Expertenzugriff unter Verbindungen & Rechte. Das ist ein Vorschlag, keine Genehmigung.",
-        "error": "Plugin-Manifest ungültig"
-      },
-      "overview_label": "Was das ist"
+      "value_label": "Nutzen für Arslan"
     },
     "equip": {
       "action": "Spawn ausrüsten…",
@@ -1004,7 +948,6 @@
       "missing": "Fehlende Dateien",
       "orphaned": "Verwaiste Dateien"
     },
-    "skill_body_label": "SKILL.md-Inhalt (muss ## Trigger und ## Decision Rules enthalten)",
     "import": {
       "subtitle": "Standard-SKILL.md, wortgetreu importiert — lizenzgeprüft.",
       "repo_placeholder": "owner/repo",
@@ -1511,11 +1454,9 @@
     "keepLocal": "Behalten, nur lokale Modelle",
     "drop": "Nein",
     "apply": "Übernehmen",
-    "use": "Verwenden",
     "source": {
       "memory": "Über dich",
-      "curation": "Aufräumen",
-      "lesson": "Gelernte Vorgehensweise"
+      "curation": "Aufräumen"
     },
     "sensitive": "Sensibel"
   },
@@ -1549,8 +1490,6 @@
     "memoryTitle": "Diese Erinnerung löschen?",
     "memoryBody": "Arslan vergisst sie und lernt sie nicht aus alten Unterhaltungen zurück.",
     "unsavedTitle": "Ohne Speichern verlassen?",
-    "unsavedBody": "Deine Änderungen an dieser Notiz gehen verloren.",
-    "deleted": "Gelöscht",
-    "undo": "Rückgängig"
+    "unsavedBody": "Deine Änderungen an dieser Notiz gehen verloren."
   }
 }

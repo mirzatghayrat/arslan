@@ -17,7 +17,7 @@ const DOT = { on: "bg-[#34C759]", off: "bg-subtle-foreground", setup: "bg-ask", 
  * from GET /capabilities, which reads the same gates the model's tool list is built
  * from: a switch here is the switch, not a second opinion about it.
  */
-export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "mcps" | "discover" | "forge") => void }) {
+export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "mcps" | "skills" | "forge") => void }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<CapabilityRow[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -105,7 +105,7 @@ export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "m
     <aside className="flex w-full shrink-0 flex-col gap-2 lg:w-[300px]">
       <h2 className="px-1 text-[12px] font-semibold text-muted-foreground">{t("capabilityList.addTitle")}</h2>
       <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        {([["mcps", Globe, "addMcp"], ["discover", KeyRound, "addLink"], ["forge", Sparkles, "addMethod"]] as const).map(([tab, Icon, key]) =>
+        {([["mcps", Globe, "addMcp"], ["skills", KeyRound, "addLink"], ["forge", Sparkles, "addMethod"]] as const).map(([tab, Icon, key]) =>
           <button key={tab} data-testid={`cap-add-${tab}`} onClick={() => onOpenTab?.(tab)}
             className="flex w-full items-center gap-2.5 border-t border-border px-3.5 py-2.5 text-left first:border-t-0 hover:bg-fill">
             <Icon size={14} className="shrink-0 text-subtle-foreground" />

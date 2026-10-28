@@ -18,7 +18,6 @@ import asyncio
 import json
 
 import pytest
-from sqlalchemy import select
 
 from server.db.models import Setting
 from server.orchestrator import arslan, on_demand, tool_loop, untrusted
@@ -237,8 +236,8 @@ async def test_a_tool_that_cannot_be_called_is_refused_before_any_card(monkeypat
 
 
 async def test_propose_capability_through_use_tool_is_the_direct_call(execution_db, monkeypatch):
-    """The same card, the same row in the ledger of finds (⓪Plan's Q3 b)."""
-    from server.db.models import CapabilityFind
+    """The same card, the same row in the approval ledger (⓪Plan's Q3 b; CAP1a removed the finds)."""
+    from server.services import permission_store
     from tests.server.test_capability_flow import CAND, _ask, shown
     cards = []
     args = {"candidate_id": CAND["id"], "why": "formulas"}
@@ -265,7 +264,7 @@ async def test_propose_capability_through_use_tool_is_the_direct_call(execution_
                 conversation="conv-proxy", resolve_tools=without, resolve_callable=reachable, confirm_command=confirm_command)
     assert len(cards) == 2 and cards[0] == cards[1]
     async with execution_db() as db:
-        finds = (await db.execute(select(CapabilityFind).order_by(CapabilityFind.id))).scalars().all()
-    rows = [(f.why, f.need, f.candidate, f.state) for f in finds]
-    assert len(rows) == 2 and rows[0] == rows[1]
+        ledger = await permission_store.recent(db)
+    rows = [(r.kind, r.target, r.decision, r.decided_by) for r in ledger]
+    assert len(rows) == 2 and rows[0] == rows[1] and rows[0][2:] == ("deny", "user")
     assert asyncio.iscoroutinefunction(capability_flow.propose)

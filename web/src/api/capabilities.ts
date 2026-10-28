@@ -19,7 +19,7 @@ export interface CapabilityRow {
   source: "builtin" | "mcp" | "skill";
 }
 
-/** One candidate of GET /capability-search (0.1.57 §2, server/services/capability_search.py). */
+/** A candidate as server/services/capability_search.py returns it (0.1.57 §2): here, a newer version in an update check. */
 export interface CapabilityCandidate {
   id: string;
   kind: "mcp" | "skill" | "project";
@@ -42,14 +42,6 @@ export interface CapabilityCandidate {
   checked_at: number | null;
   path: string | null;
 }
-export interface CapabilitySearch { words: string[]; candidates: CapabilityCandidate[]; notes: string[] }
-
-/** 0.1.57 §4: something Arslan found and kept for later ("Arslan 找到的"). */
-export interface CapabilityFind {
-  id: string; need: string; why: "declined" | "job" | "project_level";
-  conversation_id: string | null; project_id: string | null; level_id: string | null;
-  candidate: CapabilityCandidate; created_at: string;
-}
 /** 0.1.57 §7: the dossier of a capability Arslan installed (or tried to). */
 export interface CapabilitySource {
   id: string; kind: "mcp" | "skill"; name: string; candidate_id: string; source_url: string | null; repo: string | null;
@@ -71,26 +63,12 @@ export interface UpdateInfo { current: string | null; latest: string | null; new
 const json = (method: string, body: unknown) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const capabilitiesApi = {
-  finds: () => request<CapabilityFind[]>("/capability-finds"),
-  dismissFind: (id: string) => request<{ ok: boolean }>(`/capability-finds/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
   sources: () => request<CapabilitySource[]>("/capability-sources"),
-  checkCandidate: (candidateId: string) =>
-    request<{ candidate: CapabilityCandidate; installable: boolean; why_not: string | null }>("/capability-candidates/check",
-      json("POST", { candidate_id: candidateId })),
-  /** "加进能力库": install, scan, test, switch on (the same steps as the card in a conversation). */
-  install: (candidateId: string, folders: string[], keys: Record<string, string>) =>
-    request<InstallResult>("/capability-candidates/install", json("POST", { candidate_id: candidateId, folders, keys })),
   setFolders: (sourceId: string, folders: string[]) =>
     request<CapabilitySource>(`/capability-sources/${encodeURIComponent(sourceId)}/folders`, json("PUT", { folders })),
   remove: (sourceId: string) => request<{ ok: boolean }>(`/capability-sources/${encodeURIComponent(sourceId)}`, { method: "DELETE" }),
   checkUpdate: (sourceId: string) => request<UpdateInfo>(`/capability-sources/${encodeURIComponent(sourceId)}/update`),
   update: (sourceId: string) => request<InstallResult>(`/capability-sources/${encodeURIComponent(sourceId)}/update`, { method: "POST" }),
-  asMaterial: (projectId: string, candidateId: string) =>
-    request<{ collection_id: number; chunks: number }>(`/projects/${encodeURIComponent(projectId)}/capability-material`,
-      json("POST", { candidate_id: candidateId })),
-  /** 0.1.57: what you want done, across the official MCP Registry, GitHub and skill libraries. */
-  search: (q: string, kind?: CapabilityCandidate["kind"]) =>
-    request<CapabilitySearch>(`/capability-search?q=${encodeURIComponent(q)}${kind ? `&kind=${kind}` : ""}`),
   list: () => request<CapabilityRow[]>("/capabilities"),
   switch: (key: string, on: boolean) => request<CapabilityRow>(`/capabilities/${encodeURIComponent(key).replace(/%3A/g, ":")}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }),

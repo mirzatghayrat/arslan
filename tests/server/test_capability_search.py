@@ -252,32 +252,6 @@ async def test_results_are_cached_for_an_hour(net):
     assert len(net.calls) == calls
 
 
-# ── words for the page ───────────────────────────────────────────────────────
-
-async def test_a_question_without_latin_words_gets_words_from_the_fast_model(monkeypatch):
-    seen = []
-
-    class Reply:
-        content = 'Sure: ["excel", "formula"]'
-
-    class Adapter:
-        async def chat(self, *, system, user):
-            seen.append(user)
-            return Reply()
-
-    async def adapter():
-        return Adapter()
-    monkeypatch.setattr(cs, "_words_adapter", adapter)
-    assert await cs.words_for("帮我核对预算表的公式") == ["excel", "formula"]
-    assert await cs.words_for("read Excel formulas") == ["excel", "formulas"]       # no call needed
-    assert seen == ["帮我核对预算表的公式"]
-
-    async def broken():
-        raise RuntimeError("no model")
-    monkeypatch.setattr(cs, "_words_adapter", broken)
-    assert await cs.words_for("帮我核对预算表的公式") == []
-
-
 # ── the model's tool ─────────────────────────────────────────────────────────
 
 async def test_find_capability_returns_outside_content_and_remembers_what_it_showed(net):
@@ -313,21 +287,6 @@ def test_no_installer_imports_the_search():
     for module in (skill_import, mcp_service):
         source = pathlib.Path(inspect.getfile(module)).read_text()
         assert "capability_search" not in source, module.__name__
-
-
-async def test_the_page_endpoint_searches_with_the_words_of_the_box(net, monkeypatch):
-    from fastapi import FastAPI
-
-    from server import auth
-    from server.api.capabilities import router
-    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-cap-token")
-    app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
-                                 headers={"Authorization": "Bearer synthetic-cap-token"}) as client:
-        body = (await client.get("/api/v1/capability-search", params={"q": "Excel formulas", "kind": "skill"})).json()
-    assert body["words"] == ["excel", "formulas"]
-    assert body["candidates"] and {c["kind"] for c in body["candidates"]} == {"skill"}
 
 
 def test_with_the_same_fit_a_usable_license_comes_before_more_stars():

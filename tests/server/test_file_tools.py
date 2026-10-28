@@ -137,7 +137,7 @@ async def test_recorded_writes_keep_owned_snapshots_before_applying(ws, monkeypa
     monkeypatch.setattr(artifact_store, "root", lambda: tmp_path / "artifacts")
     with execution_context.bind_run(77):
         initial = await file_tools.WriteFileExecutor().execute({"path": "result.txt", "content": "first"})
-        revised = await file_tools.EditFileExecutor().execute({"path": "result.txt", "old": "first", "new": "second"})
+        revised = await file_tools.EditFileExecutor().execute({"path": "result.txt", "old_string": "first", "new_string": "second"})
     assert (ws / "result.txt").read_text() == "second"
     before, after = initial["artifact"], revised["artifact"]
     assert before["id"] != after["id"] and before["logical_key"] == after["logical_key"]
@@ -191,7 +191,7 @@ async def test_write_to_secret_name_refused(ws):
 # ── edit_file (T1) — unique-hit semantics ──────────────────────────────────
 async def test_edit_replaces_a_unique_match(ws):
     out = await file_tools.EditFileExecutor().execute(
-        {"path": "notes.md", "old": "second line", "new": "SECOND LINE"})
+        {"path": "notes.md", "old_string": "second line", "new_string": "SECOND LINE"})
     assert out["ok"] is True
     assert "SECOND LINE" in (ws / "notes.md").read_text()
 
@@ -201,7 +201,7 @@ async def test_edit_refuses_when_the_old_string_is_not_unique(ws):
     several occurrences is how a 'successful' edit changes the wrong line."""
     (ws / "dup.txt").write_text("alpha\nalpha\n")
     out = await file_tools.EditFileExecutor().execute(
-        {"path": "dup.txt", "old": "alpha", "new": "beta"})
+        {"path": "dup.txt", "old_string": "alpha", "new_string": "beta"})
     assert out["ok"] is False
     assert "2" in out["error"]                    # says HOW MANY it found
     assert (ws / "dup.txt").read_text() == "alpha\nalpha\n"    # untouched
@@ -209,14 +209,14 @@ async def test_edit_refuses_when_the_old_string_is_not_unique(ws):
 
 async def test_edit_refuses_when_the_old_string_is_absent(ws):
     out = await file_tools.EditFileExecutor().execute(
-        {"path": "notes.md", "old": "nowhere", "new": "x"})
+        {"path": "notes.md", "old_string": "nowhere", "new_string": "x"})
     assert out["ok"] is False
     assert "notes.md" in (ws / "notes.md").read_text() or True
     assert "hello world" in (ws / "notes.md").read_text()      # untouched
 
 
 async def test_edit_requires_a_nonempty_old(ws):
-    out = await file_tools.EditFileExecutor().execute({"path": "notes.md", "old": "", "new": "x"})
+    out = await file_tools.EditFileExecutor().execute({"path": "notes.md", "old_string": "", "new_string": "x"})
     assert out["ok"] is False
 
 

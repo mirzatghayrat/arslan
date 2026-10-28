@@ -34,8 +34,6 @@ interface SidebarProps {
   onOpenConversation?: (conversationId: string) => void;
   /** Inbox badge: items not yet looked at, and how many of those need a look. */
   inboxUnread?: number; inboxHigh?: number;
-  /** 0.1.57: what Arslan found and kept for later — a quiet count, never a notification. */
-  capabilityFinds?: number;
   /** Each conversation's kind and state (GET /conversations), for the glyphs and the Remote trace. */
   meta?: Record<string, ConversationMeta>;
   /** 0.1.58 §4: projects whose conversations live under them instead of in 最近. */
@@ -47,7 +45,7 @@ interface SidebarProps {
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, capabilityFinds = 0, meta = {},
+    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, meta = {},
     projects = [], onStartInProject, onOpenProject, onMoveToProject } = props;
   const { t } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -145,10 +143,7 @@ export default function Sidebar(props: SidebarProps) {
         <button id="nav-btn-brain-deck" onClick={() => onChangeSection("brain")} className={navClass(activeSection === "brain")}>
           <Network size={15} /><span>{t("companion.memory")}</span></button>
         <button id="nav-btn-capabilities-deck" onClick={() => onChangeSection("capabilities")} className={navClass(activeSection === "capabilities")}>
-          <Boxes size={15} /><span className="flex-1">{t("sidebar.capabilities")}</span>
-          {capabilityFinds > 0 && <span data-testid="capabilities-badge" aria-label={`${capabilityFinds}`}
-            className="min-w-[18px] rounded-full bg-fill px-1.5 text-center text-[10px] leading-[18px] tabular-nums text-muted-foreground">
-            {capabilityFinds > 99 ? "99+" : capabilityFinds}</span>}</button>
+          <Boxes size={15} /><span className="flex-1">{t("sidebar.capabilities")}</span></button>
       </nav>
       <section aria-label={t("workspace.recentConversations")} className="mt-3 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-2">
         {/* 0.1.47: no "Conversations" nav entry and no second "+" here. The rows below ARE the way

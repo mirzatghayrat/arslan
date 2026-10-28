@@ -303,20 +303,21 @@ async def summary() -> dict:
             "high": sum(n for status, p, n in rows if status == "new" and p == "high"),
             # 0.1.55 §12: the Inbox is everything waiting for the user's decision —
             # cards to approve (any conversation or job) and memory waiting for an OK.
+            # INB1 (v0.1.64): learned practices no longer wait for an OK, so none is counted.
             "approvals": len(approvals.all_pending()),
             "memory": memory}
 
 
 async def _memory_waiting(db) -> int:
-    """Pending memory proposals (all kinds: noticed facts that wait, curation) plus
-    learned practices that wait. Fails soft: the badge must never break the page."""
-    from server.db.models import Lesson, MemoryProposal
+    """Pending memory proposals (all kinds: noticed facts that wait, curation). Learned practices
+    are not counted since INB1: one that is not in effect is listed in Memory with its reason, it
+    does not wait for an OK. INB2 removes this count too. Fails soft: the badge must never break
+    the page."""
+    from server.db.models import MemoryProposal
     try:
         proposals = (await db.execute(select(func.count()).select_from(MemoryProposal)
                                       .where(MemoryProposal.status == "pending"))).scalar_one()
-        lessons = (await db.execute(select(func.count()).select_from(Lesson)
-                                    .where(Lesson.status == "proposed"))).scalar_one()
-        return int(proposals) + int(lessons)
+        return int(proposals)
     except Exception:  # noqa: BLE001
         return 0
 

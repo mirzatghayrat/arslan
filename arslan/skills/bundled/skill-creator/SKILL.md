@@ -1,7 +1,7 @@
 ---
 name: skill-creator
-description: 造技能 —— 把一套可复用的方法/流程打包成一份高质量、人设无关、任意分身可复用的 SKILL.md，并迭代打磨。用户说"帮我把这套流程做成技能 / 优化这个技能"时用。
-version: 0.1.0
+description: Skill creator — package a reusable method or workflow into a high-quality, general SKILL.md that Arslan can reuse in any conversation, and refine it over iterations. Use when the user says "turn this workflow into a skill" or "improve this skill".
+version: 0.2.0
 authors:
   - Arslan
 source: adapted from anthropics/skills · skill-creator (Apache-2.0); Claude-Code-specific eval tooling removed
@@ -11,18 +11,18 @@ source: adapted from anthropics/skills · skill-creator (Apache-2.0); Claude-Cod
 
 ## Trigger
 
-当用户想把一套"每次都这么做"的方法沉淀成可复用技能时激活 —— 新建技能、改进/优化已有技能、或让某个分身具备一项新的横向能力。产出是一份结构规范的 `SKILL.md`（技巧与规则，不是一次性答案），能被装备到任意分身。
+Activate when the user wants to turn a method they "do the same way every time" into a reusable skill — creating a new skill, improving or optimizing an existing one, or giving Arslan a new cross-cutting capability. The output is a well-structured `SKILL.md` (techniques and rules, not a one-off answer) that Arslan can use in any conversation.
 
-## 决策规则
+## Decision Rules
 
-- **先定"什么时候用它"（Trigger）**：好技能首先说清"在什么场景该激活"——具体、可判别；`description` 里就写明触发条件，这直接决定它会不会被正确调用。
-- **技能 = 决策规则，不是长篇教程**：主体是一组"遇到 X 就 Y"的判断规则（建议 ≥6 条），每条能独立指导行为；不写百科式背景，不塞一次性内容。
-- **人设无关、可复用**：技能是横向能力（任何分身都能装），不绑定某个具体人设或任务；把"谁来做"和"怎么做"分开。
-- **草稿 → 真跑几个例子 → 按结果改**：别一次写完就定稿；拿 3 个代表性场景，让装了该技能的分身实跑，看它有没有按规则行动，再针对性收紧规则。
-- **格式规范**：frontmatter 含 `name`（小写连字符）、`description`（一句话说清做什么 + 何时用）；正文含 `## Trigger` + `## 决策规则`；保持简洁，能念、能执行。
-- **诚实边界 + 反幻觉**：凡涉及外部数据/执行的技能，规则里要写明"没把握就查证/升级，绝不编造"；不把该技能不具备的能力写进去。
-- **可迭代**：技能不是一次成型；上线后按真实使用反馈持续收紧规则（这也是 Arslan 进化层能自动优化的对象）。
+- **Decide "when to use it" first (Trigger):** a good skill first says clearly in which situations it should activate — concretely and checkably; put the trigger conditions in the `description` too, because that decides whether the skill gets called at the right time.
+- **A skill is decision rules, not a long tutorial:** the main body is a set of "when X, do Y" judgment rules (6 or more is a good target), each able to guide behaviour on its own; no encyclopedic background and no one-off content.
+- **General and reusable:** a skill is a cross-cutting capability, not tied to one task or one project; keep "what this case needs" separate from "how it is done".
+- **Draft → actually run a few examples → revise from the results:** do not finalize after one pass; take 3 representative scenarios, actually run them with the skill, check whether it followed the rules, then tighten the rules where it did not.
+- **Format:** the frontmatter has `name` (lowercase, hyphenated) and `description` (one sentence on what it does plus when to use it); the body has `## Trigger` and `## Decision Rules`; keep it short enough to read aloud and act on.
+- **Honest limits, no hallucination:** any skill that touches external data or execution must say in its rules "when unsure, verify or escalate; never invent"; do not write capabilities into it that the skill does not have.
+- **Iterate:** a skill is not finished in one go; after it ships, keep tightening the rules from real usage feedback.
 
-## 用户/Arslan 自产
+## Made by the user or by Arslan
 
-用户可以说"帮我把 <某套流程> 做成一个技能"，你就按上面规则产出 `SKILL.md`，存进技能库供自己或分身复用 —— 库因此不只是三方搬运，而是**三方 + 自产**。
+The user can say "turn <some workflow> into a skill", and you produce a `SKILL.md` by the rules above and save it to the skill library to reuse — so the library holds not only third-party skills but **third-party plus self-made** ones.
