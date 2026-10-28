@@ -18,6 +18,7 @@ import MemoryList from "../components/companion/MemoryList";
 import { ConfirmHost } from "../components/kit";
 import MemoryDataSection from "../components/settings/MemoryDataSection";
 import { lessonsApi, type Lesson } from "../api/lessons";
+import * as client from "../api/client";
 import { companionApi } from "../api/companion";
 import { toUiMessages } from "../api/adapters";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
@@ -109,7 +110,8 @@ describe("Brain › learned practices", () => {
     vi.spyOn(lessonsApi, "list").mockResolvedValue([
       lesson({ id: 4, text: "Reports → lists first", situation: "Reports", advice: "lists first" }),
       lesson({ id: 2, status: "proposed", text: "Reports → tables first", situation: "Reports", advice: "tables first",
-        not_in_effect: "conflicts", evidence: { not_in_effect: "conflicts", conflicts_with: 4 } }),
+        not_in_effect: "conflicts", evidence: { not_in_effect: "conflicts", conflicts_with: 4 },
+        updated_at: "2026-10-28T10:00:00Z" }),
     ]);
     const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
     render(<><MemoryList /><ConfirmHost /></>);
@@ -128,13 +130,14 @@ describe("Brain › learned practices", () => {
     fireEvent.click(within(await screen.findByTestId("practice-2")).getByText("companion.practiceViewAndTurnOn"));
     await screen.findByTestId("practice-open-sheet");
     fireEvent.click(screen.getByTestId("confirm-action"));
-    await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active"));
+    // F4 (#460 review): bound to the row the sheet showed; a row that changed since is refused.
+    await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active", "2026-10-28T10:00:00Z"));
   });
   it("Restore goes through the same sheet: a retired practice may never have been in effect (#460 review, F1)", async () => {
     vi.spyOn(lessonsApi, "list").mockResolvedValue([
       lesson({ id: 3, status: "archived", text: "Calendar → AppleScript", situation: "Calendar", advice: "AppleScript",
         not_in_effect: "outside_content", evidence: { not_in_effect: "outside_content" } }),
-      lesson({ id: 9, status: "archived", text: "Old way", not_in_effect: "retired" }),
+      lesson({ id: 9, status: "archived", text: "Old way", not_in_effect: "retired", updated_at: "2026-10-01T08:00:00Z" }),
     ]);
     const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
     render(<><MemoryList /><ConfirmHost /></>);
@@ -154,7 +157,7 @@ describe("Brain › learned practices", () => {
     fireEvent.click(within(screen.getByTestId("practice-9")).getByText("companion.practiceRestore"));
     expect(await screen.findByTestId("practice-open-sheet")).toHaveTextContent("companion.practiceWhyNot:companion.why_retired");
     fireEvent.click(screen.getByTestId("confirm-action"));
-    await waitFor(() => expect(set).toHaveBeenCalledWith(9, "active"));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(9, "active", "2026-10-01T08:00:00Z"));
     expect(set).toHaveBeenCalledTimes(1);
   });
   it("retire, pin and delete call the API; delete asks first", async () => {
@@ -179,6 +182,16 @@ describe("Brain › learned practices", () => {
     render(<MemoryList />);
     await waitFor(() => expect(companionApi.memories).toHaveBeenCalled());
     expect(screen.queryByTestId("learned-practices")).toBeNull();
+  });
+});
+
+describe("lessonsApi.setStatus", () => {
+  it("sends the updated_at the sheet showed, and nothing extra otherwise", async () => {
+    const req = vi.spyOn(client, "request").mockResolvedValue({} as never);
+    await lessonsApi.setStatus(2, "active", "2026-10-28T10:00:00Z");
+    await lessonsApi.setStatus(4, "archived");
+    expect(JSON.parse(req.mock.calls[0][1]!.body as string)).toEqual({ status: "active", expected_updated_at: "2026-10-28T10:00:00Z" });
+    expect(JSON.parse(req.mock.calls[1][1]!.body as string)).toEqual({ status: "archived" });
   });
 });
 

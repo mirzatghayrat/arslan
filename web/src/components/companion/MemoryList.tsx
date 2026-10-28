@@ -178,7 +178,7 @@ function LearnedPractices({ lessons, busy, change }: {
     </div>;
     if (await confirmSheet({ title: t("companion.practiceOpenTitle"), body, action: t("companion.practiceTurnOn"),
       cancel: t("companion.practiceNotNow"), destructive: false }))
-      await change(() => lessonsApi.setStatus(lesson.id, "active"));
+      await change(() => lessonsApi.setStatus(lesson.id, "active", lesson.updated_at));
   };
   const row = (lesson: Lesson) => {
     const switchedOn = lesson.status === "active";

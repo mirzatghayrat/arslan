@@ -18,6 +18,9 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 class LessonStatus(BaseModel):
     status: Literal["active", "archived"]
+    # F4 (#460 review): the `updated_at` of the row Memory's sheet showed. When given, a row that changed
+    # since (its words merged, or a deleted id reused by a new lesson) is refused, not switched on.
+    expected_updated_at: str | None = None
 
 
 class LessonPin(BaseModel):
@@ -34,12 +37,14 @@ async def list_lessons(status: Literal["active", "proposed", "stale", "archived"
         return [lessons.present(row) for row in (await db.scalars(q)).all()]
 
 
-async def _change(lesson_id: int, *, edit=None, **values) -> dict:
+async def _change(lesson_id: int, *, edit=None, expected_updated_at: str | None = None, **values) -> dict:
     from datetime import datetime
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(Lesson, lesson_id)
         if row is None:
             raise HTTPException(404, "lesson_not_found")
+        if expected_updated_at is not None and lessons.present(row)["updated_at"] != expected_updated_at:
+            raise HTTPException(409, "lesson_version_conflict")
         for key, value in values.items():
             setattr(row, key, value)
         if edit is not None:
@@ -53,8 +58,10 @@ async def _change(lesson_id: int, *, edit=None, **values) -> dict:
 async def lesson_status(lesson_id: int, body: LessonStatus):
     """Switch on one that is not in effect, or restore (active); undo or retire (archived, restorable).
     INB1: switching one on drops why it was not in effect (the reason, the rival, the failure count);
-    Memory shows the full text and that reason before the user switches it on."""
-    return await _change(lesson_id, status=body.status, edit=lessons.switched_on if body.status == "active" else None)
+    Memory shows the full text and that reason before the user switches it on, and sends the
+    `updated_at` it showed (F4)."""
+    return await _change(lesson_id, status=body.status, edit=lessons.switched_on if body.status == "active" else None,
+                         expected_updated_at=body.expected_updated_at)
 
 
 @router.post("/lessons/{lesson_id}/pin")

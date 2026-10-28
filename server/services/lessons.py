@@ -269,7 +269,10 @@ async def _contradicts_what_worked(text: str, conversation_id: str | None) -> bo
 
 # -- capture -------------------------------------------------------------------
 
-async def _nearest(text: str, limit: int = 2) -> list:
+async def _nearest(text: str, limit: int = 2, *, stopped: bool = False) -> list:
+    """The closest lessons in use or waiting; with `stopped`, also the ones three failures stopped, so a
+    practice Arslan finds again merges into its stopped row instead of coming back as a new active one
+    (#460 review, F2)."""
     from sqlalchemy import select
 
     from arslan.companion import memory_relevance
@@ -278,7 +281,8 @@ async def _nearest(text: str, limit: int = 2) -> list:
     if not terms:
         return []
     async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.scalars(select(Lesson).where(Lesson.status.in_(("active", "proposed")))
+        statuses = ("active", "proposed", "stale") if stopped else ("active", "proposed")
+        rows = (await db.scalars(select(Lesson).where(Lesson.status.in_(statuses))
                                  .order_by(Lesson.updated_at.desc()).limit(SCAN_LIMIT))).all()
     scored = [(memory_relevance.score(terms, f"{row.situation} {row.advice}"), row) for row in rows]
     return [row for score, row in sorted((p for p in scored if p[0] > 0), key=lambda p: -p[0])[:limit]]
@@ -328,12 +332,15 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     or await _contradicts_what_worked(text, conversation_id)):
                 immediate, why = False, "not_a_correction"
         merged = conflicting = None
-        for row in await _nearest(text):
+        # F2: what Arslan finds again merges into a stopped row, which only counts up and stays stopped.
+        # A stopped row is never a rival (it failed three times in a row), and the user's own correction
+        # is the user's choice, so it never looks at stopped rows.
+        for row in await _nearest(text, stopped=cand.source != "user_correction"):
             pair = {"candidate": text, "existing": render(row)}
             if await _yes("memory.merge", pair, conversation_id):
                 merged = row
                 break
-            if await _yes("memory.conflict", pair, conversation_id):
+            if row.status != "stale" and await _yes("memory.conflict", pair, conversation_id):
                 conflicting = row
                 break
         now = datetime.utcnow()

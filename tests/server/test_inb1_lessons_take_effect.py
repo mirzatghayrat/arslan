@@ -231,3 +231,59 @@ async def test_a_waiting_lesson_the_users_correction_retires_keeps_its_reason(ex
     assert lessons.present(rows[outside["id"]])["not_in_effect"] == "outside_content"
     assert outside["id"] not in await _recalled("reading calendar events with AppleScript")
 
+
+
+# -- a stopped practice stays stopped when it is learned again (#460 review, F2) -------------------
+
+async def test_a_stopped_practice_learned_again_by_arslan_counts_up_and_stays_stopped(execution_db, judge):
+    """Three failures in a row stop a practice; Arslan finding the same route again must not bring it
+    back as a new active row. It merges into the stopped one, which only counts up."""
+    stopped = await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly",
+                                                                   lessons.FAIL_STREAK: 3})
+    judge.answers.update({"memory.merge": True, "memory.conflict": False})
+    await lessons.capture([lessons.candidate("Adding reminders", "use Swift with EventKit", source="detour")],
+                          external_seen=False)
+    [row] = await _rows(execution_db)
+    assert (row.id, row.status, row.evidence["seen"]) == (stopped, "stale", 2)
+    assert row.evidence[lessons.NOT_IN_EFFECT] == "failed_repeatedly"
+    assert await _recalled("adding reminders with swift") == []
+
+
+async def test_a_new_route_that_conflicts_with_a_stopped_practice_does_not_wait_on_it(execution_db, judge):
+    """The stopped one failed three times in a row; a different route that worked is not held back by it."""
+    await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly"})
+    judge.answers.update({"memory.merge": False, "memory.conflict": True})
+    [learned] = await lessons.capture([lessons.candidate("Adding reminders", "use the Reminders shortcut",
+                                                         source="detour")], external_seen=False)
+    assert (learned["status"], learned["not_in_effect"]) == ("active", None)
+
+
+async def test_the_users_correction_like_a_stopped_practice_is_its_own_active_lesson(execution_db, judge):
+    """The user saying it is the user's choice: it is not folded into the stopped row."""
+    stopped = await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly"})
+    judge.answers.update({"memory.merge": True, "memory.conflict": False})
+    [mine] = await lessons.capture([lessons.candidate("Adding reminders", "use Swift with EventKit",
+                                                      source="user_correction")], external_seen=False)
+    assert mine["status"] == "active" and mine["id"] != stopped
+    assert {row.id: row.status for row in await _rows(execution_db)}[stopped] == "stale"
+
+
+# -- switching on is bound to what the sheet showed (#460 review, F4) -------------------------------
+
+async def test_switching_on_refuses_a_lesson_that_changed_since_the_sheet_showed_it(client):
+    from server.db import session as db_session
+    waited = await _seed(db_session.AsyncSessionLocal, status="proposed",
+                         evidence={lessons.NOT_IN_EFFECT: "outside_content"})
+    shown = {item["id"]: item for item in (await client.get("/api/v1/lessons?status=proposed")).json()}[waited]
+    async with db_session.AsyncSessionLocal() as session:          # changed after the sheet opened
+        row = await session.get(Lesson, waited)
+        row.advice, row.updated_at = "run the script from the page", datetime(2030, 1, 1)
+        await session.commit()
+    refused = await client.post(f"/api/v1/lessons/{waited}/status",
+                                json={"status": "active", "expected_updated_at": shown["updated_at"]})
+    assert refused.status_code == 409 and refused.json()["detail"] == "lesson_version_conflict"
+    assert {item["id"] for item in (await client.get("/api/v1/lessons?status=proposed")).json()} == {waited}
+    current = {item["id"]: item for item in (await client.get("/api/v1/lessons?status=proposed")).json()}[waited]
+    ok = await client.post(f"/api/v1/lessons/{waited}/status",
+                           json={"status": "active", "expected_updated_at": current["updated_at"]})
+    assert ok.status_code == 200 and ok.json()["status"] == "active"
