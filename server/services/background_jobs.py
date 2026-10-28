@@ -233,8 +233,9 @@ async def _run(job: Job) -> None:
             _emit(job)
             if callable(job.outside_seen):                # S64-0: ask the starting turn, now
                 job.outside_seen = bool(job.outside_seen())
-            with untrusted.carried(job.outside_seen):    # each of its turns starts from it
+            with untrusted.carried(job.outside_seen) as run:    # each of its turns starts from it
                 final_text, phase, reason = await _execute(job)
+            job.outside_seen = run["seen"]          # S64-0b: or one of its turns read outside content
     except asyncio.CancelledError:
         phase, reason = "cancelled", None
     except Exception as exc:  # noqa: BLE001 — a job failure is reported, never raised into the loop
@@ -376,14 +377,18 @@ def budget_stop_of(budget: dict, *, pause_reason: str | None, tier: str) -> dict
 
 async def _report(job: Job, text: str) -> None:
     """Post the result, tell the shell, offer voice mode one line. Best-effort."""
-    from server.orchestrator import memory
+    from server.orchestrator import memory, untrusted
     from server.ws import protocol
     body = text.strip()
     try:
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
-            message_id = await memory.add_message(job.conversation_id, "arslan", body, job_outcome=job.outcome)
+            # S64-0b: what may carry outside content (the result, or the budget note naming the goal)
+            # reaches later turns framed; the user sees it as written. Only a job known clean is not.
+            framed = untrusted.job_result(body) if job.outside_seen is not False else None
+            message_id = await memory.add_message(job.conversation_id, "arslan", framed or body,
+                                                  display_content=body if framed else None, job_outcome=job.outcome)
             run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
                 "job_id": job.job_id, "outcome": job.outcome, "run_id": job.run_id})
     except Exception as exc:  # noqa: BLE001
@@ -396,8 +401,8 @@ async def _report(job: Job, text: str) -> None:
 
 
 async def _budget_note(job: Job) -> str:
-    """Plain words for a job the budget ended. Counts only — no tool output is
-    quoted, so nothing a web page said reaches the conversation this way."""
+    """Plain words for a job the budget ended. Counts only, no tool output is quoted. It names the
+    goal, which may carry outside content (S64-0), so _report frames it like a result."""
     from server.services import runtime_messages
     locale = await runtime_messages.selected_locale()
     stop = job.budget_stop or {}
@@ -419,7 +424,7 @@ async def report_interrupted() -> int:
     from sqlalchemy import select
     from server.db import session as db_session
     from server.db.models import CompanionTask
-    from server.orchestrator import memory
+    from server.orchestrator import memory, untrusted
     from server.services import runtime_messages
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
@@ -435,8 +440,9 @@ async def report_interrupted() -> int:
             row = await repo.get(task_id, owner_id=owner_id)
             goal = (await repo.spec(row)).instruction[:200]
             await repo.cancel(task_id, owner_id=owner_id)
-        await memory.add_message(conversation_id, "arslan",
-                                 runtime_messages.render("job_interrupted", locale, goal=goal),
+        # S64-0b: the note names the goal, and nothing here knows whether it carries outside content.
+        note = runtime_messages.render("job_interrupted", locale, goal=goal)
+        await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,
                                  job_outcome="interrupted")
     return len(targets)
 

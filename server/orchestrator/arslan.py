@@ -22,6 +22,7 @@ from server.orchestrator import (
     tool_loop,
     turn_context,
     turn_tools,
+    untrusted,
 )
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.tool_caller import ToolCaller
@@ -826,7 +827,8 @@ async def _handle_answer_body(
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
-        with request_policy.prompt_cache(long=True):
+        # S64-0b: what the user attached (a file's text, a picture, what OCR reads off it) is outside content.
+        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)):
             return await _run_answer(user_content)
 
     async def _run_answer(user_content):
