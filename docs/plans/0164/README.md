@@ -85,8 +85,8 @@
 | F5b-2（删 Cua Driver 的死文件） | 必须 | 只删文件，U2；③Hands 审。 |
 | C5a（过程文档移到存档分支、删隐私段落） | 应该 | 对用户没影响。 |
 | C5b 的同类清理 + `__version__` | 必须 | 用户 10-27 同意的删除期限。 |
-| C7c（专家表、旧专家转技能页、记忆 v1 旧表、`router_decisions`、专家 REST 接口） | 必须 | 一次迁移；代码里已写 `DELETE-BY: v0.1.64`。 |
-| K6（文件工具补齐）、K10（读 AGENTS.md） | 应该 | K10 和 L11「文件夹规矩」一起做；AGENTS.md 是不是给分类器看，跟 #432 一起定。 |
+| C7c（专家表、旧专家转技能页、记忆 v1 旧表、`router_decisions`、专家 REST 接口） | 必须 | 一次迁移；代码里已写 `DELETE-BY: v0.1.64`。**Also (user, 2026-10-28):** decide in the same PR whether the 30 quarantined `scope_kind=expert` memory entries are deleted or moved, and say which in the PR. |
+| K6（文件工具补齐）、K10（读 AGENTS.md） | 应该 | K10 和 L11「文件夹规矩」一起做；AGENTS.md 是不是给分类器看，跟 #432 一起定。**L11 also gets (user, 2026-10-28, memory plan item 15):** output language follows where the output goes (chat: the language of the user's message; a file: that folder's rules; a message: the recipient), and after the user corrects the same thing twice, Arslan asks "make this a rule for this folder?". |
 | S4b、S5、S6，S4a 的两个跟进 | 看 #432 | 都建在权限模型上。#432 若选五档模式，S5 扩写。 |
 | #298b（SECURITY / ARCHITECTURE 按三层模型重写） | 必须 | 跟着安全模型的结果写。 |
 
@@ -110,7 +110,19 @@
 - **排在哪：** 最前面。不等 SBX，也不等 #432；它是安全修复，§11 第 3 条管不到。SUB1 并进来，INB1 只留做法那一侧的测试。INB2（放宽「关于你」的记忆）必须排在它后面。
 - **一个设计上的限制（不是洞）：** 标记按回合算。第 N 轮读了网页，第 N+1 轮从干净开始，可模型在第 N 轮的回复可能复述了网页。笔记和做法今天接受了这一点；INB2 要扩到「关于你」时不能接受，见 INB 卡。
 
-### 3.5 用户新报的 bug
+### 3.5 Added on 2026-10-28 (bugs and rules the user reported or decided that day)
+
+New text in this plan is in English from 2026-10-28 (`docs/sessions.md` §6).
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **MEM1** | Memory write hygiene: merge by meaning, write in the user's language and never guess gender, keep one-off task state out of "about you" | ②Main | must | In the INB card, after INB2. From the memory plan (`docs/plans/0162/README.md` §8, item A). |
+| **CAP8b** | Import memories from ChatGPT / Claude (paste, list, confirm) | CAP session | must | In the CAP card, after MEM1. Item 17. |
+| **LANG1** | English on GitHub, enforced: a CI check that fails when Chinese appears in a file that should not have it (exceptions: `web/src/locales`, tests of Chinese handling, `docs-site`, an allowlist in the check itself); translate the two bundled skills `arslan/skills/bundled/designed-html-report/SKILL.md` and `skill-creator/SKILL.md` to English | ②Main | must | Items 13 and 14. The check must not fail on files written before 2026-10-28: it runs on the lines a PR adds (diff-based), not on the whole tree. Not a new subsystem; can start as soon as this PR merges. |
+
+The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as files (v0.1.65; ⓪Plan puts the "used N memories" line and "what Arslan learned this week" there, not in the interface version); item 18 (WeChat, no database decryption) after v0.1.65; item 19 (proactive proposals in the conversation or progress page, not the Inbox) after v0.1.65.
+
+### 3.6 用户新报的 bug
 
 | 卡 | 做什么 | 道 | 分级 | 说明 |
 |---|---|---|---|---|
@@ -154,7 +166,7 @@ L7：随时可做，跑分不退步才合
 | 道 | 卡 |
 |---|---|
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
-| ②Main | SBX、INB、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
+| ②Main | SBX、INB（含 MEM1）、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
 | 新开一个会话（用户 10-28 定，为了并行） | CAP |
 | ③Hands | **S64-0（effort=max 写）**；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |

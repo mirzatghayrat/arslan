@@ -194,6 +194,15 @@
   - 角标不再数记忆；
   - 旧提案一条不少、状态不变。
 
+### MEM1 Memory write hygiene (user, 2026-10-28, memory plan item A) · memory write path · effort=max · after INB2
+
+Added after the card was drafted; the full text is `docs/plans/0162/README.md` §8, "Memory: what changes", item A. Lane ②Main. One PR, separate from INB2, merged after it, because both touch the "about you" write path.
+- **Merge by meaning before writing.** Today `dedup_key` only catches literal duplicates, and the user's machine has the same meaning stored three times. Before a new "about you" entry or note is stored, compare it with existing active and proposed entries of the same kind; when it says the same thing, update the existing entry (keep the older id, refresh the date, keep the stricter sensitivity) instead of adding a row. How "same meaning" is judged is the PR's choice (embedding similarity plus a model check is the obvious one); the PR states it and its threshold, and a test pins one same-meaning pair that merges and one close-but-different pair that does not.
+- **Language and gender.** Entries are written in the language the user speaks in that conversation; never "he/his/she/her" for the user, always "the user" (or the user's language's equivalent). Fix in the extractor prompt; a test feeds a turn and checks the stored text.
+- **No one-off task state in "about you".** Paths, ports, "the user is currently deploying X" stay with the conversation or project. Fix in the extractor's rules plus a cheap filter; tests for each of the three kinds.
+- **Not here:** the outside-content gate (S64-0), the #239 sensitive-memory rules, `local_only`. The 30 quarantined `scope_kind=expert` entries are C7c's decision (see the v0.1.64 README §3.3).
+- **Size:** about +200 product lines, tests about +250.
+
 ### INB3 定时任务单独一个入口（第 3 条的基本版）
 
 - `web/src/lib/sections.ts:14-22` 加 `scheduled`；侧边栏（`web/src/components/Sidebar.tsx`）加一项「定时任务」。外观先用现有样式。
@@ -437,7 +446,9 @@
 | INB8 | +150 | Mac，含事件带种类；手机那半是协议和向量 |
 | INB9 | +300 | 只做用户不在场的运行 |
 
-合计约 +2,250 / −574 产品行。§11 第 6 条的目标（本版净行数为负）要靠别的删除卡，本卡做不到净负。
+MEM1: about +200 (added 2026-10-28; see its section).
+
+合计约 +2,250 / −574 产品行（不含 MEM1）。§11 第 6 条的目标（本版净行数为负）要靠别的删除卡，本卡做不到净负。
 
 ## 风险与回退
 

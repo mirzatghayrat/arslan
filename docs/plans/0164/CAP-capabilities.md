@@ -108,6 +108,7 @@
 | CAP7a | 迁移：重建 `capability_sources`，`kind` 加 `plugin` | 否 | CAP6a | 约 80 |
 | CAP7b | 插件包：拆出技能和连接，带钩子的不装 | 是 | CAP4、CAP5、CAP6a/b、CAP7a | 约 +700 |
 | CAP8 | 导入 Claude Code / Codex 的设置，含 MCP 配置（import-agent） | 是 | CAP6a、CAP7b | 约 +500 |
+| CAP8b | Import memories from ChatGPT / Claude: the user pastes, Arslan lists the entries it would keep, the user confirms before anything is stored (user, 2026-10-28) | yes (memory write) | MEM1 (merge by meaning, so imports do not duplicate) | about +250 |
 | CAP9 | 安装卡上的 OSV.dev 漏洞检查（插进 CAP4 留的位置） | 是（卡面） | CAP4 | 约 +250 |
 | CAP10 | `verify`：找出怎么运行，在沙箱里跑冒烟测试 | 是 | **SBX** | 约 +400 |
 | CAP11 | ⑤ iPhone 能看安装卡、不能批（**用户点头才做**） | 是（Bridge 帧） | 用户定第 1 条；①iOS | 约 +150（Mac 端） |
@@ -305,6 +306,10 @@
 - **MCP 配置**每个服务器一张卡，卡面同 CAP4。本地的进 `capability_sandbox`，没钉版本的钉上或拒。
 - **钥匙：** 配置里的环境变量可能是真钥匙。由服务端直接读、加密存（同 `capability_install.py:304-305`），不进模型上下文、不进账本、不显示在卡上（卡上只写「带了 N 个钥匙」）。
 - 这一切只在用户点「导入」时做。模型不能触发，也不能读这些文件。
+
+### CAP8b Import memories from ChatGPT / Claude (user, 2026-10-28)
+
+From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes the memory export from ChatGPT or Claude into a conversation. Arslan splits it into candidate entries, drops one-off task state and anything that guesses the user's gender (MEM1 rules), merges by meaning against what is already stored (MEM1), and shows the list. Nothing is stored until the user confirms; the user can untick lines. Pasted text is treated as the user's own words only for this confirm step: it is shown, not executed, and it never switches on lessons or notes by itself. Merged with CAP8 in the cut order (CAP10 → CAP8 and CAP8b → CAP7).
 
 ### CAP9 OSV.dev 检查
 
