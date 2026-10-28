@@ -69,7 +69,7 @@
 
 ## STY2: how Arslan does work, "deeper, not bigger" (user, 2026-10-28; relayed by ④参谋)
 
-⓪Plan, 2026-10-28. The user's clarification: this is about **how Arslan does work** (办事风格), not how it talks, and it applies to tasks, not chit-chat. It edits the same prompt section as STY, so it is a second PR on this card, after STY's.
+⓪Plan, 2026-10-28. The user's clarification: this is about **how Arslan does work** (the user said "办事风格"), not how it talks, and it applies to tasks, not chit-chat. It edits the same prompt section as STY, so it is a second PR on this card, after STY's.
 
 | Item | Content |
 |---|---|
