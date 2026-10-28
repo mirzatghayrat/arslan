@@ -188,6 +188,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 - A writable shared cache is "written now, run later": a tampered package in the user's `~/.npm`, a pip cache under `~/Library/Caches` or a Homebrew cache is installed later by an unsandboxed process (a manually added MCP server started through `npx`, the user's own terminal). If shared caches stayed writable they would have to go on HR's e list.
 - So sandboxed tools get Arslan-owned cache folders (outside the protected roots, as for TMPDIR), through environment variables that redirect them reliably (②Main): `npm_config_cache`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `XDG_CACHE_HOME`, `GOCACHE`, and others SBX-M confirms.
 - The user's `~/.npm`, `~/.cache` and `~/Library/Caches` become read-only to the sandbox. A tool that cannot be redirected and needs to write its shared cache is listed by SBX-M with its card cost; it is not reopened by default.
+- **Separate cache roots per preset** (③Hands, recheck of `0a2be0c8`): the commands preset and the MCP preset never share a cache folder. Otherwise a command can leave a tampered package that a sandboxed MCP server (which has network and granted folders) loads later. If a shared root is ever unavoidable, the MCP start path refuses a cached package whose hash does not match the lockfile. Test: a package planted in the commands cache is not visible to the MCP preset.
 - Cost: cold caches, more downloads on first use (measured in SBX-M).
 
 ### 2. The system-service allowlist (correction A)
@@ -220,6 +221,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not.
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
   - allow outbound to `localhost:*`;
+  - **deny every port Arslan itself listens on, not only the API port** (③Hands, recheck of `0a2be0c8`): in particular the browser's CONNECT tunnel (`server/services/browser_proxy.py`), which reaches public hosts on 443; otherwise `localhost:*` is a second way out in N-a mode. The list is built from the ports Arslan actually binds at start, not hand-written; corpus item: a sandboxed command connecting to the tunnel's port is refused in both modes;
   - then deny Arslan's own API port (and Hands' and the Bridge's local ports, if any are TCP) after it, since the last rule wins. The port is known to the server when it builds the profile;
   - corpus items: a dev server bound and fetched on localhost, a local test database, Arslan's port refused, a bind to all interfaces refused.
 - **DNS:** today's offline profile already blocks resolution on macOS 26.6.2 (③Hands' measurement, above). SBX-M repeats it on the new base in each mode. In proxy mode DNS from inside is denied by design.
