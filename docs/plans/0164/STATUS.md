@@ -28,20 +28,27 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444~~ (merged) → #454 → #428. ④参谋 checked every open PR at ~15:10 UTC (heads, reviews on GitHub, overlap with main):
+The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444~~ (merged) → #454 → #428. ④参谋 checked every open PR at ~15:10 UTC (heads, reviews, overlap with main); updated since.
 
-- **Ready now:** #457 (CAP1b, ③Hands OK at `d8372fd4`), #454 (STY read test, ①iOS OK at `48f3083e`), #428 (docs/site, ①iOS OK at `bde88795`), #461 (CAP F3; ⓪Plan's max reviewer at `1188c10d`, the later commit `9ec18990` is test-only, noted on the PR), #462 (BR1; ①iOS OK at `cd60c056`, recorded here because ①iOS does not post on PRs), #463 (BR2; ①iOS rechecked `609de05d`: OK, CI 40695106664 success; ⑥Helper then merged main in (`2286a1b1`) and fixed one BR2 test that still used edit_file's old `old`/`new` names, which C5b removed (`d01381ec`, test-only, one line); CI 40713934590 on that head is running, ready once it is green; one old-data note: pre-v0.1.64 outputs with titles over 240 characters and the same title collapse to one, not a fix request), #456 (F5b-2; ②Main confirmed at `54805cfd`, CI 40677484593 success; after it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, together with the Cua lines already planned after #428).
-- **Recheck of a newer head:** #464 (③Hands posts a line that its OK covers `b7059ff3`).
-- **Fresh CI first:** #443 (S64-0b; main merged in at `d2ab87e5`, CI 40712453311 running).
-- **No review on GitHub yet:** #459 PRJ0 (⑤CAP), #453 and #458 (⑥Helper), #465 (③Hands OK at `7c93e2ec`, one pointer added after at `e075d479`).
-- **#447** (SBX card): main merged in at `0c1454fc` (it was conflicting). The user answered its seven questions (2026-10-28, ~15:20 UTC), written into the card at `18c88202`: network N-a (a minimal local proxy, no site list) if SBX-M's breakage is acceptable, otherwise the numbers go back to the user before N-b; manually added MCP servers stay unsandboxed and the form says so; reads stay open minus the protected and closed folders; keep today's card when the sandbox cannot start; "ask only when risky" stays off until S2a-3 and S5a; the re-run share is only recorded; `ssh_exec` onto the builder in SBX-1. Needs a re-OK at the new head.
+**Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan.
 
-**Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
+**Ready now** (another session's OK at the current head, green CI on it):
+- #457 (CAP1b): ③Hands OK at `d8372fd4`.
+- #454 (STY read test): ①iOS OK at `48f3083e`.
+- #428 (docs/site): ①iOS OK at `bde88795`.
+- #461 (CAP F3): ⓪Plan's max reviewer at `1188c10d`; the later `9ec18990` is test-only (noted on the PR).
+- #462 (BR1): ①iOS found a gap after testing build 25 (once Allow was clicked the Bridge dropped to the 10 s pace before the new phone's first hello); ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. ①iOS rechecked it: OK (read the diff, relied on that CI run; no frame change). ①iOS does not post on PRs; its verdict is recorded here.
+- #456 (F5b-2): ②Main confirmed at `54805cfd`, CI 40677484593 success. After it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, with the Cua lines already planned after #428.
+- #443 (S64-0b): written by ③Hands; independent review by ②Main with its effort=max reviewer, OK at `390aa048`. Main merged in at `d2ab87e5`; CI 40712453311 success. No Astra under the new rule.
+- #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
 
-- #443 (S64-0b): written by ③Hands; independent review by ②Main with its effort=max reviewer, OK at `390aa048` (CI 40675097201 success). No Astra needed under the new rule. ③Hands is merging main in (no force-push) so CI runs on the head you merge; ready after that run.
-- #462 (BR1): ①iOS found a gap after testing build 25 (once Allow was clicked the Bridge dropped to the 10 s pace before the new phone's first hello). ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. ①iOS rechecked it: OK, ready (it read the diff and relied on that CI run; the pairing pace is still bounded: an open code until it expires, an answered one for 60 s; no frame change). ①iOS does not post on PRs; its verdict is recorded here.
-- #464 (code rules, sessions.md §12, card EXC1): docs only; ③Hands OK at `057fe7a6` (posted on the PR), plus its optional wording at `b7059ff3`. Best merged after #447 (lane table moves SBX to ③Hands).
-- #465 (Codex only when a Claude review is blocked): docs only; ③Hands asked for missing pointers and the #443 wording, fixed at `7c93e2ec`; waiting for its recheck.
+**Waiting for CI or a re-OK:**
+- #463 (BR2): ①iOS rechecked `609de05d`: OK. ⑥Helper then merged main in (`2286a1b1`) and fixed one test that still used edit_file's old `old`/`new` names, which C5b removed (`d01381ec`, one test line); CI 40713934590 on that head pending. One old-data note from ①iOS: pre-v0.1.64 outputs with titles over 240 characters and the same title collapse to one; not a fix request.
+- #464 (code rules, sessions.md §12, card EXC1): ③Hands OK at `057fe7a6` on the PR; `b7059ff3` is its own wording; ③Hands posts that the OK covers it. Best merged after #447 (lane table moves SBX to ③Hands).
+- #465 (Codex only when a Claude review is blocked): ③Hands OK at `7c93e2ec`; one pointer added at `e075d479` (no recheck needed, per ③Hands).
+- #447 (SBX card): the user answered its seven questions (2026-10-28, ~15:20 UTC), written into the card at `18c88202`; ③Hands posted that the decisions section matches. `cac07791` adds one line from ③Hands' SBX-1 check (SBX-4 sorts `computation_profile`'s set-order lines). Decisions: network N-a (a minimal local proxy, no site list) if SBX-M's breakage is acceptable, otherwise the numbers go back to the user before N-b; manually added MCP servers stay unsandboxed and the form says so; reads stay open minus the protected and closed folders; keep today's card when the sandbox cannot start; "ask only when risky" stays off until S2a-3 and S5a; the re-run share is only recorded; `ssh_exec` onto the builder in SBX-1.
+- #453 (M64 hand-check fix): ⑥Helper asked to drop the generic T2 keywords; done at `a3a127f7` (plus a test that wrong findings with only a generic word don't catch T2; mutants checked); needs ⑥Helper's re-OK.
+- #458 (this page, SIDE card): ⑥Helper checked the facts against GitHub; its fixes are in this commit; needs its re-OK.
 - #466 (INB1 follow-ups F2, F4): an independent effort=max Claude review is running.
 
 ## In progress
@@ -49,7 +56,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 | Lane | Work |
 |---|---|
 | ②Main | INB1 follow-ups F2 + F4 (rebase on #460); after INB2 merges, learned practices use the per-conversation outside-content check too (user, 2026-10-28: a detour or machine quirk takes effect only when `runs.read_outside` says the whole conversation is clean, like "about you"; user corrections unchanged; until then the current-turn mark plus S64-0's carried marks), INB1 UI (waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
-| ③Hands | PRJ0 (deletions; table drop 0076), CAP1b #457 review, #449 security review |
+| ③Hands | SBX-1 (builder written, byte-for-byte check 0 of 32 differ); PRJ0's table drop 0076 after #459 |
 | ⑤CAP | CAP1b #457 (0074), CAP1c (0075, after #457), CAP2a (at max) |
 | ⑥Helper | STY #452 (draft; gated on the read test and a bench "after" run), SIDE after SUB2 |
 | ⓪Plan | M64 (baseline done, hand check #453), STY read test #454 (page with the user), mid-version M1 round, cards |
