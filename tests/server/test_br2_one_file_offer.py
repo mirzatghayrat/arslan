@@ -114,3 +114,40 @@ def test_an_entry_without_a_key_stands_alone():
     items = [{"filename": "x", "logical_key": None}, {"filename": "y"}, {"filename": "z", "logical_key": "c" * 64},
              {"filename": "w", "logical_key": "c" * 64}]
     assert [i["filename"] for i in artifact_store.final_versions(items)] == ["x", "y", "w"]
+
+
+# ── ⑤CAP's review of #463 ────────────────────────────────────────────────────
+def _three_versions(monkeypatch, clock):
+    """Three versions of one file whose random ids sort newest-first by name, under `clock`."""
+    _uuids(monkeypatch, ["f" * 32, "8" * 32, "0" * 32])
+    monkeypatch.setattr(artifact_store.time, "time_ns", clock)
+    stored = [artifact_store.store_bytes(RUN, "notes.md", data, logical_key="e" * 64) for data in (b"one", b"two", b"three")]
+    stamps = [item["stored_at_ns"] for item in stored]
+    assert stamps == sorted(stamps) and len(set(stamps)) == 3, "strictly increasing"
+    return [a["sha256"] for a in artifact_store.final_versions(artifact_store.list_artifacts(RUN))]
+
+
+def test_versions_stored_in_the_same_clock_tick_keep_their_order(ws, monkeypatch):
+    """macOS gives time_ns() in microsecond steps: writes in one tick tied, and a tie fell back to
+    the random filename (the earlier version offered in about half of ⑤CAP's probe runs)."""
+    assert _three_versions(monkeypatch, lambda: 5 * 10**18) == [sha(b"three")]
+
+
+def test_a_clock_that_steps_back_does_not_reorder_versions(ws, monkeypatch):
+    ticks = iter([6 * 10**18, 6 * 10**18 - 10**12, 6 * 10**18 - 2 * 10**12])   # NTP or the user moves the clock back
+    assert _three_versions(monkeypatch, lambda: next(ticks)) == [sha(b"three")]
+
+
+def test_two_outputs_without_a_path_that_share_a_name_both_stay(ws):
+    """A run's exported outputs (run_python files, browser downloads) have no path identity: two
+    different files called out.csv are two offers, as before BR2."""
+    first = artifact_store.store_bytes(RUN, "out.csv", b"a,b")
+    second = artifact_store.store_bytes(RUN, "out.csv", b"c,d")
+    assert first["logical_key"] == second["logical_key"]          # the default title key
+    assert [f["sha256"] for f in phone_reads.run_files(RUN)] == [sha(b"a,b"), sha(b"c,d")]
+
+
+def test_history_keeps_the_latest_files_when_a_run_has_more_than_it_shows(ws):
+    for name in ("a.md", "b.md", "c.md"):
+        artifact_store.store_bytes(RUN, name, name.encode(), logical_key=hashlib.sha256(name.encode()).hexdigest())
+    assert [f["title"] for f in artifact_store.artifacts_by_run([RUN], per_run=2)[RUN]] == ["b.md", "c.md"]

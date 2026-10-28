@@ -466,5 +466,7 @@ def _snapshot_write(root: Path, path: Path, content: str):
 def _file_key(path: Path) -> str:
     """One file's identity across a run's snapshots and attachments (BR2 / M3 #12): its resolved
     path. Before v0.1.64 a snapshot's key was built from the workspace root plus the relative path
-    and an attachment had none, so the window and the phone showed one card per write."""
+    and an attachment had none, so the window and the phone showed one card per write.
+    Limitation: the path is not case-folded, so on a case-insensitive volume `docs/A.md` and
+    `docs/a.md` (one file) are two keys and two cards; only when a turn spells the path both ways."""
     return hashlib.sha256(("file:" + str(path.resolve())).encode()).hexdigest()
