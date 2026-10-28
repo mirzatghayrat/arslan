@@ -20,10 +20,12 @@ async def _about_you(actor, ctx):
 
     from server.db import session as db_session
     from server.db.models import Run
-    from server.orchestrator import untrusted
+    from server.orchestrator import run_trace, untrusted
     from server.services import presence
-    clean = not untrusted.external_seen()
-    if clean and ctx.conversation_id:
+    # This turn and every earlier turn of this run (#475 review, F5); with no conversation whose other runs can
+    # be checked, nothing is known to be clean (F7).
+    clean = not untrusted.external_seen() and run_trace.outside() is not True and bool(ctx.conversation_id)
+    if clean:
         async with db_session.AsyncSessionLocal() as db:
             query = select(Run.id).where(Run.conversation_id == ctx.conversation_id,
                                          or_(Run.read_outside.is_(None), Run.read_outside.is_(True)))
@@ -47,10 +49,7 @@ def _tell_the_window(ctx, result: dict) -> None:
              "entry_id": result.get("id"), "version": result.get("version")}
     if waiting:
         frame |= {"proposal_id": result.get("proposal_id"), "reason": result.get("reason")}
-    try:
-        run_registry.make_emit(ctx.conversation_id)(frame)
-    except Exception:  # noqa: BLE001 — the line is a courtesy; the entry is already saved
-        pass
+    run_registry.make_emit(ctx.conversation_id)(frame)     # each window is isolated there: a dead one breaks nothing
 
 
 def _context(caller):

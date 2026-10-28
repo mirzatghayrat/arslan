@@ -28,9 +28,24 @@ export interface PendingMemoryItem {
   proposal?: MemoryProposal;
 }
 
+const PAGE = 100;            // what /memory/proposals returns per call
+const MAX_ROWS = 2000;       // a backstop against a source that never says it is done
+
+/** Every row, page by page (#475 review): "To sort" lists all that wait, not the first page. */
+async function allPages<T>(page: (offset: number) => Promise<T[]>): Promise<T[]> {
+  const out: T[] = [];
+  for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+    const rows = await page(offset);
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
 export async function loadPendingMemory(t: TFunction): Promise<PendingMemoryItem[]> {
   const [memory, curation] = await Promise.allSettled([
-    companionApi.proposals(), api.listMemoryProposals({ status: "pending", limit: 50 }),
+    allPages((offset) => companionApi.proposals(offset)),
+    allPages((offset) => api.listMemoryProposals({ status: "pending", limit: PAGE, offset })),
   ]);
   const out: PendingMemoryItem[] = [];
   if (memory.status === "fulfilled") {

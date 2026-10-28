@@ -1,4 +1,5 @@
 """Memory input contracts and trusted caller policy; model text is never authority."""
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal
@@ -105,15 +106,14 @@ class WriteDecision:
 
 # Sensitive inference is never saved silently, even if the model labels it normal. INB2 adds family
 # (add-only; bare "child" is left out on purpose: "child process").
-_SENSITIVE = (r"\b(?:birthday|diagnosis|medical|passport|salary|bank account|home address"
-              r"|family|children|kids?|son|daughter|parents?|father|mother|spouse|husband|wife)\b"
-              r"|(?:生日|诊断|病史|身份证|护照|工资|银行账户|家庭住址|精确位置"
-              r"|家人|家属|孩子|儿子|女儿|父母|父亲|母亲|爸爸|妈妈|配偶|丈夫|妻子|老公|老婆)")  # lang-check: allow (Chinese input to match)
+_SENSITIVE = re.compile(r"\b(?:birthday|diagnosis|medical|passport|salary|bank account|home address"
+                        r"|family|children|kids?|son|daughter|parents?|father|mother|spouse|husband|wife)\b"
+                        r"|(?:生日|诊断|病史|身份证|护照|工资|银行账户|家庭住址|精确位置"
+                        r"|家人|家属|孩子|儿子|女儿|父母|父亲|母亲|爸爸|妈妈|配偶|丈夫|妻子|老公|老婆)", re.IGNORECASE)  # lang-check: allow (Chinese input to match)
 
 
 def sensitive_words(text: str) -> bool:
-    import re
-    return bool(re.search(_SENSITIVE, text, re.IGNORECASE))
+    return bool(_SENSITIVE.search(text))
 
 
 def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:

@@ -130,6 +130,18 @@ describe("待整理 (to sort): what was not remembered directly (INB2)", () => {
     expect(items.map((i) => [i.key, i.source, i.reason, i.sensitive])).toEqual([["m:1", "memory", "external_seen", true]]);
   });
 
+  it("loads every waiting row, page by page, not only the first page of each source (#475 review)", async () => {
+    const proposals = vi.spyOn(companionApi, "proposals").mockImplementation(async (offset = 0) =>
+      (offset === 0 ? Array.from({ length: 100 }, (_, i) => proposal(i + 1, "external_seen")) : [proposal(501, "sensitive")]) as never);
+    const suggestions = vi.spyOn(api, "listMemoryProposals").mockImplementation(async (opts) =>
+      (opts?.offset ? [] : Array.from({ length: 100 }, (_, i) => ({ ...suggestion, id: 1000 + i }))) as never);
+    const items = await loadPendingMemory(((k: string) => k) as never);
+    expect(items).toHaveLength(201);
+    expect(proposals.mock.calls.map((c) => c[0])).toEqual([0, 100]);
+    expect(suggestions.mock.calls.map((c) => c[0])).toEqual([{ status: "pending", limit: 100, offset: 0 },
+                                                             { status: "pending", limit: 100, offset: 100 }]);
+  });
+
   it("is folded, counts every row, and opened lists them by why they wait; nothing is answered on its own", async () => {
     vi.spyOn(companionApi, "memories").mockResolvedValue([]);
     vi.spyOn(companionApi, "proposals").mockResolvedValue([

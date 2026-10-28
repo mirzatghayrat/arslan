@@ -626,8 +626,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             attached = (data.get("attached_context") or "").strip()
 
             # INB2: the one place a turn counts as the user's own (server/services/presence.py, the allowlist):
-            # a message typed in the window, or on the iPhone (the Bridge's chat.send, source "phone").
-            with presence.user_turn():
+            # a message typed in the window, or on the iPhone (the Bridge's chat.send, source "phone") that
+            # arrives soon after it was sent.
+            with presence.user_turn() if presence.typed_just_now(data) else contextlib.nullcontext():
                 async with _turn(data):
                     await run_with_confirm_frames(
                         arslan.handle_user_message(conversation_id, content, emit,

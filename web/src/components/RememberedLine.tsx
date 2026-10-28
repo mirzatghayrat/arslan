@@ -65,9 +65,9 @@ export default function RememberedLine({ facts }: { facts: RememberedFact[] }) {
   );
 }
 
-/** INB2: the one question about a sensitive entry. Both buttons answer exactly this proposal; the server
- *  refuses one already answered (in Memory, say) or whose entry changed since the proposal was made (its
- *  version), and then the line points to Memory. Kept means kept for this Mac only, the sensitivity
+/** INB2: the one question about a sensitive entry. Both buttons answer exactly this proposal, at the version
+ *  the line showed; the server refuses one already answered (in Memory, say) or whose entry changed since,
+ *  and then the line points to Memory. Kept means kept for this Mac only, the sensitivity
  *  acknowledged, as "Keep, this Mac only" in "To sort". It is never asked again: unanswered, it waits there. */
 function Ask({ fact }: { fact: Asked }) {
   const { t } = useTranslation();
@@ -76,7 +76,7 @@ function Ask({ fact }: { fact: Asked }) {
   async function answer(keep: boolean) {
     setState("busy");
     try {
-      await companionApi.resolveProposal(fact.proposalId, keep, keep, false);
+      await companionApi.resolveProposal(fact.proposalId, keep, keep, false, fact.version ?? undefined);
       setState(keep ? "kept" : "skipped");
     } catch {
       setState("changed");

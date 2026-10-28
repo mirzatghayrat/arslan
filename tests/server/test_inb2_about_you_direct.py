@@ -7,7 +7,6 @@ Presence is an allowlist (server/services/presence.py): the window's user_messag
 chat.send (it arrives on the same socket with source "phone"). "Read outside content" is a per-run record
 (`runs.read_outside`, migration 0072); a run with no record counts as having read some.
 """
-import contextvars
 from datetime import datetime
 
 import pytest
@@ -15,6 +14,7 @@ from sqlalchemy import select
 
 from server.db.migrations import runner
 from server.db.migrations.versions import _0072_runs_read_outside as m0072
+from server.db.companion_models import MemoryEntry
 from server.db.models import MemoryProposal, Run
 from server.orchestrator import run_trace, untrusted
 from server.orchestrator.tool_caller import ToolCaller
@@ -23,6 +23,9 @@ from server.services import (background_jobs, host_run, memory_tools_v2, presenc
 from server.services import personal_context as pc
 from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
+from server.services.memory_repository import repository
+
+from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite
 
 CID = "c-inb2"
 HOST = ToolCaller(actor="host", spawn_id=None, conversation_id=CID)
@@ -149,14 +152,16 @@ def test_presence_is_off_unless_an_allowlisted_entry_turns_it_on():
     assert presence.present() is False
 
 
-async def test_a_background_job_reads_not_present_even_when_a_present_turn_started_it():
+async def test_a_background_job_reads_not_present_even_when_a_present_turn_started_it(memory, monkeypatch):
+    """Through background_jobs.start, as a turn starts one: the job runs in a fresh context."""
     seen = []
 
-    async def job():
+    async def run(job):
         seen.append(presence.present())
-    import asyncio
+    monkeypatch.setattr(background_jobs, "_run", run)
     with presence.user_turn():
-        await asyncio.get_running_loop().create_task(job(), context=contextvars.Context())
+        job = await background_jobs.start(CID, "tidy the notes", [], outside_seen=False)
+    await job.task
     assert seen == [False]
 
 
@@ -242,6 +247,151 @@ async def test_the_badge_no_longer_counts_memory(memory):
         session.add(MemoryProposal(kind="memory_v2", table_name="memory_entries", reason="sensitive", status="pending"))
         await session.commit()
     assert "memory" not in await proactive_service.summary()
+
+
+# -- #475 review: the whole run, and a conversation to check (F5, F7) ------------------------------------
+
+async def test_an_earlier_turn_of_the_same_run_that_read_outside_content_keeps_it_waiting(memory):
+    """F5: turn 1 of this run read a page; turn 2 starts clean, and this run has no record yet."""
+    with run_trace.collecting():
+        token = untrusted.track_turn()
+        untrusted.mark_external()
+        run_trace.record_outside(untrusted.end_turn(token))
+        out = await _write("remember", "The user prefers short answers")
+    assert out["status"] == "proposed" and await _reason(memory, out["id"]) == "external_seen"
+
+
+async def test_with_no_conversation_to_check_about_you_waits(memory):
+    """F7: nothing to check means nothing is known to be clean."""
+    out = await _write("remember", "The user prefers short answers", ctx=_ctx(cid=None))
+    assert out["status"] == "proposed"
+
+
+async def test_a_remember_supersede_in_a_present_clean_turn_stays_a_proposal(memory):
+    """F6: only a new entry takes effect directly; Arslan's edit of one waits, present and clean or not."""
+    first = await _write("remember", "The user prefers short answers")
+    assert first["status"] == "active"
+    async with repository() as repo:
+        row = await repo.db.get(MemoryEntry, first["id"])
+        alias = await repo.compatibility_id(row, "user_facts")
+    out = await _write("remember", "The user prefers very short answers", action="supersede",
+                       entry={"target_id": alias, "expected_version": first["version"]})
+    assert out["status"] == "proposed"
+    assert await _entry(memory, first["id"]) == ("active", "normal", "local_only", "The user prefers short answers")
+
+
+# -- #475 review: an existing entry is never changed by "about you" taking effect (F3) ---------------------
+
+USER = MemoryActor(origin="user")
+
+
+async def _entry(db, entry_id):
+    from server.db.companion_models import MemoryRevision
+    async with db() as session:
+        row = await session.get(MemoryEntry, entry_id)
+        revision = await session.get(MemoryRevision, row.current_revision_id)
+        return row.status, row.sensitivity, row.use_policy, revision.content
+
+
+async def _pending(db, entry_id) -> int:
+    async with db() as session:
+        return len((await session.scalars(select(MemoryProposal.id).where(
+            MemoryProposal.target_entry_id == entry_id, MemoryProposal.status == "pending"))).all())
+
+
+async def test_a_no_is_not_undone_by_a_later_clean_write_of_the_same_words(memory):
+    waiting = await _write("remember", "The user prefers short answers", present=False)
+    async with repository() as repo:
+        await repo.resolve_proposal(waiting["proposal_id"], accept=False, actor=USER)
+    assert (await _entry(memory, waiting["id"]))[0] == "paused"
+    again = await _write("remember", "The user prefers short answers")
+    assert again["id"] == waiting["id"]
+    assert (await _entry(memory, waiting["id"]))[0] == "paused" and await _pending(memory, waiting["id"]) == 0
+
+
+async def test_a_no_is_not_undone_by_the_same_fact_noticed_again(memory):
+    """Not only "about you": the extractor noticing the same words again ("remember me" on) does not bring
+    back what the user said no to. Only the user's own confirmation does."""
+    fact = MemoryWrite(content="The user prefers short answers", kind="preference", scope=MemoryScope(kind="global"))
+    async with repository() as repo:
+        waiting = await repo.create(fact, MemoryActor(origin="extractor"))
+        await repo.resolve_proposal(waiting["proposal_id"], accept=False, actor=USER)
+    async with repository() as repo:
+        await repo.create(fact, MemoryActor(origin="extractor", auto_activate_noticed=True))
+    assert (await _entry(memory, waiting["id"]))[0] == "paused"
+    async with repository() as repo:
+        await repo.create(fact, USER)                       # the user adds it again in Memory: it comes back
+    assert (await _entry(memory, waiting["id"]))[0] == "active"
+
+
+async def test_a_waiting_entry_is_not_switched_on_by_a_clean_write_in_another_conversation(memory):
+    waiting = await _write("remember", "The user rides to work", outside=True)
+    elsewhere = await _write("remember", "The user rides to work", ctx=_ctx(cid="c-elsewhere"))
+    assert elsewhere["id"] == waiting["id"]
+    assert (await _entry(memory, waiting["id"]))[0] == "proposed" and await _pending(memory, waiting["id"]) == 1
+
+
+async def test_a_sensitive_proposal_from_the_extractor_stays_waiting_and_sensitive(memory, monkeypatch):
+    """The model marked the fact sensitive (no keyword says so); Arslan then writes the same words, present
+    and clean. The extractor's proposal is still the user's to answer."""
+    from server.services import turn_facts
+
+    async def extract(conversation_id, user_message):
+        return [{"content": "The user is pregnant", "sensitive": True}]
+    monkeypatch.setattr(turn_facts, "extract", extract)
+    with pc.bind(_ctx(auto_activate_noticed=True)):
+        assert await turn_facts.capture(CID, "I'm pregnant", lambda frame: None) == 1
+    [noticed] = [f for f in memory.frames if f.get("type") == "memory_proposed"] or [None]
+    async with memory() as session:
+        entry_id = (await session.scalars(select(MemoryEntry.id))).one()
+    await _write("remember", "The user is pregnant")
+    assert await _entry(memory, entry_id) == ("proposed", "sensitive", "local_only", "The user is pregnant")
+
+
+async def test_arslan_never_widens_what_the_user_kept_for_this_mac_only(memory):
+    """The user kept it sensitive and for this Mac only. Arslan's note adds the same words to "about you":
+    the user's choice stays as it was."""
+    async with repository() as repo:
+        mine = await repo.create(MemoryWrite(content="The user is pregnant", kind="preference",
+                                             scope=MemoryScope(kind="global"), sensitivity="sensitive",
+                                             sensitive_acknowledged=True, use_policy="local_only"), USER)
+    assert (mine["status"], mine["sensitivity"], mine["use_policy"]) == ("active", "sensitive", "local_only")
+    await _write("memory_note", "The user is pregnant", ctx=_ctx(cloud_memory_allowed=True))
+    assert await _entry(memory, mine["id"]) == ("active", "sensitive", "local_only", "The user is pregnant")
+    assert await _pending(memory, mine["id"]) == 1         # putting it "in view" is an edit: it waits for the user
+
+
+async def test_only_the_user_loosens_an_entry_anyone_else_revises(memory):
+    """The extractor takes a waiting fact into effect ("remember me" on): it stays sensitive and for this Mac
+    only, because only the user loosens an entry (#475 review, F3)."""
+    async with repository() as repo:
+        waiting = await repo.create(MemoryWrite(content="The user is pregnant", kind="preference",
+                                                scope=MemoryScope(kind="global"), sensitivity="sensitive"),
+                                    MemoryActor(origin="extractor"))
+    assert waiting["status"] == "proposed"
+    noticed = MemoryActor(origin="extractor", auto_activate_noticed=True, cloud_memory_allowed=True)
+    async with repository() as repo:
+        await repo.revise(waiting["id"], waiting["version"], MemoryWrite(
+            content="The user is pregnant", kind="preference", scope=MemoryScope(kind="global")), noticed)
+    assert await _entry(memory, waiting["id"]) == ("active", "sensitive", "local_only", "The user is pregnant")
+
+
+async def test_the_chat_lines_no_is_refused_once_the_entry_changed(memory):
+    """The chat line's two buttons name the version they showed: a "No" for an entry that changed since is
+    refused (the line then points to Memory), and 待整理's own "No", which names none, works as before."""
+    waiting = await _write("remember", "The user's family visits on Sundays")
+    async with repository() as repo:
+        await repo.revise(waiting["id"], waiting["version"],
+                          MemoryWrite(content="The user's family visits on Saturdays", kind="preference",
+                                      scope=MemoryScope(kind="global"), sensitive_acknowledged=True), USER)
+    with pytest.raises(MemoryError, match="memory_version_conflict"):
+        async with repository() as repo:
+            await repo.resolve_proposal(waiting["proposal_id"], accept=False, actor=USER,
+                                        expected_version=waiting["version"])
+    assert await _pending(memory, waiting["id"]) == 1
+    async with repository() as repo:
+        await repo.resolve_proposal(waiting["proposal_id"], accept=False, actor=USER)
+    assert await _pending(memory, waiting["id"]) == 0
 
 
 # -- the run's record ------------------------------------------------------------------------------------

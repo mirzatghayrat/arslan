@@ -1,11 +1,13 @@
 """INB2: which entry points count as "the user is present" (server/services/presence.py, an allowlist).
 
 Present: the window's user_message, and the iPhone's chat.send, which the Bridge delivers on the same socket
-as a user_message with source "phone". Not present: everything else, here a resumed task (the window's or
-the Bridge's resume_task frame), a scheduled fire and a background job. A new entry point counts only once
-its own PR adds it to presence.py.
+as a user_message with source "phone", when it arrives soon after it was sent (its `sent_at`; one that waited
+on the phone while the Mac was offline is not the user being there, #475 review). Not present: everything
+else, here a resumed task (the window's or the Bridge's resume_task frame), a scheduled fire and a background
+job. A new entry point counts only once its own PR adds it to presence.py.
 """
 import types
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -54,12 +56,22 @@ def _until_stream_end(ws, limit=40):
     raise AssertionError("no stream_end")
 
 
+def _sent(minutes_ago: float) -> str:
+    """A send time as the envelope's `ts` spells it (ISO 8601, UTC)."""
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat().replace("+00:00", "Z")
+
+
 @pytest.mark.parametrize("frame,expected", [
     ({"type": "user_message", "content": "hi"}, ("user_message", None, True)),
-    ({"type": "user_message", "content": "hi", "source": "phone"}, ("user_message", "phone", True)),
+    ({"type": "user_message", "content": "hi", "source": "phone", "sent_at": _sent(0)},
+     ("user_message", "phone", True)),
+    ({"type": "user_message", "content": "hi", "source": "phone"}, ("user_message", "phone", False)),
+    ({"type": "user_message", "content": "hi", "source": "phone", "sent_at": _sent(60)},
+     ("user_message", "phone", False)),
     ({"type": "resume_task", "task_id": "t-1", "expected_version": 1}, ("resume_task", None, False)),
     ({"type": "resume_task", "task_id": "t-1", "expected_version": 1, "source": "phone"}, ("resume_task", None, False)),
-], ids=["window-message", "phone-chat-send", "window-resume", "bridge-resume"])
+], ids=["window-message", "phone-chat-send", "phone-no-send-time", "phone-sent-an-hour-ago", "window-resume",
+        "bridge-resume"])
 def test_only_a_typed_message_from_the_window_or_the_phone_counts_as_present(app_client, seen, frame, expected):
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()                                    # history
@@ -83,3 +95,23 @@ async def test_a_scheduled_fire_is_not_present_even_when_started_from_a_present_
     with presence.user_turn():
         await scheduler._fire(types.SimpleNamespace(id=1, conversation_id="s-1", name="daily", prompt="go"))
     assert record == [False]
+
+
+@pytest.mark.parametrize("minutes_ago,present", [(0, True), (6.9, True), (7.1, False), (-1.9, True), (-2.1, False)],
+                         ids=["now", "just-inside", "too-old", "phone-clock-ahead", "too-far-ahead"])
+def test_a_phone_message_counts_as_present_only_soon_after_it_was_sent(minutes_ago, present):
+    """Five minutes on the way, and the two clocks may be two minutes apart either way."""
+    now = datetime(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
+    sent = (now - timedelta(minutes=minutes_ago)).isoformat()
+    assert presence.typed_just_now({"source": "phone", "sent_at": sent}, now) is present
+
+
+@pytest.mark.parametrize("sent_at", [None, "", "yesterday", "2026-10-29T12:00:00"],
+                         ids=["missing", "empty", "unreadable", "no-time-zone"])
+def test_a_phone_message_without_a_readable_send_time_is_not_present(sent_at):
+    now = datetime(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
+    assert presence.typed_just_now({"source": "phone", "sent_at": sent_at}, now) is False
+
+
+def test_a_message_from_the_window_needs_no_send_time():
+    assert presence.typed_just_now({"type": "user_message", "content": "hi"}) is True

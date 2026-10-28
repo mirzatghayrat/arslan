@@ -97,11 +97,12 @@ describe("what Arslan remembered after a turn", () => {
     expect(screen.getByTestId("memory-ask-11")).toHaveTextContent("chat.memoryAsk:你的孩子周三有钢琴课");
     fireEvent.click(within(screen.getByTestId("memory-ask-11")).getByText("pendingMemory.keepLocal"));
     await waitFor(() => expect(screen.getByTestId("memory-ask-11")).toHaveTextContent("chat.memoryKeptLocal:你的孩子周三有钢琴课"));
-    expect(resolve.mock.calls).toEqual([[11, true, true, false]]);
+    // Bound to the version the line showed (#475 review): one that changed since is refused by the server.
+    expect(resolve.mock.calls).toEqual([[11, true, true, false, 1]]);
     expect(within(screen.getByTestId("memory-ask-11")).queryByRole("button")).toBeNull();      // asked once
     fireEvent.click(within(screen.getByTestId("memory-ask-12")).getByText("pendingMemory.drop"));
     await waitFor(() => expect(screen.getByTestId("memory-ask-12")).toHaveTextContent("chat.memorySkipped"));
-    expect(resolve.mock.calls).toEqual([[11, true, true, false], [12, false, false, false]]);
+    expect(resolve.mock.calls).toEqual([[11, true, true, false, 1], [12, false, false, false, 1]]);
     expect(screen.getByText("chat.rememberedUndo")).toBeInTheDocument();          // the one that took effect keeps Undo
   });
 
@@ -132,5 +133,17 @@ describe("what Arslan remembered after a turn", () => {
     expect(toUser("ユーザーは短い答えが好き")).toBe("あなたは短い答えが好き");
     expect(toUser("The user prefers short answers")).toBe("The user prefers short answers");
     expect(toUser("喜欢用户界面简洁")).toBe("喜欢用户界面简洁");
+  });
+});
+
+describe("the chat line's answer names the version it showed (#475 review)", () => {
+  it("sends expected_version only when given: Memory's own rows name none", async () => {
+    const req = vi.spyOn(client, "request").mockResolvedValue({} as never);
+    await companionApi.resolveProposal(3, false, false, false, 2);
+    await companionApi.resolveProposal(4, true, true, false);
+    expect(req.mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body)))).toEqual([
+      { accept: false, sensitive_acknowledged: false, use_policy: "local_only", expected_version: 2 },
+      { accept: true, sensitive_acknowledged: true, use_policy: "local_only" },
+    ]);
   });
 });
