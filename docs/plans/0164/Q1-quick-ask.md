@@ -184,7 +184,7 @@
 
     A retry with the same `client_msg_id` gets the first result, so it never trips `conversation_exists`.
 - **`conversations.list`** gains optional `kind` (only `"quick"`: quick conversations only; absent: today's list, which leaves them out) and `before`. **`conversations.result`** gains `has_more`.
-  - **C:** `before` is the `updated_at` of the last conversation the phone already has, sent back exactly as received. The Mac returns conversations strictly older, most recent first, up to `limit`.
+  - **C:** `before` is the `updated_at` of the last conversation the phone already has, sent back exactly as received. The Mac returns conversations at or before it, most recent first, up to `limit`, and the phone drops the ids it already has. Times are whole seconds, so a strictly-older page would skip, for good, a conversation cut by `limit` inside the boundary second (①iOS's review of #479, 2026-10-29). A page that brings nothing new ends the paging.
 - **`conversation.update {conversation_id, kind: "chat"}` → `conversation.updated {conversation_id, kind}`.** No `title`. `chat` is the only target. While a turn runs, the answer is `error` `mac_busy`.
 - **`conversation.delete`** deletes a quick conversation like any other. A phone that said `quick` may also delete the pocket.
 - **Still open, ②Main:** §4b's other point (`outcomes` holds only finished tasks).
