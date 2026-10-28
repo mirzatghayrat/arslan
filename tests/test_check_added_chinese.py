@@ -280,6 +280,7 @@ PLAN_TAIL = "".join(f"Step {n}: an English line that keeps rename detection hone
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)  # CI sets it; annotations have their own test
     # A user may have turned rename detection off; the checker must not depend on it.
     (tmp_path / "gitconfig").write_text("[diff]\n\trenames = false\n")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
@@ -325,6 +326,16 @@ def test_end_to_end_catches_an_added_line_and_passes_the_exceptions(repo, capsys
     assert out.count("docs/") == 2  # the failing line, plus the hint naming docs/sessions.md
     for passing in ("locales", "tests/test_input.py", "docs-site", "quote.md", "moved.md", "plan.md:3"):
         assert passing not in out
+
+
+def test_end_to_end_under_actions_a_failure_is_also_an_annotation(repo, capsys, monkeypatch):
+    root, git, write = repo
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    write("docs/new.md", "English.\n新的中文\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "change")
+    assert main(["--base", "main"]) == 1
+    assert "::error file=docs/new.md,line=2::" in capsys.readouterr().out
 
 
 def test_end_to_end_marker_and_allowlist_clear_it(repo, capsys):
