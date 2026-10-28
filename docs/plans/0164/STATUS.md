@@ -32,10 +32,12 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 
 **Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
 
-- #443 (S64-0b): OKs from ②Main (effort=max) and ③Hands at `390aa048`, CI green. No Astra needed under the new rule: ready.
+- #443 (S64-0b): written by ③Hands; independent review by ②Main with its effort=max reviewer, OK at `390aa048` (CI 40675097201 success). No Astra needed under the new rule. ③Hands is merging main in (no force-push) so CI runs on the head you merge; ready after that run.
 - #462 (BR1): ①iOS found a gap after testing build 25 (once Allow is clicked the Bridge dropped to the 10 s pace before the new phone's first hello). ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. Waits for ①iOS's recheck.
 - #464 (code rules, sessions.md §12, card EXC1): docs only; ③Hands OK at `057fe7a6` (posted on the PR), plus its optional wording at `b7059ff3`. Best merged after #447 (lane table moves SBX to ③Hands).
-- #465 (Codex only when a Claude review is blocked): docs only; needs another session's review.
+- #465 (Codex only when a Claude review is blocked): docs only; ③Hands asked for missing pointers and the #443 wording, fixed at `7c93e2ec`; waiting for its recheck.
+- #466 (INB1 follow-ups F2, F4): an independent effort=max Claude review is running.
+- Also ready: #463 (BR2), #457 (CAP1b), #461 (CAP F3); each has its Claude review and says "Codex: not needed".
 - #456 (F5b-2): ③Hands' review; ②Main's confirmation of its commit and CI pending.
 
 ## In progress
