@@ -214,18 +214,19 @@ _NUMBER = re.compile(r"^\s*\d+[.)]\s+(.*)$")
 
 
 def _inline(escaped: str) -> str:
-    """Inline code, bold and italics on text that is already HTML-escaped. Code spans are cut out
-    first, so marks inside them stay literal."""
-    parts = _CODE.split(escaped)
-    out = []
-    for i, part in enumerate(parts):
-        if i % 2:
-            out.append(f"<code>{part}</code>")
-            continue
-        part = _BOLD.sub(lambda m: f"<strong>{m.group(1) or m.group(2)}</strong>", part)
-        part = _ITALIC.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", part)
-        out.append(part)
-    return "".join(out)
+    """Inline code, bold and italics on text that is already HTML-escaped. Code spans are swapped
+    for placeholders first, so marks inside them stay literal and bold around a code span
+    (**`x`**, common in replies) still renders; render_md strips NUL from the input."""
+    codes: list[str] = []
+
+    def hold(m: re.Match) -> str:
+        codes.append(m.group(1))
+        return f"\x00{len(codes) - 1}\x00"
+
+    text = _CODE.sub(hold, escaped)
+    text = _BOLD.sub(lambda m: f"<strong>{m.group(1) or m.group(2)}</strong>", text)
+    text = _ITALIC.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", text)
+    return re.sub("\x00(\\d+)\x00", lambda m: f"<code>{codes[int(m.group(1))]}</code>", text)
 
 
 def render_md(text: str) -> str:
@@ -233,7 +234,7 @@ def render_md(text: str) -> str:
     inline code, bold and italics. The text is HTML-escaped first and only these tags are added,
     so nothing in a reply can reach the page as markup. Anything else (tables, links, quotes) is
     shown as its plain text. Both sides of a row go through the same rendering."""
-    lines = html.escape(text).split("\n")
+    lines = html.escape(text.replace("\x00", "")).split("\n")
     out: list[str] = []
     para: list[str] = []
     items: list[str] = []

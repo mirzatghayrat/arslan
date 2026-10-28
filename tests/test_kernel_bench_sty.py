@@ -270,6 +270,16 @@ def test_markdown_subset_renders_after_escaping():
     )
 
 
+def test_bold_around_inline_code_renders():
+    """Seen in the first real run (prompt 13): **`KeyError: 'port'`** kept its stars on one side
+    only, because bold was matched inside the pieces between code spans."""
+    assert sty_read.render_md("**`KeyError: 'port'`** here") == (
+        "<p><strong><code>KeyError: &#x27;port&#x27;</code></strong> here</p>"
+    )
+    # A NUL in a reply cannot pose as a code placeholder.
+    assert sty_read.render_md("\x000\x00 and `a`") == "<p>0 and <code>a</code></p>"
+
+
 def test_script_in_a_reply_stays_escaped(tmp_path):
     attack = "<script>alert(1)</script> **<img src=x onerror=alert(2)>** `<b>`"
     rendered = sty_read.render_md(attack)
