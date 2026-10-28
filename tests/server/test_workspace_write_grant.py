@@ -46,7 +46,7 @@ async def _dispatch(key, args, *, grant=None):
 
 @pytest.mark.parametrize("key,args", [
     ("write_file", {"path": "a.txt", "content": "x"}),
-    ("edit_file", {"path": "a.txt", "old": "a", "new": "b"}),
+    ("edit_file", {"path": "a.txt", "old_string": "a", "new_string": "b"}),
 ])
 async def test_writers_refused_without_a_grant_callback(monkeypatch, key, args):
     """Safety default: no way to ask means no way to write."""
@@ -60,7 +60,7 @@ async def test_writers_refused_without_a_grant_callback(monkeypatch, key, args):
 
 @pytest.mark.parametrize("key,args", [
     ("write_file", {"path": "a.txt", "content": "x"}),
-    ("edit_file", {"path": "a.txt", "old": "a", "new": "b"}),
+    ("edit_file", {"path": "a.txt", "old_string": "a", "new_string": "b"}),
 ])
 async def test_writers_refused_when_the_user_declines(monkeypatch, key, args):
     log = []
@@ -121,7 +121,7 @@ async def test_run_command_gate_is_untouched(monkeypatch):
 
 @pytest.mark.parametrize("key,args", [
     ("write_file", {"path": "a.txt", "content": "x"}),
-    ("edit_file", {"path": "a.txt", "old": "a", "new": "b"}),
+    ("edit_file", {"path": "a.txt", "old_string": "a", "new_string": "b"}),
 ])
 async def test_in_its_own_folder_arslan_writes_without_asking(monkeypatch, key, args):
     log, asked = [], []

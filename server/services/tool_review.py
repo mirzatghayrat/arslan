@@ -41,10 +41,10 @@ def capture(tool: str, args: dict, result: dict) -> dict | None:
     result = result if isinstance(result, dict) else {}
     path = str(args.get("path") or "")[:500]
     if tool == "edit_file":
-        # K5: old_string / new_string, or the old names until v0.1.64 (DELETE-BY: v0.1.64); same keys out.
+        # K5: old_string / new_string; the output keys stay "old" / "new", so the phone sees nothing new.
         return {"kind": "edit", "path": str(result.get("path") or path)[:500],
-                "old": _text(args.get("old_string", args.get("old")), SNIPPET_CHARS),
-                "new": _text(args.get("new_string", args.get("new")), SNIPPET_CHARS)}
+                "old": _text(args.get("old_string"), SNIPPET_CHARS),
+                "new": _text(args.get("new_string"), SNIPPET_CHARS)}
     if tool == "write_file":
         content = args.get("content") if isinstance(args.get("content"), str) else ""
         artifact = result.get("artifact") if isinstance(result.get("artifact"), dict) else {}

@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "desde el iPhone",
     "learned": "Aprendido: {{text}}",
-    "wantsToLearn": "Arslan quiere recordar una práctica: {{text}}",
     "learnedUndo": "Deshacer",
-    "learnedKeep": "Recordar",
-    "learnedSkip": "No, gracias",
+    "learnedNotInEffect": "Aprendí una práctica, sin efecto: {{reason}}",
+    "learnedSeeInMemory": "Ver en Memoria",
     "learnedUndone": "Deshecho",
-    "learnedKept": "Recordado",
     "title": "Chatear con {{name}}",
     "placeholder": "Escribe un mensaje...",
     "send": "Enviar",
@@ -1456,11 +1454,9 @@
     "keepLocal": "Guardar, solo modelos locales",
     "drop": "No",
     "apply": "Aplicar",
-    "use": "Usarla",
     "source": {
       "memory": "Sobre ti",
-      "curation": "Orden",
-      "lesson": "Práctica aprendida"
+      "curation": "Orden"
     },
     "sensitive": "Sensible"
   },

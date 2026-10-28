@@ -34,7 +34,7 @@ async def list_lessons(status: Literal["active", "proposed", "stale", "archived"
         return [lessons.present(row) for row in (await db.scalars(q)).all()]
 
 
-async def _change(lesson_id: int, **values) -> dict:
+async def _change(lesson_id: int, *, edit=None, **values) -> dict:
     from datetime import datetime
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(Lesson, lesson_id)
@@ -42,6 +42,8 @@ async def _change(lesson_id: int, **values) -> dict:
             raise HTTPException(404, "lesson_not_found")
         for key, value in values.items():
             setattr(row, key, value)
+        if edit is not None:
+            edit(row)
         row.updated_at = datetime.utcnow()
         await db.commit()
         return lessons.present(row)
@@ -49,8 +51,10 @@ async def _change(lesson_id: int, **values) -> dict:
 
 @router.post("/lessons/{lesson_id}/status")
 async def lesson_status(lesson_id: int, body: LessonStatus):
-    """Accept a proposal or restore (active); undo or retire (archived, restorable)."""
-    return await _change(lesson_id, status=body.status)
+    """Switch on one that is not in effect, or restore (active); undo or retire (archived, restorable).
+    INB1: switching one on drops why it was not in effect (the reason, the rival, the failure count);
+    Memory shows the full text and that reason before the user switches it on."""
+    return await _change(lesson_id, status=body.status, edit=lessons.switched_on if body.status == "active" else None)
 
 
 @router.post("/lessons/{lesson_id}/pin")
