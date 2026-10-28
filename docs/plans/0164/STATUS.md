@@ -2,13 +2,16 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-28, ~12:00 UTC.
+**Updated:** 2026-10-28, ~14:45 UTC.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
-| #451 | FS1: closing from full screen no longer leaves a black screen (real-Mac check on `SMOKE.md` still open) | `c2bfe497` (main CI 40683704446 running) |
+| #446 | LANG1: CI check for Chinese added outside the exceptions; bundled skills in English | `96bdf096` (main CI 40707221804 success) |
+| #445 | C5b: delete `__version__`, the unused click/rich deps, and edit_file's old argument names | `d6cef2b0` (main CI 40705243770 success) |
+| #448 | C7c-1: remove the dead `RouterDecision` model; C7c's plan as its card | `3f71d029` (main CI 40684400151 success, covering #451 too) |
+| #451 | FS1: closing from full screen no longer leaves a black screen (real-Mac check on `SMOKE.md` still open) | `c2bfe497` |
 | #455 | S3 checkpoint tests no longer depend on the runner's free disk; CI temp on disk | `69ced22d` (main CI 40680764208 success; it covers #449 too, whose own run 40680379988 was cancelled when #455 merged) |
 | #449 | CAP1a: remove the capability discovery centre and the found-for-later rail (⑥Helper reviewed it, OK with optional cleanups, but could not post; an after-the-fact security review of the `capability_flow.py` lines is requested from ③Hands and goes on the PR) | `5ccc5e39` |
 | #432 | Security model: hard rules + sandbox + classifier, five modes (user decided 2026-10-28) | `11f05434` |
@@ -23,16 +26,19 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order: ~~#451~~ (merged) → #448 → #445 → #446 → #444 → #454 → #428. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
+The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446~~ (merged) → #444 → #454 → #428. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
 
 - #443 (S64-0b): ②Main's OK at `390aa048`, CI green. Waits for the user's Codex Astra run.
+- #460 (INB1): recheck says F1 and F3 are resolved; CI 40687679309 on `7c93a854` success. Waits for the user's Codex Astra run.
+- #462 (BR1): not ready. ①iOS found a gap after testing build 25: once Allow is clicked the Bridge drops to the 10 s pace before the new phone's first hello, adding up to 10 s to every pairing. ⑥Helper keeps the 2 s pace for 60 s after a code is answered; ready again once that head is green.
+- #464 (code rules, sessions.md §12, card EXC1): docs only; ③Hands reviewing.
 - #456 (F5b-2): ③Hands' review; ②Main's confirmation of its commit and CI pending.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
-| ②Main | INB1 (backend done; UI waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
+| ②Main | INB1 #460 (then F2 + F4 follow-ups); after INB2 merges, learned practices use the per-conversation outside-content check too (user, 2026-10-28: a detour or machine quirk takes effect only when `runs.read_outside` says the whole conversation is clean, like "about you"; user corrections unchanged; until then the current-turn mark plus S64-0's carried marks), INB1 UI (waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
 | ③Hands | PRJ0 (deletions; table drop 0076), CAP1b #457 review, #449 security review |
 | ⑤CAP | CAP1b #457 (0074), CAP1c (0075, after #457), CAP2a (at max) |
 | ⑥Helper | STY #452 (draft; gated on the read test and a bench "after" run), SIDE after SUB2 |
