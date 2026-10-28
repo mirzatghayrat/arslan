@@ -288,8 +288,8 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     - **只看公开仓库。** 两种跑法：在 GitHub 或它自己的云端环境上跑；或者在新克隆里跑，用隔离的 HOME，那台机器上没有 `~/.arslan`。
     - **绝不让它碰：** 用户的家目录、Arslan 的数据文件夹、`~/.arslan`、跑分的原始记录、④参谋 的 M3 记录（里面有用户的真实数据）、任何真密钥或令牌。它要跑的命令照旧走 `scripts/dev/probe.sh` 或 pytest。PR3（#396）的真 shell 对照只在一次性 CI 虚拟机里跑，或者在不配任何密钥的云端环境里跑，绝不在任何人的 Mac 上跑（S2a 卡 10-24 的条件照样适用）。
     - **「只读」怎么做到（用户 10-28 接好并试过，④参谋 转）：**
-      - **接法：** ChatGPT 桌面版 → Code Review → 连 GitHub。GitHub 上装「ChatGPT Codex Connector」时选「Only select repositories」，只勾一个无关的公开仓库，**没勾 arslan，也没勾任何私有仓库**。安装页上，勾了的仓库会给 actions / code / issues / PR / workflows 的读写权限；没勾的公开仓库一律只读。所以 Codex 对 arslan 只有公开仓库的只读权限，照样能打开 PR、看改动和 checks、点「Review with Codex」（用户贴 #434 的链接试过）。**以后不要在这个安装里勾选 arslan。**
-      - **审的时候：** 只用聊天里的「Review with Codex」（官方文档：在聊天里审不会发评论、不会批准、也不会合并）。不开自动审查；不在 Code Review 里点 Submit review 或 Merge。合并照旧在 GitHub 上由用户点。
+      - **接法：** ChatGPT 桌面版 → Code Review → 连 GitHub。GitHub 上装「ChatGPT Codex Connector」时选「Only select repositories」，只勾一个无关的公开仓库，**没勾 arslan，也没勾任何私有仓库**。勾了的那个仓库会拿到写权限（含 workflows），所以它必须是一个空的、一次性的公开仓库，不配任何 Actions 密钥，不是用户真在用的项目。安装页上，勾了的仓库会给 actions / code / issues / PR / workflows 的读写权限；没勾的公开仓库一律只读。所以 Codex 对 arslan 只有公开仓库的只读权限，照样能打开 PR、看改动和 checks、点「Review with Codex」（用户贴 #434 的链接试过）。**以后不要在这个安装里勾选 arslan。** ChatGPT 账号里要是另外还连着别的 GitHub 连接器，同样不勾 arslan。
+      - **审的时候：** 只用聊天里的「Review with Codex」（[官方文档](https://developers.openai.com/codex/code-review)：在聊天里审不会发评论、不会批准、也不会合并）。不开自动审查；不在 Code Review 里点 Submit review 或 Merge；**不在 Summary 或 Changes 页里写评论**（同一份文档：那里写的评论会马上发到 GitHub，不等 Submit review）；也不在 PR 上写 `@codex review`。合并照旧在 GitHub 上由用户点。
       - 在本地跑时照旧用只读沙箱。Codex 不推送，不合并，不开 PR，不碰 main。待审的 PR 和能直接粘的提示在 STATUS.md「Codex 待审」。
     - **结论写明模型：** 写明 Codex 的版本、模型和推理档位；Plus 到上限换了模型就标出来，并请 ②Main 或 ⓪Plan 复核那部分。
     - **结论怎么用：** 它说「没问题」不算证据；它提出的每一条，合并前都要在 PR 上回应，要么修好并加测试，要么拿证据反驳。合并前照旧要有 CI run id 和复现步骤。

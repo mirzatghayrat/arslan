@@ -13,7 +13,7 @@
 
 ## Codex 待审
 
-**怎么跑（你 10-28 定的方式）：** ChatGPT 桌面版 → Code Review → 选下表里「能审」的 PR → **Review with Codex**，把下面那段提示整段粘进去，再把 `<PR 号>` 和 `<额外要看的>` 换成表里那一行。只在聊天里审：**不点 Submit review，不开自动审查。** 你 10-28 装 GitHub 连接器时只勾了一个无关的公开仓库，没勾 arslan，所以 Codex 对 arslan 只有只读权限；以后也别勾 arslan（README §8）。审完把 Codex 的回复原样（带第一行的模型）贴成那个 PR 的一条评论；各会话逐条回应，回应完才合。
+**怎么跑（你 10-28 定的方式）：** ChatGPT 桌面版 → Code Review → 选下表里「能审」的 PR → **Review with Codex**，把下面那段提示整段粘进去，再把 `<PR 号>` 和 `<额外要看的>` 换成表里那一行。只在聊天里审：**不点 Submit review，不开自动审查，不在 Summary 或 Changes 页里写评论**（那里的评论会马上发到 GitHub）。 你 10-28 装 GitHub 连接器时只勾了一个无关的公开仓库，没勾 arslan，所以 Codex 对 arslan 只有只读权限；以后也别勾 arslan（README §8）。审完把 Codex 的回复原样（带第一行的模型）贴成那个 PR 的一条评论；各会话逐条回应，回应完才合。
 
 | PR | 是什么 | 能审了吗 | `<额外要看的>` |
 |---|---|---|---|
