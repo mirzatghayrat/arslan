@@ -405,6 +405,8 @@ jobs:
     # `lang-check: allow` marker) are in scripts/check_added_chinese.py.
     # Commit messages and PR text are not checked.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -426,9 +428,26 @@ jobs:
             BASE="$BEFORE"
           fi
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
-            echo "no earlier commit to diff against; nothing to check"
+            echo "no earlier commit to diff against (a new branch); nothing to check"
             exit 0
           fi
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            # A force-push: the commit it replaced is not in the clone. The
+            # pull request that brought these lines was checked already.
+            echo "::notice::$BASE is not in the clone (force-push?); nothing to check"
+            exit 0
+          fi
+          TMP="${RUNNER_TEMP:-$(mktemp -d)}"
+          if git cat-file -e "$BASE:scripts/check_added_chinese.py" 2>/dev/null; then
+            # First the BASE commit's checker and allowlist, so a change cannot
+            # loosen the check it is judged by. A new exception or allowlist
+            # entry lands in its own PR, before the Chinese it allows.
+            git show "$BASE:scripts/check_added_chinese.py" > "$TMP/check_base.py"
+            git show "$BASE:.github/lang-check-allow.txt" > "$TMP/allow_base.txt" 2>/dev/null || : > "$TMP/allow_base.txt"
+            echo "== the base commit's checker and allowlist"
+            python3 "$TMP/check_base.py" --base "$BASE" --head HEAD --allowlist "$TMP/allow_base.txt"
+          fi
+          echo "== this change's checker and allowlist"
           python3 scripts/check_added_chinese.py --base "$BASE" --head HEAD
 
   frontend:

@@ -7,4 +7,10 @@
 #     <path glob>  # <reason>
 #
 # `*` stays inside one directory, `**` crosses directories. An entry without a
-# reason fails the check. Adding a path here is a review item: say why in the PR.
+# reason fails the check, and so does one that would cover most of the
+# repository: an entry names one file, or has two directory levels before its
+# first wildcard (docs/archive/** is fine; **, **/*.md and docs/** are not).
+#
+# CI checks a change against the BASE commit's copy of this file, so an entry
+# lands in its own PR before the Chinese it allows. Adding a path here is a
+# review item: say why in the PR.
