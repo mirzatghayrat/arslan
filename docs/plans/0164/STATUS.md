@@ -47,6 +47,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #463 (BR2): ①iOS OK at `609de05d`, covering `d01381ec` (main merged in, one test line for C5b's renamed edit_file arguments); CI 40713934590 success. Bridge surface: the user merges.
 - #467 (who merges, sessions.md §5): ⑥Helper OK at `276c2afc`; `24020153` is its own nit (the authoring session watches main's CI).
 - #468 (a new card has four lines, sessions.md §6): ⑥Helper OK at `3a149de3`.
+- #469 (STY2 card: Arslan's working method, deeper not bigger): docs; ⑥Helper reviewing.
 - #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
 
 **Waiting for CI or a re-OK:**
@@ -71,7 +72,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - Two classifier pass lines in #444: X% of the approvable scope (⓪Plan suggests ≥ 70%) and the failure fallback cap (≤ 5%).
 - C7c questions 1, 2, 3 (DELETE-BY move for `/brain/proposals*`), 4.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md` (#447).
-- Making the `language` CI job a required check (branch protection, after #446).
+- Making the `language` CI job a required check (branch protection). **Wait for ⑥Helper's fix first:** main's `language` job is red on `319eef0e` (CI 40716975056) because the published site pages `docs/docs/zh/` and `docs/docs/ja/` from #428 are not in the exceptions; ⑥Helper adds them (#428 itself is right; no revert).
 - The side-chat mock (SIDE-0), when it comes.
 
 ## Spend
