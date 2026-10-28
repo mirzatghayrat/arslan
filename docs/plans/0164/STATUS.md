@@ -48,7 +48,9 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #467 (who merges, sessions.md §5): ⑥Helper OK at `276c2afc`; `24020153` is its own nit (the authoring session watches main's CI).
 - #468 (a new card has four lines, sessions.md §6): ⑥Helper OK at `3a149de3`.
 - #469 (STY2 card: Arslan's working method, deeper not bigger): ⑥Helper OK at `74dd64f7`.
-- #470 (LANG1 fix: exempt the published site pages `docs/docs/**`): ⓪Plan OK at `63d35f47` (posted on the PR); CI running. It changes the language check's own exceptions, so the user merges it.
+- #470 (LANG1 fix: exempt the published site pages `docs/docs/**`): ⓪Plan OK at `63d35f47` (posted on the PR); CI 40719825007 success. It changes the language check's own exceptions, so the user merges it.
+- #472 (CAP2a: the save-a-skill card; deletes Skill Forge, the curator and candidates): security surface; an independent effort=max review by ⓪Plan's reviewer is running. User merges.
+- #473 (CAP1c: migration 0075 drops `capability_finds`): ⑥Helper OK at `a09b0392`; ⑤CAP fills in the CI run id and the backup note (last three archives). Drops data, so the user merges.
 - #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
 
 **Waiting for CI or a re-OK:**
