@@ -13,11 +13,11 @@
 
 ## Codex 待审
 
-**怎么跑（你 10-28 定的方式）：** ChatGPT 桌面版 → Code Review → 选下表里「能审」的 PR → **Review with Codex**，把下面那段提示整段粘进去，再把 `<PR 号>` 和 `<额外要看的>` 换成表里那一行。只在聊天里审：**不点 Submit review，不开自动审查，不在 Summary 或 Changes 页里写评论**（那里的评论会马上发到 GitHub）。 你 10-28 装 GitHub 连接器时只勾了一个无关的公开仓库，没勾 arslan，所以 Codex 对 arslan 只有只读权限；以后也别勾 arslan（README §8）。审完把 Codex 的回复原样（带第一行的模型）贴成那个 PR 的一条评论；各会话逐条回应，回应完才合。
+**怎么跑（你 10-28 定的方式）：** ChatGPT 桌面版 → Code Review → 选下表里「能审」的 PR → **Review with Codex**，把下面那段提示整段粘进去，再把 `<PR 号>` 和 `<额外要看的>` 换成表里那一行。只在聊天里审：**不点 Submit review，不开自动审查，不在 Summary 或 Changes 页里写评论**（那里的评论会马上发到 GitHub）。你 10-28 装 GitHub 连接器时只勾了一个无关的公开仓库，没勾 arslan，所以 Codex 对 arslan 只有只读权限；以后也别勾 arslan（README §8）。审完把 Codex 的回复原样（带第一行的模型）贴成那个 PR 的一条评论；各会话逐条回应，回应完才合。
 
 | PR | 是什么 | 能审了吗 | `<额外要看的>` |
 |---|---|---|---|
-| S64-0（③Hands 在写，开了 PR 就填号） | 「读过外部内容」标记的四个漏洞 | 还不能：PR 还没开 | `server/orchestrator/untrusted.py`（`track_turn`、`_WEB_TOOLS`、`_OUTSIDE_TOOLS`）、`server/services/task_workers.py`、`server/registry/task_tools.py`（`delegate_work` 和后台任务从这里起）、`server/services/background_jobs.py`、`server/services/lessons.py`、`server/services/memory_tools_v2.py:137`（笔记看这个标记）、`server/services/task_service.py` 的 `resume_turn`、`server/orchestrator/tool_loop.py`；`docs/plans/0164/README.md` §3.4（这四个洞是什么、另外三处为什么没修；#434 合并前它只在分支 `claude/0164-plan-draft` 上） |
+| [#438](https://github.com/mirzatghayrat/arslan/pull/438)（S64-0） | 「读过外部内容」标记的四个漏洞 | **能审**：CI 绿后就审（③Hands 会在 PR 上补 run id）；和 ②Main 的 max 审查同时进行 | `server/orchestrator/untrusted.py`（`track_turn`、新加的 `carried()` 上下文——看它在异步任务和并发回合里会不会漏或串、`_WEB_TOOLS`、`_OUTSIDE_TOOLS`）、`server/services/task_workers.py`、`server/registry/task_tools.py`（`delegate_work` 和后台任务从这里起）、`server/services/background_jobs.py`、`server/services/lessons.py`、`server/services/memory_tools_v2.py:137`（笔记看这个标记）、`server/services/task_service.py` 的 `resume_turn`、`server/services/phone_reads.py`、新加的测试 `tests/server/test_s64_0_outside_content_gaps.py`、`server/orchestrator/tool_loop.py`（`:373-377`、`:1261`、`:1300`、`:2812`）；`task_service.resume_entry`（也包了 `carried(True)`，调用方 `task_context.py:138`）；`proactive_service.py:373`（代码没改，但行为变了：收件箱接受的提议起的任务一律按读过外部内容起步，请判断对不对）；`carried()` 跨过的异步边界 `background_jobs.py:169`、`task_service.py:925`、`host_run.py:103`；`ws/arslan.py:482` 和 `:588-601`（钉住的那条和「继续」）；`turn_tools.py:107`（历史副作用）；`tests/server/test_phone_review.py`（#438 也改了）；`docs/plans/0164/README.md` §3.4（这四个洞是什么、另外三处为什么没修；#434 合并前它只在分支 `claude/0164-plan-draft` 上） |
 | [#375](https://github.com/mirzatghayrat/arslan/pull/375) | S2a-3 a+c：命令按完整的 shell 语法读懂才放行 | 还不能：等默认拒绝沙箱（SBX）合并、③Hands rebase 之后审新头，不审旧头 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#376](https://github.com/mirzatghayrat/arslan/pull/376) | S2a-3 c 的后半：经别的命令间接跑的，算没读懂 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#378](https://github.com/mirzatghayrat/arslan/pull/378) | S2a-3 b：请 macOS 在沙箱外办事的程序分两档 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
@@ -139,7 +139,7 @@
 
 ## 在路上
 
-- **S64-0（③Hands，effort=max）：** 「读过外部内容」标记的四个漏洞，你 10-28 说现在就开；②Main 带独立审查员审，再加 Codex（见「Codex 待审」）。
+- **S64-0 = [#438](https://github.com/mirzatghayrat/arslan/pull/438)（③Hands，effort=max，已开）：** 「读过外部内容」标记的四个漏洞，你 10-28 说现在就开；②Main 带独立审查员审，再加 Codex（见「Codex 待审」）。
 - **M64（⓪Plan）：** 跑分加代码审查题、拆分派汇总题和同题统计，你 10-28 说现在就能开。
 - 没有 v0.1.63 的卡了。顺延到 v0.1.64 的见 README §8 开头「冻结时顺延的」，还有 R63 判定里的两处删除（`__version__`、专家时代的 REST 接口）。
 - **S2a-3（③Hands）：** #375、#376、#378、#396 留着，v0.1.64 和默认拒绝沙箱一起审（你 10-24 定）。#298 也开着（和 main 冲突）：SECURITY.md 那半已被 #339 顶替，剩下的 #298b 跟 S2a-3 一起写（README §8）。
