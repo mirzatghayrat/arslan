@@ -40,6 +40,11 @@ AUTHORED = "authored"
 #: `skill_script`, read_skill's `references/` section, the "Bundled" headings). This tool writes text only.
 _USES_FILES = re.compile(r"skill_script|[\"']?section[\"']?\s*:\s*[\"']references/|^#+\s*bundled\s+(?:scripts|references)",
                          re.I | re.M)
+#: Invisible, though not in a "C" category: variation selectors, the combining grapheme joiner, the Hangul
+#: fillers and the blank braille pattern (#472 review F4). A name made only of these would show blank.
+_INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+#: The longest run of spaces or tabs kept inside the body (deep list indentation fits).
+_RUN_MAX = 16
 
 
 def validate(key: str, name: str, description: str, body: str) -> list[str]:
@@ -62,9 +67,18 @@ def validate(key: str, name: str, description: str, body: str) -> list[str]:
 
 
 def _visible(text, keep: str = "") -> str:
-    """Without control or format characters (a bidi override, a zero-width space) but those in `keep`: the
-    card shows exactly what is stored."""
-    return "".join(ch for ch in str(text or "") if ch in keep or not unicodedata.category(ch).startswith("C"))
+    """Without control or format characters (a bidi override, a zero-width space) but those in `keep`, and
+    without the other invisible ones: the card shows exactly what is stored."""
+    return _INVISIBLE.sub("", "".join(ch for ch in str(text or "")
+                                      if ch in keep or not unicodedata.category(ch).startswith("C")))
+
+
+def _tidy(body: str) -> str:
+    """No trailing spaces, at most one blank line in a row, no run of spaces or tabs longer than `_RUN_MAX`:
+    blank padding cannot push the end of the text out of sight in the card's box (#472 review F5). The card
+    shows, and the skill keeps, the tidied text."""
+    lines = [re.sub(r"[ \t]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, line.rstrip()) for line in body.split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
 
 
 def _line(text, limit: int) -> str:
@@ -94,11 +108,14 @@ async def register(*, key: str, name: str, description: str, body: str) -> bool:
 
 async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     """The model's `create_skill`. Returns the tool result (and `refresh: True` once the skill is saved, so
-    the loop re-reads its tools and read_skill lists it)."""
+    the loop re-reads its tools and read_skill lists it).
+
+    DELETE-BY: v0.1.65, when "for you to look at" lands (CAP card): a skill Arslan writes then waits there for
+    the user's review instead of this card's direct save."""
     key = str(args.get("key") or "").strip()
     name = _line(args.get("name"), _NAME_MAX)
     description = _line(args.get("description"), _LINE_MAX)
-    body = _visible(args.get("body"), keep="\n\t").strip() + "\n"
+    body = _tidy(_visible(args.get("body"), keep="\n\t"))
     why = _line(args.get("why"), _LINE_MAX)
     errors = validate(key, name, description, body) + (
         [f"key is at most {_KEY_MAX} characters"] if len(key) > _KEY_MAX else [])

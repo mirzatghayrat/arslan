@@ -39,6 +39,7 @@ describe("the save-a-skill card", () => {
     expect(screen.getByTestId("skill-save-rows")).toHaveTextContent("discover.save_whatText");
     const body = screen.getByTestId("skill-save-body");
     expect(body.textContent).toBe(BODY);                                   // all of it, nothing folded away
+    expect(screen.getByTestId("skill-save-lines")).toHaveTextContent('discover.save_lines:{"count":7}');
     expect(body.children).toHaveLength(0);                                 // text only: nothing rendered from it
     expect(card.querySelector("img, a, strong")).toBeNull();
     expect(screen.queryByTestId("ask-risk")).toBeNull();

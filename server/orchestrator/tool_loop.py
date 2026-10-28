@@ -3365,7 +3365,7 @@ async def _run_native(
                     continue
                 if name in ("propose_capability", "create_skill") and (name in wired_keys or on_demand_call):
                     # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
-                    # same channel. A blocking ask in THIS window (confirm_command carries it); a job or a
+                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill). A blocking ask in THIS window (confirm_command carries it); a job or a
                     # turn nobody watches adds nothing. On success the tools are read again, so the new
                     # capability (or read_skill's list) is there for the rest of this turn.
                     emit({"type": "tool_call", "tool": name,

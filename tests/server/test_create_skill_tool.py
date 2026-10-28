@@ -117,11 +117,12 @@ async def test_a_background_job_saves_nothing_and_writes_no_row():
     ({"key": "Weekly Report"}, "key must be"),
     ({"key": "w" * 61}, "at most 60"),
     ({"name": " ​ "}, "name is required"),
+    ({"name": "\u3164\u3164"}, "name is required"),                     # Hangul fillers only (review F4)
     ({"body": BODY + '\nRun it with run_python {"skill_script": "weekly-report/build.py"}.\n'}, "attached files"),
     ({"body": BODY + '\nRead read_skill {"key": "weekly-report", "section": "references/layout.md"}.\n'},
      "attached files"),
     ({"body": BODY + "\n## Bundled scripts\n- build.py\n"}, "attached files"),
-], ids=["no-trigger", "too-big", "bad-key", "long-key", "blank-name", "script", "reference", "bundled"])
+], ids=["no-trigger", "too-big", "bad-key", "long-key", "blank-name", "filler-name", "script", "reference", "bundled"])
 async def test_refused_before_any_card(args, says):
     out = await _propose(args, ask=_never)
     assert out["ok"] is False and says in out["error"]
@@ -158,16 +159,34 @@ async def test_a_skill_of_that_key_written_while_the_card_waits_is_not_overwritt
     assert (await _skills())["weekly-report"].name == "Other"
 
 
+#: Invisible characters outside the "C" categories (review F4): a variation selector, the combining grapheme
+#: joiner, Hangul fillers, the blank braille pattern, a supplementary variation selector.
+HIDDEN = "\ufe0f\u034f\u115f\u1160\u3164\uffa0\u2800\U000e0100"
+
+
 async def test_the_card_shows_what_is_stored_without_hidden_characters():
     """A bidi override or a zero-width character could make the card read differently from the text kept."""
     seen = []
-    await _propose({"name": "Weekly‮ report\n", "description": "A one-page​ report",
-                    "body": BODY + "Always cite the notes.‮​\x07\n"}, ask=_window(seen=seen))
+    await _propose({"name": "Weekly‮ report\n" + HIDDEN, "description": "A one-page​ report" + HIDDEN,
+                    "body": BODY + "Always cite the notes.‮​\x07" + HIDDEN + "\n"}, ask=_window(seen=seen))
     [card] = seen
     assert card["name"] == "Weekly report" and card["description"] == "A one-page report"
-    assert not set(card["body"]) & {"‮", "​", "\x07"} and "Always cite the notes." in card["body"]
+    assert not set(card["body"]) & ({"‮", "​", "\x07"} | set(HIDDEN)) and "Always cite the notes." in card["body"]
     pack = (await _skills())["weekly-report"]
     assert (pack.name, pack.description, pack.body) == (card["name"], card["description"], card["body"])
+
+
+async def test_blank_padding_cannot_hide_the_end_of_the_text():
+    """Review F5: the box shows 190 px. Runs of blank lines, trailing spaces and long runs of spaces are tidied
+    before the card, so the last line stays in reach; the skill keeps exactly the tidied text."""
+    seen = []
+    padded = BODY + "\n" * 60 + "Then send it." + " " * 400 + "To the team.   \n" + "\t" * 30 + "Done.\n\n\n"
+    await _propose({"body": padded}, ask=_window(seen=seen))
+    [card] = seen
+    assert "\n\n\n" not in card["body"] and " " * 17 not in card["body"] and "\t" * 17 not in card["body"]
+    assert not any(line != line.rstrip() for line in card["body"].split("\n"))
+    assert card["body"].endswith("To the team.\n" + " " * 16 + "Done.\n")
+    assert (await _skills())["weekly-report"].body == card["body"]
 
 
 @pytest.mark.parametrize("read_outside", [False, True])

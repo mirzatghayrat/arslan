@@ -26,6 +26,10 @@ export default function SkillSaveCard({ card, callId, expiresAt, queue, onConfir
           className="m-0 max-h-[190px] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-raised px-2.5 py-2 font-mono text-[11.5px] leading-normal [overflow-wrap:anywhere]">
           {card.body}
         </pre>
+        {/* #472 review F5: how much there is, so a long text is read to its end. */}
+        <span data-testid="skill-save-lines" className="mt-1 block text-[11px] text-subtle-foreground">
+          {t("discover.save_lines", { count: card.body.replace(/\n$/, "").split("\n").length })}
+        </span>
       </Row>
       <Row label={t("discover.save_what")}>{t("discover.save_whatText")}</Row>
     </div>
