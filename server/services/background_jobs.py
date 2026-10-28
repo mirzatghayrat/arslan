@@ -233,8 +233,9 @@ async def _run(job: Job) -> None:
             _emit(job)
             if callable(job.outside_seen):                # S64-0: ask the starting turn, now
                 job.outside_seen = bool(job.outside_seen())
-            with untrusted.carried(job.outside_seen):    # each of its turns starts from it
+            with untrusted.carried(job.outside_seen) as run:    # each of its turns starts from it
                 final_text, phase, reason = await _execute(job)
+            job.outside_seen = run["seen"]          # S64-0b: or one of its turns read outside content
     except asyncio.CancelledError:
         phase, reason = "cancelled", None
     except Exception as exc:  # noqa: BLE001 — a job failure is reported, never raised into the loop
@@ -376,14 +377,18 @@ def budget_stop_of(budget: dict, *, pause_reason: str | None, tier: str) -> dict
 
 async def _report(job: Job, text: str) -> None:
     """Post the result, tell the shell, offer voice mode one line. Best-effort."""
-    from server.orchestrator import memory
+    from server.orchestrator import memory, untrusted
     from server.ws import protocol
     body = text.strip()
+    # S64-0b: a result that may carry outside content reaches later turns framed; the user sees it as
+    # written. The budget note below is the host's own words.
+    framed = untrusted.job_result(body) if body and job.outside_seen is True else None
     try:
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
-            message_id = await memory.add_message(job.conversation_id, "arslan", body, job_outcome=job.outcome)
+            message_id = await memory.add_message(job.conversation_id, "arslan", framed or body,
+                                                  display_content=body if framed else None, job_outcome=job.outcome)
             run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
                 "job_id": job.job_id, "outcome": job.outcome, "run_id": job.run_id})
     except Exception as exc:  # noqa: BLE001

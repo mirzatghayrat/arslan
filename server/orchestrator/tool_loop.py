@@ -2810,6 +2810,8 @@ async def run_native(**kwargs) -> dict:
     from server.orchestrator import untrusted as _untrusted
     from server.services import tool_outputs
     seen = _untrusted.track_turn()
+    if _untrusted.history_from_outside(kwargs.get("history")):
+        _untrusted.mark_external()       # S64-0b: a background job's result framed as outside content
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
     copies_of = tool_outputs.conversation.set(kwargs.get("conversation_id"))
