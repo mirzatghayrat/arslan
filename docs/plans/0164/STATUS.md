@@ -2,13 +2,13 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-28, ~15:30 UTC.
+**Updated:** 2026-10-28, ~16:00 UTC.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
-| #460 | INB1: learned practices take effect directly; what is not in effect says why (reviewed by another Claude session at effort=max; merged without Astra, see the Codex rule below) | `55168fad` (main CI 40710426557 queued) |
+| #460 | INB1: learned practices take effect directly; what is not in effect says why (reviewed by another Claude session at effort=max; merged without Astra, see the Codex rule below) | `55168fad` (main CI 40710426557 success) |
 | #444 | Classifier pass lines (option 2 + the cloud audit's six changes); the audit's answer on outside content | `75e40e6f` (its main CI 40710072868 was cancelled when #460 merged; 40710426557 covers both) |
 | #446 | LANG1: CI check for Chinese added outside the exceptions; bundled skills in English | `96bdf096` (main CI 40707221804 success) |
 | #445 | C5b: delete `__version__`, the unused click/rich deps, and edit_file's old argument names | `d6cef2b0` (main CI 40705243770 success) |
@@ -28,7 +28,13 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444~~ (merged) → #454 → #428.
+The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444~~ (merged) → #454 → #428. ④参谋 checked every open PR at ~15:10 UTC (heads, reviews on GitHub, overlap with main):
+
+- **Ready now:** #457 (CAP1b, ③Hands OK at `d8372fd4`), #454 (STY read test, ①iOS OK at `48f3083e`), #428 (docs/site, ①iOS OK at `bde88795`), #461 (CAP F3; ⓪Plan's max reviewer at `1188c10d`, the later commit `9ec18990` is test-only, noted on the PR), #462 (BR1; ①iOS OK at `cd60c056`, recorded here because ①iOS does not post on PRs).
+- **Rechecks of a newer head:** #463 (BR2; ①iOS's OK was at `c443a7d8`; ⑥Helper merges main in, ①iOS rechecks), #464 (③Hands posts a line that its OK covers `b7059ff3`).
+- **Fresh CI first:** #443 (S64-0b; main merged in at `d2ab87e5`, CI 40712453311 running).
+- **No review on GitHub yet:** #459 PRJ0 (⑤CAP), #456 F5b-2 (②Main's confirmation), #453 and #458 (⑥Helper), #465 (③Hands OK at `7c93e2ec`, one pointer added after at `e075d479`).
+- **#447** (SBX card): main merged in at `0c1454fc` (it was conflicting); the user's answers to its seven questions come through ④参谋.
 
 **Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
 
