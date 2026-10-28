@@ -43,6 +43,8 @@ def _tell_the_window(ctx, result: dict) -> None:
     from server.services import run_registry
     if not ctx.conversation_id or not result.get("ok") or not result.get("id"):
         return
+    if result.get("status") not in ("active", "proposed"):
+        return          # #475 recheck, G2: it landed on a paused or quarantined entry: nothing was remembered
     waiting = result.get("status") == "proposed"
     frame = {"type": "memory_proposed" if waiting else "fact_saved", "content": result.get("content"),
              "sensitive": result.get("sensitivity", "normal") != "normal",

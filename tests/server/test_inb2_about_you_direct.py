@@ -304,9 +304,11 @@ async def test_a_no_is_not_undone_by_a_later_clean_write_of_the_same_words(memor
     async with repository() as repo:
         await repo.resolve_proposal(waiting["proposal_id"], accept=False, actor=USER)
     assert (await _entry(memory, waiting["id"]))[0] == "paused"
+    memory.frames.clear()
     again = await _write("remember", "The user prefers short answers")
     assert again["id"] == waiting["id"]
     assert (await _entry(memory, waiting["id"]))[0] == "paused" and await _pending(memory, waiting["id"]) == 0
+    assert memory.frames == []          # #475 recheck, G2: no "Remembered … [Undo]" for what was not remembered
 
 
 async def test_a_no_is_not_undone_by_the_same_fact_noticed_again(memory):
@@ -359,21 +361,82 @@ async def test_arslan_never_widens_what_the_user_kept_for_this_mac_only(memory):
     await _write("memory_note", "The user is pregnant", ctx=_ctx(cloud_memory_allowed=True))
     assert await _entry(memory, mine["id"]) == ("active", "sensitive", "local_only", "The user is pregnant")
     assert await _pending(memory, mine["id"]) == 1         # putting it "in view" is an edit: it waits for the user
+    # #475 recheck, G1: the proposal asks about what the entry already is, so the user's yes keeps it so.
+    async with memory() as session:
+        proposal = (await session.scalars(select(MemoryProposal).where(
+            MemoryProposal.target_entry_id == mine["id"], MemoryProposal.status == "pending"))).one()
+    assert (proposal.candidate["sensitivity"], proposal.candidate["use_policy"]) == ("sensitive", "local_only")
+    async with repository() as repo:
+        await repo.resolve_proposal(proposal.id, accept=True, actor=USER, sensitive_acknowledged=True)
+    assert await _entry(memory, mine["id"]) == ("active", "sensitive", "local_only", "The user is pregnant")
 
 
-async def test_only_the_user_loosens_an_entry_anyone_else_revises(memory):
-    """The extractor takes a waiting fact into effect ("remember me" on): it stays sensitive and for this Mac
-    only, because only the user loosens an entry (#475 review, F3)."""
+async def test_putting_the_users_own_entry_in_view_waits_for_them_even_present_and_clean(memory):
+    """An ordinary entry the user added; Arslan's note puts the same words "in view" in a present, clean turn.
+    That is an edit of an existing entry, so it waits for the user: "about you" taking effect directly is for
+    a new entry only (#475 review, F3)."""
+    async with repository() as repo:
+        mine = await repo.create(MemoryWrite(content="The user prefers short answers", kind="preference",
+                                             scope=MemoryScope(kind="global")), USER)
+    await _write("memory_note", "The user prefers short answers")
+    from server.db.companion_models import MemoryRevision
+    async with memory() as session:
+        row = await session.get(MemoryEntry, mine["id"])
+        core = ((await session.get(MemoryRevision, row.current_revision_id)).structured_value or {}).get("core")
+    assert (row.version, core) == (mine["version"], None) and await _pending(memory, mine["id"]) == 1
+
+
+async def test_a_sensitive_waiting_entry_noticed_again_stays_waiting(memory):
+    """The extractor noticing the same words without the sensitive mark does not switch it on: Arslan's revise
+    carries the entry's own sensitivity (#475 recheck, G1), so only the user's acknowledgement does."""
     async with repository() as repo:
         waiting = await repo.create(MemoryWrite(content="The user is pregnant", kind="preference",
                                                 scope=MemoryScope(kind="global"), sensitivity="sensitive"),
                                     MemoryActor(origin="extractor"))
-    assert waiting["status"] == "proposed"
+    noticed = MemoryActor(origin="extractor", auto_activate_noticed=True, cloud_memory_allowed=True)
+    async with repository() as repo:
+        out = await repo.revise(waiting["id"], waiting["version"], MemoryWrite(
+            content="The user is pregnant", kind="preference", scope=MemoryScope(kind="global")), noticed)
+    assert out["status"] == "proposed"
+    assert await _entry(memory, waiting["id"]) == ("proposed", "sensitive", "local_only", "The user is pregnant")
+
+
+async def test_only_the_user_widens_an_entrys_use(memory):
+    """A normal waiting entry the extractor takes into effect ("remember me" on, cloud allowed) stays for
+    this Mac only, as it was: only the user widens an entry (#475 review, F3)."""
+    async with repository() as repo:
+        waiting = await repo.create(MemoryWrite(content="The user prefers short answers", kind="preference",
+                                                scope=MemoryScope(kind="global")), MemoryActor(origin="extractor"))
+    assert (waiting["status"], waiting["use_policy"]) == ("proposed", "local_only")
     noticed = MemoryActor(origin="extractor", auto_activate_noticed=True, cloud_memory_allowed=True)
     async with repository() as repo:
         await repo.revise(waiting["id"], waiting["version"], MemoryWrite(
-            content="The user is pregnant", kind="preference", scope=MemoryScope(kind="global")), noticed)
-    assert await _entry(memory, waiting["id"]) == ("active", "sensitive", "local_only", "The user is pregnant")
+            content="The user prefers short answers", kind="preference", scope=MemoryScope(kind="global"),
+            use_policy="cloud_allowed"), noticed)
+    assert await _entry(memory, waiting["id"]) == ("active", "normal", "local_only", "The user prefers short answers")
+
+
+async def test_a_quarantined_entry_stays_quarantined_when_arslan_writes_the_same_words(memory):
+    """#475 recheck, G5: "about you" taking effect is for a new entry; a quarantined one is left alone."""
+    first = await _write("remember", "The user prefers short answers")
+    async with memory() as session:
+        (await session.get(MemoryEntry, first["id"])).status = "quarantined"
+        await session.commit()
+    await _write("remember", "The user prefers short answers")
+    assert (await _entry(memory, first["id"]))[0] == "quarantined" and await _pending(memory, first["id"]) == 0
+
+
+async def test_keeping_a_proposal_checks_its_own_version_as_well_as_the_one_shown(memory):
+    """#475 recheck, G3: the version the line showed is checked in addition to the proposal's own."""
+    waiting = await _write("remember", "The user's family visits on Sundays")
+    async with repository() as repo:
+        changed = await repo.revise(waiting["id"], waiting["version"], MemoryWrite(
+            content="The user's family visits on Saturdays", kind="preference", scope=MemoryScope(kind="global"),
+            sensitive_acknowledged=True), USER)
+    with pytest.raises(MemoryError, match="memory_version_conflict"):
+        async with repository() as repo:
+            await repo.resolve_proposal(waiting["proposal_id"], accept=True, actor=USER, sensitive_acknowledged=True,
+                                        expected_version=changed["version"])
 
 
 async def test_the_chat_lines_no_is_refused_once_the_entry_changed(memory):

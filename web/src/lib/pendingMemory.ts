@@ -54,9 +54,10 @@ export async function loadPendingMemory(t: TFunction): Promise<PendingMemoryItem
       out.push({
         key: `m:${p.id}`, source: "memory", sensitive, reason: p.reason, createdAt: p.entry.created_at ?? null, proposal: p,
         text: p.candidate?.content ?? p.entry.content ?? "",
-        // Kept for local models only: the safe default for something that waited.
-        accept: () => companionApi.resolveProposal(p.id, true, sensitive, false),
-        reject: () => companionApi.resolveProposal(p.id, false, false, false),
+        // Kept for local models only: the safe default for something that waited. Both answers name the version
+        // the row showed (#475 recheck, G4): one that changed since is refused, and Memory shows it again.
+        accept: () => companionApi.resolveProposal(p.id, true, sensitive, false, p.entry.version),
+        reject: () => companionApi.resolveProposal(p.id, false, false, false, p.entry.version),
       });
     }
   }

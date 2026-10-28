@@ -291,6 +291,12 @@ class MemoryRepository:
         if actor.origin != "user":
             # #475 review, F3: "about you" taking effect directly is for a new entry (INB2), never an edit.
             actor = replace(actor, user_present=False, conversation_clean=False)
+            # #475 recheck, G1: the write carries the entry's stricter sensitivity (as the edit paths spell it:
+            # secret → unknown), so a proposal made here asks about what the entry already is, and the user's yes
+            # keeps it so. Use needs no fold: Arslan's writes never ask for cloud use, and the update below keeps
+            # the narrower use when an automatic path takes the entry into effect.
+            write = MemoryWrite.model_validate({**write.model_dump(), "sensitivity": _stricter(
+                _SENSITIVITY, {"secret": "unknown"}.get(entry.sensitivity, entry.sensitivity), write.sensitivity)})
         decision = decide_write(write, actor)
         await self._scope_exists(write.scope, actor)
         digest = await self._not_suppressed(write, actor)
@@ -311,9 +317,9 @@ class MemoryRepository:
             current_revision_id=revision_id, version=version, kind=write.kind,
             normalized_hash=digest, dedup_key=self._dedup_key(write, actor.owner_id, digest),
             scope_kind=write.scope.kind, scope_id=write.scope.id,
-            # #475 review, F3: only the user loosens an entry; anyone else keeps its stricter sensitivity and use.
-            sensitivity=decision.sensitivity if actor.origin == "user" else _stricter(
-                _SENSITIVITY, entry.sensitivity, decision.sensitivity),
+            # #475 review, F3: only the user widens an entry's use (the automatic paths set it from the setting,
+            # whatever the write says); its sensitivity already came in with the write (G1).
+            sensitivity=decision.sensitivity,
             use_policy=decision.use_policy if actor.origin == "user" else _stricter(
                 _USE, entry.use_policy, decision.use_policy),
             status="active", superseded_by=None, confirmation_kind=decision.confirmation_kind, confirmed_at=now,
@@ -345,8 +351,9 @@ class MemoryRepository:
         entry = await self.get(proposal.target_entry_id, owner_id=actor.owner_id)
         # The chat line names the version it showed (INB2, #475 review): its "No" for an entry that changed
         # since is refused too, so the line never says "not remembered" about one that took effect.
-        if (accept or expected_version is not None) and entry.version != (
-                proposal.target_version if expected_version is None else expected_version):
+        if expected_version is not None and entry.version != expected_version:
+            raise MemoryError("memory_version_conflict")
+        if accept and entry.version != proposal.target_version:       # in addition, never instead (#475 recheck, G3)
             raise MemoryError("memory_version_conflict")
         if entry.status == "deleted":
             raise MemoryError("memory_deleted")

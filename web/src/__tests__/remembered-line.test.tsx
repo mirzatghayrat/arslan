@@ -137,7 +137,7 @@ describe("what Arslan remembered after a turn", () => {
 });
 
 describe("the chat line's answer names the version it showed (#475 review)", () => {
-  it("sends expected_version only when given: Memory's own rows name none", async () => {
+  it("sends expected_version only when given", async () => {
     const req = vi.spyOn(client, "request").mockResolvedValue({} as never);
     await companionApi.resolveProposal(3, false, false, false, 2);
     await companionApi.resolveProposal(4, true, true, false);

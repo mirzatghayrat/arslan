@@ -194,9 +194,10 @@ describe("待整理 (to sort): what was not remembered directly (INB2)", () => {
       fireEvent.click(button);
     };
     await press("pending-memory-m:2", "pendingMemory.keepLocal");
-    await waitFor(() => expect(resolve).toHaveBeenCalledWith(2, true, true, false));
+    // #475 recheck, G4: each row names the version it showed, as the chat line does.
+    await waitFor(() => expect(resolve).toHaveBeenCalledWith(2, true, true, false, 1));
     await press("pending-memory-m:1", "pendingMemory.drop");
-    await waitFor(() => expect(resolve).toHaveBeenLastCalledWith(1, false, false, false));
+    await waitFor(() => expect(resolve).toHaveBeenLastCalledWith(1, false, false, false, 1));
     await press("pending-memory-c:9", "pendingMemory.apply");
     await waitFor(() => expect(apply).toHaveBeenCalledWith(9));
     expect(within(block).getByRole("button", { name: /memoryPage\.toSort/ })).toHaveAttribute("aria-expanded", "true");
