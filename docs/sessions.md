@@ -16,7 +16,7 @@
 | ③Hands | 负责 Hands：`desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` |
 
 - 新开的会话往后编号（④、⑤……），开工前先在当轮 README 的分道表里登记。
-- 版本号、打 tag、发布、合并，都由用户拍板、用户点。例外：决定 U9（2026-10-18），⓪Plan 可以合并同时满足四条的 PR（CI 绿、完成证据四项齐、另一个会话审过、按当轮 README §3 的顺序）；打 tag 和发布仍只归用户。
+- 版本号、打 tag、发布、合并，都由用户拍板、用户点。例外：决定 U9（2026-10-18），⓪Plan 可以合并同时满足四条的 PR（CI 绿、完成证据四项齐、另一个会话审过、按当轮 README §3 的顺序）；打 tag 和发布仍只归用户。 **Replaced for merging (user, 2026-10-28, confirmed in ⓪Plan's chat):** sessions merge PRs that are not on the security surface themselves, through GitHub auto-merge; see §5 "Who merges". Tags and releases stay the user's.
 
 ## 2. 文件归属
 
@@ -62,6 +62,31 @@
   - 描述里写「完成证据」四项（§8）；
   - K 线 PR 要贴跑分的前后对比，没有对比不合。
 - **合并顺序**由依赖图决定，不是先到先得。顺序表在当轮 README。
+- **Who merges (user, 2026-10-28; relayed by ④参谋 and confirmed by the user in ⓪Plan's chat; replaces U9 for merging):**
+  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session's OK **at the current head**, and **every** check on that head green (not only the required ones; the `language` job, for example, is not required yet). The authoring session enables auto-merge with `ccd_pr` `set_auto_merge`; GitHub merges when the required checks pass. **Timing (found 2026-10-29):** GitHub refuses to enable auto-merge on a PR that is already mergeable ("clean status"), so enable it once the OK is in and every check that is *not* required has passed (today `language`; the ruleset requires `backend`, `frontend`, `macos`, `secrets`), while a required one is still running. If all checks are already green, a session cannot merge it (a plain `gh pr merge` is blocked); name it to the user, who merges.
+  - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping) unless the user says otherwise. The security surface here means:
+    - the outside-content mark;
+    - the sandbox;
+    - the classifier;
+    - command policy;
+    - permissions and confirm cards;
+    - the five modes;
+    - the Bridge (pairing, keys, frames, what it offers the phone);
+    - secrets and credential storage;
+    - network egress checks (`net_pin`, the SSRF allowlist);
+    - capability and MCP install checks;
+    - memory and learned-practice writes;
+    - Hands' policy;
+    - CI and repository settings (`.github/workflows/`, branch protection, required checks);
+    - dependency and lock changes (`pyproject.toml`, `uv.lock`, `package.json` and lockfiles);
+    - migrations that drop data.
+
+    Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
+  - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
+  - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
+  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
+  - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
+  - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
 - **rebase 纪律：**
   - 开 PR 前和合并前，各 rebase 一次到最新的目标分支（一般是 main；热修线是 `release/0.1.62`，见 §7）；
   - 冲突按 §3 处理；
