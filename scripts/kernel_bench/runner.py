@@ -37,7 +37,9 @@ import uuid
 from pathlib import Path
 
 from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_t5, check_t6, check_t7,
-                                  check_t8, check_t9, check_t10, check_t11, check_t12)
+                                  check_t8, check_t9, check_t10, check_t11, check_t12, check_t13, check_t14,
+                                  check_t15, check_t16, check_t17, fixture_t13, fixture_t14, fixture_t15,
+                                  tool_record)
 from scripts.kernel_bench.arslan_driver import snapshot
 
 HERE = Path(__file__).resolve().parent
@@ -74,17 +76,36 @@ CHECKS = {
     # The Hands trace lives in the instance's data folder (start_arslan.sh: $BENCH_ROOT/data/<name>).
     "T12": lambda run, reply, ctx: check_t12.check(reply, ctx.get("arslan_data") or os.environ.get("BENCH_ARSLAN_DATA"),
                                                    ctx["started"]),
+    # v0.1.64 M64: code review in three languages (planted bugs, review_kit's matching rule) ...
+    "T13": lambda run, reply, ctx: check_t13.check(run, reply),
+    "T14": lambda run, reply, ctx: check_t14.check(run, reply),
+    "T15": lambda run, reply, ctx: check_t15.check(run, reply),
+    # ... and split / delegate / summarise with its other side, read from the run's tool-call record.
+    "T16": lambda run, reply, ctx: check_t16.check(run, ctx["fixture"], tool_record.calls(ctx["who"], run, ctx),
+                                                   ctx["who"]),
+    "T17": lambda run, reply, ctx: check_t17.check(run, ctx["fixture"], tool_record.calls(ctx["who"], run, ctx),
+                                                   ctx["who"]),
 }
 FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
-            "T10": check_t10.fixture, "T11": check_t11.fixture}
+            "T10": check_t10.fixture, "T11": check_t11.fixture, "T13": fixture_t13.fixture,
+            "T14": fixture_t14.fixture, "T15": fixture_t15.fixture, "T16": check_t16.fixture,
+            "T17": check_t17.fixture}
 # Recorded without running (no spend): capabilities an entrant does not have.
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
 # page the user logged into; it has no phone/messaging channel.
-UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"},
+# T16/T17 (split, delegate, summarise; and its one-step other side): Arslan has no sub-session tool
+# until the SUB card's tool lands. DELETE-BY: v0.1.64 when SUB3 merges (take T16 and T17 out of both
+# Arslan entries, and check tool_record.SUB_SESSION has the tool's real name).
+UNSUPPORTED = {"arslan": {"T4", "T4x", "T6", "T16", "T17"}, "arslan-legacy": {"T4", "T4x", "T6", "T16", "T17"},
                # No browser of its own and no phone channel; no Hands (T12 is a Hands task).
                "claude-code": {"T4", "T4x", "T6", "T12"},
                "hermes": {"T12"}}
+UNSUPPORTED_WHY = {"T16": "no sub-session tool yet (SUB card)", "T17": "no sub-session tool yet (SUB card)"}
+# Tasks scored from the run's tool-call record, and the entrants whose record the bench reads
+# (tool_record.py); the others are recorded as unsupported for these tasks.
+NEEDS_TOOL_RECORD = {"T16", "T17"}
+TOOL_RECORD = tool_record.READS
 ARSLAN = ("arslan", "arslan-legacy")
 # Entrants that can take a task of several turns: Arslan keeps one conversation, Claude
 # Code resumes its session. The others are recorded as unsupported for such tasks.
@@ -282,6 +303,11 @@ def usage(label: str, since: float = 0.0) -> dict:
             "cache_hit_tokens": sum(r["hit"] for r in mine), "cache_miss_tokens": sum(r["miss"] for r in mine)}
 
 
+def rate_limited(label: str, since: float = 0.0) -> int:
+    """How many of this run's model calls the provider answered with 429 (the meter logs each status)."""
+    return sum(1 for r in _usage_rows() if r.get("cand") == label and r.get("t", 0) >= since and r.get("status") == 429)
+
+
 def settle(label: str, since: float, ended: float = 0.0, quiet_s: float = 20.0, max_s: float = 120.0) -> float:
     """Wait until `quiet_s` has passed since the later of the driver's exit (`ended`) and this
     run's last model call (at most `max_s`), and return the seconds waited. Arslan makes a few
@@ -474,14 +500,17 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     raw = prompts.get(task, "")              # unsupported tasks are recorded without a prompt
     turns_raw = raw if isinstance(raw, list) else [raw]
     if task in UNSUPPORTED.get(who, set()):
-        return _unsupported(task, who, n, label, model, f"{who} cannot use a page the user logged into")
+        why = UNSUPPORTED_WHY.get(task, "cannot use a page the user logged into")
+        return _unsupported(task, who, n, label, model, f"{who} {why}")
     if len(turns_raw) > 1 and who not in MULTI_TURN:
         return _unsupported(task, who, n, label, model, f"{who}: several turns in one session not set up")
     if task in DECLINES and who not in ARSLAN:
         return _unsupported(task, who, n, label, model, f"{who}: no way to decline a card with a note")
+    if task in NEEDS_TOOL_RECORD and who not in TOOL_RECORD:
+        return _unsupported(task, who, n, label, model, f"{who}: the bench reads no tool-call record for it")
     if task == "T6":
         raise SystemExit(f"T6 for {who}: the gateway launch (fake Telegram base_url) is not verified yet")
-    ctx: dict = {}
+    ctx: dict = {"who": who, "home": str(ROOT / "home" / who)}
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
     if task == "T12":
@@ -504,6 +533,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         ctx["started"] = started
         if who == "claude-code":                       # one process per turn, resuming the same session
             session = str(uuid.uuid4())
+            ctx["session"] = session                   # its transcript is T16/T17's tool-call record
             for i, prompt in enumerate(turns):
                 cmd, e = command(who, label, run, prompt, sb, model=model, turn=i, session=session)
                 rc = _run(cmd, e, run, "w" if i == 0 else "a")
@@ -530,6 +560,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               "entrant_version": entrant_version(who), "end": end,
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
+              "rate_limited_429": rate_limited(label, started),           # v0.1.64 M64 (T16 records it)
               "timing": timing,
               # v0.1.63: the command policy Arslan's instance ran under (ask_risky unless the run asked for
               # ask_all), so the final M1's ask_all reference run is labelled; None for other entrants.

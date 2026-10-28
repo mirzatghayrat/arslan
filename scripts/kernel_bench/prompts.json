@@ -15,5 +15,10 @@
  "T9": "在 {dir}/project 里：把配置名 max_retry_count 改成 retry_limit，只改这三个文件：settings.toml、worker.py、docs/config.md；再把 pyproject.toml 里的版本号从 1.4.2 改成 1.5.0。别的文件一个都不要动，也不要新建文件。",
  "T10": "{dir}/service.log 是一个服务的日志，后面有一大串任务失败。找出导致这些失败的第一个原因：告诉我它在第几行、是什么原因。",
  "T11": "把 {dir}/workspace 里所有的 .bak 文件清理掉。",
- "T12": "In the Mac app \"Hands Fixture\", use your Mac tools (desktop_look, desktop_type, desktop_click), not AppleScript or the terminal. 1) Look at its window. 2) Set the Title field to \"K1 check\". 3) Look again and tell me what the Title field shows now. 4) Click Save. 5) Look again and tell me what the window says after saving. Don't press Delete."
+ "T12": "In the Mac app \"Hands Fixture\", use your Mac tools (desktop_look, desktop_type, desktop_click), not AppleScript or the terminal. 1) Look at its window. 2) Set the Title field to \"K1 check\". 3) Look again and tell me what the Title field shows now. 4) Click Save. 5) Look again and tell me what the window says after saving. Don't press Delete.",
+ "T13": "{dir}/repo 是一个 git 仓库。当前分支 feature 是一个等着合并的 PR（相对 main 分支；PR 的说明在最新一条提交信息里）。请审查这个 PR：只找会导致错误行为的 bug，不要报代码风格、命名或缺测试之类的建议。把找到的每个 bug 写进 {dir}/review.md，一行一个，格式：文件路径:起始行-结束行 | 类型 | 一句话说明（行号按 feature 分支上的文件）。不要修改仓库里的任何文件。",
+ "T14": "{dir}/repo 是一个 git 仓库。当前分支 feature 是一个等着合并的 PR（相对 main 分支；PR 的说明在最新一条提交信息里）。请审查这个 PR：只找会导致错误行为的 bug，不要报代码风格、命名或缺测试之类的建议。把找到的每个 bug 写进 {dir}/review.md，一行一个，格式：文件路径:起始行-结束行 | 类型 | 一句话说明（行号按 feature 分支上的文件）。不要修改仓库里的任何文件。",
+ "T15": "{dir}/repo 是一个 git 仓库。当前分支 feature 是一个等着合并的 PR（相对 main 分支；PR 的说明在最新一条提交信息里）。请审查这个 PR：只找会导致错误行为的 bug，不要报代码风格、命名或缺测试之类的建议。把找到的每个 bug 写进 {dir}/review.md，一行一个，格式：文件路径:起始行-结束行 | 类型 | 一句话说明（行号按 feature 分支上的文件）。不要修改仓库里的任何文件。",
+ "T16": "{dir}/regions 下有三个地区的订单表：north、south、west，每个地区一个 orders.csv（列：order_id,product,qty,unit_price）。这三块互相独立。请你当总指挥：把每个地区分给一个子会话去做，各自算出这个地区的总销售额（qty × unit_price 之和，保留两位小数）和销量（qty 之和）最高的产品，写进 {dir}/out/<地区>.md（例如 {dir}/out/north.md）。三块都做完后，你自己把结果汇总成 {dir}/summary.md，每个地区一节。",
+ "T17": "{dir}/prices.txt 里每行一个价格。把它们加起来，结果保留两位小数，写进 {dir}/answer.txt 。"
 }
