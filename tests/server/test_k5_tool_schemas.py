@@ -66,6 +66,6 @@ def test_schemas_match_the_executors_required_arguments():
     for key, required in {"search_files": ["query"], "schedule_task": ["name", "prompt", "when"],
                           "cancel_task": ["task_id"], "read_skill": ["key"], "ssh_probe": ["host"],
                           "ssh_run": ["host", "user", "command"], "enroll_node": ["host", "user", "name"],
-                          "edit_file": ["path"]}.items():
+                          "edit_file": ["path", "old_string", "new_string"]}.items():
         assert sorted(SCHEMAS[key].get("required", [])) == sorted(required), key
     assert "conversation_id" not in SCHEMAS["schedule_task"]["properties"]      # read, never advertised
