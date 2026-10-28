@@ -49,7 +49,9 @@ Once per round, from a checkout that has `sty_read.py` (main after this lands, o
      --compare <results>/sty1/before.json <results>/sty1/after.json --html <results>/sty1/read.html
    ```
 
-   This also writes `read.key.json`, which records which reply is A in each row. The key is also inside the page, base64-encoded, so the exported choices can be unblinded. The reader should not open the page source before finishing.
+   This also writes `read.key.json`, which records which reply is A in each row, the seed and both commits. **Only the key file has them.** The page holds none of them: no key, no commit, no seed and no side label, only an opaque page id. Give the reader `read.html` alone. (The first version embedded the key in the page; ①iOS's review of #454 found that a reader could unblind every row from the source.)
+
+   Replies are shown with a small Markdown subset: headings, lists, paragraphs, code, bold and italics. Both sides are rendered the same way, after HTML escaping. Tables and links appear as plain text, and the page's lead says so.
 
 5. Claude spot check (card step 3, optional, a few prompts): start `start_proxy.sh anthropic`, then run both sides again with `--model claude-sonnet-5-5 --only 1,5,8,10,13,19`, a new round (`BENCH_ROUND=sty1-claude`) and another `--out` folder.
 
@@ -70,14 +72,15 @@ Per row, "B compared with A: better / same / worse", plus an optional note. From
 
 ## How the result is recorded
 
-1. The user clicks "Export choices (JSON)" on the page. It downloads `sty-read-verdicts.json` and also shows the JSON in a box at the bottom, in case the download is blocked. Choices are kept in the browser in between, so the page can be closed and reopened.
+1. The user clicks "Export choices (JSON)" on the page. It downloads `sty-read-verdicts.json`, which holds only `{page, rows: [{id, choice, note}]}`, and also shows the JSON in a box at the bottom, in case the download is blocked. Choices are kept in the browser in between, so the page can be closed and reopened.
 2. Unblind and count:
 
    ```bash
-   .venv/bin/python -m scripts.kernel_bench.sty_read --tally sty-read-verdicts.json
+   .venv/bin/python -m scripts.kernel_bench.sty_read --tally sty-read-verdicts.json \
+     --key <results>/sty1/read.key.json
    ```
 
-   It prints, per row, how "after" compares with "before", plus totals overall, per kind (chat / task) and per kind and language.
+   It prints, per row, how "after" compares with "before", plus totals overall, per kind (chat / task) and per kind and language. It refuses a verdict file from another page (the page ids differ), and one with a duplicate, missing or unknown row.
 3. Record the totals, every "worse" row with its note, and the verdict on prompts 5 and 10 in the STY PR's description and in `docs/plans/0162/STATUS.md`. Keep `before.json`, `after.json`, `read.html`, `read.key.json` and the verdicts file in `<results>`, not in the repo: they hold local paths.
 4. The STY PR merges only after the user has read the page and agreed (card step 4).
 

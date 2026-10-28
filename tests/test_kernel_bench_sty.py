@@ -1,6 +1,5 @@
 """STY read test (v0.1.64): prompts, fixture and the side-by-side page. No model calls."""
 
-import base64
 import html
 import json
 import re
@@ -118,10 +117,19 @@ def test_fixture_builds_the_folder(tmp_path):
         assert "@" not in text and not re.search(r"\d{3}[- ]\d{4}", text), n
 
 
-def _replies(label: str, mark: str, skip: set[int] = frozenset()) -> dict:
+# Fake commits, branches and seed: none of them may appear on the page.
+HEADS = {
+    "before": {"sha": "1a2b3c4d5e6f7a8b9c0d", "branch": "trunk-for-test"},
+    "after": {"sha": "9f8e7d6c5b4a39281706", "branch": "claude/0164-sty-reply-style"},
+}
+MARKS = {"before": "QZX", "after": "KWV"}  # each side's reply marker; neither word is on the page
+SEED = 918273645
+
+
+def _replies(label: str, skip: set[int] = frozenset(), reply=None) -> dict:
     return {
         "label": label,
-        "head": {"sha": f"{label}-sha", "branch": label},
+        "head": HEADS[label],
         "model": "deepseek-v4-pro",
         "round": "test",
         "replies": [
@@ -130,7 +138,7 @@ def _replies(label: str, mark: str, skip: set[int] = frozenset()) -> dict:
                 "kind": p["kind"],
                 "lang": p["lang"],
                 "prompt": p["prompt"],
-                "reply": f"{mark} reply to {p['id']} <b>&",
+                "reply": reply or f"{MARKS[label]} reply to {p['id']} <b>&",
                 "end": "done" if p["id"] != 10 else "task_waiting_user",
                 "cards": ["propose_schedule"] if p["id"] == 10 else [],
             }
@@ -140,39 +148,36 @@ def _replies(label: str, mark: str, skip: set[int] = frozenset()) -> dict:
     }
 
 
-def _page(tmp_path, seed=7, skip_after=frozenset()):
+def _page(tmp_path, seed=SEED, skip_after=frozenset(), after_reply=None):
     before, after = tmp_path / "before.json", tmp_path / "after.json"
-    before.write_text(json.dumps(_replies("before", "BEFORE-MARK")), encoding="utf-8")
-    after.write_text(json.dumps(_replies("after", "AFTER-MARK", skip_after)), encoding="utf-8")
+    before.write_text(json.dumps(_replies("before")), encoding="utf-8")
+    after.write_text(json.dumps(_replies("after", skip_after, after_reply)), encoding="utf-8")
     out = tmp_path / "read.html"
     key = sty_read.compare(before, after, out, seed=seed)
     return out.read_text(encoding="utf-8"), key, out
 
 
-def test_compare_page_has_every_prompt_both_replies_and_the_key(tmp_path):
+def test_compare_page_has_every_prompt_both_replies_and_the_key_file(tmp_path):
     page, key, out = _page(tmp_path)
     for p in sty_read.load_prompts():
         assert html.escape(p["prompt"]) in page
-        for mark in ("BEFORE-MARK", "AFTER-MARK"):
+        for mark in MARKS.values():
             assert html.escape(f"{mark} reply to {p['id']} <b>&") in page
         for choice in ("better", "same", "worse"):
             assert f'name="r{p["id"]}" value="{choice}"' in page
     assert page.count('class="row"') == 20
     # Reply text is escaped, never markup.
     assert "<b>&" not in page
-    # Labels are hidden: the words before/after never name a column.
-    assert "<h3>before" not in page.lower() and "<h3>after" not in page.lower()
-    # The key is in the page (base64, not readable at a glance) and next to it, and they agree.
-    encoded = re.search(r'id="sty-key">([^<]+)<', page).group(1)
-    assert json.loads(base64.b64decode(encoded)) == key
-    assert json.loads(out.with_suffix(".key.json").read_text()) == key
-    assert key["seed"] == 7 and len(key["rows"]) == 20
+    # The key is in the file next to the page, and only there.
+    assert json.loads(sty_read.key_path(out).read_text()) == key
+    assert key["seed"] == SEED and len(key["rows"]) == 20
+    assert key["before"] == HEADS["before"] and key["after"] == HEADS["after"]
     assert all({r["a"], r["b"]} == {"before", "after"} for r in key["rows"])
     # Each row's A column holds the reply the key names.
     for row in key["rows"]:
         section = re.search(rf'data-id="{row["id"]}".*?</section>', page, re.S).group(0)
         a_side = section.split("<h3>B</h3>")[0]
-        assert f"{row['a'].upper()}-MARK reply to {row['id']} " in a_side
+        assert f"{MARKS[row['a']]} reply to {row['id']} " in a_side
     # Light and dark both set the body's background and text colour.
     assert "prefers-color-scheme: dark" in page
     assert re.search(r"body \{[^}]*background: var\(--bg\);[^}]*color: var\(--fg\)", page)
@@ -181,6 +186,26 @@ def test_compare_page_has_every_prompt_both_replies_and_the_key(tmp_path):
     # Prompt 10's schedule card and its unclean end are shown to the reader.
     assert (
         "schedule card (the bench declined it)" in page and "run ended: task_waiting_user" in page
+    )
+
+
+def test_page_cannot_tell_which_side_is_which(tmp_path):
+    """①iOS's review of #454: the page held the key (base64), both commits and the seed, so a
+    reader could unblind any row. Now nothing on it names a side or a version."""
+    page, key, _ = _page(tmp_path)
+    lowered = page.lower()
+    assert "before" not in lowered and "after" not in lowered
+    for head in HEADS.values():
+        assert head["sha"] not in page and head["sha"][:7] not in page
+        assert head["branch"] not in page
+    assert str(SEED) not in page
+    assert "sty-key" not in page and "atob(" not in page
+    # The only scripts on the page are its own code: no data block, no encoded payload.
+    assert page.count("<script") == 1 and "<script>" in page
+    assert not re.search(r"[A-Za-z0-9+/]{40,}={0,2}", page)  # no long base64 run anywhere
+    # The page id is opaque: it is a hash, not one of the inputs.
+    assert re.search(rf'data-page="{key["page"]}"', page) and re.fullmatch(
+        r"[0-9a-f]{12}", key["page"]
     )
 
 
@@ -204,7 +229,7 @@ def test_compare_shuffle_is_recorded_and_seeded(tmp_path):
 def test_compare_marks_a_missing_reply_and_refuses_another_prompt(tmp_path):
     page, _, _ = _page(tmp_path, skip_after={3})
     assert "(no reply recorded)" in page
-    bad = _replies("after", "AFTER-MARK")
+    bad = _replies("after")
     bad["replies"][0]["prompt"] = "something else"
     (tmp_path / "after.json").write_text(json.dumps(bad), encoding="utf-8")
     with pytest.raises(SystemExit):
@@ -213,22 +238,93 @@ def test_compare_marks_a_missing_reply_and_refuses_another_prompt(tmp_path):
         sty_read.compare(tmp_path / "after.json", tmp_path / "before.json", tmp_path / "x.html")
 
 
-def test_tally_unblinds_through_the_key(tmp_path):
-    _, key, _ = _page(tmp_path)
-    by_id = {r["id"]: r for r in key["rows"]}
+def test_markdown_subset_renders_after_escaping():
+    text = (
+        "## Result\n"
+        "\n"
+        "I changed **timeout** from *10* to `30`, in config_file_name.\n"
+        "Second line of the same paragraph.\n"
+        "\n"
+        "- renamed `a.txt`\n"
+        "- renamed **b.txt**\n"
+        "\n"
+        "1. read the file\n"
+        "2. wrote it back\n"
+        "\n"
+        "```\n"
+        "x = {'a': 1} ** 2\n"
+        "```"
+    )
+    got = sty_read.render_md(text)
+    assert got == (
+        '<p class="md-h">Result</p>'
+        "<p>I changed <strong>timeout</strong> from <em>10</em> to <code>30</code>, in "
+        "config_file_name.<br>Second line of the same paragraph.</p>"
+        "<ul><li>renamed <code>a.txt</code></li><li>renamed <strong>b.txt</strong></li></ul>"
+        "<ol><li>read the file</li><li>wrote it back</li></ol>"
+        "<pre><code>x = {&#x27;a&#x27;: 1} ** 2</code></pre>"
+    )
+    # Marks inside inline code stay literal; a lone star is left alone.
+    assert sty_read.render_md("`**not bold**` and 2 * 3") == (
+        "<p><code>**not bold**</code> and 2 * 3</p>"
+    )
+
+
+def test_script_in_a_reply_stays_escaped(tmp_path):
+    attack = "<script>alert(1)</script> **<img src=x onerror=alert(2)>** `<b>`"
+    rendered = sty_read.render_md(attack)
+    assert "<script" not in rendered and "<img" not in rendered and "<b>" not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "<strong>&lt;img src=x onerror=alert(2)&gt;</strong>" in rendered
+    page, _, _ = _page(tmp_path, after_reply=attack)
+    assert page.count("<script") == 1  # the page's own script only
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page and "<img" not in page
+
+
+def _verdicts(tmp_path, key, rows=None, page=None):
+    rows = (
+        rows
+        if rows is not None
+        else [{"id": r["id"], "choice": None, "note": ""} for r in key["rows"]]
+    )
+    path = tmp_path / "v.json"
+    path.write_text(json.dumps({"page": page or key["page"], "rows": rows}), encoding="utf-8")
+    return path
+
+
+def test_tally_unblinds_through_the_key_file(tmp_path):
+    _, key, out = _page(tmp_path)
     first_b_after = next(r for r in key["rows"] if r["b"] == "after")["id"]
     first_b_before = next(r for r in key["rows"] if r["b"] == "before")["id"]
-    rows = [{**r, "choice": None, "note": ""} for r in key["rows"]]
+    # What the page exports: id, choice, note, nothing about sides.
+    rows = [{"id": r["id"], "choice": None, "note": ""} for r in key["rows"]]
     for r in rows:
         if r["id"] in (first_b_after, first_b_before):
-            r["choice"] = "better"
-    verdicts = tmp_path / "v.json"
-    verdicts.write_text(json.dumps({"page": key["page"], "rows": rows}), encoding="utf-8")
-    out = sty_read.tally(verdicts)
-    got = {r["id"]: r["after_vs_before"] for r in out["rows"]}
-    assert by_id[first_b_after]["b"] == "after" and got[first_b_after] == "better"
+            r["choice"], r["note"] = "better", f"note {r['id']}"
+    result = sty_read.tally(_verdicts(tmp_path, key, rows), sty_read.key_path(out))
+    got = {r["id"]: r["after_vs_before"] for r in result["rows"]}
+    assert got[first_b_after] == "better"
     assert got[first_b_before] == "worse"  # B was before and better, so after is worse
-    assert out["totals"]["all"] == {"better": 1, "same": 0, "worse": 1, "unjudged": 18}
+    assert result["totals"]["all"] == {"better": 1, "same": 0, "worse": 1, "unjudged": 18}
+    assert {r["id"]: r["note"] for r in result["rows"]}[first_b_after] == f"note {first_b_after}"
+
+
+def test_tally_refuses_another_page_and_bad_rows(tmp_path):
+    _, key, out = _page(tmp_path)
+    kp = sty_read.key_path(out)
+    good = [{"id": r["id"], "choice": "same", "note": ""} for r in key["rows"]]
+    with pytest.raises(SystemExit, match="page"):
+        sty_read.tally(_verdicts(tmp_path, key, good, page="000000000000"), kp)
+    with pytest.raises(SystemExit, match="more than once"):
+        sty_read.tally(_verdicts(tmp_path, key, good + [good[0]]), kp)
+    with pytest.raises(SystemExit, match="missing"):
+        sty_read.tally(_verdicts(tmp_path, key, good[1:]), kp)
+    with pytest.raises(SystemExit, match="not on the page"):
+        sty_read.tally(_verdicts(tmp_path, key, good + [{"id": 99, "choice": "same"}]), kp)
+    with pytest.raises(SystemExit, match="choice"):
+        sty_read.tally(_verdicts(tmp_path, key, [{**good[0], "choice": "great"}] + good[1:]), kp)
+    with pytest.raises(SystemExit):  # the command line needs the key
+        sty_read.main(["--tally", str(tmp_path / "v.json")])
 
 
 def test_run_label_and_preflight(monkeypatch, tmp_path):

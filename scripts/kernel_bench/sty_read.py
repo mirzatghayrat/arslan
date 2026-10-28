@@ -12,7 +12,10 @@ Then write one blind page that puts the two versions side by side:
 
 and, once the user has exported their choices from that page, count them:
 
-    .venv/bin/python -m scripts.kernel_bench.sty_read --tally sty-read-verdicts.json
+    .venv/bin/python -m scripts.kernel_bench.sty_read --tally sty-read-verdicts.json --key read.key.json
+
+The page is blind: it holds no key, commit, seed or side label. Only the key file `--compare`
+writes next to it says which reply is A in each row.
 
 The runs go through the bench's own code: `runner.fresh_instance` (start_arslan.sh with
 BENCH_REPO, empty data folder, stopped afterwards), `runner.command` + `runner._run` (the
@@ -26,12 +29,12 @@ Task prompts (11-20) get a fresh fixture_sty folder as the run folder.
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import html
 import json
 import os
 import random
+import re
 import secrets
 import shutil
 import subprocess
@@ -200,13 +203,91 @@ def run_all(label: str, repo: Path, out_dir: Path, model: str, only: set[int] | 
 # ---------------------------------------------------------------- the side-by-side page
 
 
+_CODE = re.compile(r"`([^`\n]+)`")
+_BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__")
+_ITALIC = re.compile(
+    r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)"
+)
+_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+_BULLET = re.compile(r"^\s*[-*+]\s+(.*)$")
+_NUMBER = re.compile(r"^\s*\d+[.)]\s+(.*)$")
+
+
+def _inline(escaped: str) -> str:
+    """Inline code, bold and italics on text that is already HTML-escaped. Code spans are cut out
+    first, so marks inside them stay literal."""
+    parts = _CODE.split(escaped)
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2:
+            out.append(f"<code>{part}</code>")
+            continue
+        part = _BOLD.sub(lambda m: f"<strong>{m.group(1) or m.group(2)}</strong>", part)
+        part = _ITALIC.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", part)
+        out.append(part)
+    return "".join(out)
+
+
+def render_md(text: str) -> str:
+    """A small, safe Markdown subset: headings, bullet and numbered lists, paragraphs, fenced code,
+    inline code, bold and italics. The text is HTML-escaped first and only these tags are added,
+    so nothing in a reply can reach the page as markup. Anything else (tables, links, quotes) is
+    shown as its plain text. Both sides of a row go through the same rendering."""
+    lines = html.escape(text).split("\n")
+    out: list[str] = []
+    para: list[str] = []
+    items: list[str] = []
+    list_tag = ""
+
+    def flush() -> None:
+        nonlocal list_tag
+        if para:
+            out.append("<p>" + "<br>".join(_inline(x) for x in para) + "</p>")
+            para.clear()
+        if items:
+            out.append(f"<{list_tag}>" + "".join(f"<li>{_inline(x)}</li>" for x in items))
+            out.append(f"</{list_tag}>")
+            items.clear()
+            list_tag = ""
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith("```"):
+            flush()
+            code = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code.append(lines[i])
+                i += 1
+            out.append("<pre><code>" + "\n".join(code) + "</code></pre>")
+        elif not line.strip():
+            flush()
+        elif m := _HEADING.match(line):
+            flush()
+            out.append(f'<p class="md-h">{_inline(m.group(2))}</p>')
+        elif m := _BULLET.match(line) or _NUMBER.match(line):
+            tag = "ul" if _BULLET.match(line) else "ol"
+            if para or (items and list_tag != tag):
+                flush()
+            list_tag = tag
+            items.append(m.group(1))
+        else:
+            if items:
+                flush()
+            para.append(line)
+        i += 1
+    flush()
+    return "".join(out)
+
+
 def _side(rec: dict | None) -> str:
     if rec is None:
         return '<p class="missing">(no reply recorded)</p>'
     parts = []
     text = rec.get("reply") or ""
     parts.append(
-        f'<div class="reply">{html.escape(text)}</div>'
+        f'<div class="reply">{render_md(text)}</div>'
         if text.strip()
         else '<p class="missing">(empty reply)</p>'
     )
@@ -221,13 +302,13 @@ def _side(rec: dict | None) -> str:
 
 PAGE_CSS = """
 :root { --bg: #f7f6f2; --fg: #1d1d1b; --muted: #6b6a64; --card: #ffffff; --line: #dedcd4;
-  --accent: #2f5d50; --reply: #fbfaf7; }
+  --accent: #2f5d50; --reply: #fbfaf7; --code: #efede6; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg: #161615; --fg: #ecebe6; --muted: #a09f98; --card: #1f1f1d;
-    --line: #34332f; --accent: #8fc2b0; --reply: #252522; }
+    --line: #34332f; --accent: #8fc2b0; --reply: #252522; --code: #2e2e2a; }
 }
 :root[data-theme="dark"] { --bg: #161615; --fg: #ecebe6; --muted: #a09f98; --card: #1f1f1d;
-  --line: #34332f; --accent: #8fc2b0; --reply: #252522; }
+  --line: #34332f; --accent: #8fc2b0; --reply: #252522; --code: #2e2e2a; }
 * { box-sizing: border-box; }
 html { background: var(--bg); }
 body { margin: 0; background: var(--bg); color: var(--fg);
@@ -248,8 +329,15 @@ button { font: inherit; color: var(--bg); background: var(--accent); border: 0;
 .watch { color: var(--accent); font-size: 13px; margin: 0 0 10px; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .side h3 { font-size: 13px; margin: 0 0 4px; color: var(--muted); }
-.reply { white-space: pre-wrap; word-break: break-word; background: var(--reply);
-  border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.reply { word-break: break-word; background: var(--reply);
+  border: 1px solid var(--line); border-radius: 8px; padding: 2px 12px; }
+.reply p, .reply ul, .reply ol, .reply pre { margin: 8px 0; }
+.reply ul, .reply ol { padding-left: 22px; }
+.reply .md-h { font-weight: 600; }
+.reply code { font: 13px/1.4 ui-monospace, Menlo, monospace; background: var(--code);
+  border-radius: 4px; padding: 0 3px; }
+.reply pre { white-space: pre-wrap; background: var(--code); border-radius: 6px; padding: 8px; }
+.reply pre code { padding: 0; background: none; }
 .missing, .meta { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
 .judge { margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
 .judge textarea { width: 100%; min-height: 44px; font: inherit; color: var(--fg);
@@ -259,19 +347,20 @@ button { font: inherit; color: var(--bg); background: var(--accent); border: 0;
 @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
 """
 
+# The page knows only its own id and the rows on it: which side is A is in the key file alone.
 PAGE_JS = """
 (function () {
   const PAGE = document.body.dataset.page;
-  const KEY = JSON.parse(atob(document.getElementById('sty-key').textContent.trim()));
+  const ROWS = Array.from(document.querySelectorAll('.row'));
   const store = 'sty-read:' + PAGE;
   let state = {};
   try { state = JSON.parse(localStorage.getItem(store) || '{}') || {}; } catch (e) { state = {}; }
   function save() { try { localStorage.setItem(store, JSON.stringify(state)); } catch (e) {} }
   function count() {
-    const n = Object.values(state).filter(v => v && v.choice).length;
-    document.getElementById('count').textContent = n + ' / ' + KEY.rows.length + ' judged';
+    const n = ROWS.filter(row => (state[row.dataset.id] || {}).choice).length;
+    document.getElementById('count').textContent = n + ' / ' + ROWS.length + ' judged';
   }
-  document.querySelectorAll('.row').forEach(row => {
+  ROWS.forEach(row => {
     const id = row.dataset.id;
     const s = state[id] || {};
     row.querySelectorAll('input[type=radio]').forEach(r => {
@@ -287,11 +376,11 @@ PAGE_JS = """
     });
   });
   document.getElementById('do-export').addEventListener('click', () => {
-    const rows = KEY.rows.map(k => ({id: k.id, a: k.a, b: k.b,
-      choice: (state[String(k.id)] || {}).choice || null,
-      note: (state[String(k.id)] || {}).note || ''}));
-    const out = JSON.stringify({page: PAGE, seed: KEY.seed, before: KEY.before,
-      after: KEY.after, question: 'B compared with A', rows: rows}, null, 1);
+    const rows = ROWS.map(row => {
+      const s = state[row.dataset.id] || {};
+      return {id: Number(row.dataset.id), choice: s.choice || null, note: s.note || ''};
+    });
+    const out = JSON.stringify({page: PAGE, rows: rows}, null, 1);
     document.getElementById('export').value = out;
     try {
       const a = document.createElement('a');
@@ -312,10 +401,15 @@ def _load_side(path: Path, label: str) -> dict:
     return doc
 
 
+def key_path(html_path: Path) -> Path:
+    return html_path.with_suffix(".key.json")
+
+
 def compare(before: Path, after: Path, out: Path, seed: int | None = None) -> dict:
-    """Write the blind side-by-side page and its key; return the key. A and B are shuffled per row;
-    the key (which of A/B is before) is kept in the page, base64-encoded so a glance at the source
-    does not give it away, and in `<out>.key.json` next to it."""
+    """Write the blind side-by-side page and its key file; return the key. A and B are shuffled
+    per row. The page holds no key, no commit, no seed and no side label: only an opaque page id
+    (a hash), so nothing in it links a column to a version. `<out>.key.json` holds the key;
+    keep it away from the reader."""
     sides = {"before": _load_side(before, "before"), "after": _load_side(after, "after")}
     by_id = {lab: {r["id"]: r for r in doc.get("replies", [])} for lab, doc in sides.items()}
     seed = secrets.randbits(32) if seed is None else seed
@@ -359,7 +453,6 @@ def compare(before: Path, after: Path, out: Path, seed: int | None = None) -> di
         "after": heads["after"],
         "rows": key_rows,
     }
-    encoded = base64.b64encode(json.dumps(key).encode()).decode()
     doc = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -368,31 +461,49 @@ def compare(before: Path, after: Path, out: Path, seed: int | None = None) -> di
         '<p class="lead">Twenty prompts, two versions of Arslan. In every row, which reply is A and '
         "which is B is shuffled. For each row, say whether B is better, the same or worse than A, "
         "and add a note if you like. Chat: did it get colder, or caring in a fake way? Task "
-        "reports: did they get wordier, or clipped like a telegram? Choices stay in this browser; "
-        "export them when you are done.</p>"
+        "reports: did they get wordier, or clipped like a telegram? Formatting is simplified the "
+        "same way on both sides: bold, italics, code, headings and lists are shown; tables and "
+        "links appear as plain text. Choices stay in this browser; export them when you are "
+        "done.</p>"
         '<div class="bar"><span id="count"></span><button id="do-export" type="button">'
         "Export choices (JSON)</button></div>"
         f"{''.join(rows)}"
         '<h2>Export</h2><textarea id="export" readonly aria-label="Exported choices"></textarea>'
-        f'</main><script type="application/json" id="sty-key">{encoded}</script>'
-        f"<script>{PAGE_JS}</script></body></html>"
+        f"</main><script>{PAGE_JS}</script></body></html>"
     )
     out.write_text(doc, encoding="utf-8")
-    out.with_suffix(".key.json").write_text(json.dumps(key, indent=1), encoding="utf-8")
+    key_path(out).write_text(json.dumps(key, indent=1), encoding="utf-8")
     return key
 
 
-def tally(verdicts: Path) -> dict:
-    """Unblind an exported verdict file: for each row, how `after` compares with `before`."""
+def tally(verdicts: Path, key_file: Path) -> dict:
+    """Unblind an exported verdict file with the key `--compare` wrote: for each row, how `after`
+    compares with `before`. Refuses a verdict file from another page, and one whose rows are not
+    exactly the key's rows (a duplicate, a missing or an unknown id, an unknown choice)."""
     doc = json.loads(verdicts.read_text(encoding="utf-8"))
+    key = json.loads(key_file.read_text(encoding="utf-8"))
+    if doc.get("page") != key.get("page"):
+        raise SystemExit(
+            f"{verdicts} is from page {doc.get('page')!r}; {key_file} is for page {key.get('page')!r}"
+        )
+    ids = [row.get("id") for row in doc.get("rows", [])]
+    dupes = sorted({i for i in ids if ids.count(i) > 1}, key=str)
+    if dupes:
+        raise SystemExit(f"{verdicts}: rows {dupes} appear more than once")
+    sides = {r["id"]: r for r in key["rows"]}
+    missing, unknown = sorted(set(sides) - set(ids)), sorted(set(ids) - set(sides), key=str)
+    if missing or unknown:
+        raise SystemExit(f"{verdicts}: rows missing {missing}, rows not on the page {unknown}")
     flip = {"better": "worse", "worse": "better", "same": "same"}
     kinds = {p["id"]: (p["kind"], p["lang"]) for p in load_prompts()}
     rows, totals = [], {}
-    for row in doc["rows"]:
+    for row in sorted(doc["rows"], key=lambda r: r["id"]):
         choice = row.get("choice")
+        if choice is not None and choice not in CHOICES:
+            raise SystemExit(f"{verdicts}: row {row['id']} has choice {choice!r}")
         if choice is None:
             verdict = None
-        elif row["b"] == "after":
+        elif sides[row["id"]]["b"] == "after":
             verdict = choice
         else:
             verdict = flip[choice]
@@ -401,7 +512,7 @@ def tally(verdicts: Path) -> dict:
         for group in ("all", kind, f"{kind}-{lang}"):
             bucket = totals.setdefault(group, {"better": 0, "same": 0, "worse": 0, "unjudged": 0})
             bucket[verdict or "unjudged"] += 1
-    return {"page": doc.get("page"), "totals": totals, "rows": rows}
+    return {"page": key["page"], "totals": totals, "rows": rows}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -415,14 +526,17 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--html", type=Path)
     ap.add_argument("--seed", type=int, help="the shuffle seed (default: random, recorded)")
     ap.add_argument("--tally", type=Path, metavar="VERDICTS")
+    ap.add_argument("--key", type=Path, help="with --tally: the .key.json --compare wrote")
     a = ap.parse_args(argv)
     if a.tally:
-        print(json.dumps(tally(a.tally), ensure_ascii=False, indent=1))
+        if not a.key:
+            ap.error("--tally needs --key (the .key.json next to the page)")
+        print(json.dumps(tally(a.tally, a.key), ensure_ascii=False, indent=1))
     elif a.compare:
         if not a.html:
             ap.error("--compare needs --html")
         key = compare(a.compare[0], a.compare[1], a.html, a.seed)
-        print(f"wrote {a.html} and {a.html.with_suffix('.key.json')} (seed {key['seed']})")
+        print(f"wrote {a.html} and {key_path(a.html)} (seed {key['seed']})")
     else:
         if not (a.label and a.repo and a.out):
             ap.error("a run needs --label, --repo and --out")
