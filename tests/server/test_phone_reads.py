@@ -80,6 +80,21 @@ async def test_a_turns_files_and_a_files_bytes_match_the_reference(client, artif
     assert (await client.get("/api/v1/phone/runs/99/files")).status_code == 404
 
 
+async def test_the_lists_file_count_is_what_the_phone_is_offered(client, artifacts, monkeypatch):
+    """BR2 (①iOS review of #463): one path written three times is one file in the list's count,
+    as in the run's offers; a file too big to travel is not counted either."""
+    from server.services import phone_reads
+    monkeypatch.setattr(phone_reads, "PHONE_FILE_MAX", 4)
+    for data in (b"v1", b"v2", b"v3"):
+        artifact_store.store_bytes(7, "report.md", data, logical_key="a" * 64)
+    artifact_store.store_bytes(8, "big.bin", b"abcde")
+    await _seed(client, [_message(1, "trip", "user", "plan", "2026-10-01T08:00:00", run_id=7),
+                         _message(2, "trip", "arslan", "done", "2026-10-01T08:01:00", run_id=8)])
+    assert len((await client.get("/api/v1/phone/runs/7/files")).json()["files"]) == 1
+    listed = (await client.get("/api/v1/phone/conversations")).json()["conversations"]
+    assert [c["files"] for c in listed if c["id"] == "trip"] == [1]
+
+
 async def test_a_file_that_is_too_big_never_travels(client, artifacts, monkeypatch):
     from server.services import phone_reads
     monkeypatch.setattr(phone_reads, "PHONE_FILE_MAX", 4)

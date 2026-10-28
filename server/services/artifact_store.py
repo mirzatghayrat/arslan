@@ -169,17 +169,18 @@ def final_versions(items: list[dict]) -> list[dict]:
     return [item for index, item in enumerate(items) if index in keep]
 
 
-def artifacts_by_run(run_ids: list[int], *, per_run: int = 20) -> dict[int, list[dict]]:
+def artifacts_by_run(run_ids: list[int] | None, *, per_run: int | None = 20) -> dict[int, list[dict]]:
     """0.1.58 §2: the files several runs produced, in ONE pass over the folder (history rows
     carry each reply's files, so a reloaded reply shows its file cards). One card per file:
-    each run's final versions (BR2), at most `per_run` of them."""
-    wanted = {i for i in run_ids if isinstance(i, int) and i > 0}
+    each run's final versions (BR2), at most `per_run` of them. `run_ids=None` is every run and
+    `per_run=None` no cap (the phone's per-conversation file counts)."""
+    wanted = None if run_ids is None else {i for i in run_ids if isinstance(i, int) and i > 0}
     found: dict[int, list[tuple[int, str, dict]]] = {}
-    if not wanted or not root().is_dir():
+    if wanted is not None and not wanted or not root().is_dir():
         return {}
     for path in root().glob("run_*.manifest.json"):
         m = re.match(r"run_(\d+)_", path.name)
-        if not m or int(m[1]) not in wanted or path.is_symlink():
+        if not m or (wanted is not None and int(m[1]) not in wanted) or path.is_symlink():
             continue
         run_id = int(m[1])
         try:

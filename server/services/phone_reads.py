@@ -64,16 +64,11 @@ def file_reference(item: dict) -> dict | None:
 
 
 def artifact_counts() -> dict[int, int]:
-    """Files per run, from one listing of the artifact folder (names start `run_<id>_`)."""
-    directory = artifact_store.root()
-    counts: dict[int, int] = {}
-    if not directory.exists():
-        return counts
-    for path in directory.glob("run_*.manifest.json"):
-        head = path.name.split("_", 2)
-        if len(head) > 2 and head[1].isdigit():
-            counts[int(head[1])] = counts.get(int(head[1]), 0) + 1
-    return counts
+    """Files per run, from one pass over the artifact folder: what `run_files` offers (BR2, ①iOS
+    review of #463), so one file written three times counts once and a file too big to travel
+    is not counted."""
+    return {run_id: sum(1 for item in items if file_reference(item))
+            for run_id, items in artifact_store.artifacts_by_run(None, per_run=None).items()}
 
 
 def run_files(run_id: int | None) -> list[dict]:
