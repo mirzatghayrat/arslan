@@ -92,7 +92,7 @@ def _skill_body(key: str) -> str | None:
 # CAP1a) left "gh-" keys, which no retired key is (tested).
 _USERS_SKILL = or_(
     SkillPack.category == "imported",
-    SkillPack.category == skill_forge.AUTHORED,
+    SkillPack.category.in_(skill_forge.WRITTEN),
     SkillPack.source_id.is_not(None),
     exists().where(and_(SkillCandidate.key == SkillPack.key, SkillCandidate.promoted_at.is_not(None))),
 )

@@ -12,16 +12,21 @@ run) nothing is saved and no draft is kept. A skill that would come with files (
 is refused before any card: that waits for v0.1.65's "for you to look at".
 
 `register` writes the row, for the card and for a converted former expert. Its category is
-`AUTHORED`, which the seeder reads as the user's skill (D7): a retirement never deletes it.
+`AUTHORED`, or `AUTHORED_OUTSIDE` when the card said the conversation had read outside content (the
+user's decision on #472 F1): read_skill then reads it like an imported skill, framed, and the turn that
+reads it counts as having read outside content. The seeder reads both as the user's skill (D7): a
+retirement never deletes it.
 
 This replaces the Skill Forge page, its candidates and the curator (sessions.md §11). The
 `skill_candidates` table stays until CAP2b, which gives the skills promoted from it the same mark.
 """
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from server.db import session as db_session
@@ -36,6 +41,13 @@ _LINE_MAX = 300         # the description and the reason, as the card shows them
 #: The category of a skill Arslan wrote and the user kept (the card's yes, or converting a former
 #: expert): the seeder's D7 mark of a user's skill (`seeder._USERS_SKILL`). No seed ever had it.
 AUTHORED = "authored"
+#: The same, saved from a card that said the conversation had read outside content (#472 F1): read like an
+#: imported skill. Both are `WRITTEN`, the seeder's mark.
+AUTHORED_OUTSIDE = "authored-outside"
+WRITTEN = (AUTHORED, AUTHORED_OUTSIDE)
+#: What an earlier turn's `<turn_tools>` block says when it read outside content, or when the block was cut
+#: and may have (server/orchestrator/turn_tools.py `_line` and `block`).
+_HISTORY_OUTSIDE = ("external content, source only", "more tool calls")
 #: A body that relies on files of its own, the way an imported skill's does (skill_import: run_python's
 #: `skill_script`, read_skill's `references/` section, the "Bundled" headings). This tool writes text only.
 _USES_FILES = re.compile(r"skill_script|[\"']?section[\"']?\s*:\s*[\"']references/|^#+\s*bundled\s+(?:scripts|references)",
@@ -94,21 +106,39 @@ def _line(text, limit: int) -> str:
     return " ".join(_visible(text).split())[:limit]
 
 
-def _files_folder(key: str):
-    """Where skill_import stores a skill's scripts and references (`executors._skill_scripts_root`)."""
-    from server import config
-    return config.data_dir() / "skill_scripts" / key
+def _files_stored(key: str) -> bool:
+    """Whether skill_import left anything under this key's folder; a dangling link counts (#472 F8)."""
+    from server.registry.executors import _skill_scripts_root
+    return os.path.lexists(_skill_scripts_root() / key)
 
 
-async def register(*, key: str, name: str, description: str, body: str) -> bool:
-    """Write the skill, on and equippable at once (the registry reads SkillPack directly). False when the key
-    is taken: nothing is overwritten."""
+async def _conversation_read_outside(conversation_id: str | None) -> bool:
+    """Whether an earlier turn of this conversation read outside content (#472 F2): "save what we just did"
+    usually comes in the turn after the page. Read from the history's `<turn_tools>` lines; with that
+    summary switched off there is nothing to read, so the answer is yes (the safe side).
+    DELETE-BY: when INB2's `runs.read_outside` lands (#475): read that instead."""
+    if not conversation_id:
+        return False
+    from server.db.models import ArslanMessage
+    from server.orchestrator import turn_tools
+    if not turn_tools.enabled():
+        return True
+    async with db_session.AsyncSessionLocal() as db:
+        hit = await db.scalar(select(ArslanMessage.id).where(
+            ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "arslan",
+            or_(*(ArslanMessage.content.contains(phrase) for phrase in _HISTORY_OUTSIDE))).limit(1))
+    return hit is not None
+
+
+async def register(*, key: str, name: str, description: str, body: str, outside: bool = False) -> bool:
+    """Write the skill, on and equippable at once (the registry reads SkillPack directly); `outside` marks it
+    to be read like an imported skill (#472 F1). False when the key is taken: nothing is overwritten."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             if await db.get(SkillPack, key) is not None:
                 return False
-            db.add(SkillPack(key=key, name=name, category=AUTHORED, description=description, tier="safe",
-                             status="registered", body=body, enabled=True))
+            db.add(SkillPack(key=key, name=name, category=AUTHORED_OUTSIDE if outside else AUTHORED,
+                             description=description, tier="safe", status="registered", body=body, enabled=True))
             await db.commit()
     except IntegrityError:          # the same key written meanwhile
         return False
@@ -134,7 +164,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     if _USES_FILES.search(body):
         return {"ok": False, "error": "not saved: a skill with scripts or attached files cannot be saved yet "
                                       "(v0.1.65). Write the method as text only, or tell the user."}
-    if _files_folder(key).exists():
+    if _files_stored(key):
         # A removed import's files stay on disk; read_skill and run_python would serve them with this key.
         return {"ok": False, "error": f"not saved: files are already stored under the key '{key}'; pick another key"}
     async with db_session.AsyncSessionLocal() as db:
@@ -154,8 +184,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was saved and no "
                         "draft is kept. Offer to save it when the user is in the conversation."}
     card = {"kind": AUTHORED, "key": key, "name": name, "description": description, "body": body, "why": why,
-            # This turn read a page, a file or another tool's result: the text may carry what that said.
-            "outside": untrusted.external_seen()}
+            # This conversation read a page, a file or another tool's result, in this turn or an earlier one:
+            # the text may carry what that said. The saved skill keeps it (#472 F1, F2).
+            "outside": untrusted.external_seen() or await _conversation_read_outside(conversation_id)}
     approvals.LAST_OUTCOME.set(None)          # only this card's own outcome may read as expired
     decision = await ask(card)
     await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
@@ -164,7 +195,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True,
                 "note": f"The user did not save it ({outcome}). Do not propose it again now."}
-    if not await register(key=key, name=name, description=description, body=body):
+    if not await register(key=key, name=name, description=description, body=body, outside=card["outside"]):
         return {"ok": False, "error": f"not saved: a skill with the key '{key}' was added meanwhile"}
     return {"ok": True, "saved": key, "refresh": True, **({"tidied": True} if tidied else {}),
             "note": "Saved and switched on. Read it with read_skill when work it covers comes up."

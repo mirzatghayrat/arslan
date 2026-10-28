@@ -826,13 +826,19 @@ class ReadSkillExecutor:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
         # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
-        # untrusted, and the turn counts as having read outside content. Arslan's own are not.
-        outside = row.category == "imported"
+        # untrusted, and the turn counts as having read outside content. So is one Arslan wrote in a
+        # conversation that had read outside content (v0.1.64 #472 F1). Arslan's own others are not.
+        from server.services.skill_forge import AUTHORED_OUTSIDE
+        outside = row.category in ("imported", AUTHORED_OUTSIDE)
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
             # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
             # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
+            # Only skill_import stores references, so only an imported skill has any: files under
+            # another skill's key are leftovers of a removed or failed import (v0.1.64 #472 F8).
+            if row.category != "imported":
+                return {"ok": False, "external": False, "error": f"no attached files: {section}"}
             fname = section[len("references/"):]
             if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
                 return {"ok": False, "external": False, "error": "invalid reference filename"}

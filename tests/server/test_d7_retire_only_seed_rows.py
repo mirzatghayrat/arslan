@@ -87,8 +87,12 @@ async def test_a_skill_saved_on_the_card_or_converted_from_an_expert_survives_un
     assert await skill_forge.register(key="notion", name="Notion notes", description="How I keep notes",
                                       body="## Trigger\nWhen the user asks to file a note.\n\n"
                                            "## Decision Rules\nKeep each note short, dated and in the user's words.")
+    assert await skill_forge.register(key="obsidian", name="Obsidian notes", description="How I clip pages",
+                                      body="## Trigger\nWhen the user asks to clip a page.\n\n"
+                                           "## Decision Rules\nKeep the title, the link and the date.", outside=True)
     assert (await db.get(SkillPack, "notion")).category == skill_forge.AUTHORED
-    assert await _boot(db) == {"notion"}
+    assert (await db.get(SkillPack, "obsidian")).category == skill_forge.AUTHORED_OUTSIDE   # #472 F1
+    assert await _boot(db) == {"notion", "obsidian"}
 
 
 @pytest.mark.asyncio
@@ -96,8 +100,8 @@ async def test_no_seed_category_is_the_authored_mark():
     """The mark only shields what Arslan wrote: no skill the seeder plants (or ever retired) carries it."""
     from server.registry import seed_catalog
     from server.services import skill_forge
-    assert skill_forge.AUTHORED not in {category for _key, _name, category, *_ in seed_catalog.SKILLS}
-    assert skill_forge.AUTHORED != "imported"
+    assert not set(skill_forge.WRITTEN) & {category for _key, _name, category, *_ in seed_catalog.SKILLS}
+    assert "imported" not in skill_forge.WRITTEN
 
 
 @pytest.mark.asyncio
