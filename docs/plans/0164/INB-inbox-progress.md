@@ -9,7 +9,7 @@
 | 分级 | 必须（⓪Plan 建议，用户定） |
 | 依赖 | **S64-0**（堵外部内容那道闸的漏洞，不归本卡，见下）先合。文案跟 ACM（卡片界面与文案大合并，领先路线里叫 D1）对齐，但不并进 ACM、不等 ACM 合并。SUB：子会话的父链接、子会话的验收单。Q1：iPhone 快问输入框，四行简报挂在它下面。Bridge 帧的一次性决定（v0.1.64 README §2 第 3 条） |
 | 合并位置 | S64-0 → INB1 → INB2（安全面，先合；INB2 是放宽，必须在 S64-0 和 INB1 之后）→ INB3 → INB4 → INB5 → INB6 → INB7 → INB8 → INB9。手机那半（INB4、INB7、INB8 里标了「手机」的部分）等 Bridge 帧点头，可以顺延，不挡 Mac 端 |
-| 推动的门槛 | R64「用户验收：收件箱改完后用户一天的使用感受」；R64 安全（碰安全面的 PR 都有 effort=max 审查 + Codex 审查）；§11「换掉就删掉」（收件箱的代码本版删完） |
+| 推动的门槛 | R64「用户验收：收件箱改完后用户一天的使用感受」；R64 安全（碰安全面的 PR 都有 effort=max 审查 + Codex 审查；Codex only where a Claude review is blocked, README §1.3）；§11「换掉就删掉」（收件箱的代码本版删完） |
 | 分支 | `claude/0164-inb1-lessons-direct`、`claude/0164-inb2-memory-direct`、`claude/0164-inb3-scheduled-entry`、`claude/0164-inb4-sidebar-dots`、`claude/0164-inb5-inbox-out`、`claude/0164-inb6-run-records`、`claude/0164-inb7-progress-brief`、`claude/0164-inb8-push`、`claude/0164-inb9-acceptance-sheet` |
 | 迁移号 | INB4 要一个（已读标记）；INB2 可能要一个（每次运行记「读过外部内容」，见 INB2）。开工时向 ②Main 申请，其余 PR 不要迁移 |
 
@@ -413,7 +413,7 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
    - 今天会变成提案的每一种情况，以后都是「没生效」，一种都不许变成生效；
    - INB2 加「第 N 轮读网页、第 N+1 轮写」那条。
    测试先红，再改代码。
-2. **INB1、INB2 按 effort=max 写和审，再加 Codex 审**（v0.1.64 README §1）。审查专门看：有没有哪条路能让「没生效」的东西被自动打开（合并、批量接受、旧数据、新入口算成「在场」）。
+2. **INB1、INB2 按 effort=max 写和审，再加 Codex 审**（v0.1.64 README §1）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.审查专门看：有没有哪条路能让「没生效」的东西被自动打开（合并、批量接受、旧数据、新入口算成「在场」）。
 3. **每个挪走的东西先在新位置做出来，再删旧的**，但新旧在同一版里做完（§11 第 1 条）。INB5 的验收是「收件箱的代码查不到」，`git grep` 的结果贴进 PR。
 4. **「要你做」只有一个函数：** 角标、进展页的简报、推送、手机都读它。
 5. **文案：** 写法跟 ACM、STY 对齐（任务汇报那四条原则）。先写中英文，其余四种语言同一个 PR 补上（§3）。
@@ -421,7 +421,7 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
 ## 验收
 
 - **INB1 / INB2：**
-  - 测试全过，effort=max 审查和 Codex 审查的结论写进 PR；
+  - 测试全过，effort=max 审查和 Codex 审查的结论写进 PR； **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
   - 角标里不再有记忆和做法；
   - Memory 页能看到每一条没生效的做法和记忆，以及没生效的原因。
 - **INB5 合并后：**
@@ -454,7 +454,7 @@ MEM1: about +200 (added 2026-10-28; see its section).
 
 - **风险 1：「直接生效」被当成「全部打开」。** 这是本卡最大的风险。今天会变成提案的五种情况，只要有一种被改成生效，或者「在场」的白名单漏进一个新入口，网页里的一句话就能变成 Arslan 的做法或「关于你」的记忆。
   - 测试逐种断言；
-  - 审查按 effort=max，加 Codex；
+  - 审查按 effort=max，加 Codex； **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
   - S64-0、INB1、INB2 单独合，不跟界面的 PR 混在一起。
 - **风险 2：东西挪丢了。** 例如「你不在时没做的」按对话分以后，某一类（定时任务写进普通对话的那种）两边都不显示。
   - 按五块逐块验收；

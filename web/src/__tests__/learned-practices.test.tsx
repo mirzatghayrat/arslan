@@ -1,9 +1,12 @@
-/** 0.1.52 S5: the "learned a practice" line, its store frame, Brain's list, the island count, the setting. */
+/** 0.1.52 S5: the "learned a practice" line, its store frame, Brain's list, the island count, the setting.
+ *  v0.1.64 (INB1): nothing waits for an OK. One that is not in effect says why, in the line and in Memory,
+ *  and is switched on in Memory after its full text and the reason are shown. */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts?.text ? `${key}:${opts.text}` : key),
+  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) =>
+    (opts?.text ? `${key}:${opts.text}` : opts?.reason ? `${key}:${opts.reason}` : key),
     i18n: { resolvedLanguage: "en" } }),
 }));
 vi.mock("../components/EmbeddingSettings", () => ({ default: () => null }));
@@ -21,6 +24,7 @@ import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 import { applyFeed, dismiss, initialState, open } from "../island/islandMachine";
 import type { Feed, FeedEvent } from "../island/feed";
 import { FIELD_HOMES } from "../components/settings/sectionRegistry";
+import { OPEN_SECTION_EVENT } from "../lib/sections";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -33,27 +37,34 @@ describe("the learned line in the chat", () => {
     await waitFor(() => expect(screen.getByText("chat.learnedUndone")).toBeInTheDocument());
     expect(set).toHaveBeenCalledWith(7, "archived");
   });
-  it("a practice that waits asks: remember or not", async () => {
+  it("one that is not in effect says why and points to Memory; it asks nothing and changes nothing", () => {
     const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
-    render(<LearnedLine id={8} text="x → y" status="proposed" />);
-    expect(screen.getByTestId("learned-line")).toHaveTextContent("chat.wantsToLearn:x → y");
-    expect(screen.queryByText("chat.learnedUndo")).toBeNull();
-    fireEvent.click(screen.getByText("chat.learnedKeep"));
-    await waitFor(() => expect(screen.getByText("chat.learnedKept")).toBeInTheDocument());
-    expect(set).toHaveBeenCalledWith(8, "active");
-    cleanup();
-    render(<LearnedLine id={9} text="x → y" status="proposed" />);
-    fireEvent.click(screen.getByText("chat.learnedSkip"));
-    await waitFor(() => expect(set).toHaveBeenLastCalledWith(9, "archived"));
+    const opened: unknown[] = [];
+    const listen = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(OPEN_SECTION_EVENT, listen);
+    try {
+      render(<LearnedLine id={8} text="x → y" status="proposed" notInEffect="conflicts" />);
+      expect(screen.getByTestId("learned-line")).toHaveTextContent("chat.learnedNotInEffect:companion.why_conflicts");
+      expect(screen.queryByText("chat.learnedUndo")).toBeNull();
+      fireEvent.click(screen.getByText("chat.learnedSeeInMemory"));
+      expect(opened).toEqual(["brain"]);
+      expect(set).not.toHaveBeenCalled();
+    } finally { window.removeEventListener(OPEN_SECTION_EVENT, listen); }
   });
-  it("a frame becomes one line in the thread", () => {
+  it("with no reason given, the line says the safe one", () => {
+    render(<LearnedLine id={9} text="x → y" status="proposed" />);
+    expect(screen.getByTestId("learned-line")).toHaveTextContent("chat.learnedNotInEffect:companion.why_outside_content");
+  });
+  it("a frame becomes one line in the thread, with its reason", () => {
     useArslanStore.setState(initialArslanState());
-    useArslanStore.getState().handleFrame({ type: "lesson_learned", lesson: { id: 3, text: "a → b", status: "active" } } as never);
+    useArslanStore.getState().handleFrame({ type: "lesson_learned", lesson: { id: 3, text: "a → b", status: "active", not_in_effect: null } } as never);
+    useArslanStore.getState().handleFrame({ type: "lesson_learned", lesson: { id: 4, text: "c → d", status: "proposed", not_in_effect: "setting_off" } } as never);
     const items = useArslanStore.getState().items;
-    expect(items[items.length - 1]).toMatchObject({ kind: "lesson", content: "a → b", lesson: { id: 3, status: "active" } });
-    const [message] = toUiMessages(items.slice(-1));
-    expect(message.learned).toEqual({ id: 3, status: "active" });
-    expect(message.text).toBe("a → b");
+    expect(items[items.length - 2]).toMatchObject({ kind: "lesson", content: "a → b", lesson: { id: 3, status: "active" } });
+    const [active, waiting] = toUiMessages(items.slice(-2));
+    expect(active.learned).toEqual({ id: 3, status: "active", notInEffect: null });
+    expect(active.text).toBe("a → b");
+    expect(waiting.learned).toEqual({ id: 4, status: "proposed", notInEffect: "setting_off" });
   });
 });
 
@@ -67,32 +78,91 @@ describe("Brain › learned practices", () => {
     vi.spyOn(companionApi, "projects").mockResolvedValue([]);
     vi.spyOn(companionApi, "noticedEarlier").mockResolvedValue({ count: 0 });
   });
-  it("lists practices with their source and counts; retired ones fold away", async () => {
+  it("lists practices by state, each one not in use with its reason; retired ones fold away", async () => {
     vi.spyOn(lessonsApi, "list").mockResolvedValue([
       lesson({ id: 1, text: "Reminders → use Swift", source: "machine_quirk" }),
-      lesson({ id: 2, text: "Reports → tables first", source: "user_correction", status: "proposed" }),
+      lesson({ id: 2, text: "Reports → tables first", source: "user_correction", status: "proposed",
+        not_in_effect: "setting_off", evidence: { not_in_effect: "setting_off" } }),
       lesson({ id: 3, text: "Old way", status: "archived" }),
+      lesson({ id: 5, text: "Before v0.1.64", status: "proposed", not_in_effect: "outside_content", evidence: {} }),
+      lesson({ id: 6, text: "Keeps failing", status: "stale", not_in_effect: "failed_repeatedly",
+        evidence: { not_in_effect: "failed_repeatedly" } }),
     ]);
     render(<MemoryList />);
     const first = await screen.findByTestId("practice-1");
     expect(first).toHaveTextContent("companion.sourceQuirk");
     expect(first).toHaveTextContent("companion.practiceCounts");
-    // 0.1.55 §13: a practice that waits sits with everything else that waits, once.
-    expect(await screen.findByTestId("pending-memory-l:2")).toHaveTextContent("Reports → tables first");
-    expect(screen.queryByTestId("practice-2")).toBeNull();
+    expect(first).not.toHaveTextContent("companion.whyShort_");
+    // Nothing about practices waits with the rest for an OK.
+    expect(screen.queryByTestId("pending-memory-l:2")).toBeNull();
+    const notInEffect = screen.getByTestId("practices-not-in-effect");
+    expect(within(notInEffect).getByTestId("practice-2")).toHaveTextContent("companion.whyShort_setting_off");
+    // One learned before v0.1.64 has no reason written: the page says so, not a guess.
+    expect(within(notInEffect).getByTestId("practice-5")).toHaveTextContent("companion.whyShort_legacy");
+    expect(within(screen.getByTestId("practices-stopped")).getByTestId("practice-6"))
+      .toHaveTextContent("companion.whyShort_failed_repeatedly");
     expect(screen.queryByTestId("practice-3")).toBeNull();
     fireEvent.click(screen.getByText("companion.practiceRetired"));
     expect(screen.getByTestId("practice-3")).toHaveTextContent("companion.practiceRestore");
   });
-  it("use, retire, pin and delete call the API; delete asks first", async () => {
-    vi.spyOn(lessonsApi, "list").mockResolvedValue([lesson({ id: 2, status: "proposed", text: "waits" }), lesson({ id: 4, text: "in use" })]);
+  it("one not in effect is switched on only after its full text and reason are shown", async () => {
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([
+      lesson({ id: 4, text: "Reports → lists first", situation: "Reports", advice: "lists first" }),
+      lesson({ id: 2, status: "proposed", text: "Reports → tables first", situation: "Reports", advice: "tables first",
+        not_in_effect: "conflicts", evidence: { not_in_effect: "conflicts", conflicts_with: 4 } }),
+    ]);
+    const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
+    render(<><MemoryList /><ConfirmHost /></>);
+    const row = await screen.findByTestId("practice-2");
+    expect(within(row).queryByText("companion.practicePin")).toBeNull();
+    fireEvent.click(within(row).getByText("companion.practiceViewAndTurnOn"));
+    const sheet = await screen.findByTestId("practice-open-sheet");
+    expect(sheet).toHaveTextContent("tables first");
+    expect(sheet).toHaveTextContent("companion.practiceWhyNot:companion.why_conflicts");
+    expect(sheet).toHaveTextContent("companion.whyDetail_conflicts");
+    expect(sheet).toHaveTextContent("companion.practiceRival:Reports → lists first");
+    expect(set).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("companion.practiceNotNow"));
+    await waitFor(() => expect(screen.queryByTestId("practice-open-sheet")).toBeNull());
+    expect(set).not.toHaveBeenCalled();
+    fireEvent.click(within(await screen.findByTestId("practice-2")).getByText("companion.practiceViewAndTurnOn"));
+    await screen.findByTestId("practice-open-sheet");
+    fireEvent.click(screen.getByTestId("confirm-action"));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active"));
+  });
+  it("Restore goes through the same sheet: a retired practice may never have been in effect (#460 review, F1)", async () => {
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([
+      lesson({ id: 3, status: "archived", text: "Calendar → AppleScript", situation: "Calendar", advice: "AppleScript",
+        not_in_effect: "outside_content", evidence: { not_in_effect: "outside_content" } }),
+      lesson({ id: 9, status: "archived", text: "Old way", not_in_effect: "retired" }),
+    ]);
+    const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
+    render(<><MemoryList /><ConfirmHost /></>);
+    fireEvent.click(await screen.findByText("companion.practiceRetired"));
+    const never = screen.getByTestId("practice-3");
+    expect(never).toHaveTextContent("companion.whyShort_outside_content");
+    expect(screen.getByTestId("practice-9")).not.toHaveTextContent("companion.whyShort_");
+    const restore = within(never).getByText("companion.practiceRestore");
+    await waitFor(() => expect(restore).not.toBeDisabled());          // the page has finished loading
+    fireEvent.click(restore);
+    const sheet = await screen.findByTestId("practice-open-sheet");
+    expect(sheet).toHaveTextContent("AppleScript");
+    expect(sheet).toHaveTextContent("companion.practiceWhyNot:companion.why_outside_content");
+    fireEvent.click(screen.getByText("companion.practiceNotNow"));
+    await waitFor(() => expect(screen.queryByTestId("practice-open-sheet")).toBeNull());
+    expect(set).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByTestId("practice-9")).getByText("companion.practiceRestore"));
+    expect(await screen.findByTestId("practice-open-sheet")).toHaveTextContent("companion.practiceWhyNot:companion.why_retired");
+    fireEvent.click(screen.getByTestId("confirm-action"));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(9, "active"));
+    expect(set).toHaveBeenCalledTimes(1);
+  });
+  it("retire, pin and delete call the API; delete asks first", async () => {
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([lesson({ id: 4, text: "in use" })]);
     const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
     const pin = vi.spyOn(lessonsApi, "pin").mockResolvedValue({} as Lesson);
     const remove = vi.spyOn(lessonsApi, "remove").mockResolvedValue({});
     render(<><MemoryList /><ConfirmHost /></>);
-    await screen.findByTestId("pending-memory-l:2");
-    fireEvent.click(screen.getByText("pendingMemory.use"));
-    await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active"));
     await screen.findByTestId("practice-4");
     fireEvent.click(await screen.findByText("companion.practiceRetire"));
     await waitFor(() => expect(set).toHaveBeenLastCalledWith(4, "archived"));

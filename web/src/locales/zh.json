@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "来自 iPhone",
     "learned": "学到了：{{text}}",
-    "wantsToLearn": "Arslan 想记住一个做法：{{text}}",
     "learnedUndo": "撤销",
-    "learnedKeep": "记住",
-    "learnedSkip": "不用",
+    "learnedNotInEffect": "学到一条，没生效：{{reason}}",
+    "learnedSeeInMemory": "去「记忆」里看",
     "learnedUndone": "已撤销",
-    "learnedKept": "已记住",
     "title": "与 {{name}} 对话",
     "placeholder": "输入消息……",
     "send": "发送",
@@ -1456,11 +1454,9 @@
     "keepLocal": "留下，只给本机用",
     "drop": "不要",
     "apply": "合并",
-    "use": "用上",
     "source": {
       "memory": "关于你",
-      "curation": "整理",
-      "lesson": "学到的做法"
+      "curation": "整理"
     },
     "sensitive": "敏感"
   },

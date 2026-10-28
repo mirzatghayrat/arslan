@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "depuis l’iPhone",
     "learned": "Appris : {{text}}",
-    "wantsToLearn": "Arslan veut retenir une pratique : {{text}}",
     "learnedUndo": "Annuler",
-    "learnedKeep": "Retenir",
-    "learnedSkip": "Non merci",
+    "learnedNotInEffect": "Pratique apprise, pas en vigueur : {{reason}}",
+    "learnedSeeInMemory": "Voir dans Mémoire",
     "learnedUndone": "Annulé",
-    "learnedKept": "Retenu",
     "title": "Discuter avec {{name}}",
     "placeholder": "Saisissez un message...",
     "send": "Envoyer",
@@ -1456,11 +1454,9 @@
     "keepLocal": "Garder, modèles locaux seulement",
     "drop": "Non",
     "apply": "Appliquer",
-    "use": "L’utiliser",
     "source": {
       "memory": "À ton sujet",
-      "curation": "Rangement",
-      "lesson": "Pratique apprise"
+      "curation": "Rangement"
     },
     "sensitive": "Sensible"
   },
