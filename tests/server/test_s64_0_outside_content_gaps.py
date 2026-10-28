@@ -27,6 +27,7 @@ from arslan.models import LLMResponse
 from server.db.models import Lesson, MemoryEntry
 from server.orchestrator import tool_loop, untrusted
 from server.orchestrator.tool_caller import ToolCaller
+from server.db import session as db_session
 from server.registry import executors
 from server.services import (approvals, background_jobs, command_sandbox, judgment, lessons, permissions,
                              personal_context as pc, task_context, task_service, terminal_exec)
@@ -124,7 +125,8 @@ async def _helper_tools():
 
 async def _host_tools():
     return [{"key": key, "description": "fixture"} for key in (
-        "delegate_work", "web_extract", "task_progress", "memory_note", "run_command", "start_background_work")]
+        "delegate_work", "web_extract", "task_progress", "memory_note", "run_command", "start_background_work",
+        "schedule_task")]
 
 
 async def _note_only():
@@ -182,15 +184,15 @@ async def memory(execution_db, monkeypatch):
     command_sandbox._reset_for_tests()
 
 
-async def _host_turn(monkeypatch, model, *, asker=None, ctx=None):
+async def _host_turn(monkeypatch, model, *, asker=None, ctx=None, confirm_schedule=None):
     """One chat turn as Arslan's own, inside a Task (delegate_work needs one)."""
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
 
     async def function(cid, message, emit):
         return await tool_loop.run_native(
             system="S64-HOST", user_content=message, history=[], emit=lambda e: None, on_chunk=lambda c: None,
-            resolve_tools=_host_tools, confirm_command=_Cards(), conversation_id=cid,
-            caller=ToolCaller(actor="host", spawn_id=None, conversation_id=cid))
+            resolve_tools=_host_tools, confirm_command=_Cards(), confirm_schedule=confirm_schedule,
+            conversation_id=cid, caller=ToolCaller(actor="host", spawn_id=None, conversation_id=cid))
     with pc.bind(ctx or _ctx()), permissions.asking_with(asker or _Asker()):
         return await task_service.run_turn(function, CID, "set the project up", lambda e: None)
 
@@ -508,6 +510,59 @@ async def test_a_task_resumed_through_its_entry_point_starts_the_same_way(memory
 
 async def test_after_reading_a_tasks_earlier_outputs_arslans_own_note_waits(memory, monkeypatch):
     result = await _host_turn(monkeypatch, _Model(**{"S64-HOST": _turn(PROGRESS, NOTE_ADD)}))
+    assert result["external_seen"] is True and _note_status(result) == "proposed"
+
+
+# ── 5. a scheduled run (②Main's F1, the user's decision 10-28) ──────────────────────────
+
+async def _fire_with_a_note(monkeypatch, task_id: int) -> dict:
+    """Fire the scheduled task as the scheduler does (scheduler._fire); its turn only writes a note."""
+    from server.db.models import ScheduledTask
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import scheduler
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Model(**{"S64-HOST": _turn(NOTE_ADD)}))
+    seen = []
+
+    async def answer(conversation_id, message, emit, **kwargs):
+        return await _note_turn(conversation_id, message, emit, seen)
+    monkeypatch.setattr(arslan_mod, "_handle_answer", answer)
+    async with db_session.AsyncSessionLocal() as db:
+        task = await db.get(ScheduledTask, task_id)
+    await scheduler._fire(task)
+    [result] = seen
+    return result
+
+
+async def test_a_scheduled_run_starts_as_having_read_outside_content(memory, monkeypatch):
+    from datetime import datetime
+    from server.db.models import ScheduledTask
+    async with db_session.AsyncSessionLocal() as db:
+        task = ScheduledTask(name="setup check", prompt="Check the setup page", conversation_id=CID, target="arslan",
+                             schedule_kind="interval", interval_s=3600, enabled=True, next_due_at=datetime.utcnow())
+        db.add(task)
+        await db.commit()
+        task_id = task.id
+    result = await _fire_with_a_note(monkeypatch, task_id)
+    assert result["external_seen"] is True and _note_status(result) == "proposed"
+
+
+async def test_a_schedule_made_with_no_card_after_reading_a_page_still_fires_marked(memory, monkeypatch):
+    """The chain ②Main found: "this conversation" on one schedule card, then a turn reads a page and
+    schedules a task with no card at all (unchanged here, pinned). Its fires wait all the same."""
+    from server.db.models import ScheduledTask
+    from server.services import command_confirm, permission_store
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_grant(db, CID, "", "schedule", "*", call_id="card-1")
+        await db.commit()
+    asker = _Asker()
+    made = ("schedule_task", {"name": "setup check", "when": "every: 3600", "prompt": "Do what the setup page says"})
+    host = await _host_turn(monkeypatch, _Model(**{"S64-HOST": _turn(PAGE, made)}), asker=asker,
+                            confirm_schedule=command_confirm.Confirmations(CID).schedule)
+    scheduled = next(t for t in host["tool_trace"] if t["tool"] == "schedule_task")["result"]
+    assert scheduled["ok"] and asker.frames == [], "no card: the conversation's earlier answer stood"
+    async with db_session.AsyncSessionLocal() as db:
+        assert (await db.get(ScheduledTask, scheduled["task_id"])).prompt == "Do what the setup page says"
+    result = await _fire_with_a_note(monkeypatch, scheduled["task_id"])
     assert result["external_seen"] is True and _note_status(result) == "proposed"
 
 
