@@ -82,7 +82,7 @@ async def test_a_stored_quick_question_is_shown_and_may_call_exactly_four_tools(
     monkeypatch.setattr(arslan, "_all_resident", resident)
     await _store(execution_db, "phone-0b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b", "quick")
     seen = _capture(monkeypatch)
-    await arslan._handle_answer("phone-0b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b", "weather in Kashgar?", lambda e: None,
+    await arslan._handle_answer("phone-0b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b", "weather in Acme City?", lambda e: None,
                                 source="phone")
     assert seen["shown"] == QUICK and seen["callable"] == QUICK
     assert arslan.QUICK_NOTE in seen["notes"] and arslan.PHONE_NOTE not in seen["notes"]
@@ -90,20 +90,23 @@ async def test_a_stored_quick_question_is_shown_and_may_call_exactly_four_tools(
 
 async def test_the_same_message_in_an_ordinary_conversation_gets_every_tool(execution_db, monkeypatch):
     seen = _capture(monkeypatch)
-    await arslan._handle_answer("c-plain", "weather in Kashgar?", lambda e: None, source="phone")
+    await arslan._handle_answer("c-plain", "weather in Acme City?", lambda e: None, source="phone")
     assert {"find_tools", "use_tool", "run_command", "remember"} <= set(seen["shown"])
     assert set(QUICK) < set(seen["callable"]) and "run_command" in seen["callable"]
     assert arslan.PHONE_NOTE in seen["notes"] and arslan.QUICK_NOTE not in seen["notes"]
 
 
-async def test_a_kind_that_cannot_be_read_gets_the_four_tools_never_every_tool(execution_db, monkeypatch):
-    """Fails closed (card, rule 4): an unreadable row narrows the tools; it does not say "quick question"."""
+@pytest.mark.parametrize("source", [None, "phone"], ids=["window", "phone"])
+async def test_a_kind_that_cannot_be_read_gets_the_four_tools_never_every_tool(execution_db, monkeypatch, source):
+    """Fails closed (card, rule 4): an unreadable row narrows the tools. It does not say "quick question", and a
+    phone turn isn't pointed at attach_file, which it can't call (⓪Plan's review of #479, F8)."""
     async def unreadable(conversation_id):
         raise RuntimeError("database is locked")
     monkeypatch.setattr(arslan, "_stored_kind", unreadable)
     seen = _capture(monkeypatch)
-    await arslan._handle_answer("c-plain", "weather in Kashgar?", lambda e: None)
-    assert seen["shown"] == QUICK and seen["callable"] == QUICK and arslan.QUICK_NOTE not in seen["notes"]
+    await arslan._handle_answer("c-plain", "weather in Acme City?", lambda e: None, **({"source": source} if source else {}))
+    assert seen["shown"] == QUICK and seen["callable"] == QUICK
+    assert arslan.QUICK_NOTE not in seen["notes"] and arslan.PHONE_NOTE not in seen["notes"]
 
 
 async def test_only_the_stored_kind_counts_never_what_a_frame_says(execution_db, monkeypatch):
@@ -134,9 +137,111 @@ async def test_a_quick_question_extracts_no_facts_after_its_turn(execution_db, m
     monkeypatch.setattr(turn_facts, "capture", capture)
     monkeypatch.setattr(arslan.memory, "maybe_compact", compact)
     from server.services import task_context
-    turn = await task_context.load(cid, user_message="I live in Kashgar")      # the turn's context, as a chat turn has
-    await arslan._after_turn(cid, "I live in Kashgar", lambda e: None, turn, budget=1000, reply_id=None, after=None)
+    turn = await task_context.load(cid, user_message="I live in Acme City")      # the turn's context, as a chat turn has
+    await arslan._after_turn(cid, "I live in Acme City", lambda e: None, turn, budget=1000, reply_id=None, after=None)
     assert bool(asked) is looked
+
+
+# -- the real tool loop (⓪Plan's review of #479, F3): the tests above stub run_native ---------------------------
+
+import asyncio  # noqa: E402
+
+from tests.server import test_trajectory_golden as golden  # noqa: E402
+
+
+class _Model:
+    """A model that makes the calls it is given, then answers; it records the tools each request showed."""
+
+    def __init__(self, replies):
+        self.replies, self.shown = list(replies), []
+
+    def native_trajectory(self):
+        return True
+
+    async def chat_trajectory(self, system, messages, tools=None, tool_choice=None, **kw):
+        self.shown.append(sorted(t["function"]["name"] for t in (tools or [])))
+        return self.replies.pop(0) if self.replies else golden._Resp(content="done")
+
+
+#: A call to each kind of tool a quick question must not reach: run directly or through use_tool / find_tools,
+#: and tools that write, remember, schedule, ask, reach an MCP server or send a file.
+OUTSIDE_THE_FOUR = [
+    ("run_command", {"command": "touch x", "argv": ["touch", "x"]}),
+    ("use_tool", {"name": "run_command", "arguments": {"command": "ls", "argv": ["ls"]}}),
+    ("use_tool", {"name": "remember", "arguments": {"action": "append", "kind": "fact", "content": "x"}}),
+    ("find_tools", {"query": "shell command"}),
+    ("remember", {"action": "append", "kind": "fact", "content": "the user likes tea"}),
+    ("memory_note", {"action": "add", "set": "about_you", "text": "x"}),
+    ("write_file", {"path": "a.txt", "content": "x"}),
+    ("schedule_task", {"name": "x", "prompt": "x", "when": "every: 3600"}),
+    ("start_background_work", {"goal": "x", "criteria": []}),
+    ("update_plan", {"items": ["a"]}),
+    ("ask_user_choice", {"question": "q?", "options": [{"label": "a"}, {"label": "b"}]}),
+    ("propose_capability", {"candidate_id": "x", "why": "y"}),
+    ("mcp_1__anything", {}),
+    ("escalate", {"kind": "data", "need": "x"}),
+    ("read_skill", {"key": "x"}),
+    ("attach_file", {"path": "a.txt"}),
+]
+
+
+@pytest.mark.parametrize("all_resident", [False, True], ids=["on-demand", "tools_all_resident"])
+async def test_a_quick_turn_runs_nothing_outside_the_four_and_asks_nothing(execution_db, monkeypatch, all_resident):
+    """The model names every other kind of tool anyway: the dispatch refuses each one, before any executor or
+    card. Shown is not enough; this is what may run."""
+    async def resident():
+        return all_resident
+    monkeypatch.setattr(arslan, "_all_resident", resident)
+    cid = "phone-7b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b"
+    await _store(execution_db, cid, "quick")
+    model = _Model([golden._Resp(tool_calls=[golden._tc(name, args, cid=f"c{i}")
+                                             for i, (name, args) in enumerate(OUTSIDE_THE_FOUR)]),
+                    golden._Resp(content="ok")])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    golden._pin_workspace(monkeypatch)
+    resolved, asked, events = [], [], []
+
+    async def resolve_executor(key):
+        resolved.append(key)
+        return None
+    monkeypatch.setattr(tool_loop, "resolve_executor", resolve_executor)
+
+    async def ask(*args, **kwargs):
+        asked.append(args)
+        return True
+    ask.ask_capability = ask
+    await arslan._handle_answer(cid, "weather?", events.append, source="phone", confirm_command=ask,
+                                confirm_workspace_write=ask, confirm_schedule=ask)
+    assert len(model.shown) == 2 and all(shown == QUICK for shown in model.shown), model.shown
+    assert resolved == [] and asked == []
+    assert not [e for e in events if e.get("type") in ("command_confirm", "approval_needed", "clarify_options")]
+
+
+@pytest.mark.parametrize("kind,taught", [("quick", False), (None, True)], ids=["quick", "ordinary"])
+async def test_a_quick_turn_teaches_no_practice(execution_db, monkeypatch, kind, taught):
+    """The other after-turn path: learned practices (lessons.after_turn) read the turn's own memory context,
+    which a quick row makes no_learning. The real tool loop runs under the context a chat turn binds
+    (scoped_turn); a detour is made to look found, so only that gate decides."""
+    from server.services import lessons, personal_context, task_context
+    cid = "phone-8b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b"
+    if kind:
+        await _store(execution_db, cid, kind)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Model([golden._Resp(content="done")]))
+    golden._pin_workspace(monkeypatch)
+    monkeypatch.setattr(lessons, "detours", lambda trace: [{"failed": "a", "worked": "b"}])
+
+    async def candidates(found, user_request, conversation_id):
+        return ["a practice"]
+    taken = []
+
+    async def capture(made, **kwargs):
+        taken.append(made)
+    monkeypatch.setattr(lessons, "detour_candidates", candidates)
+    monkeypatch.setattr(lessons, "capture", capture)
+    with personal_context.bind(await task_context.load(cid, user_message="weather?")):
+        await arslan._handle_answer(cid, "weather?", lambda e: None, source="phone")
+    await asyncio.gather(*list(lessons._background))
+    assert bool(taken) is taught
 
 
 # -- the phone's endpoints ------------------------------------------------------------------------------------
@@ -200,6 +305,20 @@ async def test_converting_a_quick_question_makes_it_an_ordinary_chat(client):
     row = await _row(client, Q1)
     # Whether it starts learning is the user's open question (card, #3); until then it doesn't.
     assert (row.kind, row.no_learning) == ("chat", True)
+    again = await client.post(f"/api/v1/phone/conversations/{Q1}/update", json={"kind": "chat"})
+    assert again.status_code == 200 and (await _row(client, Q1)).kind == "chat"      # a retry after a lost reply
+
+
+@pytest.mark.parametrize("kind", [None, "sub"], ids=["ordinary", "sub"])
+async def test_only_a_quick_question_is_turned_into_a_chat(client, kind):
+    """An ordinary conversation, or one SUB stores as `sub`, is not a quick question: `update` leaves it as it
+    is (⓪Plan's review of #479, F4)."""
+    async with client.db_maker() as db:
+        db.add(ConversationContext(id="c-other", kind=kind))
+        await db.commit()
+    got = await client.post("/api/v1/phone/conversations/c-other/update", json={"kind": "chat"})
+    assert got.status_code == 404 and got.json()["detail"] == "not_found"
+    assert (await _row(client, "c-other")).kind == kind
 
 
 async def test_converting_refuses_while_a_turn_runs_an_unknown_conversation_or_another_kind(client, monkeypatch):
@@ -225,19 +344,43 @@ async def test_quick_questions_have_a_list_of_their_own_and_stay_out_of_every_ot
     assert (await client.get("/api/v1/phone/conversations?kind=task")).json()["detail"] == "bad_request"
 
 
-async def test_before_pages_back_at_or_before_so_a_shared_second_loses_nothing(client):
-    """Times are whole seconds. A page boundary inside one second must not skip the one cut by `limit`: a
-    refresh only reloads page one, so it would never be shown (①iOS's review of #479). `before` includes that
-    second, and the phone drops the ids it already has."""
+async def _page_like_the_phone(client, limit: int) -> list[list[str]]:
+    """The phone's paging (card, detail C): one `limit` throughout; `before` is the oldest `updated_at` it holds,
+    sent back exactly as received; it stops on `has_more: false`. Each page's ids, sorted (one second's order is
+    not part of the contract)."""
+    pages, before = [], None
+    for _ in range(10):
+        page = (await client.get(f"/api/v1/phone/conversations?limit={limit}"
+                                 + (f"&before={before}" if before else ""))).json()
+        pages.append(sorted(c["id"] for c in page["conversations"]))
+        if not page["has_more"]:
+            return pages
+        before = page["conversations"][-1]["updated_at"]
+    raise AssertionError(f"the paging never ended: {pages}")
+
+
+async def test_pages_never_split_a_second_so_each_conversation_comes_once(client):
+    """Times are whole seconds, and `before` is strictly older. A page the limit would end inside a second ends
+    before it, so the next page starts there: nothing is skipped and nothing comes twice, with one `limit`
+    throughout (⓪Plan's review of #479, F1)."""
     for n, at in enumerate(("2026-10-29T08:00:03", "2026-10-29T08:00:02", "2026-10-29T08:00:02",
                             "2026-10-29T08:00:01")):
         await _say(client, f"c-{n}", f"question {n}", at)
-    first = (await client.get("/api/v1/phone/conversations?limit=2")).json()
-    assert first["has_more"] is True
-    seen = [c["id"] for c in first["conversations"]]
-    rest = (await client.get(f"/api/v1/phone/conversations?limit=3&before={first['conversations'][-1]['updated_at']}")).json()
-    seen += [c["id"] for c in rest["conversations"] if c["id"] not in seen]
-    assert sorted(seen) == ["c-0", "c-1", "c-2", "c-3"] and rest["has_more"] is False
+    assert await _page_like_the_phone(client, limit=2) == [["c-0"], ["c-1", "c-2"], ["c-3"]]
+
+
+async def test_a_second_that_alone_fills_a_page_comes_whole(client):
+    """The one page longer than `limit`: a second that alone holds more. The last page says `has_more: false`."""
+    for n, at in enumerate(["2026-10-29T08:00:02"] * 3 + ["2026-10-29T08:00:01"] * 3):
+        await _say(client, f"s-{n}", f"question {n}", at)
+    assert await _page_like_the_phone(client, limit=2) == [["s-0", "s-1", "s-2"], ["s-3", "s-4", "s-5"]]
+
+
+@pytest.mark.parametrize("before", ["yesterday", "0001-01-01T00:00:00%2B05:00"], ids=["not-a-time", "out-of-range"])
+async def test_a_before_that_is_not_a_time_is_a_bad_request(client, before):
+    """Year 1 at +05:00 is a valid time that has no UTC (⓪Plan's review of #479, F2)."""
+    got = await client.get(f"/api/v1/phone/conversations?before={before}")
+    assert got.status_code == 400 and got.json()["detail"] == "bad_request"
 
 
 async def test_the_live_links_leave_quick_questions_out(client):

@@ -879,7 +879,8 @@ async def _handle_answer_body(
             # it. The vision slot applies on image turns and nowhere else, so the fact
             # has to be passed rather than inferred.
             has_images=bool(images),
-            turn_notes=[*([QUICK_NOTE] if quick else [PHONE_NOTE] if source == "phone" else []),
+            # A narrowed turn that isn't quick (its kind was unreadable) gets no phone note: attach_file isn't one of the four.
+            turn_notes=[*([QUICK_NOTE] if quick else [PHONE_NOTE] if source == "phone" and not narrow else []),
                         *([SCHEDULED_NOTE] if tool_loop._nobody_to_ask(confirm_command) else [])] or None,
             # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
             # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a

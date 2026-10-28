@@ -255,18 +255,13 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
     scheduled = {cid for (cid,) in (await db.execute(select(ScheduledTask.conversation_id)
                                                      .where(ScheduledTask.conversation_id.is_not(None)))).all()}
     waiting = set(desktop_status.island_feed()["awaiting_conversations"])
-    from server.db.companion_models import ConversationContext
-    quick = set((await db.scalars(select(ConversationContext.id).where(
-        ConversationContext.id.in_(ids), ConversationContext.kind == "quick"))).all())
     per_run = artifact_counts()
     out = {}
     for cid in ids:
         jobs = background_jobs.jobs_for(cid)
         running_job = next((j for j in jobs if j.phase != "finished"), None)
         latest_job = max(jobs, key=lambda j: j.started_at) if jobs else None
-        if cid in quick:
-            kind = "quick"                     # Q1: the stored kind wins; the rest is worked out as before
-        elif cid == REMOTE_ID:               # DELETE-BY: v0.1.65 (Q1), with REMOTE_ID
+        if cid == REMOTE_ID:                 # DELETE-BY: v0.1.65 (Q1), with REMOTE_ID
             kind = "remote"
         elif jobs or cid in outcomes or cid.startswith("task-"):
             kind = "task"

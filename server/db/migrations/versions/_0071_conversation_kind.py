@@ -19,3 +19,8 @@ def upgrade_sync(connection) -> None:
     for name, ddl in (("kind", "VARCHAR(20)"), ("parent_id", "VARCHAR(100)")):
         if name not in have:
             connection.exec_driver_sql(f"ALTER TABLE conversation_contexts ADD COLUMN {name} {ddl}")
+
+
+def downgrade_sync(connection) -> None:
+    """Leaving the columns is harmless (unread by older code); SQLite before 3.35 cannot drop them."""
+    return
