@@ -211,6 +211,20 @@ main 上最新是 0070。这一版预计要的（开工时向 ②Main 申请、�
 | SUB6 | 删 `task_workers` 表；迁移 0052 今天 import 了 `TaskWorker`，删类之前要让 0052 在新装上照样能跑 |
 | S2a 跟进 | 清理旧的 `legacy_rule` 权限行 |
 
+**Numbers assigned (②Main, 2026-10-29).** One migration per PR. Numbers are unique and never reused; they may land out of order (`apply_pending` is set-based), but a drop PR lands after the code that used the table is gone. Ask ②Main before taking a number.
+
+| Number | Card | What | Where |
+|---|---|---|---|
+| 0071 | Q1 + SUB | The shared `kind` / parent / title columns on `conversation_contexts` | Reserved; Q1a opens it |
+| 0072 | INB2 | `runs.read_outside` | #475 |
+| 0073 | C7c-2 | Drop `router_decisions` | #450 |
+| 0074 | CAP1b | Drop `discovery_candidates` | Merged (#457) |
+| 0075 | CAP1c | Drop `capability_finds` | #473 |
+| 0076 | PRJ0 | Its table drop, after #459 | ③Hands |
+| 0077 | CAP2b | Drop `skill_candidates` | ⑤CAP |
+
+The next free number is 0078.
+
 ## 7. 门槛（R64，草稿）
 
 - 跑分：按 M64 卡，DeepSeek 上不退步（通过、答对不降，「等你」不增，没有新的报错类型）；对 Hermes 同题三次全过不少于它；代码审查题和拆分派汇总题出数。
