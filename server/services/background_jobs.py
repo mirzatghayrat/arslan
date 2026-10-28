@@ -165,7 +165,7 @@ async def start(conversation_id: str, goal: str, criteria: list[dict], *,
         raise ValueError("background_goal_required")
     job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
               acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
-              outside_seen=outside_seen)
+              outside_seen=True if outside_seen is None else outside_seen)   # None: nobody knows
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,

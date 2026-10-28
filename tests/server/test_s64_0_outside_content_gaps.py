@@ -341,6 +341,15 @@ async def test_a_task_typed_on_the_phone_starts_clean_as_a_chat_turn_does(memory
     assert _note_status(seen[0]) == "active"
 
 
+async def test_a_caller_that_says_none_starts_its_job_as_having_read_outside_content(memory, monkeypatch):
+    """②Main's recheck E2: None is "nobody knows", the safe side."""
+    seen = _job_turns(monkeypatch)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Model(**{"S64-JOB": _turn(NOTE_ADD)}))
+    job = await background_jobs.start(CID, "Tidy my notes into a report", [], outside_seen=None)
+    await _wait(lambda: job.task.done())       # its reporting too, before the database goes
+    assert _note_status(seen[0]) == "proposed"
+
+
 def test_an_inner_clean_start_never_clears_what_a_run_carries_in():
     with untrusted.carried(True), untrusted.carried(False):
         seen = untrusted.track_turn()
@@ -430,6 +439,50 @@ async def test_a_merge_never_switches_on_a_lesson_that_waits_for_the_user_to_cho
                           external_seen=False)
     first, second = await _lessons(execution_db)
     assert (first.status, second.status, second.advice) == ("active", "proposed", "use AppleScript")
+
+
+async def _a_lesson_and_one_waiting_against_it(judge, *, outside=False, pinned=False, db=None):
+    """An active lesson, and a waiting one that conflicts with it; the judge then merges only into the
+    waiting one. Returns the active one's id."""
+    judge.answers.update({"memory.merge": False, "memory.conflict": False})
+    [first] = await lessons.capture([_detour("use icalBuddy", "Reading calendar events")], external_seen=False)
+    if pinned:
+        async with db() as session:
+            (await session.get(Lesson, first["id"])).pinned = True
+            await session.commit()
+    judge.answers["memory.conflict"] = True
+    [waiting] = await lessons.capture([_detour("use AppleScript", "Reading calendar events")], external_seen=outside)
+    assert waiting["evidence"][lessons.CONFLICTS_WITH] == first["id"]
+    judge.answers.update({"memory.conflict": False, "memory.merge": lambda pair: "AppleScript" in pair["existing"]})
+    return first["id"]
+
+
+@pytest.mark.parametrize("pinned", [False, True], ids=["the-correction-chooses", "a-pinned-lesson-stays"])
+async def test_the_users_correction_chooses_between_a_lesson_and_the_one_waiting_against_it(execution_db, judge,
+                                                                                           pinned):
+    """②Main's recheck (d): the user's own correction merged into the waiting one is the user's choice, as
+    on the conflict path: it takes effect in the user's words and the other one is retired, unless pinned."""
+    await _a_lesson_and_one_waiting_against_it(judge, pinned=pinned, db=execution_db)
+    said = lessons.candidate("Reading calendar events", "use AppleScript's Calendar dictionary",
+                             source="user_correction")
+    assert await lessons.capture([said]) == []               # merged into the waiting one, no new row
+    first, second = await _lessons(execution_db)
+    if pinned:
+        assert (first.status, second.status, second.advice) == ("active", "proposed", "use AppleScript")
+    else:
+        assert (first.status, second.status, second.advice) == (
+            "archived", "active", "use AppleScript's Calendar dictionary")
+        assert lessons.CONFLICTS_WITH not in second.evidence and lessons.NOT_IN_EFFECT not in second.evidence
+
+
+async def test_a_proposal_from_an_outside_turn_that_also_conflicts_still_waits_for_the_user(execution_db, judge):
+    """②Main's recheck E1: its reason says outside content, but it waits against an active lesson too."""
+    await _a_lesson_and_one_waiting_against_it(judge, outside=True)
+    await lessons.capture([_detour("use AppleScript's Calendar dictionary", "Reading calendar events")],
+                          external_seen=False)
+    first, second = await _lessons(execution_db)
+    assert (first.status, second.status, second.advice) == ("active", "proposed", "use AppleScript")
+    assert second.evidence[lessons.NOT_IN_EFFECT] == "outside_content"
 
 
 async def test_why_a_lesson_waits_is_written_when_it_is_learned(execution_db, judge):

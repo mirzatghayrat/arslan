@@ -48,6 +48,9 @@ SCAN_LIMIT = 500
 # none written (learned before v0.1.64) counts as outside content. Either way a merge never
 # activates a waiting lesson in its own words (_capture); Brain shows the reason (INB1).
 NOT_IN_EFFECT = "not_in_effect"
+# One that waits because it conflicts with an active lesson keeps that lesson's id here, whatever
+# its reason says: it waits for the user to choose, and the user's own correction is that choice.
+CONFLICTS_WITH = "conflicts_with"
 
 # Failures that were never a real try of a route: refused by the user or the host,
 # malformed, or not run at all.
@@ -307,26 +310,36 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                 evidence["seen"] = int(evidence.get("seen") or 1) + 1
                 # S64-0: a waiting lesson's words may come from a turn that read outside content.
                 # It takes effect only in the words of the turn that may make it take effect. One
-                # that waits because it conflicts with another waits for the user to choose.
-                takes_effect = immediate and not (row.status == "proposed"
-                                                  and evidence.get(NOT_IN_EFFECT) == "conflicts")
+                # that conflicts with an active lesson waits for the user to choose (CONFLICTS_WITH);
+                # the user's correction chooses, as on the conflict path below.
+                rival = None
+                if row.status == "proposed" and evidence.get(CONFLICTS_WITH) is not None:
+                    rival = await db.get(Lesson, evidence[CONFLICTS_WITH])
+                    rival = rival if rival is not None and rival.status == "active" else None
+                takes_effect = immediate and (rival is None or (cand.source == "user_correction"
+                                                                and not rival.pinned))
                 if takes_effect and (cand.source == "user_correction" or row.status == "proposed"):
                     row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
                     evidence.pop(NOT_IN_EFFECT, None)
+                    evidence.pop(CONFLICTS_WITH, None)
+                    if rival is not None:
+                        rival.status, rival.updated_at = "archived", now     # the user's newer words win
                 row.evidence = evidence
                 if takes_effect and row.status == "proposed":
                     row.status = "active"
                 row.updated_at = now
                 await db.commit()
                 continue
-            status = "active" if immediate else "proposed"
+            status, rival_id = ("active" if immediate else "proposed"), None
             if conflicting is not None:
                 old = await db.get(Lesson, conflicting.id)
                 if cand.source == "user_correction" and immediate and not old.pinned:
                     old.status, old.updated_at = "archived", now     # the user's newer words win
                 else:
                     status, why = "proposed", why or "conflicts"     # the user decides between the two
-            evidence = dict(cand.evidence) | ({NOT_IN_EFFECT: why} if status == "proposed" else {})
+                    rival_id = old.id if old.status == "active" else None
+            evidence = dict(cand.evidence) | ({NOT_IN_EFFECT: why} if status == "proposed" else {}) \
+                | ({CONFLICTS_WITH: rival_id} if rival_id is not None else {})
             row = Lesson(situation=cand.situation, advice=cand.advice, polarity=cand.polarity, source=cand.source,
                          evidence=evidence, status=status, created_at=now, updated_at=now)
             db.add(row)
