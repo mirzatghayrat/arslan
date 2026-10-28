@@ -45,7 +45,7 @@
 不要：运行任何命令或测试，只读代码（你在用户的个人电脑上，不在隔离环境里）；不访问家目录、~/.arslan、Arslan 的数据文件夹或任何密钥；攻击写法只写到能证明问题为止。
 
 回复格式：
-Write the whole reply in English (it is pasted onto GitHub).
+Write the whole reply in English (it is pasted onto GitHub), with these labels: "First line: Model: …", "Severity (high / medium / low)", "Not reviewed", "Verdict: merge / merge after fixes / do not merge".
 第一行：模型：<Codex 版本、模型名、推理档位>（中途换了模型也写明，标出哪部分是换了之后审的）。
 然后每条发现一段：严重度（高 / 中 / 低）；文件:行；问题是什么；会出什么事（什么输入 → 什么错误结果）；建议怎么修。
 然后「没看的部分」：哪些文件或路径没细看。
