@@ -170,3 +170,21 @@
   - notify 收窄（INB 第 5 条）会改变所有手机（包括旧版）收到的推送，单独让用户定。
 
 **用户 10-28 定：照 ①iOS 的建议。** 翻页这一版做；改名先不做（`conversation.update` 不带 `title`，`conversation.rename` 撤掉）；「做完未看」按手机的 `hello` 降级；四行简报和子会话上手机顺延 v0.1.65。**notify 收窄（「推送只推要你做的」）还没定，单独问用户。** 10-26 §4b 的两点（`phone-<uuid>`、`outcomes` 只放已结束的任务）仍由 ②Main 定。
+
+## Frame names, fixed (②Main, 2026-10-29)
+
+①iOS builds Q1c against these. The names are ①iOS's, as the user approved on 10-28; A–C are the details this card left to ②Main.
+
+- **`hello.capabilities`:** the Mac adds `new_conversation` and `quick`; the phone adds `quick`. A Mac that says `quick` always also says `new_conversation`.
+- **`chat.send`** gains `new_conversation_id` and `conversation_kind: "quick"`. `conversation_kind` is valid only together with `new_conversation_id`, and `quick` is its only value. The Mac stores `kind=quick` before it runs the message; if it can't, it refuses, and the backend never sees the text.
+  - **A (§4b):** the phone makes `new_conversation_id` as `phone-` plus a lowercase UUID v4.
+  - **B, new error codes** (in `error`, with `related_id` = that `chat.send`):
+    - `bad_request`: `conversation_kind` without `new_conversation_id`, an unknown kind, an id not shaped `phone-<uuid>`, or an unknown `conversations.list` `kind`;
+    - `conversation_exists`: `new_conversation_id` names a conversation that already has messages.
+
+    A retry with the same `client_msg_id` gets the first result, so it never trips `conversation_exists`.
+- **`conversations.list`** gains optional `kind` (only `"quick"`: quick conversations only; absent: today's list, which leaves them out) and `before`. **`conversations.result`** gains `has_more`.
+  - **C:** `before` is the `updated_at` of the last conversation the phone already has, sent back exactly as received. The Mac returns conversations strictly older, most recent first, up to `limit`.
+- **`conversation.update {conversation_id, kind: "chat"}` → `conversation.updated {conversation_id, kind}`.** No `title`. `chat` is the only target. While a turn runs, the answer is `error` `mac_busy`.
+- **`conversation.delete`** deletes a quick conversation like any other. A phone that said `quick` may also delete the pocket.
+- **Still open, ②Main:** §4b's other point (`outcomes` holds only finished tasks).
