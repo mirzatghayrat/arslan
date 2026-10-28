@@ -729,6 +729,29 @@ async def _background_callable() -> list[dict]:
     return [tool for tool in await _callable_tools() if tool["key"] not in _LIVE_TURN_ONLY]
 
 
+#: Q1 (v0.1.64): a quick question is shown, and may call, these four read-only tools and nothing else: an
+#: allowlist over every tool, with no find_tools or use_tool, whatever `tools_all_resident` says. Read from the
+#: conversation's stored kind (migration 0071), never from a frame, so a Bridge error can't widen it.
+QUICK_TOOLS = frozenset({"web_search", "web_extract", "recall", "conversation_search"})
+#: Short and sourced is said here, in the turn's own notes; the system prompt stays byte-stable (K3).
+QUICK_NOTE = ("This is a quick question from the user's iPhone: answer in a few sentences and name your sources "
+              "(links) when you used the web. Here you can only search the web, read a page, and look in the "
+              "user's memory and earlier conversations.")
+
+
+async def _quick_tools() -> list[dict]:
+    return [tool for tool in await _every_tool() if tool["key"] in QUICK_TOOLS]
+
+
+async def _stored_kind(conversation_id: str) -> str | None:
+    """What the conversation is, as stored (0071): `quick`, `chat`, or None (worked out on each read)."""
+    from sqlalchemy import select
+
+    from server.db.companion_models import ConversationContext
+    async with db_session.AsyncSessionLocal() as db:
+        return await db.scalar(select(ConversationContext.kind).where(ConversationContext.id == conversation_id))
+
+
 async def _with_project_card(facts: str) -> str:
     """0.1.56 §8: in a project's conversation the model sees the project — name, finish
     line, current level and its open checkpoints — beside the memory block."""
@@ -831,6 +854,12 @@ async def _handle_answer_body(
         with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)):
             return await _run_answer(user_content)
 
+    try:
+        quick = await _stored_kind(conversation_id) == "quick"
+        narrow = quick
+    except Exception:  # noqa: BLE001 — an unreadable kind gets the four tools, never every tool (Q1 card, rule 4)
+        quick, narrow = False, True
+
     async def _run_answer(user_content):
         return await tool_loop.run_native(
             system=system,
@@ -838,7 +867,8 @@ async def _handle_answer_body(
             history=ctx["history"][:-1],
             emit=emit,
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
-            resolve_tools=_arslan_tools, resolve_callable=_callable_tools,
+            resolve_tools=_quick_tools if narrow else _arslan_tools,
+            resolve_callable=_quick_tools if narrow else _callable_tools,
             allow_escalation=False,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
                              confirm_schedule=confirm_schedule,
@@ -849,7 +879,7 @@ async def _handle_answer_body(
             # it. The vision slot applies on image turns and nowhere else, so the fact
             # has to be passed rather than inferred.
             has_images=bool(images),
-            turn_notes=[*([PHONE_NOTE] if source == "phone" else []),
+            turn_notes=[*([QUICK_NOTE] if quick else [PHONE_NOTE] if source == "phone" else []),
                         *([SCHEDULED_NOTE] if tool_loop._nobody_to_ask(confirm_command) else [])] or None,
             # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
             # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a

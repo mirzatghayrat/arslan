@@ -103,14 +103,69 @@ async def revoke(device_id: str):
 
 
 @router.get("/phone/conversations")
-async def phone_conversations(limit: int = Query(20, ge=1, le=100), db: AsyncSession = Depends(get_session)):
-    """`conversations.result`: most recently active first, the same list as the window's sidebar."""
-    from server.api.conversations import list_conversations
-    rows = (await list_conversations(db))[:limit]
+async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | None = None,
+                              before: str | None = None, db: AsyncSession = Depends(get_session)):
+    """`conversations.result`: most recently active first, the same list as the window's sidebar. Q1:
+    `kind=quick` lists the quick questions instead (they are never in the other list); `before` pages back
+    to conversations strictly older than that `updated_at`, and `has_more` says whether any remain. Times
+    are whole seconds, so two conversations last active in the same second can fall either side of a page."""
+    from server.api.conversations import conversation_list
+    if kind not in (None, "quick"):
+        raise HTTPException(400, "bad_request")
+    try:
+        older = _iso(before) if before else None
+    except ValueError:
+        raise HTTPException(400, "bad_request") from None
+    rows = [r for r in await conversation_list(db, quick=kind == "quick") if older is None or _iso(r.last_at) < older]
     return {"conversations": [{"id": r.conversation_id, "title": r.title, "updated_at": _iso(r.last_at),
                                "kind": r.kind, "state": r.state, "origin": r.origin, "preview": r.preview,
                                "files": r.files, **({"job": r.job} if r.job else {})}
-                              for r in rows]}
+                              for r in rows[:limit]],
+            "has_more": len(rows) > limit}
+
+
+#: Q1: a quick question's id, made on the phone (`phone-` and a lowercase UUID v4; card, detail A).
+_QUICK_ID = re.compile(r"phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+
+
+@router.post("/phone/conversations/{conversation_id}/quick")
+async def phone_new_quick(conversation_id: str, db: AsyncSession = Depends(get_session)):
+    """Q1: store a new conversation as a quick question before its first message runs, so that turn
+    already gets only the quick tools (arslan.QUICK_TOOLS) and learns nothing. Only a phone-made id with
+    no messages yet: one that has messages ran with every tool and stays what it is. A retry is fine.
+    `no_memory` is left as it is."""
+    if not _QUICK_ID.fullmatch(conversation_id):
+        raise HTTPException(400, "bad_request")
+    if await db.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1)):
+        raise HTTPException(409, "conversation_exists")
+    row = await db.get(ConversationContext, conversation_id) or ConversationContext(id=conversation_id)
+    row.kind, row.no_learning = "quick", True
+    db.add(row)
+    await db.commit()
+    return {"conversation_id": conversation_id, "kind": "quick"}
+
+
+class ConversationUpdate(BaseModel):
+    kind: str
+
+
+@router.post("/phone/conversations/{conversation_id}/update")
+async def phone_update_conversation(conversation_id: str, body: ConversationUpdate,
+                                    db: AsyncSession = Depends(get_session)):
+    """Q1's `conversation.update`: a quick question becomes an ordinary chat, with every tool from its next
+    turn. Refused while a turn runs (the Bridge answers `mac_busy`). Whether it then starts learning is the
+    user's open question (card, #3); until they decide, `no_learning` stays as it is."""
+    from server.services import run_registry, turn_journal
+    if body.kind != "chat":
+        raise HTTPException(400, "bad_request")
+    row = await db.get(ConversationContext, conversation_id)
+    if row is None:
+        raise HTTPException(404, "not_found")
+    if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
+        raise HTTPException(409, "mac_busy")
+    row.kind = "chat"
+    await db.commit()
+    return {"conversation_id": conversation_id, "kind": "chat"}
 
 
 @router.get("/phone/conversations/{conversation_id}/history")

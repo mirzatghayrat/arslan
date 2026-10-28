@@ -8,6 +8,7 @@ export function threadDisplayTitle(
 ): string {
   if (thread.temporary) return translate("companion.temporary");
   // The phone's own conversation is Remote, not its first message.
+  // DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
   if (kind === "remote" || thread.id === "pocket") return translate("sidebar.remote");
   return thread.defaultTitle === true && thread.title === "New Session"
     ? translate("workspace.newConversation") : thread.title;

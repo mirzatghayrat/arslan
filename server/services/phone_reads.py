@@ -19,6 +19,7 @@ from server.services import artifact_store, background_jobs, desktop_status, run
 
 #: A file travels to the phone inside one CloudKit record (protocol §4.6).
 PHONE_FILE_MAX = 20 * 1024 * 1024
+# DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
 REMOTE_ID = "pocket"            # the phone's own conversation; shown everywhere as "Remote"
 REMOTE_TITLE = "Remote"
 STEPS_SHOWN = 40                # the newest steps of a run; `total` says how many there were
@@ -254,13 +255,18 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
     scheduled = {cid for (cid,) in (await db.execute(select(ScheduledTask.conversation_id)
                                                      .where(ScheduledTask.conversation_id.is_not(None)))).all()}
     waiting = set(desktop_status.island_feed()["awaiting_conversations"])
+    from server.db.companion_models import ConversationContext
+    quick = set((await db.scalars(select(ConversationContext.id).where(
+        ConversationContext.id.in_(ids), ConversationContext.kind == "quick"))).all())
     per_run = artifact_counts()
     out = {}
     for cid in ids:
         jobs = background_jobs.jobs_for(cid)
         running_job = next((j for j in jobs if j.phase != "finished"), None)
         latest_job = max(jobs, key=lambda j: j.started_at) if jobs else None
-        if cid == REMOTE_ID:
+        if cid in quick:
+            kind = "quick"                     # Q1: the stored kind wins; the rest is worked out as before
+        elif cid == REMOTE_ID:               # DELETE-BY: v0.1.65 (Q1), with REMOTE_ID
             kind = "remote"
         elif jobs or cid in outcomes or cid.startswith("task-"):
             kind = "task"

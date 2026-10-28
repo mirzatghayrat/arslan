@@ -43,7 +43,7 @@ async def test_the_list_is_newest_first_with_protocol_timestamps(client):
          "kind": "remote", "state": "idle", "origin": "mac", "preview": "remind me", "files": 0},
         {"id": "trip", "title": "Plan a trip to Kashgar", "updated_at": "2026-10-02T08:00:00Z",
          "kind": "chat", "state": "idle", "origin": "mac", "preview": "Sure", "files": 0},
-    ]}, "the phone's own conversation is named Remote, everywhere"
+    ], "has_more": False}, "the phone's own conversation is named Remote, everywhere"
     assert [c["id"] for c in (await client.get("/api/v1/phone/conversations?limit=1")).json()["conversations"]] == ["pocket"]
     assert (await client.get("/api/v1/phone/conversations?limit=0")).status_code == 422
 

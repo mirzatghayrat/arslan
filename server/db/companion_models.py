@@ -24,6 +24,10 @@ class ConversationContext(Base):
     temporary = Column(Boolean, nullable=False, default=False)
     cloud_memory_allowed = Column(Boolean, nullable=False, default=False)
     allow_sensitive = Column(Boolean, nullable=False, default=False)
+    # 0071 (Q1, SUB): what the conversation is, stored (`quick`, `chat`; SUB adds `sub`). NULL reads as
+    # today, worked out on each read. `parent_id`: SUB's link to the conversation that started it.
+    kind = Column(String(20), nullable=True)
+    parent_id = Column(String(100), nullable=True)
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
