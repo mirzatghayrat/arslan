@@ -949,7 +949,7 @@ async def _handle_answer_body(
     # K2: the turn's tool summary rides after the reply in `content` (the model's history);
     # display_content keeps the reply alone. No block for an empty reply: readers fall back to
     # `content` when display_content is empty, and would show it.
-    tools_block = turn_tools.block(result.get("tool_trace")) if full else ""
+    tools_block = turn_tools.block(result.get("tool_trace"), outside=result.get("external_seen") is True) if full else ""
     if tools_block:
         msg_id = await memory.add_message(conversation_id, "arslan", f"{full}\n\n{tools_block}",
                                           display_content=full)
@@ -1021,8 +1021,12 @@ async def _skill_index(limit: int = 80) -> str:
                 func.trim(SkillPack.body) != "").order_by(SkillPack.key).limit(limit))).scalars().all()
     except Exception:  # noqa: BLE001 — a missing index must never break a turn
         return ""
-    return "\n".join(f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}"
-                     for r in rows)
+    # v0.1.64 #472 R2 (the CAP card's rule for third-party skills): a skill whose text came from outside
+    # (imported, or saved after outside content) is listed by its key alone ([a-z0-9-], at most 60). Its
+    # name and description are outside text, and this index rides in every request unmarked.
+    from server.services.skill_forge import AUTHORED_OUTSIDE
+    return "\n".join(f"- {r.key}" if r.category in ("imported", AUTHORED_OUTSIDE)
+                     else f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}" for r in rows)
 
 
 # K7 (v0.1.63): the tools every request carries. Everything else `_callable_tools` reaches is found

@@ -86,7 +86,7 @@ async def test_a_skill_saved_on_the_card_or_converted_from_an_expert_survives_un
                         async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False))
     assert await skill_forge.register(key="notion", name="Notion notes", description="How I keep notes",
                                       body="## Trigger\nWhen the user asks to file a note.\n\n"
-                                           "## Decision Rules\nKeep each note short, dated and in the user's words.")
+                                           "## Decision Rules\nKeep each note short, dated and in the user's words.", outside=False)
     assert await skill_forge.register(key="obsidian", name="Obsidian notes", description="How I clip pages",
                                       body="## Trigger\nWhen the user asks to clip a page.\n\n"
                                            "## Decision Rules\nKeep the title, the link and the date.", outside=True)

@@ -55,6 +55,8 @@ async def convert(spawn_id: int) -> dict:
         name, description = spawn.name, f"Method from the former expert {spawn.name}"[:200]
     if len(body) < 80 or skill_forge.validate(key, name, description, body):
         return {"ok": False, "code": "expert_prompt_too_short"}
-    if not await skill_forge.register(key=key, name=name, description=description, body=body):
+    # The former expert's own prompt (Arslan's setup, kept by the user, converted on the user's click), not
+    # text read from outside in a conversation. C7c-5 decides the same for each expert it converts.
+    if not await skill_forge.register(key=key, name=name, description=description, body=body, outside=False):
         return {"ok": True, "key": key, "already": True}     # converted meanwhile (another click)
     return {"ok": True, "key": key}

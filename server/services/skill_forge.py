@@ -46,7 +46,8 @@ AUTHORED = "authored"
 AUTHORED_OUTSIDE = "authored-outside"
 WRITTEN = (AUTHORED, AUTHORED_OUTSIDE)
 #: What an earlier turn's `<turn_tools>` block says when it read outside content, or when the block was cut
-#: and may have (server/orchestrator/turn_tools.py `_line` and `block`).
+#: and may have (server/orchestrator/turn_tools.py `_line` and `block`; `turn_tools.OUTSIDE` and the S64-0b
+#: headers are added where they are read, below).
 _HISTORY_OUTSIDE = ("external content, source only", "more tool calls")
 #: A body that relies on files of its own, the way an imported skill's does (skill_import: run_python's
 #: `skill_script`, read_skill's `references/` section, the "Bundled" headings). This tool writes text only.
@@ -113,26 +114,34 @@ def _files_stored(key: str) -> bool:
 
 
 async def _conversation_read_outside(conversation_id: str | None) -> bool:
-    """Whether an earlier turn of this conversation read outside content (#472 F2): "save what we just did"
-    usually comes in the turn after the page. Read from the history's `<turn_tools>` lines; with that
-    summary switched off there is nothing to read, so the answer is yes (the safe side).
+    """Whether an earlier turn of this conversation read outside content (#472 F2, R3): "save what we just
+    did" usually comes in the turn after the page. Read from what the history keeps: a `<turn_tools>` line
+    (an outside tool, a cut block, or the turn's own mark for an attachment or OCR text), a job's result
+    posted under S64-0b's header, or a rolling summary marked as folding one in. With the tools summary
+    switched off there is nothing to read, so the answer is yes (the safe side).
     DELETE-BY: when INB2's `runs.read_outside` lands (#475): read that instead."""
     if not conversation_id:
         return False
-    from server.db.models import ArslanMessage
-    from server.orchestrator import turn_tools
+    from server.db.models import ArslanMessage, ArslanSummary
+    from server.orchestrator import turn_tools, untrusted
     if not turn_tools.enabled():
         return True
+    phrases = (*_HISTORY_OUTSIDE, turn_tools.OUTSIDE, untrusted.JOB_RESULT_FROM_OUTSIDE)
     async with db_session.AsyncSessionLocal() as db:
         hit = await db.scalar(select(ArslanMessage.id).where(
             ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "arslan",
-            or_(*(ArslanMessage.content.contains(phrase) for phrase in _HISTORY_OUTSIDE))).limit(1))
+            or_(*(ArslanMessage.content.contains(phrase) for phrase in phrases))).limit(1))
+        if hit is None:
+            hit = await db.scalar(select(ArslanSummary.id).where(
+                ArslanSummary.conversation_id == conversation_id,
+                ArslanSummary.summary.contains(untrusted.SUMMARY_FROM_OUTSIDE)).limit(1))
     return hit is not None
 
 
-async def register(*, key: str, name: str, description: str, body: str, outside: bool = False) -> bool:
-    """Write the skill, on and equippable at once (the registry reads SkillPack directly); `outside` marks it
-    to be read like an imported skill (#472 F1). False when the key is taken: nothing is overwritten."""
+async def register(*, key: str, name: str, description: str, body: str, outside: bool) -> bool:
+    """Write the skill, on and equippable at once (the registry reads SkillPack directly). `outside` (no
+    default: every caller says where the text came from) marks it to be read like an imported skill (#472
+    F1, recheck). False when the key is taken: nothing is overwritten."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             if await db.get(SkillPack, key) is not None:

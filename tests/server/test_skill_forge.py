@@ -59,7 +59,7 @@ async def test_register_makes_a_real_assignable_skill_marked_as_the_users(maker)
     from server.services import skill_forge
 
     assert await skill_forge.register(key="my-skill", name="My Skill", description="does a thing",
-                                      body=_GOOD_BODY) is True
+                                      body=_GOOD_BODY, outside=False) is True
     async with maker() as s:
         pack = await s.get(SkillPack, "my-skill")
         assert (pack.tier, pack.status, pack.enabled, pack.body) == ("safe", "registered", True, _GOOD_BODY)
@@ -75,7 +75,7 @@ async def test_register_never_overwrites_a_skill_of_that_key(maker):
         s.add(SkillPack(key="taken", name="Theirs", category="imported", description="d", tier="safe",
                         status="registered", body=_GOOD_BODY))
         await s.commit()
-    assert await skill_forge.register(key="taken", name="Mine", description="x", body=_GOOD_BODY) is False
+    assert await skill_forge.register(key="taken", name="Mine", description="x", body=_GOOD_BODY, outside=False) is False
     async with maker() as s:
         pack = await s.get(SkillPack, "taken")
         assert (pack.name, pack.category) == ("Theirs", "imported")
