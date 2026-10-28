@@ -105,6 +105,28 @@ No answer is ever written into the agent's folder: what a checker needs (T7's se
 length, T10's line) is returned by the fixture and kept by the runner. An Arslan run that does
 not end cleanly fails whatever the checker scored (M1a).
 
+## T13–T17 (v0.1.64, M64): code review, split / delegate / summarise
+
+| Task | Fixture | Checker (3 = pass) | Who can run it |
+| --- | --- | --- | --- |
+| T13 / T14 / T15 code review (Python / TypeScript / Swift) | `fixture_t13.py` … `fixture_t15.py`: a small synthetic git repo in `repo/`, `main` plus one PR commit on `feature`; four planted bugs each, two of them in code the PR does not change (T13 P4 and T15 S4: the PR changes a contract and an untouched caller breaks) | `check_t13.py` … `check_t15.py` hold the bugs (file, line ranges, type, keywords) and `EXTRAS`, true flaws that were not planted (flagging them costs nothing); `review_kit.py` reads `review.md` (else the reply), gives each finding at most one bug (the nearest), matches type keywords in prose only (not in code), and scores caught / planted and false positives. The matching rule is in `review_kit`'s docstring; each finding's verdict is in the record. 3 = all caught, at most one false positive | all |
+| T16 split, delegate, summarise | `regions/<north,south,west>/orders.csv`; the answers stay with the runner | `check_t16.py`: each `out/<region>.md` right (the top product read from the line that claims it), `summary.md` covers all three, and 2–4 sub-sessions opened (from the run's tool-call record, `tool_record.py`); the record also keeps cost and `rate_limited_429` | Claude Code; Arslan once the SUB card's tool lands |
+| T17 one step, no hand-off | `prices.txt` | `check_t17.py`: 0 if a sub-session was opened or work delegated (`delegate_work` counts), or no tool-call record; else 3 if `answer.txt` holds the sum | Arslan, Claude Code |
+
+**Hand check and rescoring.** When the hand check of a run that decides a gate finds a "false
+positive" that is a real flaw of the fixture, add it to that task's `EXTRAS` (a correct finding
+scored "located" goes into the bug's keywords), then rescore every run of that round, for every
+entrant: `python -m scripts.kernel_bench.rescore results.jsonl --round NAME`. It re-applies the
+current checks to the saved run folders (T13–T17) without running any agent, keeps each old
+verdict as `check_before`, and writes `results.rescored-NAME.jsonl` next to the results.
+
+`report.py` prints, under the per-task table, two totals per entrant and model: Pass^k over every
+task with an unsupported task counted as not passed (the figure rounds before v0.1.64 used), and
+the **same-task** Pass^k over only the tasks every entrant on that model supports (R64 gates on
+this one). `--round NAME` keeps one round's runs. Recomputed from R63's raw results: DeepSeek
+Arslan 6/9 and 5/7, Hermes 6/9 and 6/7 (one task short on the same tasks); Claude Arslan and
+Claude Code 5/9 and 5/8 each.
+
 ## T1 / T2 / T4 / T6 (0.1.49)
 
 | Task | Fixture | Checker | Human step | Arslan |
