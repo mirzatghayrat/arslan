@@ -49,6 +49,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #468 (a new card has four lines, sessions.md §6): ⑥Helper OK at `3a149de3`.
 - #469 (STY2 card: Arslan's working method, deeper not bigger): ⑥Helper OK at `74dd64f7`.
 - #470 (LANG1 fix: exempt the published site pages `docs/docs/**`): ⓪Plan OK at `63d35f47` (posted on the PR); CI 40719825007 success. It changes the language check's own exceptions, so the user merges it.
+- #471 (SBX-1: one profile builder, all five profiles on it): ③Hands, head `86e29b72`, CI 40720179706 success; byte-for-byte check 0 of 32 differ under hash seeds 0 and 1. ②Main's independent effort=max reviewer is on it. Security surface: the user merges, after #447.
 - #472 (CAP2a: the save-a-skill card; deletes Skill Forge, the curator and candidates): security surface; an independent effort=max review by ⓪Plan's reviewer is running. User merges.
 - #473 (CAP1c: migration 0075 drops `capability_finds`): ⑥Helper OK at `a09b0392`; ⑤CAP fills in the CI run id and the backup note (last three archives). Drops data, so the user merges.
 - #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
@@ -64,7 +65,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 | Lane | Work |
 |---|---|
 | ②Main | INB1 follow-ups F2 + F4 (rebase on #460); after INB2 merges, learned practices use the per-conversation outside-content check too (user, 2026-10-28: a detour or machine quirk takes effect only when `runs.read_outside` says the whole conversation is clean, like "about you"; user corrections unchanged; until then the current-turn mark plus S64-0's carried marks), INB1 UI (waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
-| ③Hands | SBX-1 (builder written, byte-for-byte check 0 of 32 differ); PRJ0's table drop 0076 after #459 |
+| ③Hands | SBX-1 #471 in review; SBX-2 (default-deny base and service allowlist as a preset, not wired; macOS behaviour tests; corpus harness) from #471's head after ②Main's findings; PRJ0's table drop 0076 after #459 |
 | ⑤CAP | CAP1b #457 (0074), CAP1c (0075, after #457), CAP2a (at max) |
 | ⑥Helper | STY #452 (draft; gated on the read test and a bench "after" run), SIDE after SUB2 |
 | ⓪Plan | M64 (baseline done, hand check #453), STY read test #454 (page with the user), mid-version M1 round, cards |
