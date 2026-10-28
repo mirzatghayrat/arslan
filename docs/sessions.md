@@ -77,6 +77,7 @@
   - 用户数据库的摘录（只有汇总数字可以）。
 - **草稿区**（系统临时目录）会被清理，不要放交付物。
 - **范围冻结：** 新想法写进当轮 README 的「下一版候选」，不进本版。删死代码不在此列，条件见 §11 第 4 条。
+- **Language (user, 2026-10-28):** everything written to GitHub is in English: code, comments, commit messages, PR titles, bodies and comments, plan docs and task cards, bundled skills, READMEs. Chinese written before 2026-10-28 is not rewritten; new lines added to an older Chinese file are English. Chat with the user stays in Chinese, and sessions give the user a Chinese summary in chat. Messages between sessions may be in either language. Exceptions: `web/src/locales`, tests that exercise Chinese handling, `docs-site`, and the allowlist the CI check carries. v0.1.64 adds that CI check (card LANG1 in `docs/plans/0164/README.md`); until it lands, every session checks its own diff.
 
 ## 7. 发版
 

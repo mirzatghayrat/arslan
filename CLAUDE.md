@@ -14,3 +14,4 @@
 - 每个 PR 和每次说「做完了」，都写完成证据四项：做了什么验证、覆盖到哪、没覆盖到哪、还剩什么风险（`docs/sessions.md` §8）。
 - 留着的旧路径、兜底和回退开关，代码注释和任务卡里都写明哪个版本删、或什么条件下删（§9）。
 - 合并、打 tag、发布都由用户点。
+- **Everything written to GitHub is in English (user, 2026-10-28):** code, comments, commit messages, PR titles, bodies and comments, plan docs and task cards, bundled skills, READMEs. Existing Chinese text is not rewritten; new lines in an older Chinese file are still English. Chat with the user stays in Chinese. Exceptions: translation files (`web/src/locales`), tests that exercise Chinese handling, the multilingual `docs-site`, and an explicit allowlist. See `docs/sessions.md` §6.
