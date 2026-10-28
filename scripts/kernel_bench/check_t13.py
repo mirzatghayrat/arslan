@@ -39,7 +39,6 @@ BUGS = (
             # Hand check of r64-m64-base (2026-10-28): correct P1 findings said "passes 0.15
             # instead of 15" and were scored "located".
             "而非 15",
-            "应传 15",
             "传 15",
         ),
         "apply_discount(subtotal, 0.15)",

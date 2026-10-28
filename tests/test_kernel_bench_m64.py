@@ -600,7 +600,7 @@ def test_probe_a_a_unit_finding_quoting_a_comparison_does_not_also_catch_the_off
 
 
 # Correct T2 findings from the r64-m64-base hand check (2026-10-28), scored "located" before
-# "limit+1", "越界" and "边界" joined T2's keywords. The rest of each review is the all-caught one.
+# "limit+1" and "等于 limit 时仍放行" joined T2's keywords. The rest of each review is the all-caught one.
 T2_REAL = (
     "src/limiter.ts:29-29 | 越界错误 | 用 > 而非 >= 判断，允许的请求数变成 limit+1 次\n",
     "src/limiter.ts:29 | 边界错误 | 用 > 而非 >= 判断，count 等于 limit 时仍放行\n",
@@ -615,6 +615,21 @@ def test_real_t2_wordings_from_the_baseline_hand_check_are_caught(tmp_path, find
     assert (res["caught"], res["missed"], res["false_positives"], res["score"]) == (4, [], 0, 3), (
         res
     )
+
+
+# Wrong findings on the T2 line that only share a generic word ("边界", "越界") with a real one:
+# they must not catch T2 (⑥Helper's review of #453).
+T2_WRONG = (
+    "src/limiter.ts:29 | 边界检查缺失 | limit 为负数或 0 时没有校验参数\n",
+    "src/limiter.ts:29 | 数组越界 | buckets 可能越界访问\n",
+)
+
+
+@pytest.mark.parametrize("finding", T2_WRONG)
+def test_a_wrong_finding_on_the_t2_line_with_a_generic_word_does_not_catch_t2(tmp_path, finding):
+    others = [ln for ln in ALL_CAUGHT["T14"][1].splitlines(keepends=True) if ":29" not in ln]
+    res = _review(tmp_path, "T14", "review.md", finding + "".join(others))
+    assert "T2" not in res["caught_ids"] and res["caught"] == 3, res
 
 
 T13_REAL = (
