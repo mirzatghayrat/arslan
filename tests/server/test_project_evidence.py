@@ -1,10 +1,12 @@
 """0.1.56 P4: evidence that moves a project — files, what the user said, runs (§4)."""
 import os
+import time
+from datetime import datetime, timedelta
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from server import auth
 from server.api.companion import router as companion_router
@@ -421,3 +423,45 @@ async def test_ticks_and_proposals_never_reach_the_inbox(api, execution_db, monk
         assert await db.scalar(select(func.count()).select_from(ProactiveItem)) == 0
     card = (await api.get("/api/v1/projects/board")).json()["cards"][0]
     assert card["proposal"] is not None
+
+
+async def _noted(execution_db, pid) -> bool:
+    from server.db.models import Project
+    async with execution_db() as db:
+        noted = await project_evidence.note_folder_activity(db, await db.get(Project, pid))
+        await db.commit()
+    return noted
+
+
+async def test_a_file_changed_in_the_folder_is_activity_and_starts_a_planned_idea(api, execution_db, tmp_path):
+    """§9: a file newer than the project's newest event is activity, and starts a planned
+    project in Idea. Moved here from test_project_habits.py when PRJ0 deleted stall reminders."""
+    from server.db.models import ProjectEvent
+    folder = tmp_path / "folder"                       # the test database lives in tmp_path itself
+    folder.mkdir()
+    old = folder / "old.txt"
+    old.write_text("x")
+    past = time.time() - 40 * 86400
+    os.utime(old, (past, past))
+    response = await api.post("/api/v1/projects", json={"name": "Sample game", "kind": "general", "template": "game",
+                                                        "workspace_ref": str(folder)})
+    pid = response.json()["id"]
+    await api.put(f"/api/v1/projects/{pid}/plan", json={"expected_version": 0, "levels": LEVELS})
+
+    async def stage():
+        return (await api.get(f"/api/v1/projects/{pid}/plan")).json()["stage"]
+
+    await project_evidence.scan_projects()
+    assert await stage() == "idea"                     # a file from before the project is not activity
+    (folder / "new.txt").write_text("y")
+    await project_evidence.scan_projects()
+    assert await stage() == "active"
+    async with execution_db() as db:
+        kinds = (await db.execute(select(ProjectEvent.kind).where(ProjectEvent.project_id == pid))).scalars().all()
+    assert "activity" in kinds
+    assert await _noted(execution_db, pid) is False    # nothing newer than the newest event
+    async with execution_db() as db:
+        await db.execute(update(ProjectEvent).where(ProjectEvent.project_id == pid)
+                         .values(created_at=datetime.utcnow() - timedelta(days=30)))
+        await db.commit()
+    assert await _noted(execution_db, pid) is True     # the same file is newer than every event now

@@ -6,7 +6,6 @@ import { openCheckpointsOf, projectsApi, type Board, type BoardCard, type Leftov
 import LeftoverSheet from "../projects/LeftoverSheet";
 import { Notice } from "../kit";
 import NewProject, { TEMPLATES } from "../projects/NewProject";
-import HabitsSheet from "../projects/HabitsSheet";
 import ProjectPage from "../projects/ProjectPage";
 import ProjectsBoard from "../projects/ProjectsBoard";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
@@ -78,7 +77,7 @@ export function ProjectEditor({ project, onClose, onSaved }: { project?: Project
   </CompanionDialog>;
 }
 
-type View = { kind: "board" } | { kind: "new"; project?: Project } | { kind: "page"; id: string } | { kind: "habits" };
+type View = { kind: "board" } | { kind: "new"; project?: Project } | { kind: "page"; id: string };
 
 /**
  * Projects (0.1.56): the board, a project's page, and new / plan-it. The board reloads
@@ -110,12 +109,6 @@ export default function ProjectsSection({ onStart, openProjectId, onOpenedProjec
   async function projectById(id: string): Promise<Project | undefined> {
     return (await companionApi.projects(true)).find(p => p.id === id);
   }
-  async function run(call: () => Promise<unknown>) {
-    setBusy(true);
-    try { await call(); await reload(); }
-    catch (cause) { setError(companionError(cause)); }
-    finally { setBusy(false); }
-  }
   async function decide(card: BoardCard, accept: boolean, choice?: Leftover) {
     if (!card.proposal) return;
     const proposalId = card.proposal.id;
@@ -127,18 +120,10 @@ export default function ProjectsSection({ onStart, openProjectId, onOpenedProjec
       else setError(companionError(cause));
     } finally { setBusy(false); }
   }
-  /** §9 "接着做": a conversation in the project, at what to do next, typed and not sent. */
-  async function resume(card: BoardCard) {
-    const project = await projectById(card.id);
-    if (!project || !card.next || !card.current) return;
-    await onStart(project, t("projectsUI.handOffText", { checkpoint: card.next.text, level: card.current.name, project: project.name }),
-      card.next.id);
-  }
 
   if (view.kind === "new") return <NewProject project={view.project}
     onCancel={() => setView({ kind: "board" })}
     onDone={id => { void reload(); setView({ kind: "page", id }); }} />;
-  if (view.kind === "habits") return <HabitsSheet onBack={() => { setView({ kind: "board" }); void reload(); }} />;
   if (view.kind === "page") return <ProjectPage projectId={view.id} onBack={() => { setView({ kind: "board" }); void reload(); }}
     onStart={onStart} onChanged={() => void reload()} onPlan={project => setView({ kind: "new", project })} />;
   return <>
@@ -147,12 +132,7 @@ export default function ProjectsSection({ onStart, openProjectId, onOpenedProjec
     {board && <ProjectsBoard board={board} busy={busy} onNew={() => setView({ kind: "new" })}
       onOpen={id => setView({ kind: "page", id })}
       onPlan={id => void projectById(id).then(project => { if (project) setView({ kind: "new", project }); })}
-      onDecide={(card, accept) => void decide(card, accept)}
-      onResume={card => void resume(card)}
-      onPause={card => void run(() => projectsApi.stage(card.id, { paused: true }))}
-      onAuto={(on, answered) => void run(() => projectsApi.autoAdvance(on, answered))}
-      onNote={note => { const miss = board.shadow.last_miss; if (miss) void run(() => projectsApi.note(miss.project_id, miss.id, note)); }}
-      onHabits={() => setView({ kind: "habits" })} />}
+      onDecide={(card, accept) => void decide(card, accept)} />}
     {leftover?.card.proposal && <LeftoverSheet level={leftover.card.proposal.level} next={leftover.card.proposal.next}
       open={leftover.open} busy={busy} onCancel={() => setLeftover(null)}
       onConfirm={choice => void decide(leftover.card, true, choice)} />}

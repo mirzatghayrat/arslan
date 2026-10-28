@@ -1,4 +1,4 @@
-/** 0.1.56 P6: the retro at Done — offered, written on request, rules kept; skippable. */
+/** 0.1.56 P6: the retro at Done — offered, written on request; skippable. */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 
@@ -14,10 +14,8 @@ import { projectsApi, type Retro } from "../api/projects";
 
 const RETRO: Retro = {
   id: "r1", summary: "Shaping ran long.", source: "model", created_at: "",
-  rules: [{ text: "Time-box shaping", kept: false }, { text: "Cut early", kept: true }],
-  facts: { total_days: 40.4, plan_changes: 2, cut_checkpoints: 3, slower: ["Shape"],
-    levels: [{ level: "Shape", band: "shaping", days: 10, usual: 4, slower: true },
-      { level: "Build", band: "doing", days: 3, usual: null, slower: false }] },
+  facts: { total_days: 40.4, plan_changes: 2, cut_checkpoints: 3,
+    levels: [{ level: "Shape", band: "shaping", days: 10 }, { level: "Build", band: "doing", days: 3 }] },
 };
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); try { localStorage.clear(); } catch { /* none */ } });
@@ -32,7 +30,6 @@ describe("the retro at Done", () => {
     fireEvent.click(screen.getByTestId("retro-write"));
     await waitFor(() => expect(write).toHaveBeenCalledWith("p1", "zh"));
     expect(await screen.findByTestId("retro-summary")).toHaveTextContent("Shaping ran long.");
-    expect(screen.getByTestId("retro-facts")).toHaveTextContent('projectsUI.retroSlower:{"level":"Shape","days":10,"usual":4}');
     expect(screen.getByTestId("retro-facts")).toHaveTextContent('projectsUI.retroChanges:{"count":2,"cut":3}');
     expect(screen.getByTestId("retro-facts")).toHaveTextContent('projectsUI.retroTotal:{"count":40}');
   });
@@ -51,23 +48,11 @@ describe("the retro at Done", () => {
     expect(await screen.findByTestId("retro-offer")).toBeInTheDocument();
   });
 
-  it("a rule can be kept; a kept one says so", async () => {
-    vi.spyOn(projectsApi, "retro").mockResolvedValue(RETRO);
-    const keep = vi.spyOn(projectsApi, "keepRetroRule").mockResolvedValue({ ...RETRO,
-      rules: RETRO.rules.map(r => ({ ...r, kept: true })) });
-    render(<RetroCard projectId="p1" />);
-    expect(await screen.findByTestId("retro-kept-1")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("retro-keep-0"));
-    await waitFor(() => expect(keep).toHaveBeenCalledWith("p1", 0));
-    expect(await screen.findByTestId("retro-kept-0")).toBeInTheDocument();
-  });
-
   it("a facts-only retro (no model) shows the facts without a summary", async () => {
-    vi.spyOn(projectsApi, "retro").mockResolvedValue({ ...RETRO, summary: null, source: "facts", rules: [],
-      facts: { ...RETRO.facts, levels: [RETRO.facts.levels[1]], slower: [] } });
+    vi.spyOn(projectsApi, "retro").mockResolvedValue({ ...RETRO, summary: null, source: "facts",
+      facts: { ...RETRO.facts, levels: [RETRO.facts.levels[1]] } });
     render(<RetroCard projectId="p1" />);
-    expect(await screen.findByTestId("retro-facts")).toHaveTextContent("projectsUI.retroNoneSlower");
+    expect(await screen.findByTestId("retro-facts")).toHaveTextContent('projectsUI.retroChanges:{"count":2,"cut":3}');
     expect(screen.queryByTestId("retro-summary")).toBeNull();
-    expect(screen.queryByTestId("retro-rules")).toBeNull();
   });
 });

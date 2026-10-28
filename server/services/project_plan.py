@@ -5,8 +5,7 @@ Rules (spec §1, §4, §5):
   level (a current level in the Done band still shows in Doing); Done and Dropped are
   only ever set by the user.
 - Small ticks may be automatic (with evidence, undoable); clearing a level by Arslan is a
-  PROPOSAL the user accepts or declines — unless the user turned auto-advance on after the
-  shadow streak reached 10. Done/Dropped are never automatic.
+  PROPOSAL the user accepts or declines. Done/Dropped are never automatic.
 - Nothing here bumps `projects.version`: that column pins running tasks
   (task_repository: task_project_changed). The plan has its own `plan_version`.
 """
@@ -14,10 +13,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import select, update
 
 from server.db.models import Project, ProjectCheckpoint, ProjectEvent, ProjectLevel
 
@@ -25,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 COLUMNS = ("idea", "shaping", "doing", "done", "dropped")
 STAGES = ("idea", "active", "done", "dropped")
-SHADOW_STREAK_TO_ASK = 10
 ACTIVITY_EVERY = timedelta(hours=1)
 
 
@@ -92,7 +89,7 @@ def _checkpoint(row: ProjectCheckpoint) -> dict:
 
 def _level(row: ProjectLevel, checkpoints: list[ProjectCheckpoint]) -> dict:
     return {"id": row.id, "position": row.position, "name": row.name, "description": row.description,
-            "band": row.band, "clear_condition": row.clear_condition, "state": row.state, "habit": bool(row.habit),
+            "band": row.band, "clear_condition": row.clear_condition, "state": row.state,
             "started_at": _iso(row.started_at), "cleared_at": _iso(row.cleared_at),
             "checkpoints": [_checkpoint(c) for c in checkpoints]}
 
@@ -161,7 +158,7 @@ def _clean_level(raw: dict) -> dict:
     return {"id": raw.get("id"), "name": name, "band": band,
             "description": str(raw.get("description") or "").strip()[:300],
             "clear_condition": str(raw.get("clear_condition") or "").strip()[:400],
-            "habit": bool(raw.get("habit")), "checkpoints": clean_cps}
+            "checkpoints": clean_cps}
 
 
 async def put_plan(db, project: Project, expected_version: int, levels_in: list[dict], *, actor: str = "user") -> dict:
@@ -182,7 +179,7 @@ async def put_plan(db, project: Project, expected_version: int, levels_in: list[
     old_by_id = {lv.id: lv for lv in existing if lv.id not in cleared_ids}
     old_cp_by_id = {cp.id: cp for lv in existing for cp in old_cps.get(lv.id, [])}
     kept_cp_ids = {cp["id"] for raw in incoming for cp in raw["checkpoints"] if cp["id"]}
-    # §6 (b): checkpoints of open levels that a re-plan drops — "features cut mid-way".
+    # Checkpoints of open levels that a re-plan drops: the retro counts them (cut_checkpoints).
     removed = sum(1 for lv in existing if lv.id not in cleared_ids
                   for cp in old_cps.get(lv.id, []) if cp.id not in kept_cp_ids)
     # Drop the open levels and their checkpoints; re-create from the request.
@@ -201,7 +198,7 @@ async def put_plan(db, project: Project, expected_version: int, levels_in: list[
         level = ProjectLevel(
             id=raw["id"] if previous else _id(), project_id=project.id, position=position, name=raw["name"],
             description=raw["description"], band=raw["band"], clear_condition=raw["clear_condition"],
-            state="current" if is_current else "todo", habit=raw["habit"],
+            state="current" if is_current else "todo",
             started_at=(previous.started_at if previous and previous.started_at and is_current
                         else (datetime.utcnow() if is_current else None)))
         if is_current and current_before is not None and current_before.id == level.id:
@@ -221,9 +218,6 @@ async def put_plan(db, project: Project, expected_version: int, levels_in: list[
     if had_plan:
         await _event(db, project.id, "plan_change", actor, {"levels": len(incoming),
                                                             "removed_checkpoints": removed if mid_way else 0})
-    from server.services import project_habits
-    await project_habits.learn_from_plan(db, project, incoming, actor=actor,
-                                         cut_mid_way=mid_way and removed > 0)
     return await plan_of(db, project)
 
 
@@ -283,7 +277,7 @@ async def _checkpoint_in(db, project: Project, checkpoint_id: str) -> tuple[Proj
 
 async def tick(db, project: Project, checkpoint_id: str, *, actor: str, evidence: dict | None = None) -> ProjectEvent | None:
     """Tick a checkpoint. Arslan's ticks need evidence. When Arslan's tick completes the
-    current level, a proposal (or, with auto-advance, an advance) follows."""
+    current level, a proposal follows."""
     cp, level = await _checkpoint_in(db, project, checkpoint_id)
     if actor == "arslan" and not evidence:
         raise PlanError("evidence_required")
@@ -324,8 +318,7 @@ async def open_proposal(db, project_id: str) -> ProjectEvent | None:
 
 
 async def propose_advance(db, project: Project, *, evidence: dict) -> ProjectEvent | None:
-    """Arslan thinks the current level is cleared. One open proposal at a time; with
-    auto-advance on (§5) it advances instead, logged and undoable."""
+    """Arslan thinks the current level is cleared. One open proposal at a time."""
     current, nxt = await _current_and_next(db, project)
     if current is None or stage_of(project) != "active":
         return None
@@ -338,10 +331,6 @@ async def propose_advance(db, project: Project, *, evidence: dict) -> ProjectEve
     open_cps = await open_checkpoints(db, current)
     if open_cps:
         payload["open"] = [{"id": cp.id, "text": cp.text} for cp in open_cps]
-    # 0.1.58 §5: auto-advance only clears a level with nothing left open; a condition read
-    # from what you said, with checkpoints still open, stays a proposal that lists them.
-    if nxt is not None and not open_cps and await auto_advance_enabled(db):
-        return await advance(db, project, actor="arslan", evidence=evidence)
     return await _event(db, project.id, "proposal", "arslan", payload)
 
 
@@ -412,7 +401,7 @@ async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: 
     current, _ = await _current_and_next(db, project)
     if current is None or current.id != proposal.payload.get("level_id"):
         # The plan moved on (the user cleared it by hand, or re-planned): the proposal no
-        # longer applies. Not a decline — it does not count for the shadow streak.
+        # longer applies. Not a decline.
         proposal.outcome = "stale"
         await _bump_plan(db, project)
         return None
@@ -424,10 +413,8 @@ async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: 
     if not accept:
         note = " ".join((note or "").split())[:200]
         if note:
-            # §5/§6: the optional line on a decline ("还想再试一版") becomes a plan rule.
+            # Kept on the proposal: the retro lists the reasons given on declines.
             proposal.payload = {**proposal.payload, "note": note}
-            from server.services import project_habits
-            await project_habits.learn_from_decline(db, project, note)
         await _bump_plan(db, project)
         return None
     if proposal.payload.get("last"):
@@ -437,23 +424,8 @@ async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: 
                          leftover=leftover)
 
 
-async def add_note(db, project: Project, proposal_id: str, note: str) -> None:
-    """The optional line after a decline (§5), said afterwards: once, on a declined proposal."""
-    proposal = await db.get(ProjectEvent, proposal_id)
-    if proposal is None or proposal.project_id != project.id or proposal.kind != "proposal":
-        raise PlanError("proposal_not_found")
-    note = " ".join((note or "").split())[:200]
-    if proposal.outcome != "declined" or proposal.payload.get("note") or not note:
-        raise PlanError("proposal_decided")
-    proposal.payload = {**proposal.payload, "note": note}
-    from server.services import project_habits
-    await project_habits.learn_from_decline(db, project, note)
-    await db.flush()
-
-
 async def undo(db, project: Project, event_id: str) -> None:
-    """Reverse one of Arslan's ticks or advances, or an accepted advance. An undone
-    advance counts as a miss for the shadow streak."""
+    """Reverse one of Arslan's ticks or advances, or an accepted advance."""
     event = await db.get(ProjectEvent, event_id)
     if event is None or event.project_id != project.id or event.kind not in ("tick", "advance"):
         raise PlanError("event_not_undoable")
@@ -518,84 +490,9 @@ async def set_stage(db, project: Project, *, stage: str | None = None, paused: b
         await _bump_plan(db, project)
 
 
-# ── shadow mode (§5) ───────────────────────────────────────────────────────────
-
-@dataclass
-class Shadow:
-    proposed: int
-    accepted: int
-    streak: int
-    asked: bool
-    misses_in_a_row: int = 0
-    last_miss: dict | None = None
-
-
-async def _moves(db) -> list[ProjectEvent]:
-    """Every level clear Arslan proposed and the user answered, and every one it made itself
-    with auto-advance on, oldest first. Stale proposals are not answers and are left out."""
-    rows = (await db.execute(select(ProjectEvent).where(or_(
-        and_(ProjectEvent.kind == "proposal", ProjectEvent.outcome.in_(("accepted", "declined", "undone"))),
-        and_(ProjectEvent.kind == "advance", ProjectEvent.actor == "arslan"),
-    )).order_by(ProjectEvent.created_at, ProjectEvent.id))).scalars().all()
-    return list(rows)
-
-
-def _hit(event: ProjectEvent) -> bool:
-    # An accepted proposal, or an advance Arslan made itself that nobody undid.
-    return event.outcome == "accepted" if event.kind == "proposal" else event.outcome is None
-
-
-async def shadow(db) -> Shadow:
-    """Over every project: how many level clears Arslan proposed (or made), how many the user
-    kept, and the current run of kept ones — a decline or an undo resets it (§5)."""
-    from server.services import settings_service
-    moves = await _moves(db)
-    streak = misses = 0
-    last_miss = None
-    for event in moves:
-        if _hit(event):
-            streak, misses = streak + 1, 0
-        else:
-            streak, misses = 0, misses + 1
-            last_miss = event
-    asked = (await settings_service._get_raw(db, ASKED_KEY)) in ("yes", "no")
-    miss = None
-    if last_miss is not None:
-        miss = {"id": last_miss.id, "project_id": last_miss.project_id, "level": last_miss.payload.get("level"),
-                "outcome": "declined" if last_miss.outcome == "declined" else "undone",
-                "note": last_miss.payload.get("note"), "at": _iso(last_miss.created_at)}
-    return Shadow(proposed=len(moves), accepted=sum(1 for e in moves if _hit(e)), streak=streak, asked=asked,
-                  misses_in_a_row=misses, last_miss=miss)
-
-
-ASKED_KEY = "projects_auto_asked"           # "yes" | "no": the one ask at 10 was answered
-KEPT_KEY = "projects_auto_kept_after"       # the miss after which the user chose to keep auto-advance on
-
-
-async def shadow_view(db) -> dict:
-    """The board footer and the habits sheet: the numbers, plus whether to ask (§5: 10 kept
-    in a row, asked once) or to offer turning auto-advance off (2 undos in a row)."""
-    from server.services import settings_service
-    s = await shadow(db)
-    auto = await auto_advance_enabled(db)
-    kept_after = await settings_service._get_raw(db, KEPT_KEY)
-    return {"proposed": s.proposed, "accepted": s.accepted, "streak": s.streak, "ask_at": SHADOW_STREAK_TO_ASK,
-            "asked": s.asked, "auto_advance": auto, "last_miss": s.last_miss,
-            "miss_is_latest": s.misses_in_a_row > 0,
-            "ask_due": not auto and not s.asked and s.streak >= SHADOW_STREAK_TO_ASK,
-            "offer_off": auto and s.misses_in_a_row >= 2 and (s.last_miss or {}).get("id") != kept_after}
-
-
-async def auto_advance_enabled(db) -> bool:
-    from server.services import settings_service
-    raw = await settings_service._get_raw(db, "projects_auto_advance")
-    return str(raw).strip().lower() == "true" if raw is not None else False
-
-
 # ── the board ──────────────────────────────────────────────────────────────────
 
 async def board(db, owner_id: str = "local") -> dict:
-    from server.services import project_habits
     projects = (await db.execute(select(Project).where(Project.owner_id == owner_id)
                                  .order_by(Project.updated_at.desc(), Project.id))).scalars().all()
     cards = []
@@ -616,14 +513,9 @@ async def board(db, owner_id: str = "local") -> dict:
             "left": left,
             "proposal": ({"id": proposal.id, **proposal.payload} if proposal else None),
             "done_at": _iso(project.done_at), "has_plan": bool(levels),
-            "stall": await project_habits.stall(db, project, current, left),
-            # §9 "接着做": what to do next on the current level.
-            "next": next(({"id": cp["id"], "text": cp["text"]} for cp in (current or {}).get("checkpoints", [])
-                          if cp["state"] != "done"), None),
         })
     archived = sum(1 for p in projects if p.status == "archived")
-    return {"cards": cards, "counts": {"paused": sum(1 for c in cards if c["paused"]), "archived": archived},
-            "shadow": await shadow_view(db)}
+    return {"cards": cards, "counts": {"paused": sum(1 for c in cards if c["paused"]), "archived": archived}}
 
 
 # ── the project, as the model sees it (§8) ─────────────────────────────────────

@@ -83,6 +83,7 @@ class ProjectLevel(Base):
     band = Column(String(10), nullable=False)
     clear_condition = Column(String(400), nullable=False, default="")
     state = Column(String(10), nullable=False, default="todo")
+    #: Nothing reads or writes it since PRJ0 (plan rules deleted). DELETE-BY: the PRJ0 table-drop PR (0076).
     habit = Column(Boolean, nullable=False, default=False)
     started_at = Column(DateTime, nullable=True)
     cleared_at = Column(DateTime, nullable=True)
@@ -109,7 +110,7 @@ class ProjectCheckpoint(Base):
 class ProjectEvent(Base):
     """What happened to a project's plan: ticks, proposals and their outcome, advances,
     plan changes, stage changes. Arslan's own entries are what "Arslan 最近做的" lists and
-    what Undo reverses; proposal outcomes are the shadow-mode record."""
+    what Undo reverses."""
     __tablename__ = "project_events"
     __table_args__ = (
         CheckConstraint("kind IN ('tick','untick','proposal','advance','plan_change','plan_proposal','stage','activity','handoff','retro')",
@@ -127,7 +128,10 @@ class ProjectEvent(Base):
 
 
 class ProjectHabit(Base):
-    """How the user advances projects (0.1.56 §6): plan rules Arslan learned, and pace overrides."""
+    """How the user advances projects (0.1.56 §6): plan rules Arslan learned, and pace overrides.
+
+    Nothing reads or writes it since PRJ0 deleted plan rules and pace (user, 2026-10-28).
+    DELETE-BY: the PRJ0 table-drop PR (0076)."""
     __tablename__ = "project_habits"
     __table_args__ = (
         CheckConstraint("kind IN ('plan_rule','pace_override')", name="ck_project_habit_kind"),
