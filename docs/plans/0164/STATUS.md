@@ -77,6 +77,8 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md` (#447).
 - Making the `language` CI job a required check: main is green again (CI 40723824079 on `8532152f`, including `language`); the user agreed in principle and ④参谋 is walking through the ruleset setting.
 - Allowing `bind_pr` and `set_auto_merge` in the user's settings (④参谋 is walking through it); then ⓪Plan tries auto-merge on the next non-security docs PR.
+- **INB2 (#475):** F2, how a conversation counts as clean: an allowlist (no attachment, no injected knowledge, only known-local tools; `run_command` reading a file counts as outside), or marking every result that says external; plus whether the Bridge may pass the envelope `ts` as `sent_at` (a new field on the Bridge→server message). F4: how sensitive memories are recognised beyond keywords (an optional `sensitive: true` on the tools, and/or categories).
+- **Q1 card, open items 3 and 4** (②Main builds the safe defaults meanwhile): after "convert to chat", does Arslan learn from that conversation from then on, or never (default: never)? How long the pocket (Remote) stays for old phones: v0.1.65 (default) or removed this version?
 - The side-chat mock (SIDE-0), when it comes.
 
 **Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474.
