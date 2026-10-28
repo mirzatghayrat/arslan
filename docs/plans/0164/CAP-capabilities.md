@@ -90,7 +90,7 @@
 ## 拆成的 PR
 
 - 每个 PR 产品代码不超过约 800 行（测试、翻译、生成的文件不算）。整份删除的部分照 U2 例外，剪线的部分另算。
-- **标「安全面」的：effort=max 写，effort=max 审，再加一道 Codex 审查**（`docs/plans/0162/README.md` §8「v0.1.64 的安全审查路径」：只看公开仓库、只读、结论写明模型、每一条都要在 PR 上回应）。
+- **标「安全面」的：effort=max 写，effort=max 审，再加一道 Codex 审查**（`docs/plans/0162/README.md` §8「v0.1.64 的安全审查路径」：只看公开仓库、只读、结论写明模型、每一条都要在 PR 上回应）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
 
 | PR | 做什么 | 安全面 | 依赖 | 量级（产品代码） |
 |---|---|---|---|---|
@@ -353,7 +353,7 @@ From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes
    - 逐个模块按导入语句和路径查；
    - 再按字符串查一遍（路由路径、注册表的键、翻译键、`usage.py` 那种名字列表）。
 2. **每个安全面 PR 先写打不过去的测试。** 例如：今天能装 `status=deleted` 的条目、扫的是装完的文件、`read_skill` 里有第三方的 description、模型能写技能目录、带钩子的插件能装上一半、锁和卡对不上照样装。先红后绿，再做 mutation（改回去，测试要红）。
-3. **卡和安全文案定稿后，先发云端审计看**（10-21 定的），再交 Codex 审合并前的头。
+3. **卡和安全文案定稿后，先发云端审计看**（10-21 定的），再交 Codex 审合并前的头。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
 4. **危险的写法只放在测试里**，PR 描述和卡里只写「哪一类」。
 5. **每个 PR 都写完成证据四项**（`sessions.md` §8），说 CI 绿要附 run id 和结论。
 
