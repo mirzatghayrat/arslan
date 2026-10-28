@@ -67,6 +67,8 @@
 
 ### SUB1 `delegate_work` 的标记：在 S64-0 做，本卡只引用
 
+> **S64-0 的实际做法（#438，③Hands 10-28）：** 「起始值」没有做成 `track_turn` 的参数，而是一个上下文 `untrusted.carried(seen)`（跑一次设一次），这样 `tool_loop.py`、`arslan.py` 都不用改。本卡凡写「`track_turn` 的起始值」，都指它：SUB3 往下传标记时写 `with untrusted.carried(True): …` 包住子会话的运行；汇总回合同理。
+
 - **修复在 S64-0**（⓪Plan 提议的单独补洞 PR，安全，effort=max 写和审，Codex 审）。S64-0 一起管：`delegate_work`、后台任务从「干净」开始、教训的合并、恢复和 `task_progress`；它给 `track_turn` 加一个起始值。
 - **S64-0 里关于 `delegate_work` 的要点**（②Main、③Hands 审 #434 时提的，记在这里方便对账）：
   - 两处都要改：不再返回 `"external": False`（`task_workers.py:268`），**并且** `delegate_work` 进 `_WEB_TOOLS`（`untrusted.py:52`）和 `_OUTSIDE_TOOLS`（`:72-73`）。只改一处，文字要么完全不加框，要么只按普通工具输出加框；
@@ -175,7 +177,7 @@
 
 ## 怎么做（要点）
 
-1. **S64-0 先合**（不在本卡）。SUB3 要用它给 `track_turn` 加的起始值。
+1. **S64-0 先合**（#438，不在本卡）。SUB3 要用它加的起始值 `untrusted.carried(seen)`。
 2. **SUB2** 等 Q1 的迁移合了再开。只加数据、继承和过滤，用户看不到变化。
 3. **SUB3、SUB4、SUB5 叠在一起做，先不合。** 最上面那个 PR 的头上跑 M64 的拆分派汇总题和反面题（DeepSeek 当总指挥），加上全套旧题。过了，三个 PR 按顺序合，每个都要 CI 绿。没过，三个都不合，结论写进早报，回来改。理由：先合进 main 而工具没开放，就是一堆没人调的代码；跑分不过要么返工，要么撤。
 4. **跑分过的标准（⓪Plan 建议，用户定）：**
@@ -214,7 +216,7 @@ README 里「开工前要先想好」的另外两条：
 
 ## 验收
 
-- **S64-0（引用）：** 合了，`track_turn` 有起始值。
+- **S64-0（引用，#438）：** 合了，有起始值 `untrusted.carried(seen)`。
 - **SUB2：**
   - 子对话不出现在 Mac 侧栏、项目的「对话」标签、`/phone/conversations`、`/phone/live`（子会话正在跑时也不出现）；
   - 子对话的设置改松回 422；总指挥后来开了 `no_memory`，子会话下一个回合就不用记忆；
