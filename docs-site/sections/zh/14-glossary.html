@@ -19,7 +19,7 @@
 <tr><th>On-demand tools</th><td>不随每次请求发送、而是在需要时查找的工具</td><td>自 0.1.63 起，很少用到的工具和 MCP 工具不在每次请求中；模型用 <code>find_tools</code> 找到它们，并按真实名称用 <code>use_tool</code> 调用，所受的审批相同</td></tr>
 <tr><th>Streaming</th><td>在模型书写的同时显示回答</td><td>自 0.1.63 起适用于 OpenAI-compatible 提供商、Claude 和 Gemini；如果流在中途中断，你已看到的内容会保留，回复被标为已中断。原先会拦下回答的检查，现在改为在回答之后追加更正</td></tr>
 <tr><th>Steering</th><td>在任务运行时改变它的方向</td><td>自 0.1.63 起，回复期间输入的消息会在下一步到达它；在最终答案书写期间发出的消息，会在它之后立即运行</td></tr>
-<tr><th>Dollar limit per task</th><td>对一个任务的模型花费设的上限</td><td>自 0.1.63 起默认开启：每个聊天回复或后台任务 $2，约三分之二时开始收尾；只有已知价格的模型才计入；可在 设置 › 后台 中更改</td></tr>
+<tr><th>Dollar limit per task</th><td>对一个任务的模型花费设的上限</td><td>自 0.1.63 起默认开启：每个聊天回复或后台任务 $2，约三分之二时开始收尾；只有已知价格的模型才计入；可在 设置 › 后台与主动 中更改</td></tr>
 <tr><th>BYOK</th><td>用户自带模型 API 密钥</td><td>由用户选供应商并承担对应模型调用费用</td></tr>
 <tr><th>Prompt injection</th><td>把网页或工具内容伪装成给 Agent 的新指令</td><td>外部内容按数据处理，未经确认的外部影响经验通常进入提案；这不是彻底免疫证明</td></tr>
 <tr><th>Learned practice</th><td>从纠正或成功绕路中记下的方法</td><td>“此机 AppleScript 不通，尝试 EventKit”；不修改模型权重</td></tr>
