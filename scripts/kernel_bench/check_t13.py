@@ -36,6 +36,12 @@ BUGS = (
             "almost no discount",
             "几乎没有折扣",
             "几乎不打折",
+            # Hand check of r64-m64-base (2026-10-28): correct P1 findings said "passes 0.15
+            # instead of 15" and were scored "located".
+            "而非 15",
+            "应传 15",
+            "传 15",
+            "instead of 15",
         ),
         "apply_discount(subtotal, 0.15)",
         context=True,
@@ -61,6 +67,11 @@ BUGS = (
             "9 lines",
             "9 行",
             "exclusive",
+            # Hand check of r64-m64-base (2026-10-28): correct P2 findings said "每页少返回一行/一条".
+            "少返回",
+            "每页少",
+            "one line short",
+            "one row short",
         ),
         "start + size - 1",
     ),

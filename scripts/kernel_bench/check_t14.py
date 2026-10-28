@@ -47,6 +47,13 @@ BUGS = (
             "one request too many",
             "too many requests",
             "limit + 1 requests",
+            # Hand check of r64-m64-base (2026-10-28): four correct T2 findings said "limit+1",
+            # "越界" or "边界" and were scored "located". Safe because a finding credits only its
+            # nearest bug (T1 at :26 is matched on its own line first).
+            "limit+1",
+            "limit + 1",
+            "越界",
+            "边界",
             "多一个",
             "多一次",
             "多放",
