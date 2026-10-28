@@ -8,6 +8,9 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
+| #443 | S64-0b: mark attachments and OCR text; frame background job results from outside content | `c2aaff29` (main CI 40731335249 running; covers #462 and #467) |
+| #462 | BR1: Bridge polls every 2 s while a pairing code is open, and for 60 s after it is answered | `cd6e7edb` |
+| #467 | sessions.md §5 "Who merges": sessions auto-merge non-security PRs (the first one merged by auto-merge) | `ba5964dd` |
 | #453 | M64 hand check of r64-m64-base: missing keywords, one T15 extra; generic T2 words left out | `8532152f` (main CI 40723824079 running; it covers #470, #468, #469 and #465 too, whose own runs were cancelled by the next merge) |
 | #465 | Codex only for what a Claude review cannot cover | `579c606d` |
 | #469 | STY2 card: Arslan's working method, deeper not bigger | `4081d6d7` |
@@ -44,12 +47,10 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 
 **Ready now** (another session's OK at the current head, green CI on it):
 - #461 (CAP F3): ⓪Plan's max reviewer at `1188c10d`; the later `9ec18990` is test-only (noted on the PR).
-- #462 (BR1): ①iOS found a gap after testing build 25 (once Allow was clicked the Bridge dropped to the 10 s pace before the new phone's first hello); ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. ①iOS rechecked it: OK (read the diff, relied on that CI run; no frame change). ①iOS does not post on PRs; its verdict is recorded here.
 - #456 (F5b-2): ②Main confirmed at `54805cfd`, CI 40677484593 success. After it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, with the Cua lines already planned after #428.
-- #443 (S64-0b): written by ③Hands; independent review by ②Main with its effort=max reviewer, OK at `390aa048`. Main merged in at `d2ab87e5`; CI 40712453311 success. No Astra under the new rule.
 - #458 (this page, SIDE card): ⑥Helper OK at `4cd3a0c0` (facts checked against GitHub); later commits only update this page.
 - #463 (BR2): ①iOS OK at `609de05d`, covering `d01381ec` (main merged in, one test line for C5b's renamed edit_file arguments); CI 40713934590 success. Bridge surface: the user merges.
-- #467 (who merges, sessions.md §5): ⑥Helper OK at `276c2afc`; `24020153` is its own nit (the authoring session watches main's CI).
+- #447 (SBX card): ③Hands OK at `017660a2` (posted on the PR), all checks green. Order: **#447 → #471 → #477**. Already all-green, so a session cannot auto-merge it: the user merges.
 - #471 (SBX-1: one profile builder, all five profiles on it): ③Hands; ②Main's max reviewer: merge after fixes, all four in at `39ac6ae0`, ②Main's recheck OK; CI 40728593104 success (macOS 60). **Ready for the user, after #447.**
 - #477 (SBX-1b: seatbelt non-ASCII path encoder; stacked on #471): ③Hands, head `2c742bd7`. Measured on macOS 26.6.2: `json.dumps` misses CJK, accented, emoji and control characters; raw UTF-8 and `\xHH` decode. ASCII paths byte-identical (30 of 32 matrix cases; the 2 non-ASCII differ only by decoded escapes); real-seatbelt tests, 11 fail with `json.dumps` put back; macOS test population 60 → 69 (pin test and `ci.yml`). ②Main reviewing at max. The user merges, after #471.
 - #472 (CAP2a: the save-a-skill card; deletes Skill Forge, the curator and candidates): independent effort=max review: no path writes a skill without a click; what is shown is what is stored; 16 of 16 mutations caught. Fixes F4–F7 and R1 done (`4063335b`, recheck running). **User decided F1/F2 (2026-10-29): keep the mark.** A skill saved from a card that showed the outside line is stored as `authored-outside`; reading it later marks the turn; the outside line reflects the whole conversation (INB2's `runs.read_outside`). F8 decided with it. F3 is a follow-up. Security surface: the user merges.
