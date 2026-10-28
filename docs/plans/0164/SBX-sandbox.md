@@ -4,7 +4,7 @@
 
 | Item | Content |
 |---|---|
-| Lane | **③Hands** (moved from ②Main on 2026-10-28, both agreeing; ③Hands also does the S2a-3 rebase on the same files). Written at **effort=max**. Reviewed by ②Main with an effort=max reviewer; Codex GPT-6 Astra on SBX-1 + SBX-2 together, then the rest one by one. SBX-1 shows the byte-for-byte check of all five profiles, old vs new, with `/usr/bin/diff` or `cmp` (not rtk's diff, which always exits 0). |
+| Lane | **③Hands** (moved from ②Main on 2026-10-28, both agreeing; ③Hands also does the S2a-3 rebase on the same files). Written at **effort=max**. Reviewed by ②Main with an effort=max reviewer. Codex GPT-6 Astra only for parts that review cannot cover (user, 2026-10-28 evening; v0.1.64 README §1.3); when it is needed, SBX-1 + SBX-2 go together, then the rest one by one. SBX-1 shows the byte-for-byte check of all five profiles, old vs new, with `/usr/bin/diff` or `cmp` (not rtk's diff, which always exits 0). |
 | Version | v0.1.64 |
 | Tier | Must (user, 2026-10-22, lead roadmap §0.6 item 1; again 2026-10-28, `docs/plans/0164/README.md:43`) |
 | Depends on | Nothing in the security chain comes before it. #432 is decided (`docs/plans/0164/README.md:41-43`). S64-0 (#438) is independent. SBX-M (the measurement on a Mac) needs the user at the Mac only to start it; it uses no keys. |
@@ -356,8 +356,8 @@ Total ≈ 1,880 product lines added, ≈ 390 removed (≈ 1,430 without SBX-6), 
 - **Compatibility:** the corpus in §M passes under the new profile, or each failure is listed in the report with its card cost. The bench "waiting for you" count does not rise (DeepSeek round, M64's rules).
 - **Evidence, four items per PR** (`docs/sessions.md` §8). macOS CI run id plus conclusion for every real-seatbelt claim.
 - **Review:**
-  - ③Hands + an effort=max reviewer + Codex GPT-6 Astra at the highest level, on every SBX code PR. Codex reviews SBX-1 and SBX-2 together (no behaviour change, plus a harness), then SBX-3 … SBX-7 one by one (②Main; Q10 settled);
-  - Codex's points each answered on the PR;
+  - ②Main + an effort=max reviewer on every SBX code PR. Codex GPT-6 Astra at the highest level only for parts that review cannot cover because of safeguards (user, 2026-10-28 evening; v0.1.64 README §1.3); the PR names those parts. When Codex is needed, SBX-1 and SBX-2 go together (no behaviour change, plus a harness), then SBX-3 … SBX-7 one by one (②Main; Q10 settled);
+  - every reviewer's points (and Codex's, when it runs) each answered on the PR;
   - safety conclusions shown to the cloud audit (`docs/plans/0162/README.md` §8, review path).
 
 ## Size
@@ -444,4 +444,4 @@ About 1,430–1,880 product lines added and 390 removed across 7 code PRs, plus 
 6. **A ceiling for the re-run share:** ②Main suggests recording only in v0.1.64 and setting a ceiling after SBX-8 has a baseline. Confirm, or name a ceiling now.
 7. **`ssh_exec`:** onto the builder byte for byte in SBX-1 (②Main: yes), or left out of "one sandbox"?
 
-Settled by the reviews (no longer questions): caches are Arslan-owned (§1c, ③Hands); the classifier's scope is the work folder plus the private TMPDIR (§1b); Codex reviews SBX-1 + SBX-2 together, then the rest one by one.
+Settled by the reviews (no longer questions): caches are Arslan-owned (§1c, ③Hands); the classifier's scope is the work folder plus the private TMPDIR (§1b); Codex, when needed, reviews SBX-1 + SBX-2 together, then the rest one by one.
