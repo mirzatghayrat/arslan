@@ -135,5 +135,5 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
      "Package a reusable method into a high-quality SKILL.md; lets users/Arslan self-author skills.", _S, _REG),
     # CREATIVE (Arslan's own)
     ("designed-html-report", "designed-html-report", "creative",
-     "设计版报告:报告/简报/方案等长篇交付物产出自带设计系统的单文件 HTML(Designed HTML Report),而非 markdown 长文。", _S, _REG),
+     "Designed HTML report: reports, briefs, proposals and other long deliverables come out as a single-file HTML document with its own design system, not a wall of Markdown.", _S, _REG),
 ]

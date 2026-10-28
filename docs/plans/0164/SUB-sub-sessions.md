@@ -88,7 +88,7 @@ Added after this card was drafted. The sub-session base in this card (v0.1.64) i
 
 > **S64-0 的实际做法（#438，③Hands 10-28）：** 「起始值」没有做成 `track_turn` 的参数，而是一个上下文 `untrusted.carried(seen)`（跑一次设一次），这样 `tool_loop.py`、`arslan.py` 都不用改。本卡凡写「`track_turn` 的起始值」，都指它：SUB3 往下传标记时写 `with untrusted.carried(True): …` 包住子会话的运行；汇总回合同理。
 
-- **修复在 S64-0**（⓪Plan 提议的单独补洞 PR，安全，effort=max 写和审，Codex 审）。S64-0 一起管：`delegate_work`、后台任务从「干净」开始、教训的合并、恢复和 `task_progress`；它给 `track_turn` 加一个起始值。
+- **修复在 S64-0**（⓪Plan 提议的单独补洞 PR，安全，effort=max 写和审，Codex 审）。S64-0 一起管：`delegate_work`、后台任务从「干净」开始、教训的合并、恢复和 `task_progress`；它给 `track_turn` 加一个起始值。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
 - **S64-0 里关于 `delegate_work` 的要点**（②Main、③Hands 审 #434 时提的，记在这里方便对账）：
   - 两处都要改：不再返回 `"external": False`（`task_workers.py:268`），**并且** `delegate_work` 进 `_WEB_TOOLS`（`untrusted.py:52`）和 `_OUTSIDE_TOOLS`（`:72-73`）。只改一处，文字要么完全不加框，要么只按普通工具输出加框；
   - 副作用：之后几轮的历史里，`delegate_work` 会被记成「外部内容，只留来源」（`server/orchestrator/turn_tools.py:107`），这是对的；

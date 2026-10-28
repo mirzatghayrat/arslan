@@ -58,7 +58,7 @@ async def test_write_file_through_a_link_to_outside_is_refused(ws, decoy):
 
 async def test_edit_file_through_a_link_to_outside_is_refused(ws, decoy):
     (ws / "link.txt").symlink_to(decoy)
-    r = await edit({"path": "link.txt", "old": "MINE", "new": "PWNED"})
+    r = await edit({"path": "link.txt", "old_string": "MINE", "new_string": "PWNED"})
     assert r["ok"] is False
     assert decoy.read_text() == "export MINE=1\n"
 
@@ -100,7 +100,7 @@ async def test_write_file_splits_a_hard_link_instead_of_writing_through_it(ws, d
 
 async def test_edit_file_splits_a_hard_link_instead_of_writing_through_it(ws, decoy):
     os.link(decoy, ws / "notes.txt")
-    r = await edit({"path": "notes.txt", "old": "MINE", "new": "YOURS"})
+    r = await edit({"path": "notes.txt", "old_string": "MINE", "new_string": "YOURS"})
     assert r["ok"] is True
     assert decoy.read_text() == "export MINE=1\n"
     assert (ws / "notes.txt").read_text() == "export YOURS=1\n"

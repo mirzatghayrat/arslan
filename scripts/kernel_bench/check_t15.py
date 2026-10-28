@@ -143,6 +143,15 @@ EXTRAS = (
         ("error", "failure", "失败", "错误", "ignored", "silently", "静默", "忽略", "吞"),
         "load drops a fetch failure without telling anyone",
     ),
+    # Hand check of r64-m64-base (2026-10-28): a reviewer noted that delete only removes the
+    # note locally (the API has no delete) and the 60 s refresh brings it back. True of the
+    # fixture, not planted, so it counts as neither caught nor a false positive.
+    Extra(
+        "x-delete-local",
+        ((FILE, (31, 35)),),
+        ("只从本地", "only locally", "locally only", "重新加载", "comes back", "reloads it"),
+        "delete only removes the note locally; the next refresh brings it back",
+    ),
 )
 
 

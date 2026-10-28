@@ -183,24 +183,6 @@ class UserFact(Base):
     provenance = Column(JSON, nullable=True)  # {source_kind, spawn_id?, conversation_id?, via?...};写入层强制,列级放宽供 legacy backfill
 
 
-class RouterDecision(Base):
-    """Audit log of every router decision (logged + testable)."""
-
-    __tablename__ = "router_decisions"
-
-    id = Column(Integer, primary_key=True)
-    conversation_id = Column(String(50), nullable=False, index=True)
-    user_message = Column(Text, nullable=False)
-    action = Column(String(20), nullable=False)  # answer | route | suggest_create | fallback
-    # Intentionally NOT a ForeignKey: audit log — rows must survive spawn deletion
-    # with the historical id intact (dangling ids are expected; see delete_spawn).
-    spawn_id = Column(Integer, nullable=True)
-    task_brief = Column(Text, nullable=True)
-    reason = Column(Text, nullable=True)
-    raw = Column(JSON, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-
-
 class Toolset(Base):
     """Registry: a named executable tool group (a spawn's 'interface')."""
 

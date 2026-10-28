@@ -532,7 +532,8 @@ export default function OrchestratorChat({
             if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
             if (msg.capabilityResult) return <CapabilityResultLine key={msg.id} result={msg.capabilityResult} />;
             if (msg.planProposal) return <PlanProposalCard key={msg.id} projectId={msg.planProposal.projectId} proposal={msg.planProposal} />;
-            if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status} />;
+            if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status}
+              notInEffect={msg.learned.notInEffect} />;
             if (msg.remembered) return <RememberedLine key={msg.id} facts={msg.remembered} />;
 
             // PA-3 structured clarification card: Arslan needs the user to pick ONE of

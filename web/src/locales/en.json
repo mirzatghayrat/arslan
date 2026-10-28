@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "from iPhone",
     "learned": "Learned: {{text}}",
-    "wantsToLearn": "Arslan wants to remember a practice: {{text}}",
     "learnedUndo": "Undo",
-    "learnedKeep": "Remember",
-    "learnedSkip": "No thanks",
+    "learnedNotInEffect": "Learned one, not in effect: {{reason}}",
+    "learnedSeeInMemory": "See in Memory",
     "learnedUndone": "Undone",
-    "learnedKept": "Remembered",
     "title": "Chat with {{name}}",
     "placeholder": "Type a message...",
     "send": "Send",
@@ -1456,11 +1454,9 @@
     "keepLocal": "Keep, local models only",
     "drop": "Don't",
     "apply": "Apply",
-    "use": "Use it",
     "source": {
       "memory": "About you",
-      "curation": "Tidy-up",
-      "lesson": "Learned practice"
+      "curation": "Tidy-up"
     },
     "sensitive": "Sensitive"
   },

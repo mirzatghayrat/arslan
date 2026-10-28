@@ -658,7 +658,8 @@ async def test_every_detector_and_the_brief_produce_items_the_gate_and_the_catal
 
 
 async def test_the_inbox_counts_cards_waiting_and_memory_waiting(execution_db):
-    """0.1.55 §12: the badge counts what waits for a decision, not only proactive items."""
+    """0.1.55 §12: the badge counts what waits for a decision, not only proactive items. INB1: a learned
+    practice that is not in effect no longer waits for an OK, so it is not counted."""
     import asyncio
 
     from server.db.models import Lesson, MemoryProposal
@@ -675,7 +676,7 @@ async def test_the_inbox_counts_cards_waiting_and_memory_waiting(execution_db):
     pending = approvals.open_card("c", {"type": "propose_schedule", "call_id": "x1"}, broadcast=False)
     try:
         got = await svc.summary()
-        assert (got["approvals"], got["memory"]) == (1, 2)
+        assert (got["approvals"], got["memory"]) == (1, 1)
     finally:
         pending.future.cancel()
         approvals.close_card(pending)

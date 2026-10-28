@@ -599,6 +599,73 @@ def test_probe_a_a_unit_finding_quoting_a_comparison_does_not_also_catch_the_off
     assert (res["caught"], res["planted"], res["missed"], res["score"]) == (3, 4, ["T2"], 2), res
 
 
+# Correct T2 findings from the r64-m64-base hand check (2026-10-28), scored "located" before
+# "limit+1" and "等于 limit 时仍放行" joined T2's keywords. The rest of each review is the all-caught one.
+T2_REAL = (
+    "src/limiter.ts:29-29 | 越界错误 | 用 > 而非 >= 判断，允许的请求数变成 limit+1 次\n",
+    "src/limiter.ts:29 | 边界错误 | 用 > 而非 >= 判断，count 等于 limit 时仍放行\n",
+    "src/limiter.ts:29-29 | 逻辑错误 | 计数检查应为 >= 而非 >，否则每个窗口最多会放行 limit + 1 个请求\n",
+)
+
+
+@pytest.mark.parametrize("finding", T2_REAL)
+def test_real_t2_wordings_from_the_baseline_hand_check_are_caught(tmp_path, finding):
+    others = [ln for ln in ALL_CAUGHT["T14"][1].splitlines(keepends=True) if ":29" not in ln]
+    res = _review(tmp_path, "T14", "review.md", finding + "".join(others))
+    assert (res["caught"], res["missed"], res["false_positives"], res["score"]) == (4, [], 0, 3), (
+        res
+    )
+
+
+# Wrong findings on the T2 line that only share a generic word ("边界", "越界") with a real one:
+# they must not catch T2 (⑥Helper's review of #453).
+T2_WRONG = (
+    "src/limiter.ts:29 | 边界检查缺失 | limit 为负数或 0 时没有校验参数\n",
+    "src/limiter.ts:29 | 数组越界 | buckets 可能越界访问\n",
+)
+
+
+@pytest.mark.parametrize("finding", T2_WRONG)
+def test_a_wrong_finding_on_the_t2_line_with_a_generic_word_does_not_catch_t2(tmp_path, finding):
+    others = [ln for ln in ALL_CAUGHT["T14"][1].splitlines(keepends=True) if ":29" not in ln]
+    res = _review(tmp_path, "T14", "review.md", finding + "".join(others))
+    assert "T2" not in res["caught_ids"] and res["caught"] == 3, res
+
+
+T13_REAL = (
+    (
+        "P1",
+        "shop/cart.py:29-29 | 逻辑错误 | apply_discount 传入 0.15 而非 15，会员折扣只减约 1 分钱并返回 float 类型\n",
+    ),
+    (
+        "P1",
+        "shop/cart.py:29-29 | 逻辑错误 | 会员折扣传了 0.15，apply_discount 按 0.15% 计算并返回 float，应传 15。\n",
+    ),
+    (
+        "P2",
+        "shop/cart.py:35-35 | 逻辑错误 | 切片结束位置用 start + size - 1，每页少返回一行（应为 start + size）\n",
+    ),
+    ("P2", "shop/cart.py:35-35 | 逻辑错误 | 分页切片写成 start+size-1 使每页少返回一条\n"),
+)
+
+
+@pytest.mark.parametrize(("bug", "finding"), T13_REAL)
+def test_real_t13_wordings_from_the_baseline_hand_check_are_caught(tmp_path, bug, finding):
+    own = {"P1": "cart.py:29", "P2": "cart.py:35"}[bug]
+    others = [ln for ln in ALL_CAUGHT["T13"][1].splitlines(keepends=True) if own not in ln]
+    res = _review(tmp_path, "T13", "review.md", finding + "".join(others))
+    assert bug in res["caught_ids"] and res["false_positives"] == 0, res
+
+
+def test_t15_delete_only_local_is_an_extra_not_a_false_positive(tmp_path):
+    finding = (
+        "Sources/Notes/NotesModel.swift:31-35 | 逻辑错误 | delete 只从本地 notes 移除、不调用服务端删除，"
+        "60 秒定时刷新后该笔记会被重新加载回来\n"
+    )
+    res = _review(tmp_path, "T15", "review.md", ALL_CAUGHT["T15"][1] + finding)
+    assert (res["false_positives"], res["extra"], res["score"]) == (0, 1, 3), res
+
+
 def test_probe_b_a_generic_word_on_another_line_does_not_catch_a_bug_it_never_names(tmp_path):
     lines = ALL_CAUGHT["T13"][1].splitlines(keepends=True)
     res = _review(tmp_path, "T13", "review.md", "".join(lines[:3]) + PROBE_B_EXTRA)
