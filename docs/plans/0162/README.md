@@ -539,6 +539,37 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
 - **Aegis 试点的结论**（§9）：写在这里，v0.1.64 开工前由用户决定要不要全面换。
 - 其余见领先路线 §3、§4 的 v0.1.64 列：卡片界面与文案大合并（D1）；diff 预览；网络出口控制；子 agent 统一成一个工具；后台进程与进程工具；目标模式；ACP。
 
+- **Memory: what changes (user agreed item by item on 2026-10-28; ④参谋 wrote the one-pager).** This adds detail to the 10-21 decision (memory as files in v0.1.65) and to Inbox items 6 and 7 (#433); it does not replace them. Basis: ④参谋 read the user's local database read-only (counts only below), checked main `502012f5`, and compared the official docs of Claude Code, ChatGPT, Codex, Hermes, Letta, mem0 and Graphiti (links at the end of this item).
+  - **What is wrong today (counts from the user's machine, 10-28):** 266 "about you" entries (153 active, 77 proposed, 30 quarantined, all `scope_kind=expert` left from the expert era) and 54 lessons (31 active, 22 proposed). Problems seen: the same meaning stored three times, because `dedup_key` only catches literal duplicates; one-off task state (an install folder, a port number, "the user is deploying X") stored as a fact about the user; opinions that go stale stored without a date; mixed languages, including one English entry that guessed the user's gender.
+  - **What the mainstream agents share:** four layers (rules the user writes and the agent must follow; a small core always loaded, with a hard size cap; history searched when needed; procedures as skills). Memory is a hint, not a rule. Worth borrowing: a hard cap that forces merging when full; tidying after the conversation goes idle; no memories from a conversation that touched outside content (Arslan already does this); showing under an answer which memories it used, with "don't bring this up again" separate from "delete"; marking stale items with a date instead of hard-deleting.
+  - **A. v0.1.64, small fixes** (⓪Plan schedules them as card MEM1, after INB2; see `docs/plans/0164/INB-inbox-progress.md`):
+    1. Before writing, compare the meaning with existing entries; merge when it is the same, instead of adding a new entry.
+    2. Always write in the language the user speaks; never guess the user's gender ("the user", not he/his/she).
+    3. One-off task state (paths, ports, "currently doing X") does not go into "about you"; it stays with the conversation or project it belongs to.
+    4. The 30 quarantined `scope_kind=expert` entries: C7c decides, when it drops the expert tables, whether to delete or move them.
+  - **B. v0.1.65, when memory becomes files:**
+    5. Three files (about you / Arslan's notes / private, private stays on this Mac), each with a "used / limit" line at the top; when one is full, Arslan merges entries itself.
+    6. **Lessons stop being a separate kind:** one- or two-sentence ones go into Arslan's notes, multi-step ones become skills. The use count, success record and "stop after repeated failures" (INB1) move with them.
+    7. Background tidying works like human memory: frequently used items stay at the front, long-unused ones are marked "may be out of date" rather than deleted; every entry carries a date.
+    8. Under an answer, one line "used N memories and sources"; opening it lets the user edit, delete, or choose "don't bring this up again". The progress page map also lists which memories were used.
+    9. At the top of the memory page, one line "what Arslan learned this week": how many new, merged, faded; tap for details.
+    10. No relationship graph (dropped on 10-21).
+    - ⓪Plan's call: 8 and 9 go with v0.1.65's memory files, not the interface version. They are small and they are what makes "it gets to know me" visible.
+  - **C. Language: from a memory to a rule.**
+    11. From 2026-10-28, everything written to GitHub is in English (code, comments, commits, PR bodies and comments, plan docs, bundled skills, READMEs). Older Chinese text is not rewritten. Chat with the user stays in Chinese.
+    12. Written into `CLAUDE.md` and `docs/sessions.md` §6 (this PR).
+    13. CI check: fail when a PR adds Chinese to a line where it should not be. It checks added lines only (about 250 files on main already contain Chinese), with the exceptions in `docs/sessions.md` §6 (quoted Chinese, data that matches Chinese input, translation tables, tests/evals/fixtures with Chinese input, `docs-site`, iOS UI copy until decided). Commit messages and PR text stay each session's job. Card LANG1 (v0.1.64).
+    14. Bundled skills to English: `arslan/skills/bundled/designed-html-report/SKILL.md` and `skill-creator/SKILL.md` are in Chinese and ship to every user. Part of LANG1.
+    15. Arslan itself: output language follows where the output goes. Chat follows the language of the user's message; a file follows that folder's rules; a message follows the recipient. When the user corrects the same thing twice, Arslan asks "make this a rule for this folder?" (joins L11, folder rules).
+  - **D. Personal knowledge base.**
+    16. Sources are plain folders; Arslan reads them with its file tools and cites them (decided 10-21). An Obsidian vault can be pointed at directly, no import.
+    17. **"Import memories from ChatGPT / Claude" joins v0.1.64's import card** (CAP, the Claude Code / Codex import): the user pastes, Arslan lists the entries it would keep, the user confirms before anything is stored.
+    18. WeChat: **not** by decrypting the WeChat database. The project people point to (WeChatMsg) now has only a README and images, no code and no license, and its author has stopped updating it; its method pulled a key out of the WeChat process to decrypt the local store, which breaks WeChat's terms, reads another program's memory, and pulls in other people's private messages. What works: the user picks a few passages, exports them with WeChat's own feature or takes screenshots for OCR; one "import" conversation extracts only what is about the user and shows the list before storing; the original stays in the user's folder or is deleted after use; family, health and money are asked about separately. After v0.1.65.
+  - **E. From reactive to proactive (after v0.1.65).**
+    19. Get memory right first, then propose. Proposals appear in the conversation or on the progress page, not in the Inbox, and each says why, with the memories it relied on one tap away.
+  - **Unchanged:** the outside-content gate, the #239 sensitive-memory rules, `local_only`, and "temporary conversations and no_learning write nothing".
+  - **Sources:** [Claude Code](https://code.claude.com/docs/en/memory), [ChatGPT](https://help.openai.com/en/articles/8590148-memory-faq), [Codex](https://learn.chatgpt.com/docs/customization/memories), [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory), [Letta](https://docs.letta.com/agent-sdk/memory/), [mem0](https://github.com/mem0ai/mem0), [Graphiti](https://github.com/getzep/graphiti), [WeChatMsg](https://github.com/LC044/WeChatMsg).
+
 ## 9. 流程试点：Aegis 方法包（v0.1.62 发布后再做）
 
 - **在哪试：** 只在 ②Main 的 C 线，也就是删死代码那批卡。用 Aegis 方法包（github.com/GanyuanRan/Aegis，MIT）替换 superpowers。
