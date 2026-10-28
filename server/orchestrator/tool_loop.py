@@ -2849,7 +2849,7 @@ async def run_native(**kwargs) -> dict:
         # or failed first) goes back to its sender, to run once as a turn of its own.
         for steer in facts.pop("steers", None) or []:
             steer.hand_back()
-        _untrusted.end_turn(seen)
+        run_trace.record_outside(_untrusted.end_turn(seen))     # INB2: the run's own record (runs.read_outside)
         _SENT_IS_FINAL.reset(sent_is_final)
         tool_outputs.conversation.reset(copies_of)
 

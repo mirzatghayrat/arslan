@@ -11,6 +11,48 @@ from server.services import personal_context as pc
 from server.services.memory_repository import repository
 
 
+async def _about_you(actor, ctx):
+    """INB2: the turn's own state for a new "about you" entry: the user present (the allowlist,
+    server/services/presence.py) and the whole conversation clean: this turn read nothing from outside,
+    and every other run of the conversation recorded that it read none (`runs.read_outside`; no record,
+    NULL, counts as having read some: older runs, a crashed one, a job still running)."""
+    from sqlalchemy import or_
+
+    from server.db import session as db_session
+    from server.db.models import Run
+    from server.orchestrator import untrusted
+    from server.services import presence
+    clean = not untrusted.external_seen()
+    if clean and ctx.conversation_id:
+        async with db_session.AsyncSessionLocal() as db:
+            query = select(Run.id).where(Run.conversation_id == ctx.conversation_id,
+                                         or_(Run.read_outside.is_(None), Run.read_outside.is_(True)))
+            if ctx.source_run_id is not None:
+                query = query.where(Run.id != ctx.source_run_id)
+            clean = (await db.execute(query.limit(1))).first() is None
+    return replace(actor, user_present=presence.present(), conversation_clean=clean)
+
+
+def _tell_the_window(ctx, result: dict) -> None:
+    """INB2: the chat line after a turn. A new entry that took effect reads "remembered … [Undo]"
+    (fact_saved); one that waits names its proposal, version, text and reason (memory_proposed), so a
+    sensitive one's two buttons answer exactly that proposal. Window socket only; the Bridge never
+    forwards these frames (desktop/bridge FrameMapper maps a fixed list of types)."""
+    from server.services import run_registry
+    if not ctx.conversation_id or not result.get("ok") or not result.get("id"):
+        return
+    waiting = result.get("status") == "proposed"
+    frame = {"type": "memory_proposed" if waiting else "fact_saved", "content": result.get("content"),
+             "sensitive": result.get("sensitivity", "normal") != "normal",
+             "entry_id": result.get("id"), "version": result.get("version")}
+    if waiting:
+        frame |= {"proposal_id": result.get("proposal_id"), "reason": result.get("reason")}
+    try:
+        run_registry.make_emit(ctx.conversation_id)(frame)
+    except Exception:  # noqa: BLE001 — the line is a courtesy; the entry is already saved
+        pass
+
+
 def _context(caller):
     ctx = pc.current()
     if ctx is None or caller is None or caller.actor not in {"host", "spawn"}:
@@ -59,6 +101,8 @@ async def remember(args, caller):
     scope = MemoryScope(kind="expert", id=ctx.expert_id) if caller.actor == "spawn" else (
         MemoryScope(kind="project", id=ctx.project_id) if ctx.project_id else MemoryScope(kind="global"))
     kind = "experience" if args.get("kind") == "learning" else "preference"
+    if action == "append" and caller.actor == "host" and kind == "preference":
+        actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
     try:
         async with repository() as repo:
             if action == "append":
@@ -87,8 +131,11 @@ async def remember(args, caller):
                     review_at=entry.review_at.replace(tzinfo=UTC) if entry.review_at else None,
                     expires_at=entry.expires_at.replace(tzinfo=UTC) if entry.expires_at else None,
                 ), replace(actor, explicit_save_ref=None, allow_global_save=False))
-        return {"ok": True, **result, "saved": result.get("status") == "active",
-                "requires_confirmation": result.get("status") == "proposed"}
+        out = {"ok": True, **result, "saved": result.get("status") == "active",
+               "requires_confirmation": result.get("status") == "proposed"}
+        if action == "append" and kind == "preference" and caller.actor == "host":
+            _tell_the_window(ctx, out)
+        return out
     except MemoryError as exc:
         return {"ok": False, "code": exc.code}
     except ValidationError:
@@ -135,6 +182,8 @@ async def note(args, caller):
     actor = ctx.actor("host")
     if member == "notes":
         actor = replace(actor, auto_activate_own_notes=not untrusted.external_seen())
+    elif action == "add":
+        actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
     try:
         async with repository() as repo:
             current = await _note_set(repo, ctx.owner_id, member)
@@ -146,6 +195,8 @@ async def note(args, caller):
                             "next_action": "replace or remove an entry by id, then add"}
                 result = await repo.create(MemoryWrite(content=text, kind=kind, scope=MemoryScope(kind="global"),
                                                        core=member), actor)
+                if member == "about_you":
+                    _tell_the_window(ctx, {"ok": True, **result})
             else:
                 target = next((row for row in current if row["id"] == args.get("id")), None)
                 if target is None:
@@ -166,7 +217,7 @@ async def note(args, caller):
                     core=member if action == "replace" else None,
                 ), replace(actor, explicit_save_ref=None, allow_global_save=False))
         return {"ok": True, "id": result.get("id") or result.get("target_id"), "status": result.get("status"),
-                "saved": result.get("status") == "active",
+                "version": result.get("version"), "saved": result.get("status") == "active",
                 "requires_confirmation": result.get("status") == "proposed",
                 "note": "Takes effect from the next turn." if result.get("status") == "active" else
                         "Proposed: the user confirms it in Brain."}

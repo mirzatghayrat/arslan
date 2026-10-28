@@ -13,8 +13,9 @@ export interface ProactiveItem {
 }
 export interface ProactiveSummary {
   open: number; unread: number; high: number;
-  /** 0.1.55 §12: cards waiting for approval (any conversation or job) and memory waiting for an OK. */
-  approvals?: number; memory?: number;
+  /** 0.1.55 §12: cards waiting for approval (any conversation or job). Memory is not counted since
+   *  v0.1.64 (INB1/INB2): what did not take effect is listed in Memory, it does not wait for an OK. */
+  approvals?: number;
 }
 export interface ProactiveConfig {
   enabled: boolean; notify: boolean; notify_daily_cap: number; quiet_start: string; quiet_end: string;

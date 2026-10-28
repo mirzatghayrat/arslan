@@ -448,9 +448,9 @@ async def test_dismiss_can_mute_a_whole_kind_and_unmute_undoes_it(execution_db):
 
 async def test_unread_and_high_counts_follow_the_user_reading(execution_db):
     await ingest(found(cand(1, priority="high"), cand(2)), ProactiveConfig(notify=False))
-    assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0, "memory": 0}
+    assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0}
     await svc.mark_seen([i.id for i in await rows(execution_db)])
-    assert await svc.summary() == {"open": 2, "unread": 0, "high": 0, "approvals": 0, "memory": 0}
+    assert await svc.summary() == {"open": 2, "unread": 0, "high": 0, "approvals": 0}
 
 
 async def test_list_puts_the_urgent_first_and_scopes_done_items_apart(execution_db):
@@ -657,9 +657,10 @@ async def test_every_detector_and_the_brief_produce_items_the_gate_and_the_catal
     assert again["created"] == [] and len(await rows(execution_db)) == 5
 
 
-async def test_the_inbox_counts_cards_waiting_and_memory_waiting(execution_db):
-    """0.1.55 §12: the badge counts what waits for a decision, not only proactive items. INB1: a learned
-    practice that is not in effect no longer waits for an OK, so it is not counted."""
+async def test_the_inbox_counts_cards_waiting_and_never_memory(execution_db):
+    """0.1.55 §12: the badge counts what waits for a decision, not only proactive items. INB1/INB2
+    (v0.1.64): neither a learned practice nor a memory proposal waits for an OK; they are listed in
+    Memory, so the badge counts neither."""
     import asyncio
 
     from server.db.models import Lesson, MemoryProposal
@@ -676,7 +677,7 @@ async def test_the_inbox_counts_cards_waiting_and_memory_waiting(execution_db):
     pending = approvals.open_card("c", {"type": "propose_schedule", "call_id": "x1"}, broadcast=False)
     try:
         got = await svc.summary()
-        assert (got["approvals"], got["memory"]) == (1, 1)
+        assert got["approvals"] == 1 and "memory" not in got
     finally:
         pending.future.cancel()
         approvals.close_card(pending)

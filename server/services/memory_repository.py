@@ -228,18 +228,21 @@ class MemoryRepository:
         ))
         await self.db.flush()
         await self._source(entry, revision_id, actor)
+        proposal_id, reason = None, None
         if status == "proposed":
-            await self._proposal(entry, actor, candidate=None)
+            # INB2: why it waits (decision.reason; a topic clash with a confirmed rule is still "confirmation_required").
+            reason = decision.reason if decision.status == "proposed" and decision.reason else "confirmation_required"
+            proposal_id = await self._proposal(entry, actor, candidate=None, reason=reason)
         await self.db.flush()
         await self.compatibility_id(entry)
         await self._sync_index(entry.id)
-        return await self.present(entry)
+        return await self.present(entry, **({"proposal_id": proposal_id, "reason": reason} if proposal_id else {}))
 
-    async def _proposal(self, entry, actor, candidate):
+    async def _proposal(self, entry, actor, candidate, reason: str = "confirmation_required"):
         proposal = MemoryProposal(
             kind="memory_v2", table_name="memory_entries", old_id=None, new_id=None,
             target_entry_id=entry.id, target_version=entry.version, candidate=candidate,
-            reason="confirmation_required", status="pending",
+            reason=reason, status="pending",
             provenance={"source_kind": actor.origin, "task_id": actor.task_id},
             conversation_id=actor.task_id,
         )

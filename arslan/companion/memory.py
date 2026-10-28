@@ -84,6 +84,12 @@ class MemoryActor:
     source_message_id: int | None = None
     source_run_id: int | None = None
     conversation_id: str | None = None
+    # v0.1.64 INB2: an "about you" memory Arslan writes takes effect directly when the user is present
+    # (server/services/presence.py, the allowlist) and the whole conversation read nothing from outside
+    # (`runs.read_outside`). Set only by the remember / memory_note executors from the turn's own state,
+    # never from arguments.
+    user_present: bool = False
+    conversation_clean: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,6 +98,22 @@ class WriteDecision:
     sensitivity: str
     use_policy: str
     confirmation_kind: str | None
+    # Why a proposal waits (INB2), for Memory's 待整理: sensitive / not_present / external_seen, or
+    # confirmation_required for every other proposal (as before).
+    reason: str | None = None
+
+
+# Sensitive inference is never saved silently, even if the model labels it normal. INB2 adds family
+# (add-only; bare "child" is left out on purpose: "child process").
+_SENSITIVE = (r"\b(?:birthday|diagnosis|medical|passport|salary|bank account|home address"
+              r"|family|children|kids?|son|daughter|parents?|father|mother|spouse|husband|wife)\b"
+              r"|(?:生日|诊断|病史|身份证|护照|工资|银行账户|家庭住址|精确位置"
+              r"|家人|家属|孩子|儿子|女儿|父母|父亲|母亲|爸爸|妈妈|配偶|丈夫|妻子|老公|老婆)")
+
+
+def sensitive_words(text: str) -> bool:
+    import re
+    return bool(re.search(_SENSITIVE, text, re.IGNORECASE))
 
 
 def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
@@ -110,14 +132,10 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
         }
         if write.scope.kind != "global" and write.scope.id != allowed.get(write.scope.kind):
             raise MemoryError("memory_scope_denied")
-    # Sensitive inference is never saved silently, even if the model labels it normal.
-    import re
     sensitive = write.sensitivity
     if sensitive == "unknown" and actor.origin == "user" and write.sensitive_acknowledged:
         sensitive = "sensitive"
-    if re.search(r"\b(?:birthday|diagnosis|medical|passport|salary|bank account|home address)\b"
-                 r"|(?:生日|诊断|病史|身份证|护照|工资|银行账户|家庭住址|精确位置)",
-                 write.content + (write.style_reference.model_dump_json() if write.style_reference else ""), re.IGNORECASE):
+    if sensitive_words(write.content + (write.style_reference.model_dump_json() if write.style_reference else "")):
         sensitive = "sensitive"
     import hashlib
     content_digest = hashlib.sha256(normalized_memory(write.content).encode()).hexdigest()
@@ -137,19 +155,31 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
     own_note = (not user_confirmation and not auto_noticed and actor.origin == "host"
                 and actor.auto_activate_own_notes and write.kind == "experience"
                 and write.scope.kind == "global" and sensitive == "normal" and not write.style_reference)
+    # INB2: "about you" Arslan writes, present and clean. An edit of an existing entry (supersede, replace)
+    # never comes here with these flags set: the executors set them only for a new entry.
+    about_you = (not user_confirmation and not auto_noticed and not own_note and actor.origin == "host"
+                 and actor.user_present and actor.conversation_clean and write.kind == "preference"
+                 and sensitive == "normal" and not write.style_reference)
     if user_confirmation:
         use_policy = write.use_policy if (actor.origin == "user" or actor.cloud_memory_allowed) else "local_only"
         kind = "user_form" if actor.origin == "user" else "explicit_user_request"
-    elif auto_noticed or own_note:
+    elif auto_noticed or own_note or about_you:
         use_policy = "cloud_allowed" if actor.cloud_memory_allowed else "local_only"
-        kind = "auto_noticed" if auto_noticed else "arslan_note"
+        kind = "auto_noticed" if auto_noticed else "arslan_note" if own_note else "arslan_about_you"
     else:
         use_policy, kind = "local_only", None
+    active = user_confirmation or auto_noticed or own_note or about_you
+    reason = None if active else (
+        "sensitive" if sensitive != "normal"
+        else "not_present" if actor.origin == "host" and write.kind == "preference" and not actor.user_present
+        else "external_seen" if actor.origin == "host" and write.kind == "preference" and not actor.conversation_clean
+        else "confirmation_required")
     return WriteDecision(
-        status="active" if (user_confirmation or auto_noticed or own_note) else "proposed",
+        status="active" if active else "proposed",
         sensitivity=sensitive,
         use_policy=use_policy,
         confirmation_kind=kind,
+        reason=reason,
     )
 
 

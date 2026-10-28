@@ -135,9 +135,13 @@ async def capture(conversation_id: str, user_message: str, emit, *, recheck=None
         logger.info("turn facts skipped: %s", type(exc).__name__)
         return 0
     for fact in created:
-        emit({"type": "memory_proposed" if getattr(fact, "status", "active") != "active" else "fact_saved",
+        waiting = getattr(fact, "status", "active") != "active"
+        emit({"type": "memory_proposed" if waiting else "fact_saved",
               "content": fact.content, "sensitive": fact.sensitive,
-              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None)})
+              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None),
+              # INB2: which proposal it waits as, and why (window socket only; the Bridge never forwards it).
+              **({"proposal_id": getattr(fact, "proposal_id", None), "reason": getattr(fact, "reason", None)}
+                 if waiting else {})})
     if created:
         try:
             from server.services import recap_service
