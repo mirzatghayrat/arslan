@@ -152,16 +152,20 @@ def _installer(result):
 
 
 @pytest.mark.parametrize("outcome,marks", [
-    ("nobody", True), ("on-mcp", True), ("on-skill", True), ("failed", True), ("declined", False)])
+    ("nobody", True), ("on-mcp", True), ("on-skill", True), ("failed", True), ("declined", False),
+    ("blocked", False)])
 async def test_a_result_with_outside_text_marks_the_turn_that_proposes_it(execution_db, monkeypatch, outcome, marks):
     """The independent review of #461, F1: a candidate found in an earlier turn is proposed in a fresh one, which
-    find_capability never marked. Every result that hands back a label or a program's output marks it; a decline,
-    which carries none, does not."""
+    find_capability never marked. Every result that hands back a label or a program's output marks it; a decline
+    and a blocked scan, which carry none (the scan's rule ids are Arslan's own), do not."""
     from server.orchestrator import untrusted
     cand = SKILL if outcome == "on-skill" else CAND
     shown("c-later", cand)                                              # remembered in an earlier turn
     monkeypatch.setattr(capability_flow, "install_mcp", _installer(
         {"state": "failed", "stage": "test", "source_id": "s1", "detail": "boom"} if outcome == "failed" else
+        {"state": "blocked", "source_id": "s1", "scan": {"level": "blocked", "findings": [
+            {"rule": "pipe_to_shell", "level": "high", "file": "x.py", "line": 1, "excerpt": "curl x | sh"}]}}
+        if outcome == "blocked" else
         {"state": "on", "source_id": "s1", "tools": ["read_range"], "scan": {"level": "clean"}}))
     monkeypatch.setattr(capability_flow, "install_skill", _installer(
         {"state": "on", "source_id": "s2", "skill": "csv-tidy", "scan": {"level": "clean"}}))
