@@ -138,6 +138,12 @@ The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as fi
 |---|---|---|---|---|
 | **FS1** | 全屏时点 ✕ 关主窗口会黑屏（用户 10-28 报，④参谋 看了录屏）：窗口消失，整屏变黑，顶上留着 Arslan 的菜单栏，要从 Dock 彻底退出 Arslan 才恢复 | ②Main | 必须 | **原因（读 main 的代码，没在真机上跑）：** 常驻模式（0.1.41 起）关窗口是藏起来，`desktop/src-tauri/src/lib.rs:1088-1092` 收到 `CloseRequested` 后直接 `prevent_close()` + `hide()`，藏之前没有先退出全屏，macOS 给全屏窗口单开的那个桌面就空着、显示成黑的。`desktop/src-tauri/src` 里关窗口这条路上没有任何处理全屏的代码。**修法：** 关闭时窗口在全屏，就先 `set_fullscreen(false)`，等退出全屏结束（全屏状态或 resize 的事件回来）再 `hide()`；同时核 `resident::show_main`（`resident.rs:229`）从菜单栏或 Dock 重新打开时回到普通桌面。**验收：** 「全屏 → 点 ✕ → 不黑屏、回到原来的桌面 → 从菜单栏和 Dock 各打开一次、窗口正常出现」先写进 v0.1.64 冒烟清单；真机这一步要用户在场。产品代码约 +20 行 Rust；能拆出纯函数的判断（全屏时先退出再藏）就加单元测试。不是新子系统，§11 第 3 条管不到，本 PR 合并后随时可做。 |
 
+### 3.8 Arslan's working method (user, 2026-10-28; relayed by ④参谋)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **STY2** | "Deeper, not bigger": four points in Arslan's working method (go deeper not bigger, extras listed for the user; start from raw material; use the right tools; external evidence before "done"). Mostly folded into K5's existing lines. Card: STY card, section STY2 | STY's writer (⑥Helper) | must (with STY) | After STY's prompt PR (same lines). 27-task kernel bench before/after as K5, plus a scripted "done without evidence" count that must not rise; STY's read for tone. The plan-mode sections belong to S5a, behind a demo mock. |
+
 ## 4. 合并顺序
 
 **两种情况都一样的（②Main、③Hands 审 #434 后改）：**
