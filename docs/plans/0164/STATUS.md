@@ -8,7 +8,8 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
-| #455 | S3 checkpoint tests no longer depend on the runner's free disk; CI temp on disk | `69ced22d` |
+| #451 | FS1: closing from full screen no longer leaves a black screen (real-Mac check on `SMOKE.md` still open) | `c2bfe497` (main CI 40683704446 running) |
+| #455 | S3 checkpoint tests no longer depend on the runner's free disk; CI temp on disk | `69ced22d` (main CI 40680764208 success; it covers #449 too, whose own run 40680379988 was cancelled when #455 merged) |
 | #449 | CAP1a: remove the capability discovery centre and the found-for-later rail (⑥Helper reviewed it, OK with optional cleanups, but could not post; an after-the-fact security review of the `capability_flow.py` lines is requested from ③Hands and goes on the PR) | `5ccc5e39` |
 | #432 | Security model: hard rules + sandbox + classifier, five modes (user decided 2026-10-28) | `11f05434` |
 | #434 | The v0.1.64 plan (user approved 2026-10-28) | `3759f57b` |
@@ -22,7 +23,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order: #451 → #448 → #445 → #446 → #444 → #454 → #428. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
+The user is merging in ④参谋's order: ~~#451~~ (merged) → #448 → #445 → #446 → #444 → #454 → #428. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
 
 - #443 (S64-0b): ②Main's OK at `390aa048`, CI green. Waits for the user's Codex Astra run.
 - #456 (F5b-2): ③Hands' review; ②Main's confirmation of its commit and CI pending.
