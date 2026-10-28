@@ -10,7 +10,7 @@
 | Depends on | SUB's base: SUB2 (child conversations with a parent id, only-inherited settings, hidden from the list) and the shared `kind` column from Q1's migration 0071 (`kind=side`). A clickable demo mock approved by the user before any product code (user, 2026-10-28). |
 | Merge position | After SUB2. Not in the strict security chain, but SIDE-1 is on the security surface (permissions inherited, outside-content mark), so it is written and reviewed at effort=max plus Codex GPT-6 Astra. |
 | Branches | `claude/0164-side-0-mock`, `claude/0164-side-1-backend`, `claude/0164-side-2-web` |
-| Migration | None of its own: it uses SUB2's / Q1's columns (`kind`, parent id). If it turns out to need one, ask ②Main (next free is in the plan's §6). |
+| Migration | The branch point needs a column: a branch message id on the side conversation. If Q1's migration 0071 has not opened yet, add the column there (Q1 + SUB + SIDE share it); otherwise SIDE-1 asks ②Main for the next free number and logs it in the plan's §6. `kind=side` and the parent id come from 0071. |
 
 ## What the user wants (the shape of Claude desktop's side chat)
 
@@ -22,10 +22,10 @@
 ## Rules (④参谋's additions; the user said "or a better plan if you have one"; ⓪Plan adopts them)
 
 1. **Bring back to main** is the only way anything moves to the main conversation. It is an action on a side-chat reply: it puts the reply into the main input box as a quote, and the user decides whether to send. Nothing is sent automatically.
-2. **Permissions inherit from the main conversation and are never broader.** By default only read-only tools (read files, search). No commands, file writes, memory or lesson writes, schedules or outward actions. (A later version may allow more, only by the user's explicit choice per side chat.)
-3. **Outside-content mark:** if the main conversation's turns up to the branch point read outside content, the side chat starts marked (S64-0's `untrusted.carried(True)`), because it reads that context.
+2. **Permissions inherit from the main conversation and are never broader.** By default only read-only tools (read files, search). Mechanism: SIDE-1 extends SUB2's `effective_settings` and its 422 `sub_session_inherits` (specified for `kind="sub"`) to `kind="side"`, and forces `no_memory` and `no_learning` there. The permission mode is global today (`server/services/permissions.py:575`), so "inherited" in practice means the read-only tool set, which the global mode can only narrow. No commands, file writes, memory or lesson writes, schedules or outward actions. (A later version may allow more, only by the user's explicit choice per side chat.)
+3. **Outside-content mark:** the mark is not stored per turn today (it is a per-turn context variable, `server/orchestrator/untrusted.py:74`; only `Job.outside_seen` and scheduled tasks persist it), so "did the turns up to the branch point read outside content" cannot be looked up later. Rule: **the side chat starts marked (`untrusted.carried(True)`) unless SIDE-1 can show those turns were clean; unknown counts as marked**, the same default as SUB's rule 1 and `background_jobs.py:168`. If INB2's per-run `runs.read_outside` (migration 0072) has landed, SIDE-1 may use it: every run of the parent up to the branch point `false` means clean; any `NULL` or `true` means marked.
 4. **No memory:** side chats write no memories or lessons, the same as temporary conversations.
-5. **Kept and deletable:** side chats are stored under their parent conversation so they can be reopened; each can be deleted on its own; deleting the parent deletes them.
+5. **Kept and deletable:** side chats are stored under their parent conversation so they can be reopened; each can be deleted on its own; deleting the parent deletes them. Like SUB's rule 8 for `sub`, `side` is hidden from every conversation list, `/phone/live` included (test).
 6. **Model:** the main conversation's model. Mac first; iPhone later (no Bridge frame change in v0.1.64).
 
 ## PR split

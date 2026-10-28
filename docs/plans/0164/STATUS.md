@@ -9,7 +9,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | PR | What | Merge commit |
 |---|---|---|
 | #455 | S3 checkpoint tests no longer depend on the runner's free disk; CI temp on disk | `69ced22d` |
-| #449 | CAP1a: remove the capability discovery centre and the found-for-later rail (after-the-fact security review of the `capability_flow.py` lines requested from ③Hands; it had no review recorded on GitHub) | `5ccc5e39` |
+| #449 | CAP1a: remove the capability discovery centre and the found-for-later rail (⑥Helper reviewed it, OK with optional cleanups, but could not post; an after-the-fact security review of the `capability_flow.py` lines is requested from ③Hands and goes on the PR) | `5ccc5e39` |
 | #432 | Security model: hard rules + sandbox + classifier, five modes (user decided 2026-10-28) | `11f05434` |
 | #434 | The v0.1.64 plan (user approved 2026-10-28) | `3759f57b` |
 | #442 | README §8 points to the Projects decisions | `1a29b685` |
@@ -17,6 +17,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | #438 | S64-0: four leaks in the "read outside content" mark, plus F1 | `3ee16b6c` |
 | #436 | M64: code-review, split/delegate and inverse bench tasks; same-task Pass^3 | `43667421` |
 | #440 | Memory plan in README §8; English-on-GitHub rule | `d7b96c30` |
+| #433 | v0.1.64 Inbox: the user's eight points (merged 2026-10-27, before the plan) | `502012f5` |
 | #439, #437, #435 | Codex queue, read-only Codex connection, #438 in the queue | `8df2d44e`, `ef356fb5`, `601baee0` |
 
 ## Ready for the user to merge
