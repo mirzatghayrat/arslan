@@ -946,6 +946,9 @@ fn open_main_window(app: &tauri::AppHandle, port: u16) {
     if let Err(e) = win.build() {
         return report_boot_failure(app, &format!("could not open the main window: {e}"));
     }
+    // FS1 (v0.1.64): a close from full screen hides only once the exit is done.
+    // Both callers build this window on the main thread, as AppKit requires.
+    resident::watch_main_full_screen(app);
 
     // Backstop for a page that never reports Finished. Without it a stalled
     // load leaves a hidden main window behind a launch screen that will never
@@ -1086,9 +1089,16 @@ pub fn run() {
             // Resident mode (0.1.41): closing the main window hides it; the
             // backend keeps working and the menu bar keeps it reachable.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if resident::close_action(window.label()) == resident::CloseAction::Hide {
-                    api.prevent_close();
-                    let _ = window.hide();
+                match resident::close_action(window.label(), resident::in_full_screen(window)) {
+                    resident::CloseAction::Hide => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    resident::CloseAction::LeaveFullScreenThenHide => {
+                        api.prevent_close();
+                        resident::leave_full_screen_then_hide(window);
+                    }
+                    resident::CloseAction::Close => {}
                 }
             }
         })
