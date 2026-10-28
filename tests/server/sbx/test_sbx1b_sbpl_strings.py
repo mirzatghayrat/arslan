@@ -19,9 +19,9 @@ from server.services.sandbox_profile import sbpl_string
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
 
-# Names written with escapes so this file stays ASCII.
-CJK = "保护"                                     # two CJK characters
-ACCENTED = unicodedata.normalize("NFC", "ünïcode")
+# Names written as escapes, so each one's code points are explicit (NFC and NFD look the same).
+CJK = "\u4fdd\u62a4"                                     # two CJK characters
+ACCENTED = unicodedata.normalize("NFC", "\u00fcn\u00efcode")
 EMOJI = "box-\U0001F4E6"
 CONTROL = "ctl\x01x"
 DELETE = "del\x7fx"
@@ -74,14 +74,18 @@ def _run(profile: str, *argv: str) -> subprocess.CompletedProcess:
 @macos
 @pytest.mark.parametrize("name", ["plain", CJK, ACCENTED, EMOJI, CONTROL, DELETE],
                          ids=["ascii", "cjk", "accented", "emoji", "control", "delete"])
-def test_a_protected_folder_is_closed_whatever_its_name(tmp_path, name):
+def test_a_protected_folder_or_file_is_closed_whatever_its_name(tmp_path, name):
+    """A folder is written as a subpath and a file as a literal; both go through the encoder."""
     ws = tmp_path / "ws"
     secret = ws / name / "secret.txt"
     secret.parent.mkdir(parents=True)
     secret.write_text("hush")
-    text = command_sandbox.profile([ws], [ws / name])
-    run = _run(text, "/bin/cat", str(secret))
-    assert run.returncode != 0 and "hush" not in run.stdout, (name, run.stdout, run.stderr)
+    key = ws / f"{name}.key"
+    key.write_text("hush")
+    text = command_sandbox.profile([ws], [ws / name, key])
+    for closed in (secret, key):
+        run = _run(text, "/bin/cat", str(closed))
+        assert run.returncode != 0 and "hush" not in run.stdout, (name, closed.name, run.stdout, run.stderr)
     # The control: the same command reads a file beside it.
     (ws / "open.txt").write_text("fine")
     assert _run(text, "/bin/cat", str(ws / "open.txt")).stdout == "fine"

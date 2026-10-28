@@ -99,9 +99,12 @@ def test_commands_profile_plain_and_empty(T, A):
 def test_a_non_ascii_name_is_written_as_its_own_characters(T, A):
     """SBX-1b: a CJK name is written as itself. Until SBX-1b it was `\\u5de5\\u4f5c\\u533a`
     (json.dumps), which seatbelt does not decode, so the rule matched no real folder (#471's review)."""
-    name = "工作区"           # a working folder named in Chinese
-    assert _shown(command_sandbox.profile([A / name], []), T).splitlines()[-1] == \
-        f'(allow file-write* (subpath "<T>/{name}"))'
+    name = "\u5de5\u4f5c\u533a"           # a working folder named in Chinese
+    (T / f"{name}.key").write_text("x")      # and a protected file named the same way: a literal
+    lines = _shown(command_sandbox.profile([A / name], [A / f"{name}.key"]), T).splitlines()
+    assert lines[-3:] == [f'(allow file-write* (subpath "<T>/{name}"))',
+                          f'(deny file-read* file-write* (literal "<T>/{name}.key"))',
+                          f'(deny network-outbound (literal "<T>/{name}.key"))']
 
 
 def test_outside_floor(T, A, monkeypatch):
