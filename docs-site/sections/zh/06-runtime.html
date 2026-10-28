@@ -1,5 +1,5 @@
 <section class="chapter" id="runtime"><h2><span class="num">06 / 执行运行时</span>让一次请求有过程、有边界、有结果</h2>
-<p>Arslan 的执行核心负责把用户意图变成一连串可观察的动作：准备上下文、调用模型、校验工具请求、执行获准的操作、读取真实结果，再决定继续还是交付。v0.1.60 的默认入口采用统一循环，专家已关闭；消息直接进入答复流程，长期事实的提取放在答复之后。历史专家系统仍留有兼容代码，当前主流程不再先经过一次模型路由。</p>
+<p>Arslan 的执行核心负责把用户意图变成一连串可观察的动作：准备上下文、调用模型、校验工具请求、执行获准的操作、读取真实结果，再决定继续还是交付。自 v0.1.60 起，默认入口采用统一循环；消息直接进入答复流程，长期事实的提取放在答复之后。主流程不会先经过一次模型路由，已没有任何回复能走到的专家时代代码（创建专家、专家模板和引擎）已在 v0.1.63 中移除。</p>
 <div class="flow"><div class="flow-step"><b>建立任务</b><span>绑定会话、工作区与权限</span></div><div class="flow-step"><b>准备输入</b><span>历史、记忆、资料和可用工具</span></div><div class="flow-step"><b>模型决策</b><span>请求工具，或生成答复</span></div><div class="flow-step"><b>真实执行</b><span>校验、授权、记录与结果回流</span></div><div class="flow-step"><b>检查交付</b><span>核对约定、证据和产物</span></div></div>
 <p class="evidence">源码：{{source:server/orchestrator/arslan.py|消息入口与上下文组装}}；{{source:server/services/task_context.py|可信任务上下文}}；{{source:server/orchestrator/tool_loop.py|统一工具循环}}。</p>
 
@@ -32,26 +32,30 @@
 <rect x="353" y="655" width="592" height="57" rx="8" class="box"/><text x="371" y="690" class="small">回答后：按权限提取偏好与经验，显示来源；需要审阅的内容进入提案</text>
 </svg><p class="diagram-caption">图 2 · 执行闭环。纯文本读法：输入 → 上下文 → 模型 → 参数校验 → 授权 → 工具执行 → 结果回流，再继续循环；模型也可直接回答。答案与产物须经检查，再交付或如实说明未完成；禁止和拒绝不会被模型意愿覆盖。</p></div>
 <h3>模型负责提出下一步，运行时负责执行条件</h3>
-<p>模型看到的工具是一组名称、用途与参数 schema。它返回结构化 <code>tool_calls</code> 后，运行时先解析 JSON、验证参数，再重新确认工具是否仍可用、当前预算是否允许以及是否需要用户授权。内建工具由注册表映射到执行函数，<code>mcp_</code> 前缀的工具转入 MCP 调用。一个工具出现在注册表中，并不意味着它会在每轮对话里开放。</p>
+<p>模型看到的工具是一组名称、用途与参数 schema。它返回结构化 <code>tool_calls</code> 后，运行时先解析 JSON、验证参数，再重新确认工具是否仍可用、当前预算是否允许以及是否需要用户授权。内建工具由注册表映射到执行函数，<code>mcp_</code> 前缀的工具转入 MCP 调用，模型只会看到此刻已就绪的 MCP 服务。一个工具出现在注册表中，并不意味着它会在每轮对话里开放：自 v0.1.63 起，一次请求只携带常用工具，外加两个查找器 <code>find_tools</code> 和 <code>use_tool</code>；很少用到的工具和 MCP 工具按需查找并调用，所受的审批和记录与直接调用相同。一个对话按需用过的工具列表最多增长到 12 个，且只保存在内存中。</p>
+<p>自 v0.1.63 起，回答随书写即时显示（在下文列出的端点上），原先会拦下回答的检查改为在必要时于回答之后追加更正；如果流在中途失败，Arslan 会保留你已看到的内容并说明这次回复被中断，而不是从头再来。当模型连续请求多个读取（网页、搜索、其服务标记为只读的 MCP 工具）时，最多四个同时运行；每个结果仍与发出请求的那次调用配对，任何不是读取的调用则在原位置单独运行。</p>
+<p class="evidence">源码：{{source:server/orchestrator/parallel_reads.py|同时运行的读取}}；{{source:server/orchestrator/tool_loop.py|流式显示与工具循环}}。</p>
 <p>一个关键边界是响应完整性：如果供应商因输出长度限制截断了工具调用，本批调用不会被执行，即使其中某项看起来已经完整。含有工具调用的模型文本只作为过程说明，不能提前充当最终交付。执行前后会记录检查点，真实工具结果带着对应调用身份返回模型；来自网页、文件或外部工具的内容仍作为数据处理。</p>
 <p>因此，“我已经保存文件”要能对应实际保存结果和产物引用；一句自然语言承诺不会自动变成已经发生的操作。工具失败也会成为下一轮输入，循环可以调整路线，但须继续遵守相同的权限与预算。</p>
 <p>以“读取指定目录并生成清单”为例，目录路径先作为输入进入任务范围；模型提出读取请求，工具返回实际文件信息，随后才有依据生成清单。若进一步要求移动或删除文件，运行时还要根据对应操作判断授权。最后的交付应指向已经生成的文件，并说明检查结果。这个过程中的文件列表、操作回执与产物引用，分别承担不同的证据作用。</p>
 
 <h3>统一入口之下保留模型协议差异</h3>
 <p><code>LLMAdapter</code> 提供统一调用接口，具体 Provider 处理请求格式、流式事件、工具调用与 usage。Provider 实现通过 <code>httpx</code> 发送 HTTP 请求；OpenAI 兼容端点也可配置为本地模型服务。选择云端模型时，对应请求上下文会发往用户配置的供应商。</p>
-<div class="table-wrap"><table><thead><tr><th>协议路径</th><th>v0.1.60 的实际处理</th></tr></thead><tbody><tr><td>OpenAI 兼容</td><td>支持 native trajectory：将 assistant 工具调用、调用 ID 和 tool result 渲染为原生消息历史；特定协议拒绝可触发有限降级。</td></tr><tr><td>Anthropic</td><td>使用该 Provider 既有的消息与工具结果渲染路径，没有启用 OpenAI 路径的 native trajectory 能力标记。</td></tr><tr><td>Gemini</td><td>保留自身的工具调用与历史表示，并维护所需的供应商续接信息；不能把各家流式能力视作完全相同。</td></tr></tbody></table></div>
-<p><em>Trajectory</em> 是循环中的结构化轨迹，作用是保留“哪个调用产生了哪个结果”的关系。它使内部记录统一，同时允许不同供应商使用各自协议，避免把工具交互压成一段难以核对的普通文本。</p>
-<p class="evidence">源码：{{source:arslan/llm/adapter.py|模型门面}}；{{source:arslan/llm/trajectory.py|轨迹数据结构}}；{{source:arslan/llm/providers/base.py|Provider 能力约定}}；{{source:docs/companion/0.1.49-execution-layer.md|执行层变更说明}}。</p>
+<div class="table-wrap"><table><thead><tr><th>协议路径</th><th>v0.1.63 的实际处理</th></tr></thead><tbody><tr><td>OpenAI 兼容</td><td>支持 native trajectory：将 assistant 工具调用、调用 ID 和 tool result 渲染为原生消息历史；特定协议拒绝可触发有限降级。在 DeepSeek、OpenAI 和 OpenRouter 端点上，回复随书写而流式显示，这些端点已知其流式工具调用是完整的；其他端点则整段返回。</td></tr><tr><td>Anthropic</td><td>自 v0.1.63 起也使用 native trajectory。在 Anthropic 自己的主机（或列入名单的第一方代理）上，回复随书写而流式显示，并请 API 自行清理旧的工具结果；其他使用 Anthropic 协议的端点则整段返回。</td></tr><tr><td>Gemini</td><td>保留自身的工具调用与历史表示，并维护所需的供应商续接信息；自 v0.1.63 起也使用 native trajectory，且只在 Google 自己的主机上流式显示。</td></tr></tbody></table></div>
+<p><em>Trajectory</em> 是循环中的结构化轨迹，作用是保留“哪个调用产生了哪个结果”的关系。它使内部记录统一，同时允许不同供应商使用各自协议，避免把工具交互压成一段难以核对的普通文本。如果某个端点拒绝原生历史，这一回合的其余部分会改用旧式渲染。</p>
+<p>这一层有两处修复。自 0.1.61 起，当提供商拒绝某个可选的请求设置（例如较新 Claude 模型上的 <code>temperature</code>）时，Arslan 会去掉该设置重新发送，或改用错误信息要求的名称，并为该模型记住这一点直到重启。自 0.1.62 起，MCP 工具描述会被重塑为 Anthropic、OpenAI-compatible 提供商和 Gemini 都接受的形式；如果提供商仍拒绝某个工具，该工具在这条回复剩余的部分被排除在外（第二次拒绝，或拒绝时没有指明工具，则这条回复排除所有 MCP 工具）。内建工具按原样发送。</p>
+<p class="evidence">源码：{{source:arslan/llm/adapter.py|模型门面}}；{{source:arslan/llm/trajectory.py|轨迹数据结构}}；{{source:arslan/llm/providers/base.py|Provider 能力约定}}；{{source:arslan/llm/param_heal.py|去掉被拒绝的设置后重发}}；{{source:arslan/llm/tool_schema.py|MCP 工具描述重塑}}；{{source:server/orchestrator/on_demand.py|按需工具}}；{{source:docs/companion/0.1.49-execution-layer.md|执行层变更说明}}。</p>
 
 <h3>临时协作者与后台任务各有职责</h3>
 <p><code>delegate_work</code> 把独立研究拆给临时 worker：一批最多 4 项，最多同时运行 2 项。当前 worker 只开放 <code>web_search</code> 与 <code>web_extract</code>，不能写文件或个人记忆，也不能继续递归委派。主执行者接回材料后负责核对和整合。这个设计保留了并行研究的价值，同时让执行责任集中在原任务上。</p>
 <p>后台 job 则用于较长的完整任务：它拥有独立上下文和预算，复用工具循环、产物检查与修复流程，进度通过任务卡回到会话，默认最多同时运行 3 个。网络连接、聊天窗口和后台执行有各自生命周期；切换会话不等于取消任务。本机休眠或进程退出时，后台工作也不会转交给云端继续运行。</p>
 
 <h3>先进入收尾，再触及硬限制</h3>
-<p>预算同时统计模型请求数、工具调用数、累计 token 与执行时间。达到 soft limit 时，循环应停止扩张研究范围并组织现有成果；hard limit 防止继续失控消耗。嵌套执行和重试也要计入任务预算，无进展的重复调用另有检测，避免反复尝试同一条失败路径。</p>
-<div class="table-wrap"><table><thead><tr><th>默认配置</th><th>模型请求</th><th>工具调用</th><th>累计 token</th><th>执行时间</th></tr></thead><tbody><tr><td>前台 turn</td><td>32</td><td>24</td><td>128,000</td><td>600 秒</td></tr><tr><td>后台 lean</td><td>60</td><td>40</td><td>300,000</td><td>900 秒</td></tr><tr><td>后台 standard</td><td>120</td><td>80</td><td>600,000</td><td>1,800 秒</td></tr><tr><td>后台 ample</td><td>240</td><td>160</td><td>1,200,000</td><td>3,600 秒</td></tr></tbody></table></div>
-<p class="note">表中是 soft 默认值，四项 hard 值为其 1.5 倍。单次输出上限与产物大小限制另行计算。token 用量在响应返回后记账，因此这些阈值是调度边界，不能理解为精确费用上限或完成时长承诺。恢复任务会继承已用计数与执行时间，停机等待时间不作为重新执行时长，也不会清零预算。</p>
-<p class="evidence">源码：{{source:arslan/execution_budget.py|预算规则}}；{{source:server/services/task_workers.py|临时协作者}}；{{source:server/services/background_jobs.py|后台任务}}。</p>
+<p>预算同时统计模型请求数、工具调用数、累计 token、执行时间，以及自 v0.1.63 起的美元。聊天回复和后台任务现在适用相同的限制：设置中选定的档位，默认是 standard。达到 soft limit 时，循环应停止扩张研究范围并组织现有成果；hard limit 防止继续失控消耗。嵌套执行和重试也要计入任务预算，无进展的重复调用另有检测，避免反复尝试同一条失败路径。</p>
+<div class="table-wrap"><table><thead><tr><th>档位（聊天回复和后台任务）</th><th>模型请求</th><th>工具调用</th><th>累计 token</th><th>执行时间</th></tr></thead><tbody><tr><td>lean</td><td>60</td><td>40</td><td>300,000</td><td>900 秒</td></tr><tr><td>standard（默认）</td><td>120</td><td>80</td><td>600,000</td><td>1,800 秒</td></tr><tr><td>ample</td><td>240</td><td>160</td><td>1,200,000</td><td>3,600 秒</td></tr></tbody></table></div>
+<p class="note">表中是 soft 默认值，四项 hard 值为其 1.5 倍。单次输出上限与产物大小限制另行计算。token 用量在响应返回后记账，因此这些阈值是调度边界，不能理解为精确费用上限或完成时长承诺。等待审批卡的时间不计入执行时间。在这些档位之外，每个任务还有美元上限，默认开启，为 $2（设置 › 后台与主动 › 每个任务的美元上限）：运行达到其三分之二时开始收尾，达到上限时停止。只有已知价格的模型的响应才计入，所以本地模型或价格表里没有的模型不会增加金额，token 上限依然有效；检查在下一次请求之前进行，因此一次运行可能超出一个响应的量。恢复任务会继承已用计数、执行时间和美元，停机等待时间不作为重新执行时长，也不会清零预算。</p>
+<p>长时间的工作留在聊天中：Arslan 不再自己把它推到后台；后台任务是在你或模型选择时，把同样的工作换到别处去做。十分钟后，回复会告诉你它仍在工作。终端命令按它所请求的时长运行（默认 2 分钟，最多 10 分钟），但不会超过这条回复剩余的时间；如果时间限制让它停止，Arslan 仍能看到到那时为止的输出，并会被告知这一点，输出泛滥的命令则保留开头和结尾。默认情况下，每条新命令都会先显示一张卡（v0.1.63），而定时任务在这个版本中不运行命令：该步骤被跳过，并列在收件箱中。无人回应的卡片在 30 分钟后过期，Arslan 会被告知这不是拒绝。</p>
+<p class="evidence">源码：{{source:arslan/execution_budget.py|预算规则}}；{{source:server/services/terminal_exec.py|命令时间限制与输出上限}}；{{source:server/services/approvals.py|审批卡及其过期}}；{{source:server/services/task_workers.py|临时协作者}}；{{source:server/services/background_jobs.py|后台任务}}。</p>
 
 <h3>任务、尝试与验收分别记录</h3>
 <p><code>TaskSpec</code> 保存任务约定：指令、输入、范围、验收项与预算，并带有修订版本。一个 task 可经历多次 attempt；attempt 是一次具体执行尝试。修改约定、取消后返回的旧结果或恢复后的新尝试，不能互相混写状态。持久化更新同时检查 attempt 身份与 row version，防止过期执行覆盖新状态。</p>
@@ -62,11 +66,12 @@
 <h3>恢复从已有证据继续</h3>
 <p>检查点保存进度、已用预算、证据与产物引用，运行事件供界面重连后查看。进程内的 run registry 持有实际异步任务和取消入口，并把事件分发给已连接窗口；重连时同步取得快照并附着事件流，减少连接交接处的丢帧或重复。</p>
 <p>进程重启后，尚未结束的执行会被识别为中断，由用户显式继续。已经发送出去、却没有收到回执的外部动作，其效果属于未知，必须先核对，不能直接重复提交。恢复备份还会撤销旧动作授权、把相关动作标成不确定。检查点解决的是“从哪里安全继续”，并不能撤回已经产生的外部结果。</p>
+<p>另有一种检查点用于“撤回这一轮”（v0.1.63）。一个回合第一次写文件或运行命令时，Arslan 会把工作文件夹按当时的样子保存一次。撤销会把文件放回去，并把这一回合及之后的每一回合从对话中移除，连同它们教给 Arslan 的事实；摘要会保留，消息 id 绝不会被重复使用。只有当文件夹最多有 20,000 个文件和 5 GB、剩余磁盘空间足够，并且与 Arslan 的数据在同一块磁盘上时，才会保存该文件夹。可重建的文件夹（Python 环境、<code>node_modules</code>、构建输出、<code>__pycache__</code>）和形似机密的文件不会被保存，也绝不会被放回；撤销框会说明哪些没有保存。回合之后被改动的文件会保留并列出，而在某次运行仍在改动该文件夹时，撤销会被拒绝。</p>
 <p>停止也有两个层面：运行注册表负责取消正在等待或执行的异步工作，持久化状态负责阻止迟到结果继续提交。对外部系统已经接受的请求，取消本地等待无法证明对方没有执行。因此动作表区分准备、已开始、已确认、失败、效果未知与已取消等状态，恢复流程先处理这些状态，再决定哪些步骤可以再次尝试。</p>
-<p class="evidence">源码：{{source:arslan/companion/contracts.py|任务与验收契约}}；{{source:server/services/task_repository.py|持久化状态与并发检查}}；{{source:server/services/task_validation.py|产物校验}}；{{source:server/services/task_service.py|执行与显式继续}}；{{source:server/services/run_registry.py|连接与运行分离}}；{{source:server/services/task_restore.py|备份恢复边界}}。</p>
+<p class="evidence">源码：{{source:arslan/companion/contracts.py|任务与验收契约}}；{{source:server/services/task_repository.py|持久化状态与并发检查}}；{{source:server/services/task_validation.py|产物校验}}；{{source:server/services/task_service.py|执行与显式继续}}；{{source:server/services/run_registry.py|连接与运行分离}}；{{source:server/services/task_restore.py|备份恢复边界}}；{{source:server/services/checkpoints.py|用于撤销的文件夹检查点}}；{{source:server/services/turn_undo.py|撤销一个回合}}。</p>
 <h3>一轮运行中持续告知窗口</h3>
-<p>自 0.1.59 起，一轮运行期间，服务端至少每 15 秒向窗口发送一次“工作中”事件，即使模型要花几分钟写一个长文件也是如此；因此“已中断”现在只表示连接本身断了。Arslan 还在回答时发来的消息会排队，在这次回答之后立即处理，而不是被拒绝。回答语言跟随用户最新的一条消息：判断时忽略路径、网址和代码，没有文字的消息跟随界面语言。窗口连接已关闭时发出的审批不再让这一轮失败；卡片会在收件箱、Island 或重新连上的窗口里等待。</p>
-<p class="evidence">源码：{{source:server/ws/arslan.py|工作中事件、排队与重连后的卡片}}；{{source:server/orchestrator/arslan.py|回答语言}}。</p>
+<p>自 0.1.59 起，一轮运行期间，服务端至少每 15 秒向窗口发送一次“工作中”事件，即使模型要花几分钟写一个长文件也是如此；因此“已中断”现在只表示连接本身断了。自 0.1.63 起，在 Arslan 仍在回答时发来的消息，会在那条回复的下一步就到达它，而不必等它结束：尚未开始的步骤会被跳过，回复先读这条消息，窗口会说明它已被追加。正在写最终答案的回复已经没有下一步，所以这条消息在它之后立即运行。当审批卡在等待时，一条消息会以该消息为备注回答它“否”，然后接着运行。回答语言跟随用户最新的一条消息：判断时忽略路径、网址和代码，没有文字的消息跟随界面语言。窗口连接已关闭时发出的审批不再让这一轮失败；卡片会在收件箱、Island 或重新连上的窗口里等待。</p>
+<p class="evidence">源码：{{source:server/ws/arslan.py|工作中事件、排队与重连后的卡片}}；{{source:server/services/steering.py|追加到运行中回复的消息}}；{{source:server/orchestrator/arslan.py|回答语言}}。</p>
 <h3>项目：看板、关卡，以及要凭证据才打勾的检查点</h3>
 <p>自 0.1.56 起，一个项目有一份按关卡组织的计划，每一关都有清楚的过关条件和几个检查点。选定类型（游戏、app、网站、研究、写作、视频、技能、旅行、工作或其他）后，关卡按模板起草，不调用模型；“让 Arslan 细化”用用户自己的模型调用一次，把关卡贴合到终点线上，用户点“创建”之前什么都不保存。看板的四栏——想法、成形、在做、完成——由当前关卡推导，不靠拖动；“完成”和“放弃”只由用户来定。</p>
 <p>Arslan 只凭能说出来源的证据推进计划，而且只针对当前关卡：写明文件的检查点，在这些文件出现在项目文件夹里时打勾；用户自己发完一轮后，由判断层判断这条消息是否说明某件事做完了；从项目“交给 Arslan 起头”开始的后台任务以完成结束时，为对应检查点打勾。小勾可以撤销；过关只是卡片上的提议，不发通知、不进收件箱。只有连续猜对十次之后，Arslan 才会问一次能否自己推进关卡。它学到的计划规则、用户的节奏和“停滞”提示都留在本机，只在用户自己发起的起草请求里才会进入模型。</p>

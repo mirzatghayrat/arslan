@@ -11,7 +11,7 @@
 | 分级 | 必须（用户 2026-10-21 定，U13 第 2 条；10-28 的八条；10-27 的 Hermes 表里 v0.1.64 的三行） |
 | 依赖 | **硬依赖 SBX（沙箱默认拒绝）**：跑陌生代码或者靠沙箱守边界的 PR，都排在 SBX 合并之后，没有例外。这包括 CAP5、CAP6b、CAP7b、CAP10。**CAP5 还要等 #432**。S1、S7 已在 v0.1.63 合并（10-21 安全底线的前提已满足）。CAP2a 和 C7c 都碰 `expert_conversion.py`，谁先合另一个 rebase。CAP3 的「专业工作方法」并进技能，和 SUB 一起改 |
 | 合并位置 | 按 `docs/plans/0164/README.md` §4：SBX（和 S2a-3）之后。CAP1–CAP3 不跑陌生代码，#432 采纳「情况 B」时可以先做。CAP4 起按编号顺序。每张删表的迁移单独一个 PR，排在删代码的 PR 之后 |
-| 推动的门槛 | 10-21 安全底线全部落地；10-28 八条（⑤ 等用户点头）；Hermes 表的 security / verify / import-agent 三行；`sessions.md` §11（同版删掉被替换的发现中心、创建技能页、候选表和评估门；`curator.py:28` 的 `DELETE-BY: v0.1.64`）；R64 安全门槛（每个碰安全面的 PR 有 effort=max 审查 + Codex 审查） |
+| 推动的门槛 | 10-21 安全底线全部落地；10-28 八条（⑤ 等用户点头）；Hermes 表的 security / verify / import-agent 三行；`sessions.md` §11（同版删掉被替换的发现中心、创建技能页、候选表和评估门；`curator.py:28` 的 `DELETE-BY: v0.1.64`）；R64 安全门槛（每个碰安全面的 PR 有 effort=max 审查 + Codex 审查） **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3. |
 | 分支 | `claude/0164-cap<N>-<主题>`，每个 PR 一条，例如 `claude/0164-cap1a-remove-discovery` |
 | 迁移号 | 最多五个，开工时向 ②Main 申请（main 上最新是 0070；一个 PR 最多一个迁移）：CAP1b 删 `discovery_candidates`；CAP1c 删 `capability_finds`（`models.py:401`，看「开工前要用户定的」第 2 条）；CAP2b 给升过级的技能换标法、改 seeder，再删 `skill_candidates`；CAP3b 删 `professional_methods`、`professional_method_versions`（或者写 DELETE-BY）；CAP7a 重建 `capability_sources`，让 `kind` 能是 `plugin` |
 
@@ -90,7 +90,7 @@
 ## 拆成的 PR
 
 - 每个 PR 产品代码不超过约 800 行（测试、翻译、生成的文件不算）。整份删除的部分照 U2 例外，剪线的部分另算。
-- **标「安全面」的：effort=max 写，effort=max 审，再加一道 Codex 审查**（`docs/plans/0162/README.md` §8「v0.1.64 的安全审查路径」：只看公开仓库、只读、结论写明模型、每一条都要在 PR 上回应）。
+- **标「安全面」的：effort=max 写，effort=max 审，再加一道 Codex 审查**（`docs/plans/0162/README.md` §8「v0.1.64 的安全审查路径」：只看公开仓库、只读、结论写明模型、每一条都要在 PR 上回应）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
 
 | PR | 做什么 | 安全面 | 依赖 | 量级（产品代码） |
 |---|---|---|---|---|
@@ -353,7 +353,7 @@ From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes
    - 逐个模块按导入语句和路径查；
    - 再按字符串查一遍（路由路径、注册表的键、翻译键、`usage.py` 那种名字列表）。
 2. **每个安全面 PR 先写打不过去的测试。** 例如：今天能装 `status=deleted` 的条目、扫的是装完的文件、`read_skill` 里有第三方的 description、模型能写技能目录、带钩子的插件能装上一半、锁和卡对不上照样装。先红后绿，再做 mutation（改回去，测试要红）。
-3. **卡和安全文案定稿后，先发云端审计看**（10-21 定的），再交 Codex 审合并前的头。
+3. **卡和安全文案定稿后，先发云端审计看**（10-21 定的），再交 Codex 审合并前的头。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
 4. **危险的写法只放在测试里**，PR 描述和卡里只写「哪一类」。
 5. **每个 PR 都写完成证据四项**（`sessions.md` §8），说 CI 绿要附 run id 和结论。
 

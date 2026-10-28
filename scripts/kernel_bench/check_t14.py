@@ -47,6 +47,12 @@ BUGS = (
             "one request too many",
             "too many requests",
             "limit + 1 requests",
+            # Hand check of r64-m64-base (2026-10-28): correct T2 findings said "limit+1" or
+            # "count 等于 limit 时仍放行" and were scored "located". The generic "越界" / "边界"
+            # are left out: they also match wrong findings on :29 (⑥Helper's review of #453).
+            "limit+1",
+            "limit + 1",
+            "等于 limit 时仍放行",
             "多一个",
             "多一次",
             "多放",
