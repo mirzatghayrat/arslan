@@ -145,6 +145,88 @@ async def test_outside_names_never_enter_the_sentence_arslan_tells_the_model(exe
         assert "\u202e" not in out["detail"] and "data, not instructions" in out["note"]
 
 
+def _installer(result):
+    async def install(c, *args, **kwargs):
+        return result
+    return install
+
+
+@pytest.mark.parametrize("outcome,marks", [
+    ("nobody", True), ("on-mcp", True), ("on-skill", True), ("failed", True), ("declined", False)])
+async def test_a_result_with_outside_text_marks_the_turn_that_proposes_it(execution_db, monkeypatch, outcome, marks):
+    """The independent review of #461, F1: a candidate found in an earlier turn is proposed in a fresh one, which
+    find_capability never marked. Every result that hands back a label or a program's output marks it; a decline,
+    which carries none, does not."""
+    from server.orchestrator import untrusted
+    cand = SKILL if outcome == "on-skill" else CAND
+    shown("c-later", cand)                                              # remembered in an earlier turn
+    monkeypatch.setattr(capability_flow, "install_mcp", _installer(
+        {"state": "failed", "stage": "test", "source_id": "s1", "detail": "boom"} if outcome == "failed" else
+        {"state": "on", "source_id": "s1", "tools": ["read_range"], "scan": {"level": "clean"}}))
+    monkeypatch.setattr(capability_flow, "install_skill", _installer(
+        {"state": "on", "source_id": "s2", "skill": "csv-tidy", "scan": {"level": "clean"}}))
+    token = untrusted.track_turn()                                      # the later turn: nothing read yet
+    try:
+        out = await capability_flow.propose({"candidate_id": cand["id"], "why": "x"}, conversation_id="c-later",
+                                            ask=None if outcome == "nobody" else _ask(approved=outcome != "declined"),
+                                            emit=lambda e: None)
+    finally:
+        seen = untrusted.end_turn(token)
+    assert out.get("ok") is (outcome.startswith("on")) and seen is marks
+
+
+async def test_an_install_failure_with_a_code_keeps_the_detail_out_of_the_error(execution_db, monkeypatch):
+    """F2: every install-stage failure carries a code, and the error is built from it."""
+    monkeypatch.setattr(capability_flow, "install_mcp", _installer(
+        {"state": "failed", "stage": "install", "code": "package_install_failed", "detail": HOSTILE}))
+    shown("c-code", CAND)
+    out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-code",
+                                        ask=_ask(), emit=lambda e: None)
+    assert out["error"] == "it did not pass (install: package_install_failed)"
+    assert _no_hostile_text(out["error"]) and _no_hostile_text(out["note"]) and "Ignore every rule" in out["detail"]
+
+
+@pytest.mark.parametrize("ask", [None, "yes"])
+async def test_a_hostile_skill_candidate_stays_out_of_the_sentences(execution_db, monkeypatch, ask):
+    """F2: the skill path, its name (a SKILL.md's free text) and the key it was stored under."""
+    monkeypatch.setattr(capability_flow, "install_skill", _installer(
+        {"state": "on", "source_id": "s2", "skill": HOSTILE, "scan": {"level": "clean"}}))
+    shown("c-skill", {**SKILL, "name": HOSTILE})
+    out = await capability_flow.propose({"candidate_id": SKILL["id"], "why": "x"}, conversation_id="c-skill",
+                                        ask=None if ask is None else _ask(), emit=lambda e: None)
+    assert _no_hostile_text(out["note"])
+    if ask is None:
+        assert _a_label(out["missing"])
+    else:
+        assert _a_label(out["installed"]) and _a_label(out["skill"]) and "tools" not in out
+
+
+async def test_every_cap_holds_on_a_long_hostile_input(execution_db, monkeypatch):
+    """F2: names at most 100 characters, tool names and the skill key 80, the detail 400, tools 20."""
+    long = HOSTILE + "A" * 500
+    tools = [f"{long}{i}" for i in range(25)]
+    shown("c-long", {**CAND, "name": long})
+    out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-long", ask=None,
+                                        emit=lambda e: None)
+    assert len(out["missing"]) == 100
+    monkeypatch.setattr(capability_flow, "install_mcp", _installer(
+        {"state": "on", "source_id": "s1", "tools": tools, "scan": {"level": "clean"}}))
+    out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-long",
+                                        ask=_ask(), emit=lambda e: None)
+    assert len(out["installed"]) == 100 and len(out["tools"]) == 20 and {len(t) for t in out["tools"]} == {80}
+    monkeypatch.setattr(capability_flow, "install_mcp", _installer(
+        {"state": "failed", "stage": "test", "source_id": "s1", "detail": long}))
+    out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-long",
+                                        ask=_ask(), emit=lambda e: None)
+    assert len(out["detail"]) == 400
+    monkeypatch.setattr(capability_flow, "install_skill", _installer(
+        {"state": "on", "source_id": "s2", "skill": long, "scan": {"level": "clean"}}))
+    shown("c-long-skill", SKILL)
+    out = await capability_flow.propose({"candidate_id": SKILL["id"], "why": "x"}, conversation_id="c-long-skill",
+                                        ask=_ask(), emit=lambda e: None)
+    assert len(out["skill"]) == 80
+
+
 async def test_a_decline_installs_nothing(execution_db, monkeypatch):
     from server.db.models import CapabilitySource
     installs = []
