@@ -357,7 +357,8 @@ async def test_brain_lists_accepts_undoes_pins_and_deletes(client):
         await db.commit()
     [item] = (await client.get("/api/v1/lessons")).json()
     assert item["status"] == "proposed" and item["text"] == "Adding reminders → use Swift"
-    assert (await client.post(f"/api/v1/lessons/{item['id']}/status", json={"status": "active"})).json()["status"] == "active"
+    assert (await client.post(f"/api/v1/lessons/{item['id']}/status",
+                              json={"status": "active", "expected_updated_at": item["updated_at"]})).json()["status"] == "active"
     assert (await client.post(f"/api/v1/lessons/{item['id']}/status", json={"status": "proposed"})).status_code == 422
     assert (await client.post(f"/api/v1/lessons/{item['id']}/pin", json={"pinned": True})).json()["pinned"] is True
     assert (await client.get("/api/v1/lessons?status=archived")).json() == []

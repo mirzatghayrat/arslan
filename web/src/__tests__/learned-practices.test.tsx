@@ -4,11 +4,13 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) =>
-    (opts?.text ? `${key}:${opts.text}` : opts?.reason ? `${key}:${opts.reason}` : key),
-    i18n: { resolvedLanguage: "en" } }),
-}));
+// One `t` for every render, as react-i18next gives: a new one each render would re-create Memory's
+// reload and load the page again after every change, hiding whether a refusal reloads it (#466 review).
+vi.mock("react-i18next", () => {
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    (opts?.text ? `${key}:${opts.text}` : opts?.reason ? `${key}:${opts.reason}` : key);
+  return { useTranslation: () => ({ t, i18n: { resolvedLanguage: "en" } }) };
+});
 vi.mock("../components/EmbeddingSettings", () => ({ default: () => null }));
 vi.mock("../components/settings/DeletionManifestExport", () => ({ default: () => null }));
 vi.mock("../components/settings/CreateBackupButton", () => ({ default: () => null }));
@@ -159,6 +161,30 @@ describe("Brain › learned practices", () => {
     fireEvent.click(screen.getByTestId("confirm-action"));
     await waitFor(() => expect(set).toHaveBeenCalledWith(9, "active", "2026-10-01T08:00:00Z"));
     expect(set).toHaveBeenCalledTimes(1);
+  });
+  it("a switch-on refused as stale reloads the list, so trying again sends the current version (#466 review)", async () => {
+    const waiting = (updated_at: string) => lesson({ id: 2, status: "proposed", text: "Reports → tables first",
+      situation: "Reports", advice: "tables first", not_in_effect: "outside_content",
+      evidence: { not_in_effect: "outside_content" }, updated_at });
+    let version = "2026-10-28T10:00:00Z";
+    vi.spyOn(lessonsApi, "list").mockImplementation(async () => [waiting(version)]);
+    const set = vi.spyOn(lessonsApi, "setStatus").mockImplementationOnce(async () => {
+      version = "2026-10-28T11:00:00Z";                               // it changed after the sheet opened
+      throw new client.ApiError("lesson_version_conflict", 409);
+    }).mockResolvedValue({} as Lesson);
+    render(<><MemoryList /><ConfirmHost /></>);
+    const open = async () => {
+      const button = within(await screen.findByTestId("practice-2")).getByText("companion.practiceViewAndTurnOn");
+      await waitFor(() => expect(button).not.toBeDisabled());
+      fireEvent.click(button);
+      await screen.findByTestId("practice-open-sheet");
+      fireEvent.click(screen.getByTestId("confirm-action"));
+    };
+    await open();
+    await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active", "2026-10-28T10:00:00Z"));
+    expect(await screen.findByText("companion.conflict")).toBeTruthy();
+    await open();
+    await waitFor(() => expect(set).toHaveBeenLastCalledWith(2, "active", "2026-10-28T11:00:00Z"));
   });
   it("retire, pin and delete call the API; delete asks first", async () => {
     vi.spyOn(lessonsApi, "list").mockResolvedValue([lesson({ id: 4, text: "in use" })]);

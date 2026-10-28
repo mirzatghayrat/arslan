@@ -18,8 +18,10 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 class LessonStatus(BaseModel):
     status: Literal["active", "archived"]
-    # F4 (#460 review): the `updated_at` of the row Memory's sheet showed. When given, a row that changed
-    # since (its words merged, or a deleted id reused by a new lesson) is refused, not switched on.
+    # F4 (#460 review): the `updated_at` of the row Memory's sheet showed. A row that changed since (a
+    # merge counted it up or rewrote it, or a deleted id was reused by a new lesson) is refused, not
+    # switched on. Switching on requires it, so no way in skips the check (#466 review); retiring does
+    # not (the chat's Undo).
     expected_updated_at: str | None = None
 
 
@@ -60,6 +62,8 @@ async def lesson_status(lesson_id: int, body: LessonStatus):
     INB1: switching one on drops why it was not in effect (the reason, the rival, the failure count);
     Memory shows the full text and that reason before the user switches it on, and sends the
     `updated_at` it showed (F4)."""
+    if body.status == "active" and body.expected_updated_at is None:
+        raise HTTPException(422, "lesson_version_required")
     return await _change(lesson_id, status=body.status, edit=lessons.switched_on if body.status == "active" else None,
                          expected_updated_at=body.expected_updated_at)
 
