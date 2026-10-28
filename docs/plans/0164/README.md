@@ -195,7 +195,7 @@ main 上最新是 0070。这一版预计要的（开工时向 ②Main 申请、�
 | SUB6 | 删 `task_workers` 表；迁移 0052 今天 import 了 `TaskWorker`，删类之前要让 0052 在新装上照样能跑 | — |
 | S2a 跟进 | 清理旧的 `legacy_rule` 权限行 | — |
 
-Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0074 CAP1b, 0075 CAP1c. The next free number is 0076; a card that needs one asks ②Main and logs it here.
+Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0074 CAP1b, 0075 CAP1c. The 0076 PRJ0 table drop (`project_habits` / `ProjectLevel.habit`, ③Hands); next free number is 0077; a card that needs one asks ②Main and logs it here.
 
 ## 7. 门槛（R64，草稿）
 
