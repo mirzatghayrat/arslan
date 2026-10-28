@@ -16,6 +16,9 @@ export interface Lesson {
   succeeded: number;
   failed: number;
   evidence: Record<string, unknown>;
+  /** INB1: why it is not in effect (outside_content, setting_off, no_judgement, not_a_correction,
+   *  conflicts, failed_repeatedly); null while active or retired. */
+  not_in_effect?: string | null;
   last_used_at: string | null;
   created_at: string;
   updated_at: string;

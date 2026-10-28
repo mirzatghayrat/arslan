@@ -135,41 +135,82 @@ function IndexLine() {
   return line ? <span data-testid="memory-index-line">{line}</span> : null;
 }
 
-/** 0.1.52 S5: what Arslan learned from your corrections and its own detours, with its record. */
+/** 0.1.52 S5: what Arslan learned from your corrections and its own detours, with its record.
+ *  v0.1.64 (INB1): by state, each with why. In use; not in effect (read outside content, conflicts with
+ *  another, the setting was off, …); stopped (followed in three failed turns in a row); retired (folded).
+ *  Nothing waits for an OK: one that is not in effect is switched on here, after its full text and the
+ *  reason are shown. */
 function LearnedPractices({ lessons, busy, change }: {
   lessons: Lesson[]; busy: boolean; change: (operation: () => Promise<unknown>) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [showRetired, setShowRetired] = useState(false);
   const current = lessons.filter(lesson => lesson.status === "active");
+  const waiting = lessons.filter(lesson => lesson.status === "proposed");
+  const stopped = lessons.filter(lesson => lesson.status === "stale");
   const retired = lessons.filter(lesson => lesson.status === "archived");
   const source = { user_correction: "companion.sourceUser", detour: "companion.sourceDetour", machine_quirk: "companion.sourceQuirk" } as const;
+  // A waiting one learned before v0.1.64 has no reason written: the server counts it as outside content,
+  // and the page says it was not recorded.
+  const reasonOf = (lesson: Lesson) => lesson.status === "proposed" && !lesson.evidence?.not_in_effect ? "legacy"
+    : lesson.not_in_effect || (lesson.status === "stale" ? "failed_repeatedly" : "outside_content");
   const remove = async (lesson: Lesson) => {
     if (await confirmSheet({ title: t("memoryPage.deletePracticeTitle"), body: t("memoryPage.deletePracticeBody"), action: t("companion.remove") }))
       await change(() => lessonsApi.remove(lesson.id));
   };
-  const row = (lesson: Lesson) => <div key={lesson.id} data-testid={`practice-${lesson.id}`} className="memory-row group flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0">
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <span className="break-words text-[14px] leading-snug">{lesson.text}</span>
-      <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle-foreground">
-        <Tag>{t(source[lesson.source])}</Tag>{lesson.pinned ? <Tag>{t("companion.practiceUnpin")}</Tag> : null}
-        <span>{t("companion.practiceCounts", { recalled: lesson.recalled, followed: lesson.followed, succeeded: lesson.succeeded, failed: lesson.failed })}</span>
-      </span>
-    </div>
-    <HoverActions>
-      {lesson.status === "archived"
-        ? <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "active"))}>{t("companion.practiceRestore")}</button>
-        : <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "archived"))}>{t("companion.practiceRetire")}</button>}
-      <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.pin(lesson.id, !lesson.pinned))}>{t(lesson.pinned ? "companion.practiceUnpin" : "companion.practicePin")}</button>
-      <button className={`${actionClass} !text-destructive`} disabled={busy} onClick={() => void remove(lesson)}>{t("companion.remove")}</button>
-    </HoverActions>
+  const turnOn = async (lesson: Lesson) => {
+    const reason = reasonOf(lesson);
+    const rivalId = lesson.evidence?.conflicts_with;
+    const rival = typeof rivalId === "number" ? lessons.find(other => other.id === rivalId) : undefined;
+    const body = <div data-testid="practice-open-sheet" className="flex flex-col gap-2.5">
+      <dl className="flex flex-col gap-1 rounded-lg bg-fill px-3 py-2.5">
+        <dt className="text-[11px] text-subtle-foreground">{t("companion.practiceWhen")}</dt>
+        <dd className="text-[14px] text-foreground">{lesson.situation}</dd>
+        <dt className="mt-1 text-[11px] text-subtle-foreground">{t(lesson.polarity === "avoid" ? "companion.practiceAvoid" : "companion.practiceDo")}</dt>
+        <dd className="text-[14px] text-foreground">{lesson.advice}</dd>
+        <dd className="mt-1 text-[11px] text-subtle-foreground">{t("companion.practiceFrom", { source: t(source[lesson.source]) })}</dd>
+      </dl>
+      <p className="font-semibold text-ask">{t("companion.practiceWhyNot", { reason: t(`companion.why_${reason}`) })}</p>
+      <p>{t(`companion.whyDetail_${reason}`)}</p>
+      {rival && <p>{t("companion.practiceRival", { text: rival.text })}</p>}
+    </div>;
+    if (await confirmSheet({ title: t("companion.practiceOpenTitle"), body, action: t("companion.practiceTurnOn"),
+      cancel: t("companion.practiceNotNow"), destructive: false }))
+      await change(() => lessonsApi.setStatus(lesson.id, "active"));
+  };
+  const row = (lesson: Lesson) => {
+    const inEffect = lesson.status === "active" || lesson.status === "archived";
+    return <div key={lesson.id} data-testid={`practice-${lesson.id}`} className="memory-row group flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="break-words text-[14px] leading-snug">{lesson.text}</span>
+        <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle-foreground">
+          {!inEffect && <Tag tone={lesson.status === "stale" ? "danger" : "ask"}>{t(`companion.whyShort_${reasonOf(lesson)}`)}</Tag>}
+          <Tag>{t(source[lesson.source])}</Tag>{lesson.pinned ? <Tag>{t("companion.practiceUnpin")}</Tag> : null}
+          <span>{t("companion.practiceCounts", { recalled: lesson.recalled, followed: lesson.followed, succeeded: lesson.succeeded, failed: lesson.failed })}</span>
+        </span>
+      </div>
+      <HoverActions>
+        {!inEffect ? <button className={actionClass} disabled={busy} onClick={() => void turnOn(lesson)}>{t("companion.practiceViewAndTurnOn")}</button>
+          : lesson.status === "archived"
+          ? <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "active"))}>{t("companion.practiceRestore")}</button>
+          : <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "archived"))}>{t("companion.practiceRetire")}</button>}
+        {lesson.status === "active" && <button className={actionClass} disabled={busy} onClick={() => void change(() => lessonsApi.pin(lesson.id, !lesson.pinned))}>{t(lesson.pinned ? "companion.practiceUnpin" : "companion.practicePin")}</button>}
+        <button className={`${actionClass} !text-destructive`} disabled={busy} onClick={() => void remove(lesson)}>{t("companion.remove")}</button>
+      </HoverActions>
+    </div>;
+  };
+  const section = (testId: string, title: string, rows: Lesson[]) => rows.length > 0 && <div data-testid={testId} className="flex flex-col gap-1">
+    <h3 className="px-1 text-[12px] font-semibold text-muted-foreground">{title} · {rows.length}</h3>
+    <div className="overflow-hidden rounded-xl border border-border bg-surface">{rows.map(row)}</div>
   </div>;
-  if (!current.length && !retired.length) return null;
+  if (!lessons.length) return null;
   return <div data-testid="learned-practices" className="flex flex-col gap-1.5">
     <Block title={t("memoryPage.practices")}>
       {current.map(row)}
       {!current.length && <p className="px-4 py-3 text-[13px] text-subtle-foreground">{t("companion.practicesHint")}</p>}
     </Block>
+    {section("practices-not-in-effect", t("companion.practicesNotInEffect"), waiting)}
+    {section("practices-stopped", t("companion.practicesStopped"), stopped)}
     {retired.length > 0 && <button className="self-start px-1 text-[12px] text-muted-foreground hover:text-foreground" aria-expanded={showRetired}
       onClick={() => setShowRetired(value => !value)}>{t("companion.practiceRetired", { count: retired.length })}</button>}
     {showRetired && <div className="overflow-hidden rounded-xl border border-border bg-surface opacity-75">{retired.map(row)}</div>}
@@ -331,7 +372,7 @@ export default function MemoryList({ addRequest = 0, onAddHandled, onOpenMateria
   };
 
   const pendingLabel = (item: PendingMemoryItem) => item.source === "curation" ? t("pendingMemory.apply")
-    : item.source === "lesson" ? t("pendingMemory.use") : item.sensitive ? t("pendingMemory.keepLocal") : t("pendingMemory.keep");
+    : item.sensitive ? t("pendingMemory.keepLocal") : t("pendingMemory.keep");
 
   return <section className="h-full overflow-y-auto px-5 py-5 sm:px-8" aria-label={t("memoryPage.title")}>
     <div className="mx-auto flex max-w-6xl flex-col gap-5 lg:flex-row lg:items-start">

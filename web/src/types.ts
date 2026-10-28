@@ -56,7 +56,8 @@ export interface Message {
   /** 0.1.42: this entry is the live card of a background job (render the card, not a bubble). */
   jobId?: string;
   /** 0.1.52 S5: a practice learned in this turn (render one quiet line with undo). */
-  learned?: { id: number; status: string };
+  /** INB1: a practice not in effect says why (lessons.not_in_effect: outside_content, conflicts, …). */
+  learned?: { id: number; status: string; notInEffect?: string | null };
   /** 0.1.57: how a capability the user approved ended (one quiet line). */
   capabilityResult?: import('./api/client.types').CapabilityResult;
   /** 0.1.56 §7: Arslan proposes a changed plan for the project (a card, answered here). */
