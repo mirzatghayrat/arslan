@@ -69,7 +69,8 @@ def store_bytes(run_id: int, title: str, data: bytes, *, logical_key: str | None
         "id": f"artifact:{filename}",
         "kind": "file", "run_id": run_id, "filename": filename, "title": title[:240],
         "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
-        "logical_key": logical_key or _default_key(title),
+        # From the stored (cut) title, so final_versions recognises the default key on read-back.
+        "logical_key": logical_key or _default_key(title[:240]),
         "media_type": mimetypes.guess_type(basename)[0] or "application/octet-stream",
         "url": f"/api/v1/runs/{run_id}/artifacts/{filename}",
         # v0.1.64 BR2: storage order. Filenames carry a random id, so they do not sort by time.
@@ -196,7 +197,7 @@ def artifacts_by_run(run_ids: list[int] | None, *, per_run: int | None = 20) -> 
     """0.1.58 §2: the files several runs produced, in ONE pass over the folder (history rows
     carry each reply's files, so a reloaded reply shows its file cards). One card per file:
     each run's final versions (BR2), the latest `per_run` of them. `run_ids=None` is every run and
-    `per_run=None` no cap (the phone's per-conversation file counts)."""
+    `per_run=None` no cap (the phone's per-conversation file counts); `per_run=0` is none."""
     wanted = None if run_ids is None else {i for i in run_ids if isinstance(i, int) and i > 0}
     found: dict[int, list[tuple[int, str, dict]]] = {}
     if wanted is not None and not wanted or not root().is_dir():
@@ -215,7 +216,9 @@ def artifacts_by_run(run_ids: list[int] | None, *, per_run: int | None = 20) -> 
         except (OSError, ValueError, TypeError):
             continue
     # The latest `per_run`: a long turn's last files are the ones its reply is about.
-    return {run_id: final_versions(_in_order(entries))[-per_run if per_run else None:] for run_id, entries in found.items()}
+    def cap(items: list[dict]) -> list[dict]:
+        return items if per_run is None else items[len(items) - per_run:] if per_run > 0 else []
+    return {run_id: cap(final_versions(_in_order(entries))) for run_id, entries in found.items()}
 
 
 def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:

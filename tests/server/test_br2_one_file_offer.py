@@ -151,3 +151,18 @@ def test_history_keeps_the_latest_files_when_a_run_has_more_than_it_shows(ws):
     for name in ("a.md", "b.md", "c.md"):
         artifact_store.store_bytes(RUN, name, name.encode(), logical_key=hashlib.sha256(name.encode()).hexdigest())
     assert [f["title"] for f in artifact_store.artifacts_by_run([RUN], per_run=2)[RUN]] == ["b.md", "c.md"]
+
+
+def test_two_outputs_with_one_long_name_both_stay(ws):
+    """⑤CAP recheck: the stored title is cut at 240 characters; the default key is computed from
+    the cut title, so final_versions still recognises it."""
+    long = "x" * 300 + ".csv"
+    artifact_store.store_bytes(RUN, long, b"a,b")
+    artifact_store.store_bytes(RUN, long, b"c,d")
+    assert len(artifact_store.final_versions(artifact_store.list_artifacts(RUN))) == 2
+
+
+def test_a_cap_of_zero_shows_no_files(ws):
+    artifact_store.store_bytes(RUN, "a.md", b"a", logical_key="f" * 64)
+    assert artifact_store.artifacts_by_run([RUN], per_run=0)[RUN] == []
+    assert len(artifact_store.artifacts_by_run([RUN], per_run=None)[RUN]) == 1
