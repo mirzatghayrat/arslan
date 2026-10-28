@@ -44,7 +44,7 @@
 - 沙箱、确认卡、命令判定、令牌、密钥有没有绕过的路；出错、超时、限流时是放行还是拒绝（应该是拒绝或出卡）。
 - 测试有没有测后果，而不只是看代码写了；把修复删掉，测试会不会变红。
 - PR 描述说修了、代码里其实没修的；没写删除条件的旧路径或兜底。
-- Over-defence (docs/sessions.md §12): unnecessary defensive code outside the security boundaries, the same validation repeated in several layers, single-use helpers or abstractions, and broad `except` blocks that swallow errors without a comment saying why.
+- Over-defence (docs/sessions.md §12): unnecessary defensive code outside the security boundaries, the same validation repeated in several layers, single-use helpers or abstractions, and broad `except` blocks that swallow errors without a comment saying why; on an execution or permission path, a swallow that fails open is a security finding.
 
 不要：运行任何命令或测试，只读代码（你在用户的个人电脑上，不在隔离环境里）；不访问家目录、~/.arslan、Arslan 的数据文件夹或任何密钥；攻击写法只写到能证明问题为止。
 

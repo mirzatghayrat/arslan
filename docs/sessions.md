@@ -139,14 +139,29 @@
 
 ## 12. Code: no over-defence
 
-User, 2026-10-28 (relayed by ④参谋). Adapted for Python from OpenCode's `AGENTS.md` (Style Guide, General Principles). Measured on main `96bdf096` (`server/` and `arslan/`, tests excluded, about 65k lines): 808 `try` blocks, 294 broad handlers (`except Exception`, `BaseException` or bare), 32 of them silent (the body is only `pass`). Cleanup card: EXC1 in `docs/plans/0164/README.md` §3.7.
+User, 2026-10-28 (relayed by ④参谋). Adapted for Python from OpenCode's `AGENTS.md` (Style Guide, General Principles). Measured on main `96bdf096` (`server/` and `arslan/`, tests excluded, about 65k lines): 808 `try` blocks, 294 broad handlers (`except Exception`, `BaseException` or bare), 59 of them silent swallows (the body is only `pass` (32), a constant `return` (25) or `continue` (2)). Cleanup card: EXC1 in `docs/plans/0164/README.md` §3.7.
+
+**Security boundaries (all four rules):** the security model's decided boundaries are not speculative edge cases, and checks on them are not "repeated validation". They are:
+- outside content and its mark;
+- the sandbox (Seatbelt profiles and their builder);
+- command policy;
+- permissions, the five modes and confirm cards;
+- memory, learned-practice and other persisting writes;
+- Hands' own policy (the helper's never-list);
+- secrets, tokens and local auth (the API token, the WebSocket origin check, `crypto_boot`);
+- network egress checks (the SSRF allowlist, the LAN scan);
+- capability and MCP install checks;
+- the Bridge;
+- the approval ledger.
+
+Defence there follows the security process (the user decides, a review at effort=max, Codex Astra), not these rules. A check repeated across a process or privilege boundary is defence in depth, not repetition: for example the Hands helper's own never-list (`server/services/hands_service.py`, `desktop/hands/src/policy.rs`) or Seatbelt on top of `terminal_policy` (`server/services/command_sandbox.py`). Anywhere else, the rules apply.
 
 1. **No speculative defence.** Before adding code for a race or edge case that is speculative or very unlikely, write down the concrete failure (what input or timing gives what wrong result), how likely it is, and what the extra code costs. Put it in the PR description. A reviewer may ask for the code to come out. Don't grow scope quietly for theoretical robustness.
-   - **Boundary:** the security model's decided boundaries are not speculative edge cases: outside content and its mark, the sandbox, command policy, permissions and confirm cards, and memory or learned-practice writes. Defence there follows the security process (the user decides, a review at effort=max, Codex Astra), not this rule. Anywhere else, rule 1 applies.
-2. **Validate once, at the boundary that owns the value**, then pass typed values inward (a pydantic model, a dataclass, an enum, a `NewType`). Don't re-check the same thing at every layer. When a value is checked in more than one place, keep the check at the owning boundary and delete the rest. This is also the fix for the security model: the S64-0 and S64-0b holes came from the outside-content mark being carried by hand along many paths instead of being set once at entry.
+2. **Validate once, at the boundary that owns the value**, then pass typed values inward (a pydantic model, a dataclass, an enum, a `NewType`). Don't re-check the same thing at every layer. When a value is checked in more than one place, keep the check at the owning boundary and delete the rest. This is also the direction for the security model: the S64-0 and S64-0b holes came from the outside-content mark being carried by hand along many paths; the fix is to set it once at entry and honour it at every sink.
 3. **No premature abstraction.** Inline logic that is used once. Extract a helper only when it is reused, hides a genuinely complex boundary, or names a real concept. No base class, protocol, registry or factory with a single implementation.
 4. **Keep complexity down.** Avoid `try`/`except` where the error can't happen or the caller already handles it. Catch the narrowest exception you expect. Don't split one clear function into several small ones.
-   - **A broad catch that swallows** (`except Exception` or `BaseException` or a bare `except`, whose body only passes, continues or returns a default) needs a comment on the `except` line saying why swallowing is right, for example `# noqa: BLE001 — a ledger write failure does not change the decision`. A bare `# noqa: BLE001` is not a reason. Otherwise narrow it or log it.
+   - **A broad catch that swallows** (`except Exception` or `BaseException` or a bare `except`, whose body only passes, continues or returns a constant) needs a comment on the `except` line saying why swallowing is right, for example `# noqa: BLE001 — a ledger write failure does not change the decision`. A bare `# noqa: BLE001` is not a reason. Otherwise narrow it or log it.
+   - **On an execution or permission path, a swallow fails closed** (the returned constant asks, sandboxes or refuses), and its comment says so, for example `# noqa: BLE001 — unreadable means the default: sandboxed`. A swallow that fails open there is a security bug, not a style issue.
    - Catching `asyncio.CancelledError` and not re-raising needs the same comment (for example, awaiting a task you just cancelled during shutdown).
 
 **Reviewing (every review, by sessions and by Codex):** besides correctness and the evidence (§8), point out unnecessary defensive code, the same validation repeated in several layers, and helpers or abstractions with a single use. Name the file and line and say what to remove; the author answers each one (remove it, or state the failure mode it guards against).

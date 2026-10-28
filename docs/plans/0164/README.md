@@ -140,11 +140,11 @@ The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as fi
 
 ### 3.7 Code rules (user, 2026-10-28 evening, relayed by ④参谋)
 
-Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` §12 (no speculative defence outside the security model's boundaries; validate once at the owning boundary; no premature abstraction; keep `try`/`except` down). Every review, including Codex's, now also points out over-defence.
+Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` §12 (no speculative defence; validate once at the owning boundary; no premature abstraction; keep `try`/`except` down; none of them applies to the security model's boundaries, and a check repeated across a process or privilege boundary is defence in depth). Every review, including Codex's, now also points out over-defence.
 
 | Card | What | Lane | Tier | Notes |
 |---|---|---|---|---|
-| **EXC1** | The 32 silent broad catches on main: narrow, log, or keep with a reason; then a check so a new one without a reason fails CI. Card: [EXC1-silent-catches.md](EXC1-silent-catches.md) | ⑥Helper | could | Cleanup lane, blocks nothing. No behaviour change; migrations comment-only. Hot files (`tool_loop.py`, `orchestrator/arslan.py`) merge after any open K-line PR on them. |
+| **EXC1** | The 59 silent broad catches on main (32 `pass`, then 27 `return`/`continue`): narrow, log, or keep with a reason; on execution paths they fail closed; then a check so a new one without a reason fails CI. Card: [EXC1-silent-catches.md](EXC1-silent-catches.md) | ⑥Helper | could | Cleanup lane, blocks nothing. No behaviour change; migrations comment-only. Hot files (`tool_loop.py`, `orchestrator/arslan.py`) merge after any open K-line PR on them. |
 
 ## 4. 合并顺序
 
