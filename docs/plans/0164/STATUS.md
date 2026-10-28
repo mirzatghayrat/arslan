@@ -34,7 +34,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - **Recheck of a newer head:** #464 (③Hands posts a line that its OK covers `b7059ff3`).
 - **Fresh CI first:** #443 (S64-0b; main merged in at `d2ab87e5`, CI 40712453311 running).
 - **No review on GitHub yet:** #459 PRJ0 (⑤CAP), #453 and #458 (⑥Helper), #465 (③Hands OK at `7c93e2ec`, one pointer added after at `e075d479`).
-- **#447** (SBX card): main merged in at `0c1454fc` (it was conflicting); the user's answers to its seven questions come through ④参谋.
+- **#447** (SBX card): main merged in at `0c1454fc` (it was conflicting). The user answered its seven questions (2026-10-28, ~15:20 UTC), written into the card at `18c88202`: network N-a (a minimal local proxy, no site list) if SBX-M's breakage is acceptable, otherwise the numbers go back to the user before N-b; manually added MCP servers stay unsandboxed and the form says so; reads stay open minus the protected and closed folders; keep today's card when the sandbox cannot start; "ask only when risky" stays off until S2a-3 and S5a; the re-run share is only recorded; `ssh_exec` onto the builder in SBX-1. Needs a re-OK at the new head.
 
 **Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
 
@@ -59,7 +59,6 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - The STY read page (export the choices to ⓪Plan).
 - Two classifier pass lines in #444: X% of the approvable scope (⓪Plan suggests ≥ 70%) and the failure fallback cap (≤ 5%).
 - C7c questions 1, 2, 3 (DELETE-BY move for `/brain/proposals*`), 4.
-- The SBX card's seven questions (#447), mainly network N-a vs N-b.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md` (#447).
 - Making the `language` CI job a required check (branch protection, after #446).
 - The side-chat mock (SIDE-0), when it comes.
