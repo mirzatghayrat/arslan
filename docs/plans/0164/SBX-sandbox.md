@@ -4,7 +4,7 @@
 
 | Item | Content |
 |---|---|
-| Lane | ②Main. Written at **effort=max** (no precedent for this surface in Arslan; ②Main asks the user to switch the session to max before it starts, `docs/plans/0164/README.md:78`). |
+| Lane | **③Hands** (moved from ②Main on 2026-10-28, both agreeing; ③Hands also does the S2a-3 rebase on the same files). Written at **effort=max**. Reviewed by ②Main with an effort=max reviewer; Codex GPT-6 Astra on SBX-1 + SBX-2 together, then the rest one by one. SBX-1 shows the byte-for-byte check of all five profiles, old vs new, with `/usr/bin/diff` or `cmp` (not rtk's diff, which always exits 0). |
 | Version | v0.1.64 |
 | Tier | Must (user, 2026-10-22, lead roadmap §0.6 item 1; again 2026-10-28, `docs/plans/0164/README.md:43`) |
 | Depends on | Nothing in the security chain comes before it. #432 is decided (`docs/plans/0164/README.md:41-43`). S64-0 (#438) is independent. SBX-M (the measurement on a Mac) needs the user at the Mac only to start it; it uses no keys. |

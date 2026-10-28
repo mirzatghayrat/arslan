@@ -170,9 +170,9 @@ L7：随时可做，跑分不退步才合
 | 道 | 卡 |
 |---|---|
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
-| ②Main | SBX、S5a、S5b、INB（含 MEM1）、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
+| ②Main | S5a、S5b、INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
 | 新开一个会话（用户 10-28 定，为了并行） | CAP |
-| ③Hands | **S64-0（effort=max 写）**；S64-0b；HR；CLS；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
+| ③Hands | **S64-0（effort=max 写）**；S64-0b；**SBX (from 2026-10-28)**；HR；CLS；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |
 | Codex（外部工具，不是会话） | 安全面和大 PR 的独立审查（§8 安全审查路径） |
 
