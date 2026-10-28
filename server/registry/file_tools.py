@@ -444,7 +444,8 @@ class AttachFileExecutor:
         suffix = "".join(path.suffixes[-2:]) if path.suffixes[-2:-1] == [".tar"] else path.suffix
         if suffix and not title.lower().endswith(suffix.lower()):
             title += suffix
-        artifact = artifact_store.store_bytes(run_id, title, data)
+        # BR2 / M3 #12: the same key as write_file's snapshot of this path, so the turn offers it once.
+        artifact = artifact_store.store_bytes(run_id, title, data, logical_key=_file_key(path))
         return {"ok": True, "path": _home_rel(path), "attached": artifact["title"], "bytes": len(data),
                 "media_type": artifact["media_type"], "artifact": artifact}
 
@@ -459,6 +460,11 @@ def _snapshot_write(root: Path, path: Path, content: str):
     run_id = execution_context.current_run_id()
     if run_id is None:
         return None  # Legacy direct executors without a recorded Run.
-    title = _rel(path, root)
-    key = hashlib.sha256(("workspace:" + str(root.resolve()) + "/" + title).encode()).hexdigest()
-    return artifact_store.store_bytes(run_id, title, content.encode("utf-8"), logical_key=key)
+    return artifact_store.store_bytes(run_id, _rel(path, root), content.encode("utf-8"), logical_key=_file_key(path))
+
+
+def _file_key(path: Path) -> str:
+    """One file's identity across a run's snapshots and attachments (BR2 / M3 #12): its resolved
+    path. Before v0.1.64 a snapshot's key was built from the workspace root plus the relative path
+    and an attachment had none, so the window and the phone showed one card per write."""
+    return hashlib.sha256(("file:" + str(path.resolve())).encode()).hexdigest()

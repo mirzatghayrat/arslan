@@ -60,6 +60,22 @@ describe("files a reply wrote", () => {
     expect(toUiMessages(useArslanStore.getState().items)[0].files?.map((f) => f.title)).toEqual(["报告/a.md"]);
   });
 
+  it("a write and attach_file of the same file are one card, the attachment (BR2 / M3 #12)", () => {
+    const store = useArslanStore.getState();
+    const key = "c".repeat(64);
+    store.handleFrame({ type: "stream_start", source: "arslan", run_id: 9 } as never);
+    store.handleFrame({ type: "tool_call", tool: "write_file", args_summary: '{"path": "r/report.md"}' } as never);
+    store.handleFrame({ type: "tool_result", tool: "write_file", ok: true, summary: "ok", artifact: { ...art("r/report.md", 1), logical_key: key } } as never);
+    store.handleFrame({ type: "tool_call", tool: "attach_file", args_summary: '{"path": "r/report.md"}' } as never);
+    store.handleFrame({ type: "tool_result", tool: "attach_file", ok: true, summary: "ok", artifact: { ...art("Weekly report.md", 2), logical_key: key } } as never);
+    store.handleFrame({ type: "tool_call", tool: "write_file", args_summary: '{"path": "r/other.md"}' } as never);
+    store.handleFrame({ type: "tool_result", tool: "write_file", ok: true, summary: "ok", artifact: { ...art("r/other.md", 3), logical_key: "d".repeat(64) } } as never);
+    store.handleFrame({ type: "stream_chunk", content: "sent" } as never);
+    store.handleFrame({ type: "stream_end", message_id: 6, run_id: 9 } as never);
+    expect(toUiMessages(useArslanStore.getState().items).find((m) => m.text === "sent")?.files?.map((f) => f.title))
+      .toEqual(["Weekly report.md", "r/other.md"]);
+  });
+
   it("shows up to three cards, one per path; the rest open the workbench; a card opens the reader", () => {
     render(<ReplyArtifacts files={[art("r/a.md", 1), art("r/b.csv", 2), art("r/c.pdf", 3), art("r/d.png", 4)]} />);
     expect(screen.getAllByTestId("file-card")).toHaveLength(3);

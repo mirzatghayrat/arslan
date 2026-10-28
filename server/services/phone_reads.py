@@ -79,7 +79,8 @@ def artifact_counts() -> dict[int, int]:
 def run_files(run_id: int | None) -> list[dict]:
     if not run_id:
         return []
-    return [ref for ref in map(file_reference, artifact_store.list_artifacts(run_id)) if ref]
+    # BR2: one offer per file, its last version (a file written three times was offered three times).
+    return [ref for ref in map(file_reference, artifact_store.final_versions(artifact_store.list_artifacts(run_id))) if ref]
 
 
 # ------------------------------------------------------------------ history in one envelope
