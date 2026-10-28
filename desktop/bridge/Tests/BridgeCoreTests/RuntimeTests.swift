@@ -43,16 +43,27 @@ final class RuntimeTests: XCTestCase {
         (control.last("devices")?["items"] as? [[String: Any]] ?? []).compactMap { $0["device_id"] as? String }.sorted()
     }
 
-    /// BR1: the poll loop reads `pairingOpen()`; it follows Arslan's "pairing.new" and the click.
-    func testThePollLoopSeesAnOpenPairingCode() async throws {
+    /// BR1: the poll loop reads `isPairing()`; it follows Arslan's "pairing.new" and the click, and
+    /// stays at 2 s for the minute after the click (build 25: the phone's first hello comes then).
+    func testThePollLoopStaysFastUntilAMinuteAfterTheClick() async throws {
         let store = MemoryStore(), control = FakeControl()
         let bridge = try runtime(store, control)
-        XCTAssertFalse(bridge.pairingOpen())
+        XCTAssertFalse(bridge.isPairing())
         let id = try await ask(bridge, store, control, phoneID: "iphone-br1")
-        XCTAssertTrue(bridge.pairingOpen())
-        XCTAssertEqual(PollPace.interval(lastHeard: bridge.mailbox.lastHeard, pairingOpen: bridge.pairingOpen()), 2)
+        XCTAssertTrue(bridge.isPairing())
+        XCTAssertEqual(PollPace.interval(lastHeard: bridge.mailbox.lastHeard, pairing: bridge.isPairing()), 2)
         try await bridge.handleControl(["type": "pairing.decide", "request_id": id, "accept": true])
-        XCTAssertFalse(bridge.pairingOpen())
+        let clicked = Date()
+        XCTAssertNil(bridge.mailbox.lastHeard, "the new phone has not written as a paired phone yet")
+        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairing: bridge.isPairing(now: clicked), now: clicked), 2)
+        let later = clicked.addingTimeInterval(61)
+        XCTAssertFalse(bridge.isPairing(now: later))
+        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairing: bridge.isPairing(now: later), now: later), 10)
+        // A phone heard inside the minute keeps the "heard" rule's pace after it.
+        let heard = clicked.addingTimeInterval(30)
+        XCTAssertEqual(PollPace.interval(lastHeard: heard, pairing: bridge.isPairing(now: later), now: later), 2)
+        let quiet = heard.addingTimeInterval(PollPace.window)
+        XCTAssertEqual(PollPace.interval(lastHeard: heard, pairing: bridge.isPairing(now: quiet), now: quiet), 10)
     }
 
     func testTheQRCodeDecodesBackToTheURI() throws {

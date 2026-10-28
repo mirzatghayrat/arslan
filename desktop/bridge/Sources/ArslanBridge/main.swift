@@ -127,7 +127,7 @@ Task {
     while true {                                   // §2: every 2 s while the phone app is open or a pairing code is, else 10 s
         do { for received in try await runtime.poll() { await links.handle(received) } }
         catch { BridgeLog.error("reading the store", error) }
-        let pace = PollPace.interval(lastHeard: runtime.mailbox.lastHeard, pairingOpen: runtime.pairingOpen())
+        let pace = PollPace.interval(lastHeard: runtime.mailbox.lastHeard, pairing: runtime.isPairing())
         try? await Task.sleep(nanoseconds: UInt64(pace * 1_000_000_000))
     }
 }

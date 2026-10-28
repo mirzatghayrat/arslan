@@ -55,9 +55,9 @@ final class PollPaceTests: XCTestCase {
     /// is nil; an open code alone keeps the Mac at 2 s.
     func testFastWhileAPairingCodeIsOpen() {
         let now = Date()
-        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairingOpen: true, now: now), 2)
-        XCTAssertEqual(PollPace.interval(lastHeard: now.addingTimeInterval(-600), pairingOpen: true, now: now), 2)
-        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairingOpen: false, now: now), 10)
+        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairing: true, now: now), 2)
+        XCTAssertEqual(PollPace.interval(lastHeard: now.addingTimeInterval(-600), pairing: true, now: now), 2)
+        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairing: false, now: now), 10)
     }
 
     func testAnythingThePhoneWritesCountsAcksIncluded() async throws {

@@ -395,14 +395,15 @@ public final class MemoryStore: EnvelopeStore {
 }
 
 /// How often the Bridge reads the store: every 2 s while the phone wrote in the last two minutes
-/// (its app is open: it acks each 60-s heartbeat) or while a pairing code is open, else every 10 s.
+/// (its app is open: it acks each 60-s heartbeat) or while a pairing is under way, else every 10 s.
 /// Measured 2026-10-04: at a flat 10 s a phone message waited up to 10 s before the Mac even saw it.
 /// A phone that is pairing has never written as a paired phone (`lastHeard` is nil), so without the
-/// second case its pair.request waited up to 10 s while the phone itself polls at 2 s (build 24, BR1).
+/// second case its pair.request (build 24) and its first hello after the click (build 25) each
+/// waited up to 10 s while the phone itself polls at 2 s (BR1, `PairingHost.isPairing`).
 public enum PollPace {
     public static let active: TimeInterval = 2, idle: TimeInterval = 10, window: TimeInterval = 120
-    public static func interval(lastHeard: Date?, pairingOpen: Bool = false, now: Date = Date()) -> TimeInterval {
-        if pairingOpen { return active }
+    public static func interval(lastHeard: Date?, pairing: Bool = false, now: Date = Date()) -> TimeInterval {
+        if pairing { return active }
         guard let lastHeard, now.timeIntervalSince(lastHeard) < window else { return idle }
         return active
     }
