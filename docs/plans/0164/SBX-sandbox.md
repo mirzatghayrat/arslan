@@ -1,6 +1,6 @@
 # SBX: a default-deny sandbox, and one sandbox for everything
 
-> Draft by ⓪Plan, 2026-10-28, for the v0.1.64 plan. Revised the same day after ②Main's and ③Hands' reviews on #447 (issuecomment-6465940944, issuecomment-6466034420); their additions are marked "(②Main)" or "(③Hands)". Plan row: `docs/plans/0164/README.md` §3.2, SBX. Code read on `origin/main`: `3759f57b` for the code (unchanged at `11f05434`, which only adds #432's text to `docs/plans/0162/README.md` and `STATUS.md`). Every `file:line` below was read for this card. The #432 text is cited at `11f05434` (`docs/plans/0162/README.md:326-370`), because it is not in `3759f57b`'s copy of that file.
+> Draft by ⓪Plan, 2026-10-28, for the v0.1.64 plan. Revised the same day after ②Main's and ③Hands' reviews on #447 (issuecomment-6465940944, issuecomment-6466034420); their additions are marked "(②Main)" or "(③Hands)". Plan row: `docs/plans/0164/README.md` §3.2, SBX. Code read on `origin/main`: `3759f57b` for the code (unchanged at `11f05434`, which only adds #432's text to `docs/plans/0162/README.md` and `STATUS.md`). Every `file:line` below was read for this card. The #432 text is cited at `11f05434` (`docs/plans/0162/README.md:326-370`), because it is not in `3759f57b`'s copy of that file. The user answered its seven questions the same day ("User decisions" at the end).
 
 | Item | Content |
 |---|---|
@@ -104,11 +104,11 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 | `server/services/command_sandbox.py` | SBX-1, SBX-3, SBX-5 | Becomes the commands' preset on the builder; `available()` probes the real profile; denial detection beyond EPERM; the private TMPDIR replaces `temp_roots()` (`:67-76`); the tagged writable-root list and the resolved `in_scope()` helper for CLS (§1b); the `deny_write_after_roots` parameter HR fills (§e); the narrowed `/dev` list; the closed app-data folders (§1); CAP6b paths |
 | `server/services/code_sandbox.py`, `server/services/artifact_validation.py` | SBX-4 | `computation_profile` becomes the strictest preset on the same base (no network, no services beyond the base); delete `_SEATBELT_PROFILE` (§11: replaced, so removed) |
 | `server/services/capability_sandbox.py` | SBX-4, SBX-5 | Drop `(allow mach-lookup)` (`:49`) for the shared allowlist; network = proxy port (or as today, per Q1); exclude the CAP6b folders even inside granted folders |
-| `server/services/ssh_exec.py` | SBX-1 only | The same text produced by the builder, byte for byte (no behaviour change; Q7) |
+| `server/services/ssh_exec.py` | SBX-1 only | The same text produced by the builder, byte for byte (no behaviour change; Q7, decided yes) |
 | `server/services/terminal_exec.py` | SBX-3, SBX-7 | `TMPDIR` = the run's private folder instead of the process temp (`:165-168`); denial code on the result; "unavailable" handling unchanged |
 | `server/services/execution_context.py` (or wherever a Run's lifetime ends) | SBX-3 | Create and remove the run's private TMPDIR |
 | `server/services/command_confirm.py` | SBX-7 | `Request.extra = {"sandbox": "retry" | "outside"}` so the ledger row says which card it was. `permissions.py` does not change: `_record_in` already writes `req.extra` into the row (`server/services/permissions.py:609-620`; ②Main) |
-| `server/services/sandbox_proxy.py` (new) | SBX-6 (only with Q1 option N-a) | A minimal local forward / CONNECT proxy on a loopback port, no site list (NET adds the list), chaining through the system proxy as `browser_proxy` does |
+| `server/services/sandbox_proxy.py` (new) | SBX-6 (Q1 decided N-a) | A minimal local forward / CONNECT proxy on a loopback port, no site list (NET adds the list), chaining through the system proxy as `browser_proxy` does |
 | `scripts/usage_report.py` | SBX-7 | Two rows: sandbox denials per week, re-run cards per week (counts only, as the file's rules say, `:10-17`) |
 | `scripts/kernel_bench/arslan_driver.py`, `scripts/kernel_bench/report.py` | SBX-7 | Split `sandbox_cards` into `outside_cards` and `retry_cards`; report the retry share (overlaps: "File overlaps" below) |
 | Cache redirection (in `terminal_exec.py`'s child environment and the MCP preset's env) | SBX-5 | Arslan-owned cache folders for sandboxed tools (§1c) |
@@ -329,7 +329,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 | **SBX-3** | Commands use the default-deny preset (IPC, ptys, narrowed `/dev`, unix-socket allowlist, loopback rule with Arslan's port denied, closed app data); `available()` probes it; private TMPDIR per run (location, lifetime, boot sweep); tagged writable roots + resolved `in_scope()` for CLS; `deny_write_after_roots` parameter for HR; denial detection beyond EPERM; SECURITY.md sentences | +340 / −70 | +600 | SBX-M |
 | **SBX-4** | `run_python`, artifact checks, MCP onto the shared base; delete `_SEATBELT_PROFILE`; drop wholesale `mach-lookup` from MCP | +150 / −120 | +300 | SBX-3 |
 | **SBX-5** | CAP6b (skill, plugin, MCP config folders; outside floor write-deny; MCP grant exclusion; `write_file` refusal; symlink test); Arslan-owned caches (§1c). **Not e** (HR) | +240 | +450 (every write path, CAP card `:276-282`) | SBX-3, SBX-M |
-| **SBX-6** | Only with Q1 option N-a: local proxy, proxy-port-only network, DNS denied inside | +450 | +300 | SBX-3 |
+| **SBX-6** | Q1 decided N-a (user, 2026-10-28; unless SBX-M shows heavy breakage and the user then picks N-b): local proxy, proxy-port-only network, DNS denied inside | +450 | +300 | SBX-3 |
 | **SBX-7** | The two numbers: ledger `extra.sandbox` (no `permissions.py` change), denial code and counts, `usage_report.py` rows, bench driver split | +130 (+100 scripts) | +250 | SBX-3; after #436 (see "File overlaps") |
 | **SBX-8** | Bench rounds: retry share before / after; ask-all vs ask-risky cards (the classifier's baseline); report | 0 (docs) | — | SBX-3 … SBX-7 |
 
@@ -430,18 +430,23 @@ About 1,430–1,880 product lines added and 390 removed across 7 code PRs, plus 
 10. **e's owner:** `docs/plans/0164/README.md:78` puts e in SBX ("e (files written now and run later become a hard rule)") and `:79` puts it in HR too; `:81` makes S5a wait on "SBX, e and S3". ③Hands' review of #444 puts e in HR only. The README rows need the same change (⓪Plan's to make), and S5a's dependency becomes "SBX, HR's e, S3".
 11. **"Temp" in the plan** means the run's own space (③Hands), but `temp_roots()` is the shared per-user folder with the `C` cache plus `/private/tmp` and `/private/var/tmp` (`command_sandbox.py:67-76`), and commands share the server's temp as `TMPDIR` (`terminal_exec.py:165-168`).
 
-## Questions for the user
+## User decisions (2026-10-28, ~15:20 UTC; the user said 「都同意」, relayed by ④参谋)
 
-1. **Network in v0.1.64.** The measurement decides; the two views:
-   - **(N-a) a minimal local proxy, no site list** (⓪Plan's lean): the kernel allows only that port plus loopback, and no DNS from inside, so no raw sockets and no DNS channel. Tools that ignore proxy settings fail and ask for a re-run.
-   - **(N-b) network open in the sandbox as today, plus S2a-1's cut; proxy-only comes with NET in v0.1.65** (②Main's lean, unless SBX-M shows the proxy is cheap): without a site list the proxy still lets HTTP(S) out to anywhere, so its v0.1.64 value is mainly "no raw sockets or DNS channel"; it costs ≈ +450 lines, a new component, and breakage from tools that ignore proxy settings; the loopback and unix-socket rules give most of the protection either way; NET brings the site list, where a proxy pays off.
+These were the card's seven questions (Q1–Q7, referenced above).
 
-   SBX-M runs the corpus in both modes and reports the breakage, so the user picks with numbers.
-2. **Manually added MCP servers:** stay unsandboxed as the user configured them (like Claude Code), or go into the same sandbox with the folders and network the form names? ⓪Plan and ②Main suggest leaving them for v0.1.64 and saying so on the form.
-3. **Reads:** keep reads open (minus protected and closed folders, now including Mail, Messages, Safari and Photos data, §1), as today and as Codex does, or default-deny reads too? ⓪Plan, ②Main and ③Hands suggest open in v0.1.64.
-4. **Sandbox cannot start:** keep today's card (`unsandboxed:*`), or refuse to run (row D)? ⓪Plan suggests keeping the card in v0.1.64; CLS / S5b approve nothing without a sandbox anyway.
-5. **"Ask only when risky" after SBX-8:** it stays default-off with its warning until S2a-3 and S5a. SBX only measures. Confirm.
-6. **A ceiling for the re-run share:** ②Main suggests recording only in v0.1.64 and setting a ceiling after SBX-8 has a baseline. Confirm, or name a ceiling now.
-7. **`ssh_exec`:** onto the builder byte for byte in SBX-1 (②Main: yes), or left out of "one sandbox"?
+1. **Network: N-a**, a minimal local proxy with no site list, provided SBX-M's measurement shows acceptable breakage. In this mode the kernel allows only the proxy port plus loopback, and there is no DNS from inside, so no raw sockets and no DNS channel.
+   - Why the user accepted it:
+     - the cloud audit named egress control as the real fix for `run_command` reading files;
+     - it matches mainstream practice: Claude Code's sandbox goes through a proxy, and Codex's default sandbox has no network;
+     - "complete in one go";
+     - NET's site list in v0.1.65 then reuses this proxy.
+   - SBX-6 is therefore planned.
+   - **If SBX-M shows heavy breakage, bring the numbers back to the user before falling back to N-b** (network open in the sandbox as today, plus S2a-1's cut). Do not fall back without asking.
+2. **Manually added MCP servers:** they stay unsandboxed in v0.1.64, as the user configured them (like Claude Code). The add form says so.
+3. **Reads:** stay open, minus the protected and closed folders, which now include Mail, Messages, Safari and Photos data (§1).
+4. **Sandbox cannot start:** keep today's card (`unsandboxed:*`). CLS and S5b approve nothing without a sandbox.
+5. **"Ask only when risky":** stays default-off with its warning until S2a-3 and S5a; SBX only measures. Confirmed.
+6. **Re-run share:** v0.1.64 only records it. A ceiling is set after SBX-8 has a baseline.
+7. **`ssh_exec`:** goes onto the builder byte for byte in SBX-1.
 
 Settled by the reviews (no longer questions): caches are Arslan-owned (§1c, ③Hands); the classifier's scope is the work folder plus the private TMPDIR (§1b); Codex, when needed, reviews SBX-1 + SBX-2 together, then the rest one by one.
