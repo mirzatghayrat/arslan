@@ -47,7 +47,7 @@ Code PRs merge before their drop PRs. C7c-1/2 can go first and alone.
 
 ④参谋 looked at the user's database read-only and counted 6 leftover experts in `spawns` and 1 `knowledge_chunks` row with a `spawn_id`. The counts are given here, not the rows.
 
-- **Q1:** in the migration, every leftover expert becomes a skill automatically, with nothing for the user to click. The user deletes any they don't want on the skills page. CAP2a (#472) removes the candidate table, so `convert` writes `SkillPack` directly.
+- **Q1:** in the migration, every leftover expert becomes a skill automatically, with nothing for the user to click. The user deletes any they don't want on the skills page. After CAP2a (#472), `expert_conversion.convert` goes through `skill_forge.register(key, name, description, body)`: the skill is written with category `"authored"`, on at once, never overwriting a taken key, and seed retirement never deletes it (D7). C7c-5 writes through `register()` (or sets `category=skill_forge.AUTHORED` itself), and lands after #472 or rebases onto it, since #472 removes `create_candidate` / `promote_candidate`. (`skill_candidates` itself is dropped by CAP2b, not #472; C7c-5 does not need it gone. ⑤CAP, 2026-10-29.)
 - **Q2:** expert-private knowledge moves into the general knowledge base: `spawn_id=NULL`, and the source expert is kept as a label. Nothing is ever cascade-deleted.
 - **Q3:** the v1 views, `memory_legacy_map`, `/brain/proposals*` and `/brain/undo-supersede` go in v0.1.65, with the Brain page. Write `DELETE-BY: v0.1.65` on each of them, including `brain.py:616`, which says v0.1.64 today.
 - **Q4:** in the user's words, 「这一版直接删，没必要拖着」. `list_spawns` is removed in v0.1.64, with no empty-list stub.
