@@ -461,15 +461,20 @@ async def _a_lesson_and_one_waiting_against_it(judge, *, outside=False, pinned=F
 async def test_the_users_correction_chooses_between_a_lesson_and_the_one_waiting_against_it(execution_db, judge,
                                                                                            pinned):
     """②Main's recheck (d): the user's own correction merged into the waiting one is the user's choice, as
-    on the conflict path: it takes effect in the user's words and the other one is retired, unless pinned."""
+    on the conflict path: it takes effect in the user's words and the other one is retired, unless pinned.
+    Against a pinned one, INB1 keeps the correction as its own waiting lesson (S64-0's recheck, N2)."""
     await _a_lesson_and_one_waiting_against_it(judge, pinned=pinned, db=execution_db)
     said = lessons.candidate("Reading calendar events", "use AppleScript's Calendar dictionary",
                              source="user_correction")
-    assert await lessons.capture([said]) == []               # merged into the waiting one, no new row
-    first, second = await _lessons(execution_db)
+    learned = await lessons.capture([said])
     if pinned:
+        assert [item["advice"] for item in learned] == ["use AppleScript's Calendar dictionary"]
+        first, second, third = await _lessons(execution_db)
         assert (first.status, second.status, second.advice) == ("active", "proposed", "use AppleScript")
+        assert (third.status, third.evidence[lessons.CONFLICTS_WITH]) == ("proposed", first.id)
     else:
+        assert learned == []                                  # merged into the waiting one, no new row
+        first, second = await _lessons(execution_db)
         assert (first.status, second.status, second.advice) == (
             "archived", "active", "use AppleScript's Calendar dictionary")
         assert lessons.CONFLICTS_WITH not in second.evidence and lessons.NOT_IN_EFFECT not in second.evidence
