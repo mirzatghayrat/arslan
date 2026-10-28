@@ -373,7 +373,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     framed = (raw_payload if result.get("external") is False else wrap_external(raw_payload)
               if _untrusted.from_the_web(tool_key, args) else _untrusted.wrap_tool_output(raw_payload))
     if result.get("ok") and (_untrusted.counts_as_external(tool_key, args)
-                             or (tool_key == "read_skill" and result.get("external") is True)):
+                             or (tool_key in ("read_skill", "background_status")      # S64-0b: per result
+                                 and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
     # hint sits AFTER the data frame — it is OUR trusted framing (like the

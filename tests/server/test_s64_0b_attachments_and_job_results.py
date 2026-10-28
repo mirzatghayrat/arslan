@@ -93,7 +93,8 @@ class _Asker:
 
 
 async def _tools():
-    return [{"key": key, "description": "fixture"} for key in ("memory_note", "run_command", "web_extract")]
+    return [{"key": key, "description": "fixture"}
+            for key in ("memory_note", "run_command", "web_extract", "background_status")]
 
 
 def _ctx(cid=CID):
@@ -255,6 +256,16 @@ def test_only_arslans_side_of_the_history_carries_a_jobs_framed_result():
     assert untrusted.history_from_outside([{"role": "user", "content": "hi"}, {"role": "assistant", "content": framed}])
     assert not untrusted.history_from_outside([{"role": "user", "content": framed}])
     assert not untrusted.history_from_outside([{"role": "assistant", "content": POISON}, None])
+
+
+@pytest.mark.parametrize("outside_seen", [True, False], ids=["may-carry-outside", "known-clean"])
+async def test_a_jobs_status_reports_its_goal_as_outside_content_unless_the_job_is_clean(chat, outside_seen):
+    """②Main's recheck: background_status returns a job's goal and steps; a job that may carry outside
+    content reports them as outside content (framed, and the turn is marked)."""
+    background_jobs._jobs["job-status"] = background_jobs.Job(
+        job_id="job-status", conversation_id=CID, goal=POISON, acceptance=[], outside_seen=outside_seen)
+    notes, network, _ = await chat(_Model(chat=_turn(("background_status", {}), NOTE_ADD, COMMAND)))
+    assert (notes, network) == ((["proposed"], ["network"]) if outside_seen else (["active"], []))
 
 
 async def test_a_job_that_never_said_whether_it_may_carry_outside_content_posts_framed(chat):
