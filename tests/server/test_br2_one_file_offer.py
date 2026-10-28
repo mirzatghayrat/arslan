@@ -58,7 +58,7 @@ W, E, A = file_tools.WriteFileExecutor, file_tools.EditFileExecutor, file_tools.
 
 async def test_three_writes_and_an_attachment_reach_the_phone_and_the_window_once(ws):
     await run((W, {"path": "report.md", "content": "v1"}),
-              (E, {"path": "report.md", "old": "v1", "new": "v2"}),
+              (E, {"path": "report.md", "old_string": "v1", "new_string": "v2"}),
               (W, {"path": "report.md", "content": "v3"}),
               (A, {"path": "report.md", "title": "Weekly report"}))
     assert len(artifact_store.list_artifacts(RUN)) == 4, "every version is kept"
