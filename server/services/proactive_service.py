@@ -302,7 +302,7 @@ async def summary() -> dict:
             "high": sum(n for status, p, n in rows if status == "new" and p == "high"),
             # 0.1.55 §12: the Inbox is everything waiting for the user's decision — cards to
             # approve (any conversation or job). INB1/INB2 (v0.1.64): memory no longer waits for an
-            # OK; what did not take effect is in Memory's 待整理, never in the badge.
+            # OK; what did not take effect is in Memory's "To sort" list, never in the badge.
             "approvals": len(approvals.all_pending())}
 
 

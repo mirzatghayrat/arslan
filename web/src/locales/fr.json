@@ -253,11 +253,18 @@
     "thinking": "Réflexion...",
     "stopRun": "Arrêter",
     "remembered": "Retenu : {{text}}",
-    "wantsToRemember": "Arslan aimerait retenir : {{text}}",
     "rememberedUndo": "Annuler",
     "rememberedUndone": "Annulé",
-    "rememberedReview": "Vérifier dans Mémoire",
-    "rememberedChanged": "Modifié depuis — voir Mémoire"
+    "rememberedChanged": "Modifié depuis — voir Mémoire",
+    "memoryAsk": "Arslan aimerait retenir quelque chose de sensible : {{text}}",
+    "memoryKeptLocal": "Retenu, sur ce Mac seulement : {{text}}",
+    "memorySkipped": "D'accord, ce n'est pas retenu.",
+    "memoryWaits": "Arslan aimerait retenir : {{text}}. C'est dans « À trier » parce que {{reason}}.",
+    "memoryWhy_external_seen": "cette conversation a lu des pages web ou d'autres contenus extérieurs",
+    "memoryWhy_not_present": "tu n'étais pas là quand cela a été écrit",
+    "memoryWhy_sensitive": "c'est sensible",
+    "memoryWhy_confirmation_required": "il faut ton accord",
+    "memorySeeInMemory": "Voir dans Mémoire"
   },
   "clarify_card": {
     "answered": "Choix envoyé"
@@ -1432,8 +1439,6 @@
     "stalled": "Arrêté",
     "changed": "Changements",
     "other": "Autres",
-    "memoryWaiting": "Mémoire en attente de ton accord",
-    "memoryOpen": "Ouvrir Mémoire",
     "watching": "Sous surveillance",
     "muted": "Plus de rappel",
     "addWatch": "Surveiller une autre page ou un dossier",
@@ -1450,15 +1455,14 @@
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",
-    "keep": "Garder",
-    "keepLocal": "Garder, modèles locaux seulement",
+    "keep": "Retenir",
+    "keepLocal": "Retenir, sur ce Mac seulement",
     "drop": "Non",
     "apply": "Appliquer",
     "source": {
       "memory": "À ton sujet",
       "curation": "Rangement"
-    },
-    "sensitive": "Sensible"
+    }
   },
   "confirm": {
     "delete": "Supprimer",

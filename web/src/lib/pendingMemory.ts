@@ -3,9 +3,10 @@ import { api } from "../api/client";
 import { companionApi, type MemoryProposal } from "../api/companion";
 
 /**
- * Everything about memory that waits for the user's OK, from its two sources, as one
- * list (0.1.55 §12/§13 — "等你确认" in the Inbox and at the top of Memory):
- *   - memory entries that wait (sensitive, or written from elsewhere): /memory/proposals
+ * Everything about memory that was not remembered directly, from its two sources, as one list: Memory's
+ * "To sort" (v0.1.64, INB2; it left the Inbox, and nothing here is pushed or counted in the badge):
+ *   - memory entries that wait (sensitive, written in a conversation that read outside content, or with
+ *     nobody present, …): /memory/proposals
  *   - curation suggestions (merge, supersede, …): /brain/proposals?status=pending
  * Learned practices are not here since v0.1.64 (INB1): one that is not in effect is listed with its
  * reason in Memory's "learned practices", and nothing waits for an OK.
@@ -16,6 +17,9 @@ export interface PendingMemoryItem {
   source: "memory" | "curation";
   text: string;
   sensitive: boolean;
+  /** A memory entry's proposal says why it waits (INB2): sensitive / external_seen / not_present, or
+   *  confirmation_required for the rest, including every one from before v0.1.64. */
+  reason?: string;
   createdAt: string | null;
   /** Keep it: memory → confirmed, only for local models (sensitive acknowledged); curation → apply. */
   accept: () => Promise<unknown>;
@@ -33,7 +37,7 @@ export async function loadPendingMemory(t: TFunction): Promise<PendingMemoryItem
     for (const p of memory.value) {
       const sensitive = p.entry.sensitivity !== "normal";
       out.push({
-        key: `m:${p.id}`, source: "memory", sensitive, createdAt: p.entry.created_at ?? null, proposal: p,
+        key: `m:${p.id}`, source: "memory", sensitive, reason: p.reason, createdAt: p.entry.created_at ?? null, proposal: p,
         text: p.candidate?.content ?? p.entry.content ?? "",
         // Kept for local models only: the safe default for something that waited.
         accept: () => companionApi.resolveProposal(p.id, true, sensitive, false),

@@ -1,14 +1,14 @@
-/** 0.1.55 §13: Memory as one page — waiting, always in view, about you by recent use, rail. */
+/** 0.1.55 §13: Memory as one page — to sort, always in view, about you by recent use, rail. */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, o?: Record<string, unknown>) => (o && "count" in o ? `${key}:${o.count}`
-      : o && "cap" in o ? `${key}:${o.used}/${o.cap}` : key),
-    i18n: { resolvedLanguage: "en" },
-  }),
-}));
+// One `t` for every render, as react-i18next gives: a new one each render would re-create Memory's reload
+// and load the page again after every change.
+vi.mock("react-i18next", () => {
+  const t = (key: string, o?: Record<string, unknown>) => (o && "count" in o ? `${key}:${o.count}`
+    : o && "cap" in o ? `${key}:${o.used}/${o.cap}` : key);
+  return { useTranslation: () => ({ t, i18n: { resolvedLanguage: "en" } }) };
+});
 vi.mock("../components/brain/BrainSection", () => ({
   default: (props: { page?: boolean }) => <div data-testid="graph" data-page={String(!!props.page)} />,
 }));
@@ -23,6 +23,7 @@ import { api } from "../api/client";
 import { companionApi, type MemoryEntry, type MemoryProposal, type MemoryStats } from "../api/companion";
 import { lessonsApi, type Lesson } from "../api/lessons";
 import { OPEN_SECTION_EVENT, readOpenSection } from "../lib/sections";
+import { loadPendingMemory } from "../lib/pendingMemory";
 import { resolveSection } from "../components/settings/sectionRegistry";
 import { memoryPageMessages } from "../locales/memoryPage";
 import BrainNav from "../components/brain/BrainNav";
@@ -112,30 +113,85 @@ describe("about you", () => {
   });
 });
 
-describe("what waits, and what is always in view", () => {
-  it("merges the two pending sources into one block, each answerable in place; a practice is not among them", async () => {
-    vi.spyOn(companionApi, "memories").mockResolvedValue([]);
-    vi.spyOn(companionApi, "proposals").mockResolvedValue([{ id: 7, target_id: "e", target_version: 1, candidate: null, reason: "",
-      entry: entry({ id: "e", content: "Blood pressure note", status: "proposed", sensitivity: "sensitive" }) }] as unknown as MemoryProposal[]);
-    vi.spyOn(api, "listMemoryProposals").mockResolvedValue([{ id: 3, kind: "supersede_suspect", table_name: "t", new_id: 1, old_id: 2,
-      reason: "Merge two rules", status: "pending", provenance: null, created_at: "2026-10-07T00:00:00Z", resolved_at: null }]);
-    vi.spyOn(lessonsApi, "list").mockResolvedValue([{ id: 5, text: "Rename → use the shell", status: "proposed", source: "detour",
-      situation: "", advice: "", polarity: "do", pinned: false, recalled: 0, followed: 0, succeeded: 0, failed: 0, evidence: {},
-      last_used_at: null, created_at: "2026-10-06T00:00:00Z", updated_at: "" } as Lesson]);
-    const resolve = vi.spyOn(companionApi, "resolveProposal").mockResolvedValue({} as never);
-    render(<MemoryList />);
-    const block = await screen.findByTestId("memory-waiting");
-    await waitFor(() => expect(within(block).getAllByTestId(/^pending-memory-/)).toHaveLength(2));
-    // v0.1.64 (INB1): a practice that is not in effect is listed with its reason, not waiting for an OK.
-    expect(within(block).queryByTestId("pending-memory-l:5")).toBeNull();
-    expect(within(await screen.findByTestId("practices-not-in-effect")).getByTestId("practice-5")).toBeInTheDocument();
-    const sensitive = within(block).getByTestId("pending-memory-m:7");
-    expect(sensitive).toHaveTextContent("memoryPage.sensitive");
-    // A sensitive one is kept for local models only: acknowledged, not for the cloud.
-    fireEvent.click(within(sensitive).getByText("pendingMemory.keepLocal"));
-    await waitFor(() => expect(resolve).toHaveBeenCalledWith(7, true, true, false));
+describe("待整理 (to sort): what was not remembered directly (INB2)", () => {
+  const proposal = (id: number, reason: string, over: Partial<MemoryEntry> = {}) => ({ id, target_id: `e${id}`,
+    target_version: 1, candidate: null, reason, entry: entry({ id: `e${id}`, content: `memory ${id}`, status: "proposed", ...over }) });
+  const suggestion = { id: 9, kind: "supersede_suspect", table_name: "t", new_id: 1, old_id: 2, reason: "Merge two rules",
+    status: "pending", provenance: null, created_at: "2026-10-07T00:00:00Z", resolved_at: null } as const;
+  const practice = { id: 5, text: "Rename → use the shell", status: "proposed", source: "detour", situation: "", advice: "",
+    polarity: "do", pinned: false, recalled: 0, followed: 0, succeeded: 0, failed: 0, evidence: {}, last_used_at: null,
+    created_at: "2026-10-06T00:00:00Z", updated_at: "" } as Lesson;
+
+  it("both sources load with why each waits; one failing hides nothing else; practices are not among them", async () => {
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([proposal(1, "external_seen", { sensitivity: "sensitive" })] as never);
+    vi.spyOn(api, "listMemoryProposals").mockRejectedValue(new Error("down"));
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([practice]);
+    const items = await loadPendingMemory(((k: string) => k) as never);
+    expect(items.map((i) => [i.key, i.source, i.reason, i.sensitive])).toEqual([["m:1", "memory", "external_seen", true]]);
   });
 
+  it("is folded, counts every row, and opened lists them by why they wait; nothing is answered on its own", async () => {
+    vi.spyOn(companionApi, "memories").mockResolvedValue([]);
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([
+      proposal(1, "external_seen"), proposal(2, "sensitive", { sensitivity: "sensitive" }), proposal(3, "confirmation_required"),
+      proposal(4, "not_present"), proposal(6, "external_seen", { sensitivity: "sensitive" }),
+    ] as unknown as MemoryProposal[]);
+    vi.spyOn(api, "listMemoryProposals").mockResolvedValue([suggestion]);
+    vi.spyOn(companionApi, "noticedEarlier").mockResolvedValue({ count: 1 });
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([practice]);
+    const resolve = vi.spyOn(companionApi, "resolveProposal").mockResolvedValue({} as never);
+    const apply = vi.spyOn(api, "acceptMemoryProposal").mockResolvedValue({} as never);
+    const useAll = vi.spyOn(companionApi, "acceptNoticedEarlier").mockResolvedValue({ accepted: 0 });
+    render(<MemoryList />);
+    const block = await screen.findByTestId("memory-to-sort");
+    const toggle = within(block).getByRole("button", { name: /memoryPage\.toSort/ });
+    await waitFor(() => expect(within(toggle).getByTestId("to-sort-count")).toHaveTextContent("6"));
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(block).queryAllByTestId(/^pending-memory-/)).toHaveLength(0);
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const groups = within(block).getAllByTestId(/^to-sort-group-/);
+    expect(groups.map((group) => group.dataset.testid)).toEqual(["to-sort-group-sensitive", "to-sort-group-external_seen",
+      "to-sort-group-not_present", "to-sort-group-curation", "to-sort-group-other"]);
+    const rows = (group: HTMLElement) => within(group).getAllByTestId(/^pending-memory-/).map((row) => row.dataset.testid);
+    expect(groups.map(rows)).toEqual([["pending-memory-m:2"], ["pending-memory-m:1", "pending-memory-m:6"],
+      ["pending-memory-m:4"], ["pending-memory-c:9"], ["pending-memory-m:3"]]);
+    expect(within(groups[1]).getByTestId("pending-memory-m:6")).toHaveTextContent("memoryPage.sensitive");
+    expect(within(block).getByText("companion.useAll")).toBeInTheDocument();      // "Use all" for what was noticed earlier stays
+    // v0.1.64 (INB1): a practice that is not in effect is listed with its reason, not here.
+    expect(within(block).queryByTestId("pending-memory-l:5")).toBeNull();
+    expect(within(await screen.findByTestId("practices-not-in-effect")).getByTestId("practice-5")).toBeInTheDocument();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(useAll).not.toHaveBeenCalled();
+  });
+
+  it("each row is answered in place: a sensitive one for this Mac only, a suggestion applied, any one dropped", async () => {
+    vi.spyOn(companionApi, "memories").mockResolvedValue([]);
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([proposal(2, "sensitive", { sensitivity: "sensitive" }),
+      proposal(1, "external_seen")] as unknown as MemoryProposal[]);
+    vi.spyOn(api, "listMemoryProposals").mockResolvedValue([suggestion]);
+    const resolve = vi.spyOn(companionApi, "resolveProposal").mockResolvedValue({} as never);
+    const apply = vi.spyOn(api, "acceptMemoryProposal").mockResolvedValue({} as never);
+    render(<MemoryList />);
+    const block = await screen.findByTestId("memory-to-sort");
+    fireEvent.click(within(block).getByRole("button", { name: /memoryPage\.toSort/ }));
+    const press = async (row: string, label: string) => {
+      const button = within(await within(block).findByTestId(row)).getByText(label);
+      await waitFor(() => expect(button).not.toBeDisabled());
+      fireEvent.click(button);
+    };
+    await press("pending-memory-m:2", "pendingMemory.keepLocal");
+    await waitFor(() => expect(resolve).toHaveBeenCalledWith(2, true, true, false));
+    await press("pending-memory-m:1", "pendingMemory.drop");
+    await waitFor(() => expect(resolve).toHaveBeenLastCalledWith(1, false, false, false));
+    await press("pending-memory-c:9", "pendingMemory.apply");
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(9));
+    expect(within(block).getByRole("button", { name: /memoryPage\.toSort/ })).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("what is always in view", () => {
   it("shows the server's budgets, and says what did not fit", async () => {
     vi.spyOn(companionApi, "memories").mockResolvedValue([entry({ id: "a", content: "Short replies", core: "about_you" })]);
     render(<MemoryList />);

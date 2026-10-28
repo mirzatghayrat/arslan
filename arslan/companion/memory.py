@@ -98,7 +98,7 @@ class WriteDecision:
     sensitivity: str
     use_policy: str
     confirmation_kind: str | None
-    # Why a proposal waits (INB2), for Memory's 待整理: sensitive / not_present / external_seen, or
+    # Why a proposal waits (INB2), for Memory's "To sort" list: sensitive / not_present / external_seen, or
     # confirmation_required for every other proposal (as before).
     reason: str | None = None
 
@@ -108,7 +108,7 @@ class WriteDecision:
 _SENSITIVE = (r"\b(?:birthday|diagnosis|medical|passport|salary|bank account|home address"
               r"|family|children|kids?|son|daughter|parents?|father|mother|spouse|husband|wife)\b"
               r"|(?:生日|诊断|病史|身份证|护照|工资|银行账户|家庭住址|精确位置"
-              r"|家人|家属|孩子|儿子|女儿|父母|父亲|母亲|爸爸|妈妈|配偶|丈夫|妻子|老公|老婆)")
+              r"|家人|家属|孩子|儿子|女儿|父母|父亲|母亲|爸爸|妈妈|配偶|丈夫|妻子|老公|老婆)")  # lang-check: allow (Chinese input to match)
 
 
 def sensitive_words(text: str) -> bool:
@@ -169,10 +169,13 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
     else:
         use_policy, kind = "local_only", None
     active = user_confirmation or auto_noticed or own_note or about_you
+    # Absence and outside content are named before sensitivity: the chat line's one question (two buttons)
+    # is only for a sensitive entry from the user's own present, clean turn, so a page never gets a one-click
+    # keep under the reply (INB2).
     reason = None if active else (
-        "sensitive" if sensitive != "normal"
-        else "not_present" if actor.origin == "host" and write.kind == "preference" and not actor.user_present
+        "not_present" if actor.origin == "host" and write.kind == "preference" and not actor.user_present
         else "external_seen" if actor.origin == "host" and write.kind == "preference" and not actor.conversation_clean
+        else "sensitive" if sensitive != "normal"
         else "confirmation_required")
     return WriteDecision(
         status="active" if active else "proposed",

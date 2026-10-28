@@ -770,6 +770,8 @@ function makeActions(set: SetState, get: GetState) {
             content: frame.content, sensitive: frame.sensitive,
             entryId: frame.entry_id ?? null, version: frame.version ?? null,
             status: frame.type === "memory_proposed" ? "proposed" as const : "active" as const,
+            // INB2: which proposal it waits as, and why, so the line asks about exactly that one.
+            ...(frame.type === "memory_proposed" ? { proposalId: frame.proposal_id ?? null, reason: frame.reason ?? null } : {}),
           };
           const replyId = typeof frame.reply_message_id === "number" ? frame.reply_message_id : null;
           const reply = replyId == null ? -1

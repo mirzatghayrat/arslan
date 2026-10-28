@@ -180,6 +180,22 @@ async def test_a_sensitive_about_you_waits_and_the_chat_line_asks_about_that_one
         out["id"], out["version"], text, "sensitive")
 
 
+@pytest.mark.parametrize("present,outside,reason", [
+    (True, False, "sensitive"),
+    (True, True, "external_seen"),
+    (False, False, "not_present"),
+])
+async def test_a_sensitive_about_you_first_names_whatever_else_stopped_it(memory, present, outside, reason):
+    """The chat line asks its one question (two buttons) only about a sensitive entry from the user's own
+    present, clean turn. One that a turn which read outside content wrote, or that was written with nobody
+    present, waits for that reason in 待整理, with no question in the chat: a page must never get a one-click
+    keep under the reply."""
+    out = await _write("remember", "The user's family visits on Sundays", present=present, outside=outside)
+    assert out["status"] == "proposed" and await _reason(memory, out["id"]) == reason
+    [frame] = memory.frames
+    assert (frame["type"], frame["reason"], frame["sensitive"]) == ("memory_proposed", reason, True)
+
+
 async def test_a_sensitive_fact_noticed_after_a_turn_names_its_proposal_in_the_chat_line(memory, monkeypatch):
     """The extractor's path too: its memory_proposed frame names the proposal, version, text and reason,
     so the chat line's two buttons answer exactly that proposal."""

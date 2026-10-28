@@ -576,6 +576,10 @@ export interface RememberedFact {
   version?: number | null;
   /** "active" took effect (undoable); "proposed" waits for the user in Memory. */
   status: "active" | "proposed";
+  /** INB2: a waiting one names its proposal and why it waits (sensitive, external_seen, not_present or
+   *  confirmation_required). Only a "sensitive" one is asked about in the chat, bound to this proposal. */
+  proposalId?: number | null;
+  reason?: string | null;
 }
 
 /** What the install-and-retry card shows (server/services/capability_flow.card_for). */
@@ -712,7 +716,8 @@ export type ArslanServerMessage =
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
       detail: string; background?: boolean } & CardV2Fields)
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
-  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
+  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number;
+      proposal_id?: number | null; reason?: string | null }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string; not_in_effect?: string | null } }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
