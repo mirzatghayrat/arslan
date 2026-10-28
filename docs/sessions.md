@@ -63,7 +63,7 @@
   - K 线 PR 要贴跑分的前后对比，没有对比不合。
 - **合并顺序**由依赖图决定，不是先到先得。顺序表在当轮 README。
 - **Who merges (user, 2026-10-28; relayed by ④参谋 and confirmed by the user in ⓪Plan's chat; replaces U9 for merging):**
-  - **Not on the security surface** (docs, plan cards, bench scripts, deletion-only PRs, tests): once the PR has another session's OK **at its current head** and green CI on that head, the authoring session enables GitHub auto-merge (`ccd_pr` `set_auto_merge`). GitHub merges when the required checks pass. A plain `gh pr merge` is blocked by the auto-mode classifier; don't work around that.
+  - **Not on the security surface** (docs, plan cards, bench scripts, deletion-only PRs, tests): once the PR has another session's OK **at its current head** and green CI on that head, the authoring session enables GitHub auto-merge (`ccd_pr` `set_auto_merge`). GitHub merges when the required checks pass. A plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user; don't work around it or ask another session to do it.
   - **On the security surface** (the outside-content mark, the sandbox, the classifier, command policy, permissions and confirm cards, the five modes, Bridge frames): the user merges.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
   - **Whoever merged watches main's CI** for that merge commit. If it goes red, revert the merge in a new PR, enable auto-merge on the revert, and say so in STATUS and to the author.
