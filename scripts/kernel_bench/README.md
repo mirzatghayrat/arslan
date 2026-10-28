@@ -127,6 +127,13 @@ this one). `--round NAME` keeps one round's runs. Recomputed from R63's raw resu
 Arslan 6/9 and 5/7, Hermes 6/9 and 6/7 (one task short on the same tasks); Claude Arslan and
 Claude Code 5/9 and 5/8 each.
 
+## STY read test (v0.1.64)
+
+`sty_read.py` runs the 20 prompts of `sty_prompts.json` (10 chat, 10 task reports on the `fixture_sty.py`
+folder) once each, every prompt on a new instance, and writes a blind before / after page for the user to
+read. It reuses `runner.fresh_instance`, `runner.command` and the driver. Procedure, cost and what the user
+judges: `docs/plans/0164/STY-read-test.md`.
+
 ## T1 / T2 / T4 / T6 (0.1.49)
 
 | Task | Fixture | Checker | Human step | Arslan |
