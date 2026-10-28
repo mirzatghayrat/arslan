@@ -225,10 +225,23 @@ async def test_quick_questions_have_a_list_of_their_own_and_stay_out_of_every_ot
     assert (await client.get("/api/v1/phone/conversations?kind=task")).json()["detail"] == "bad_request"
 
 
-async def test_before_pages_back_through_strictly_older_conversations(client):
-    for n, at in enumerate(("2026-10-29T08:00:03", "2026-10-29T08:00:02", "2026-10-29T08:00:01")):
+async def test_before_pages_back_at_or_before_so_a_shared_second_loses_nothing(client):
+    """Times are whole seconds. A page boundary inside one second must not skip the one cut by `limit`: a
+    refresh only reloads page one, so it would never be shown (①iOS's review of #479). `before` includes that
+    second, and the phone drops the ids it already has."""
+    for n, at in enumerate(("2026-10-29T08:00:03", "2026-10-29T08:00:02", "2026-10-29T08:00:02",
+                            "2026-10-29T08:00:01")):
         await _say(client, f"c-{n}", f"question {n}", at)
     first = (await client.get("/api/v1/phone/conversations?limit=2")).json()
-    assert [c["id"] for c in first["conversations"]] == ["c-0", "c-1"] and first["has_more"] is True
-    rest = (await client.get(f"/api/v1/phone/conversations?limit=2&before={first['conversations'][-1]['updated_at']}")).json()
-    assert [c["id"] for c in rest["conversations"]] == ["c-2"] and rest["has_more"] is False
+    assert first["has_more"] is True
+    seen = [c["id"] for c in first["conversations"]]
+    rest = (await client.get(f"/api/v1/phone/conversations?limit=3&before={first['conversations'][-1]['updated_at']}")).json()
+    seen += [c["id"] for c in rest["conversations"] if c["id"] not in seen]
+    assert sorted(seen) == ["c-0", "c-1", "c-2", "c-3"] and rest["has_more"] is False
+
+
+async def test_the_live_links_leave_quick_questions_out(client):
+    await client.post(f"/api/v1/phone/conversations/{Q1}/quick")
+    await _say(client, Q1, "weather?", "2026-10-29T08:00:00")
+    await _say(client, "trip", "Plan a trip", "2026-10-29T07:00:00")
+    assert (await client.get("/api/v1/phone/live")).json()["conversation_ids"] == ["trip"]

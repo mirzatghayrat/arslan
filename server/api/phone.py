@@ -107,8 +107,10 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
                               before: str | None = None, db: AsyncSession = Depends(get_session)):
     """`conversations.result`: most recently active first, the same list as the window's sidebar. Q1:
     `kind=quick` lists the quick questions instead (they are never in the other list); `before` pages back
-    to conversations strictly older than that `updated_at`, and `has_more` says whether any remain. Times
-    are whole seconds, so two conversations last active in the same second can fall either side of a page."""
+    to conversations at or before that `updated_at`, and `has_more` says whether any remain. Times are whole
+    seconds, so the boundary second is included and the phone drops the ids it already has: a strictly-older
+    page would skip, for good, one cut by `limit` inside that second (①iOS's review of #479). A page that
+    brings the phone nothing new ends its paging."""
     from server.api.conversations import conversation_list
     if kind not in (None, "quick"):
         raise HTTPException(400, "bad_request")
@@ -116,7 +118,7 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
         older = _iso(before) if before else None
     except ValueError:
         raise HTTPException(400, "bad_request") from None
-    rows = [r for r in await conversation_list(db, quick=kind == "quick") if older is None or _iso(r.last_at) < older]
+    rows = [r for r in await conversation_list(db, quick=kind == "quick") if older is None or _iso(r.last_at) <= older]
     return {"conversations": [{"id": r.conversation_id, "title": r.title, "updated_at": _iso(r.last_at),
                                "kind": r.kind, "state": r.state, "origin": r.origin, "preview": r.preview,
                                "files": r.files, **({"job": r.job} if r.job else {})}
