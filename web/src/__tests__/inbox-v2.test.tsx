@@ -1,5 +1,6 @@
 /** 0.1.55 §12: the Inbox is everything waiting for the user's decision — cards to
- *  approve (answered here, over HTTP), and memory waiting for an OK (three sources, one list). */
+ *  approve (answered here, over HTTP), and memory waiting for an OK (two sources, one list; learned
+ *  practices left it in v0.1.64, INB1). */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from "@testing-library/react";
 
@@ -290,7 +291,7 @@ describe("Not done while you were away", () => {
 });
 
 describe("memory waiting for your OK", () => {
-  it("merges the three sources, and one failing source hides nothing else", async () => {
+  it("merges the two sources, and one failing source hides nothing else; practices are not among them", async () => {
     vi.spyOn(companionApi, "proposals").mockResolvedValue([{ id: 1, target_id: "e1", target_version: 1, reason: "",
       candidate: null, entry: { content: "体检报告里的血压数据", sensitivity: "sensitive", created_at: "2026-10-06T00:00:00Z" } }] as never);
     vi.spyOn(client.api, "listMemoryProposals").mockRejectedValue(new Error("down"));
@@ -298,8 +299,7 @@ describe("memory waiting for your OK", () => {
       { id: 7, status: "proposed", text: "读大表格 → 先看表头", created_at: "2026-10-07T00:00:00Z" },
       { id: 8, status: "active", text: "not waiting", created_at: "2026-10-07T00:00:00Z" }] as never);
     const items = await loadPendingMemory(((k: string) => k) as never);
-    expect(items.map((i) => [i.source, i.text, i.sensitive])).toEqual([
-      ["lesson", "读大表格 → 先看表头", false], ["memory", "体检报告里的血压数据", true]]);
+    expect(items.map((i) => [i.source, i.text, i.sensitive])).toEqual([["memory", "体检报告里的血压数据", true]]);
   });
 
   it("a sensitive one is kept for local models only, with the sensitivity acknowledged", async () => {

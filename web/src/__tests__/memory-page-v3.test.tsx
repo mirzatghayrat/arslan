@@ -113,7 +113,7 @@ describe("about you", () => {
 });
 
 describe("what waits, and what is always in view", () => {
-  it("merges the three pending sources into one block, each answerable in place", async () => {
+  it("merges the two pending sources into one block, each answerable in place; a practice is not among them", async () => {
     vi.spyOn(companionApi, "memories").mockResolvedValue([]);
     vi.spyOn(companionApi, "proposals").mockResolvedValue([{ id: 7, target_id: "e", target_version: 1, candidate: null, reason: "",
       entry: entry({ id: "e", content: "Blood pressure note", status: "proposed", sensitivity: "sensitive" }) }] as unknown as MemoryProposal[]);
@@ -125,7 +125,10 @@ describe("what waits, and what is always in view", () => {
     const resolve = vi.spyOn(companionApi, "resolveProposal").mockResolvedValue({} as never);
     render(<MemoryList />);
     const block = await screen.findByTestId("memory-waiting");
-    await waitFor(() => expect(within(block).getAllByTestId(/^pending-memory-/)).toHaveLength(3));
+    await waitFor(() => expect(within(block).getAllByTestId(/^pending-memory-/)).toHaveLength(2));
+    // v0.1.64 (INB1): a practice that is not in effect is listed with its reason, not waiting for an OK.
+    expect(within(block).queryByTestId("pending-memory-l:5")).toBeNull();
+    expect(within(await screen.findByTestId("practices-not-in-effect")).getByTestId("practice-5")).toBeInTheDocument();
     const sensitive = within(block).getByTestId("pending-memory-m:7");
     expect(sensitive).toHaveTextContent("memoryPage.sensitive");
     // A sensitive one is kept for local models only: acknowledged, not for the cloud.
