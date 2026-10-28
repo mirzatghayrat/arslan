@@ -156,7 +156,7 @@ Write the whole reply in English (it is pasted onto GitHub), with these labels: 
 - **S2a-3 PR1 #375 约 1,060 行，超过 `docs/sessions.md` §5 的约 800 行，要不要拆：** 938 行是一份完整的 shell 语法，拆开会在 main 上留下半个读取器。我倾向不拆，但这是 §5 的规矩，由你定。S2a-3 只是顺延，这个问题没定；v0.1.64 送外部审查前要答。
 - **R63 判定里没有记录的两半**（M3 第 7 条 Mac 那半，第 12 条截屏那半）：v0.1.64 冒烟时补测，还是就此放下。
 - **K8c 的 Gemini M1：** 要 Gemini 代理和额度（只有你能放 key）。
-- **Security model "hard rules + sandbox + classifier" with permission modes — decided by the user on 2026-10-28** (README §8): sandbox and classifier both "must" in v0.1.64 (SBX first, classifier after); all five modes (S5a after SBX, S5b after the classifier); D8 reversed with the audit's conditions, any one unmet means no classifier; S64-0b for two more mark leaks; if the classifier's review is blocked, v0.1.64 waits. Pass lines: you chose option 2 on 2026-10-28 (README §8).
+- **Security model "hard rules + sandbox + classifier" with permission modes — decided by the user on 2026-10-28** (README §8): sandbox and classifier both "must" in v0.1.64 (SBX first, classifier after); all five modes (S5a after SBX, S5b after the classifier); D8 reversed with the audit's conditions, any one unmet means no classifier; S64-0b for two more mark leaks; if the classifier's review is blocked, v0.1.64 waits. Pass lines: you chose option 2 on 2026-10-28, with the cloud audit's six changes (README §8). **Still yours:** three lines from ⓪Plan's candidates (X% of the approvable scope answered; the cap on failures that fall back to a card; the cap on approvals after outside content).
 
 ## 已定、不用再问
 
