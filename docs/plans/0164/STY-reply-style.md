@@ -66,3 +66,75 @@
 
 - ~~这张卡放「应该」还是「必须」~~：用户 10-28 定「必须」。
 - 读回复用多少条：⓪Plan 建议 20 条（闲聊 10、任务 10，中英各半），用户嫌多可以减。
+
+## STY2: how Arslan does work, "deeper, not bigger" (user, 2026-10-28; relayed by ④参谋)
+
+⓪Plan, 2026-10-28. The user's clarification: this is about **how Arslan does work** (办事风格), not how it talks, and it applies to tasks, not chit-chat. It edits the same prompt section as STY, so it is a second PR on this card, after STY's.
+
+| Item | Content |
+|---|---|
+| Lane | Whoever writes STY (#452, ⑥Helper). ⓪Plan runs the bench before and after. |
+| Tier | Must, in STY's tier (the user decided it goes with STY). |
+| Depends on | STY's prompt PR merged first (same lines). The plan-mode part depends on S5a and a demo mock the user approves first. |
+| Merge position | After STY. It is a system-prompt hot-file change, so it waits behind any open K-line prompt PR, as STY does. |
+| Migration | None |
+
+### What changes
+
+The working method in `_ARSLAN_SYSTEM` (`server/orchestrator/arslan.py:124-140`, added by K5 in v0.1.63) gets four points. Three of them extend lines that are already there. Following `docs/sessions.md` §12 rule 3, they are merged into those lines rather than added as a second list.
+
+1. **Go deeper, not bigger.** Before starting a task, consider what a top professional would do here. Do what fits the request well. List anything beyond the request as a suggestion at the end; don't widen the scope on your own. (New line.)
+2. **Start from the raw material.** Read the real file, data or original page, not memory, a summary or someone's retelling. Citations point back to the source. This extends `:127` ("Read before you change") and `:135` ("cite only sources you actually read").
+3. **Use the right tools.** Run what can be run (the tests, the command, opening the produced file) instead of reasoning that it should work. This extends `:128` ("Check after you change").
+4. **External evidence before "done".** Saying it is done needs evidence beyond Arslan's own word: a passing test, command output, the file existing, the source matching. Say plainly what was not verified. This lines up with INB9's acceptance sheet (`docs/plans/0164/INB-inbox-progress.md:375`): ✅ needs evidence, and claims backed only by the model never go in ✅. It also extends `:128`.
+
+**Background jobs:** `BACKGROUND_SYSTEM` gets the same four points in one line. STY already changes its ending.
+
+**Plan mode (S5a):** the plan shows these four as its sections:
+- references, plus "what a pro would add, for you to pick";
+- materials;
+- method;
+- how it will be verified.
+
+The acceptance sheet at the end is checked against these sections. This is UI, so a clickable demo mock goes to the user before any UI code (user, 2026-10-28). It belongs to S5a's PR, not to this card's prompt PR.
+
+### The four card lines (`docs/sessions.md` §6, after #468)
+
+1. **References:**
+   - Claude Code's system prompt and its "verify before claiming done" practice;
+   - Codex's AGENTS.md conventions and the OpenCode `AGENTS.md` style rules the user picked (https://github.com/sst/opencode/blob/dev/AGENTS.md);
+   - Hermes' task loop.
+
+   The PR links the exact passages it read. **Listed for the user, not built:** a per-task "professional checklist" (by task type) that Arslan fills in before starting. It is bigger than four lines in a prompt and would need its own card.
+2. **Raw material:**
+   - the current prompt text at `server/orchestrator/arslan.py:124-140` and `BACKGROUND_SYSTEM`;
+   - the M64 bench transcripts of tasks where Arslan said "done" without checking, read on this Mac;
+   - the card records only the counts and the task ids.
+3. **Method:**
+   - prompt text first;
+   - a pytest that pins that the four points are in the working method and that the chit-chat part (`:45-48`) is unchanged;
+   - the M64 bench before and after, on the same tasks (DeepSeek);
+   - STY's 20-reply read for tone;
+   - a mutation check: remove the new lines and the pin test goes red.
+4. **External evidence:**
+   - **Bench:** Pass rate does not drop, "waiting for you" does not rise, no new error types (K5's gate style), and the cache hit rate does not drop.
+   - **Count from the bench transcripts:** "done" claims without a check or test run in the same turn, before vs after. Target: fewer, not zero.
+   - **Tone:** the user's read of STY's 20 replies shows no colder chit-chat.
+   - CI run ids on the PR.
+
+### Acceptance
+
+- The four points are in the working method; three are folded into K5's lines, with no duplicate list.
+- BACKGROUND_SYSTEM gets the same one line.
+- Bench gate as above.
+- The "done without evidence" count does not rise, and the PR reports it.
+- STY's read still passes.
+
+### Size
+
+About +10 product lines (prompt text) and about +20 test lines. The bench run is the main cost and stays inside the DeepSeek proxy cap.
+
+### Risks
+
+- Longer prompts change the cached prefix, so the first request costs more. Check the hit rate afterwards.
+- "List extras at the end" can make replies longer. STY's read catches this. Extras go in one short list, only when there is something real to suggest.
