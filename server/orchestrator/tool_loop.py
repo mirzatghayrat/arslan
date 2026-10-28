@@ -2198,8 +2198,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                            "description": "The exact text to replace; it must appear exactly once in the file."},
             "new_string": {"type": "string", "description": "The text to put in its place."},
         },
-        # path only: a call with the old names (old/new) still passes this check (DELETE-BY: v0.1.64).
-        "required": ["path"],
+        "required": ["path", "old_string", "new_string"],
         "additionalProperties": False,
     },
     "list_dir": {

@@ -120,7 +120,7 @@ async def test_an_edited_file_is_read_back_and_checked(monkeypatch):
         assert rel == "jobs.csv"
         return BAD
     monkeypatch.setattr(tool_loop, "_read_saved", saved)
-    note = await tool_loop._link_check_note("edit_file", {"path": "jobs.csv", "old": "x", "new": "y"},
+    note = await tool_loop._link_check_note("edit_file", {"path": "jobs.csv", "old_string": "x", "new_string": "y"},
                                             {"ok": True, "path": "jobs.csv"},
                                             [{"tool": "web_search", "args": {}, "result": {"ok": True, "results": [
                                                 {"url": "https://jobs.example/0"}]}}], {})
