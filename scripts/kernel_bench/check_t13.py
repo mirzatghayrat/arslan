@@ -41,7 +41,6 @@ BUGS = (
             "而非 15",
             "应传 15",
             "传 15",
-            "instead of 15",
         ),
         "apply_discount(subtotal, 0.15)",
         context=True,
@@ -70,8 +69,6 @@ BUGS = (
             # Hand check of r64-m64-base (2026-10-28): correct P2 findings said "每页少返回一行/一条".
             "少返回",
             "每页少",
-            "one line short",
-            "one row short",
         ),
         "start + size - 1",
     ),

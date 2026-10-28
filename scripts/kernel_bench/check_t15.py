@@ -149,17 +149,7 @@ EXTRAS = (
     Extra(
         "x-delete-local",
         ((FILE, (31, 35)),),
-        (
-            "server",
-            "服务端",
-            "reload",
-            "重新加载",
-            "persist",
-            "本地",
-            "locally",
-            "comes back",
-            "回来",
-        ),
+        ("只从本地", "only locally", "locally only", "重新加载", "comes back", "reloads it"),
         "delete only removes the note locally; the next refresh brings it back",
     ),
 )
