@@ -72,12 +72,13 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 
 ## Waiting on the user
 
-- The STY read page (export the choices to ⓪Plan).
-- Two classifier pass lines in #444: X% of the approvable scope (⓪Plan suggests ≥ 70%) and the failure fallback cap (≤ 5%).
-- C7c questions 1, 2, 3 (DELETE-BY move for `/brain/proposals*`), 4.
+- The STY read page: sent to the user on 2026-10-29; the user exports the choices (JSON) to ⓪Plan, which tallies them.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md` (#447).
-- Making the `language` CI job a required check (branch protection). The fix for main's red `language` job (#470) is merged; check main CI 40723824079 is green before making it required.
+- Making the `language` CI job a required check: main is green again (CI 40723824079 on `8532152f`, including `language`); the user agreed in principle and ④参谋 is walking through the ruleset setting.
+- Allowing `bind_pr` and `set_auto_merge` in the user's settings (④参谋 is walking through it); then ⓪Plan tries auto-merge on the next non-security docs PR.
 - The side-chat mock (SIDE-0), when it comes.
+
+**Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474.
 
 ## Spend
 
