@@ -17,11 +17,11 @@
 
 | PR | 是什么 | 能审了吗 | `<额外要看的>` |
 |---|---|---|---|
-| S64-0（③Hands 在写，开了 PR 就填号） | 「读过外部内容」标记的四个漏洞 | 还不能：PR 还没开 | `server/orchestrator/untrusted.py`（`track_turn`、`_WEB_TOOLS`、`_OUTSIDE_TOOLS`）、`server/services/task_workers.py`、`server/services/background_jobs.py`、`server/services/lessons.py`、`server/services/task_service.py` 的 `resume_turn`、`server/orchestrator/tool_loop.py`；`docs/plans/0164/README.md` §3.4（这四个洞是什么、另外三处为什么没修） |
+| S64-0（③Hands 在写，开了 PR 就填号） | 「读过外部内容」标记的四个漏洞 | 还不能：PR 还没开 | `server/orchestrator/untrusted.py`（`track_turn`、`_WEB_TOOLS`、`_OUTSIDE_TOOLS`）、`server/services/task_workers.py`、`server/registry/task_tools.py`（`delegate_work` 和后台任务从这里起）、`server/services/background_jobs.py`、`server/services/lessons.py`、`server/services/memory_tools_v2.py:137`（笔记看这个标记）、`server/services/task_service.py` 的 `resume_turn`、`server/orchestrator/tool_loop.py`；`docs/plans/0164/README.md` §3.4（这四个洞是什么、另外三处为什么没修；#434 合并前它只在分支 `claude/0164-plan-draft` 上） |
 | [#375](https://github.com/mirzatghayrat/arslan/pull/375) | S2a-3 a+c：命令按完整的 shell 语法读懂才放行 | 还不能：等默认拒绝沙箱（SBX）合并、③Hands rebase 之后审新头，不审旧头 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
-| [#376](https://github.com/mirzatghayrat/arslan/pull/376) | S2a-3 c 的后半：经别的命令间接跑的，算没读懂 | 同上 | 同上 |
-| [#378](https://github.com/mirzatghayrat/arslan/pull/378) | S2a-3 b：请 macOS 在沙箱外办事的程序分两档 | 同上 | 同上 |
-| [#396](https://github.com/mirzatghayrat/arslan/pull/396) | S2a-3 d：拿真 shell 对照命令判定 | 同上；由写它的会话 rebase | 同上。它的真 shell 对照只在一次性 CI 虚拟机里跑，**不要让 Codex 在任何人的 Mac 上跑它** |
+| [#376](https://github.com/mirzatghayrat/arslan/pull/376) | S2a-3 c 的后半：经别的命令间接跑的，算没读懂 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
+| [#378](https://github.com/mirzatghayrat/arslan/pull/378) | S2a-3 b：请 macOS 在沙箱外办事的程序分两档 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
+| [#396](https://github.com/mirzatghayrat/arslan/pull/396) | S2a-3 d：拿真 shell 对照命令判定 | 同 #375：等 SBX 合并、由写它的会话 rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md`。**不要运行这个 PR 的真 shell 对照测试，只读代码；它只在一次性 CI 虚拟机里跑。** |
 
 只改文档的 PR（如 #432、#434）不送 Codex；#432 的安全模型由云端审计审。
 
@@ -42,11 +42,11 @@
 - 测试有没有测后果，而不只是看代码写了；把修复删掉，测试会不会变红。
 - PR 描述说修了、代码里其实没修的；没写删除条件的旧路径或兜底。
 
-不要：在任何机器上访问家目录、~/.arslan、Arslan 的数据文件夹或任何密钥；要跑测试只用 pytest 或 scripts/dev/probe.sh；攻击写法只写到能证明问题为止。
+不要：运行任何命令或测试，只读代码（你在用户的个人电脑上，不在隔离环境里）；不访问家目录、~/.arslan、Arslan 的数据文件夹或任何密钥；攻击写法只写到能证明问题为止。
 
 回复格式：
 第一行：模型：<Codex 版本、模型名、推理档位>（中途换了模型也写明，标出哪部分是换了之后审的）。
-然后每条发现一段：严重度（高 / 中 / 低）；文件:行；问题是什么；会出什么事（什么输入 → 什么错误结果）；建议怎么修；这条是读代码得出的还是跑过的。
+然后每条发现一段：严重度（高 / 中 / 低）；文件:行；问题是什么；会出什么事（什么输入 → 什么错误结果）；建议怎么修。
 然后「没看的部分」：哪些文件或路径没细看。
 最后一句结论：可以合 / 改完再合 / 不能合。
 ```
