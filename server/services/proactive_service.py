@@ -370,7 +370,8 @@ async def accept(item_id: int, conversation_id: str | None = None) -> dict:
             raise ProactiveError("already_handled")
         await db.commit()
     try:
-        job = await background_jobs.start(conversation_id, goal, criteria)
+        # S64-0: the goal is text Arslan put together from what a detector found, not the user's message.
+        job = await background_jobs.start(conversation_id, goal, criteria, outside_seen=True)
     except Exception:
         async with db_session.AsyncSessionLocal() as db:       # the job never started: give the item back
             item = await _get(db, item_id)

@@ -417,15 +417,21 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
 
 async def _fire(task: ScheduledTask) -> None:
+    from server.orchestrator import untrusted
     from server.services import task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
     from server.services import desktop_status
 
     async def body(sink):
         return await _fire_body(task)
+    # S64-0 (②Main's F1, the user's decision 2026-10-28): every fire starts as having read outside
+    # content. Its prompt may come from a turn that had read some, and after one "this conversation"
+    # the schedule card is not shown again. DELETE-BY: v0.1.64, with S2a-3 PR4 (scheduled runs get
+    # read-only commands back): it records outside_seen on the scheduled task, read here instead.
     with desktop_status.working(cid, title=task.name, kind="scheduled"):   # keeps the Mac awake while the fire runs (0.1.41)
-        return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
-                                                headless=True)
+        with untrusted.carried(True):
+            return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
+                                                    headless=True)
 
 
 async def _fire_body(task: ScheduledTask) -> None:

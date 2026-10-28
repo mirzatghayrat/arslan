@@ -54,8 +54,9 @@ class StartBackgroundWorkExecutor:
         if not isinstance(goal, str) or not goal.strip() or not isinstance(criteria, list):
             return {"ok": False, "error_code": "invalid_background_arguments"}
         waiting = background_jobs.active_count() >= background_jobs.MAX_CONCURRENT
-        job = await background_jobs.start(conversation_id, goal,
-                                          [c for c in criteria if isinstance(c, dict)])
+        from server.orchestrator import untrusted
+        job = await background_jobs.start(conversation_id, goal, [c for c in criteria if isinstance(c, dict)],
+                                          outside_seen=untrusted.turn_so_far())   # S64-0: this turn's mark
         from server.services import hands_service
         hands_service.carry_stop_to(job.job_id)   # H3: a stopped turn's job is stopped too (before it runs)
         when = ("The job is queued behind other background work and starts when one finishes"

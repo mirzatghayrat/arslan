@@ -265,6 +265,8 @@ async def delegate(batch: Batch, parent_tools):
     merged = {item["id"]: item for item in [*cached, *results]}
     evidence = {entry["url"]: entry for item in merged.values()
                 for entry in (item.get("result") or {}).get("evidence", [])}
-    return {"ok": True, "external": False, "workers": list(merged.values()),
+    # S64-0: no "external": False. The helpers' results are what they read on the web, so the tool
+    # loop frames them as web content and marks the turn (untrusted: delegate_work is in both lists).
+    return {"ok": True, "workers": list(merged.values()),
             "evidence": list(evidence.values()),
             "summary": "Independent subtask results; final task acceptance remains with the host."}

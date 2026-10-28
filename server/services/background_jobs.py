@@ -18,6 +18,7 @@ import contextvars
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from server.services import desktop_status, run_registry
@@ -49,6 +50,9 @@ class Job:
     tool_calls_seen: int = 0
     run_id: int | None = None         # its recorded run: the phone reviews the steps by it
     origin: str = "mac"               # "phone": started from the paired iPhone
+    # S64-0: whether the goal may carry outside content. A fixed answer (True: nobody knows), or the
+    # starting turn's mark, asked again when the job gets its slot (start).
+    outside_seen: bool | Callable[[], bool] = field(default=True, repr=False)
     results: dict = field(default_factory=dict)   # check_id -> status
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -149,12 +153,19 @@ def active() -> list[Job]:
     return sorted((job for job in _jobs.values() if job.phase != "finished"), key=lambda job: job.started_at)
 
 
-async def start(conversation_id: str, goal: str, criteria: list[dict], *, origin: str = "mac") -> Job:
+async def start(conversation_id: str, goal: str, criteria: list[dict], *,
+                outside_seen: bool | Callable[[], bool], origin: str = "mac") -> Job:
+    """S64-0: the job runs in a clean context, but its goal is someone's words, and every caller
+    says whether they may carry outside content. A turn passes `untrusted.turn_so_far()`, asked
+    when the job gets its slot: a queued job reads the history after that turn may have read more.
+    The phone passes False (the user's own words), an accepted Inbox proposal True (text Arslan
+    put together)."""
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
     job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
-              acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac")
+              acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
+              outside_seen=True if outside_seen is None else outside_seen)   # None: nobody knows
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
@@ -210,6 +221,7 @@ def _job_sink(job: Job, downstream):
 
 
 async def _run(job: Job) -> None:
+    from server.orchestrator import untrusted
     global _slots
     if _slots is None:
         _slots = asyncio.Semaphore(MAX_CONCURRENT)
@@ -219,7 +231,10 @@ async def _run(job: Job) -> None:
         async with _slots:
             job.phase = "running"
             _emit(job)
-            final_text, phase, reason = await _execute(job)
+            if callable(job.outside_seen):                # S64-0: ask the starting turn, now
+                job.outside_seen = bool(job.outside_seen())
+            with untrusted.carried(job.outside_seen):    # each of its turns starts from it
+                final_text, phase, reason = await _execute(job)
     except asyncio.CancelledError:
         phase, reason = "cancelled", None
     except Exception as exc:  # noqa: BLE001 — a job failure is reported, never raised into the loop

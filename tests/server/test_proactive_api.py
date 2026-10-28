@@ -95,7 +95,7 @@ async def test_seen_clears_the_unread_count(client):
 async def test_accept_starts_a_job_then_conflicts_then_404s(client, monkeypatch):
     started = []
 
-    async def start(conversation_id, goal, criteria):
+    async def start(conversation_id, goal, criteria, **kw):
         started.append((conversation_id, goal))
         return SimpleNamespace(job_id="job-7")
 
@@ -138,7 +138,7 @@ async def test_the_goal_cannot_be_chosen_by_the_caller(client, monkeypatch):
     """accept runs the stored goal and nothing else: there is no way to smuggle a different one in."""
     started = []
 
-    async def start(conversation_id, goal, criteria):
+    async def start(conversation_id, goal, criteria, **kw):
         started.append(goal)
         return SimpleNamespace(job_id="j")
 
