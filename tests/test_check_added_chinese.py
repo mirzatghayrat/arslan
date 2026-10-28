@@ -328,6 +328,22 @@ def test_end_to_end_catches_an_added_line_and_passes_the_exceptions(repo, capsys
         assert passing not in out
 
 
+def test_end_to_end_the_published_docs_site_passes_and_docs_elsewhere_still_fail(repo, capsys):
+    """Main CI 40716975056: #428's built pages under docs/docs/ failed while their source in
+    docs-site/ passed. Kanji in the Japanese page count as Han, so it needs the exception too."""
+    root, git, write = repo
+    write("docs/docs/zh/index.html", "<p>Arslan 是一个本地优先的助手，所有记忆都留在这台 Mac 上。</p>\n")
+    write("docs/docs/ja/index.html", "<p>Arslan はローカル優先のアシスタントです。記憶はこの Mac に残ります。</p>\n")
+    write("docs/docs/index.html", '<a href="../docs/zh/" lang="zh-CN">简体中文</a><a href="../docs/ja/" lang="ja">日本語</a>\n')
+    write("docs/sessions.md", "新的中文规矩\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "change")
+    assert main(["--base", "main"]) == 1
+    out = capsys.readouterr().out
+    assert "docs/sessions.md:1: 新的中文规矩" in out
+    assert "docs/docs/" not in out
+
+
 def test_end_to_end_under_actions_a_failure_is_also_an_annotation(repo, capsys, monkeypatch):
     root, git, write = repo
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
