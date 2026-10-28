@@ -25,24 +25,12 @@ interface EnvRow {
   v: string;
 }
 
-// One-time seed payload for the add form (from a curated preset). Does NOT auto-submit.
-interface McpServersProps {
-  prefill?: {
-    label: string;
-    command: string;
-    args: string[];
-    transport: string;
-    url?: string;
-    envKeys?: string[];
-  };
-}
-
 /**
  * MCP servers panel: register stdio MCP servers, connect to discover their tools,
  * then expose (toolset→safe) + wire (tool→safe+wired) to open the SQL choke point.
  * Tools are locked by default. Renders ONLY plain text — never server-supplied HTML.
  */
-export default function McpServers({ prefill }: McpServersProps = {}) {
+export default function McpServers() {
   const { t: tr } = useTranslation();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [query, setQuery] = useState("");
@@ -69,22 +57,6 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
   useEffect(() => {
     loadServers();
   }, []);
-
-  // One-time seed of the add form from a curated preset. Does NOT auto-submit —
-  // the user reviews, fills the path/key, and clicks Add (the consent step).
-  useEffect(() => {
-    if (!prefill) return;
-    setLabel(prefill.label);
-    setTransport(prefill.transport === "http" ? "http" : "stdio");
-    setCommand(prefill.command);
-    setArgsText((prefill.args || []).join(" "));
-    setUrl(prefill.url ?? "");
-    setEnvRows(
-      prefill.envKeys && prefill.envKeys.length > 0
-        ? prefill.envKeys.map((k) => ({ k, v: "" }))
-        : [{ k: "", v: "" }],
-    );
-  }, [prefill]);
 
   const canAdd =
     !!label.trim() && (transport === "http" ? !!url.trim() : !!command.trim());

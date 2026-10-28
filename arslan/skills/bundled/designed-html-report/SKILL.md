@@ -1,52 +1,53 @@
 ---
 name: designed-html-report
-description: 设计版报告 —— 报告/简报/调研/方案等长篇交付物默认产出自带完整设计系统的单文件 HTML(圆角卡片版式、粘性导航、语义 callout、可编辑文本),而非 markdown 长文墙。
-version: 0.2.0
+description: Designed report — for reports, briefs, research, proposals and other long deliverables, produce by default a single-file HTML document with a complete design system (rounded-card layout, sticky navigation, semantic callouts, editable text) instead of a wall of Markdown.
+version: 0.3.0
 authors:
   - Arslan
 ---
 
 ## Trigger
 
-当用户要「报告 / 简报 / 调研 / 方案 / 分析 / 复盘 / insight report」或任何明显要被保存、转发、打印的长篇交付物时激活:产出一份**完整的单文件 HTML 文档**,而不是 markdown 长文墙。
+Activate when the user asks for a report, brief, research write-up, proposal, analysis, retrospective or insight report, or any long deliverable that will clearly be saved, forwarded or printed: produce a **complete single-file HTML document**, not a wall of Markdown.
 
-**输出方式(关键)**:整条回复就是这份 HTML 文档本身——以 `<!DOCTYPE html>` 开头、以 `</html>` 结尾,**开头不加任何解说文字,也不要用 ```html 代码围栏包裹**。客户端只在「整条消息以 `<!DOCTYPE html>` 开头」时才把它渲染成预览/复制/下载卡片;围栏或开头多一句话都会破坏识别,变回一堵代码墙。(本文档下方的围栏代码块只是给你看的骨架参考,真正回复时不要带围栏。)
+**How to output it (this matters):** the whole reply is the HTML document itself — it starts with `<!DOCTYPE html>` and ends with `</html>`, with **no explanatory text before it and no ```html code fence around it**. The client renders a preview / copy / download card only when the whole message starts with `<!DOCTYPE html>`; a fence or one extra sentence at the start breaks that and turns the reply back into a wall of code. (The fenced skeleton below is a reference for you; do not fence the real reply.)
 
-日常问答、短回复、闲聊照常用普通文本——不要过度触发。
+Everyday questions, short replies and chat stay plain text — do not over-trigger.
 
-## 决策规则
+## Decision Rules
 
-1. **项目 design spec 压倒一切**:任务上下文(附带材料或知识库检索结果)里若有项目设计规范——形如 `*-design.md` / `design.md` 的文件——则**完全遵循它**的 tokens/字体/版式,本技能的默认设计系统整体让位。每个项目可以有自己的规范(A 项目 → A-design.md)。
-2. **其次是用户口头偏好**:用户在对话中说过的风格偏好(主题色、语气、品牌感)在默认版式结构内优先兑现。
-3. **否则静默用默认设计系统**:普通报告**不要**追问用户设计偏好,直接交付成品。
-4. **大型/对外品牌交付物例外**:当交付物明显是大型对客/品牌 artifact(deck、客户报告)且没有 design.md 时,值得**只问一个短问题**,给三个选项:用默认风格 / 说出偏好 / 提供 design.md(可存入知识库供本项目复用)——得到答复即继续,不纠缠。
-5. **数据诚实**:报告里每一个数字都必须来自对话内容或工具结果;绝不编造指标或案例;未知就明写「未知 / 待确认」。
-6. **单文件、零外部依赖**:不引任何外部 CDN 脚本/字体/图片;字体用系统栈 + 'PingFang SC' / 'Noto Sans SC' 兜底;文件从磁盘双击打开即完整可看,`@media print` 下打印干净。
+1. **A project design spec overrides everything:** if the task context (attached material or knowledge-base results) contains a project design spec — a file like `*-design.md` or `design.md` — **follow it completely** for tokens, fonts and layout, and set this skill's default design system aside. Each project can have its own spec (project A → A-design.md).
+2. **Next, what the user has said:** style preferences the user stated in the conversation (accent colour, tone, brand feel) come first within the default layout structure.
+3. **Otherwise use the default design system without asking:** for an ordinary report, **do not** ask the user about design preferences; deliver the finished document.
+4. **Exception for large or external branded deliverables:** when the deliverable is clearly a large client-facing or branded artifact (a deck, a client report) and there is no design.md, it is worth asking **one short question** with three options: use the default style / describe a preference / provide a design.md (which can be saved to the knowledge base and reused for this project). Continue as soon as there is an answer; do not press.
+5. **Honest data:** every number in the report comes from the conversation or a tool result; never invent metrics or cases; when something is unknown, write "unknown / to be confirmed" in the report's language.
+6. **Single file, no external dependencies:** no external CDN scripts, fonts or images; use the system font stack with 'PingFang SC' / 'Noto Sans SC' as fallbacks; the file opens complete when double-clicked from disk, and prints cleanly under `@media print`.
+7. **The report's language is the user's language:** write the content in the language the user is using, and set `<html lang>` to match.
 
-## 默认设计系统(House style · Ember 暖调 · 圆角卡片版式,WCAG AA 已校准)
+## Default design system (house style · warm Ember palette · rounded-card layout, calibrated for WCAG AA)
 
-- **Tokens(`:root`)**:`--ink:#1A1410`(暖黑,正文与深底)、`--bg:#F2EBE0`(麦色纸页面底)、`--card:#FAF5EE`(卡片底)、`--accent:#D94420`(锈橙红,唯一强调色;米白底上对比 4.6:1 达 AA)、`--accent-bright:#F06A20`(深底上的强调色——深色带里必须用它,别用 #D94420)、`--secondary:#6B5E52`(次要文字)、`--muted:#A8998C`(浅底上**只允许 ≥18px 的大字**,正文小字一律用 secondary)、`--green:#2E6645`(**只用于「开源/成功/正向」类 tag**,不作第二主色)、`--line:#D8CFC4`(发丝边框)。语义 callout 允许两组衍生浅调(唯一的非 Ember 扩展,只用于 callout):warn 琥珀 `--warn-bg:#F7EDD8/--warn-line:#E3CFA0/--warn-ink:#7A5A14`,info 冷灰蓝 `--info-bg:#E9EEF2/--info-line:#C9D6DE/--info-ink:#2F4A5C`。
-- **对比度铁律**:accent 底(#D94420)上配**白字**;深底(#1A1410)上强调用 `--accent-bright`;用户有品牌色时只换 accent 两个值,其余不动。
-- **版式基调 = 圆角卡片,不是通栏长文**:每个 section 是一张浮在暖纸底上的圆角卡(`--card` 底、`border-radius:12px`、1px 发丝边、`padding:34px 38px`、`margin-bottom:28px`);全文圆角统一在 9–14px 区间,柔和不锐利。正文 14.5px/1.55;h3 17px/600;小标签一律小号、大写、宽字距。
-- **粘性导航条**:深底(`--ink`)`position:sticky` 顶栏,accent-bright 色小 logo/字标 + 各 section 锚点链接(不透明度 .85,hover 到 1)——长报告一跳直达。
-- **封面块(不是细头带)**:深底大圆角覆盖块(radius 14px、padding ~44px、flex 可换行):accent-bright 宽字距 eyebrow → 40px/700 大标题(深底上用 `--accent-bright`)→ 21px 细体浅色副标 → meta 行(标签+值)→ accent 左边框的小号免责/口径说明。右侧一块**关键数字小面板**:半透明卡(`rgba(255,255,255,.08)`、radius 10),每行 = 大号数值 + 右对齐小标签,行间淡分隔线。
-- **编号 section pill**:每节顶部一枚 accent 底小圆 pill(`padding:2px 10px; border-radius:14px`)写序号,下接 25px/700 的节标题,再一行 secondary 色副题 + 2px 下划线规。
-- **语义 callout 家族(radius 9,按语义用、不当装饰)**:`box-hl` = accent 底白字关键结论(一页至多一两处);`box-warn` = 琥珀浅底+同调边框+深化文字的警示;`box-info` = 冷调浅底的补充说明。
-- **指标网格**:3/4 列圆角指标卡(`--bg` 底、22px/700 数值 + 12.5px secondary 标签);主角指标用 `.accent` 反色变体(深底、accent-bright 数值)。
-- **案例/数据卡**:3 列,发丝边 + 4–5px 彩色**顶边**,26px 大数 + 说明 + 斜体来源行。
-- **分段/方案卡**:3 列,每张**不同颜色的顶边**(accent / green / ink)+ 同色小 pill 标签,内容用虚线分隔的列表行。
-- **行动清单**:真 `<input type="checkbox">` 行(`accent-color:var(--accent)`)、虚线分隔,按小号彩色 h4 分组——用于行动计划/下一步。
-- **表格**:深底表头(浅色文字、11px 大写宽字距)+ 发丝行线 + 偶数行斑马纹,置于圆角卡内。
-- **图表**:纯 CSS 条形图(flex 行 = 定宽名称 + 浅色轨道 + 深色填充条,突出项 accent 底白字)或**内联 SVG 图表**均可,上方配一行宽字距小图表标题;禁用外部图表库。
-- **响应式**:一个 `@media (max-width:820px)` 把所有网格收成单列、封面收紧内边距。
-- **可编辑交付**:关键文本块可加 `contenteditable`(hover 虚线发丝 outline、focus accent outline)——交付的文件在浏览器里可直接改字;页脚小注里说明这一点。
-- **打印**:`@media print` 去阴影白底,对深底/accent 元素加 `print-color-adjust:exact`。
+- **Tokens (`:root`):** `--ink:#1A1410` (warm black, body text and dark surfaces), `--bg:#F2EBE0` (wheat paper page background), `--card:#FAF5EE` (card background), `--accent:#D94420` (rust orange-red, the only accent; 4.6:1 on the off-white background, meets AA), `--accent-bright:#F06A20` (the accent on dark surfaces — inside a dark band always use it, never #D94420), `--secondary:#6B5E52` (secondary text), `--muted:#A8998C` (on light backgrounds **only for large text ≥18px**; small body text always uses secondary), `--green:#2E6645` (**only for "open source / success / positive" tags**, never a second main colour), `--line:#D8CFC4` (hairline borders). Semantic callouts may use two derived light tints (the only extension beyond Ember, and only for callouts): warn amber `--warn-bg:#F7EDD8/--warn-line:#E3CFA0/--warn-ink:#7A5A14`, info cool grey-blue `--info-bg:#E9EEF2/--info-line:#C9D6DE/--info-ink:#2F4A5C`.
+- **Contrast rules:** on the accent background (#D94420) use **white text**; on the dark background (#1A1410) use `--accent-bright` for emphasis; if the user has a brand colour, change only the two accent values and leave the rest.
+- **The base layout is rounded cards, not a full-width wall of text:** each section is a rounded card floating on the warm paper background (`--card` background, `border-radius:12px`, 1px hairline border, `padding:34px 38px`, `margin-bottom:28px`); all corner radii stay within 9–14px, soft rather than sharp. Body text 14.5px/1.55; h3 17px/600; small labels are always small, uppercase and widely letter-spaced.
+- **Sticky navigation bar:** a dark (`--ink`) `position:sticky` top bar with a small logo or wordmark in accent-bright plus anchor links to each section (opacity .85, 1 on hover) — one click to any part of a long report.
+- **A cover block (not a thin header strip):** a large dark block with rounded corners (radius 14px, padding ~44px, wrapping flex): a widely spaced accent-bright eyebrow → a 40px/700 title (in `--accent-bright` on the dark surface) → a 21px light subtitle in a pale colour → meta rows (label + value) → a small disclaimer or scope note with an accent left border. On the right, a **small key-numbers panel**: a translucent card (`rgba(255,255,255,.08)`, radius 10), each row a large value plus a small right-aligned label, with faint dividers between rows.
+- **Numbered section pill:** at the top of each section, a small rounded accent pill (`padding:2px 10px; border-radius:14px`) with the number, then a 25px/700 section title, then one line of subtitle in secondary with a 2px rule underneath.
+- **Semantic callout family (radius 9, used for meaning, not decoration):** `box-hl` = white text on accent for the key conclusion (at most one or two per page); `box-warn` = a warning on an amber tint with a matching border and deeper text; `box-info` = a supplementary note on a cool tint.
+- **Metrics grid:** 3 or 4 columns of rounded metric cards (`--bg` background, 22px/700 value + 12.5px secondary label); the headline metric uses the inverted `.accent` variant (dark background, accent-bright value).
+- **Case / data cards:** 3 columns, hairline border plus a 4–5px coloured **top border**, a 26px large number, a description and an italic source line.
+- **Segment / option cards:** 3 columns, each with a **different coloured top border** (accent / green / ink) and a small pill label in the same colour; the content is list rows separated by dashed lines.
+- **Action checklist:** real `<input type="checkbox">` rows (`accent-color:var(--accent)`), separated by dashed lines and grouped under small coloured h4 headings — for action plans and next steps.
+- **Tables:** a dark header row (light text, 11px uppercase, wide letter-spacing), hairline row lines and zebra-striped even rows, inside a rounded card.
+- **Charts:** either pure-CSS bar charts (a flex row = fixed-width name + light track + dark fill bar; the highlighted item is white on accent) or **inline SVG charts**, with a small widely spaced chart title above; external chart libraries are not allowed.
+- **Responsive:** one `@media (max-width:820px)` collapses every grid to a single column and tightens the cover padding.
+- **Editable deliverable:** key text blocks can carry `contenteditable` (dashed hairline outline on hover, accent outline on focus) — the delivered file can be edited directly in the browser; say so in a small footer note.
+- **Print:** `@media print` removes shadows and uses a white background, and adds `print-color-adjust:exact` to dark and accent elements.
 
-## 骨架(照此扩展;{{...}} 为占位,按内容增删区块,tokens 与层级语言保持一致)
+## Skeleton (extend from this; {{...}} are placeholders; add or remove blocks to fit the content, and keep the tokens and the visual hierarchy consistent)
 
 ```html
 <!DOCTYPE html>
-<html lang="zh-Hans"><head><meta charset="utf-8">
+<html lang="{{LANG}}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{TITLE}}</title><style>
 :root{--ink:#1A1410;--bg:#F2EBE0;--card:#FAF5EE;--accent:#D94420;--accent-bright:#F06A20;--secondary:#6B5E52;--muted:#A8998C;--green:#2E6645;--line:#D8CFC4;
@@ -107,47 +108,47 @@ tbody tr:nth-child(even) td{background:var(--bg)}
 .cover,.box-hl,.metric.accent,th,.bar-fill,.pill{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head>
 <body>
-<nav class="nav"><span class="logo">{{字标}}</span><a href="#s1">{{节一}}</a><a href="#s2">{{节二}}</a></nav>
+<nav class="nav"><span class="logo">{{WORDMARK}}</span><a href="#s1">{{SECTION 1}}</a><a href="#s2">{{SECTION 2}}</a></nav>
 <div class="wrap">
   <div class="cover">
     <div style="flex:1;min-width:300px">
-      <div class="eyebrow">{{EYEBROW · 报告类别}}</div>
+      <div class="eyebrow">{{EYEBROW · REPORT TYPE}}</div>
       <h1 contenteditable>{{TITLE}}</h1>
-      <p class="sub" contenteditable>{{一句副标:这份报告回答什么问题}}</p>
-      <div class="meta">{{标签}}:<b>{{值}}</b></div>
-      <div class="meta">{{标签}}:<b>{{值}}</b></div>
-      <div class="disclaimer">{{口径/免责一句话}}</div>
+      <p class="sub" contenteditable>{{One-line subtitle: the question this report answers}}</p>
+      <div class="meta">{{Label}}: <b>{{Value}}</b></div>
+      <div class="meta">{{Label}}: <b>{{Value}}</b></div>
+      <div class="disclaimer">{{One sentence on scope / disclaimer}}</div>
     </div>
     <div class="stats">
-      <div class="row"><span class="v">{{数值}}</span><span class="l">{{标签}}</span></div>
-      <div class="row"><span class="v">{{数值}}</span><span class="l">{{标签}}</span></div>
-      <div class="row"><span class="v">{{数值}}</span><span class="l">{{标签}}</span></div>
+      <div class="row"><span class="v">{{Value}}</span><span class="l">{{Label}}</span></div>
+      <div class="row"><span class="v">{{Value}}</span><span class="l">{{Label}}</span></div>
+      <div class="row"><span class="v">{{Value}}</span><span class="l">{{Label}}</span></div>
     </div>
   </div>
   <section class="card" id="s1">
-    <span class="pill">01</span><h2>{{节标题 = 本节结论}}</h2><div class="h2sub">{{一行副题}}</div>
-    <p contenteditable>{{导语段落}}</p>
+    <span class="pill">01</span><h2>{{Section title = this section's conclusion}}</h2><div class="h2sub">{{One-line subtitle}}</div>
+    <p contenteditable>{{Lead paragraph}}</p>
     <div class="metrics">
-      <div class="metric accent"><div class="v">{{主角数值}}</div><div class="l">{{标签}}</div></div>
-      <div class="metric"><div class="v">{{数值}}</div><div class="l">{{标签}}</div></div>
-      <div class="metric"><div class="v">{{数值}}</div><div class="l">{{标签}}</div></div>
-      <div class="metric"><div class="v">{{数值}}</div><div class="l">{{标签}}</div></div>
+      <div class="metric accent"><div class="v">{{Headline value}}</div><div class="l">{{Label}}</div></div>
+      <div class="metric"><div class="v">{{Value}}</div><div class="l">{{Label}}</div></div>
+      <div class="metric"><div class="v">{{Value}}</div><div class="l">{{Label}}</div></div>
+      <div class="metric"><div class="v">{{Value}}</div><div class="l">{{Label}}</div></div>
     </div>
-    <div class="box-hl">{{本节最重要的一句结论}}</div>
-    <div class="box-warn">{{警示/风险,仅在确有风险时用}}</div>
+    <div class="box-hl">{{The single most important conclusion of this section}}</div>
+    <div class="box-warn">{{Warning / risk — only when there really is one}}</div>
   </section>
   <section class="card" id="s2">
-    <span class="pill">02</span><h2>{{节标题}}</h2><div class="h2sub">{{一行副题}}</div>
-    <table><thead><tr><th>{{列}}</th><th>{{列}}</th><th>{{列}}</th></tr></thead>
+    <span class="pill">02</span><h2>{{Section title}}</h2><div class="h2sub">{{One-line subtitle}}</div>
+    <table><thead><tr><th>{{Column}}</th><th>{{Column}}</th><th>{{Column}}</th></tr></thead>
       <tbody><tr><td>{{…}}</td><td>{{…}}</td><td>{{…}}</td></tr></tbody></table>
-    <div class="chart-title">{{图表标题}}</div>
-    <div class="bar-row"><div class="bar-name">{{项}}</div><div class="bar-track"><div class="bar-fill hl" style="width:100%">{{值}}</div></div></div>
-    <div class="bar-row"><div class="bar-name">{{项}}</div><div class="bar-track"><div class="bar-fill" style="width:58%">{{值}}</div></div></div>
-    <div class="checks"><h4>{{行动组标题}}</h4>
-      <label><input type="checkbox">{{行动项}}</label>
-      <label><input type="checkbox">{{行动项}}</label>
+    <div class="chart-title">{{Chart title}}</div>
+    <div class="bar-row"><div class="bar-name">{{Item}}</div><div class="bar-track"><div class="bar-fill hl" style="width:100%">{{Value}}</div></div></div>
+    <div class="bar-row"><div class="bar-name">{{Item}}</div><div class="bar-track"><div class="bar-fill" style="width:58%">{{Value}}</div></div></div>
+    <div class="checks"><h4>{{Action group title}}</h4>
+      <label><input type="checkbox">{{Action item}}</label>
+      <label><input type="checkbox">{{Action item}}</label>
     </div>
   </section>
-  <div class="footer">{{数据来源 · 口径}} · 本文件可在浏览器中直接编辑文字(点击文本即可修改)。</div>
+  <div class="footer">{{Data sources · scope}} · {{In the user's language: the text in this file can be edited in the browser (click any text to change it).}}</div>
 </div></body></html>
 ```

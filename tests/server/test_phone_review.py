@@ -36,7 +36,7 @@ def artifacts(tmp_path, monkeypatch):
 # ------------------------------------------------------------------ what is recorded
 
 def test_an_edit_keeps_its_old_and_new_text_bounded():
-    review = tool_review.capture("edit_file", {"path": "a.py", "old": "x = 1", "new": "x = 2" + "y" * 7000},
+    review = tool_review.capture("edit_file", {"path": "a.py", "old_string": "x = 1", "new_string": "x = 2" + "y" * 7000},
                                  {"ok": True, "path": "a.py"})
     assert review["kind"] == "edit" and review["path"] == "a.py" and review["old"] == "x = 1"
     assert len(review["new"]) <= tool_review.SNIPPET_CHARS + 2 and review["new"].endswith("…")
@@ -101,7 +101,7 @@ async def test_a_finished_run_reads_back_with_terminal_diff_and_new_file(client,
         artifact = artifact_store.store_bytes(rec.run_id, "report.md", b"# Q3\n")
     for tool, args, result, target in [
         ("run_command", {"command": "python make_report.py"}, {"ok": True, "stdout": "Loaded 1,204 rows\nPDF written", "exit_code": 0}, "python make_report.py"),
-        ("edit_file", {"path": "make_report.py", "old": "df = read(p)\n", "new": "df = read(p, dates=True)\n"}, {"ok": True, "path": "make_report.py"}, "make_report.py"),
+        ("edit_file", {"path": "make_report.py", "old_string": "df = read(p)\n", "new_string": "df = read(p, dates=True)\n"}, {"ok": True, "path": "make_report.py"}, "make_report.py"),
         ("write_file", {"path": "report.md", "content": "# Q3\n"}, {"ok": True, "path": "report.md", "artifact": artifact}, "report.md"),
     ]:
         tee({"type": "tool_call", "tool": tool, "args_summary": "{}", "target": target})

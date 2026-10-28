@@ -1,0 +1,16 @@
+# Escape hatch for scripts/check_added_chinese.py (card LANG1, docs/sessions.md §6).
+#
+# Paths here may gain Chinese lines without failing CI. Use it only for a case
+# the exceptions in docs/sessions.md §6 do not name; for one line, prefer the
+# marker `lang-check: allow` on that line. Every entry is
+#
+#     <path glob>  # <reason>
+#
+# `*` stays inside one directory, `**` crosses directories. An entry without a
+# reason fails the check, and so does one that would cover most of the
+# repository: an entry names one file, or has two directory levels before its
+# first wildcard (docs/archive/** is fine; **, **/*.md and docs/** are not).
+#
+# CI checks a change against the BASE commit's copy of this file, so an entry
+# lands in its own PR before the Chinese it allows. Adding a path here is a
+# review item: say why in the PR.

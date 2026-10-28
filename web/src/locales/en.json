@@ -235,12 +235,10 @@
   "chat": {
     "fromPhone": "from iPhone",
     "learned": "Learned: {{text}}",
-    "wantsToLearn": "Arslan wants to remember a practice: {{text}}",
     "learnedUndo": "Undo",
-    "learnedKeep": "Remember",
-    "learnedSkip": "No thanks",
+    "learnedNotInEffect": "Learned one, not in effect: {{reason}}",
+    "learnedSeeInMemory": "See in Memory",
     "learnedUndone": "Undone",
-    "learnedKept": "Remembered",
     "title": "Chat with {{name}}",
     "placeholder": "Type a message...",
     "send": "Send",
@@ -883,15 +881,11 @@
     "empty_no_spawns_action": "Create a spawn"
   },
   "capabilities": {
-    "title": "Capability Library",
-    "subtitle": "Discover, install, and manage tools, skills, and MCP servers.",
     "tabs": {
-      "discover": "Discover",
       "tools": "Tools",
       "skills": "Skills",
       "forge": "Skill Forge",
-      "mcps": "MCPs",
-      "saved": "Saved"
+      "mcps": "MCPs"
     },
     "chips": {
       "all": "All",
@@ -911,13 +905,9 @@
       "filtered_clear": "Show all"
     },
     "hero": {
-      "placeholder": "Paste a GitHub link, or search…",
-      "research": "Research",
-      "hint": "A repo link gets a full dossier (license, type, value); anything else searches GitHub.",
       "results": "Search results",
       "evaluate": "Evaluate",
       "save": "Save",
-      "researching": "Researching…",
       "kind": {
         "all": "All",
         "mcp": "MCP",
@@ -930,53 +920,7 @@
       "import_skills": "Import skills from a repo"
     },
     "dossier": {
-      "no_license": "no license",
-      "license_ok": "License OK — usable",
-      "license_learn": "Learning only",
-      "type": {
-        "mcp": "MCP server",
-        "skill": "Skill repo",
-        "agent": "Agent project",
-        "other": "Other"
-      },
-      "value_label": "Value for Arslan",
-      "actions": {
-        "register_skill": "Register as Skill",
-        "add_mcp": "Add as MCP",
-        "distill": "Distill to note",
-        "save": "Save to catalog"
-      },
-      "saved_ok": "Saved to catalog.",
-      "scan": {
-        "title": "SKILL.md files (verbatim import, license-gated)",
-        "none": "No SKILL.md files found.",
-        "import": "Import",
-        "imported": "Imported"
-      },
-      "mcp": {
-        "title": "Suggested launch command (review & edit)",
-        "add": "Add as MCP server",
-        "added": "MCP server added and locked. Review and connect it in Connections & permissions."
-      },
-      "note": {
-        "title": "Reference note (review & edit)",
-        "fallback": "LLM distill unavailable — showing the evaluation summary instead.",
-        "pick_spawn": "Choose a spawn…",
-        "ingest": "Feed to spawn knowledge",
-        "ingest_ok": "Ingested into {{name}}'s knowledge base.",
-        "create_skill": "Register as skill",
-        "create_ok": "Added to the Skills library (safe)."
-      },
-      "manifest": {
-        "title": "Author-shipped config",
-        "add": "Add this server",
-        "added": "Server added — connect it in Connections & permissions.",
-        "import_skill": "Import skill",
-        "imported": "Skill imported",
-        "expose_hint": "The author suggests enabling access for experts in Connections & permissions. This is a suggestion, not authorization.",
-        "error": "Plugin manifest invalid"
-      },
-      "overview_label": "What this is"
+      "value_label": "Value for Arslan"
     },
     "equip": {
       "action": "Equip to spawn…",
@@ -1004,7 +948,6 @@
       "missing": "Missing files",
       "orphaned": "Orphaned files"
     },
-    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## Decision Rules)",
     "import": {
       "subtitle": "Standard SKILL.md files, imported verbatim — license-gated.",
       "repo_placeholder": "owner/repo",
@@ -1511,11 +1454,9 @@
     "keepLocal": "Keep, local models only",
     "drop": "Don't",
     "apply": "Apply",
-    "use": "Use it",
     "source": {
       "memory": "About you",
-      "curation": "Tidy-up",
-      "lesson": "Learned practice"
+      "curation": "Tidy-up"
     },
     "sensitive": "Sensitive"
   },
@@ -1549,8 +1490,6 @@
     "memoryTitle": "Delete this memory?",
     "memoryBody": "Arslan forgets it and won't learn it back from old conversations.",
     "unsavedTitle": "Leave without saving?",
-    "unsavedBody": "Your changes to this note will be lost.",
-    "deleted": "Deleted",
-    "undo": "Undo"
+    "unsavedBody": "Your changes to this note will be lost."
   }
 }

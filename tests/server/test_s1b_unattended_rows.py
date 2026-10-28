@@ -102,25 +102,20 @@ async def test_a_machine_offered_with_nobody_there_is_listed():
 
 
 async def test_a_capability_found_with_nobody_there_is_listed_too(monkeypatch):
-    """⓪Plan: the Capabilities page keeps the find as before, and the Inbox lists it too: the Inbox is
-    the one list a user checks after a scheduled run. A background job (which has its own card surface)
-    only records it, as before."""
+    """⓪Plan: the Inbox lists it: the Inbox is the one list a user checks after a scheduled run. A
+    background job (which has its own card surface) writes no row. CAP1a: neither adds a "found for
+    later" entry any more; the tool result tells the model to name what is missing."""
     from server.services import capability_flow, capability_search
-    found = []
     cand = {"name": "pdf-tools", "kind": "skill"}
     monkeypatch.setattr(capability_search, "seen", lambda conversation, cid: cand)
     monkeypatch.setattr(capability_flow, "installable", lambda c: None)
     monkeypatch.setattr(capability_flow, "card_for", lambda c, **kw: {})
-
-    async def record(c, **kw):
-        found.append(c["name"])
-    monkeypatch.setattr(capability_flow, "record_find", record)
     out = await capability_flow.propose({"candidate_id": "c1", "why": "read PDFs"}, conversation_id="conv-u",
                                         ask=None, emit=lambda e: None)
     [row] = await _rows()
-    assert out["recorded"] is True and found == ["pdf-tools"]
+    assert out["not_added"] is True and "'pdf-tools' is missing" in out["note"]
     assert _policy(row, "capability") and row.target == "capability:pdf-tools"
-    with permissions.asking_with(_ask):                           # a job: recorded only
-        await capability_flow.propose({"candidate_id": "c1"}, conversation_id="conv-u", ask=None,
-                                      emit=lambda e: None)
-    assert len(await _rows()) == 1 and found == ["pdf-tools", "pdf-tools"]
+    with permissions.asking_with(_ask):                           # a job: no row
+        job = await capability_flow.propose({"candidate_id": "c1"}, conversation_id="conv-u", ask=None,
+                                            emit=lambda e: None)
+    assert job["not_added"] is True and len(await _rows()) == 1

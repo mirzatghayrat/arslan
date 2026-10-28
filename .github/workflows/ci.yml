@@ -128,6 +128,15 @@ jobs:
         # times itself against the wall clock has less slack here than it used to.
         # No --cov on this step: under coverage, test_osascript_once's 2 s alarm goes flaky,
         # and coverage's fast core needs Python >= 3.12 (deferred to v0.1.64).
+        #
+        # TMPDIR on the runner's disk, not /tmp: this image mounts /tmp as a tmpfs of a few GiB,
+        # and pytest keeps every test's tmp_path there until the session ends. Measured
+        # 2026-10-28: 4.28 GiB free mid-run (85.91 GiB on /), under checkpoints.MIN_FREE, so
+        # S3's saves were skipped as low_disk. The S3 tests also stub free space now; this keeps
+        # the rest of the suite off a filling tmpfs. Tests that need a short AF_UNIX path pick
+        # /tmp themselves (test_hands_p0.py, test_command_sandbox.py).
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: .venv/bin/pytest tests/ -q -rfEs -n auto --dist loadfile
 
       # ── 0.1.53 Arslan Hands: the contract and the supply chain, on Linux ────
@@ -395,6 +404,60 @@ jobs:
         # Non-zero exit on any finding; --redact keeps the secret itself out of
         # the log, which is public on this repository.
         run: gitleaks detect --no-banner --redact --config .gitleaks.toml
+
+  language:
+    # LANG1 (docs/sessions.md §6, user 2026-10-28): everything written to
+    # GitHub is English. A DIFF check, unlike `secrets` above: about 250 files
+    # on main hold Chinese written before the rule, and that text is not
+    # rewritten, so only the lines this change adds are read. The exceptions
+    # and the escape hatch (.github/lang-check-allow.txt or a
+    # `lang-check: allow` marker) are in scripts/check_added_chinese.py.
+    # Commit messages and PR text are not checked.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base commit has to be in the clone for `git diff base...HEAD`.
+          fetch-depth: 0
+
+      - name: No new Chinese outside the exceptions (added lines only)
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            # HEAD is GitHub's test merge; its first parent is the base tip it
+            # merged onto. Not pull_request.base.sha: that can be an older base
+            # tip, and the diff would then blame this PR for commits on main.
+            BASE=$(git rev-parse HEAD^1)
+          else
+            BASE="$BEFORE"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "no earlier commit to diff against (a new branch); nothing to check"
+            exit 0
+          fi
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            # A force-push: the commit it replaced is not in the clone. The
+            # pull request that brought these lines was checked already.
+            echo "::notice::$BASE is not in the clone (force-push?); nothing to check"
+            exit 0
+          fi
+          TMP="${RUNNER_TEMP:-$(mktemp -d)}"
+          if git cat-file -e "$BASE:scripts/check_added_chinese.py" 2>/dev/null; then
+            # First the BASE commit's checker and allowlist, so a change cannot
+            # loosen the check it is judged by. A new exception or allowlist
+            # entry lands in its own PR, before the Chinese it allows.
+            git show "$BASE:scripts/check_added_chinese.py" > "$TMP/check_base.py"
+            git show "$BASE:.github/lang-check-allow.txt" > "$TMP/allow_base.txt" 2>/dev/null || : > "$TMP/allow_base.txt"
+            echo "== the base commit's checker and allowlist"
+            python3 "$TMP/check_base.py" --base "$BASE" --head HEAD --allowlist "$TMP/allow_base.txt"
+          fi
+          echo "== this change's checker and allowlist"
+          python3 scripts/check_added_chinese.py --base "$BASE" --head HEAD
 
   frontend:
     runs-on: ubuntu-latest

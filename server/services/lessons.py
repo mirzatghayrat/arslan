@@ -13,9 +13,13 @@ counters (recalled, followed, then succeeded or failed). Three sources:
 Capture runs after the answer, off the reply path, through the judgment layer:
 memory.worth (keep it?), then memory.merge / memory.conflict against the nearest
 existing lessons. Effect (D2): the user's correction, or a detour in a turn that read
-nothing from outside, takes effect at once and can be undone; otherwise it is a
-proposal. "Learned practices take effect" off: everything is a proposal. No judge
-answer: a detour is skipped and a correction waits for the user's OK.
+nothing from outside, takes effect at once and can be undone; otherwise it is not in
+effect (status "proposed"), with its reason written when it is learned. "Learned
+practices take effect" off: nothing takes effect. No judge answer: a detour is skipped
+and a correction is not in effect. Since v0.1.64 (INB1) nothing waits in a queue for the
+user's OK: Memory lists what is not in effect, with its reason, and the user can switch
+one on there after reading it. A practice followed in three failed turns in a row stops
+(status "stale"), unless the user pinned it.
 
 Recall: at turn start, the lessons that match the user's message (the same local
 relevance scorer as memory; the table stays small by curation, P4b), at most 5 and
@@ -46,11 +50,18 @@ SCAN_LIMIT = 500
 # S64-0: `evidence[NOT_IN_EFFECT]` says why a learned practice waits, written when it is learned:
 # outside_content, setting_off, no_judgement, not_a_correction or conflicts. A waiting one with
 # none written (learned before v0.1.64) counts as outside content. Either way a merge never
-# activates a waiting lesson in its own words (_capture); Brain shows the reason (INB1).
+# activates a waiting lesson in its own words (_capture); Memory shows the reason (INB1, not_in_effect).
 NOT_IN_EFFECT = "not_in_effect"
 # One that waits because it conflicts with an active lesson keeps that lesson's id here, whatever
 # its reason says: it waits for the user to choose, and the user's own correction is that choice.
 CONFLICTS_WITH = "conflicts_with"
+# INB1: failed turns in a row that followed a practice (memory.applied said it was followed);
+# a success starts the count again. At FAIL_STREAK_LIMIT the practice stops ("stale",
+# NOT_IN_EFFECT "failed_repeatedly"), the same three a scheduled task pauses after.
+FAIL_STREAK = "fail_streak"
+FAIL_STREAK_LIMIT = 3
+# What says why a lesson is not in effect; switching one on by hand drops all three (switched_on).
+_NOT_IN_EFFECT_KEYS = (NOT_IN_EFFECT, CONFLICTS_WITH, FAIL_STREAK)
 
 # Failures that were never a real try of a route: refused by the user or the host,
 # malformed, or not run at all.
@@ -92,9 +103,32 @@ def render(lesson) -> str:
     return f"{lesson.situation} → {advice}"
 
 
+def not_in_effect(row) -> str | None:
+    """Why a lesson is not in effect, as Memory shows it (INB1); None while it is active. A waiting
+    one with no reason written (learned before v0.1.64) counts as outside content: nobody knows, so
+    the safe answer. A retired one keeps the reason it never took effect for, when one is written
+    (a waiting lesson a conflicting correction of the user's retired): "Restore" switches it on, so
+    Memory shows that reason first (#460 review, F1). With none written it says "retired": it may
+    have been in effect, or declined by the user before v0.1.64."""
+    reason = (row.evidence or {}).get(NOT_IN_EFFECT)
+    if row.status == "proposed":
+        return reason or "outside_content"
+    if row.status == "stale":
+        return reason or "failed_repeatedly"
+    if row.status == "archived":
+        return reason or "retired"
+    return None
+
+
+def switched_on(row) -> None:
+    """The user switched it on by hand (Memory): what said why it was not in effect goes."""
+    row.evidence = {k: v for k, v in (row.evidence or {}).items() if k not in _NOT_IN_EFFECT_KEYS}
+
+
 def present(row) -> dict:
     return {"id": row.id, "situation": row.situation, "advice": row.advice, "polarity": row.polarity,
             "source": row.source, "status": row.status, "pinned": bool(row.pinned), "text": render(row),
+            "not_in_effect": not_in_effect(row),
             "recalled": row.recalled, "followed": row.followed, "succeeded": row.succeeded, "failed": row.failed,
             "evidence": row.evidence or {},
             "last_used_at": row.last_used_at.isoformat() + "Z" if row.last_used_at else None,
@@ -318,18 +352,24 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     rival = rival if rival is not None and rival.status == "active" else None
                 takes_effect = immediate and (rival is None or (cand.source == "user_correction"
                                                                 and not rival.pinned))
-                if takes_effect and (cand.source == "user_correction" or row.status == "proposed"):
-                    row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
-                    evidence.pop(NOT_IN_EFFECT, None)
-                    evidence.pop(CONFLICTS_WITH, None)
-                    if rival is not None:
-                        rival.status, rival.updated_at = "archived", now     # the user's newer words win
-                row.evidence = evidence
-                if takes_effect and row.status == "proposed":
-                    row.status = "active"
-                row.updated_at = now
-                await db.commit()
-                continue
+                if immediate and cand.source == "user_correction" and not takes_effect:
+                    # INB1 (S64-0's recheck, N2): the user's correction against a pinned lesson is not
+                    # folded into the waiting one, where nobody would see it: it is kept as its own
+                    # lesson, waiting against the pinned one in the user's words (the conflict path).
+                    merged, conflicting = None, rival
+                else:
+                    if takes_effect and (cand.source == "user_correction" or row.status == "proposed"):
+                        row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
+                        evidence.pop(NOT_IN_EFFECT, None)
+                        evidence.pop(CONFLICTS_WITH, None)
+                        if rival is not None:
+                            rival.status, rival.updated_at = "archived", now     # the user's newer words win
+                    row.evidence = evidence
+                    if takes_effect and row.status == "proposed":
+                        row.status = "active"
+                    row.updated_at = now
+                    await db.commit()
+                    continue
             status, rival_id = ("active" if immediate else "proposed"), None
             if conflicting is not None:
                 old = await db.get(Lesson, conflicting.id)
@@ -409,7 +449,9 @@ def _steps(trace: list[dict]) -> list[str]:
 
 async def record_applied(recalled: list[dict], trace: list[dict], *, ok: bool,
                          conversation_id: str | None = None) -> None:
-    """memory.applied per recalled lesson: followed +1, then succeeded or failed by how the turn ended."""
+    """memory.applied per recalled lesson: followed +1, then succeeded or failed by how the turn ended.
+    INB1: FAIL_STREAK failed turns in a row stop an active practice ("stale", with its reason), unless
+    the user pinned it; a success starts the count again."""
     from sqlalchemy import update
 
     from server.db.models import Lesson
@@ -422,6 +464,17 @@ async def record_applied(recalled: list[dict], trace: list[dict], *, ok: bool,
         async with db_session.AsyncSessionLocal() as db:
             await db.execute(update(Lesson).where(Lesson.id == item["id"]).values(
                 followed=Lesson.followed + 1, **{outcome.key: outcome + 1}))
+            row = await db.get(Lesson, item["id"])
+            if row is not None:
+                evidence = dict(row.evidence or {})
+                if ok:
+                    evidence.pop(FAIL_STREAK, None)
+                else:
+                    evidence[FAIL_STREAK] = int(evidence.get(FAIL_STREAK) or 0) + 1
+                    if evidence[FAIL_STREAK] >= FAIL_STREAK_LIMIT and row.status == "active" and not row.pinned:
+                        row.status, row.updated_at = "stale", datetime.utcnow()
+                        evidence[NOT_IN_EFFECT] = "failed_repeatedly"
+                row.evidence = evidence
             await db.commit()
 
 

@@ -14,7 +14,6 @@ authors = [
     { name = "Arslan Team" },
 ]
 dependencies = [
-    "click>=8.1",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     # 🔴 SECURITY FLOOR — do not lower either of these.
@@ -29,7 +28,6 @@ dependencies = [
     # server/registry/executors.py::_pinned_request_args.
     "httpx>=0.28",
     "httpcore>=1.0",
-    "rich>=13.0",
     # Capped below fastapi 0.137 / starlette 1.3.
     #
     # THE REASON WRITTEN HERE BEFORE WAS WRONG, and the correction matters. It

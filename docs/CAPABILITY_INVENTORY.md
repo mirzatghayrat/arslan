@@ -123,6 +123,6 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 | `server/registry/schedule_tools.py` | `c11d786317d7c67c243d625878d2f0015a368677aadf31828c0ec1d1ab31890a` |
 | `server/registry/seed_catalog.py` | `e53b1aaa0b0213d1156e44e3fd7fb9b1e12b7423b859ecde3990b953d650fda7` |
 | `server/registry/ssh_tools.py` | `a31f56ef47fb8559e0595ab7e0365a3582f3e5b417071bee9b4c072cebd9ce5a` |
-| `server/registry/task_tools.py` | `19a8b1fc427589b300fb51d4fddc8051f66dbf8b5eb00c523e44a1a1c3d9e42c` |
+| `server/registry/task_tools.py` | `0a26f0ec42454c24175ab38ef0c56c3251e4ade26535a55acaeed97b3c275c5c` |
 | `server/resources/browser_runtime/package-lock.json` | `6b772b55920dfd4e4aa81b55e6721d7ffb80dc0ea59579d86906fb1f6a9b8de1` |
 | `server/services/capability_fitness.py` | `5251e4b3644d359fab91b8f3bf4d9ec6cea8dce3ebe6695217755deda959202a` |

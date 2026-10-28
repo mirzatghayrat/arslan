@@ -183,24 +183,6 @@ class UserFact(Base):
     provenance = Column(JSON, nullable=True)  # {source_kind, spawn_id?, conversation_id?, via?...};写入层强制,列级放宽供 legacy backfill
 
 
-class RouterDecision(Base):
-    """Audit log of every router decision (logged + testable)."""
-
-    __tablename__ = "router_decisions"
-
-    id = Column(Integer, primary_key=True)
-    conversation_id = Column(String(50), nullable=False, index=True)
-    user_message = Column(Text, nullable=False)
-    action = Column(String(20), nullable=False)  # answer | route | suggest_create | fallback
-    # Intentionally NOT a ForeignKey: audit log — rows must survive spawn deletion
-    # with the historical id intact (dangling ids are expected; see delete_spawn).
-    spawn_id = Column(Integer, nullable=True)
-    task_brief = Column(Text, nullable=True)
-    reason = Column(Text, nullable=True)
-    raw = Column(JSON, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-
-
 class Toolset(Base):
     """Registry: a named executable tool group (a spawn's 'interface')."""
 
@@ -393,36 +375,6 @@ class CapabilitySource(Base):
     skill_key = Column(String(60), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     installed_at = Column(DateTime, nullable=True)
-
-
-class CapabilityFind(Base):
-    """0.1.57 §4 "Arslan 找到的": a need Arslan met and what it found, kept for later. Never a
-    notification, never an Inbox item."""
-    __tablename__ = "capability_finds"
-    __table_args__ = (
-        CheckConstraint("why IN ('declined','job','project_level')", name="ck_capability_find_why"),
-        CheckConstraint("state IN ('open','dismissed','installed')", name="ck_capability_find_state"),
-    )
-    id = Column(String(36), primary_key=True)
-    owner_id = Column(String(100), nullable=False, default="local")
-    need = Column(String(300), nullable=False)
-    why = Column(String(16), nullable=False)
-    conversation_id = Column(String(50), nullable=True)
-    project_id = Column(String(36), nullable=True)
-    level_id = Column(String(36), nullable=True)
-    candidate = Column(JSON, nullable=False)
-    state = Column(String(10), nullable=False, default="open")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-
-
-class DiscoveryCandidate(Base):
-    __tablename__ = "discovery_candidates"
-
-    id = Column(Integer, primary_key=True)
-    full_name = Column(String(140), nullable=False, unique=True)   # owner/repo
-    html_url = Column(String(500), nullable=True)
-    snapshot = Column(JSON, nullable=False)                        # {repo, trust, suggestion}
-    saved_at = Column(DateTime, default=datetime.utcnow)
 
 
 class ProviderConfig(Base):

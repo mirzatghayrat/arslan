@@ -754,7 +754,8 @@ function makeActions(set: SetState, get: GetState) {
             items: [
               ...state.items,
               { id: nextClientId(), kind: "lesson", role: "arslan", content: frame.lesson.text,
-                lesson: { id: frame.lesson.id, status: frame.lesson.status } },
+                lesson: { id: frame.lesson.id, status: frame.lesson.status,
+                  notInEffect: frame.lesson.not_in_effect ?? null } },
             ],
           });
           break;

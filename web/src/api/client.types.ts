@@ -617,7 +617,7 @@ export interface ArslanThreadItem {
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
-  lesson?: { id: number; status: string };
+  lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
   toolSteps?: ToolStep[]; // replies: folded tool activity
   /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
@@ -714,7 +714,7 @@ export type ArslanServerMessage =
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null; reply_message_id?: number }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
-  | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
+  | { type: "lesson_learned"; lesson: { id: number; text: string; status: string; not_in_effect?: string | null } }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
       source?: string | null }
@@ -1033,18 +1033,6 @@ export interface McpTool {
   status: string; // registered|wired
   suggested_tier: string; // safe|orchestrator (UI hint)
   host_enabled: boolean; // Arslan (host) may use this MCP tool
-}
-
-/** Prefill payload for the MCP add-server form (built from a saved discovery candidate
- * or a dossier). `envKeys`, if present, seeds one env row per required credential —
- * it never auto-submits, the user reviews & supplies values before connecting. */
-export interface McpPrefill {
-  label: string;
-  command: string;
-  args: string[];
-  transport: string;
-  url?: string;
-  envKeys?: string[];
 }
 
 export interface NoteDto {
