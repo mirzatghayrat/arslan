@@ -25,3 +25,7 @@
    - From the iPhone, then in the Mac window, ask Arslan for a screenshot of the Mac screen.
    - **Expected:** the image shows the real screen, not only the desktop background; in the window, a file card appears under the answer.
    - **Record:** whether macOS asked for Screen Recording the first time (the permission goes to Arslan, not Hands).
+
+## F5b-2 (#456): Hands still works without the Cua files
+
+- Build a development Hands with its own bundle id (not `.dev`, which old builds hold), grant Accessibility and Screen Recording when asked, and run `hands_smoke.py`. Expected: the same pass list as #249's smoke. The user is at the Mac for the permission prompts.
