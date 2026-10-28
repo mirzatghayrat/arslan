@@ -2,6 +2,8 @@
 
 ⓪Plan 维护，每次合并后更新。卡的详情看 [README](README.md) §2 的状态列。
 
+> **v0.1.64 status now lives in [`docs/plans/0164/STATUS.md`](../0164/STATUS.md)** (from 2026-10-28). The "Codex 待审" section below stays here and still applies.
+
 **更新于：** 2026-10-28 北京时间上午（Codex 已只读接上 GitHub）
 
 ## v0.1.63 已发布

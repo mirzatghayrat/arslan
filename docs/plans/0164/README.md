@@ -52,7 +52,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 4. **#375 约 1,060 行要不要拆**（超过 §5 的约 800 行）。按云端审计的意见 S2a-3 的解析器要留，这一问照样要答。
 5. **R63 判定里没有记录的两半**（M3 第 7 条 Mac 那半、第 12 条截屏那半）：v0.1.64 冒烟时补测，还是放下。
 6. **K8c 的 Gemini M1：** 要 Gemini 代理和额度（只有用户能放 key）。
-7. **还没确认的建议：** 旁聊进 v0.1.64；界面版的设计图先出；Aegis 试点的结论（§9 还没跑）。
+7. **还没确认的建议：** ~~旁聊进 v0.1.64~~ (decided by the user on 2026-10-28: in v0.1.64, card SIDE, `docs/plans/0164/SIDE-side-chat.md`)；界面版的设计图先出；Aegis 试点的结论（§9 还没跑）。
 8. **钩子支持排在 v0.1.65 之后**（⓪Plan 排的）、**收件箱各条放哪一版**（⓪Plan 排的）、**按 U2 整份删除的 PR 不让 Codex 审**（⓪Plan 定的）：用户可以改。
 9. **M64 开工前的两个小问**（M64 卡末尾）：Codex 参考线第一轮用「用户贴题、存回复」；三道代码审查题用 Python、TypeScript、Swift。⓪Plan 先按这两个默认做，用户可以改。
 
@@ -128,6 +128,7 @@ New text in this plan is in English from 2026-10-28 (`docs/sessions.md` §6).
 | **MEM1** | Memory write hygiene: merge by meaning, write in the user's language and never guess gender, keep one-off task state out of "about you" | ②Main | must | In the INB card, after INB2. From the memory plan (`docs/plans/0162/README.md` §8, item A). |
 | **CAP8b** | Import memories from ChatGPT / Claude (paste, list, confirm) | CAP session | must | In the CAP card, after MEM1. Item 17. |
 | **PRJ0** | Projects, deletions only: "learn how you advance gates" (shadow / auto, `project_habits` and its table), rhythm stats, stall reminders | ③Hands | must | From the user's Projects decisions (SUB card, "Projects"). U2; the table drop is its own PR. Board, template gates and retro go in v0.1.65 together with their replacement. |
+| **SIDE** | Side chat, the way Claude desktop does it: select text → "Start a side chat" → right-hand panel with tabs; reads the main conversation up to that point; read-only, inherits permissions and the outside-content mark, writes no memory; "Bring back to main" only fills the main input box | ⑥Helper (agree with ②Main before SIDE-1) | must (user, 2026-10-28) | After SUB2. Clickable mock first. Card: `docs/plans/0164/SIDE-side-chat.md`. |
 | **LANG1** | English on GitHub, enforced: a CI check that fails when Chinese appears in a file that should not have it (exceptions as in `docs/sessions.md` §6 after #440: quoted Chinese inside English, data that must match Chinese input, translation files and tables, tests/evals/fixtures with Chinese input, `docs-site`, iOS UI copy until the user decides); translate the two bundled skills `arslan/skills/bundled/designed-html-report/SKILL.md` and `skill-creator/SKILL.md` to English | ②Main | must | Items 13 and 14. The check must not fail on files written before 2026-10-28: it runs on the lines a PR adds (diff-based), not on the whole tree. Commit messages and PR text are not checked; they stay each session's job (①iOS review of #440). It needs its own escape hatch (an allowlist file or a marker comment) for a case none of the exceptions name (①iOS). Not a new subsystem; can start as soon as this PR merges. |
 
 The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as files (v0.1.65; ⓪Plan puts the "used N memories" line and "what Arslan learned this week" there, not in the interface version); item 18 (WeChat, no database decryption) after v0.1.65; item 19 (proactive proposals in the conversation or progress page, not the Inbox) after v0.1.65.
