@@ -121,6 +121,10 @@ public final class BridgeRuntime {
         catch { BridgeLog.error("deleting acknowledged records", error) }   // retried next round
     }
 
+    /// Whether a pairing is under way: a code is waiting for its phone, or was answered under a
+    /// minute ago (`PollPace`). Read by the poll loop, the same task that opens pair.requests in `poll`.
+    public func isPairing(now: Date = Date()) -> Bool { pairing.isPairing(now: now) }
+
     /// One look at the store. Returns the paired phones' messages to act on.
     public func poll(now: Date = Date()) async throws -> [Received] {
         let (records, next) = try await store.changes(since: mailbox.token)

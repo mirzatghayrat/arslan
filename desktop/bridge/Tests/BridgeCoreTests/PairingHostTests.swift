@@ -60,6 +60,38 @@ final class PairingHostTests: XCTestCase {
         XCTAssertThrowsError(try h.decide(request, .accept, now: now))
     }
 
+    /// BR1: pairing is under way from `newCode` until the code expires unanswered, or for a minute
+    /// after it is answered (build 25: the accepted phone's first hello comes after the click).
+    func testPairingLastsUntilExpiryOrAMinuteAfterTheAnswer() throws {
+        let h = host(), now = Date()
+        XCTAssertFalse(h.isPairing(now: now), "no code yet")
+        let (uri, _) = try h.newCode(now: now)
+        XCTAssertTrue(h.isPairing(now: now))
+        XCTAssertTrue(h.isPairing(now: now.addingTimeInterval(599)))
+        XCTAssertFalse(h.isPairing(now: now.addingTimeInterval(600)), "expired unanswered after ten minutes")
+        let (request, _) = try h.open(try phoneRequest(uri: uri, now: now), now: now)
+        let clicked = now.addingTimeInterval(570)
+        XCTAssertTrue(h.isPairing(now: clicked), "still open while the Mac waits for the click")
+        _ = try h.decide(request, .accept, now: clicked)
+        XCTAssertTrue(h.isPairing(now: clicked), "the accepted phone has not said hello yet")
+        XCTAssertTrue(h.isPairing(now: clicked.addingTimeInterval(59)), "past the code's own expiry, inside the minute")
+        XCTAssertFalse(h.isPairing(now: clicked.addingTimeInterval(60)))
+    }
+
+    func testARejectedCodeAlsoKeepsPairingForAMinute() throws {
+        let h = host(), now = Date()
+        let (first, _) = try h.newCode(now: now)
+        let (rejected, _) = try h.open(try phoneRequest(uri: first, now: now), now: now)
+        _ = try h.decide(rejected, .reject("declined_on_mac"), now: now)
+        XCTAssertTrue(h.isPairing(now: now.addingTimeInterval(59)), "the only code, rejected under a minute ago")
+        XCTAssertFalse(h.isPairing(now: now.addingTimeInterval(60)))
+        let (second, _) = try h.newCode(now: now.addingTimeInterval(60))
+        let (accepted, _) = try h.open(try phoneRequest(uri: second, now: now.addingTimeInterval(60)), now: now.addingTimeInterval(60))
+        _ = try h.decide(accepted, .accept, now: now.addingTimeInterval(70))
+        XCTAssertTrue(h.isPairing(now: now.addingTimeInterval(129)), "the later answer's minute")
+        XCTAssertFalse(h.isPairing(now: now.addingTimeInterval(130)), "both answered a minute ago or more")
+    }
+
     func testOnlyTheCodesKeyAndALiveCodeAreAccepted() throws {
         let h = host(), now = Date()
         let (uri, _) = try h.newCode(now: now)
