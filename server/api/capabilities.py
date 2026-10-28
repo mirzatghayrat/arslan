@@ -29,41 +29,11 @@ async def switch_capability(key: str, body: Switch) -> dict:
     return row or {"key": key}
 
 
-@router.get("/capability-search")
-async def search_capabilities(q: str = "", kind: str | None = None) -> dict:
-    """0.1.57 §2/§9: the Discover box — what you want done, across the official MCP Registry,
-    GitHub and reviewed skill libraries. Read-only; nothing here installs."""
-    from server.services import capability_search
-    from server.services import capability_dossier
-    words = await capability_search.words_for(q)
-    kinds = {kind} if kind in ("mcp", "skill", "project") else None
-    result = await capability_search.search(q, words=words, kinds=kinds)
-    # Kept server-side so "加进能力库" on a dossier names one of THESE candidates.
-    capability_search.remember(capability_dossier.PAGE, result)
-    return result
-
-
-# ── 0.1.57 §4 §7 §8: found for later, dossiers, install from the page, projects ──
+# ── 0.1.57 §7: what Arslan installed — its dossier, folders, updates, removal ──
 
 def _dossier_error(exc) -> HTTPException:
-    status = 404 if exc.code.endswith("not_found") or exc.code == "unknown_candidate" else 409
+    status = 404 if exc.code.endswith("not_found") else 409
     return HTTPException(status_code=status, detail={"code": exc.code})
-
-
-@router.get("/capability-finds")
-async def capability_finds() -> list[dict]:
-    from server.services import capability_dossier
-    return await capability_dossier.finds()
-
-
-@router.post("/capability-finds/{find_id}/dismiss")
-async def dismiss_find(find_id: str) -> dict:
-    from server.services import capability_dossier
-    try:
-        await capability_dossier.dismiss(find_id)
-    except capability_dossier.DossierError as exc:
-        raise _dossier_error(exc) from exc
-    return {"ok": True}
 
 
 @router.get("/capability-sources")
@@ -79,36 +49,6 @@ async def capability_source(source_id: str) -> dict:
         return capability_dossier.view(await capability_dossier.source(source_id))
     except capability_dossier.DossierError as exc:
         raise _dossier_error(exc) from exc
-
-
-class CandidateRef(BaseModel):
-    candidate_id: str
-
-
-@router.post("/capability-candidates/check")
-async def check_candidate(body: CandidateRef) -> dict:
-    from server.services import capability_dossier
-    try:
-        return await capability_dossier.check(body.candidate_id)
-    except capability_dossier.DossierError as exc:
-        raise _dossier_error(exc) from exc
-
-
-class InstallIn(BaseModel):
-    candidate_id: str
-    folders: list[str] = []
-    keys: dict[str, str] = {}
-
-
-@router.post("/capability-candidates/install")
-async def install_candidate(body: InstallIn) -> dict:
-    """"加进能力库": the user names this candidate on its dossier — install, scan, test, switch on."""
-    from server.services import capability_dossier
-    try:
-        result = await capability_dossier.install(body.candidate_id, folders=body.folders[:3], keys=body.keys)
-    except capability_dossier.DossierError as exc:
-        raise _dossier_error(exc) from exc
-    return {k: v for k, v in result.items() if k in ("state", "source_id", "stage", "code", "detail", "tools", "skill")}
 
 
 class FoldersIn(BaseModel):
@@ -152,16 +92,3 @@ async def apply_update(source_id: str) -> dict:
     except capability_dossier.DossierError as exc:
         raise _dossier_error(exc) from exc
     return {k: v for k, v in result.items() if k in ("state", "source_id", "stage", "code", "detail", "tools")}
-
-
-class MaterialIn(BaseModel):
-    candidate_id: str
-
-
-@router.post("/projects/{project_id}/capability-material")
-async def as_material(project_id: str, body: MaterialIn) -> dict:
-    from server.services import capability_dossier
-    try:
-        return await capability_dossier.as_material(project_id, body.candidate_id)
-    except capability_dossier.DossierError as exc:
-        raise _dossier_error(exc) from exc

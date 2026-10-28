@@ -1035,18 +1035,6 @@ export interface McpTool {
   host_enabled: boolean; // Arslan (host) may use this MCP tool
 }
 
-/** Prefill payload for the MCP add-server form (built from a saved discovery candidate
- * or a dossier). `envKeys`, if present, seeds one env row per required credential —
- * it never auto-submits, the user reviews & supplies values before connecting. */
-export interface McpPrefill {
-  label: string;
-  command: string;
-  args: string[];
-  transport: string;
-  url?: string;
-  envKeys?: string[];
-}
-
 export interface NoteDto {
   id: number; title: string; content: string; tags: string[];
   created_at: string | null; updated_at: string | null;

@@ -883,15 +883,11 @@
     "empty_no_spawns_action": "Créer un spawn"
   },
   "capabilities": {
-    "title": "Bibliothèque de capacités",
-    "subtitle": "Découvrez, installez et gérez les outils, compétences et serveurs MCP.",
     "tabs": {
-      "discover": "Découvrir",
       "tools": "Outils",
       "skills": "Compétences",
       "forge": "Forge de compétences",
-      "mcps": "MCPs",
-      "saved": "Enregistrés"
+      "mcps": "MCPs"
     },
     "chips": {
       "all": "Tous",
@@ -911,13 +907,9 @@
       "filtered_clear": "Tout afficher"
     },
     "hero": {
-      "placeholder": "Collez un lien GitHub ou recherchez…",
-      "research": "Étudier",
-      "hint": "Un lien de dépôt fournit un dossier sur sa licence, son type et son intérêt ; tout autre texte lance une recherche GitHub.",
       "results": "Résultats de recherche",
       "evaluate": "Évaluer",
       "save": "Enregistrer",
-      "researching": "Recherche…",
       "kind": {
         "all": "Tous",
         "mcp": "MCP",
@@ -930,53 +922,7 @@
       "import_skills": "Importer des compétences d’un dépôt"
     },
     "dossier": {
-      "no_license": "sans licence",
-      "license_ok": "Licence adaptée — utilisable",
-      "license_learn": "Apprentissage uniquement",
-      "type": {
-        "mcp": "Serveur MCP",
-        "skill": "Dépôt de compétences",
-        "agent": "Projet d’agent",
-        "other": "Autre"
-      },
-      "value_label": "Intérêt pour Arslan",
-      "actions": {
-        "register_skill": "Enregistrer comme compétence",
-        "add_mcp": "Ajouter comme MCP",
-        "distill": "Résumer en note",
-        "save": "Enregistrer au catalogue"
-      },
-      "saved_ok": "Enregistré au catalogue.",
-      "scan": {
-        "title": "Fichiers SKILL.md (importation à l’identique selon la licence)",
-        "none": "Aucun fichier SKILL.md trouvé.",
-        "import": "Importer",
-        "imported": "Importé"
-      },
-      "mcp": {
-        "title": "Commande de lancement suggérée (vérifier et modifier)",
-        "add": "Ajouter comme serveur MCP",
-        "added": "Serveur MCP ajouté et verrouillé. Vérifiez-le et connectez-le dans Connexions et droits."
-      },
-      "note": {
-        "title": "Note de référence (vérifier et modifier)",
-        "fallback": "Le résumé par modèle est indisponible ; le résumé de l’évaluation est affiché à la place.",
-        "pick_spawn": "Choisir un expert…",
-        "ingest": "Ajouter aux connaissances de l’expert",
-        "ingest_ok": "Ajouté à la base de connaissances de {{name}}.",
-        "create_skill": "Enregistrer comme compétence",
-        "create_ok": "Ajouté aux compétences (faible risque)."
-      },
-      "manifest": {
-        "title": "Configuration fournie par l'auteur",
-        "add": "Ajouter ce serveur",
-        "added": "Serveur ajouté ; connectez-le dans Connexions et droits.",
-        "import_skill": "Importer le skill",
-        "imported": "Skill importé",
-        "expose_hint": "L’auteur suggère l’accès aux experts dans Connexions et droits. Il s’agit d’une suggestion, pas d’une autorisation.",
-        "error": "Manifeste du plugin invalide"
-      },
-      "overview_label": "Ce que c’est"
+      "value_label": "Intérêt pour Arslan"
     },
     "equip": {
       "action": "Équiper un spawn…",
@@ -1004,7 +950,6 @@
       "missing": "Fichiers manquants",
       "orphaned": "Fichiers orphelins"
     },
-    "skill_body_label": "Corps de SKILL.md (doit contenir ## Trigger et ## Decision Rules)",
     "import": {
       "subtitle": "SKILL.md standard, importé tel quel — contrôle de licence.",
       "repo_placeholder": "owner/repo",
@@ -1549,8 +1494,6 @@
     "memoryTitle": "Supprimer ce souvenir ?",
     "memoryBody": "Arslan l’oublie et ne le réapprendra pas des anciennes conversations.",
     "unsavedTitle": "Partir sans enregistrer ?",
-    "unsavedBody": "Tes modifications de cette note seront perdues.",
-    "deleted": "Supprimé",
-    "undo": "Annuler"
+    "unsavedBody": "Tes modifications de cette note seront perdues."
   }
 }

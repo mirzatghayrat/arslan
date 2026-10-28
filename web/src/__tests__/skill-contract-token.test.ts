@@ -34,10 +34,4 @@ describe("SKILL.md contract tokens (backend-literal in every locale)", () => {
     expect(v).toContain("## Trigger");
     expect(v).toContain(lang === "zh" ? "## 决策规则" : "## Decision Rules");
   });
-
-  it.each([...LOCALES])("%s: capabilities skill_body_label names both tokens", (lang) => {
-    const v = dig(locale(lang), ["capabilities", "skill_body_label"]);
-    expect(v).toContain("## Trigger");
-    expect(v).toContain(lang === "zh" ? "## 决策规则" : "## Decision Rules");
-  });
 });

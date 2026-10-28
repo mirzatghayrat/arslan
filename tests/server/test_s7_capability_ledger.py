@@ -4,7 +4,7 @@ The card stays as it is — the asking window's alone, carrying back the key the
 they picked (0.1.57 §3.1), so it does not ask through `permissions.decide`. Its answer is recorded after
 it (`permissions.record_card_outcome`): allowed or refused by the user, or expired; never the key. A
 scheduled run (nobody to ask) writes a `policy` refusal, which the Inbox lists (S1); a background job, which
-never shows the window's card, records the find only (⓪Plan, S7)."""
+never shows the window's card, writes nothing (⓪Plan, S7; CAP1a removed the finds)."""
 from __future__ import annotations
 
 import copy
@@ -88,7 +88,7 @@ async def test_an_expired_card_is_not_a_refusal_in_the_inbox():
 
 async def test_every_answer_writes_exactly_one_row_and_a_job_that_skips_the_card_writes_none():
     """⓪Plan's S7 check: yes, no and expired each add exactly one row; a background job, which never shows
-    the window's install card, adds none (it records the find only: S1's ruling)."""
+    the window's install card, adds none (S1's ruling; CAP1a removed the finds)."""
     from server.services import background_jobs
 
     async def surface(frame):
@@ -103,13 +103,13 @@ async def test_every_answer_writes_exactly_one_row_and_a_job_that_skips_the_card
             out = await _propose(None)
         finally:
             background_jobs._inside_job.reset(token)
-    assert out["recorded"] is True
+    assert out["not_added"] is True
     assert [r.decided_by for r in await _rows()] == ["user", "user", "expired"]
 
 
 async def test_a_scheduled_runs_refusal_is_still_one_row():
     out = await _propose(None)                # no surface at all: a scheduled run (S1)
-    assert out["recorded"] is True
+    assert out["not_added"] is True
     assert [(r.kind, r.decided_by) for r in await _rows()] == [("capability", "policy")]
 
 

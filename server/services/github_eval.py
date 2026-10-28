@@ -11,7 +11,6 @@ from server.db import session as db_session
 from server.services import settings_service
 
 _GITHUB_API = "https://api.github.com"
-_README_LIMIT = 12000
 _TIMEOUT = 15.0
 
 _REF_RE = re.compile(r"^(?:https?://github\.com/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)")
@@ -135,44 +134,3 @@ async def search_repos(query: str) -> list[dict]:
             "trust": {"tier": trust_tier(stars, pdays), "license_note": license_note(spdx)},
         })
     return out
-
-
-MANIFEST_PATH = "arslan.plugin.json"
-_FILE_LIMIT = 64_000
-
-
-async def fetch_file(owner: str, repo: str, path: str) -> str:
-    """Raw repo file body, "" when absent/unreadable (best-effort like the README).
-
-    Same fixed-host surface: owner/repo/path are PATH SEGMENTS on
-    api.github.com — the path guard exists so a manifest-supplied string can
-    never smuggle traversal or query tricks into the request (defense here,
-    contract in plugin_manifest.safe_repo_path)."""
-    from server.services.plugin_manifest import safe_repo_path
-
-    if not safe_repo_path(path):
-        raise ValueError(f"unsafe repo path: {path!r}")
-    token = await _token()
-    headers = {**_headers(token), "Accept": "application/vnd.github.raw"}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(f"{_GITHUB_API}/repos/{owner}/{repo}/contents/{path}",
-                                 headers=headers)
-        if r.status_code != 200:
-            return ""
-        return (r.text or "")[:_FILE_LIMIT]
-    except Exception:  # noqa: BLE001  (best-effort, like the README)
-        return ""
-
-
-async def fetch_readme(owner: str, repo: str) -> str:
-    token = await _token()
-    headers = {**_headers(token), "Accept": "application/vnd.github.raw"}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(f"{_GITHUB_API}/repos/{owner}/{repo}/readme", headers=headers)
-        if r.status_code != 200:
-            return ""
-        return (r.text or "")[:_README_LIMIT]
-    except Exception:  # noqa: BLE001  (README is best-effort)
-        return ""

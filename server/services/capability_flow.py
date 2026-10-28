@@ -4,7 +4,8 @@
 this conversation was SHOWN by `find_capability` (capability_search.seen): the card is built
 from that search result on the server, never from the model's words. Nothing installs unless
 the user approves the card in the Arslan window that asked; a background job, or a turn with
-nobody to ask, records the find for the Capabilities page instead (§3.2, §4).
+nobody to ask, adds nothing and tells the model to name what is missing in its answer (§3.2;
+v0.1.64 CAP1a removed the Capabilities page's "found for later" rail).
 
 After approval: install pinned and switched off (capability_install / skill_import at a
 commit), scan what came in (capability_scan — a high finding removes it again), test once
@@ -20,7 +21,7 @@ import uuid
 from datetime import datetime
 
 from server.db import session as db_session
-from server.db.models import CapabilityFind, CapabilitySource, MCPServer, SkillPack
+from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.services import capability_install, capability_runtime, capability_scan, capability_search
 from arslan.aio import within
 
@@ -64,18 +65,6 @@ def card_for(c: dict, *, why: str, retry: str, folders: list[str]) -> dict:
         "keys": [k for k in needs.get("keys") or [] if k.get("required") or k.get("secret")][:6],
         "why": why[:300], "retry": retry[:300],
     }
-
-
-async def record_find(c: dict, *, need: str, why: str, conversation_id: str | None,
-                      project_id: str | None = None, level_id: str | None = None, owner_id: str = "local") -> str:
-    """§4: kept for the Capabilities page ("Arslan 找到的"). Never a notification."""
-    async with db_session.AsyncSessionLocal() as db:
-        row = CapabilityFind(id=uuid.uuid4().hex, owner_id=owner_id, need=(need or c.get("name") or "")[:300], why=why,
-                             conversation_id=conversation_id, project_id=project_id, level_id=level_id,
-                             candidate=c, state="open", created_at=datetime.utcnow())
-        db.add(row)
-        await db.commit()
-        return row.id
 
 
 async def _source(source_id: str) -> CapabilitySource:
@@ -236,15 +225,15 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     request = _ledger_request(cand, why)
     context = permissions.Context(conversation_id, job_id=background_jobs._inside_job.get())
     if ask is None:
-        await record_find(cand, need=why, why="job", conversation_id=conversation_id)
         if permissions.current_asker() is None:
             # S1 (U14 c, ⓪Plan): a scheduled run: listed in the Inbox too, the one list a user checks after one.
-            # A background job only records the find: it has a card surface, so it is not "nobody to ask", and
+            # A background job writes no row: it has a card surface, so it is not "nobody to ask", and
             # no card was shown (⓪Plan, S7).
             await permissions.refuse_unattended(request, context)
-        return {"ok": False, "recorded": True,
-                "note": "Nobody to ask here (a background job or a scheduled run). Saved on the Capabilities "
-                        "page under 'Arslan found' for the user; say so in your answer."}
+        return {"ok": False, "not_added": True,
+                "note": f"Nobody to ask here (a background job or a scheduled run), so nothing was added. "
+                        f"Say in your answer that '{cand['name']}' is missing and that the user can add it by "
+                        f"asking for it in a conversation."}
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     decision = await ask(card)
@@ -252,7 +241,6 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
                                           expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
-        await record_find(cand, need=why, why="declined", conversation_id=conversation_id)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
                                                         "way or say what is missing; do not propose it again now."}
