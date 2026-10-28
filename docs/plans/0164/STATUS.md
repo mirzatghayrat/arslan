@@ -43,7 +43,6 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #464 (code rules, sessions.md §12, card EXC1): docs only; ③Hands OK at `057fe7a6` (posted on the PR), plus its optional wording at `b7059ff3`. Best merged after #447 (lane table moves SBX to ③Hands).
 - #465 (Codex only when a Claude review is blocked): docs only; ③Hands asked for missing pointers and the #443 wording, fixed at `7c93e2ec`; waiting for its recheck.
 - #466 (INB1 follow-ups F2, F4): an independent effort=max Claude review is running.
-- #456 (F5b-2): ③Hands' review; ②Main's confirmation of its commit and CI pending.
 
 ## In progress
 
