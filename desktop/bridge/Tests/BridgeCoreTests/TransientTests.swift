@@ -51,6 +51,15 @@ final class PollPaceTests: XCTestCase {
         XCTAssertEqual(PollPace.interval(lastHeard: now.addingTimeInterval(-121), now: now), 10)
     }
 
+    /// BR1 (build 24): a phone that is pairing has never written as a paired phone, so `lastHeard`
+    /// is nil; an open code alone keeps the Mac at 2 s.
+    func testFastWhileAPairingCodeIsOpen() {
+        let now = Date()
+        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairingOpen: true, now: now), 2)
+        XCTAssertEqual(PollPace.interval(lastHeard: now.addingTimeInterval(-600), pairingOpen: true, now: now), 2)
+        XCTAssertEqual(PollPace.interval(lastHeard: nil, pairingOpen: false, now: now), 10)
+    }
+
     func testAnythingThePhoneWritesCountsAcksIncluded() async throws {
         let store = MemoryStore()
         let mac = Mailbox(deviceID: "mac-1", signing: .init(), exchange: .init(), store: store)

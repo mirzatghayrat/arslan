@@ -57,6 +57,11 @@ public final class PairingHost {
         return (PairingCode.scheme + b64url, id)
     }
 
+    /// A code is open from `newCode` until it is answered (`decide`) or expires (`PollPace`).
+    public func hasOpenCode(now: Date = Date()) -> Bool {
+        codes.values.contains { $0.answered == nil && now < $0.expires }
+    }
+
     /// Open a pair.request. Throws for anything not made with a live code's key.
     /// A retry of an already answered request returns it (the caller re-sends the answer).
     public func open(_ record: EnvelopeRecord, now: Date = Date()) throws -> (request: PairRequest, answered: EnvelopeRecord?) {

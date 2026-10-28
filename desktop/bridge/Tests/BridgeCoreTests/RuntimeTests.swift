@@ -43,6 +43,18 @@ final class RuntimeTests: XCTestCase {
         (control.last("devices")?["items"] as? [[String: Any]] ?? []).compactMap { $0["device_id"] as? String }.sorted()
     }
 
+    /// BR1: the poll loop reads `pairingOpen()`; it follows Arslan's "pairing.new" and the click.
+    func testThePollLoopSeesAnOpenPairingCode() async throws {
+        let store = MemoryStore(), control = FakeControl()
+        let bridge = try runtime(store, control)
+        XCTAssertFalse(bridge.pairingOpen())
+        let id = try await ask(bridge, store, control, phoneID: "iphone-br1")
+        XCTAssertTrue(bridge.pairingOpen())
+        XCTAssertEqual(PollPace.interval(lastHeard: bridge.mailbox.lastHeard, pairingOpen: bridge.pairingOpen()), 2)
+        try await bridge.handleControl(["type": "pairing.decide", "request_id": id, "accept": true])
+        XCTAssertFalse(bridge.pairingOpen())
+    }
+
     func testTheQRCodeDecodesBackToTheURI() throws {
         let uri = "arslan://pair?payload=eyJ2IjoxfQ"
         let png = try XCTUnwrap(QRCode.png(uri))
