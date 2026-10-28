@@ -669,6 +669,10 @@ def test_an_ascii_keyword_does_not_match_inside_an_identifier():
     assert not review_kit.names("nowseconds is called here", ("seconds",))
     assert review_kit.names("it is in seconds", ("seconds",))
     assert review_kit.names("this mutates defaults", ("mutat",))  # a keyword may be a stem
+    assert not review_kit.names("hasunsavedchanges returns false", ("unsaved",))
+    assert review_kit.names(
+        "hasunsavedchanges returns false", ("~unsaved",)
+    )  # ~: inside a word too
 
 
 PROBE_C_EXTRAS = (
@@ -688,3 +692,136 @@ def test_probe_c_true_flaws_that_were_not_planted_cost_nothing(tmp_path):
     assert (res["caught"], res["false_positives"], res["extra"]) == (4, 0, 1), res
     made_up = "src/index.ts:3 | 类型 | exports a type that does not exist\n"  # near an extra, not its kind
     assert _review(tmp_path / "m", "T14", "reply", made_up)["false_positives"] == 1
+
+
+# ── ②Main's recheck of 3e3b9f08: correct answers that were scored "located" ────
+
+NATURAL = {
+    (
+        "T13",
+        "P4",
+        "zh",
+    ): "`orders.py:9-10`: take 现在返回 False 而不是抛 OutOfStock，这里的 except 永远走不到，"
+    "库存不够也返回 placed",
+    (
+        "T13",
+        "P4",
+        "en",
+    ): "shop/orders.py:9-10: take() now returns False instead of throwing, so place_order's"
+    ' except never fires and it reports "placed".',
+    (
+        "T15",
+        "S4",
+        "zh",
+    ): "`Note.swift:12-14`: == 只看 id，EditTracker 用 != 判断改动，标题和正文改了也返回 false，"
+    "不会提示保存",
+    ("T15", "S4", "en"): "Sources/Notes/Note.swift:12-14: == now ignores title and body, so"
+    " EditTracker.hasUnsavedChanges returns false after an edit.",
+}
+
+
+@pytest.mark.parametrize("task,bug,lang", sorted(NATURAL))
+def test_natural_descriptions_of_the_contract_bugs_are_caught(tmp_path, task, bug, lang):
+    res = _review(tmp_path, task, "reply", NATURAL[task, bug, lang] + "\n")
+    assert res["caught_ids"] == [bug] and res["false_positives"] == 0, res
+
+
+@pytest.mark.parametrize("task,bug", [("T13", "P4"), ("T15", "S4")])
+def test_a_review_finding_all_four_in_natural_words_scores_three(tmp_path, task, bug):
+    others = [
+        line
+        for line in ALL_CAUGHT[task][1].splitlines()
+        if not ("orders.py" in line or "Note.swift" in line)
+    ]
+    for lang in ("zh", "en"):
+        text = "\n".join([*others, NATURAL[task, bug, lang]]) + "\n"
+        res = _review(tmp_path / lang, task, ALL_CAUGHT[task][0], text)
+        assert (res["caught"], res["false_positives"], res["score"]) == (4, 0, 3), res
+
+
+def test_the_giveaway_docstrings_are_gone_and_the_contracts_the_callers_rely_on_stay():
+    assert "True when all were taken" not in fixture_t13.head()["shop/inventory.py"]
+    assert "milliseconds" not in fixture_t14.head()["src/limiter.ts"]
+    assert "'backordered' when there was not enough" in fixture_t13.head()["shop/orders.py"]
+    assert "True when the note was changed" in fixture_t15.head()["Sources/Notes/EditTracker.swift"]
+    assert "numbers pages from 1" in fixture_t15.head()["Sources/Notes/Paging.swift"]
+
+
+def test_probe_d2_t16_a_summary_written_as_one_table_covers_every_region(tmp_path):
+    params = check_t16.fixture(str(tmp_path))
+    answers = params["answers"]
+    _t16_done(tmp_path, answers)
+    rows = "".join(f"| {r} | {a['total']} | {a['top']} |\n" for r, a in answers.items())
+    (tmp_path / "summary.md").write_text(
+        f"# 汇总\n\n| 地区 | 总销售额 | 销量最高的产品 |\n|---|---|---|\n{rows}"
+    )
+    res = check_t16.check(str(tmp_path), params, ["Task"] * 3, "claude-code")
+    assert res["score"] == 3 and res["summary_covers"] == sorted(answers), res
+    wrong = rows.replace(f"| {answers['north']['top']} |", "| nothing |")
+    for product in check_t16.PRODUCTS:
+        if product != answers["north"]["top"]:
+            wrong = wrong.replace("| nothing |", f"| {product} |")
+            break
+    (tmp_path / "summary.md").write_text(
+        f"| 地区 | 总销售额 | 销量最高的产品 |\n|---|---|---|\n{wrong}"
+    )
+    assert (
+        "north"
+        not in check_t16.check(str(tmp_path), params, ["Task"] * 3, "claude-code")["summary_covers"]
+    )
+    horizontal = f"| 总销售额 | 销量最高 |\n|---|---|\n| {answers['west']['total']} | {answers['west']['top']} |\n"
+    assert check_t16.claims_top(horizontal, answers["west"]["top"])
+
+
+NEW_FLAW = (
+    "src/limiter.ts:19 | 配置 | limit 和 windowMs 没有校验，传 0 或负数限流就失效\n"
+    "src/limiter.ts:19 | 配置 | windowMs 为 0 时也没有校验，每次请求都重开窗口\n"
+)
+
+
+def test_rescoring_a_round_after_adding_an_extra_turns_a_former_false_positive_into_neither(
+    tmp_path, monkeypatch
+):
+    """The hand-check rule: a real flaw found in a deciding run goes into EXTRAS, and every run of
+    that round is rescored from its saved folder (rescore.py; no agent is run)."""
+    from scripts.kernel_bench import rescore
+    from scripts.kernel_bench.review_kit import Extra
+
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "ROUND", "m64t")
+    review = json.dumps(ALL_CAUGHT["T14"][1] + NEW_FLAW)
+    script = (
+        "import json, pathlib; pathlib.Path('review.md').write_text(" + review + "); "
+        "print(json.dumps({'end': 'done', 'final': 'ok'}))"
+    )
+    monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+    before = runner.run_one("T14", "arslan", 1, {"T14": "review {dir}/repo"}, "sb")
+    assert (
+        before["check"]["false_positives"],
+        before["check"]["extra"],
+        before["check"]["score"],
+    ) == (2, 0, 2)
+    assert before["passed"] is False
+    monkeypatch.setattr(
+        runner, "command", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no agent"))
+    )
+    unchanged = rescore.rescore(report.load(str(tmp_path / "results.jsonl")))
+    assert unchanged[0]["check"] == before["check"] and unchanged[0]["rescored"]
+    extra = Extra(
+        "x-no-validation",
+        (("src/limiter.ts", (19, 19)),),
+        ("校验", "validat"),
+        "options not checked",
+    )
+    monkeypatch.setattr(check_t14, "EXTRAS", (*check_t14.EXTRAS, extra))
+    dest = rescore.main([str(tmp_path / "results.jsonl"), "--round", "m64t"])
+    (after,) = report.load(str(dest))
+    assert (
+        after["check"]["false_positives"],
+        after["check"]["extra"],
+        after["check"]["score"],
+    ) == (0, 2, 3)
+    assert after["check_before"]["false_positives"] == 2 and after["passed"] is True
+    assert (tmp_path / "results.jsonl").read_text().count(
+        "\n"
+    ) == 1  # the round's own results are kept

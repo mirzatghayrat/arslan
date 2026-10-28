@@ -8,7 +8,8 @@ The run's cost and the provider's 429 answers are in the run's record (`usage`, 
 
 - The top product is read from the lines that claim it (最高 / 最多 / 第一 / 畅销 / top / best /
   most): at least one such line names the right product and no other, and no such line names
-  only a wrong one. A product named anywhere else (a per-product table) does not count
+  only a wrong one. In a Markdown table whose header cell has a claim word, each body cell of
+  that column is such a line. A product named anywhere else (a per-product table) does not count
   (②Main's review of #436: a file listing every product passed with a wrong top).
 - A region's part is right when `out/<region>.md` has its total (to the cent; thousands
   separators allowed), claims the right top product, and holds no other region's total. Another
@@ -86,8 +87,35 @@ def _named(line: str, words) -> set[str]:
     return {w for w in words if re.search(rf"(?<![a-z]){w}(?![a-z])", line)}
 
 
+_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def tables_as_claims(text: str) -> str:
+    """A Markdown table whose header cell has a claim word claims its column: after each body row
+    a line `top: <that cell>` is added (②Main's recheck: a summary written as one table with
+    「销量最高的产品」 only in the header claimed nothing). The rows themselves stay as they were."""
+    lines, out, claim_cols = text.splitlines(), [], None
+    for i, line in enumerate(lines):
+        out.append(line)
+        is_row = "|" in line
+        if not is_row:
+            claim_cols = None
+        elif i + 1 < len(lines) and _RULE.match(lines[i + 1]) and claim_cols is None:
+            claim_cols = [n for n, cell in enumerate(_cells(line)) if CLAIM.search(cell)]
+        elif claim_cols and not _RULE.match(line):
+            cells = _cells(line)
+            out += [f"top: {cells[n]}" for n in claim_cols if n < len(cells)]
+    return "\n".join(out)
+
+
 def claims_top(text: str, top: str) -> bool:
-    """A line claiming the top product names `top` and no other, and none names only a wrong one."""
+    """A line claiming the top product names `top` and no other, and none names only a wrong one.
+    A table's claim column counts as such lines (tables_as_claims)."""
+    text = tables_as_claims(text)
     said = [_named(line, PRODUCTS) for line in text.splitlines() if CLAIM.search(line)]
     said = [s for s in said if s]
     return any(s == {top} for s in said) and not any(len(s) == 1 and s != {top} for s in said)
@@ -111,7 +139,7 @@ def _sections(text: str) -> dict[str, str]:
 def check(run: str, params: dict, names: list[str] | None, who: str) -> dict:
     answers = params["answers"]
     parts, covered = {}, {}
-    sections = _sections(_read(Path(run) / "summary.md").lower())
+    sections = _sections(tables_as_claims(_read(Path(run) / "summary.md").lower()))
     for region, want in answers.items():
         text = _read(Path(run) / "out" / f"{region}.md").lower()
         others = [a["total"] for r, a in answers.items() if r != region]

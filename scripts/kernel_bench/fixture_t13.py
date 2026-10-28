@@ -150,7 +150,7 @@ class Inventory:
         return True
 
     def reserve_all(self, lines) -> bool:
-        """Take every line's quantity, or none of them. True when all were taken."""
+        """Take every line's quantity, or none of them."""
         taken = []
         for line in lines:
             if not self.take(line.sku, line.qty):

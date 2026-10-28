@@ -562,6 +562,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
               "rate_limited_429": rate_limited(label, started),           # v0.1.64 M64 (T16 records it)
+              "session": ctx.get("session"),           # Claude Code's: rescore.py reads its transcript again
               "timing": timing,
               # v0.1.63: the command policy Arslan's instance ran under (ask_risky unless the run asked for
               # ask_all), so the final M1's ask_all reference run is labelled; None for other entrants.

@@ -48,7 +48,7 @@ PR = {
 export interface LimiterOptions {
   /** Requests allowed in each window. */
   limit: number;
-  /** Window length, in milliseconds. */
+  /** Window length. */
   windowMs: number;
 }
 

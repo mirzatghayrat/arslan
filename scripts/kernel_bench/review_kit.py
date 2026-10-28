@@ -24,7 +24,9 @@ Matching rule (the same for every entrant):
    whose type it names. The finding catches that bug when it names the bug's type: one of its
    keywords, matched case-insensitively in the finding's prose only (inline code and fenced
    blocks are left out, so quoted code never names a type; an ASCII keyword must not follow a
-   letter or digit, so `seconds` does not match `nowSeconds`). A bug counts once.
+   letter or digit, so `seconds` does not match `nowSeconds`, unless the keyword is written
+   `~word`). A bug counts once. A bug whose places are far from every other bug's (T13 P4, T15
+   S4) can have generous keywords: nearest-bug assignment keeps other findings off it.
 5. A finding that catches nothing:
    - "extra" when it is within TOLERANCE of a known extra (check_t1x.EXTRAS: true flaws the
      fixture has that were not planted, such as T14's ESM imports without `.js`) and names its
@@ -40,6 +42,11 @@ not to touch it; files on `feature` compared byte for byte, new files ignored) c
 
 Every finding's verdict is in the result (`findings`: what it cites and the bug, extra, "located"
 or "false positive" it got), for the hand check of runs that decide a gate (card M64, risks).
+
+Rule for the hand check: when a run that decides a gate shows a "false positive" that is a real
+flaw of the fixture, add it to that task's EXTRAS and rescore every run of that round, for every
+entrant, with `python -m scripts.kernel_bench.rescore` (checks only, no agent is run). A "located"
+finding that is a correct description of the bug goes into that bug's keywords the same way.
 """
 
 from __future__ import annotations
@@ -216,10 +223,14 @@ def _distance(finding: Finding, places: tuple[Place, ...]) -> float:
 
 
 def names(text: str, keywords: tuple[str, ...]) -> bool:
-    """Any keyword in `text` (lower-cased prose); an ASCII keyword must not follow a letter or digit."""
+    """Any keyword in `text` (lower-cased prose). An ASCII keyword must not follow a letter or
+    digit, unless it starts with `~` (`~unsaved` also matches `hasUnsavedChanges`)."""
     for k in keywords:
         k = k.lower()
-        if k.isascii():
+        if k.startswith("~"):
+            if k[1:] in text:
+                return True
+        elif k.isascii():
             if re.search(rf"(?<![a-z0-9]){re.escape(k)}", text):
                 return True
         elif k in text:

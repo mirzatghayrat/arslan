@@ -113,6 +113,13 @@ not end cleanly fails whatever the checker scored (M1a).
 | T16 split, delegate, summarise | `regions/<north,south,west>/orders.csv`; the answers stay with the runner | `check_t16.py`: each `out/<region>.md` right (the top product read from the line that claims it), `summary.md` covers all three, and 2–4 sub-sessions opened (from the run's tool-call record, `tool_record.py`); the record also keeps cost and `rate_limited_429` | Claude Code; Arslan once the SUB card's tool lands |
 | T17 one step, no hand-off | `prices.txt` | `check_t17.py`: 0 if a sub-session was opened or work delegated (`delegate_work` counts), or no tool-call record; else 3 if `answer.txt` holds the sum | Arslan, Claude Code |
 
+**Hand check and rescoring.** When the hand check of a run that decides a gate finds a "false
+positive" that is a real flaw of the fixture, add it to that task's `EXTRAS` (a correct finding
+scored "located" goes into the bug's keywords), then rescore every run of that round, for every
+entrant: `python -m scripts.kernel_bench.rescore results.jsonl --round NAME`. It re-applies the
+current checks to the saved run folders (T13–T17) without running any agent, keeps each old
+verdict as `check_before`, and writes `results.rescored-NAME.jsonl` next to the results.
+
 `report.py` prints, under the per-task table, two totals per entrant and model: Pass^k over every
 task with an unsupported task counted as not passed (the figure rounds before v0.1.64 used), and
 the **same-task** Pass^k over only the tasks every entrant on that model supports (R64 gates on
