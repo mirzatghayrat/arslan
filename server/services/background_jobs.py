@@ -380,13 +380,13 @@ async def _report(job: Job, text: str) -> None:
     from server.orchestrator import memory, untrusted
     from server.ws import protocol
     body = text.strip()
-    # S64-0b: a result that may carry outside content reaches later turns framed; the user sees it as
-    # written. The budget note below is the host's own words.
-    framed = untrusted.job_result(body) if body and job.outside_seen is True else None
     try:
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
+            # S64-0b: what may carry outside content (the result, or the budget note naming the goal)
+            # reaches later turns framed; the user sees it as written. Only a job known clean is not.
+            framed = untrusted.job_result(body) if job.outside_seen is not False else None
             message_id = await memory.add_message(job.conversation_id, "arslan", framed or body,
                                                   display_content=body if framed else None, job_outcome=job.outcome)
             run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
@@ -401,8 +401,8 @@ async def _report(job: Job, text: str) -> None:
 
 
 async def _budget_note(job: Job) -> str:
-    """Plain words for a job the budget ended. Counts only — no tool output is
-    quoted, so nothing a web page said reaches the conversation this way."""
+    """Plain words for a job the budget ended. Counts only, no tool output is quoted. It names the
+    goal, which may carry outside content (S64-0), so _report frames it like a result."""
     from server.services import runtime_messages
     locale = await runtime_messages.selected_locale()
     stop = job.budget_stop or {}
@@ -424,7 +424,7 @@ async def report_interrupted() -> int:
     from sqlalchemy import select
     from server.db import session as db_session
     from server.db.models import CompanionTask
-    from server.orchestrator import memory
+    from server.orchestrator import memory, untrusted
     from server.services import runtime_messages
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
@@ -440,8 +440,9 @@ async def report_interrupted() -> int:
             row = await repo.get(task_id, owner_id=owner_id)
             goal = (await repo.spec(row)).instruction[:200]
             await repo.cancel(task_id, owner_id=owner_id)
-        await memory.add_message(conversation_id, "arslan",
-                                 runtime_messages.render("job_interrupted", locale, goal=goal),
+        # S64-0b: the note names the goal, and nothing here knows whether it carries outside content.
+        note = runtime_messages.render("job_interrupted", locale, goal=goal)
+        await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,
                                  job_outcome="interrupted")
     return len(targets)
 
