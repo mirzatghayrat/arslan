@@ -67,7 +67,7 @@ def test_how_you_work_no_longer_sends_multi_step_work_away():
 
 @pytest.mark.parametrize("queued", [False, True])
 async def test_the_result_says_whether_the_job_started_or_waits_and_asks_for_no_one_liner(monkeypatch, queued):
-    async def start(conversation_id, goal, criteria):
+    async def start(conversation_id, goal, criteria, **kw):
         return types.SimpleNamespace(job_id="job-1", acceptance=[{"id": "c1", "description": "Saved"}])
     monkeypatch.setattr(background_jobs, "start", start)
     monkeypatch.setattr(background_jobs, "active_count",

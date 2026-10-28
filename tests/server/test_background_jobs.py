@@ -92,7 +92,7 @@ def _criteria():
 async def test_a_job_runs_as_its_own_task_and_posts_one_result(execution_db, active, frames, monkeypatch):
     adapter = JobAdapter()
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert job.outcome == "done", (job.detail, job.results)
     async with execution_db() as db:
@@ -119,7 +119,7 @@ async def test_a_job_gives_its_id_to_its_cards(execution_db, active, monkeypatch
         return made[-1]
     monkeypatch.setattr(approvals, "JobConfirmations", recording)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
-    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert [(c.conversation_id, c.job_id) for c in made] == [(CID, job.job_id)]
 
@@ -160,7 +160,7 @@ async def test_no_more_than_the_limit_run_at_once(execution_db, active, monkeypa
     adapter = JobAdapter(gate)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     monkeypatch.setattr(background_jobs, "MAX_CONCURRENT", 2)
-    jobs = [await background_jobs.start(CID, f"job {i}", _criteria()) for i in range(3)]
+    jobs = [await background_jobs.start(CID, f"job {i}", _criteria(), outside_seen=False) for i in range(3)]
     await _wait(lambda: adapter.running == 2)
     await asyncio.sleep(0.05)
     assert sorted(job.phase for job in jobs) == ["queued", "running", "running"]
@@ -172,7 +172,7 @@ async def test_no_more_than_the_limit_run_at_once(execution_db, active, monkeypa
 async def test_a_stopped_job_says_stopped_and_posts_no_filler(execution_db, active, frames, monkeypatch):
     gate = asyncio.Event()
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(gate))
-    job = await background_jobs.start(CID, "long work", _criteria())
+    job = await background_jobs.start(CID, "long work", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "running")
     assert not background_jobs.stop("other-conversation", job.job_id)   # scoped to its conversation
     assert background_jobs.stop(CID, job.job_id)
@@ -184,7 +184,7 @@ async def test_a_stopped_job_says_stopped_and_posts_no_filler(execution_db, acti
 
 async def test_an_answer_missing_the_criterion_is_not_done(execution_db, active, monkeypatch):
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="I made a start."))
-    job = await background_jobs.start(CID, "write the report", _criteria())
+    job = await background_jobs.start(CID, "write the report", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert job.outcome in {"partial", "blocked"} and job.outcome != "done"
 
@@ -492,7 +492,7 @@ async def test_a_restart_closes_interrupted_jobs_and_says_so_once(execution_db, 
 async def test_a_result_keeps_its_outcome_in_history(execution_db, active, frames, monkeypatch):
     from server.ws.arslan import _history
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
-    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     await _wait(lambda: any(f.get("type") == "job_spoken" for f in frames))
     rows = await _history(CID)
@@ -518,7 +518,7 @@ async def test_a_reconnecting_tab_never_replays_a_job_run_as_the_chat_turn(execu
     button aimed at the job's run."""
     gate = asyncio.Event()
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(gate))
-    job = await background_jobs.start(CID, "long work", _criteria())
+    job = await background_jobs.start(CID, "long work", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "running" and run_registry.active_for(CID))
     assert run_registry.journal_snapshots(CID) == []
     assert background_jobs.stop(CID, job.job_id)                  # still cancellable
@@ -552,7 +552,7 @@ async def test_a_job_runs_on_the_tier_the_setting_names(execution_db, active, mo
                 else:
                     row.value = tier
                 await db.commit()
-        job = await background_jobs.start(CID, f"Tidy {tier}", _criteria())
+        job = await background_jobs.start(CID, f"Tidy {tier}", _criteria(), outside_seen=False)
         await _wait(lambda: job.phase == "finished")
         async with execution_db() as db:
             task = await db.get(CompanionTask, job.job_id)
@@ -585,7 +585,7 @@ async def test_reaching_the_tier_wraps_up_and_delivers_instead_of_stopping(execu
                         dict(model_requests=50, tool_calls=3, tokens=600_000, wall_seconds=60))
     adapter = ResearchAdapter()
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    job = await background_jobs.start(CID, "Research everything", _criteria())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished", seconds=10)
     # 0.1.50: the list stays the same while the model complies (prompt cache); a
     # research call would be refused and narrow it (test_finish_mode).
@@ -605,7 +605,7 @@ async def test_a_job_that_will_not_wrap_up_is_stopped_by_the_hard_limit_and_says
                         dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
-    job = await background_jobs.start(CID, "Research everything", _criteria())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished", seconds=10)
     assert job.outcome == "out_of_budget"
     assert job.budget_stop["reason"] == "model_requests" and job.budget_stop["limit"] == 6   # 1.5 x 4
@@ -632,7 +632,7 @@ async def test_a_job_that_keeps_researching_after_wrap_up_is_made_to_answer(exec
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     adapter = ResearchAdapter(obedient=False)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    job = await background_jobs.start(CID, "Research everything", _criteria())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished", seconds=10)
     assert job.budget_stop is None                     # the hard limit was never reached
     assert adapter.n == 3 + 2 + 1                      # 3 calls, 2 refused in wrap-up, 1 text-only step
@@ -685,7 +685,7 @@ async def test_a_jobs_approvals_end_with_it(execution_db, active, monkeypatch):
     forgotten = []
     monkeypatch.setattr(hands_tools, "forget_job", forgotten.append)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
-    job = await background_jobs.start(CID, "Tidy my notes", _criteria())
+    job = await background_jobs.start(CID, "Tidy my notes", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert forgotten == [job.job_id]
 
@@ -711,7 +711,7 @@ async def test_an_answer_saying_it_could_not_do_it_is_not_done(execution_db, act
     seen = []
     _judge_says(monkeypatch, False, 0.08, seen)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="复制没做成：批准卡过期了，没有人回应。"))
-    job = await background_jobs.start(CID, "把 a.txt 复制到下载文件夹", [])
+    job = await background_jobs.start(CID, "把 a.txt 复制到下载文件夹", [], outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert (job.outcome, job.detail) == ("blocked", "goal_not_reached")
     assert seen == [("job.accomplished", {"goal": "把 a.txt 复制到下载文件夹", "answer": "复制没做成：批准卡过期了，没有人回应。"})]
@@ -728,7 +728,7 @@ async def test_a_decisive_no_counts_whichever_way_the_judge_reads_p(execution_db
     # The device run (2026-10-05): the judge said {"answer": false, "p": 0.99} for an expired copy.
     _judge_says(monkeypatch, False, p, [])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="The approval card expired unanswered; nothing ran."))
-    job = await background_jobs.start(CID, "create ~/Downloads/x.txt", [])
+    job = await background_jobs.start(CID, "create ~/Downloads/x.txt", [], outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert (job.outcome, job.detail) == ("blocked", "goal_not_reached")
 
@@ -737,7 +737,7 @@ async def test_a_decisive_no_counts_whichever_way_the_judge_reads_p(execution_db
 async def test_a_done_job_stays_done_unless_the_judge_is_sure_it_is_not(execution_db, active, monkeypatch, answer, p):
     _judge_says(monkeypatch, answer, p, [])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="Copied it."))
-    job = await background_jobs.start(CID, "copy a.txt", [])
+    job = await background_jobs.start(CID, "copy a.txt", [], outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert job.outcome == "done"
 
@@ -746,7 +746,7 @@ async def test_a_job_with_its_own_checks_is_not_asked_again(execution_db, active
     seen = []
     _judge_says(monkeypatch, False, 0.01, seen)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
-    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
     assert job.outcome == "done" and seen == []
 
@@ -789,7 +789,7 @@ async def test_a_jobs_task_grants_end_with_it_and_its_conversation_grants_stay(e
     window = _a_window_answering({"Use Notes?": "task", "Use Reminders?": "conversation"})
     run_registry.attach_sink(CID, window)
     try:
-        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
         await _wait(lambda: "during" in seen)
         if ending == "stopped":
             assert background_jobs.stop(CID, job.job_id)
@@ -822,7 +822,7 @@ async def test_a_card_answered_after_the_jobs_wall_clock_does_not_stop_the_job(e
     window = _a_window_answering({"Use Notes?": "once"}, after=3.0)   # the user takes their time
     run_registry.attach_sink(CID, window)
     try:
-        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
         await _wait(lambda: job.phase == "finished", seconds=15)
     finally:
         run_registry.detach_sink(CID, window)
@@ -854,7 +854,7 @@ async def test_a_job_reads_finished_and_is_reported_while_forgetting_its_task_gr
     gate = asyncio.Event()
     adapter = JobAdapter(gate)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
     await _wait(lambda: adapter.job_calls == 1)                  # working: at the model
     if ending == "stopped":
         assert background_jobs.stop(CID, job.job_id)
@@ -898,7 +898,7 @@ async def test_only_a_job_given_a_grant_for_its_task_deletes_one_at_its_end(exec
     window = _a_window_answering({"Use Notes?": answer} if answer else {})
     run_registry.attach_sink(CID, window)
     try:
-        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
         await _wait(lambda: job.task.done())
     finally:
         run_registry.detach_sink(CID, window)
@@ -940,7 +940,7 @@ async def test_a_job_whose_reporting_raises_still_forgets_its_task_grants(execut
     window = _a_window_answering({"Use Notes?": "task"})
     run_registry.attach_sink(CID, window)
     try:
-        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
         await _wait(lambda: job.task.done())
     finally:
         run_registry.detach_sink(CID, window)
@@ -967,7 +967,7 @@ async def test_a_forget_that_raises_changes_nothing_about_how_a_job_ends(executi
     adapter = JobAdapter(gate)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     with caplog.at_level(logging.WARNING, logger="server.services.background_jobs"):
-        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
         await _wait(lambda: adapter.job_calls == 1)                  # working: at the model
         if ending == "stopped":
             assert background_jobs.stop(CID, job.job_id)

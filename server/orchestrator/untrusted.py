@@ -126,6 +126,13 @@ def mark_external() -> None:
         holder["seen"] = True
 
 
+def turn_so_far():
+    """The current turn's mark as it stands whenever it is asked later (the turn may read more after
+    now); outside a turn, yes. S64-0: a background job asks when it gets its slot."""
+    holder = _EXTERNAL.get()
+    return (lambda: True) if holder is None else (lambda: bool(holder["seen"]))
+
+
 def external_seen() -> bool:
     holder = _EXTERNAL.get()
     return True if holder is None else bool(holder["seen"])

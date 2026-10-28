@@ -306,12 +306,15 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                 evidence = dict(row.evidence or {})
                 evidence["seen"] = int(evidence.get("seen") or 1) + 1
                 # S64-0: a waiting lesson's words may come from a turn that read outside content.
-                # It takes effect only in the words of the turn that may make it take effect.
-                if immediate and (cand.source == "user_correction" or row.status == "proposed"):
+                # It takes effect only in the words of the turn that may make it take effect. One
+                # that waits because it conflicts with another waits for the user to choose.
+                takes_effect = immediate and not (row.status == "proposed"
+                                                  and evidence.get(NOT_IN_EFFECT) == "conflicts")
+                if takes_effect and (cand.source == "user_correction" or row.status == "proposed"):
                     row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
                     evidence.pop(NOT_IN_EFFECT, None)
                 row.evidence = evidence
-                if immediate and row.status == "proposed":
+                if takes_effect and row.status == "proposed":
                     row.status = "active"
                 row.updated_at = now
                 await db.commit()

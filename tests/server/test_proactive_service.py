@@ -249,7 +249,7 @@ def started(monkeypatch):
 
     monkeypatch.setattr(svc, "model_configured", configured)
 
-    async def start(conversation_id, goal, criteria):
+    async def start(conversation_id, goal, criteria, **kw):
         calls.append((conversation_id, goal, criteria))
         return SimpleNamespace(job_id="job-42")
 
@@ -294,7 +294,7 @@ async def test_two_clicks_that_both_saw_the_item_open_start_one_job(execution_db
 
 
 async def test_if_the_job_cannot_start_the_item_comes_back(execution_db, monkeypatch):
-    async def start(*args):
+    async def start(*args, **kw):
         raise RuntimeError("no provider")
 
     async def configured():
@@ -337,7 +337,7 @@ async def test_with_no_origin_and_no_choice_there_is_nowhere_to_report(execution
 async def test_with_no_model_nothing_is_claimed_and_no_job_starts(execution_db, monkeypatch):
     starts = []
 
-    async def start(*args):
+    async def start(*args, **kw):
         starts.append(args)
 
     monkeypatch.setattr(background_jobs, "start", start)
