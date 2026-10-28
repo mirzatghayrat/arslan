@@ -72,6 +72,18 @@ def get_cart(user_id: str) -> Cart:
     """This user's cart (each user has their own)."""
     return _CARTS.setdefault(user_id, Cart(owner=user_id))
 ''',
+    "shop/orders.py": '''"""Single-item orders taken over the phone (the call centre's screen calls this)."""
+from shop.inventory import Inventory, OutOfStock
+
+
+def place_order(inventory: Inventory, sku: str, qty: int) -> str:
+    """'placed' when the stock was taken, 'backordered' when there was not enough."""
+    try:
+        inventory.take(sku, qty)
+    except OutOfStock:
+        return "backordered"
+    return "placed"
+''',
     "tests/test_cart.py": """from shop.cart import Cart
 
 
@@ -130,22 +142,22 @@ class Inventory:
     def __init__(self, stock: dict[str, int]):
         self.stock = dict(stock)
 
-    def take(self, sku: str, qty: int) -> None:
+    def take(self, sku: str, qty: int) -> bool:
+        """Take `qty` of `sku`; False, and nothing taken, when there is not enough."""
         if self.stock.get(sku, 0) < qty:
-            raise OutOfStock(sku)
+            return False
         self.stock[sku] -= qty
+        return True
 
     def reserve_all(self, lines) -> bool:
         """Take every line's quantity, or none of them. True when all were taken."""
         taken = []
-        try:
-            for line in lines:
-                self.take(line.sku, line.qty)
-                taken.append(line)
-        except OutOfStock:
-            for line in taken:
-                self.stock[line.sku] += line.qty
-            return True
+        for line in lines:
+            if not self.take(line.sku, line.qty):
+                for done in taken:
+                    self.stock[done.sku] += done.qty
+                return True
+            taken.append(line)
         return True
 ''',
     "shop/api.py": '''"""Request handlers: the web layer calls these, one call per request."""
@@ -170,7 +182,7 @@ def checkout(user_id: str, inventory, member: bool) -> dict:
 
 def clear_cart(user_id: str) -> None:
     """Empty this user's cart once they have checked out."""
-    _CARTS.clear()
+    _CARTS.pop(user_id, None)
 ''',
     "tests/test_cart.py": """from shop.cart import Cart
 
@@ -192,6 +204,8 @@ MESSAGE = """Add member discount, cart paging and checkout
 
 - Cart.total(member): members get 15% off.
 - Cart.page(number, size) for the cart page.
+- Inventory.take returns False when stock is short instead of raising
+  (checkout tries many lines; no exception per line).
 - Inventory.reserve_all: all-or-nothing stock reservation.
 - api.checkout and api.clear_cart.
 """

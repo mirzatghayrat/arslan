@@ -4,33 +4,42 @@ build the PR repo, read the review, score it against the planted bugs.
 Each task is a small synthetic repo (no real project's code) made in the run folder as a git
 repo: `main` holds the base version, branch `feature` (checked out) one commit on top, the PR.
 The planted bugs live in that task's check script (check_t13/14/15.BUGS), never in the agent's
-folder. Every bug has an identifier: file, line range (in the file on `feature`) and type.
+folder. Every bug has an identifier: file and line range (in the files on `feature`; a bug whose
+cause and effect sit in two files has both places), and a type with its keywords.
 
 Matching rule (the same for every entrant):
 
 1. What is read: `<run>/review.md` when it exists and is not empty, else the reply.
-2. Findings. The text is read line by line. A line that names a file of the repo (its path or
-   its file name; file names are unique within each repo) starts a finding about that file. A
-   line that names no file but cites a line number and starts like a list item, a heading or a
-   table row starts a finding about the file named last. Any other line continues the finding
-   before it.
+2. Findings. The text is read line by line. A line that names a file of the repo (its path or its file name; file names are unique within
+   each repo) starts a finding about that file. A line that names no file but cites a line
+   number and starts like a list item, a heading or a table row starts a finding about the file
+   named last. Any other line continues the finding before it.
 3. Line numbers a finding cites: `file:12`, `file:12-15`, `#L12`, `L12`, `line 12`, `lines 12-15`,
    `第 12 行`, `12-15 行`, `行 12`, and table cells that hold only `12` or `12-15`. A range wider
-   than MAX_SPAN lines cites nothing.
-4. A finding catches a planted bug when it names the bug's file, cites a line inside the bug's
-   range widened by TOLERANCE lines on each side, and contains one of the bug's type keywords
-   (case-insensitive substring). A bug counts once, however many findings catch it.
-5. A finding that catches nothing but cites a line inside a planted bug's widened range in a
-   file it names is "located" (right place, type not recognised): neither caught nor a false
-   positive. A finding that cites lines near no planted bug is a false positive: the fixture code
-   has no other bugs. A finding that cites no line is ignored ("unlocated").
+   than MAX_SPAN lines cites nothing. Files and line numbers are read in code too (inline code
+   and fenced blocks), keywords are not (rule 4).
+4. Each finding is assigned to at most one planted bug: the nearest one by line, among the
+   places in files the finding names. Distance is 0 when a cited line is inside the bug's range,
+   else the gap in lines; only bugs within TOLERANCE lines count. On a tie, the first tied bug
+   whose type it names. The finding catches that bug when it names the bug's type: one of its
+   keywords, matched case-insensitively in the finding's prose only (inline code and fenced
+   blocks are left out, so quoted code never names a type; an ASCII keyword must not follow a
+   letter or digit, so `seconds` does not match `nowSeconds`). A bug counts once.
+5. A finding that catches nothing:
+   - "extra" when it is within TOLERANCE of a known extra (check_t1x.EXTRAS: true flaws the
+     fixture has that were not planted, such as T14's ESM imports without `.js`) and names its
+     keywords: neither caught nor a false positive, so a careful review loses nothing for them;
+   - else "located" when a planted bug is within TOLERANCE (right place, type not recognised):
+     neither caught nor a false positive;
+   - else a false positive: it cites lines near nothing planted and nothing known.
+   A finding that cites no line is ignored ("unlocated").
 
 Score: 3 = every planted bug caught and at most one false positive; 2 = all but one caught and at
 most two false positives; 1 = at least one caught; 0 = none. A repo left changed (the prompt says
 not to touch it; files on `feature` compared byte for byte, new files ignored) caps the score at 2.
 
-Keyword matching misses a bug said in other words: spot-check the `missed` and `false_positive`
-findings by hand (card M64, risks).
+Every finding's verdict is in the result (`findings`: what it cites and the bug, extra, "located"
+or "false positive" it got), for the hand check of runs that decide a gate (card M64, risks).
 """
 
 from __future__ import annotations
@@ -43,6 +52,7 @@ from pathlib import Path
 
 TOLERANCE = 3
 MAX_SPAN = 15
+Place = tuple[str, tuple[int, int]]
 
 
 @dataclass(frozen=True)
@@ -53,14 +63,30 @@ class Bug:
     kind: str  # the bug's type
     keywords: tuple[str, ...]  # any one of them names the type
     anchor: str  # text on a line inside `lines` (a test pins it to the fixture)
-    context: bool = False  # found only by reading beyond the changed lines
+    context: bool = False  # found only by reading code the PR does not change
+    also: tuple[Place, ...] = ()  # the bug's other place, e.g. the untouched caller that breaks
+
+    @property
+    def places(self) -> tuple[Place, ...]:
+        return ((self.file, self.lines), *self.also)
+
+
+@dataclass(frozen=True)
+class Extra:
+    """A true flaw of the fixture that was not planted: flagging it costs nothing."""
+
+    id: str
+    places: tuple[Place, ...]
+    keywords: tuple[str, ...]
+    note: str
 
 
 @dataclass
 class Finding:
     files: set[str]
     spans: list[tuple[int, int]] = field(default_factory=list)
-    text: str = ""
+    text: str = ""  # prose only: inline code left out
+    raw: str = ""
 
 
 def _git_env(root: Path) -> dict:
@@ -121,6 +147,8 @@ _LINE_PATTERNS = (
     re.compile(rf"(?<![\d.])(\d+)\s*(?:{_DASH}(\d+)\s*)?行"),
     re.compile(r"行号?\s*[:：]?\s*(\d+)(?:\s*[-–—~到至]\s*(\d+))?"),
 )
+_INLINE_CODE = re.compile(r"`[^`]*`")
+_FENCE = re.compile(r"^\s*(```|~~~)")
 
 
 def _file_patterns(files) -> dict[str, re.Pattern]:
@@ -156,7 +184,11 @@ def findings(text: str, files) -> list[Finding]:
     patterns = _file_patterns(files)
     out: list[Finding] = []
     last_files: set[str] = set()
+    fenced = False
     for line in text.splitlines():
+        if _FENCE.match(line):
+            fenced = not fenced
+            continue
         named = {path for path, pattern in patterns.items() if pattern.search(line)}
         spans = _spans(line, patterns)
         if named:
@@ -167,35 +199,77 @@ def findings(text: str, files) -> list[Finding]:
         elif not out:
             continue
         out[-1].spans += spans
-        out[-1].text += line + "\n"
+        out[-1].text += ("" if fenced else _INLINE_CODE.sub(" ", line)) + "\n"
+        out[-1].raw += line + "\n"
     return out
 
 
-def _near(finding: Finding, bug: Bug) -> bool:
-    lo, hi = bug.lines[0] - TOLERANCE, bug.lines[1] + TOLERANCE
-    return bug.file in finding.files and any(a <= hi and b >= lo for a, b in finding.spans)
+def _distance(finding: Finding, places: tuple[Place, ...]) -> float:
+    """Lines between what the finding cites and the nearest of `places` (0 = inside)."""
+    best = float("inf")
+    for path, (lo, hi) in places:
+        if path not in finding.files:
+            continue
+        for a, b in finding.spans:
+            best = min(best, 0 if a <= hi and b >= lo else lo - b if b < lo else a - hi)
+    return best
 
 
-def _names_type(finding: Finding, bug: Bug) -> bool:
+def names(text: str, keywords: tuple[str, ...]) -> bool:
+    """Any keyword in `text` (lower-cased prose); an ASCII keyword must not follow a letter or digit."""
+    for k in keywords:
+        k = k.lower()
+        if k.isascii():
+            if re.search(rf"(?<![a-z0-9]){re.escape(k)}", text):
+                return True
+        elif k in text:
+            return True
+    return False
+
+
+def assign(
+    finding: Finding, bugs: tuple[Bug, ...], extras: tuple[Extra, ...] = ()
+) -> tuple[str, str]:
+    """(verdict, id): ("caught", bug), ("extra", extra), ("located", bug) or ("false positive", "")."""
     text = finding.text.lower()
-    return any(k.lower() in text for k in bug.keywords)
+    near = {b.id: _distance(finding, b.places) for b in bugs}
+    closest = min(near.values(), default=float("inf"))
+    tied = [b for b in bugs if near[b.id] == closest] if closest <= TOLERANCE else []
+    hit = next((b for b in tied if names(text, b.keywords)), None)
+    if hit:
+        return "caught", hit.id
+    extra = next(
+        (
+            e
+            for e in extras
+            if _distance(finding, e.places) <= TOLERANCE and names(text, e.keywords)
+        ),
+        None,
+    )
+    if extra:
+        return "extra", extra.id
+    if tied:
+        return "located", tied[0].id
+    return "false positive", ""
 
 
-def score(text: str, bugs: tuple[Bug, ...], files) -> dict:
+def score(text: str, bugs: tuple[Bug, ...], files, extras: tuple[Extra, ...] = ()) -> dict:
     caught: set[str] = set()
-    false_positive, located, unlocated = [], 0, 0
+    false_positive, verdicts = [], []
+    counts = {"located": 0, "extra": 0, "unlocated": 0}
     for f in findings(text, files):
+        cites = ", ".join(f"{a}-{b}" for a, b in f.spans)
         if not f.spans:
-            unlocated += 1
+            counts["unlocated"] += 1
             continue
-        hits = {b.id for b in bugs if _near(f, b) and _names_type(f, b)}
-        caught |= hits
-        if hits:
-            continue
-        if any(_near(f, b) for b in bugs):
-            located += 1
+        verdict, what = assign(f, bugs, extras)
+        verdicts.append({"files": sorted(f.files), "lines": cites, "verdict": verdict, "id": what})
+        if verdict == "caught":
+            caught.add(what)
+        elif verdict == "false positive":
+            false_positive.append(f.raw.strip()[:200])
         else:
-            false_positive.append(f.text.strip()[:200])
+            counts[verdict] += 1
     planted = len(bugs)
     n, fp = len(caught), len(false_positive)
     points = 3 if n == planted and fp <= 1 else 2 if n >= planted - 1 and fp <= 2 else 1 if n else 0
@@ -205,18 +279,24 @@ def score(text: str, bugs: tuple[Bug, ...], files) -> dict:
         "caught": n,
         "planted": planted,
         "false_positives": fp,
-        "located": located,
-        "unlocated": unlocated,
+        **counts,
         "caught_ids": sorted(caught),
         "missed": [b.id for b in bugs if b.id not in caught],
         "context_caught": f"{sum(1 for b in context if b in caught)}/{len(context)}",
         "false_positive_findings": false_positive[:5],
+        "findings": verdicts[:30],
     }
 
 
-def check(run: str, reply: str, bugs: tuple[Bug, ...], head: dict[str, str]) -> dict:
+def check(
+    run: str,
+    reply: str,
+    bugs: tuple[Bug, ...],
+    head: dict[str, str],
+    extras: tuple[Extra, ...] = (),
+) -> dict:
     text, source = review_text(run, reply)
-    res = score(text, bugs, head)
+    res = score(text, bugs, head, extras)
     repo = Path(run) / "repo"
     changed = sorted(
         name

@@ -1,14 +1,16 @@
 """T13 code review, Python (v0.1.64 M64): a PR on a tiny shop package with four planted bugs.
 
 How a review is read and scored: review_kit (the matching rule is written down there). Two of
-the four need context outside the changed lines: P1 (money.apply_discount takes a whole
-percent, in a file the PR does not touch) and P4 (every user's cart lives in one shared dict).
+the four need code the PR does not change: P1 (money.apply_discount takes a whole percent) and
+P4 (the PR changes Inventory.take's contract from raising OutOfStock to returning False, and
+orders.place_order, which the PR does not touch, still waits for the exception).
+Keywords name the type in prose; code tokens and generic words are left out (②Main's review).
 """
 
 from __future__ import annotations
 
 from scripts.kernel_bench import fixture_t13, review_kit
-from scripts.kernel_bench.review_kit import Bug
+from scripts.kernel_bench.review_kit import Bug, Extra
 
 BUGS = (
     Bug(
@@ -19,9 +21,8 @@ BUGS = (
         (
             "percent",
             "百分",
-            "whole number",
-            "整数",
             "integer",
+            "整数",
             "fraction",
             "小数",
             "unit",
@@ -32,9 +33,9 @@ BUGS = (
             "0 到 100",
             "too small",
             "太小",
-            "几乎",
-            "almost no",
-            "rounds",
+            "almost no discount",
+            "几乎没有折扣",
+            "几乎不打折",
         ),
         "apply_discount(subtotal, 0.15)",
         context=True,
@@ -49,83 +50,93 @@ BUGS = (
             "off by one",
             "差一",
             "少一",
-            "少了一",
-            "漏掉",
             "one fewer",
             "one less",
-            "size - 1",
-            "size-1",
+            "one short",
+            "drops the last",
             "last line",
             "last item",
-            "最后一",
-            "边界",
-            "boundary",
+            "最后一行",
+            "最后一个",
             "9 lines",
             "9 行",
             "exclusive",
-            "不包含",
         ),
         "start + size - 1",
     ),
     Bug(
         "P3",
         "shop/inventory.py",
-        (24, 27),
-        "failure reported as success: True after OutOfStock",
+        (23, 26),
+        "failure reported as success: True after a short line",
         (
-            "return true",
             "returns true",
-            "return false",
-            "returns false",
+            "return true",
+            "should return false",
+            "should be false",
             "返回 true",
             "返回true",
-            "返回 false",
-            "返回false",
+            "应返回 false",
+            "应该返回 false",
             "返回值",
             "return value",
-            "success",
-            "成功",
+            "reports success",
+            "as success",
+            "报告成功",
+            "当成成功",
+            "以为成功",
+            "以为预留成功",
             "always true",
-            "总是",
-            "even when",
-            "即使",
-            "failure",
-            "失败",
         ),
-        "except OutOfStock:",
+        "if not self.take(line.sku, line.qty):",
     ),
     Bug(
         "P4",
-        "shop/api.py",
-        (21, 23),
-        "wrong scope: clearing one user's cart empties every user's",
+        "shop/inventory.py",
+        (12, 15),
+        "contract change: take() no longer raises; an untouched caller breaks",
         (
-            "all users",
-            "every user",
-            "all carts",
-            "every cart",
-            "other users",
-            "other user's",
-            "everyone",
-            "every customer",
-            "all customers",
-            "entire",
-            "whole",
-            "所有用户",
-            "所有人",
-            "其他用户",
-            "别的用户",
-            "所有购物车",
-            "全部",
-            "整个",
-            "pop(",
-            "del ",
+            "no longer raise",
+            "doesn't raise",
+            "does not raise",
+            "stopped raising",
+            "instead of raising",
+            "never raised",
+            "not raised",
+            "不再抛",
+            "不抛",
+            "不会抛",
+            "没有抛",
+            "caller",
+            "调用方",
+            "调用者",
+            "breaking change",
+            "contract",
+            "契约",
+            "backorder",
+            "缺货单",
         ),
-        "_CARTS.clear()",
+        "return False",
         context=True,
+        also=(("shop/orders.py", (7, 10)), ("shop/inventory.py", (4, 5))),
+    ),
+)
+# True flaws the fixture has that were not planted: neither caught nor a false positive.
+EXTRAS = (
+    Extra(
+        "x-float-total",
+        (("shop/api.py", (16, 18)),),
+        ("whole number", "float", "整数", "小数", "fraction", "not an int"),
+        "P1's effect where checkout uses the total: total_cents is no longer whole cents",
+    ),
+    Extra(
+        "x-thread",
+        (("shop/api.py", (4, 9)), ("shop/api.py", (12, 23))),
+        ("thread", "线程", "concurren", "并发", "lock", "锁", "atomic", "原子"),
+        "_CARTS is shared by every request with no lock",
     ),
 )
 
 
 def check(run: str, reply: str) -> dict:
-    return review_kit.check(run, reply, BUGS, fixture_t13.head())
+    return review_kit.check(run, reply, BUGS, fixture_t13.head(), EXTRAS)

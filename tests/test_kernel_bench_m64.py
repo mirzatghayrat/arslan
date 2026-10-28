@@ -75,6 +75,28 @@ def test_every_planted_bug_points_at_its_line_and_one_needs_context(task):
         assert 1 <= first <= last <= len(lines), b.id
         assert any(b.anchor in line for line in lines[first - 1 : last]), b.id
         assert b.file in fixture.PR and b.keywords, b.id  # the bug is in what the PR changed
+        for path, (a, z) in b.also:
+            assert 1 <= a <= z <= len(head[path].splitlines()), b.id
+    for e in check.EXTRAS:
+        assert all(1 <= a <= z <= len(head[path].splitlines()) for path, (a, z) in e.places), e.id
+
+
+@pytest.mark.parametrize(
+    "task,bug,caller,line",
+    [
+        ("T13", "P4", "shop/orders.py", "except OutOfStock:"),
+        ("T15", "S4", "Sources/Notes/EditTracker.swift", "opened != current"),
+    ],
+)
+def test_the_contract_change_bugs_break_a_caller_the_pr_does_not_touch(task, bug, caller, line):
+    """②Main's review: P4 and S4 were visible in the diff. Now each is a contract the PR changes and
+    a caller outside the PR that breaks; the caller is one of the bug's places."""
+    check, fixture = REVIEWS[task]
+    b = next(x for x in check.BUGS if x.id == bug)
+    assert b.context and caller in fixture.BASE and caller not in fixture.PR
+    ((a, z),) = [lines for path, lines in b.also if path == caller]
+    assert any(line in text for text in fixture.head()[caller].splitlines()[a - 1 : z])
+    assert fixture.head()[b.file] != fixture.BASE.get(b.file)  # the contract change is in the diff
 
 
 # Hand-written fake reviews. Each "all caught" one uses another layout the matcher must read.
@@ -83,8 +105,8 @@ ALL_CAUGHT = {
         "review.md",
         """shop/cart.py:29-29 | 单位错误 | apply_discount 要的是 0-100 的整数百分比，这里传了 0.15，会员几乎没有折扣
 shop/cart.py:35-35 | off-by-one | 切片结束是 start + size - 1，每页少一行
-shop/inventory.py:27-27 | 返回值错误 | 库存不足、回滚之后仍然 return True，调用方以为预留成功了
-shop/api.py:23-23 | 作用域错误 | clear_cart 调用 _CARTS.clear()，清空了所有用户的购物车
+shop/inventory.py:26-26 | 返回值错误 | 库存不足、回滚之后仍然 return True，调用方以为预留成功了
+shop/orders.py:7-10 | 契约变化 | take() 现在库存不足时返回 False、不再抛 OutOfStock；这个没改的调用方还在等异常，缺货也报 placed
 """,
     ),
     "T14": (
@@ -105,9 +127,9 @@ shop/api.py:23-23 | 作用域错误 | clear_cart 调用 _CARTS.clear()，清空�
         """| 文件 | 行 | 类型 | 说明 |
 |---|---|---|---|
 | Sources/Notes/NotesModel.swift | 9 | 页码错误 | 服务器的页码从 1 开始（Paging.swift），第一页却传了 0 |
-| NotesModel.swift | 38 | 崩溃 | Int(text)! 强制解包，用户输入非数字就崩溃 |
+| NotesModel.swift | 39 | 崩溃 | Int(text)! 强制解包，用户输入非数字就崩溃 |
 | NotesModel.swift | 25-27 | 循环引用 | 重复的 Timer 强引用 self，self 又持有 timer，永远不会释放 |
-| NotesModel.swift | 32 | 索引错误 | index 是 visible（搜索过滤后的列表）里的，却拿来删 notes，会删错笔记 |
+| Sources/Notes/Note.swift | 13-14 | 判等改变 | == 只比较 id；EditTracker.swift 用 != 判断有没有改动，改了标题和正文也检测不到 |
 """,
     ),
 }
@@ -379,7 +401,7 @@ def test_the_new_prompts_name_their_folders():
         prompts[task].format(dir="/r")  # no stray braces
 
 
-def test_t16_and_t17_are_unsupported_for_arslan_until_sub_and_for_entrants_without_a_tool_record(
+def test_t16_is_unsupported_for_arslan_until_sub_and_both_for_entrants_without_a_tool_record(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(runner, "ROOT", tmp_path)
@@ -387,14 +409,39 @@ def test_t16_and_t17_are_unsupported_for_arslan_until_sub_and_for_entrants_witho
         runner, "command", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run"))
     )
     prompts = json.loads((runner.HERE / "prompts.json").read_text())
-    for task in ("T16", "T17"):
-        for who in ("arslan", "arslan-legacy", "hermes", "goose"):
-            rec = runner.run_one(task, who, 1, prompts, "sb")
-            assert (
-                rec["check"]["unsupported"] and not rec["passed"] and rec["usage"]["usd_peak"] == 0
-            ), (task, who)
+    for task, who in [("T16", w) for w in ("arslan", "arslan-legacy", "hermes", "goose")] + [
+        ("T17", "hermes"),
+        ("T17", "goose"),
+    ]:
+        rec = runner.run_one(task, who, 1, prompts, "sb")
+        assert (
+            rec["check"]["unsupported"] and not rec["passed"] and rec["usage"]["usd_peak"] == 0
+        ), (task, who)
     assert "SUB" in runner.run_one("T16", "arslan", 2, prompts, "sb")["check"]["note"]
     assert "tool-call record" in runner.run_one("T16", "hermes", 2, prompts, "sb")["check"]["note"]
+    assert all("T17" not in runner.UNSUPPORTED[w] for w in ("arslan", "arslan-legacy"))
+
+
+def test_t17_runs_for_arslan_and_delegate_work_is_a_hand_off(tmp_path, monkeypatch):
+    """②Main's review, point 5: delegate_work exists before SUB, so T17 has an Arslan baseline."""
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    for tools, passed in (([], True), (["delegate_work"], False)):
+        frames = "\n".join(
+            json.dumps({"type": "tool_call", "tool": t, "args_summary": "{}"})
+            for t in ["read_file", *tools]
+        )
+        script = (
+            "import json, pathlib; run = pathlib.Path.cwd(); "
+            "total = sum(float(x) for x in (run / 'prices.txt').read_text().split()); "
+            "(run / 'answer.txt').write_text(f'{total:.2f}'); "
+            f"pathlib.Path(str(run) + '.frames.jsonl').write_text({json.dumps(frames)}); "
+            "print(json.dumps({'end': 'done', 'final': 'ok'}))"
+        )
+        monkeypatch.setattr(
+            runner, "command", lambda *a, s=script, **k: ([sys.executable, "-c", s], {})
+        )
+        rec = runner.run_one("T17", "arslan", 1, {"T17": "add {dir}"}, "sb")
+        assert rec["passed"] is passed and rec["check"]["handoffs"] == len(tools), rec["check"]
 
 
 def test_run_one_scores_a_review_and_a_claude_code_one_step_run(tmp_path, monkeypatch):
@@ -533,3 +580,111 @@ def test_the_report_sums_caught_planted_and_false_positives_for_review_tasks_and
         and "T9" not in text
     )
     assert "| — | — |" in report.render(report.summarise([recs[-1]]))
+
+
+# ── ②Main's review of #436: probes that scored a wrong answer as a pass ───────
+
+PROBE_A = (
+    "src/limiter.ts:26 | 单位 | `resetAt` adds `windowMs` (milliseconds) to `nowSeconds()` (seconds),"
+    " so `now >= bucket.resetAt` waits 1000 times too long\n"
+    "src/settings.ts:15-19 | async | the async forEach callback is not awaited,"
+    " so saveAll resolves before the writes\n"
+    "src/settings.ts:9 | shared state | Object.assign mutates the shared DEFAULTS object\n"
+)
+PROBE_B_EXTRA = "shop/api.py:18 | 金额 | the member total is no longer a whole number of cents\n"
+
+
+def test_probe_a_a_unit_finding_quoting_a_comparison_does_not_also_catch_the_off_by_one(tmp_path):
+    res = _review(tmp_path, "T14", "review.md", PROBE_A)
+    assert (res["caught"], res["planted"], res["missed"], res["score"]) == (3, 4, ["T2"], 2), res
+
+
+def test_probe_b_a_generic_word_on_another_line_does_not_catch_a_bug_it_never_names(tmp_path):
+    lines = ALL_CAUGHT["T13"][1].splitlines(keepends=True)
+    res = _review(tmp_path, "T13", "review.md", "".join(lines[:3]) + PROBE_B_EXTRA)
+    assert (res["caught"], res["planted"], res["missed"], res["score"]) == (3, 4, ["P4"], 2), res
+
+
+def test_probe_d_t16_a_wrong_top_product_fails_even_when_the_file_lists_every_product(tmp_path):
+    params = check_t16.fixture(str(tmp_path))
+    (tmp_path / "out").mkdir()
+    table = "| product | qty |\n|---|---|\n" + "".join(f"| {p} | 1 |\n" for p in check_t16.PRODUCTS)
+    summary = ""
+    for region, a in params["answers"].items():
+        wrong = next(p for p in check_t16.PRODUCTS if p != a["top"])
+        claim = f"总销售额：{a['total']}\n销量最高：{wrong}\n\n{table}"
+        (tmp_path / "out" / f"{region}.md").write_text(f"# {region}\n{claim}")
+        summary += f"## {region}\n{claim}\n"
+    (tmp_path / "summary.md").write_text(summary)
+    res = check_t16.check(str(tmp_path), params, ["Task"] * 3, "claude-code")
+    assert res["score"] < 3 and res["parts_right"] == [] and res["summary_covers"] == [], res
+
+
+def test_t16_the_top_product_comes_from_the_line_that_claims_it():
+    assert check_t16.claims_top("| fan | 3 |\n| lamp | 9 |\n销量最高：lamp", "lamp")
+    assert not check_t16.claims_top("| fan | 3 |\n| lamp | 9 |\n销量最高：fan", "lamp")
+    assert not check_t16.claims_top("lamp 卖得多\n| lamp | 9 |", "lamp")  # no line claims it
+    assert not check_t16.claims_top("top: lamp\nbest seller: fan", "lamp")  # two claims disagree
+    assert check_t16.claims_top("top product: lamp (most units)\nfans of the shop", "lamp")
+
+
+def _bugs_two_overlapping():
+    from scripts.kernel_bench.review_kit import Bug
+
+    return (
+        Bug("A", "x.py", (10, 12), "unit", ("unit",), "a"),
+        Bug("B", "x.py", (14, 14), "off by one", ("off by one",), "b"),
+    )
+
+
+def test_a_finding_credits_at_most_one_bug_the_nearest_by_line():
+    bugs = _bugs_two_overlapping()
+    both = "x.py:12 | wrong unit, and also off by one\n"
+    assert review_kit.score(both, bugs, ["x.py"])["caught_ids"] == [
+        "A"
+    ]  # 12 is in A, B only by tolerance
+    far = "x.py:14 | wrong unit\n"  # inside B: A is not credited through the tolerance
+    res = review_kit.score(far, bugs, ["x.py"])
+    assert res["caught_ids"] == [] and res["located"] == 1
+    assert res["findings"] == [
+        {"files": ["x.py"], "lines": "14-14", "verdict": "located", "id": "B"}
+    ]
+
+
+def test_keywords_in_inline_code_or_a_fenced_block_do_not_name_a_type():
+    bugs = _bugs_two_overlapping()
+    inline = "x.py:14 | see `# off by one` here\n"
+    assert review_kit.score(inline, bugs, ["x.py"])["caught_ids"] == []
+    fenced = "x.py:14 has a problem:\n```\n# off by one\n```\n"
+    assert review_kit.score(fenced, bugs, ["x.py"])["caught_ids"] == []
+    prose = "x.py:14 is off by one: `count > limit`\n"
+    assert review_kit.score(prose, bugs, ["x.py"])["caught_ids"] == ["B"]
+    in_fence_cite = (
+        "```\nx.py:14\n```\nThat line is off by one.\n"  # the place may be quoted, the type not
+    )
+    assert review_kit.score(in_fence_cite, bugs, ["x.py"])["caught_ids"] == ["B"]
+
+
+def test_an_ascii_keyword_does_not_match_inside_an_identifier():
+    assert not review_kit.names("nowseconds is called here", ("seconds",))
+    assert review_kit.names("it is in seconds", ("seconds",))
+    assert review_kit.names("this mutates defaults", ("mutat",))  # a keyword may be a stem
+
+
+PROBE_C_EXTRAS = (
+    "src/index.ts:1-7 | ESM | relative imports have no .js extension, Node's ESM resolution fails under type: module\n"
+    "src/limiter.ts:17 | memory | buckets are never pruned, the map grows without bound\n"
+)
+
+
+def test_probe_c_true_flaws_that_were_not_planted_cost_nothing(tmp_path):
+    res = _review(tmp_path / "c", "T14", "reply", ALL_CAUGHT["T14"][1] + PROBE_C_EXTRAS)
+    assert (res["caught"], res["false_positives"], res["extra"], res["score"]) == (4, 0, 2, 3), res
+    swift = (
+        ALL_CAUGHT["T15"][1]
+        + "| NotesModel.swift | 45 | 错误处理 | fetch 失败时直接 return，错误被静默忽略 |\n"
+    )
+    res = _review(tmp_path / "s", "T15", "reply", swift)
+    assert (res["caught"], res["false_positives"], res["extra"]) == (4, 0, 1), res
+    made_up = "src/index.ts:3 | 类型 | exports a type that does not exist\n"  # near an extra, not its kind
+    assert _review(tmp_path / "m", "T14", "reply", made_up)["false_positives"] == 1

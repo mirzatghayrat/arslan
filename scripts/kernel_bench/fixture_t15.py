@@ -44,9 +44,34 @@ public protocol NotesAPI: AnyObject {
     func fetch(_ request: PageRequest, completion: @escaping (Result<[Note], Error>) -> Void)
 }
 """,
+    "Sources/Notes/EditTracker.swift": """/// Tells the editor whether to ask "Save changes?" when the user leaves a note.
+public enum EditTracker {
+    /// True when the note was changed since it was opened.
+    public static func hasUnsavedChanges(opened: Note, current: Note) -> Bool {
+        opened != current
+    }
+}
+""",
 }
 
 PR = {
+    "Sources/Notes/Note.swift": """public struct Note: Equatable {
+    public let id: Int
+    public var title: String
+    public var body: String
+
+    public init(id: Int, title: String, body: String) {
+        self.id = id
+        self.title = title
+        self.body = body
+    }
+
+    /// Two notes are the same row when they have the same id, so the list keeps its rows across edits.
+    public static func == (lhs: Note, rhs: Note) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+""",
     "Sources/Notes/NotesModel.swift": """import Foundation
 
 /// Backs the notes list screen.
@@ -78,7 +103,8 @@ public final class NotesModel {
 
     /// Delete the note at `index` in the list the user sees.
     public func delete(at index: Int) {
-        notes.remove(at: index)
+        let id = visible[index].id
+        notes.removeAll { $0.id == id }
         onChange?()
     }
 
@@ -103,6 +129,7 @@ MESSAGE = """Add NotesModel for the notes list
 
 - Loads the first page and refreshes every minute.
 - Search, delete and "go to note".
+- Note equality is by id, so list rows survive an edit.
 """
 
 

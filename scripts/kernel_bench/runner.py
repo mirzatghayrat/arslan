@@ -94,14 +94,15 @@ FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixtu
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
 # page the user logged into; it has no phone/messaging channel.
-# T16/T17 (split, delegate, summarise; and its one-step other side): Arslan has no sub-session tool
-# until the SUB card's tool lands. DELETE-BY: v0.1.64 when SUB3 merges (take T16 and T17 out of both
-# Arslan entries, and check tool_record.SUB_SESSION has the tool's real name).
-UNSUPPORTED = {"arslan": {"T4", "T4x", "T6", "T16", "T17"}, "arslan-legacy": {"T4", "T4x", "T6", "T16", "T17"},
+# T16 (split, delegate, summarise): Arslan has no sub-session tool until the SUB card's tool lands.
+# DELETE-BY: v0.1.64 when SUB3 merges (take T16 out of both Arslan entries, and check
+# tool_record.SUB_SESSION has the tool's real name). T17, its one-step other side, runs for Arslan
+# now: delegate_work exists today and counts as a hand-off, so it has a baseline before SUB.
+UNSUPPORTED = {"arslan": {"T4", "T4x", "T6", "T16"}, "arslan-legacy": {"T4", "T4x", "T6", "T16"},
                # No browser of its own and no phone channel; no Hands (T12 is a Hands task).
                "claude-code": {"T4", "T4x", "T6", "T12"},
                "hermes": {"T12"}}
-UNSUPPORTED_WHY = {"T16": "no sub-session tool yet (SUB card)", "T17": "no sub-session tool yet (SUB card)"}
+UNSUPPORTED_WHY = {"T16": "no sub-session tool yet (SUB card)"}
 # Tasks scored from the run's tool-call record, and the entrants whose record the bench reads
 # (tool_record.py); the others are recorded as unsupported for these tasks.
 NEEDS_TOOL_RECORD = {"T16", "T17"}

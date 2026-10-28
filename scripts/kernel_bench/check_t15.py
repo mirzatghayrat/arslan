@@ -2,14 +2,16 @@
 planted bugs.
 
 How a review is read and scored: review_kit (the matching rule is written down there). Two of
-the four need context outside the changed lines: S1 (Paging.swift: the server numbers pages
-from 1) and S4 (the index the list passes is into `visible`, not `notes`).
+the four need code the PR does not change: S1 (Paging.swift: the server numbers pages from 1)
+and S4 (the PR changes Note's equality to compare ids only, and EditTracker, which the PR does
+not touch, compares notes to tell whether the user changed one).
+Keywords name the type in prose; code tokens and generic words are left out (②Main's review).
 """
 
 from __future__ import annotations
 
 from scripts.kernel_bench import fixture_t15, review_kit
-from scripts.kernel_bench.review_kit import Bug
+from scripts.kernel_bench.review_kit import Bug, Extra
 
 FILE = "Sources/Notes/NotesModel.swift"
 BUGS = (
@@ -24,12 +26,10 @@ BUGS = (
             "one-based",
             "starts at 1",
             "start at 1",
-            "page 1",
-            "page: 1",
             "从 1",
             "第 1 页",
             "第一页",
-            "0 页",
+            "第 0 页",
             "page 0",
             "页码",
             "off-by-one",
@@ -43,7 +43,7 @@ BUGS = (
     Bug(
         "S2",
         FILE,
-        (38, 38),
+        (39, 39),
         "crash: force-unwrapping what the user typed",
         (
             "force unwrap",
@@ -53,14 +53,11 @@ BUGS = (
             "crash",
             "崩溃",
             "闪退",
-            "nil",
             "trap",
             "invalid input",
             "non-numeric",
             "非数字",
             "fatal",
-            "guard let",
-            "if let",
         ),
         "Int(text)!",
     ),
@@ -75,8 +72,6 @@ BUGS = (
             "strong reference",
             "strongly",
             "weak self",
-            "[weak",
-            "unowned",
             "leak",
             "循环引用",
             "强引用",
@@ -87,36 +82,51 @@ BUGS = (
             "never deallocated",
             "不会释放",
             "无法释放",
-            "deinit",
         ),
         "Timer.scheduledTimer",
     ),
     Bug(
         "S4",
-        FILE,
-        (31, 32),
-        "wrong index: removes from notes by an index into visible",
+        "Sources/Notes/Note.swift",
+        (12, 14),
+        "contract change: == compares ids only; an untouched caller breaks",
         (
-            "visible",
-            "filter",
-            "过滤",
-            "筛选",
-            "search",
-            "搜索",
-            "wrong note",
-            "另一条",
-            "别的笔记",
-            "错的",
-            "index into",
-            "different array",
-            "out of range",
-            "越界",
+            "equality",
+            "相等",
+            "判等",
+            "only compar",
+            "只比较",
+            "unsaved",
+            "未保存",
+            "没保存",
+            "caller",
+            "调用方",
+            "调用者",
+            "contract",
+            "契约",
+            "edits are lost",
+            "lose edits",
+            "lost edits",
+            "改动丢失",
+            "丢失修改",
+            "never detects",
+            "检测不到",
         ),
-        "notes.remove(at: index)",
+        "lhs.id == rhs.id",
         context=True,
+        also=(("Sources/Notes/EditTracker.swift", (4, 5)),),
+    ),
+)
+# True flaws the fixture has that were not planted: neither caught nor a false positive.
+EXTRAS = (
+    Extra(
+        "x-fetch-error",
+        ((FILE, (43, 48)),),
+        ("error", "failure", "失败", "错误", "ignored", "silently", "静默", "忽略", "吞"),
+        "load drops a fetch failure without telling anyone",
     ),
 )
 
 
 def check(run: str, reply: str) -> dict:
-    return review_kit.check(run, reply, BUGS, fixture_t15.head())
+    return review_kit.check(run, reply, BUGS, fixture_t15.head(), EXTRAS)
