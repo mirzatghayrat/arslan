@@ -2,12 +2,14 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-28, ~14:45 UTC.
+**Updated:** 2026-10-28, ~15:30 UTC.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #460 | INB1: learned practices take effect directly; what is not in effect says why (reviewed by another Claude session at effort=max; merged without Astra, see the Codex rule below) | `55168fad` (main CI 40710426557 queued) |
+| #444 | Classifier pass lines (option 2 + the cloud audit's six changes); the audit's answer on outside content | `75e40e6f` (its main CI 40710072868 was cancelled when #460 merged; 40710426557 covers both) |
 | #446 | LANG1: CI check for Chinese added outside the exceptions; bundled skills in English | `96bdf096` (main CI 40707221804 success) |
 | #445 | C5b: delete `__version__`, the unused click/rich deps, and edit_file's old argument names | `d6cef2b0` (main CI 40705243770 success) |
 | #448 | C7c-1: remove the dead `RouterDecision` model; C7c's plan as its card | `3f71d029` (main CI 40684400151 success, covering #451 too) |
@@ -26,19 +28,21 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446~~ (merged) → #444 → #454 → #428. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
+The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444~~ (merged) → #454 → #428.
 
-- #443 (S64-0b): ②Main's OK at `390aa048`, CI green. Waits for the user's Codex Astra run.
-- #460 (INB1): recheck says F1 and F3 are resolved; CI 40687679309 on `7c93a854` success. Waits for the user's Codex Astra run.
-- #462 (BR1): not ready. ①iOS found a gap after testing build 25: once Allow is clicked the Bridge drops to the 10 s pace before the new phone's first hello, adding up to 10 s to every pairing. ⑥Helper keeps the 2 s pace for 60 s after a code is answered; ready again once that head is green.
-- #464 (code rules, sessions.md §12, card EXC1): docs only; ③Hands reviewing.
+**Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan. Each has an OK from another session and green CI on its head (see each PR). Also ready: #453 (M64 hand-check fix), #447 (SBX card; its seven questions are for the user).
+
+- #443 (S64-0b): OKs from ②Main (effort=max) and ③Hands at `390aa048`, CI green. No Astra needed under the new rule: ready.
+- #462 (BR1): ①iOS found a gap after testing build 25 (once Allow is clicked the Bridge dropped to the 10 s pace before the new phone's first hello). ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. Waits for ①iOS's recheck.
+- #464 (code rules, sessions.md §12, card EXC1): docs only; ③Hands OK at `057fe7a6` (posted on the PR), plus its optional wording at `b7059ff3`. Best merged after #447 (lane table moves SBX to ③Hands).
+- #465 (Codex only when a Claude review is blocked): docs only; needs another session's review.
 - #456 (F5b-2): ③Hands' review; ②Main's confirmation of its commit and CI pending.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
-| ②Main | INB1 #460 (then F2 + F4 follow-ups); after INB2 merges, learned practices use the per-conversation outside-content check too (user, 2026-10-28: a detour or machine quirk takes effect only when `runs.read_outside` says the whole conversation is clean, like "about you"; user corrections unchanged; until then the current-turn mark plus S64-0's carried marks), INB1 UI (waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
+| ②Main | INB1 follow-ups F2 + F4 (rebase on #460); after INB2 merges, learned practices use the per-conversation outside-content check too (user, 2026-10-28: a detour or machine quirk takes effect only when `runs.read_outside` says the whole conversation is clean, like "about you"; user corrections unchanged; until then the current-turn mark plus S64-0's carried marks), INB1 UI (waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
 | ③Hands | PRJ0 (deletions; table drop 0076), CAP1b #457 review, #449 security review |
 | ⑤CAP | CAP1b #457 (0074), CAP1c (0075, after #457), CAP2a (at max) |
 | ⑥Helper | STY #452 (draft; gated on the read test and a bench "after" run), SIDE after SUB2 |
