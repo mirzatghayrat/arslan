@@ -40,6 +40,8 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #462 (BR1): ①iOS found a gap after testing build 25 (once Allow was clicked the Bridge dropped to the 10 s pace before the new phone's first hello); ⑥Helper's fix at `cd60c056` keeps the 2 s pace for 60 s after a code is answered; CI 40708948579 success. ①iOS rechecked it: OK (read the diff, relied on that CI run; no frame change). ①iOS does not post on PRs; its verdict is recorded here.
 - #456 (F5b-2): ②Main confirmed at `54805cfd`, CI 40677484593 success. After it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, with the Cua lines already planned after #428.
 - #443 (S64-0b): written by ③Hands; independent review by ②Main with its effort=max reviewer, OK at `390aa048`. Main merged in at `d2ab87e5`; CI 40712453311 success. No Astra under the new rule.
+- #453 (M64 hand-check fix): ⑥Helper OK at `a3a127f7` after dropping the generic T2 keywords; the rescore with those checks gives identical per-run verdicts (the table holds).
+- #458 (this page, SIDE card): ⑥Helper OK at `4cd3a0c0` (facts checked against GitHub); later commits only update this page.
 - #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
 
 **Waiting for CI or a re-OK:**
@@ -47,9 +49,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #464 (code rules, sessions.md §12, card EXC1): ③Hands OK at `057fe7a6` on the PR; `b7059ff3` is its own wording; ③Hands posts that the OK covers it. Best merged after #447 (lane table moves SBX to ③Hands).
 - #465 (Codex only when a Claude review is blocked): ③Hands OK at `7c93e2ec`; one pointer added at `e075d479` (no recheck needed, per ③Hands).
 - #447 (SBX card): the user answered its seven questions (2026-10-28, ~15:20 UTC), written into the card at `18c88202`; ③Hands posted that the decisions section matches. `cac07791` adds one line from ③Hands' SBX-1 check (SBX-4 sorts `computation_profile`'s set-order lines). Decisions: network N-a (a minimal local proxy, no site list) if SBX-M's breakage is acceptable, otherwise the numbers go back to the user before N-b; manually added MCP servers stay unsandboxed and the form says so; reads stay open minus the protected and closed folders; keep today's card when the sandbox cannot start; "ask only when risky" stays off until S2a-3 and S5a; the re-run share is only recorded; `ssh_exec` onto the builder in SBX-1.
-- #453 (M64 hand-check fix): ⑥Helper asked to drop the generic T2 keywords; done at `a3a127f7` (plus a test that wrong findings with only a generic word don't catch T2; mutants checked); needs ⑥Helper's re-OK.
-- #458 (this page, SIDE card): ⑥Helper checked the facts against GitHub; its fixes are in this commit; needs its re-OK.
-- #466 (INB1 follow-ups F2, F4): an independent effort=max Claude review is running.
+- #466 (INB1 follow-ups F2, F4): independent effort=max review done: **merge after fixes**. Medium: with F2, stopped rows can take `_nearest`'s two slots and push an active rival out of the conflict check, so a conflicting practice can take effect directly (INB1 case 5). Low: a test gap (a merge must not rewrite a stopped row's words), the sheet does not reload on 409, and an optional conditional update. It also recommends making `expected_updated_at` required for `status=active`. Sent to ②Main; the classifier blocked posting it on the PR, so posting is the user's call.
 
 ## In progress
 
