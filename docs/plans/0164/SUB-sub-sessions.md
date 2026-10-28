@@ -61,6 +61,25 @@
 3. **README 没提的方向：标记往下也会丢。** 原因是每次 `run_native` 都用 `track_turn()` 从 `{"seen": False}` 开始（`untrusted.py:92-93`），不在 Context 上：就算把总指挥的 Context 传下去，子会话的回合照样从「干净」开始。要给 `track_turn` 一个起始值（S64-0 加），SUB3、SUB4 用它。
 4. **「像后台任务推回结果那样」不能照抄：** 后台任务的结果是不加框的 Arslan 消息（`background_jobs.py:362-372`）。子会话的汇报照这样推回，就和 `delegate_work` 是同一个洞。
 
+## Projects: what the user agreed on 2026-10-28 (relayed by ④参谋)
+
+Added after this card was drafted. The sub-session base in this card (v0.1.64) is what these build on; the project page, checklist and progress board are v0.1.65. ④参谋's basis: a read-only look at the user's database (counts only), main `502012f5`, and first-hand docs of Claude Projects (2026-09 redesign), Claude Code sub-agents and agent teams, ChatGPT Projects, Codex goals and sub-agents, vibe-kanban, cline/kanban, Nimbalyst and Manus Projects.
+
+- **Why change:** the project feature is detailed but asks the user to manage it. On the user's machine there is one project; every gate was pushed through in ten seconds (trying the feature); all 35 checkpoints are still `todo`; 5 of 342 tasks belong to a project; `project_habits` has 0 rows. This is the opposite of "talk only to the coordinator".
+- **The seven points:**
+  1. **One project = one goal + one coordinator.** The user talks only to the coordinator. At the start, the coordinator and the user write "what done looks like" as a checklist; sub-sessions start in order (for a video: outline first, then cover and edit in parallel).
+  2. **A checklist item is ticked only when** the coordinator has accepted the sub-session's report **and** its acceptance sheet and evidence are complete (Inbox item 8's three-column sheet). A sub-session saying "done" does not tick anything. Progress = ticked items / all items. No mainstream product ties checkpoints to a progress bar, so a tick always needs the coordinator or the user.
+  3. **Shared inside a project:** project rules (that folder's rules, L11); project memory (by default it can use "about you"; things about the project are stored only in the project; one project can switch this off and be fully isolated); a library (the project folder, inputs and outputs); one spending cap (today's `shared_budget_id` is a shared budget id, not a cap: the cap has to be built); permissions only inherited, never widened.
+  4. **Reporting default:** come to the user only when a decision is needed, plus one line per finished item. Changeable per project.
+  5. **Delete:** the four-column board, per-type template gates, "learn how you advance gates" (shadow / auto, `project_habits`), rhythm stats, stall reminders. The retro becomes the coordinator's final report. Deleted under U2; each migration is its own PR.
+  6. **The board becomes a read-only progress board.** One row per project: goal ("done = …"); a segmented bar, one segment per checklist item, four colours (done and accepted / in progress / waiting for you / not started), hover shows the item; one plain line "who is doing what now"; a status tag (needs you N / working / quiet N days), which is also the sort order (waiting first, finished at the bottom); a 7-day activity strip; spent / cap; last update. No columns, no dragging, no gamification. A row opens that project's coordinator conversation. Same data as the sidebar status dots and the progress page (the progress page is a timeline of all conversations; the board is one row per project).
+  7. **Project page:** goal and checklist with the bar at the top; the tree of sub-sessions in the middle, one "doing what" line each, with a stop button; the progress timeline filtered to this project at the bottom.
+- **Schedule (⓪Plan):**
+  - **v0.1.64 (this card):** the sub-session base only. Nothing from the seven points is built here, but SUB2's data must not block them: the parent link and per-project settings (memory isolation, cap) need a place to live.
+  - **v0.1.64, card PRJ0 (③Hands, U2, deletions only):** remove "learn how you advance gates" (shadow / auto, `server/services/project_habits.py` and its table), rhythm stats and stall reminders. Nothing replaces these and nobody uses them (`project_habits` has 0 rows), so §11 is satisfied by deleting. The table drop is its own PR.
+  - **v0.1.65:** checklist and tick data, project page, progress-board data; in the same version delete the four-column board (`web/src/components/projects/ProjectsBoard.tsx`), the template gates (`server/services/project_templates.py`) and turn the retro (`project_retro.py`) into the coordinator's final report (§11 rule 1: replace means delete). `DELETE-BY: v0.1.65` on the board and gates.
+  - **Look:** the interface version. **Before any UI code, a clickable demo for the user to approve** (user, 2026-10-28; also confirms README §2 item 7). ④参谋's sketch only sets the direction.
+
 ## 改哪些文件
 
 按 PR 列。产品代码的行数是 ⓪Plan 的估计，不含测试和翻译。

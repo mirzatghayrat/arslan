@@ -118,7 +118,8 @@ New text in this plan is in English from 2026-10-28 (`docs/sessions.md` §6).
 |---|---|---|---|---|
 | **MEM1** | Memory write hygiene: merge by meaning, write in the user's language and never guess gender, keep one-off task state out of "about you" | ②Main | must | In the INB card, after INB2. From the memory plan (`docs/plans/0162/README.md` §8, item A). |
 | **CAP8b** | Import memories from ChatGPT / Claude (paste, list, confirm) | CAP session | must | In the CAP card, after MEM1. Item 17. |
-| **LANG1** | English on GitHub, enforced: a CI check that fails when Chinese appears in a file that should not have it (exceptions as in `docs/sessions.md` §6 after #440: quoted Chinese inside English, data that must match Chinese input, translation files and tables, tests/evals/fixtures with Chinese input, `docs-site`, iOS UI copy until the user decides); translate the two bundled skills `arslan/skills/bundled/designed-html-report/SKILL.md` and `skill-creator/SKILL.md` to English | ②Main | must | Items 13 and 14. The check must not fail on files written before 2026-10-28: it runs on the lines a PR adds (diff-based), not on the whole tree. Commit messages and PR text are not checked; they stay each session's job (①iOS review of #440). Not a new subsystem; can start as soon as this PR merges. |
+| **PRJ0** | Projects, deletions only: "learn how you advance gates" (shadow / auto, `project_habits` and its table), rhythm stats, stall reminders | ③Hands | must | From the user's Projects decisions (SUB card, "Projects"). U2; the table drop is its own PR. Board, template gates and retro go in v0.1.65 together with their replacement. |
+| **LANG1** | English on GitHub, enforced: a CI check that fails when Chinese appears in a file that should not have it (exceptions as in `docs/sessions.md` §6 after #440: quoted Chinese inside English, data that must match Chinese input, translation files and tables, tests/evals/fixtures with Chinese input, `docs-site`, iOS UI copy until the user decides); translate the two bundled skills `arslan/skills/bundled/designed-html-report/SKILL.md` and `skill-creator/SKILL.md` to English | ②Main | must | Items 13 and 14. The check must not fail on files written before 2026-10-28: it runs on the lines a PR adds (diff-based), not on the whole tree. Commit messages and PR text are not checked; they stay each session's job (①iOS review of #440). It needs its own escape hatch (an allowlist file or a marker comment) for a case none of the exceptions name (①iOS). Not a new subsystem; can start as soon as this PR merges. |
 
 The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as files (v0.1.65; ⓪Plan puts the "used N memories" line and "what Arslan learned this week" there, not in the interface version); item 18 (WeChat, no database decryption) after v0.1.65; item 19 (proactive proposals in the conversation or progress page, not the Inbox) after v0.1.65.
 
@@ -168,7 +169,7 @@ L7：随时可做，跑分不退步才合
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
 | ②Main | SBX、INB（含 MEM1）、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
 | 新开一个会话（用户 10-28 定，为了并行） | CAP |
-| ③Hands | **S64-0（effort=max 写）**；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
+| ③Hands | **S64-0（effort=max 写）**；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |
 | Codex（外部工具，不是会话） | 安全面和大 PR 的独立审查（§8 安全审查路径） |
 
