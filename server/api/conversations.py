@@ -155,7 +155,7 @@ async def delete_conversation(
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
-    Deliberately KEEPS `runs` + `router_decisions` + `usage_ledger` (audit/diagnosis
+    Deliberately KEEPS `runs` + `usage_ledger` (audit/diagnosis
     and cost-accounting data must survive conversation deletion, mirroring how audit
     rows survive spawn deletion; so does the permission ledger, `approval_events`, which
     keeps its own 90 days). The conversation's permission grants go with it: they were

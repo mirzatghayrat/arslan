@@ -8,8 +8,7 @@ What it does (real process, no network LLM, no touching your real data/):
      throwaway ARSLAN_DATA_DIR, with the LLM adapter mocked via scripts/smoke_app.py
   2. hits GET /api/v1/brain/graph until ready  → proves boot + migrations + REST
   3. opens ws://…/ws/arslan/main and sends one user message
-  4. asserts the three main-link invariants:
-       [routing]  a router_decisions row was persisted for the turn
+  4. asserts the two main-link invariants (v0.1.64 C7c: the router's audit table is gone):
        [reply]    stream_start → non-empty stream_chunk(s) → stream_end came back
        [persist]  arslan_messages holds the user row + an assistant/spawn_summary row
   5. (S4.1-C, permanent) asserts the inbound-MCP-server invariant against the SAME
@@ -103,13 +102,12 @@ async def ws_turn(port: int) -> dict:
 def db_state(db_path: Path) -> dict:
     con = sqlite3.connect(db_path)
     try:
-        decisions = con.execute("SELECT COUNT(*) FROM router_decisions").fetchone()[0]
         rows = con.execute(
             "SELECT role, COALESCE(display_content, content) FROM arslan_messages ORDER BY id"
         ).fetchall()
     finally:
         con.close()
-    return {"router_decisions": decisions, "messages": rows}
+    return {"messages": rows}
 
 
 MCP_INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -219,8 +217,6 @@ def main() -> int:
                 f"reply={reply[:60]!r} errors={turn['errors'] or '—'} other={turn['other']}"))
 
             db = db_state(data_dir / "arslan.db")
-            checks.append(("routing: router_decisions row persisted", db["router_decisions"] >= 1,
-                           f"rows={db['router_decisions']}"))
             roles = [r for r, _ in db["messages"]]
             has_user = "user" in roles
             # answer turns persist role="arslan"; routed turns persist "spawn_summary"
