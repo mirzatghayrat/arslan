@@ -58,8 +58,7 @@ The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → 
 - #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
 
 **Waiting for CI or a re-OK:**
-- #464 (code rules, sessions.md §12, card EXC1): ③Hands OK at `057fe7a6` on the PR; `b7059ff3` is its own wording; ③Hands posts that the OK covers it. Best merged after #447 (lane table moves SBX to ③Hands).
-- #447 (SBX card): the user answered its seven questions (2026-10-28, ~15:20 UTC), written into the card at `18c88202`; ③Hands posted that the decisions section matches. `cac07791` adds one line from ③Hands' SBX-1 check (SBX-4 sorts `computation_profile`'s set-order lines). Decisions: network N-a (a minimal local proxy, no site list) if SBX-M's breakage is acceptable, otherwise the numbers go back to the user before N-b; manually added MCP servers stay unsandboxed and the form says so; reads stay open minus the protected and closed folders; keep today's card when the sandbox cannot start; "ask only when risky" stays off until S2a-3 and S5a; the re-run share is only recorded; `ssh_exec` onto the builder in SBX-1.
+- #464 (code rules, sessions.md §12, card EXC1): OK at the current head `3e4e6fb4` (③Hands at `b7059ff3`, ⑥Helper re-OK after the main merge); all checks green, so the user merges. Best after #447.
 - #466 (INB1 follow-ups F2, F4): the same effort=max reviewer rechecked twice; at `759a6bb2` (the scan-window fix and the F2 test nit added): **merge** once CI 40723524451's macos job is green (the other four passed). The conditional UPDATE (finding 4) is the user's call. Learned-practice write: the user merges.
 
 ## In progress
