@@ -177,16 +177,39 @@ async def test_the_card_shows_what_is_stored_without_hidden_characters():
 
 
 async def test_blank_padding_cannot_hide_the_end_of_the_text():
-    """Review F5: the box shows 190 px. Runs of blank lines, trailing spaces and long runs of spaces are tidied
-    before the card, so the last line stays in reach; the skill keeps exactly the tidied text."""
+    """Review F5 and recheck R1: the box shows 190 px. Blank lines, trailing white space, long runs inside a
+    line (any white space, not only spaces) and the line separators are tidied before the card, so the last
+    line stays in reach; the card's line count is read_skill's; the skill keeps exactly the tidied text."""
     seen = []
-    padded = BODY + "\n" * 60 + "Then send it." + " " * 400 + "To the team.   \n" + "\t" * 30 + "Done.\n\n\n"
-    await _propose({"body": padded}, ask=_window(seen=seen))
+    padded = (BODY + "\n" * 60 + "Then send it." + " " * 400 + "to the team.   \n" + " " * 100 + "Done.\n"
+              + "Ideographic" + "\u3000" * 2000 + "no-break" + "\u00a0" * 2000 + "em" + "\u2003" * 2000 + "end.\n"
+              + "Separators" + "\u2028" * 2000 + "\u2029" * 50 + "last line.\n\n\n")
+    out = await _propose({"body": padded}, ask=_window(seen=seen))
     [card] = seen
-    assert "\n\n\n" not in card["body"] and " " * 17 not in card["body"] and "\t" * 17 not in card["body"]
-    assert not any(line != line.rstrip() for line in card["body"].split("\n"))
-    assert card["body"].endswith("To the team.\n" + " " * 16 + "Done.\n")
-    assert (await _skills())["weekly-report"].body == card["body"]
+    body = card["body"]
+    assert "\n\n\n" not in body and "\u2028" not in body and "\u2029" not in body
+    assert not any(line != line.rstrip() for line in body.split("\n"))
+    assert "Then send it." + " " * 16 + "to the team.\n" + " " * 64 + "Done.\n" in body
+    assert "Ideographic" + " " * 16 + "no-break" + " " * 16 + "em" + " " * 16 + "end.\n" in body
+    assert body.endswith("Separators\n\nlast line.\n")
+    assert len(body.rstrip("\n").split("\n")) == len(body.splitlines())   # the web's count, read_skill's split
+    assert (await _skills())["weekly-report"].body == body
+    assert out["tidied"] is True and "taken out" in out["note"]
+
+
+#: Indentation is meaning in code and YAML: kept as written (recheck R1), up to 64 characters.
+CODE = ("```python\ndef f(xs):\n    for a in xs:\n        for b in a:\n            for c in b:\n"
+        "                if c:\n                    print(c)\n                print('x')\n```\n"
+        "```yaml\nspec:\n  template:\n    spec:\n      containers:\n        - name: app\n          env:\n"
+        "            - name: X\n              valueFrom:\n                secretKeyRef:\n                  name: s\n```\n"
+        "```make\nall:\n\tcc -o app main.c\n\t                 -O2\n```\n")
+
+
+async def test_indentation_in_code_is_kept_as_written():
+    seen = []
+    out = await _propose({"body": BODY + CODE}, ask=_window(seen=seen))
+    assert seen[0]["body"] == BODY + CODE and (await _skills())["weekly-report"].body == BODY + CODE
+    assert "tidied" not in out and "taken out" not in out["note"]
 
 
 @pytest.mark.parametrize("read_outside", [False, True])

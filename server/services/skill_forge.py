@@ -43,8 +43,10 @@ _USES_FILES = re.compile(r"skill_script|[\"']?section[\"']?\s*:\s*[\"']reference
 #: Invisible, though not in a "C" category: variation selectors, the combining grapheme joiner, the Hangul
 #: fillers and the blank braille pattern (#472 review F4). A name made only of these would show blank.
 _INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
-#: The longest run of spaces or tabs kept inside the body (deep list indentation fits).
+#: The longest run of white space kept inside a line, and the leading indentation kept as written: code and
+#: YAML nest deep, and their indentation is their meaning (#472 recheck R1).
 _RUN_MAX = 16
+_INDENT_MAX = 64
 
 
 def validate(key: str, name: str, description: str, body: str) -> list[str]:
@@ -74,10 +76,17 @@ def _visible(text, keep: str = "") -> str:
 
 
 def _tidy(body: str) -> str:
-    """No trailing spaces, at most one blank line in a row, no run of spaces or tabs longer than `_RUN_MAX`:
-    blank padding cannot push the end of the text out of sight in the card's box (#472 review F5). The card
-    shows, and the skill keeps, the tidied text."""
-    lines = [re.sub(r"[ \t]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, line.rstrip()) for line in body.split("\n")]
+    """Blank padding cannot push the end of the text out of sight in the card's box (#472 review F5, recheck
+    R1): the Unicode line and paragraph separators become line breaks (read_skill splits on them too), no
+    line ends in white space, at most one blank line in a row, leading indentation is kept as written up to
+    `_INDENT_MAX` characters, and a run of white space inside a line stops at `_RUN_MAX`. Any white space
+    counts, not only spaces and tabs. The card shows, and the skill keeps, the tidied text."""
+    lines = []
+    for line in body.replace("\u2028", "\n").replace("\u2029", "\n").split("\n"):
+        line = line.rstrip()
+        text = line.lstrip()
+        lines.append(line[:len(line) - len(text)][:_INDENT_MAX]
+                     + re.sub(r"[^\S\n]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, text))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
 
 
@@ -116,6 +125,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     name = _line(args.get("name"), _NAME_MAX)
     description = _line(args.get("description"), _LINE_MAX)
     body = _tidy(_visible(args.get("body"), keep="\n\t"))
+    tidied = body != str(args.get("body") or "").strip() + "\n"
     why = _line(args.get("why"), _LINE_MAX)
     errors = validate(key, name, description, body) + (
         [f"key is at most {_KEY_MAX} characters"] if len(key) > _KEY_MAX else [])
@@ -156,5 +166,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
                 "note": f"The user did not save it ({outcome}). Do not propose it again now."}
     if not await register(key=key, name=name, description=description, body=body):
         return {"ok": False, "error": f"not saved: a skill with the key '{key}' was added meanwhile"}
-    return {"ok": True, "saved": key, "refresh": True,
-            "note": "Saved and switched on. Read it with read_skill when work it covers comes up."}
+    return {"ok": True, "saved": key, "refresh": True, **({"tidied": True} if tidied else {}),
+            "note": "Saved and switched on. Read it with read_skill when work it covers comes up."
+                    + (" Hidden characters or blank padding were taken out first: the saved text is what the "
+                       "user saw, and read_skill returns it." if tidied else "")}
