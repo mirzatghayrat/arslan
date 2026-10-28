@@ -160,7 +160,7 @@ C1 → K1 → K2 → K3 → K4a → K4b → K5 → K7 → K8a → K8b → K8c �
 | ②Main | F5a、F1、F2、F3、F4a、F4b、FR、F5b；全部 C、K、S 卡（C6 移给 ⑤，C7、C8 移给 ⑥，10-22）；R63 的发版准备；合并队列、本表的「状态」列、迁移号登记、CI 健康 | `server/**`、`arslan/**`、`web/**`、`.github/**`、`packaging/**`、`docs/releases/**`、`docs/CAPABILITY_INVENTORY.md`。<br>以下除外：③Hands 的文件；Bridge 契约文件的帧格式 | ③Hands 的文件（要改须由 ③Hands 审，例如 F5b、C2c 里 AppleScript 那两行）；Bridge 帧格式 |
 | ③Hands | H1、H2、H3、H4；审 F5b 和任何改 Hands 文件的卡；U13 / U14 起另做 D7、D8、D9、C9、C10、C11；10-21 晚起另做 S2a-2、S2b、S4a、S7（这几张卡改到的文件，期间 ②Main 不碰） | `desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` | 其他所有文件。本轮不新增 Hands 能力 |
 | ①iOS | 无 | iOS 仓库 | 本轮 Mac 端不改 Bridge 帧格式（`desktop/bridge/**`、`server/ws/bridge.py`、`spec/mobile-bridge/**`）。哪张卡如果发现需要改（最可能是 K9），先停下来找 ②Main 和 ①iOS |
-| Codex（外部审查工具，不是会话；用户 10-27 定） | v0.1.64 安全审查的外部审查、日常安全面和大 PR 的独立审查、卡住时 debug（§8「安全审查路径」） | 无：只读，结论由用户贴到 PR 上 | 推送、合并、main；用户的家目录、Arslan 的数据、`~/.arslan`、跑分原始记录、真密钥 |
+| Codex（外部审查工具，不是会话；用户 10-27 定） | v0.1.64 安全审查的外部审查、日常安全面和大 PR 的独立审查、卡住时 debug（§8「安全审查路径」） | 无：只读，结论由用户贴到 PR 上 | 推送、合并、main；用户的家目录、Arslan 的数据、`~/.arslan`、跑分原始记录、真密钥 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3. |
 | C 线试点会话 | v0.1.62 发布后的 C 卡（§9） | 同 ②Main 的 C 卡 | 同 ②Main；不装 superpowers |
 | ⑤C6 | C6（2026-10-22 从 ②Main 移来，用户同意加开会话） | `.github/workflows/ci.yml`、pytest 的配置和依赖（`pyproject.toml` 的测试部分、`uv.lock`） | 其他所有文件；改动跑哪些测试之前先问 ⓪Plan。删 macOS 计数那两条测试留给 ②Main |
 | ⑥C7 | C7 第一、二步（v0.1.63 的部分），之后 C8（2026-10-22 从 ②Main 移来） | 这两张卡要删的文件，加上 `compact_saved_context` 搬去的新位置 | K8 的流式文件、S3b 的文件、③Hands 的文件、Bridge 帧格式；碰到权限或沙箱的路径先停下来问 ⓪Plan |
@@ -278,9 +278,9 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
 - **同一个文件出两张卡（M3 第 12 条）：** `write_file`、`edit_file` 写文件时存一份这轮的快照（`file_tools.py:306`、`:353` 的 `_snapshot_write`），`attach_file` 又把同一个文件存一份（`artifact_store.store_bytes`），两边不认是同一个文件，名字也可能不同（文件名对 `attach_file` 的 title）。修法：同一轮同一个文件只出一张卡（`attach_file` 换掉快照那张，或快照不单独出卡），Mac 和 iPhone 一起测。
 - **本版该删、顺延到 v0.1.64 的两处（用户 2026-10-27 逐条同意，见 `R63-verdict.md`「删除期限」）：** ① `arslan/__init__.py` 的 `__version__`，跟 C5b 的同类清理一起删；② 专家时代的 REST 接口（`spawns.py` 的 `GET`/`DELETE /spawns/{id}`、`PUT …/config`、`…/preferences`，`knowledge.py`、`collections.py` 的 `/spawns/{id}/…`），并进 C7c；`GET /spawns/{id}/knowledge` 只有一个网页单元测试在调，跟它一起删，仓库卡还在用的 `POST /spawns/{id}/knowledge` 先换掉调用方再删。
 
-- **v0.1.64 的安全审查路径（用户 2026-10-24 定）：** S2a-3（#375、#376、#378）、PR3（#396）和默认拒绝沙箱的安全审查用付费的外部审查工具；默认拒绝沙箱仍排 v0.1.64 第一。**10-27 用户定：用 Codex**（见下）。
+- **v0.1.64 的安全审查路径（用户 2026-10-24 定）：** S2a-3（#375、#376、#378）、PR3（#396）和默认拒绝沙箱的安全审查用付费的外部审查工具；默认拒绝沙箱仍排 v0.1.64 第一。**10-27 用户定：用 Codex**（见下）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
   - **外部审查用 Codex（用户 10-27 定；用户开了 ChatGPT Plus，④参谋 转）：** Codex 审完，安全相关的结论再拿给云端审计会话看一遍；各会话 effort=max 的审查照旧。S2a 卡的「谁来审」和验收已改成指向这里。
-    - **S2a-3 的顺序（③Hands 提）：** 默认拒绝沙箱先合 → ③Hands rebase #375、#376、#378（#396 由写它的会话 rebase；要跟上 `assess_async` 改用 `within()`、PR4 改写的 SECURITY.md 句子、沙箱改动的那一层）→ Codex 审 rebase 之后的头 → 云端审计看结论。不审 10-22 的旧头，额度不花在旧代码上。#406（S2a-3 e，已关）重开的话也在范围里；PR4（f）碰安全面，按下面的日常规则也要审。
+    - **S2a-3 的顺序（③Hands 提）：** 默认拒绝沙箱先合 → ③Hands rebase #375、#376、#378（#396 由写它的会话 rebase；要跟上 `assess_async` 改用 `within()`、PR4 改写的 SECURITY.md 句子、沙箱改动的那一层）→ Codex 审 rebase 之后的头 → 云端审计看结论。不审 10-22 的旧头，额度不花在旧代码上。#406（S2a-3 e，已关）重开的话也在范围里；PR4（f）碰安全面，按下面的日常规则也要审。 **Changed (user, 2026-10-28 evening):** another session's effort=max Claude review comes first; Codex Astra only for the parts it cannot cover (v0.1.64 README §1.3). S2a-3 is where a Claude review was stopped by the safety classifier on 2026-10-22 (line 152 below), so parts may be stopped again; those parts go to Astra.
     - **交给 Codex 的材料：** S2a 卡「谁来审」下的那份清单，再加上 10-24 的事故记录（`docs/incidents/2026-10-24-dev-secret-read.md`）。
   - **日常 PR 也加 Codex 当一个独立审查员，只审两类：** 碰安全面的；产品代码超过约 400 行的。「安全面」指：权限和确认卡、沙箱、命令判定、令牌和鉴权、密钥、Bridge 帧、SECURITY.md。只改文档的不审；按 U2 整份删除的 PR 虽然大，风险低，不碰安全面就不审（⓪Plan 定的，可以改）。Plus 有用量上限，只留给最值得审的地方。它的结论和「他会话审」对照着看，不顶替（U9 照旧）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
   - **卡住时帮着 debug：** 比如 CI 上复现不了的问题、bench 里的回退。
@@ -321,14 +321,14 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     - **失败时往哪边倒。** 分类器超时、出错、服务商 429 时，一律退回出卡，不放行（「执行面宁关」，用户裁决）。
     - **S2a-1 的断网和「读过外部内容」的标记。** 分类器看不到工具结果，可读过网页后的外传风险恰恰发生在这里。断网这一条是继续作为硬规则留着，还是交给分类器？⓪Plan 倾向：作为硬规则留着。`delegate_work` 不传这个标记的洞（上面 S 线那条）同样要先补。
     - **S2a-3 的四个 PR（#375、#376、#378、#396）怎么办。** 三种走法：全部作废；只留「读懂 shell 语法」那部分，用来给分类器提供结构化的动作描述；或者照原计划合，作为硬规则的一部分。这会影响上面已定的「Codex 审 S2a-3」那条安排。
-    - **这和 U9、安全审查的规矩怎么对上。** 分类器本身就在安全面上，它的提示词、模型和测题集都要按 effort=max 写和审，也在 Codex 的审查范围里。
+    - **这和 U9、安全审查的规矩怎么对上。** 分类器本身就在安全面上，它的提示词、模型和测题集都要按 effort=max 写和审，也在 Codex 的审查范围里。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
     - **默认值。** 新装的用户默认哪一档；v0.1.63 那批已经被切到「每条都问」的老用户要不要再切一次（再切一次要用户点头，跟迁移 0070 一样）。
   - **云端审计的意见（2026-10-29，贴在 #432 上；⚠️ 那一轮服务端回落到了 Opus 4.8，按规矩要在 5.5 上重跑，或者由 Codex / ②Main 复核才作数）：**
     - 主方向成立。写死一句：**分类器只是「少出卡」的体验层，不是安全边界**；真正的地板是沙箱加硬规则。所以分类器必须排在默认拒绝沙箱之后，顺序不能反。
     - 分类器不读克隆仓库里的 AGENTS.md / CLAUDE.md；粘贴的内容不靠分类器区分，靠地板兜住；iPhone 经 Bridge 发来的算用户的话，前提是 Bridge 已鉴权。
     - 没人在的运行不用分类器（同意 ⓪Plan）；失败一律退回出卡，没人可问就拒绝（同意）；S2a-1 的断网必须留作硬规则（同意）。
     - S2a-3：留下「读懂 shell 语法」的解析器，放弃「把清单补全」。解析器对硬规则是承重的：经系统守护进程在沙箱外生效的那一类命令（启动项、打开 App、快捷指令、定时任务、权限和网络设置等），沙箱兜不住，分类器也认不出，必须是硬规则，「沙箱里能做完就直接跑」要把这一类排除在外。
-    - 分类器的提示词、模型、测题集按 effort=max 写和审，进 Codex 的范围；测题要加「用户意图正常、动作危险」的样例；「漏放」分两类记：本该硬规则挡住的是硬规则的 bug，沙箱挡住的是体验问题。
+    - 分类器的提示词、模型、测题集按 effort=max 写和审，进 Codex 的范围；测题要加「用户意图正常、动作危险」的样例；「漏放」分两类记：本该硬规则挡住的是硬规则的 bug，沙箱挡住的是体验问题。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
     - 默认档：新装照旧「每步问」，直到分类器的两个数达标；不给 v0.1.63 那批老用户再切一次；「自动」做成告知后由用户点头才开的选项。完全访问档下硬规则照样生效，要写明哪些是绝对的。
     - 成本、延迟、隐私：每个动作多一次模型调用，进 bench 量；分类器看得到用户指令的原文，要走同一条 BYOK 的信任边界并如实告知。
     - 「不跑陌生代码的功能不排在沙箱后」成立。
@@ -398,7 +398,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     - **Option 3, strictest:** over-eager ≤ 4 in 90 (5%); exfiltration-style ≤ 2 in 225 (1%); false blocks ≤ 5% (looser, because a stricter classifier blocks more).
     - **Also to write down before measuring (⓪Plan's suggested defaults):** cards saved: at least 30% fewer cards than "ask only when risky" alone on the same bench tasks; cost: added model cost per bench task ≤ 10%; latency: p95 added latency per gated action ≤ 3 s.
     - **Labels:** each case labeled by the user (or two reviewers) under a labeling rule written before the set is built, including what counts as over-eager, exfiltration-style and steered. Ask-all click-throughs and expired cards are not labels (gate g).
-    - **Re-measure on change:** the lines bind one model, prompt and stage design. Any change re-runs the set and goes back to Codex. The set stays on this Mac (gate g), so the PR carries the counts and a hash of the set version.
+    - **Re-measure on change:** the lines bind one model, prompt and stage design. Any change re-runs the set and goes back to review (another session's effort=max Claude review; Codex Astra only for what it cannot cover, v0.1.64 README §1.3). The set stays on this Mac (gate g), so the PR carries the counts and a hash of the set version.
   - **(Answered 2026-10-28, see the audit's answer above.) Open question for the cloud audit's next round (raised by ④参谋, forwarded with the user's agreement; a safety design question, the audit judges, then the user decides):** the audit has the classifier off in any turn that used `run_command`. Arslan runs commands in almost every turn, so "auto" would be off most of the time. Claude Code's classifier never sees tool results; it compares only the user's own words with the pending action, so it does not need "off after outside content". Can Arslan do the same: the classifier reads only messages the user typed and the action awaiting approval, never tool results or web pages; layer ② and network cards stay user-click only; and then the outside-content mark no longer needs to switch the classifier off?
 - **v0.1.64 的排序（用户 2026-10-22 定）：** ① 沙箱默认拒绝（含沙箱合一）→ ② 按需装能力（装进合一后的沙箱）→ ③ 本机代理加网站名单（产能允许时）。小模型先读网页移到 v0.1.65 之后。理由和验收见领先路线 §0.6。
 - 旧的扁平 `llm_*` 设置键：要先写数据迁移才能删（C2c 发现）。
