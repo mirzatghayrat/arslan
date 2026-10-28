@@ -84,7 +84,7 @@
     Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
   - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
-  - **Whoever merged watches main's CI** for that merge commit. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the merger may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
+  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
   - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
   - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
 - **rebase 纪律：**
