@@ -96,11 +96,16 @@ The user is merging in ④参谋's order (2026-10-29). Batch 1 is done. Batch 2 
 
 **Steps for the user:**
 1. Give the ChatGPT Codex Connector access to `mirzatghayrat/arslan` (GitHub → Settings → Applications → the connector → Repository access). Today it is limited to one unrelated public repository (`docs/plans/0162/README.md`, "「只读」怎么做到").
-2. In Codex, tell it the rules once: open PRs only, never merge, never push to `main` or to someone else's branch. If Codex has a setting to ask before pushing or merging, consider turning it on (optional).
+2. In Codex, tell it the rules once: open PRs only, never merge, never push to `main` or to someone else's branch. ②Main suggests two more, and you can drop them: never push tags (a `v*` tag starts a release), and never change `.github/` (a workflow edit on a pushed branch runs before review; a Claude session makes workflow changes instead). If Codex has a setting to ask before pushing or merging, consider turning it on (optional).
 3. Each Codex branch starts with `codex/`. Each PR gets the label `codex`. Every commit message and PR body says "Author: Codex (model, reasoning level)" and names the reviewer, and the PR carries the four evidence items (`docs/sessions.md` §8) plus its macOS CI run id.
 4. The user merges every Codex PR (all are on the security surface).
 
-**A risk to know (⓪Plan, 2026-10-29), your call:** the connector's write access includes workflows. A branch pushed to this repository runs its own workflow files on `push` with the repository's Actions secrets. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) protects against fork PRs, not against a pushed branch. Those secrets include the updater's signing key (`release.yml:132-133`). One option: move the release secrets into a GitHub Environment that only `v*` tags can use and that needs your approval. That is a repository-settings change, so it is yours to decide.
+**A risk to know (⓪Plan and ②Main, 2026-10-29), your call:** the connector's write access includes workflows and Actions. Two workflows read the repository's secrets, and both have `workflow_dispatch`: `release.yml:32` and `secrets-preflight.yml:26`. Those secrets include the updater's signing key (`release.yml:132-133`). With that access, Codex could dispatch either workflow on a `codex/` branch, which runs that branch's edited copy, or push a branch that adds a workflow of its own. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) only protects against fork PRs. `ci.yml` reads no secrets.
+If you choose the fix, move the secrets into a GitHub Environment:
+- the Environment holds every `APPLE_*` and `TAURI_*` secret;
+- its lock is a required reviewer, you. A "`v*` tags only" rule is not a lock when the same login can push tags;
+- both `release.yml`'s job and `secrets-preflight.yml`'s job name the Environment, or they lose the secrets.
+That is a repository-settings change, so it is yours to decide.
 
 **The tasks (one paste per block).** Each task points to card sections only. Codex designs the tests' content itself from the card; nothing here spells it out.
 

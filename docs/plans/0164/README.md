@@ -211,11 +211,10 @@ SBX-2 (Codex) ─────────────┐   meanwhile Claude draf
                            ▼
                 SBX-M (user's Mac, Codex's corpus)
                            ▼
-   per card: Np (Codex) green in CI ──→ Na (Claude)      for N = 3, 4, 5, 6
+   per card: Np (Codex, strict xfail until built) ──→ Na (Claude; its macOS run: all Np pass, 0 skip/xfail)   N = 3, 4, 5, 6
                            ▼
-                SBX-7 ──→ SBX-8
-                           ▼
-   S2a-3 (split: Claude structure, Codex tests) ──→ HR ──→ CLS ──→ S5a ──→ S5b
+   3a ──→ SBX-7 ──→ S2a-3 (split: Claude structure, Codex tests) ──→ HR ──→ CLS ──→ S5a ──→ S5b
+   3a … 6a + SBX-7 ──→ SBX-8
 ```
 
 The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until SBX-2 lands, and STATUS says where the chain is stuck. Cards that don't depend on SBX go ahead as before.
