@@ -111,13 +111,19 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 **Pushing a Codex branch (the user runs this).** Run it in the folder where Codex worked, which is Codex's own checkout of `arslan`, after Codex says its branch is committed. `<branch>` is the branch Codex names, for example `codex/sbx2-default-deny-base`. `<body file>` is the PR body Codex wrote, with the four evidence items.
 
 ```bash
+git fetch origin
 git status
 git log --oneline origin/main..<branch>
+git diff --stat origin/main...<branch> -- .github
 git push -u origin <branch>
 gh pr create --repo mirzatghayrat/arslan --base main --head <branch> --label codex --title "<title Codex gave>" --body-file "<body file>"
 ```
 
-- Before pushing, `git status` should be clean, and the log should show only Codex's commits.
+- Before pushing, check three things:
+  - `git status` is clean;
+  - the log shows only Codex's commits;
+  - **the `.github` diff prints nothing.**
+- If the `.github` diff lists anything, don't push. In plan A your push is the only gate. A pushed branch's workflows run with the repository's secrets (only fork PRs are cut off), so tell ⓪Plan; a Claude session makes any workflow change in its own PR (②Main's review of #497).
 - The first time only, create the label: `gh label create codex --repo mirzatghayrat/arslan --description "Written by Codex"`.
 - Then tell ⓪Plan the PR number. Claude reviews the plumbing, and Astra reviews the rest.
 
