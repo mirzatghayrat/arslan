@@ -40,7 +40,12 @@ def _codes_in_hands() -> dict[str, str]:
 def _codes_in_tools() -> set[str]:
     text = (ROOT / "server" / "registry" / "hands_tools.py").read_text()
     said = set(re.findall(r'"code": "([A-Za-z_]+)"', text)) | set(re.findall(r'\bcode="([A-Za-z_]+)"', text))
+    said |= set(re.findall(re.escape('["code"] = "') + '([A-Za-z_]+)"', text))     # out["code"] = "…"
     return said | set(hands_tools._SHOT_NOTES)
+
+
+# hands_contract.parse()'s own fallbacks: a reply that is not one, a refusal or an agent-desktop error without a code
+PARSE_FALLBACKS = {"refused", "bad_reply", "bad_output", "INTERNAL"}
 
 
 def test_the_two_lists_do_not_overlap():
@@ -58,8 +63,16 @@ def test_every_code_hands_or_the_tools_can_say_is_sorted():
                         ("hands_contract.HINTS", set(hands_contract.HINTS)),
                         ("hands_tools.py", _codes_in_tools())):
         assert not codes - known, f"{name}: {sorted(codes - known)}"
-    # parse()'s own fallbacks
-    assert {"refused", "bad_reply", "bad_output", "INTERNAL"} <= hands_tools.MAYBE_EXECUTED
+    assert PARSE_FALLBACKS <= hands_tools.MAYBE_EXECUTED
+
+
+def test_a_code_nothing_says_any_more_leaves_the_lists():
+    """The other way round: a code stays sorted only while something says it (F5b's deleted engine left
+    seven behind)."""
+    said = (set(_codes_in_hands()) | _codes_in_tools() | set(hands_contract.REFUSALS) | set(hands_contract.HINTS)
+            | PARSE_FALLBACKS)
+    known = hands_tools.NOT_EXECUTED | hands_tools.MAYBE_EXECUTED
+    assert not known - said, f"nothing says these any more; take them out of the lists: {sorted(known - said)}"
 
 
 @pytest.mark.parametrize("code", ["unknown", "TIMEOUT", "submit_unsure", "takeover_paused", "stopped_by_user",
