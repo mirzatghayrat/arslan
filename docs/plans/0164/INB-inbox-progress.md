@@ -194,6 +194,12 @@
   - 角标不再数记忆；
   - 旧提案一条不少、状态不变。
 
+- **User decisions, 2026-10-29 (relayed by ④参谋; the user: 「都按你的建议，转给 ⓪Plan」), from ⓪Plan's review of #475:**
+  - **F2, which conversations are clean: an allowlist.** A conversation counts as clean only when all three hold: no attachments, no auto-injected project material, and only tools known to be local-only were used. Anything else counts as having touched outside content, `run_command` reading a file included. "About you" memories from such a conversation go to 「待整理」.
+  - **`sent_at`:** the Bridge passes the envelope's `ts` as `sent_at`.
+  - **F4, sensitivity beyond keywords:** an optional `sensitive: true` on the write. It can only make the decision stricter, never looser. Judging sensitivity by category is later.
+  - Tests for both come first, with mutants, in their own commit on #475; the same effort=max reviewer rechecks.
+
 ### MEM1 Memory write hygiene (user, 2026-10-28, memory plan item A) · memory write path · effort=max · after INB2
 
 Added after the card was drafted; the full text is `docs/plans/0162/README.md` §8, "Memory: what changes", item A. Lane ②Main. One PR, separate from INB2, merged after it, because both touch the "about you" write path.

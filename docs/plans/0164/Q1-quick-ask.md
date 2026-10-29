@@ -156,6 +156,13 @@
 5. **「快问记录」怎么搜。** 一种：手机只在最近 100 条里自己筛（今天的上限）。另一种：给 `conversations.list` 加翻页（①iOS 提过 before / has_more），或者加一个服务端搜索的帧。后两种也是帧的改动，和第 1 条一起问。
 6. **分级和分道：** ⓪Plan 建议「必须」，Mac 端 ②Main、iPhone 端 ①iOS；随 v0.1.64 的范围一起定。
 
+**User decisions on 3 and 4, 2026-10-29** (relayed by ④参谋; the user: 「都按你的建议，转给 ⓪Plan」):
+
+- **3:** a quick ask converted to a conversation learns like an ordinary conversation from the moment of conversion. The quick-ask turns before it never learn. The 「转成对话」 copy must not promise otherwise (①iOS).
+- **4:** the pocket is deleted in v0.1.64, on condition that the iPhone build with Quick Ask (Q1c) ships together with Mac 0.1.64. Only the user's TestFlight runs the old builds. If Q1c misses 0.1.64, the deletion falls back to `DELETE-BY: v0.1.65`. ①iOS says Q1c can make it; it waits on the user's OK on its mock.
+  - **Acceptance for the deletion (①iOS's questions, ②Main to confirm):** builds up to 27 still send Share-sheet drafts to the pocket id. A `chat.send` to that id gets an `error` frame the phone already shows: the Mac never re-creates the pocket and never drops the message silently. After the deletion the Mac does not list the pocket at all, so the phone keys on whether it is listed and needs no special case for its id. Both use existing frames. Tests: a send to the old id gets an error and creates no row; the list has no pocket.
+  - The deletion is its own PR, after Q1a and Q1b, and the `git grep` in step 7 above coming back empty (except `sidebar.remote`, which stays) is its evidence.
+
 ## ①iOS 审阅的结论（2026-10-29 夜，经 ⓪Plan 转记；用户 10-28 定：不贴到 PR 上，只记在这里）
 
 - **帧能并成一份清单：** ①iOS 起草了一份 13 项的清单，全是可选字段或新帧，不升 `Wire.version`。建议：
