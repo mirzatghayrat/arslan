@@ -31,6 +31,11 @@ struct Refusal: Error {
 
 public actor ConversationLinks {
     public static let pocket = "pocket"                // "no conversation_id" = the pocket conversation
+    // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user,
+    // 2026-10-29): the pocket and every branch below that names it.
+    /// §5.8: a conversation the phone starts names itself `phone-` and a lowercase UUID v4.
+    static let phoneConversationID = try! NSRegularExpression(
+        pattern: "^phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     public static let fileLimit = 20 * 1024 * 1024     // §4.6
     public static let maxAttachments = 10              // §5.7: files with one message
     public static let holdLimit: TimeInterval = 120    // §5.7: a message waits this long for its files
@@ -70,6 +75,7 @@ public actor ConversationLinks {
     struct Held {
         let from: String, envelopeID: String, clientID: String, conversationID: String
         let body: [String: Any], fileIDs: [String], at: Date
+        let sentAt: String?                            // the envelope's `ts`: when the phone sent it
     }
     var held: [Held] = []
     var releasing = false
@@ -228,7 +234,7 @@ public actor ConversationLinks {
         guard links.count > Self.maxLinks else { return }
         let live = Set(ids)
         let idle = links.keys.filter { id in
-            !live.contains(id) && id != Self.pocket && links[id]?.mapper.cards.isEmpty == true
+            !live.contains(id) && id != Self.pocket && links[id]?.mapper.cards.isEmpty == true    // DELETE-BY: with `pocket`
                 && !held.contains { $0.conversationID == id } && now.timeIntervalSince(touched[id] ?? .distantPast) >= Self.idleLink
         }.sorted { (touched[$0] ?? .distantPast, $0) < (touched[$1] ?? .distantPast, $1) }
         for id in idle.prefix(links.count - Self.maxLinks) { unlink(id) }
@@ -295,6 +301,8 @@ public actor ConversationLinks {
             let link = link(item.conversationID)
             var frames = try link.mapper.backendFrames(for: "chat.send", body: item.body)
             if !item.fileIDs.isEmpty, let first = frames.first { frames[0] = attach(item.fileIDs, to: first) }
+            // INB2: whether the user is there for this turn reads when the phone sent it (server/services/presence.py).
+            if let sentAt = item.sentAt, !frames.isEmpty { frames[0]["sent_at"] = sentAt }
             for frame in frames { try await link.channel.send(frame) }
             // Only once it reached Arslan: a message that failed to go through runs on the phone's retry.
             if !item.clientID.isEmpty { executed.insert(item.clientID) }
@@ -369,6 +377,32 @@ public actor ConversationLinks {
         }
     }
 
+    /// Where a chat.send goes (§5.8). A conversation the phone starts (`new_conversation_id`) must still be
+    /// empty: a quick one is stored as quick first, so if the Mac can't store it, its words go nowhere; an
+    /// ordinary one is checked for messages. `conversation_kind` means nothing without a new id. No id at all is
+    /// the pocket.
+    func destination(of body: [String: Any]) async throws -> String {
+        let named = body["conversation_id"] as? String
+        guard let new = body["new_conversation_id"] as? String else {
+            guard body["conversation_kind"] == nil else { throw BridgeError.code("bad_request") }
+            return named ?? Self.pocket                                    // DELETE-BY: with `pocket`
+        }
+        let whole = NSRange(new.startIndex..., in: new)
+        guard Self.phoneConversationID.firstMatch(in: new, range: whole) != nil, named == nil || named == new else {
+            throw BridgeError.code("bad_request")
+        }
+        switch body["conversation_kind"] {
+        case nil:
+            let history = try await backend.json("/api/v1/phone/conversations/\(new.pathSegment)/history?limit=1")
+            guard (history["messages"] as? [Any] ?? []).isEmpty else { throw BridgeError.code("conversation_exists") }
+        case let kind as String where kind == "quick":
+            _ = try await backend.post("/api/v1/phone/conversations/\(new.pathSegment)/quick", body: [:])
+        default:
+            throw BridgeError.code("bad_request")
+        }
+        return new
+    }
+
     func refuse(_ error: Error, type: String, to peer: String, related: String) async {
         let code: String, message: String
         switch error {
@@ -400,18 +434,21 @@ public actor ConversationLinks {
                 }
                 let ids = attachments.map { $0["id"] as? String ?? "" }
                 guard !ids.contains(where: \.isEmpty) else { throw BridgeError.code("malformed") }
-                let conversation = body["conversation_id"] as? String ?? Self.pocket
+                let conversation = try await destination(of: body)
                 link(conversation, now: now)
                 // §5.7: it runs once every file it names is here (at once when it names none).
                 held.append(Held(from: received.from, envelopeID: related, clientID: clientID, conversationID: conversation,
-                                 body: body, fileIDs: ids, at: now))
+                                 body: body, fileIDs: ids, at: now, sentAt: received.envelope["ts"] as? String))
                 await release(now: now)
             case "file.offer":
                 try await receive(received, body, now: now)
                 await release(now: now)
             case "conversation.delete":
                 guard let id = body["conversation_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }
-                guard id != Self.pocket else { throw Refusal(code: "malformed", message: "Remote cannot be deleted.") }
+                // §5.8: a phone that said `quick` shows its own list without Remote, so it may delete it.
+                guard id != Self.pocket || mailbox.has("quick", received.from) else {      // DELETE-BY: with `pocket`
+                    throw Refusal(code: "malformed", message: "Remote cannot be deleted.")
+                }
                 let result = try await backend.delete("/api/v1/conversations/\(id.pathSegment)")
                 // The backend answers 200 for an id it has nothing for: nothing deleted = not there.
                 if let counts = result["deleted"] as? [String: Any], !counts.isEmpty, counts.values.allSatisfy({ ($0 as? Int) == 0 }) {
@@ -419,6 +456,14 @@ public actor ConversationLinks {
                 }
                 unlink(id)
                 _ = try await mailbox.send(type: "conversation.deleted", body: ["conversation_id": id], to: received.from)
+            case "conversation.update":
+                // §5.8: a quick question becomes an ordinary chat; `chat` is the only target.
+                guard let id = body["conversation_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }
+                guard body["kind"] as? String == "chat" else { throw BridgeError.code("bad_request") }
+                let result = try await backend.post("/api/v1/phone/conversations/\(id.pathSegment)/update", body: ["kind": "chat"])
+                _ = try await mailbox.send(type: "conversation.updated",
+                                           body: ["conversation_id": id, "kind": result["kind"] as? String ?? "chat"],
+                                           to: received.from)
             case "approval.answer":
                 let id = body["approval_id"] as? String ?? ""
                 guard let link = links.values.first(where: { $0.mapper.cards[id] != nil }) else {
@@ -427,11 +472,21 @@ public actor ConversationLinks {
                 for frame in try link.mapper.backendFrames(for: "approval.answer", body: body) { try await link.channel.send(frame) }
             case "conversations.list":
                 let limit = min(max(body["limit"] as? Int ?? 20, 1), 100)
-                let result = try await backend.json("/api/v1/phone/conversations?limit=\(limit)")
+                var query = "limit=\(limit)"
+                // §5.8: only quick questions (`kind: "quick"`), and the page strictly older than `before`.
+                if let kind = body["kind"] {
+                    guard kind as? String == "quick" else { throw BridgeError.code("bad_request") }
+                    query += "&kind=quick"
+                }
+                if let before = body["before"] {
+                    guard let time = before as? String else { throw BridgeError.code("bad_request") }
+                    query += "&before=\(time.pathSegment)"                // a time's + must not arrive as a space
+                }
+                let result = try await backend.json("/api/v1/phone/conversations?\(query)")
                 _ = try await mailbox.send(type: "conversations.result", body: result, to: received.from)
                 await linkLive(now: now)                 // §5.7: what the list shows stays live
             case "chat.history":
-                let id = body["conversation_id"] as? String ?? Self.pocket
+                let id = body["conversation_id"] as? String ?? Self.pocket      // DELETE-BY: with `pocket`
                 let limit = min(max(body["limit"] as? Int ?? 50, 1), 200)
                 let result = try await backend.json("/api/v1/phone/conversations/\(id.pathSegment)/history?limit=\(limit)")
                 link(id, now: now)          // the phone is looking at it: its progress, cards and results come live
@@ -493,9 +548,10 @@ public actor ConversationLinks {
 
     /// What this Mac does (hello). §5.7 added files_in (files from the phone), partial (answers as
     /// they are written), delete (conversation.delete), live (the newest conversations stay linked)
-    /// and mac_messages (words typed on the Mac are forwarded).
+    /// and mac_messages (words typed on the Mac are forwarded). §5.8 added new_conversation (a chat.send may
+    /// start one) and quick (quick questions); a Mac that says quick always says new_conversation.
     public static let capabilities = ["chat", "approvals", "jobs", "history", "files", "status", "review", "tasks", "touchid",
-                                      "files_in", "partial", "delete", "live", "mac_messages"]
+                                      "files_in", "partial", "delete", "live", "mac_messages", "new_conversation", "quick"]
 
     static func message(_ code: String) -> String {
         switch code {
@@ -506,6 +562,8 @@ public actor ConversationLinks {
         case "too_large": return "That file is too large to send to the phone."
         case "too_many_files": return "At most \(maxAttachments) files can go with one message."
         case "not_found": return "That conversation is no longer on the Mac."
+        case "bad_request": return "The Mac could not read that request."
+        case "conversation_exists": return "That conversation is already on the Mac."
         default: return "The Mac could not do that right now."
         }
     }

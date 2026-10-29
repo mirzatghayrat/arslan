@@ -115,7 +115,7 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
         if quick:
             item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
-        # DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
+        # DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
         if item.conversation_id == phone_reads.REMOTE_ID:
             item.title = phone_reads.REMOTE_TITLE
     return out

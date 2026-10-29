@@ -72,19 +72,28 @@ public final class LocalBackend: BackendReads {
         if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         request.httpBody = payload
         let (data, response) = try await URLSession.shared.data(for: request)
-        try Self.check(status: (response as? HTTPURLResponse)?.statusCode ?? 0, notFound: notFound)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        try Self.check(status: status, detail: status == 200 ? nil : Self.detail(data), notFound: notFound)
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw BridgeError.code("mac_busy")
         }
         return object
     }
 
+    /// A refusal's `{"detail": "…"}` (FastAPI's HTTPException), where Q1's codes ride.
+    static func detail(_ data: Data) -> String? {
+        (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["detail"] as? String
+    }
+
     /// The backend's status → the code the phone sees (§5.4). A 404 is the file reads'
-    /// `file_unavailable`, or `not_found` for a conversation (§5.7).
-    static func check(status: Int, notFound: String = "file_unavailable") throws {
+    /// `file_unavailable`, or `not_found` for a conversation (§5.7, or when the backend says so). §5.8: a 400 is
+    /// `bad_request`, and a 409 is `conversation_exists` when the backend says so, otherwise `mac_busy`.
+    static func check(status: Int, detail: String? = nil, notFound: String = "file_unavailable") throws {
         switch status {
         case 200: return
-        case 404: throw BridgeError.code(notFound)
+        case 400: throw BridgeError.code("bad_request")
+        case 404: throw BridgeError.code(detail == "not_found" ? "not_found" : notFound)
+        case 409: throw BridgeError.code(detail == "conversation_exists" ? "conversation_exists" : "mac_busy")
         case 413: throw BridgeError.code("too_large")
         case 422: throw BridgeError.code("malformed")
         default: throw BridgeError.code("mac_busy")
