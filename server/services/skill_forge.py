@@ -18,7 +18,8 @@ reads it counts as having read outside content. The seeder reads both as the use
 retirement never deletes it.
 
 This replaces the Skill Forge page, its candidates and the curator (sessions.md §11). Migration 0077
-(CAP2b) gave the skills promoted from those candidates the `AUTHORED` mark and dropped their table.
+(CAP2b) marked the skills promoted from those candidates (`AUTHORED` for a former expert's,
+`AUTHORED_OUTSIDE` for the rest) and dropped their table.
 """
 from __future__ import annotations
 

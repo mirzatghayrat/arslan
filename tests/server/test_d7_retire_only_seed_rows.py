@@ -5,8 +5,8 @@ it was written:
 - imported from a SKILL.md: category "imported" (skill_import);
 - installed through Capabilities: source_id set (capability_flow);
 - written by Arslan and kept by the user: category "authored" (skill_forge.register: the create_skill
-  card and expert_conversion, v0.1.64 CAP2a). A skill promoted from Skill Forge before CAP2a got the
-  same mark in migration 0077 (CAP2b; its tests are in test_migration_0077.py);
+  card and expert_conversion, v0.1.64 CAP2a), or "authored-outside". A skill promoted from Skill Forge
+  before CAP2a got one of those in migration 0077 (CAP2b; its tests are in test_migration_0077.py);
 - made from a GitHub repo in Discover before v0.1.64: its key starts with "gh-" (the discovery
   centre, removed in CAP1a; its rows stay).
 

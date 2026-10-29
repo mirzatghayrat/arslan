@@ -1,4 +1,5 @@
-"""0077 (v0.1.64 CAP2b): a skill promoted from Skill Forge before CAP2a gets the "authored" mark, then
+"""0077 (v0.1.64 CAP2b): a skill promoted from Skill Forge before CAP2a gets a mark by its candidate's source
+("expert" -> "authored", anything else -> "authored-outside"; the user's decision on #496), then
 `skill_candidates` goes. D7: before 0077 the seeder told those skills by their candidate's promoted_at;
 after it, by the mark, so a promoted skill under a retired key still survives every boot.
 
@@ -44,16 +45,6 @@ async def _seed(db_path) -> dict[str, str]:
         await engine.dispose()
 
 
-def _sql(db_path, *statements) -> None:
-    engine = sa.create_engine(f"sqlite:///{db_path}")
-    try:
-        with engine.begin() as conn:
-            for statement in statements:
-                conn.exec_driver_sql(statement)
-    finally:
-        engine.dispose()
-
-
 def _rows(db_path, query) -> list[tuple]:
     engine = sa.create_engine(f"sqlite:///{db_path}")
     try:
@@ -73,11 +64,11 @@ def _pack(key: str, category: str, *, status: str = "registered", source_id: str
             f" VALUES ('{key}', '{key}', '{category}', 'd', 'safe', '{status}', '## Trigger\nx', 1, {source})")
 
 
-def _candidate(key: str, status: str, promoted: bool) -> str:
+def _candidate(key: str, status: str, promoted: bool, source: str = "skill_creator") -> str:
     promoted_at = "'2026-10-01 00:00:00'" if promoted else "NULL"
     return ("INSERT INTO skill_candidates (key, name, category, description, body, source, status, samples,"
             f" evidence, created_at, promoted_at) VALUES ('{key}', '{key}', 'method', 'd', '## Trigger\nx',"
-            f" 'skill_creator', '{status}', '[]', '{{}}', '2026-09-01 00:00:00', {promoted_at})")
+            f" '{source}', '{status}', '[]', '{{}}', '2026-09-01 00:00:00', {promoted_at})")
 
 
 async def _before_0077(db_path, *statements) -> None:
@@ -107,33 +98,73 @@ async def test_a_skill_promoted_before_cap2a_stays_the_users_after_the_upgrade(t
                        _candidate("powerpoint", status, promoted=True))
     await _boot(db)
     assert "skill_candidates" not in _tables(db)
-    assert _rows(db, "SELECT category FROM skill_packs WHERE key = 'powerpoint'") == [(skill_forge.AUTHORED,)]
-    assert await _seed(db) == {"powerpoint": skill_forge.AUTHORED}       # the seed row under SEED is gone
-    assert await _seed(db) == {"powerpoint": skill_forge.AUTHORED}       # and the next launch keeps it
+    outside = skill_forge.AUTHORED_OUTSIDE                               # source "skill_creator"
+    assert _rows(db, "SELECT category FROM skill_packs WHERE key = 'powerpoint'") == [(outside,)]
+    assert await _seed(db) == {"powerpoint": outside}                    # the seed row under SEED is gone
+    assert await _seed(db) == {"powerpoint": outside}                    # and the next launch keeps it
 
 
-async def test_a_candidate_that_never_went_live_marks_nothing(tmp_path):
+async def test_a_former_experts_skill_is_authored_and_any_other_is_authored_outside(tmp_path):
+    """The user's decision on #496 (split by source): expert_conversion's candidates carry a former expert's own
+    prompt; every other one could have come from the model's create_skill in any turn, a scheduled run or one
+    that had read a page included, and Promote never showed its body."""
     db = tmp_path / "before.db"
-    await _before_0077(db, _pack("notion", "productivity"), _candidate("notion", "rejected", promoted=False))
+    await _before_0077(
+        db,
+        _pack("notion", "method"), _candidate("notion", "promoted", promoted=True, source="expert"),
+        _pack("obsidian", "meta"), _candidate("obsidian", "promoted", promoted=True, source="skill_creator"),
+        _pack("airtable", "meta"), _candidate("airtable", "promoted", promoted=True, source="user"),
+    )
+    await _boot(db)
+    marks = {"notion": skill_forge.AUTHORED, "obsidian": skill_forge.AUTHORED_OUTSIDE,
+             "airtable": skill_forge.AUTHORED_OUTSIDE}
+    assert dict(_rows(db, "SELECT key, category FROM skill_packs WHERE key IN ('notion', 'obsidian', 'airtable')")) \
+        == marks
+    assert await _seed(db) == marks
+
+
+async def test_a_key_with_both_kinds_of_promoted_candidate_is_authored_outside(tmp_path):
+    """Promoted, deleted, then promoted again from another candidate under the same key: which one wrote the
+    row cannot be told, so it gets the outside mark."""
+    db = tmp_path / "before.db"
+    await _before_0077(db, _pack("notion", "method"),
+                       _candidate("notion", "promoted", promoted=True, source="expert"),
+                       _candidate("notion", "promoted", promoted=True, source="skill_creator"))
+    await _boot(db)
+    assert _rows(db, "SELECT category FROM skill_packs WHERE key = 'notion'") == [(skill_forge.AUTHORED_OUTSIDE,)]
+
+
+@pytest.mark.parametrize("source", ["skill_creator", "expert"])
+async def test_a_candidate_that_never_went_live_marks_nothing(tmp_path, source):
+    db = tmp_path / "before.db"
+    await _before_0077(db, _pack("notion", "productivity"),
+                       _candidate("notion", "rejected", promoted=False, source=source))
     await _boot(db)
     assert _rows(db, "SELECT category FROM skill_packs WHERE key = 'notion'") == [("productivity",)]
     assert await _seed(db) == {}
 
 
 async def test_a_row_that_already_says_where_it_came_from_keeps_its_mark(tmp_path):
-    """A promoted candidate's key can since have gone to another skill (the user deleted it and imported or
-    installed one under that name). That row keeps its own mark: an imported skill stays framed as
-    outside text, an installed one keeps its category."""
+    """A promoted candidate's key can since have gone to another skill (the user deleted it and imported,
+    installed or saved one on the card under that name). That row keeps its own mark: an imported skill stays
+    framed as outside text, an installed one keeps its category, a card's skill its mark, whichever source the
+    candidate had."""
     db = tmp_path / "before.db"
     await _before_0077(
         db,
-        _pack("notion", "imported"), _candidate("notion", "promoted", promoted=True),
+        _pack("notion", "imported"), _candidate("notion", "promoted", promoted=True, source="expert"),
         _pack("obsidian", "writing", source_id="a" * 32), _candidate("obsidian", "promoted", promoted=True),
-        _pack("airtable", skill_forge.AUTHORED_OUTSIDE), _candidate("airtable", "promoted", promoted=True),
+        _pack("obsidian-2", "writing", source_id="b" * 32),
+        _candidate("obsidian-2", "promoted", promoted=True, source="expert"),
+        _pack("airtable", skill_forge.AUTHORED_OUTSIDE),
+        _candidate("airtable", "promoted", promoted=True, source="expert"),
+        _pack("maps-2", skill_forge.AUTHORED), _candidate("maps-2", "promoted", promoted=True),
     )
     await _boot(db)
-    assert sorted(_rows(db, "SELECT key, category FROM skill_packs WHERE key IN ('notion', 'obsidian', 'airtable')")) \
-        == [("airtable", skill_forge.AUTHORED_OUTSIDE), ("notion", "imported"), ("obsidian", "writing")]
+    assert dict(_rows(db, "SELECT key, category FROM skill_packs WHERE key IN"
+                          " ('notion', 'obsidian', 'obsidian-2', 'airtable', 'maps-2')")) \
+        == {"notion": "imported", "obsidian": "writing", "obsidian-2": "writing",
+            "airtable": skill_forge.AUTHORED_OUTSIDE, "maps-2": skill_forge.AUTHORED}
     assert await _seed(db) == {"notion": "imported", "obsidian": "writing", "airtable": skill_forge.AUTHORED_OUTSIDE}
 
 

@@ -85,9 +85,9 @@ def _skill_body(key: str) -> str | None:
 
 # D7: a skill row the user brought in, whatever its key. Every SkillPack writer but the seeder
 # leaves one of these: skill_import "imported"; capability_flow a source_id; skill_forge (the
-# create_skill card and expert_conversion) the category "authored" (v0.1.64 CAP2a). A skill promoted
-# from Skill Forge before CAP2a got that mark in migration 0077 (CAP2b). The discovery centre
-# (removed in v0.1.64 CAP1a) left "gh-" keys, which no retired key is (tested).
+# create_skill card and expert_conversion) the category "authored" or "authored-outside" (v0.1.64
+# CAP2a). A skill promoted from Skill Forge before CAP2a got one of those in migration 0077 (CAP2b).
+# The discovery centre (removed in v0.1.64 CAP1a) left "gh-" keys, which no retired key is (tested).
 _USERS_SKILL = or_(
     SkillPack.category == "imported",
     SkillPack.category.in_(skill_forge.WRITTEN),
