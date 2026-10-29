@@ -1010,7 +1010,7 @@ class SshAudit(Base):
 from server.db.companion_models import (  # noqa: E402,F401
     ContextReceiptRecord, ConversationContext, MemoryDeletion, MemoryEntry, MemoryLegacyMap, MemoryMigrationReport,
     MemoryRevision, MemorySource, MemoryStoreState, MemorySuppression, Project,
-    ProjectCheckpoint, ProjectEvent, ProjectHabit, ProjectLevel,
+    ProjectCheckpoint, ProjectEvent, ProjectLevel,
 )
 from server.db.task_models import (  # noqa: E402,F401
     CompanionTask, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
