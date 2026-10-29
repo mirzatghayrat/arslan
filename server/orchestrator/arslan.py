@@ -855,11 +855,9 @@ async def _handle_answer_body(
             return await _run_answer(user_content)
 
     try:
-        kind = await _stored_kind(conversation_id)
-        quick = kind == "quick"
-        # Q1b (#486 review, G1): a conversation the phone started with no kind stored (its store failed) gets the four
-        # tools too, and learns nothing (task_context): the server reads the conversation, never the message.
-        narrow = quick or (kind is None and phone_ids.made_on_the_phone(conversation_id))
+        # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
+        quick = phone_ids.kind_of(conversation_id, await _stored_kind(conversation_id)) == "quick"
+        narrow = quick
     except Exception:  # noqa: BLE001 — an unreadable kind gets the four tools, never every tool (Q1 card, rule 4)
         quick, narrow = False, True
 

@@ -68,10 +68,10 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         owner_id=row.owner_id if row else "local", project_id=row.project_id if row else None,
         model_is_local=model_is_local,
         no_memory=bool(row.no_memory) if row else False,
-        # Q1b (#486 review, G1): a conversation the phone started learns only once its kind is stored (quick never),
-        # so one whose store failed never does; arslan narrows its tools the same way.
+        # Q1b (#486 review, G1): a quick question learns nothing, and one the phone made with no kind stored is
+        # read as one (phone_ids.kind_of).
         no_learning=(bool(row and row.no_learning)
-                     or (not (row and row.kind) and phone_ids.made_on_the_phone(conversation_id))),
+                     or phone_ids.kind_of(conversation_id, row.kind if row else None) == "quick"),
         temporary=bool(row.temporary) if row else False,
         cloud_memory_allowed=bool(row.cloud_memory_allowed) if row else False,
         # On: a cloud model may use NORMAL entries in every conversation; the

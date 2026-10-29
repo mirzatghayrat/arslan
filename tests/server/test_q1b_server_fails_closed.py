@@ -21,11 +21,11 @@ OTHER = "phone-7c7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b"
 
 # -- the server reads the conversation, never the message -------------------------------------------------------
 
-async def test_a_phone_conversation_with_no_kind_stored_gets_the_four_tools(execution_db, monkeypatch):
+async def test_a_phone_conversation_with_no_kind_stored_is_read_as_a_quick_question(execution_db, monkeypatch):
     seen = _capture(monkeypatch)
     await arslan._handle_answer(NEW, "and tomorrow?", lambda e: None, source="phone")
     assert seen["shown"] == QUICK and seen["callable"] == QUICK
-    assert arslan.QUICK_NOTE not in seen["notes"] and arslan.PHONE_NOTE not in seen["notes"]
+    assert arslan.QUICK_NOTE in seen["notes"] and arslan.PHONE_NOTE not in seen["notes"]
 
 
 @pytest.mark.parametrize("cid, kind, learns", [
@@ -38,6 +38,19 @@ async def test_only_a_stored_kind_lets_a_phone_conversation_learn(execution_db, 
     assert ctx.no_learning is (not learns)
 
 
+async def test_a_row_with_no_kind_is_read_like_no_row(execution_db):
+    """The window's context PUT makes a row without a kind (moving the conversation into a project, say)."""
+    async with execution_db() as db:
+        db.add(ConversationContext(id=NEW, no_memory=True))
+        await db.commit()
+    assert (await task_context.load(NEW, user_message="I live in Acme City")).no_learning is True
+
+
+def test_what_a_conversation_is_comes_from_one_place():
+    assert [phone_ids.kind_of(NEW, stored) for stored in (None, "quick", "chat", "sub")] == ["quick", "quick", "chat", "sub"]
+    assert [phone_ids.kind_of("c-plain", stored) for stored in (None, "chat")] == [None, "chat"]
+
+
 def test_a_phone_id_is_exactly_the_shape_the_phone_makes():
     assert phone_ids.made_on_the_phone(NEW)
     for other in ("c-plain", "pocket", "phone-123", NEW.upper(), NEW + "\n", "x" + NEW, None, ""):
@@ -48,13 +61,15 @@ def test_a_phone_id_is_exactly_the_shape_the_phone_makes():
 
 async def test_a_new_ordinary_conversation_is_stored_as_chat(client):
     async with client.db_maker() as db:
-        db.add(ConversationContext(id=NEW, no_memory=True))          # a switch already set stays as it was
+        db.add(ConversationContext(id=NEW, no_memory=True, no_learning=True))    # switches already set stay as they were
         await db.commit()
     got = await client.post(f"/api/v1/phone/conversations/{NEW}/chat")
     assert got.status_code == 200 and got.json() == {"conversation_id": NEW, "kind": "chat"}
     row = await _row(client, NEW)
-    assert (row.kind, row.no_learning, row.no_memory) == ("chat", False, True)
+    assert (row.kind, row.no_learning, row.no_memory) == ("chat", True, True)
     assert (await client.post(f"/api/v1/phone/conversations/{NEW}/chat")).status_code == 200    # a retry
+    await client.post(f"/api/v1/phone/conversations/{OTHER}/chat")
+    assert (await _row(client, OTHER)).no_learning is False
 
 
 async def test_one_with_messages_is_never_stored_as_chat(client):
@@ -82,3 +97,24 @@ async def test_only_a_phone_shaped_new_id_is_stored_as_chat(client, conversation
     got = await client.post(f"/api/v1/phone/conversations/{conversation_id}/chat")
     assert got.status_code == 400 and got.json()["detail"] == "bad_request"
     assert await _row(client, conversation_id) is None
+
+
+# -- the lists and conversation.update read it the same way ------------------------------------------------------
+
+async def test_a_phone_conversation_with_no_kind_is_listed_with_the_quick_questions(client):
+    await _say(client, NEW, "weather?", "2026-10-29T08:00:00")
+    await _say(client, "trip", "Plan a trip", "2026-10-29T07:00:00")
+    assert [c["conversation_id"] for c in (await client.get("/api/v1/conversations")).json()] == ["trip"]
+    quick = (await client.get("/api/v1/phone/conversations?kind=quick")).json()["conversations"]
+    assert [(c["id"], c["kind"]) for c in quick] == [(NEW, "quick")]
+
+
+async def test_a_phone_conversation_with_no_kind_can_be_turned_into_a_chat(client):
+    await _say(client, NEW, "weather?", "2026-10-29T08:00:00")
+    got = await client.post(f"/api/v1/phone/conversations/{NEW}/update", json={"kind": "chat"})
+    assert got.status_code == 200 and got.json() == {"conversation_id": NEW, "kind": "chat"}
+    row = await _row(client, NEW)
+    assert (row.kind, row.no_learning) == ("chat", True)            # as a quick question's (card, #3)
+    never = await client.post(f"/api/v1/phone/conversations/{OTHER}/update", json={"kind": "chat"})
+    assert never.status_code == 404 and never.json()["detail"] == "not_found"     # never started: no messages
+    assert await _row(client, OTHER) is None

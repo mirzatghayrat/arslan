@@ -183,11 +183,19 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
     if body.kind != "chat":
         raise HTTPException(400, "bad_request")
     row = await db.get(ConversationContext, conversation_id)
-    if row is None or row.kind not in ("quick", "chat"):
+    stored = row.kind if row else None
+    # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of), once it
+    # has messages; with none it was never started.
+    if phone_ids.kind_of(conversation_id, stored) not in ("quick", "chat") or (stored is None and not await db.scalar(
+            select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1))):
         raise HTTPException(404, "not_found")
     if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
         raise HTTPException(409, "mac_busy")
+    row = row or ConversationContext(id=conversation_id)
+    if stored is None:
+        row.no_learning = True          # as a quick question's, which turning leaves as it is (card, #3)
     row.kind = "chat"
+    db.add(row)
     await db.commit()
     return {"conversation_id": conversation_id, "kind": "chat"}
 
