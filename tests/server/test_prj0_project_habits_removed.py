@@ -2,7 +2,7 @@
 
 - "Learn how you advance gates": the shadow streak, the one ask at 10, auto-advance, the
   line after a decline that became a plan rule, and the plan rules themselves
-  (project_habits; its table goes in its own PR, migration 0076).
+  (project_habits; migration 0076 drops its table and `project_levels.habit`).
 - Rhythm stats: the median days per level ("pace"), its overrides, and the retro's
   "usually N days".
 - Stall reminders: the quiet-for-too-long chip on a project card and its "pick it up".

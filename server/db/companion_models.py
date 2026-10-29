@@ -87,8 +87,6 @@ class ProjectLevel(Base):
     band = Column(String(10), nullable=False)
     clear_condition = Column(String(400), nullable=False, default="")
     state = Column(String(10), nullable=False, default="todo")
-    #: Nothing reads or writes it since PRJ0 (plan rules deleted). DELETE-BY: the PRJ0 table-drop PR (0076).
-    habit = Column(Boolean, nullable=False, default=False)
     started_at = Column(DateTime, nullable=True)
     cleared_at = Column(DateTime, nullable=True)
 
@@ -129,26 +127,6 @@ class ProjectEvent(Base):
     outcome = Column(String(10), nullable=True)          # proposals: accepted|declined|undone|stale; others: undone
     undo_of = Column(String(36), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-
-
-class ProjectHabit(Base):
-    """How the user advances projects (0.1.56 §6): plan rules Arslan learned, and pace overrides.
-
-    Nothing reads or writes it since PRJ0 deleted plan rules and pace (user, 2026-10-28).
-    DELETE-BY: the PRJ0 table-drop PR (0076)."""
-    __tablename__ = "project_habits"
-    __table_args__ = (
-        CheckConstraint("kind IN ('plan_rule','pace_override')", name="ck_project_habit_kind"),
-    )
-    id = Column(String(36), primary_key=True)
-    owner_id = Column(String(100), nullable=False, default="local")
-    template = Column(String(30), nullable=True)
-    kind = Column(String(20), nullable=False)
-    text = Column(String(300), nullable=False)
-    value = Column(JSON, nullable=True)
-    sources = Column(JSON, nullable=False, default=list)
-    enabled = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class MemoryEntry(Base):
