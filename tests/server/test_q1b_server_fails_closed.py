@@ -38,6 +38,15 @@ async def test_only_a_stored_kind_lets_a_phone_conversation_learn(execution_db, 
     assert ctx.no_learning is (not learns)
 
 
+async def test_a_stored_quick_question_never_learns_whatever_its_row_says(execution_db):
+    """Its row says no_learning from /quick; one switched on by older code (the window's context PUT before #490)
+    still learns nothing while it is a quick question."""
+    async with execution_db() as db:
+        db.add(ConversationContext(id=NEW, kind="quick", no_learning=False))
+        await db.commit()
+    assert (await task_context.load(NEW, user_message="I live in Acme City")).no_learning is True
+
+
 async def test_a_row_with_no_kind_is_read_like_no_row(execution_db):
     """The window's context PUT makes a row without a kind (moving the conversation into a project, say)."""
     async with execution_db() as db:
