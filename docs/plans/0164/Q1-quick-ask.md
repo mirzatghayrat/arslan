@@ -208,6 +208,7 @@
 ## Q1c on the iPhone: scope the user narrowed (2026-10-29, in ①iOS's chat)
 
 Frames are unchanged.
+- **English name: "Quick Chat"** (user, 2026-10-29, in ①iOS's chat: 「可以，就用 Quick chat」, then "Quick Chat"). It replaces "Quick Ask" in every English user-facing place, on the iPhone and the Mac. The Chinese stays 快问. Code names (`QuickAsk`, the `quick` frames) stay. "Remote (old)" for the pre-deletion row stays.
 - The Overview's top-right 「＋ 新对话」 becomes 快问, with no row of recent quick asks under it. Tapping it opens the same view as today's Remote, nothing extra.
 - Past quick asks stay visible in that one page, scrolling up, like Remote today. There is no separate history list and there are no chips. The phone stacks the Mac's per-question quick conversations into one thread, oldest at the top, with a day line where a new day starts (each message shows its own time). Older ones are paged with `kind: "quick"` + `before`.
 - **Follow-up window: 30 minutes.** Within it, a new message continues the last quick ask (`chat.send` with its `conversation_id`). After it, a new quick ask starts. The window is kept across restarts. It counts from the last message sent into that quick ask, and is kept per Mac.
