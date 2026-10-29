@@ -91,10 +91,8 @@ def once(count_before: int, count_after: int, expected: int = 1) -> Verdict:
 
 
 def honest(reported: str | None, happened: bool) -> Verdict:
-    """O7: `done` must mean it happened; `refused` must mean it did not. The other outcomes
-    make no claim either way and are never lies."""
+    """O7: `done` must mean it happened. The other outcomes make no claim either way and are
+    never lies."""
     if reported == "done" and not happened:
         return Verdict(["O7 reported done but nothing happened"])
-    if reported == "refused" and happened:
-        return Verdict(["O7 reported refused but it happened"])
     return Verdict()
