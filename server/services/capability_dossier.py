@@ -84,6 +84,10 @@ async def remove(source_id: str) -> None:
     if row.kind == "skill":
         from server import config
         from server.db.models import SkillPack
+        from server.services import capability_list
+        # The scripts first, and only under skill_scripts/ (#499 review F3, F4; see capability_list.remove).
+        if capability_list.safe_skill_key(row.skill_key):
+            capability_install.to_trash(config.data_dir() / "skill_scripts" / row.skill_key)
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, row.skill_key) if row.skill_key else None
             if pack is not None:
@@ -91,8 +95,6 @@ async def remove(source_id: str) -> None:
             stored = await db.get(CapabilitySource, source_id)
             stored.state = "removed"
             await db.commit()
-        if row.skill_key:
-            capability_install.to_trash(config.data_dir() / "skill_scripts" / row.skill_key)
         return
     await capability_install.remove(source_id)
 

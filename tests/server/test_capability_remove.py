@@ -30,33 +30,63 @@ async def api(execution_db, monkeypatch, tmp_path):
 
 
 def _pack(key: str, category: str, **extra) -> SkillPack:
-    return SkillPack(key=key, name=key, category=category, description="d", tier="safe", status="registered",
-                     body="## Trigger\nx", **extra)
+    """A skill whose name is not its key (#499 review: the scripts folder and the Trash go by key)."""
+    return SkillPack(key=key, name=key.replace("-", " ").title(), category=category, description="d", tier="safe",
+                     status="registered", body="## Trigger\nx", **extra)
+
+
+SCRIPTS = ("csv-tidy", "xlsx", "deck", "designed-html-report")        # skills with a scripts folder
+ADDED = datetime(2026, 9, 1)                                           # when the connections were added
 
 
 async def _seed(execution_db, tmp_path) -> None:
-    """A built-in skill, one of each kind the user has, a hand-added and an installed connection."""
-    (tmp_path / "data" / "skill_scripts" / "csv-tidy").mkdir(parents=True)
-    (tmp_path / "data" / "skill_scripts" / "csv-tidy" / "run.py").write_text("print('hi')\n")
+    """A built-in skill, one of each kind the user has, two hand-added and an installed connection."""
+    for key in SCRIPTS:
+        (tmp_path / "data" / "skill_scripts" / key).mkdir(parents=True)
+        (tmp_path / "data" / "skill_scripts" / key / "run.py").write_text("print('hi')\n")
     (tmp_path / "data" / "capabilities" / "m1").mkdir(parents=True)
     async with execution_db() as db:
         db.add_all([
             _pack("designed-html-report", "creative"),                   # planted by the seeder
             _pack("csv-tidy", "imported"),                               # pasted a link (skill_import)
             _pack("xlsx", "productivity", source_id="sk1"),              # installed from a card
+            _pack("deck", "productivity", source_id="sk2"),              # installed from a card too
             _pack("weekly-report", "authored"),                          # the save card
             _pack("page-notes", "authored-outside"),                     # the save card, after a page
             _pack("gh-acme-notes", "general"),                           # Discover, before CAP1a
             CapabilitySource(id="sk1", kind="skill", name="xlsx", candidate_id="c", needs={}, grants={},
                              state="installed", skill_key="xlsx", created_at=datetime(2026, 10, 1)),
+            CapabilitySource(id="sk2", kind="skill", name="deck", candidate_id="c", needs={}, grants={},
+                             state="installed", skill_key="deck", created_at=datetime(2026, 10, 1)),
             MCPServer(id=1, label="github", command="", url="https://mcp.example.test/", transport="http", host_allowed=True,
-                      status="registered"),
+                      status="registered", created_at=ADDED),
             MCPServer(id=2, label="excel", command="npx", transport="stdio", host_allowed=False, state="off",
-                      status="registered", sandbox={"folders": []}),
+                      status="registered", sandbox={"folders": []}, created_at=ADDED),
+            MCPServer(id=3, label="notes", command="", url="https://notes.example.test/", transport="http",
+                      host_allowed=True, status="registered", created_at=ADDED),
             CapabilitySource(id="m1", kind="mcp", name="excel", candidate_id="c", needs={}, grants={},
                              state="installed", mcp_server_id=2, created_at=datetime(2026, 10, 1)),
         ])
         await db.commit()
+
+
+async def _state(execution_db, tmp_path) -> dict:
+    """Everything a delete could reach: skills, servers, capability sources and the scripts folders."""
+    from sqlalchemy import select
+    async with execution_db() as db:
+        skills = set((await db.execute(select(SkillPack.key))).scalars())
+        servers = set((await db.execute(select(MCPServer.id))).scalars())
+        sources = dict((await db.execute(select(CapabilitySource.id, CapabilitySource.state))).all())
+    folder = tmp_path / "data" / "skill_scripts"
+    return {"skills": skills, "servers": servers, "sources": sources,
+            "scripts": {p.name for p in folder.iterdir()} if folder.is_dir() else set()}
+
+
+def _without(state: dict, *, skill: str | None = None, server: int | None = None, source: str | None = None) -> dict:
+    """`state` with one thing deleted, and nothing else touched."""
+    return {"skills": state["skills"] - {skill}, "servers": state["servers"] - {server},
+            "sources": {**state["sources"], **({source: "removed"} if source else {})},
+            "scripts": state["scripts"] - {skill}}
 
 
 async def _rows(api) -> dict[str, dict]:
@@ -87,54 +117,148 @@ async def test_each_row_says_its_section_its_origin_and_whether_it_can_be_delete
 
 
 async def test_the_server_refuses_to_delete_whatever_a_row_says_cannot_be_deleted(api, execution_db, tmp_path):
-    """Every row the page shows without a delete button is refused by the server too, and stays."""
+    """Every row the page shows without a delete button is refused by the server too, and nothing changes: not
+    the row, not a built-in skill's scripts folder (#499 review: nothing is moved before the check)."""
     await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
     kept = [key for key, row in (await _rows(api)).items() if not row["deletable"]]
     assert {"terminal", "files", "skill:designed-html-report"} <= set(kept)          # not vacuous
     for key in kept:
         response = await api.delete(f"/api/v1/capabilities/{key}")
         assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"}), key
     assert set(kept) <= set(await _rows(api))
+    assert await _state(execution_db, tmp_path) == before
+    assert (tmp_path / "data" / "skill_scripts" / "designed-html-report" / "run.py").is_file()
+
+
+async def test_what_the_page_may_delete_is_what_d7_never_retires(api, execution_db, tmp_path):
+    """#499 review F1: the page's mark agrees with D7 (seeder._USERS_SKILL): what the seeder never retires is
+    not built in here, and what it may retire is. A skill promoted from Skill Forge before CAP2a reads as the
+    user's because migration 0077 (CAP2b, merged into this branch) marked it. "gh-" rows are the user's by their
+    key: no seed or retired key is one (test_no_seed_skill_has_a_gh_key)."""
+    from sqlalchemy import select
+
+    from server.registry import seeder
+    await _seed(execution_db, tmp_path)
     async with execution_db() as db:
-        assert await db.get(SkillPack, "designed-html-report") is not None
+        everyone = set((await db.execute(select(SkillPack.key))).scalars())
+        users = set((await db.execute(select(SkillPack.key).where(seeder._USERS_SKILL))).scalars())
+    rows = await _rows(api)
+    assert users and everyone - users                                               # both kinds present
+    for key in everyone:
+        assert (rows[f"skill:{key}"]["origin"] != "builtin") == (key in users or key.startswith("gh-")), key
+        assert rows[f"skill:{key}"]["deletable"] == (key in users or key.startswith("gh-")), key
+
+
+def test_no_seed_skill_has_a_gh_key():
+    """A "gh-" key reads as installed and can be deleted, so no skill the seeder plants or retires may have one."""
+    from server.registry import seed_catalog, seeder
+    keys = [key for key, *_ in seed_catalog.SKILLS] + list(seeder.RETIRED_SKILL_KEYS)
+    assert keys and not [key for key in keys if key.startswith("gh-")]
 
 
 @pytest.mark.parametrize("key", ["csv-tidy", "weekly-report", "page-notes", "gh-acme-notes"])
 async def test_a_skill_the_user_has_is_deleted_and_its_files_go_to_the_trash(api, execution_db, tmp_path, key):
+    """Only that skill and its own scripts folder (by key, not by name); every other skill, source, server and
+    folder stays (#499 review F2)."""
     await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
     response = await api.delete(f"/api/v1/capabilities/skill:{key}")
     assert (response.status_code, response.json()) == (200, {"ok": True})
-    async with execution_db() as db:
-        assert await db.get(SkillPack, key) is None
+    assert await _state(execution_db, tmp_path) == _without(before, skill=key)
     assert f"skill:{key}" not in await _rows(api)
     if key == "csv-tidy":
-        assert not (tmp_path / "data" / "skill_scripts" / "csv-tidy").exists()
         assert (tmp_path / "home" / ".Trash" / "Arslan capability csv-tidy" / "run.py").is_file()
 
 
 async def test_an_installed_skill_is_deleted_and_its_source_marked_removed(api, execution_db, tmp_path):
     await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
     assert (await api.delete("/api/v1/capabilities/skill:xlsx")).status_code == 200
-    async with execution_db() as db:
-        assert await db.get(SkillPack, "xlsx") is None
-        assert (await db.get(CapabilitySource, "sk1")).state == "removed"
+    assert await _state(execution_db, tmp_path) == _without(before, skill="xlsx", source="sk1")
+    assert (tmp_path / "home" / ".Trash" / "Arslan capability xlsx" / "run.py").is_file()
 
 
 async def test_a_connection_added_by_hand_is_deleted(api, execution_db, tmp_path):
     await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
     assert (await api.delete("/api/v1/capabilities/mcp:1")).status_code == 200
-    async with execution_db() as db:
-        assert await db.get(MCPServer, 1) is None
-        assert await db.get(MCPServer, 2) is not None
+    assert await _state(execution_db, tmp_path) == _without(before, server=1)
 
 
 async def test_an_installed_connection_is_removed_with_its_folder(api, execution_db, tmp_path):
     await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
     assert (await api.delete("/api/v1/capabilities/mcp:2")).status_code == 200
-    async with execution_db() as db:
-        assert await db.get(MCPServer, 2) is None
-        assert (await db.get(CapabilitySource, "m1")).state == "removed"
+    assert await _state(execution_db, tmp_path) == _without(before, server=2, source="m1")
     assert (tmp_path / "home" / ".Trash" / "Arslan capability m1").is_dir()
+
+
+async def test_a_skill_key_that_is_not_a_plain_key_is_refused_before_anything_is_read(api, execution_db, tmp_path):
+    """#499 review F3: `{key:path}` lets "/" through, and the key names the scripts folder. Not reachable today
+    (every writer makes [a-z0-9-] keys), but a stored "../victim" must never move data/victim."""
+    from server.services import capability_list
+    await _seed(execution_db, tmp_path)
+    (tmp_path / "data" / "victim").mkdir()
+    async with execution_db() as db:
+        db.add(_pack("../victim", "imported"))
+        await db.commit()
+    with pytest.raises(capability_list.NotRemovable):
+        await capability_list.remove("skill:../victim")
+    assert (tmp_path / "data" / "victim").is_dir()
+    for key in ("skill:a/b", "skill:Notion", "skill:a_b"):
+        response = await api.delete(f"/api/v1/capabilities/{key}")
+        assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"}), key
+
+
+async def test_the_dossier_never_moves_a_folder_outside_the_scripts_folder(execution_db, monkeypatch, tmp_path):
+    """#499 review F3, the same join in the dossier's own removal."""
+    from server.services import capability_dossier
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    (tmp_path / "data" / "victim").mkdir(parents=True)
+    (tmp_path / "data" / "skill_scripts").mkdir()                    # so "../victim" resolves
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="bad", kind="skill", name="x", candidate_id="c", needs={}, grants={},
+                                state="installed", skill_key="../victim", created_at=datetime(2026, 10, 1)))
+        await db.commit()
+    await capability_dossier.remove("bad")
+    assert (tmp_path / "data" / "victim").is_dir()
+
+
+async def test_a_failed_move_to_the_trash_keeps_the_skill(api, execution_db, monkeypatch, tmp_path):
+    """#499 review F4: the files go to the Trash before the row goes, so a failed move leaves the skill whole,
+    never a row-less scripts folder the next skill of that key would pick up."""
+    from server.services import capability_install, capability_list
+
+    def stuck(path, prefix="Arslan capability"):
+        raise OSError("Trash not writable")
+    await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
+    monkeypatch.setattr(capability_install, "to_trash", stuck)
+    with pytest.raises(OSError):
+        await capability_list.remove("skill:csv-tidy")
+    assert await _state(execution_db, tmp_path) == before
+
+
+@pytest.mark.parametrize("key", ["mcp:١", "mcp:²"])
+async def test_a_server_number_in_other_digits_is_refused(api, execution_db, tmp_path, key):
+    """#499 review nit: str.isdigit() takes "١" (Arabic-Indic one, aliasing server 1) and "²"."""
+    await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
+    deleted = await api.delete(f"/api/v1/capabilities/{key}")
+    assert (deleted.status_code, deleted.json()["detail"]) == (409, {"code": "not_removable"})
+    switched = await api.put(f"/api/v1/capabilities/{key}", json={"on": False})
+    assert (switched.status_code, switched.json()["detail"]) == (409, {"code": "not_switchable"})
+    assert await _state(execution_db, tmp_path) == before
+
+
+async def test_a_skill_arslan_wrote_under_a_gh_key_reads_as_written(api, execution_db, tmp_path):
+    """#499 review F7: create_skill takes "gh-" keys too; what Arslan wrote is checked first."""
+    async with execution_db() as db:
+        db.add(_pack("gh-weekly", "authored"))
+        await db.commit()
+    assert (await _rows(api))["skill:gh-weekly"]["origin"] == "authored"
 
 
 @pytest.mark.parametrize("key", ["skill:nope", "mcp:99"])
@@ -181,6 +305,24 @@ async def test_last_used_comes_from_the_run_records(api, execution_db, tmp_path)
     assert rows["skill:weekly-report"]["last_used"] == "2026-10-26T09:00:00Z"
     assert rows["mcp:1"]["last_used"] == "2026-10-27T09:00:00Z"
     assert rows["mcp:2"]["last_used"] is None and rows["skill:csv-tidy"]["last_used"] is None
+
+
+async def test_a_connections_last_use_counts_only_from_when_it_was_added(api, execution_db, tmp_path):
+    """#499 review F5: server ids are reused after the newest one is deleted; a call to the old server under the
+    same id is not the new one's use."""
+    await _seed(execution_db, tmp_path)
+    await _steps(execution_db, ("mcp_3__search", datetime(2026, 8, 20, 9), "{}"))        # before server 3
+    assert (await _rows(api))["mcp:3"]["last_used"] is None
+    await _steps(execution_db, ("mcp_3__search", datetime(2026, 9, 2, 9), "{}"))
+    assert (await _rows(api))["mcp:3"]["last_used"] == "2026-09-02T09:00:00Z"
+
+
+@pytest.mark.parametrize("row,tool", [("browser", "browser_click"), ("hands", "desktop_type"),
+                                      ("shortcuts", "mac_run_shortcut")])
+async def test_the_browser_hands_and_shortcuts_rows_count_all_their_tools(api, execution_db, tmp_path, row, tool):
+    """#499 review F8c: those rows stand for a family of tools, not only the two the row lists."""
+    await _steps(execution_db, (tool, datetime(2026, 10, 26, 9), "{}"))
+    assert (await _rows(api))[row]["last_used"] == "2026-10-26T09:00:00Z"
 
 
 async def test_a_switched_off_row_still_says_when_it_was_last_used(api, execution_db, tmp_path):
