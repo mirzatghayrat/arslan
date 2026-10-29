@@ -28,8 +28,11 @@ const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(
 
 export const lessonsApi = {
   list: () => request<Lesson[]>("/lessons"),
-  /** Accept or restore (active); undo or retire (archived — restorable). */
-  setStatus: (id: number, status: "active" | "archived") => request<Lesson>(`/lessons/${id}/status`, json("POST", { status })),
+  /** Switch on or restore (active); undo or retire (archived — restorable). `expectedUpdatedAt`: the
+   *  row Memory's sheet showed; one that changed since is refused (409, F4 of the #460 review).
+   *  Switching on needs it (422 without it, #466 review); retiring does not. */
+  setStatus: (id: number, status: "active" | "archived", expectedUpdatedAt?: string) => request<Lesson>(`/lessons/${id}/status`,
+    json("POST", expectedUpdatedAt ? { status, expected_updated_at: expectedUpdatedAt } : { status })),
   pin: (id: number, pinned: boolean) => request<Lesson>(`/lessons/${id}/pin`, json("POST", { pinned })),
   remove: (id: number) => request(`/lessons/${id}`, { method: "DELETE" }),
 };
