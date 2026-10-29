@@ -261,6 +261,31 @@ async def test_a_connection_says_how_it_is_reached_and_others_do_not(api, execut
     assert rows["terminal"]["reach"] is None and rows["skill:csv-tidy"]["reach"] is None
 
 
+async def test_reach_never_carries_a_secret(api, execution_db, tmp_path):
+    """#500 light recheck: `reach` is only searched, never shown, but it must not carry what may be a secret: the
+    address's userinfo, query and fragment, a NAME=value argument, the value after a secret-looking flag, or the
+    server's own secrets (its env values, masked as last_error is)."""
+    import json
+
+    from server import crypto
+    async with execution_db() as db:
+        db.add_all([
+            MCPServer(id=7, label="remote", command="", transport="http", host_allowed=True, status="registered",
+                      url="https://someone:PASSWORD1@mcp.example.test:8443/mcp?key=SECRETQ1&v=2#FRAG1",
+                      created_at=ADDED),
+            MCPServer(id=8, label="local", command="npx", transport="stdio", host_allowed=True, status="registered",
+                      args=["-y", "some-mcp", "--token", "SECRETT1", "=".join(("API_KEY", "SECRETA1")), "--header",
+                            "Authorization: Bearer SECRETH1", "--API-KEY", "SECRETK1", "SECRETE1"],
+                      env=crypto.encrypt(json.dumps({"TOKEN": "SECRETE1"})), created_at=ADDED),
+        ])
+        await db.commit()
+    rows = await _rows(api)
+    assert rows["mcp:7"]["reach"] == "https://mcp.example.test:8443/mcp"
+    assert rows["mcp:8"]["reach"].startswith("npx -y some-mcp")
+    for secret in ("PASSWORD1", "SECRETQ1", "FRAG1", "SECRETT1", "SECRETA1", "SECRETH1", "SECRETK1", "SECRETE1"):
+        assert secret not in rows["mcp:7"]["reach"] + rows["mcp:8"]["reach"], secret
+
+
 def test_a_connection_is_deleted_only_through_the_capabilities_list():
     """#500 recheck: DELETE /mcp/servers/{id} skipped an installed connection's removal (no Trash, the source left
     "installed") and had no caller left; DELETE /capabilities/mcp:<id> is the one way."""

@@ -150,17 +150,20 @@ async def _mcp_rows() -> list[dict]:
     page must not say "on" while the model is offered none of its tools."""
     from server.mcp.supervisor import ready_now
     from server.services import mcp_service
+    from server.db.models import MCPServer
+    from server.mcp.discovery import runtime_dict
     rows = []
     installed = await _installed_servers()
+    async with db_session.AsyncSessionLocal() as db:            # each server's own secrets, to mask `reach`
+        runtimes = {srv.id: runtime_dict(srv) for srv in (await db.execute(select(MCPServer))).scalars()}
     # the stored legacy status: "never connected" (registered) and an old error decide the row below;
     # `last_error` comes masked (final review I-2)
     for server in await mcp_service.list_servers(stored_status=True):
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         # CAP3a-1: installed from a card (its capability source) or added by hand; its use is its tools'
         # calls (`mcp_<id>__…`, see capabilities()).
-        reach = " ".join(part for part in (server.get("command") or "", *(server.get("args") or []),
-                                           server.get("url") or "") if part)
-        where = {"section": "connections", "source_id": installed.get(server["id"]), "reach": reach,
+        where = {"section": "connections", "source_id": installed.get(server["id"]),
+                 "reach": _reach(server, runtimes.get(server["id"])),
                  "origin": "installed" if server["id"] in installed else "manual"}
         missing = _runtime_missing(server)
         allowed = bool(server.get("host_allowed"))
@@ -191,6 +194,38 @@ async def _mcp_rows() -> list[dict]:
             # connected: switched on means ready in this process (`starting` above), else the user's off
             rows.append(_row(key, "on" if allowed else "off", name=name, **where, switch="mcp"))
     return rows
+
+
+# Flags whose next argument is a value that may be a secret (#500 light recheck). "-H" is a header, never help.
+_SECRET_FLAGS = ("--token", "--api-key", "--apikey", "--key", "--secret", "--password", "--header")
+
+
+def _reach(server: dict, runtime: dict | None) -> str:
+    """How a connection is reached, for the page's search only (never shown): its command and arguments, or its
+    address, without anything that may be a secret (#500 light recheck). The address keeps scheme, host, port and
+    path (no userinfo, query or fragment); a NAME=value argument goes, and so does the value after a
+    secret-looking flag; what is left is masked with the server's own secrets, as its last_error is."""
+    from urllib.parse import urlsplit
+
+    from server.mcp.supervisor import mask_for
+    parts, skip = [server.get("command") or ""], False
+    for arg in map(str, server.get("args") or ()):
+        if skip:
+            skip = False
+        elif arg == "-H" or arg.lower() in _SECRET_FLAGS:
+            skip = True
+        elif "=" not in arg:
+            parts.append(arg)
+    if server.get("url"):
+        try:
+            address = urlsplit(server["url"])
+            host = f"[{address.hostname}]" if ":" in (address.hostname or "") else address.hostname or ""
+            parts.append(f"{address.scheme}://{host}{f':{address.port}' if address.port else ''}{address.path}"
+                         if address.scheme and host else "")
+        except ValueError:                                     # a malformed address: nothing of it
+            pass
+    text = " ".join(part for part in parts if part)
+    return mask_for(runtime, text) if runtime else text
 
 
 async def _installed_servers() -> dict[int, str]:
