@@ -1,9 +1,8 @@
 """SBX-1 (v0.1.64): the SBPL builder every seatbelt profile is written with (`sandbox_profile`)."""
-import json
 import os
 import re
 
-from server.services.sandbox_profile import Profile, file_or_folder, literal, real, remote_tcp, subpath
+from server.services.sandbox_profile import Profile, file_or_folder, literal, real, remote_tcp, sbpl_string, subpath
 
 
 def test_a_profile_starts_with_its_version_and_default():
@@ -45,11 +44,11 @@ def test_a_deny_over_no_paths_denies_everything():
     assert rules.text().splitlines()[2:] == ["(deny file-read* file-write*)"]
 
 
-def test_a_path_is_one_json_string_so_its_name_cannot_add_rules():
+def test_a_path_is_one_sbpl_string_so_its_name_cannot_add_rules():
     name = '/x") (allow default) (deny file-read* (subpath "\\'
     for kind in (subpath, literal):
         written = kind(name)
-        assert written.endswith(json.dumps(name) + ")")
+        assert written.endswith(sbpl_string(name) + ")")
         # Outside the quoted string nothing is left but the filter's own name.
         assert re.sub(r'"(?:\\.|[^"\\])*"', '""', written) in ('(subpath "")', '(literal "")')
 
