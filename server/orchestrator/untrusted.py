@@ -105,14 +105,14 @@ _MCP_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 _MCP_KEY = re.compile(r"mcp_\d+__(.*)", re.S)
 
 
-def breaks_mcp_name_rule(name: str) -> bool:
+def breaks_mcp_name_rule(name) -> bool:
     """A tool name the MCP rule does not allow: it is 1-128 characters of A-Za-z0-9_.- (no spaces)."""
-    return not _MCP_NAME.fullmatch(name or "")
+    return not _MCP_NAME.fullmatch(str(name))
 
 
 def odd_mcp_key(key: str) -> bool:
     """An MCP tool's key whose name part breaks the MCP name rule."""
-    found = _MCP_KEY.fullmatch(key or "")
+    found = _MCP_KEY.fullmatch(key)
     return bool(found) and breaks_mcp_name_rule(found.group(1))
 
 
