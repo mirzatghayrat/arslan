@@ -558,3 +558,100 @@ def test_0072_leaves_a_database_without_runs_alone(tmp_path):
 
 
 _ = datetime  # kept for fixtures that add timestamps
+
+
+# -- #475 F2 (the user, 2026-10-29): the allowlist itself ----------------------------------------------------
+
+def test_the_allowlist_names_four_tools_and_everything_else_counts():
+    """The tools whose results carry nothing from outside: Arslan's two memory writes, the checklist and the
+    choice card. A tool added later counts until someone adds it here on purpose."""
+    from server.orchestrator.tool_loop import _NATIVE_PARAM_SCHEMAS
+    assert untrusted.KNOWN_LOCAL_TOOLS == {"remember", "memory_note", "update_plan", "ask_user_choice"}
+    others = set(_NATIVE_PARAM_SCHEMAS) - untrusted.KNOWN_LOCAL_TOOLS | {"mcp_1__notes", "browser_open"}
+    assert {"run_command", "read_file", "desktop_look", "ssh_run", "recall"} <= others
+    assert not any(untrusted.known_local_call(key, {"ok": True}) for key in others)
+    # memory_note's answer with the set's entries is stored text (waiting entries too); an empty set is not.
+    assert not untrusted.known_local_call("memory_note", {"ok": False, "entries": [{"id": "e", "text": "x"}]})
+    assert untrusted.known_local_call("memory_note", {"ok": False, "entries": []})
+    assert untrusted.known_local_call("memory_note", {"ok": True, "status": "active"})
+
+
+def test_outside_a_turn_nothing_is_known_local():
+    assert untrusted.known_local() is False
+
+
+# -- #475 F4 (the user, 2026-10-29): Arslan's `sensitive: true` only makes a write stricter ------------------
+
+THERAPY = "The user sees a therapist on Tuesdays"           # no keyword catches it
+
+
+@pytest.mark.parametrize("tool", ["remember", "memory_note"])
+async def test_arslans_sensitive_flag_makes_an_about_you_wait_and_ask(memory, tool):
+    out = await _write(tool, THERAPY, entry={"sensitive": True})
+    assert out["status"] == "proposed" and await _reason(memory, out["id"]) == "sensitive"
+    assert (await _entry(memory, out["id"]))[:3] == ("proposed", "sensitive", "local_only")
+    # The chat line's one question, bound to this proposal.
+    assert [(f["type"], f["sensitive"]) for f in memory.frames] == [("memory_proposed", True)]
+
+
+async def test_without_the_flag_the_same_words_take_effect(memory):
+    assert (await _write("memory_note", THERAPY))["status"] == "active"
+
+
+async def test_anything_but_false_counts_as_the_flag(memory):
+    assert (await _write("memory_note", THERAPY, entry={"sensitive": "yes"}))["status"] == "proposed"
+
+
+async def test_false_never_loosens_what_the_keywords_or_the_entry_say(memory):
+    out = await _write("remember", "The user's daughter is called Ada", entry={"sensitive": False})
+    assert out["status"] == "proposed" and await _reason(memory, out["id"]) == "sensitive"
+    async with repository() as repo:
+        mine = await repo.create(MemoryWrite(content=THERAPY, kind="preference", scope=MemoryScope(kind="global"),
+                                             sensitivity="sensitive", sensitive_acknowledged=True), USER)
+    await _write("memory_note", THERAPY, entry={"sensitive": False})       # puts the user's entry in view
+    async with memory() as session:
+        proposal = (await session.scalars(select(MemoryProposal).where(
+            MemoryProposal.target_entry_id == mine["id"], MemoryProposal.status == "pending"))).one()
+    assert proposal.candidate["sensitivity"] == "sensitive"
+
+
+async def test_the_flag_on_an_edit_makes_the_proposal_sensitive_and_the_users_yes_keeps_it(memory):
+    first = await _write("memory_note", "The user is seeing someone")
+    assert first["status"] == "active"
+    await _write("memory_note", "The user is seeing someone new", action="replace",
+                 entry={"id": first["id"], "sensitive": True})
+    async with memory() as session:
+        proposal = (await session.scalars(select(MemoryProposal).where(
+            MemoryProposal.target_entry_id == first["id"], MemoryProposal.status == "pending"))).one()
+    assert proposal.candidate["sensitivity"] == "sensitive"
+    async with repository() as repo:
+        await repo.resolve_proposal(proposal.id, accept=True, actor=USER, sensitive_acknowledged=True)
+    assert (await _entry(memory, first["id"]))[1] == "sensitive"
+
+
+async def test_the_flag_on_a_remember_supersede_makes_the_proposal_sensitive(memory):
+    first = await _write("remember", "The user is seeing someone")
+    async with repository() as repo:
+        alias = await repo.compatibility_id(await repo.db.get(MemoryEntry, first["id"]), "user_facts")
+    await _write("remember", "The user is seeing someone new", action="supersede",
+                 entry={"target_id": alias, "expected_version": first["version"], "sensitive": True})
+    async with memory() as session:
+        proposal = (await session.scalars(select(MemoryProposal).where(
+            MemoryProposal.target_entry_id == first["id"], MemoryProposal.status == "pending"))).one()
+    assert proposal.candidate["sensitivity"] == "sensitive"
+
+
+def test_the_flag_only_ever_raises_a_sensitivity():
+    """Without revise's fold (#475 recheck, G1) behind it: the flag's own rule, for every starting point."""
+    for given in ("normal", "unknown", "sensitive", "secret"):
+        for off in ({}, {"sensitive": False}, {"sensitive": None}, {"sensitive": ""}):
+            assert memory_tools_v2._flagged(off, given) == given
+        assert memory_tools_v2._flagged({"sensitive": True}, given) == (
+            "sensitive" if given in ("normal", "unknown") else given)
+
+
+def test_both_write_tools_offer_the_flag():
+    """memory_note's parameters allow nothing else, so a provider that checks them would drop the flag."""
+    from server.orchestrator.tool_loop import _NATIVE_PARAM_SCHEMAS
+    for key in ("remember", "memory_note"):
+        assert _NATIVE_PARAM_SCHEMAS[key]["properties"]["sensitive"]["type"] == "boolean"

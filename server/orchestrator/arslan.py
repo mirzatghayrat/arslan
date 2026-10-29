@@ -795,8 +795,8 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
     pieces: list[str] = []
     # K3: nobody is waiting on a background job, so its cache entries keep the default five minutes,
-    # even when a chat turn started it.
-    with request_policy.prompt_cache(long=False):
+    # even when a chat turn started it. INB2 (#475 F2): its run's record counts the knowledge put in.
+    with request_policy.prompt_cache(long=False), untrusted.knowledge_in(bool(kb_block)):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_background_tools, resolve_callable=_background_callable,
@@ -851,7 +851,9 @@ async def _handle_answer_body(
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
         # S64-0b: what the user attached (a file's text, a picture, what OCR reads off it) is outside content.
-        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)):
+        # INB2 (#475 F2): so is the project knowledge found for it, for the "about you" allowlist.
+        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)), \
+                untrusted.knowledge_in(bool(kb_block)):
             return await _run_answer(user_content)
 
     try:
@@ -1135,9 +1137,10 @@ async def _every_tool() -> list[dict]:
                                "refers to something from before (\"what did I say about…\", \"last week we…\").",
         "memory_note": "Edit the two memory sets that are always in view, by entry id. set \"about_you\": "
                        "lasting facts and preferences about the user; set \"notes\": what you learned about this "
-                       "Mac and setup (paths, tools, quirks). args: {action: add|replace|remove, set, id?, text?}. "
-                       "Keep entries short. Changes apply from the next turn; a full set returns its entries so "
-                       "you can replace or remove one.",
+                       "Mac and setup (paths, tools, quirks). args: {action: add|replace|remove, set, id?, text?, "
+                       "sensitive?}. Keep entries short. Add sensitive: true for anything private (health, beliefs, "
+                       "relationships, money); the user is asked first. Changes apply from the next turn; a full set "
+                       "returns its entries so you can replace or remove one.",
     }
     tools = [{"key": k, "description": desc[k]}
              for k in ("web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search",

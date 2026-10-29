@@ -11,7 +11,8 @@ from server.services.run_recorder import RUN_RAW_CAP
 
 _trace: ContextVar[list[dict] | None] = ContextVar("run_trace", default=None)
 _prompt: ContextVar[dict | None] = ContextVar("run_prompt", default=None)
-# v0.1.64 INB2: whether the run's turns read outside content; None until a turn of the run ends.
+# v0.1.64 INB2: whether the run's turns took in anything off the "about you" allowlist (untrusted.known_local,
+# #475 F2); None until a turn of the run ends.
 _outside: ContextVar[dict | None] = ContextVar("run_outside", default=None)
 
 
@@ -66,8 +67,8 @@ def prompt() -> dict:
 
 
 def record_outside(seen: bool) -> None:
-    """A turn of this run ended (tool_loop.run_native): whether it read outside content. Any turn that did
-    makes the run's record yes (INB2)."""
+    """A turn of this run ended (tool_loop.run_native): whether it took in anything off INB2's allowlist.
+    Any turn that did makes the run's record yes."""
     holder = _outside.get()
     if holder is not None:
         holder["seen"] = bool(holder["seen"]) or bool(seen)

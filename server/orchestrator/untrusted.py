@@ -99,9 +99,10 @@ def reaches_network(command: str) -> bool:
 
 
 def track_turn() -> contextvars.Token:
-    """A turn's holder. It starts clean unless its run carries outside content in (`carried`)."""
+    """A turn's holder. It starts clean unless its run carries outside content in (`carried`); for INB2's
+    allowlist below it also starts off the list when project knowledge was put into it (`knowledge_in`)."""
     run = _CARRIED.get()
-    return _EXTERNAL.set({"seen": bool(run and run["seen"])})
+    return _EXTERNAL.set({"seen": bool(run and run["seen"]), "off_list": _KNOWLEDGE.get()})
 
 
 @contextlib.contextmanager
@@ -133,6 +134,44 @@ def mark_external() -> None:
     holder = _EXTERNAL.get()
     if holder is not None:
         holder["seen"] = True
+
+
+# ── v0.1.64 INB2 (#475 F2): the user's allowlist for "about you" memory ─────────────────────────
+# An "about you" memory Arslan writes takes effect directly only in a clean conversation, and the user
+# decided (2026-10-29) that clean is an allowlist: nothing attached, no project knowledge put into a turn,
+# and only the tools below called. Any other call counts, whether or not it ran and whatever it returned,
+# run_command included (it can read a file), and so does everything the mark above counts. Only INB2 reads
+# this (memory_tools_v2._about_you, `runs.read_outside`); lessons and Arslan's own notes keep the mark above.
+KNOWN_LOCAL_TOOLS = frozenset({"remember", "memory_note", "update_plan", "ask_user_choice"})
+_KNOWLEDGE: contextvars.ContextVar[bool] = contextvars.ContextVar("knowledge_in_turn", default=False)
+
+
+@contextlib.contextmanager
+def knowledge_in(injected: bool):
+    """Every turn started inside had project knowledge put into its context when `injected`."""
+    token = _KNOWLEDGE.set(_KNOWLEDGE.get() or bool(injected))
+    try:
+        yield
+    finally:
+        _KNOWLEDGE.reset(token)
+
+
+def known_local_call(tool_key: str, result: dict) -> bool:
+    """A call on the allowlist. memory_note answers a full set, or an id not in it, with the set's entries,
+    waiting ones too: stored text, like recall, so that answer is off the list."""
+    return tool_key in KNOWN_LOCAL_TOOLS and not (tool_key == "memory_note" and result.get("entries"))
+
+
+def mark_off_the_list() -> None:
+    holder = _EXTERNAL.get()
+    if holder is not None:
+        holder["off_list"] = True
+
+
+def known_local() -> bool:
+    """Whether everything this turn took in so far is on the allowlist; outside a turn, no."""
+    holder = _EXTERNAL.get()
+    return holder is not None and not holder["seen"] and not holder.get("off_list")
 
 
 # S64-0b: what a background job that may carry outside content posts (its result, the notes naming its

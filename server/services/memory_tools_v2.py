@@ -13,9 +13,10 @@ from server.services.memory_repository import repository
 
 async def _about_you(actor, ctx):
     """INB2: the turn's own state for a new "about you" entry: the user present (the allowlist,
-    server/services/presence.py) and the whole conversation clean: this turn read nothing from outside,
-    and every other run of the conversation recorded that it read none (`runs.read_outside`; no record,
-    NULL, counts as having read some: older runs, a crashed one, a job still running)."""
+    server/services/presence.py) and the whole conversation clean: everything this turn took in is on the
+    user's allowlist (untrusted.known_local: nothing attached, no project knowledge, only known-local tools;
+    #475 F2), and every other run of the conversation recorded the same (`runs.read_outside`; no record,
+    NULL, counts as off it: older runs, a crashed one, a job still running)."""
     from sqlalchemy import or_
 
     from server.db import session as db_session
@@ -24,7 +25,7 @@ async def _about_you(actor, ctx):
     from server.services import presence
     # This turn and every earlier turn of this run (#475 review, F5); with no conversation whose other runs can
     # be checked, nothing is known to be clean (F7).
-    clean = not untrusted.external_seen() and run_trace.outside() is not True and bool(ctx.conversation_id)
+    clean = untrusted.known_local() and run_trace.outside() is not True and bool(ctx.conversation_id)
     if clean:
         async with db_session.AsyncSessionLocal() as db:
             query = select(Run.id).where(Run.conversation_id == ctx.conversation_id,
@@ -33,6 +34,13 @@ async def _about_you(actor, ctx):
                 query = query.where(Run.id != ctx.source_run_id)
             clean = (await db.execute(query.limit(1))).first() is None
     return replace(actor, user_present=presence.present(), conversation_clean=clean)
+
+
+def _flagged(args, sensitivity: str = "normal") -> str:
+    """#475 F4 (the user, 2026-10-29): Arslan may add `sensitive: true` to a write. It only ever makes the
+    write stricter: normal or unknown becomes sensitive; leaving it out or saying false changes nothing, and
+    decide_write's keywords still apply. Judging sensitivity by category is later."""
+    return "sensitive" if args.get("sensitive") and sensitivity in ("normal", "unknown") else sensitivity
 
 
 def _tell_the_window(ctx, result: dict) -> None:
@@ -108,7 +116,7 @@ async def remember(args, caller):
         async with repository() as repo:
             if action == "append":
                 result = await repo.create(MemoryWrite(content=str(args.get("content") or ""),
-                                                       kind=kind, scope=scope), actor)
+                                                       kind=kind, scope=scope, sensitivity=_flagged(args)), actor)
             else:
                 target = args.get("target_id")
                 if not isinstance(target, int) or isinstance(target, bool):
@@ -126,7 +134,7 @@ async def remember(args, caller):
                 # review of the exact old/new versions.
                 result = await repo.revise(entry.id, expected, MemoryWrite(
                     content=str(args.get("content") or ""), kind=entry.kind, scope=scope,
-                    sensitivity=entry.sensitivity, use_policy=entry.use_policy,
+                    sensitivity=_flagged(args, entry.sensitivity), use_policy=entry.use_policy,
                     topic=(revision.structured_value or {}).get("topic"),
                     valid_from=entry.valid_from.replace(tzinfo=UTC) if entry.valid_from else None,
                     review_at=entry.review_at.replace(tzinfo=UTC) if entry.review_at else None,
@@ -195,7 +203,7 @@ async def note(args, caller):
                     return {"ok": False, "code": "core_set_full", **listing,
                             "next_action": "replace or remove an entry by id, then add"}
                 result = await repo.create(MemoryWrite(content=text, kind=kind, scope=MemoryScope(kind="global"),
-                                                       core=member), actor)
+                                                       core=member, sensitivity=_flagged(args)), actor)
                 if member == "about_you":
                     _tell_the_window(ctx, {"ok": True, **result})
             else:
@@ -212,7 +220,7 @@ async def note(args, caller):
                 result = await repo.revise(entry.id, entry.version, MemoryWrite(
                     content=text if action == "replace" else (revision.content or target["text"]),
                     kind=kind, scope=MemoryScope(kind="global"),
-                    sensitivity=entry.sensitivity if entry.sensitivity != "secret" else "unknown",
+                    sensitivity=_flagged(args, entry.sensitivity if entry.sensitivity != "secret" else "unknown"),
                     use_policy=entry.use_policy if entry.use_policy != "never" else "local_only",
                     topic=(revision.structured_value or {}).get("topic"),
                     core=member if action == "replace" else None,

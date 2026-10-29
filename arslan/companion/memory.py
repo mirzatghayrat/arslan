@@ -86,9 +86,9 @@ class MemoryActor:
     source_run_id: int | None = None
     conversation_id: str | None = None
     # v0.1.64 INB2: an "about you" memory Arslan writes takes effect directly when the user is present
-    # (server/services/presence.py, the allowlist) and the whole conversation read nothing from outside
-    # (`runs.read_outside`). Set only by the remember / memory_note executors from the turn's own state,
-    # never from arguments.
+    # (server/services/presence.py, the allowlist) and the whole conversation took in only what the user's
+    # allowlist names (`runs.read_outside`; #475 F2: nothing attached, no project knowledge, only known-local
+    # tools). Set only by the remember / memory_note executors from the turn's own state, never from arguments.
     user_present: bool = False
     conversation_clean: bool = False
 

@@ -376,6 +376,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
                              or (tool_key in ("read_skill", "background_status")      # S64-0b: per result
                                  and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
+    if not _untrusted.known_local_call(tool_key, result):
+        _untrusted.mark_off_the_list()       # INB2 (#475 F2): any call off the user's allowlist, run or not
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
     # hint sits AFTER the data frame — it is OUR trusted framing (like the
     # "TOOL RESULT for X" header and the "Use this to continue" trailer), never inside
@@ -1906,6 +1908,9 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 # so these can be loose; they exist only to nudge the model toward the right shape.
 from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
 
+# INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
+_SENSITIVE_FLAG = {"type": "boolean"}
+
 # Hands v2 §6.3: the one way the model asks for the front.
 _FRONT = ("only after this action, done in the background, did nothing (no_effect) and you looked again: "
           "Arslan borrows the app's front for about a second, waiting for the user to pause typing")
@@ -2098,7 +2103,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                    "set": {"type": "string", "enum": ["about_you", "notes"]},
                                    "id": {"type": "string", "description": "Entry id, for replace or remove."},
                                    "text": {"type": "string", "maxLength": 600,
-                                            "description": "The entry, for add or replace. One short line."}},
+                                            "description": "The entry, for add or replace. One short line."},
+                                   "sensitive": _SENSITIVE_FLAG},
                     "required": ["action", "set"], "additionalProperties": False},
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string"},
@@ -2120,6 +2126,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                 "enum": ["append", "supersede", "mark_stale", "delete"]},
                      "content": {"type": "string"},
                      "target_id": {"type": "integer"},
+                     "sensitive": _SENSITIVE_FLAG,
                  },
                  "required": ["kind", "action", "content"]},
     "update_plan": _PLAN_PARAMS,
@@ -2849,7 +2856,9 @@ async def run_native(**kwargs) -> dict:
         # or failed first) goes back to its sender, to run once as a turn of its own.
         for steer in facts.pop("steers", None) or []:
             steer.hand_back()
-        run_trace.record_outside(_untrusted.end_turn(seen))     # INB2: the run's own record (runs.read_outside)
+        known_local = _untrusted.known_local()      # read before end_turn drops the holder
+        _untrusted.end_turn(seen)
+        run_trace.record_outside(not known_local)   # INB2: the run's own record (runs.read_outside), the allowlist
         _SENT_IS_FINAL.reset(sent_is_final)
         tool_outputs.conversation.reset(copies_of)
 
