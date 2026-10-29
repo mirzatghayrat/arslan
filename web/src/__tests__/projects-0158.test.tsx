@@ -159,8 +159,7 @@ describe("clearing a level", () => {
       column: "doing", levels: [], current: null, left: 2, done_at: null, has_plan: true,
       proposal: { id: "e1", level: "Slice", next: "Launch", evidence: { kind: "said", quote: "done" }, moves_column: false, last: false,
         open: [{ id: "c2", text: "First level" }] } };
-    vi.spyOn(projectsApi, "board").mockResolvedValue({ cards: [card], counts: { paused: 0, archived: 0 },
-      shadow: { proposed: 0, accepted: 0, streak: 0, ask_at: 10, asked: false, auto_advance: false } } as never);
+    vi.spyOn(projectsApi, "board").mockResolvedValue({ cards: [card], counts: { paused: 0, archived: 0 } } as never);
     const refused = new ApiError("open", 409, { code: "open_checkpoints", open: [{ id: "c2", text: "First level" }] });
     const decide = vi.spyOn(projectsApi, "decide").mockRejectedValueOnce(refused).mockResolvedValueOnce(plan(false));
     render(<ProjectsSection onStart={vi.fn()} />);

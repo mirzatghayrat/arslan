@@ -156,6 +156,14 @@
 5. **「快问记录」怎么搜。** 一种：手机只在最近 100 条里自己筛（今天的上限）。另一种：给 `conversations.list` 加翻页（①iOS 提过 before / has_more），或者加一个服务端搜索的帧。后两种也是帧的改动，和第 1 条一起问。
 6. **分级和分道：** ⓪Plan 建议「必须」，Mac 端 ②Main、iPhone 端 ①iOS；随 v0.1.64 的范围一起定。
 
+**User decisions on 3 and 4, 2026-10-29** (relayed by ④参谋; the user: 「都按你的建议，转给 ⓪Plan」):
+
+- **3:** a quick ask converted to a conversation learns like an ordinary conversation from the moment of conversion. The quick-ask turns before it never learn. The 「转成对话」 copy must not promise otherwise (①iOS).
+- **4:** the pocket is deleted in v0.1.64, on condition that the iPhone build with Quick Ask (Q1c) ships together with Mac 0.1.64. Only the user's TestFlight runs the old builds. If Q1c misses 0.1.64, the deletion falls back to `DELETE-BY: v0.1.65`. ①iOS says Q1c can make it; it waits on the user's OK on its mock.
+  - **Acceptance for the deletion (①iOS's questions, ②Main to confirm):** builds up to 27 still send Share-sheet drafts to the pocket id. A `chat.send` to that id gets an `error` frame the phone already shows: the Mac never re-creates the pocket and never drops the message silently. After the deletion the Mac does not list the pocket at all, so the phone keys on whether it is listed and needs no special case for its id. Both use existing frames. Tests: a send to the old id gets an error and creates no row; the list has no pocket.
+  - **The pocket's old messages (user, 2026-10-29, in ⓪Plan's chat: "Keep as a conversation"):** after the deletion they stay on the Mac as an ordinary conversation, named after its first message, not pinned and not called Remote; the user can read, continue or delete it there (②Main's proposal). The id stays (`pocket`), and every phone frame that names it is refused as if it didn't exist (①iOS's review of #487, option 2). That covers `chat.send` with that id or with no id, `chat.history` with that id or with no id, and `conversation.delete`, plus `conversations.list` filtering it out for phones. So no build ≤27 can read or continue it. Only the Mac window can. **Outbound too (①iOS):** the Bridge never links the pocket id live and sends no frame naming it to any phone. That covers `chat.event`, `job.event`, `approval.request`, file offers, and `status.snapshot` jobs and waiting-approval entries (today the opposite holds: the idle-link sweep never unlinks the pocket, `ConversationLinks.swift:231`, so the deletion has to drop that exemption and stop linking it). A Mac-window turn there is approved on the Mac only. No table change, and no messages move: re-keying (option 1) would move rows across every table keyed by conversation id, which is a data migration. Tests: each of those frames is refused for the pocket id and makes no server call; a turn in the pocket with a phone paired puts nothing on the wire for the phone; the phone list has no pocket; after the deletion the old row is listed on the Mac as an ordinary chat with its messages intact and that title, and not first in the list.
+  - The deletion is its own PR, after Q1a and Q1b, and the `git grep` in step 7 above coming back empty (except `sidebar.remote`, which stays) is its evidence.
+
 ## ①iOS 审阅的结论（2026-10-29 夜，经 ⓪Plan 转记；用户 10-28 定：不贴到 PR 上，只记在这里）
 
 - **帧能并成一份清单：** ①iOS 起草了一份 13 项的清单，全是可选字段或新帧，不升 `Wire.version`。建议：
@@ -195,3 +203,14 @@
   - Only a quick conversation, or a retry for one already turned. Any other id, an ordinary conversation included, gets `error` `not_found` and is left as it is (⓪Plan's review of #479, F4).
 - **`conversation.delete`** deletes a quick conversation like any other. A phone that said `quick` may also delete the pocket.
 - **Still open, ②Main:** §4b's other point (`outcomes` holds only finished tasks).
+- **A retry repeats the kind (⓪Plan's review of #486, F1):** a resend of a quick ask's first message carries the same `new_conversation_id` and `conversation_kind: "quick"`. The Bridge refuses a resend that changes the kind (`bad_request`). Without this, a refused quick send retried with only `new_conversation_id` would land as an ordinary chat, with every tool and learning. ①iOS's Q1c already resends the kind, including after a relaunch, and tests it.
+
+## Q1c on the iPhone: scope the user narrowed (2026-10-29, in ①iOS's chat)
+
+Frames are unchanged.
+- **English name: "Quick Chat"** (user, 2026-10-29, in ①iOS's chat: 「可以，就用 Quick chat」, then "Quick Chat"). It replaces "Quick Ask" in every English user-facing place, on the iPhone and the Mac. The Chinese stays 快问. Code names (`QuickAsk`, the `quick` frames) stay. "Remote (old)" for the pre-deletion row stays.
+- The Overview's top-right 「＋ 新对话」 becomes 快问, with no row of recent quick asks under it. Tapping it opens the same view as today's Remote, nothing extra.
+- Past quick asks stay visible in that one page, scrolling up, like Remote today. There is no separate history list and there are no chips. The phone stacks the Mac's per-question quick conversations into one thread, oldest at the top, with a day line where a new day starts (each message shows its own time). Older ones are paged with `kind: "quick"` + `before`.
+- **Follow-up window: 30 minutes.** Within it, a new message continues the last quick ask (`chat.send` with its `conversation_id`). After it, a new quick ask starts. The window is kept across restarts. It counts from the last message sent into that quick ask, and is kept per Mac.
+- **No 「转成对话」 on the phone for now** (the user's choice). `conversation.update` stays in BridgeKit, unused by the UI, and the Mac side needs no change.
+- Ordinary new conversations still start from the sidebar's ＋. A Mac without `quick` makes 快问 open Remote. Share-sheet drafts go to the quick page when the Mac says `quick`. Until the Mac's pocket-deletion PR lands, a Mac that says `quick` and still lists the pocket shows it in the sidebar as 「Remote（旧）」, which can be deleted; once the Mac stops listing it, the row is gone.

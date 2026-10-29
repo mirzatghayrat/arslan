@@ -891,7 +891,6 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
-      "forge": "Skill Forge",
       "mcps": "MCPs"
     },
     "chips": {
@@ -972,66 +971,6 @@
       "count": "{{shown}} of {{total}}",
       "no_match": "Nothing here matches that. Clear the filter to see everything again.",
       "matched_tools": "contains {{tools}}"
-    }
-  },
-  "forge": {
-    "intro": "Package your own methods into skills. A candidate is observed, gated against a real spawn's scored runs, then promoted — you are the gate that makes it live. These self-authored skills join the library.",
-    "create": {
-      "title": "Create skill",
-      "submit": "Forge candidate",
-      "ok": "Forged \"{{name}}\" — now observing below."
-    },
-    "fields": {
-      "key": "Key",
-      "name": "Name",
-      "category": "Category",
-      "description": "Description",
-      "descriptionHint": "one-line description",
-      "body": "SKILL.md body",
-      "bodyHint": "Needs frontmatter, ## Trigger, and ## Decision Rules sections. Max 15 KB.",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
-    },
-    "list": {
-      "title": "Candidates ({{count}})",
-      "refresh": "Refresh",
-      "empty": "No candidates yet — forge one above."
-    },
-    "status": {
-      "observing": "observing",
-      "proposed": "proposed",
-      "promoted": "promoted",
-      "rejected": "rejected",
-      "liveLabel": "Live skill"
-    },
-    "promote": {
-      "button": "Promote",
-      "confirm": "Confirm — go live",
-      "cancel": "Cancel",
-      "hint": "Promote is the human gate: it registers this candidate as a live, assignable skill in the library.",
-      "ok": "Promoted — live as \"{{key}}\".",
-      "blocked": "Promote blocked."
-    },
-    "reject": {
-      "button": "Reject"
-    },
-    "curator": {
-      "usage": "{{usage}} runs since promotion",
-      "score": "avg {{score}}/10",
-      "noScore": "no scored runs yet",
-      "flagUnused": "⚠ unused",
-      "flagUnderperforming": "⚠ underperforming",
-      "retire": "Retire",
-      "retireConfirm": "Retire — unassign everywhere",
-      "cancel": "Cancel",
-      "retireHint": "flagged for review — retire unassigns it everywhere and makes it non-assignable",
-      "retired": "Retired \"{{key}}\" — unassigned from {{count}} spawn(s)."
-    },
-    "modes": {
-      "title": "Two ways in",
-      "a_title": "A · Paste a SKILL.md",
-      "a_desc": "Have a ready SKILL.md? Paste its body into the form below and forge it as a candidate — the form is the upload path.",
-      "b_title": "B · Guided co-build",
-      "b_desc": "Describe your method field by field — key, name, category, description, then a body with ## Trigger and decision rules. Candidates are observed, gated on real scored runs, and promoted by you."
     }
   },
   "msg": {

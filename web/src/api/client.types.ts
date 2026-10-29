@@ -311,6 +311,8 @@ export interface StoredArtifact {
   sha256: string;
   media_type: string;
   url: string;
+  /** One file's identity across a run's versions (server artifact_store; BR2). */
+  logical_key?: string;
 }
 
 export interface SpawnSummary {
@@ -374,7 +376,6 @@ export interface AppSettings {
   workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
-  projects_auto_advance?: string; // "true" | "false" (0.1.56)
   show_technical_details?: string; // "true" | "false" (0.1.58)
   heartbeat_interval_s?: string;
   lan_discovery_enabled?: string; // "true" | "false"
@@ -591,6 +592,14 @@ export interface CapabilityCard {
   folders: string[]; keys: { name: string; secret: boolean; required: boolean; description: string }[];
   why: string; retry: string;
 }
+/** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
+ *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */
+export interface AuthoredSkillCard {
+  kind: "authored"; key: string; name: string; description: string; body: string; why: string;
+  /** This conversation read a page, a file or another tool's result: the text may carry what that said, and
+   *  the saved skill stays outside content (#472 F1, F2). */
+  outside: boolean;
+}
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
@@ -710,7 +719,7 @@ export type ArslanServerMessage =
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
-  | ({ type: "propose_capability"; call_id: string } & CapabilityCard)
+  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard))
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
@@ -997,37 +1006,6 @@ export interface McpServer {
   last_error?: string | null;
   transport?: string;
   url?: string | null; // streamable-HTTP endpoint (transport === "http")
-}
-
-/** A self-authored skill candidate in the skill-forge loop. */
-export interface SkillCandidate {
-  id: number;
-  key: string;
-  name: string;
-  category: string;
-  description: string;
-  status: "observing" | "proposed" | "promoted" | "rejected" | string;
-  source: string;
-  created_at: string;
-  promoted_at: string | null;
-}
-
-/** Result of POST /skills/candidates/{id}/promote. */
-export interface SkillPromoteResult {
-  ok: boolean;
-  key?: string;
-  reason?: string;
-}
-
-/** Curator (Slice 3) usage/quality signal for one promoted self-authored skill. */
-export interface CuratorFlag {
-  key: string;
-  name: string;
-  equipped_spawns: number;
-  usage: number;
-  avg_score: number | null;
-  flag: "unused" | "underperforming" | null;
-  reason: string | null;
 }
 
 export interface McpTool {

@@ -1,4 +1,7 @@
-"""0.1.56 P6: the retro at Done — counted facts, one model call on request, rules kept as habits."""
+"""0.1.56 P6: the retro at Done — counted facts, one model call on request.
+
+PRJ0 (user, 2026-10-28) took out "usually N days" (rhythm stats) and the rules a retro
+offered to keep as plan rules (plan rules are gone)."""
 from datetime import datetime, timedelta
 
 import httpx
@@ -9,7 +12,7 @@ from sqlalchemy import select
 from server import auth
 from server.api.companion import router as companion_router
 from server.api.projects import router as projects_router
-from server.services import project_drafter, project_retro
+from server.services import project_plan, project_retro
 
 
 @pytest.fixture
@@ -59,13 +62,12 @@ async def _done_project(api, execution_db, *, name="Sample game") -> str:
             row.state, row.started_at, row.cleared_at = "cleared", start, start + timedelta(days=days)
             start += timedelta(days=days)
         await db.commit()
-    await api.put("/api/v1/project-habits/pace", json={"template": "game", "band": "shaping", "days": 4})
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "done"})
     return pid
 
 
 async def test_the_retro_is_only_for_a_done_project(api, execution_db, monkeypatch):
-    adapter = _Adapter('{"summary": "x", "rules": []}')
+    adapter = _Adapter('{"summary": "x"}')
     monkeypatch.setattr(project_retro, "_get_adapter", lambda: adapter)
     pid = (await api.post("/api/v1/projects", json={"name": "Open", "kind": "general"})).json()["id"]
     response = await api.post(f"/api/v1/projects/{pid}/retro", json={})
@@ -74,22 +76,22 @@ async def test_the_retro_is_only_for_a_done_project(api, execution_db, monkeypat
 
 
 async def test_one_call_writes_it_from_counted_facts(api, execution_db, monkeypatch):
-    adapter = _Adapter('{"summary": "Shaping took 10 days against your usual 4.", '
-                       '"rules": ["Time-box shaping to a week", "Cut scope before building", "Third", "Fourth"]}')
+    # A model that still sends rules (an older prompt, a habit): they are not kept.
+    adapter = _Adapter('{"summary": "Shaping took 10 days, then the plan was cut.", '
+                       '"rules": ["Time-box shaping to a week"]}')
     monkeypatch.setattr(project_retro, "_get_adapter", lambda: adapter)
     pid = await _done_project(api, execution_db)
     retro = (await api.post(f"/api/v1/projects/{pid}/retro", json={"lang": "zh"})).json()
     assert len(adapter.calls) == 1
     system, user = adapter.calls[0]
-    assert "Simplified Chinese" in system
+    assert "Simplified Chinese" in system and "rules" not in system and "usual" not in system
     facts = retro["facts"]
-    assert facts["slower"] == ["Shape"] and facts["levels"][0] == {
-        "level": "Shape", "band": "shaping", "days": 10.0, "usual": 4.0, "slower": True}
-    assert facts["levels"][1]["usual"] is None and facts["levels"][1]["slower"] is False
+    assert facts["levels"][0] == {"level": "Shape", "band": "shaping", "days": 10.0}
+    assert facts["levels"][1] == {"level": "Build", "band": "doing", "days": 3.0}
+    assert "slower" not in facts and "usual" not in user
     assert facts["plan_changes"] == 1 and facts["cut_checkpoints"] == 1
-    assert '"slower": ["Shape"]' in user
     assert retro["source"] == "model" and retro["summary"].startswith("Shaping took 10 days")
-    assert [r["text"] for r in retro["rules"]] == ["Time-box shaping to a week", "Cut scope before building", "Third"]
+    assert "rules" not in retro
     assert (await api.get(f"/api/v1/projects/{pid}/retro")).json()["id"] == retro["id"]
     again = (await api.post(f"/api/v1/projects/{pid}/retro", json={})).json()   # asking again replaces it
     assert again["id"] != retro["id"] and (await api.get(f"/api/v1/projects/{pid}/retro")).json()["id"] == again["id"]
@@ -105,20 +107,32 @@ async def test_without_a_usable_reply_the_retro_is_the_facts(api, execution_db, 
     monkeypatch.setattr(project_retro, "_get_adapter", lambda: adapter)
     pid = await _done_project(api, execution_db)
     retro = (await api.post(f"/api/v1/projects/{pid}/retro", json={})).json()
-    assert retro["source"] == "facts" and retro["summary"] is None and retro["rules"] == []
-    assert retro["facts"]["slower"] == ["Shape"]
+    assert retro["source"] == "facts" and retro["summary"] is None and "rules" not in retro
+    assert retro["facts"]["levels"][0]["days"] == 10.0
 
 
-async def test_a_kept_rule_becomes_a_plan_rule_once(api, execution_db, monkeypatch):
-    monkeypatch.setattr(project_retro, "_get_adapter",
-                        lambda: _Adapter('{"summary": "s", "rules": ["Time-box shaping to a week", "Other"]}'))
-    pid = await _done_project(api, execution_db, name="Tidepool")
-    await api.post(f"/api/v1/projects/{pid}/retro", json={})
-    kept = (await api.post(f"/api/v1/projects/{pid}/retro/rules/0/keep")).json()
-    assert [r["kept"] for r in kept["rules"]] == [True, False]
-    await api.post(f"/api/v1/projects/{pid}/retro/rules/0/keep")
-    rules = (await api.get("/api/v1/project-habits")).json()["rules"]
-    retro_rules = [r for r in rules if r["value"].get("code") == "retro"]
-    assert [(r["text"], r["sources"]) for r in retro_rules] == [("Time-box shaping to a week", ["Tidepool"])]
-    assert "Time-box shaping to a week" in await project_drafter.plan_rules("game")
-    assert (await api.post(f"/api/v1/projects/{pid}/retro/rules/5/keep")).status_code == 404
+async def test_the_line_said_on_a_decline_is_kept_and_the_retro_lists_it(api, execution_db, monkeypatch):
+    """What is left of the decline line since PRJ0: kept on the declined proposal (it no
+    longer becomes a plan rule), never on an accepted one, and listed in the retro."""
+    from server.db.models import Project
+    monkeypatch.setattr(project_retro, "_get_adapter", lambda: _Adapter(error=RuntimeError("no model")))
+    pid = (await api.post("/api/v1/projects", json={"name": "Sample game", "kind": "general",
+                                                   "template": "game"})).json()["id"]
+    await api.put(f"/api/v1/projects/{pid}/plan", json={"expected_version": 0, "levels": LEVELS})
+    await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
+
+    async def propose() -> str:
+        async with execution_db() as db:
+            event = await project_plan.propose_advance(db, await db.get(Project, pid),
+                                                       evidence={"kind": "said", "quote": "done"})
+            await db.commit()
+        return event.id
+
+    declined = await propose()
+    await api.post(f"/api/v1/projects/{pid}/proposals/{declined}/decline", json={"note": "  还想 再试一版  "})
+    accepted = await propose()
+    await api.post(f"/api/v1/projects/{pid}/proposals/{accepted}/accept", json={"note": "not kept", "leftover": "drop"})
+    await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "done"})
+    retro = (await api.post(f"/api/v1/projects/{pid}/retro", json={})).json()
+    assert retro["facts"]["decline_notes"] == ["还想 再试一版"]
+    assert (retro["facts"]["proposals"], retro["facts"]["proposals_kept"]) == (2, 1)

@@ -683,10 +683,6 @@ def create_app() -> FastAPI:
 
     app.include_router(discovery_api.router, prefix="/api/v1")
 
-    from server.api import skills as skills_api
-
-    app.include_router(skills_api.router, prefix="/api/v1")
-
     # --- S4.1-C inbound MCP server: off-by-default, dedicated-token-gated mount ---
     # Mounted BEFORE the SPA catch-all so /mcp-server is not swallowed. The gate is
     # fail-closed & independent of require_auth; session_manager.run() is driven from

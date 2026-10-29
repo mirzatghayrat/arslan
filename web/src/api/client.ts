@@ -18,7 +18,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   ProviderOption,
   RegistryCatalog,
   SkillHealth,
-  CuratorFlag,
   DeleteResult,
   RunCatalogDto,
   RunVitalsDto,
@@ -31,8 +30,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   ScheduledTaskDto,
   ScheduledTaskRunDto,
   ScheduledTaskUpdateBody,
-  SkillCandidate,
-  SkillPromoteResult,
   SpawnDetail,
   SpawnSummary,
   SuggestPrimaryResult,
@@ -550,34 +547,6 @@ export const api = {
         last_checked_at?: string | null;
       }>
     >("/mcp/servers"),
-  // ── Skill Forge: self-authored skills → observe → gate → promote ──────────────
-  /** Package a SKILL.md into a candidate. 400 (surfaced as ApiError.message) on invalid. */
-  forgeSkill: (body: {
-    key: string;
-    name: string;
-    category: string;
-    description: string;
-    body: string;
-    source?: string;
-  }) => request<SkillCandidate>("/skills/forge", { method: "POST", body: JSON.stringify(body) }),
-  listSkillCandidates: (status?: string) => {
-    const qs = new URLSearchParams();
-    if (status) qs.set("status", status);
-    const q = qs.toString();
-    return request<SkillCandidate[]>(`/skills/candidates${q ? `?${q}` : ""}`);
-  },
-  promoteSkillCandidate: (id: number) =>
-    request<SkillPromoteResult>(`/skills/candidates/${id}/promote`, { method: "POST" }),
-  rejectSkillCandidate: (id: number) =>
-    request<{ ok: boolean }>(`/skills/candidates/${id}/reject`, { method: "POST" }),
-  // ── Curator (Slice 3): post-promotion usage/quality signals + human retire ──────
-  getCuratorReview: () => request<CuratorFlag[]>("/skills/curator/review"),
-  /** Human-confirmed retire: unassigns the skill everywhere. 409 (ApiError) if not a promoted skill. */
-  retireSkill: (key: string) =>
-    request<{ ok: boolean; key?: string; unassigned?: number; reason?: string }>(
-      "/skills/curator/retire",
-      { method: "POST", body: JSON.stringify({ key }) },
-    ),
   extractAttachmentUrl: (url: string, compress = false) =>
     request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {
       method: "POST",

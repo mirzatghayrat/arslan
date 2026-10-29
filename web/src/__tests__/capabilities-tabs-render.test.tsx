@@ -16,8 +16,6 @@ vi.mock("../api/client", () => ({
     getRegistry: vi.fn(),
     listSpawns: vi.fn(),
     ingestKnowledgeText: vi.fn(),
-    listSkillCandidates: vi.fn(),
-    getCuratorReview: vi.fn(),
   },
   ApiError: class ApiError extends Error {},
   API_BASE: "",
@@ -53,8 +51,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   (api.getRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({ toolsets: [], skills: [] });
   (api.listSpawns as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-  (api.listSkillCandidates as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-  (api.getCuratorReview as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (mcp.listMcpServers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
@@ -116,14 +112,15 @@ describe("Capabilities page structure and legacy feature reachability", () => {
     expect(screen.getByPlaceholderText("capabilities.import.repo_placeholder")).toBeInTheDocument();
   });
 
-  it("Create skill opens the original forge without a separate primary tab", async () => {
+  it("v0.1.64 CAP2a: no Create skill page; the add-other row says to ask for it in a conversation", async () => {
     render(<Capabilities />);
+    const row = await screen.findByTestId("cap-add-method");
+    expect(row.textContent).toContain("capabilityList.addMethodSay");
+    expect(row.tagName).not.toBe("BUTTON");
+    expect(row.querySelector("button")).toBeNull();                 // nothing to open
+    expect(screen.queryByTestId("cap-add-forge")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "workspace.skillsWorkflows" }));
-    fireEvent.click(screen.getByRole("button", { name: "workspace.createSkill" }));
-    expect(screen.getByText("forge.modes.title")).toBeInTheDocument();
-    expect(screen.getByText("forge.modes.a_title")).toBeInTheDocument();
-    expect(screen.getByText("forge.modes.b_title")).toBeInTheDocument();
-    expect(await screen.findByText("forge.list.empty")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "workspace.createSkill" })).not.toBeInTheDocument();
   });
 
   it("page scrolls as a whole (overflow-y-auto shell)", () => {

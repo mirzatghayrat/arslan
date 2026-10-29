@@ -59,7 +59,7 @@ NOT_EXECUTED = frozenset({
     # cards (`_no`) and checks in this file
     "declined", "no_answer", "no_one_to_ask", "reviewer_denied", "not_allowed", "act_in_background",
     "bad_request", "no_such_file", "app_not_found", "no_apps", "hands_unavailable", "no_passwords", "no_page",
-    "too_long", "append_unreadable", "window_not_found", "app_refused",
+    "too_long", "append_unreadable", "window_not_found",
     # Hands' refusals before the action (server.rs, borrow.rs, visit.rs, takeover.rs, argv.rs)
     "app_denied", "app_look_only", "app_click_only", "ref_wrong_app", "ref_unknown", "bad_ref", "password_field",
     "borrow_off", "waiting_for_pause", "secure_input", "window_elsewhere", "window_unreachable", "borrow_declined",
@@ -68,14 +68,11 @@ NOT_EXECUTED = frozenset({
     "bad_token", "peer_not_allowed", "no_takeover", "not_paused",
     # a screenshot that was not taken (capture.m via server.rs capture_code)
     "screen_recording_off", "window_not_capturable", "needs_macos_14", "not_supported", "capture_failed",
-    # the Cua Driver path's own checks (not in a release build; F5b deletes them)
-    "arg_not_allowed", "borrow_not_allowed", "element_required", "engine_missing",
 })
 MAYBE_EXECUTED = frozenset({
     "unknown", "TIMEOUT", "submit_unsure", "takeover_paused", "takeover_resumed", "takeover_ended",
     "stopped_by_user", "busy", "helper_failed", "bad_output", "bad_reply", "refused", "batch_stopped",
     "menu_press_failed", "append_needs_set_value", "browser_unavailable",
-    "engine_error", "engine_refused", "engine_unknown",
     # agent-desktop's error codes (hands_contract.HINTS), and its fallback
     "STALE_REF", "SNAPSHOT_NOT_FOUND", "AMBIGUOUS_TARGET", "ELEMENT_NOT_FOUND", "APP_NOT_FOUND",
     "WINDOW_NOT_FOUND", "PERM_DENIED", "POLICY_DENIED", "ACTION_NOT_SUPPORTED", "ACTION_FAILED",
@@ -1198,12 +1195,6 @@ class _DesktopAct:
             text = (f"Nothing changed: {verb} “{label}” in {app.get('name')} was delivered but the app did not "
                     "react. Look again: the element may be disabled or need the app in front. Do not repeat it "
                     "blindly.")
-        elif outcome == "partly_done":
-            text = (f"Partly done: {verb} “{label}” in {app.get('name')} stopped part way. Look at what is there "
-                    "now before doing anything else.")
-        elif outcome == "refused":
-            text = (f"Not done: {app.get('name')} refused {verb} “{label}”; nothing was delivered. Look again and "
-                    "try another way.")
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
@@ -1220,11 +1211,9 @@ class _DesktopAct:
         note = _take_visit_note()
         if note:
             text += " " + note.strip()
-        out = {"ok": outcome != "refused", "external": False, "outcome": outcome, "text": text,
+        out = {"ok": True, "external": False, "outcome": outcome, "text": text,
                "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
-        # `refused` is "nothing was delivered" in the outcome vocabulary (desktop/hands/src/outcome.rs);
-        # only the Cua Driver path says it today.
-        return _not_run({**out, "code": "app_refused"}) if outcome == "refused" else out
+        return out
 
     def trace_extra(self, args: dict) -> dict:
         return {}

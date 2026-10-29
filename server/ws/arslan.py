@@ -490,8 +490,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                     sandbox=sandbox, why=why, network=network, host=host)
 
     async def confirm_capability(card: dict) -> dict:
-        """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key).
-        Returns {"approved", "keys", "folders"}; the tool loop installs on approval."""
+        """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key);
+        v0.1.64 CAP2a: also the save-a-skill card (`kind: "authored"`, no keys or folders).
+        Returns {"approved", "keys", "folders"}; the tool loop installs or saves on approval."""
         call_id = uuid.uuid4().hex
         decision = await _ask_everywhere(protocol.propose_capability(call_id, card), broadcast=False)
         extras = decision.get("extras") or {}

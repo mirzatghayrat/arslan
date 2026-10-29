@@ -75,7 +75,6 @@ class SettingsIn(BaseModel):
     # Workspace for the file tools (P1). Empty string = unset = tools not offered.
     workspace_dir: str | None = None
     heartbeat_enabled: str | None = None
-    projects_auto_advance: str | None = None
     show_technical_details: str | None = None
     tools_all_resident: str | None = None   # K7, no UI; DELETE-BY: v0.1.64
     answer_when_complete: str | None = None   # K8a, no UI; DELETE-BY: v0.1.64
@@ -149,7 +148,6 @@ class SettingsOut(BaseModel):
     ocr_languages: str = ""
     workspace_dir: str = ""
     heartbeat_enabled: str = ""
-    projects_auto_advance: str = ""
     show_technical_details: str = ""
     tools_all_resident: str = ""   # K7, no UI; DELETE-BY: v0.1.64
     answer_when_complete: str = ""   # K8a, no UI; DELETE-BY: v0.1.64
@@ -756,27 +754,6 @@ class RecapOut(BaseModel):
 
     summary: RecapSummaryOut
     items: list[RecapItemOut]
-
-
-class SkillForgeIn(BaseModel):
-    key: str
-    name: str
-    category: str = "meta"
-    description: str
-    body: str
-    source: str = "skill_creator"
-
-
-class SkillCandidateOut(BaseModel):
-    id: int
-    key: str
-    name: str
-    category: str
-    description: str
-    status: str
-    source: str
-    created_at: str | None = None
-    promoted_at: str | None = None
 
 
 class PreferencesOut(BaseModel):

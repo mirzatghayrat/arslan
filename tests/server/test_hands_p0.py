@@ -263,12 +263,13 @@ async def test_an_app_that_kept_the_front_is_said(hands, asks, in_job, monkeypat
 
 # ── P1-3: Hands says the outcome, in one vocabulary for both engines ─────────
 
-@pytest.mark.parametrize("said, expected, ok", [
-    ("done", "done", True), ("no_effect", "no_effect", True), ("partly_done", "partly_done", True),
-    ("refused", "refused", False), ("sent_unconfirmed", "sent_unconfirmed", True),
-    ("something-new", "sent_unconfirmed", True),     # an unknown word is never taken for done
+@pytest.mark.parametrize("said, expected", [
+    ("done", "done"), ("no_effect", "no_effect"), ("sent_unconfirmed", "sent_unconfirmed"),
+    ("something-new", "sent_unconfirmed"),     # an unknown word is never taken for done
+    # No engine has said these since F5b-1, so they left the vocabulary: read as unknown.
+    ("partly_done", "sent_unconfirmed"), ("refused", "sent_unconfirmed"),
 ])
-async def test_the_outcome_hands_says_is_what_the_model_is_told(hands, asks, in_job, monkeypatch, said, expected, ok):
+async def test_the_outcome_hands_says_is_what_the_model_is_told(hands, asks, in_job, monkeypatch, said, expected):
     real = hands.call
 
     async def saying(op, args=None, **kw):
@@ -276,9 +277,9 @@ async def test_the_outcome_hands_says_is_what_the_model_is_told(hands, asks, in_
         return {**reply, "outcome": said} if op == "click" else reply
     monkeypatch.setattr(hands_client, "call", saying)
     result = await hands_tools.DesktopClickExecutor().execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"})
-    assert result["outcome"] == expected and result["ok"] is ok
-    assert result["text"].startswith({"done": "Done", "no_effect": "Nothing changed", "partly_done": "Partly done",
-                                      "refused": "Not done", "sent_unconfirmed": "Sent, not confirmed"}[expected])
+    assert result["outcome"] == expected and result["ok"] is True
+    assert result["text"].startswith({"done": "Done", "no_effect": "Nothing changed",
+                                      "sent_unconfirmed": "Sent, not confirmed"}[expected])
 
 
 async def test_without_a_said_outcome_the_old_reading_holds(hands, asks, in_job):

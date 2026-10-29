@@ -29,7 +29,7 @@ async def test_a_changed_window_is_said_as_a_refusal_with_what_changed(hands, as
     assert result["ok"] is False and result["code"] == "changed"
     assert "a sheet or popover opened on “Groceries”" in result["error"]
     assert "look again" in result["error"]
-    assert result.get("outcome") in (None, "refused")
+    assert "outcome" not in result
 
 
 async def test_a_menu_item_asks_for_the_app_once_and_risky_items_every_time(hands, asks, in_job):

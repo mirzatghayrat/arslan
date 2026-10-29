@@ -113,13 +113,13 @@ TOOLSETS: list[dict] = [
     {
         "key": "skill_authoring",
         "name": "Skill Authoring",
-        "description": "create_skill — package a reusable method into a skill candidate "
-                       "(human-gated before it goes live).",
+        "description": "create_skill — save a way of working as one of the user's skills; the user "
+                       "sees the whole SKILL.md on a card and decides (v0.1.64 CAP2a).",
         "tier": "safe",
         "status": "wired",
         "tools": [
-            ("create_skill", "Forge a new skill candidate from a SKILL.md body; enters "
-             "observation/eval, never auto-installed.", "safe", "wired"),
+            ("create_skill", "Save a SKILL.md as the user's skill after they approve it on a card; "
+             "text only, no scripts or attached files.", "safe", "wired"),
         ],
     },
 ]

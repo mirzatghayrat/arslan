@@ -17,7 +17,7 @@ const DOT = { on: "bg-[#34C759]", off: "bg-subtle-foreground", setup: "bg-ask", 
  * from GET /capabilities, which reads the same gates the model's tool list is built
  * from: a switch here is the switch, not a second opinion about it.
  */
-export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "mcps" | "skills" | "forge") => void }) {
+export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "mcps" | "skills") => void }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<CapabilityRow[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -105,7 +105,7 @@ export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "m
     <aside className="flex w-full shrink-0 flex-col gap-2 lg:w-[300px]">
       <h2 className="px-1 text-[12px] font-semibold text-muted-foreground">{t("capabilityList.addTitle")}</h2>
       <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        {([["mcps", Globe, "addMcp"], ["skills", KeyRound, "addLink"], ["forge", Sparkles, "addMethod"]] as const).map(([tab, Icon, key]) =>
+        {([["mcps", Globe, "addMcp"], ["skills", KeyRound, "addLink"]] as const).map(([tab, Icon, key]) =>
           <button key={tab} data-testid={`cap-add-${tab}`} onClick={() => onOpenTab?.(tab)}
             className="flex w-full items-center gap-2.5 border-t border-border px-3.5 py-2.5 text-left first:border-t-0 hover:bg-fill">
             <Icon size={14} className="shrink-0 text-subtle-foreground" />
@@ -113,6 +113,13 @@ export default function CapabilitySwitches({ onOpenTab }: { onOpenTab?: (tab: "m
               <span className="text-[12px] text-subtle-foreground">{t(`capabilityList.${key}What`)}</span></span>
             <ChevronRight size={14} className="text-subtle-foreground" />
           </button>)}
+        {/* v0.1.64 CAP2a: no page for this any more. Asked in a conversation, Arslan writes the method and
+            the user approves the whole text on a card. Not a button: there is nothing to open. */}
+        <div data-testid="cap-add-method" className="flex w-full items-center gap-2.5 border-t border-border px-3.5 py-2.5">
+          <Sparkles size={14} className="shrink-0 text-subtle-foreground" />
+          <span className="flex min-w-0 flex-1 flex-col"><span className="text-[13px]">{t("capabilityList.addMethod")}</span>
+            <span className="text-[12px] text-subtle-foreground">{t("capabilityList.addMethodSay")}</span></span>
+        </div>
       </div>
       <p className="px-1 text-[12px] leading-relaxed text-subtle-foreground">{t("capabilityList.addFoot")}</p>
     </aside>

@@ -64,8 +64,12 @@ async def test_section_read_is_capped(seeded):
 
 async def test_non_utf8_reference_does_not_crash(seeded, tmp_path, monkeypatch):
     """FIX 4: a non-UTF-8 bundled reference must return an honest ok result with replaced
-    bytes, never raise UnicodeDecodeError."""
+    bytes, never raise UnicodeDecodeError. References belong to imported skills only (v0.1.64 #472 F8:
+    skill_import is the one writer), so the skill is an imported one here."""
     from server.registry.executors import ReadSkillExecutor
+    async with seeded() as db:
+        (await db.get(SkillPack, "writing-plans")).category = "imported"
+        await db.commit()
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
     refs = tmp_path / "skill_scripts" / "writing-plans" / "references"
     refs.mkdir(parents=True)
@@ -74,3 +78,4 @@ async def test_non_utf8_reference_does_not_crash(seeded, tmp_path, monkeypatch):
         {"key": "writing-plans", "section": "references/bad.md"})
     assert out["ok"] is True
     assert "ok text" in out["body"]        # readable prefix survives (errors='replace')
+    assert out["external"] is True         # an imported skill's reference is outside content
