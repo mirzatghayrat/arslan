@@ -190,3 +190,45 @@ async def test_a_switched_off_row_still_says_when_it_was_last_used(api, executio
     assert (await api.put("/api/v1/capabilities/terminal", json={"on": False})).status_code == 200
     terminal = (await _rows(api))["terminal"]
     assert terminal["state"] == "off" and terminal["tools"] == [] and terminal["last_used"] == "2026-10-25T09:00:00Z"
+
+
+async def test_installed_rows_carry_their_source_and_others_none(api, execution_db, tmp_path):
+    """CAP3a-2: the details sheet opens an installed capability's dossier by its source."""
+    await _seed(execution_db, tmp_path)
+    rows = await _rows(api)
+    assert (rows["skill:xlsx"]["source_id"], rows["mcp:2"]["source_id"]) == ("sk1", "m1")
+    assert {rows[key]["source_id"] for key in ("skill:csv-tidy", "skill:weekly-report", "mcp:1", "terminal")} == {None}
+    assert not {"group", "source"} & set(rows["terminal"])                     # the old fields are gone
+
+
+async def test_the_professional_methods_sit_with_the_skills_built_in_with_their_version(api, execution_db, tmp_path):
+    """CAP3a-2 (the CAP card, with SUB): methods are skills on the page; not switched or deleted here; last used
+    is the newest helper a task ran with one."""
+    from server.services import professional_methods
+    await _seed(execution_db, tmp_path)
+    async with execution_db() as db:
+        await professional_methods.revise(db, "research", 1, "Research, my way", "Cite every claim.")
+        await db.commit()
+    await _used_method(execution_db, "research", datetime(2026, 10, 27, 9))
+    rows = await _rows(api)
+    methods = {key: row for key, row in rows.items() if key.startswith("method:")}
+    assert set(methods) == {f"method:{key}" for key in professional_methods.DEFAULTS}
+    research = methods["method:research"]
+    assert (research["section"], research["origin"], research["deletable"], research["switch"], research["state"]) \
+        == ("skills", "builtin", False, None, "on")
+    assert (research["revision"], research["name"], research["last_used"]) == (2, "Research, my way", "2026-10-27T09:00:00Z")
+    unrevised = next(row for key, row in methods.items() if key != "method:research")
+    assert (unrevised["revision"], unrevised["name"], unrevised["last_used"]) == (1, None, None)
+    response = await api.delete("/api/v1/capabilities/method:research")
+    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+
+
+async def _used_method(execution_db, key: str, when: datetime) -> None:
+    """A helper a task ran with the method. Only its method and time matter here, so the task and attempt it
+    points at are not made (foreign keys off for this one write)."""
+    from server.db.worker_models import TaskWorker
+    async with execution_db() as db:
+        await (await db.connection()).exec_driver_sql("PRAGMA foreign_keys=OFF")
+        db.add(TaskWorker(id="w1", task_id="t1", attempt_id="a1", spec_revision=1, method_key=key, method_revision=2,
+                          fingerprint="f", brief={}, status="completed", created_at=when))
+        await db.commit()

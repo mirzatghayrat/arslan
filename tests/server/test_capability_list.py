@@ -151,7 +151,7 @@ async def test_a_skill_switched_off_leaves_the_index_and_cannot_be_read(api, exe
         await db.commit()
     assert "tidy-notes" in await arslan._skill_index()
     row = next(r for r in (await api.get("/api/v1/capabilities")).json() if r["key"] == "skill:tidy-notes")
-    assert row["state"] == "on" and row["group"] == "methods"
+    assert row["state"] == "on" and row["section"] == "skills"
     assert (await api.put("/api/v1/capabilities/skill:tidy-notes", json={"on": False})).json()["state"] == "off"
     assert "tidy-notes" not in await arslan._skill_index()
     result = await ReadSkillExecutor().execute({"key": "tidy-notes"})
@@ -259,7 +259,7 @@ async def test_rows_that_have_no_switch_refuse_one(api):
     assert (await api.get("/api/v1/capabilities", headers={"Authorization": "Bearer wrong"})).status_code == 401
 
 
-async def test_groups_are_the_four_the_page_draws(api):
+async def test_sections_are_the_three_the_page_draws(api):
     rows = (await api.get("/api/v1/capabilities")).json()
-    assert {r["group"] for r in rows} <= set(capability_list.GROUPS)
+    assert {r["section"] for r in rows} <= set(capability_list.SECTIONS)
     assert {r["state"] for r in rows} <= {"on", "off", "setup", "na"}
