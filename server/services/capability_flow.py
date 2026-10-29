@@ -199,8 +199,9 @@ _LABEL_CHARS = re.compile(r"[^A-Za-z0-9._/ -]+")
 def outside_label(text, limit: int = 100) -> str:
     """A name from outside (a registry entry, a repository, a SKILL.md, an MCP server's tool), as a tool result
     hands it to the model: its own field, never inside Arslan's sentence; letters, digits and ``._/ -`` only,
-    one line, at most `limit` characters (③Hands' review of #449). list_my_capabilities uses it too."""
-    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""))).split())[:limit].strip()
+    one line, at most `limit` characters (③Hands' review of #449). list_my_capabilities and the MCP status line use it too."""
+    # A new line or a tab separates words, as in the status line before #495 (O2), instead of gluing them.
+    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""), keep="\t\n\v\f\r")).split())[:limit].strip()
 
 
 def _ledger_url(url) -> str | None:
