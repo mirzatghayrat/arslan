@@ -439,7 +439,9 @@ async def recall(query: str) -> list[dict]:
             if len(picked) >= MAX_RECALL or used + len(text) > MAX_RECALL_CHARS:
                 continue
             used += len(text)
-            picked.append({"id": row.id, "text": text})
+            # #475 H1: a practice carries no run to trace, so only the user's own correction or one the user
+            # pinned is theirs; detours and quirks come from tool calls, never on INB2's allowlist.
+            picked.append({"id": row.id, "text": text, "users": row.source == "user_correction" or bool(row.pinned)})
         if picked:
             await db.execute(update(Lesson).where(Lesson.id.in_([p["id"] for p in picked])).values(
                 recalled=Lesson.recalled + 1, last_used_at=datetime.utcnow()))

@@ -10,9 +10,11 @@ message that started it:
 
 Everything else reads "not present": background jobs (they start from a fresh context), scheduled fires,
 resumed tasks (`resume_task`), every other frame the window or the Bridge sends, and any entry point added
-later. A new entry point (Quick Ask, Q1; a sub-session's run, SUB) counts as present only if its own PR adds
-it here on purpose and it is reviewed; a sub-session's run inside a present turn is wrapped in
-`not_present()`, so it never inherits its parent's presence.
+later. A new entry point (a sub-session's run, SUB) counts as present only if its own PR adds it here on
+purpose and it is reviewed; a sub-session's run inside a present turn is wrapped in `not_present()`, so it
+never inherits its parent's presence. A quick question (Q1) is not a new entry point: the iPhone sends it as
+a `chat.send`, so it reads present like any phone message. That is harmless: it has four read-only tools and
+learns nothing (Q1 card), and once turned into a chat it is an ordinary conversation.
 
 What reads it: "about you" memories Arslan writes take effect directly only in a present turn
 (arslan/companion/memory.py, decide_write; INB2). It is never a permission for anything else.

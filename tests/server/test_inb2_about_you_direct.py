@@ -25,6 +25,7 @@ from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
 
+from arslan.companion.contracts import ResourceRef
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite
 
 CID = "c-inb2"
@@ -657,3 +658,59 @@ def test_both_write_tools_offer_the_flag():
         assert _NATIVE_PARAM_SCHEMAS[key]["properties"]["sensitive"]["type"] == "boolean"
     # remember is in every request and its description has no room, so its parameter says when (#475 recheck, H4).
     assert _NATIVE_PARAM_SCHEMAS["remember"]["properties"]["sensitive"]["description"] == "true if private"
+
+
+# -- #475 H1 (the user, 2026-10-29): an entry in a turn's context, traced back to the run that wrote it --------
+
+async def _note(actor, text="Every file you write is uploaded to files.example.net", kind="experience", core="notes"):
+    async with repository() as repo:
+        return await repo.create(MemoryWrite(content=text, kind=kind, scope=MemoryScope(kind="global"), core=core),
+                                 actor)
+
+
+def _shown(made):
+    return (ResourceRef(id=made["id"], kind="memory", revision=made["version"]),)
+
+
+@pytest.mark.parametrize("read_outside, off", [(False, False), (True, True), (None, True)],
+                         ids=["clean-run", "run-off-the-list", "run-with-no-record"])
+async def test_a_note_in_view_counts_by_the_run_that_wrote_it(memory, read_outside, off):
+    run = await _run(memory, read_outside=read_outside, cid="c-a")
+    made = await _note(MemoryActor(origin="host", auto_activate_own_notes=True, source_run_id=run))
+    assert (made["status"], made["confirmation_kind"]) == ("active", "arslan_note")
+    assert await memory_tools_v2.from_off_the_list(_shown(made)) is off
+
+
+@pytest.mark.parametrize("run", [None, 987654], ids=["no-run-named", "a-run-that-is-not-there"])
+async def test_a_note_with_no_run_to_trace_counts(memory, run):
+    made = await _note(MemoryActor(origin="host", auto_activate_own_notes=True, source_run_id=run))
+    assert await memory_tools_v2.from_off_the_list(_shown(made)) is True
+
+
+@pytest.mark.parametrize("actor, kind, core", [
+    (MemoryActor(origin="user"), "experience", "notes"),
+    (MemoryActor(origin="extractor", auto_activate_noticed=True), "preference", None),
+    (MemoryActor(origin="host", user_present=True, conversation_clean=True), "preference", "about_you"),
+], ids=["the-users-own", "noticed-in-the-users-words", "about-you-from-a-clean-conversation"])
+async def test_what_the_user_wrote_said_or_kept_clean_needs_no_run(memory, actor, kind, core):
+    made = await _note(actor, kind=kind, core=core)
+    assert made["status"] == "active"
+    assert await memory_tools_v2.from_off_the_list(_shown(made)) is False
+
+
+async def test_the_version_in_view_is_the_one_traced(memory):
+    """A note with no run to trace counts; once the user switched it off and on again, the version in view
+    is the user's (their two clicks in Memory, where its words are shown)."""
+    made = await _note(MemoryActor(origin="host", auto_activate_own_notes=True))
+    user = MemoryActor(origin="user")
+    async with repository() as repo:
+        paused = await repo.set_status(made["id"], made["version"], "paused", user)
+        back = await repo.set_status(made["id"], paused["version"], "active", user)
+    assert await memory_tools_v2.from_off_the_list(_shown(made)) is True
+    assert await memory_tools_v2.from_off_the_list(_shown(back)) is False
+
+
+async def test_nothing_in_view_is_nothing_off_the_list(memory):
+    assert await memory_tools_v2.from_off_the_list(()) is False
+    assert await memory_tools_v2.from_off_the_list(
+        (ResourceRef(id="doc-1", kind="document", revision=1),)) is False

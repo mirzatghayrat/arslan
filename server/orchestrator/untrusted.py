@@ -100,9 +100,9 @@ def reaches_network(command: str) -> bool:
 
 def track_turn() -> contextvars.Token:
     """A turn's holder. It starts clean unless its run carries outside content in (`carried`); for INB2's
-    allowlist below it also starts off the list when project knowledge was put into it (`knowledge_in`)."""
+    allowlist below it also starts off the list when material off the list was put into it (`off_list_in`)."""
     run = _CARRIED.get()
-    return _EXTERNAL.set({"seen": bool(run and run["seen"]), "off_list": _KNOWLEDGE.get()})
+    return _EXTERNAL.set({"seen": bool(run and run["seen"]), "off_list": _PUT_IN.get()})
 
 
 @contextlib.contextmanager
@@ -138,22 +138,24 @@ def mark_external() -> None:
 
 # ── v0.1.64 INB2 (#475 F2): the user's allowlist for "about you" memory ─────────────────────────
 # An "about you" memory Arslan writes takes effect directly only in a clean conversation, and the user
-# decided (2026-10-29) that clean is an allowlist: nothing attached, no project knowledge put into a turn,
+# decided (2026-10-29) that clean is an allowlist: nothing attached, nothing from off the list put into a turn
+# (project knowledge, the project card, a note or practice in view that came from a run off it: #475 H1/H2),
 # and only the tools below called. Any other call counts, whether or not it ran and whatever it returned,
 # run_command included (it can read a file), and so does everything the mark above counts. Only INB2 reads
 # this (memory_tools_v2._about_you, `runs.read_outside`); lessons and Arslan's own notes keep the mark above.
 KNOWN_LOCAL_TOOLS = frozenset({"remember", "memory_note", "update_plan", "ask_user_choice"})
-_KNOWLEDGE: contextvars.ContextVar[bool] = contextvars.ContextVar("knowledge_in_turn", default=False)
+_PUT_IN: contextvars.ContextVar[bool] = contextvars.ContextVar("off_list_put_in", default=False)
 
 
 @contextlib.contextmanager
-def knowledge_in(injected: bool):
-    """Every turn started inside had project knowledge put into its context when `injected`."""
-    token = _KNOWLEDGE.set(_KNOWLEDGE.get() or bool(injected))
+def off_list_in(injected: bool):
+    """Every turn started inside had material off the list put into its context when `injected`: project
+    knowledge (#475 F2), the project card (H2), or a note in view that came from a run off the list (H1)."""
+    token = _PUT_IN.set(_PUT_IN.get() or bool(injected))
     try:
         yield
     finally:
-        _KNOWLEDGE.reset(token)
+        _PUT_IN.reset(token)
 
 
 def known_local_call(tool_key: str, result: dict) -> bool:

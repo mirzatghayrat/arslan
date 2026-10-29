@@ -752,33 +752,47 @@ async def _stored_kind(conversation_id: str) -> str | None:
         return await db.scalar(select(ConversationContext.kind).where(ConversationContext.id == conversation_id))
 
 
-async def _with_project_card(facts: str) -> str:
+async def _with_project_card(facts: str) -> tuple[str, str]:
     """0.1.56 §8: in a project's conversation the model sees the project — name, finish
-    line, current level and its open checkpoints — beside the memory block."""
+    line, current level and its open checkpoints — beside the memory block. Also returns the card itself
+    (empty when none went in): INB2 counts it as project material (#475 H2)."""
     from server.services import personal_context, project_plan
     ctx = personal_context.current()
     if ctx is None or not ctx.project_id:
-        return facts
+        return facts, ""
     try:
         async with db_session.AsyncSessionLocal() as db:
             card = await project_plan.card_text(db, ctx.project_id)
     except Exception:  # noqa: BLE001 — the card is context, never a reason to fail a turn
         logger.warning("project card unavailable", exc_info=True)
-        return facts
-    return f"{facts}\n\n{card}".strip() if card else facts
+        return facts, ""
+    return (f"{facts}\n\n{card}".strip(), card) if card else (facts, "")
+
+
+async def _notes_from_off_the_list(personal) -> bool:
+    """#475 H1: a note in the turn's memory block that came from a run off the list (memory_tools_v2). A
+    lookup that fails counts as yes: the turn goes on, and only an "about you" entry it writes waits."""
+    from server.services import memory_tools_v2
+    try:
+        return await memory_tools_v2.from_off_the_list(personal.receipt.used)
+    except Exception:  # noqa: BLE001 — never a reason to fail a turn
+        logger.warning("tracing the notes in view failed", exc_info=True)
+        return True
 
 
 async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations) -> str:
     """One background job's execution: the answer machinery without the chat stream."""
     ctx = await memory.assemble_working_context(conversation_id, budget=await memory.turn_budget(conversation_id))
     from server.services import personal_context
+    traced = False
     if personal_context.current() is not None:
         personal = await personal_context.assemble(goal)
         facts = personal.text
         await personal_context.record(personal)
+        traced = await _notes_from_off_the_list(personal)
     else:
         facts = await memory.facts_text(include_sensitive=True)
-    facts = await _with_project_card(facts)
+    facts, card = await _with_project_card(facts)
     kb_block = ""
     try:
         from server.services import knowledge as _knowledge
@@ -795,8 +809,9 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
     pieces: list[str] = []
     # K3: nobody is waiting on a background job, so its cache entries keep the default five minutes,
-    # even when a chat turn started it. INB2 (#475 F2): its run's record counts the knowledge put in.
-    with request_policy.prompt_cache(long=False), untrusted.knowledge_in(bool(kb_block)):
+    # even when a chat turn started it. INB2 (#475 F2, H1, H2): its run's record counts the knowledge, the
+    # project card and a note from off the list put in.
+    with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_background_tools, resolve_callable=_background_callable,
@@ -819,13 +834,15 @@ async def _handle_answer_body(
     ctx = await memory.assemble_working_context(
         conversation_id, budget=await memory.turn_budget(conversation_id, has_images=bool(images)))
     from server.services import personal_context
+    traced = False
     if personal_context.current() is not None:
         personal = await personal_context.assemble(user_message)
         facts = personal.text
         await personal_context.record(personal)
+        traced = await _notes_from_off_the_list(personal)
     else:
         facts = await memory.facts_text(include_sensitive=True)
-    facts = await _with_project_card(facts)
+    facts, card = await _with_project_card(facts)
     # K3: the knowledge found for this request, like everything else per turn, goes in the turn's
     # reference block, never the system prompt.
     kb_block = ""
@@ -851,9 +868,10 @@ async def _handle_answer_body(
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
         # S64-0b: what the user attached (a file's text, a picture, what OCR reads off it) is outside content.
-        # INB2 (#475 F2): so is the project knowledge found for it, for the "about you" allowlist.
+        # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
+        # so are the project card and a note in view that came from a run off the list.
         with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)), \
-                untrusted.knowledge_in(bool(kb_block)):
+                untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
     try:

@@ -16,7 +16,8 @@ async def _about_you(actor, ctx):
     server/services/presence.py) and the whole conversation clean: everything this turn took in is on the
     user's allowlist (untrusted.known_local: nothing attached, no project knowledge, only known-local tools;
     #475 F2), and every other run of the conversation recorded the same (`runs.read_outside`; no record,
-    NULL, counts as off it: older runs, a crashed one, a job still running)."""
+    NULL, counts as off it: older runs, a crashed one, a job still running). Off the list too: a turn with a
+    note or practice in view that came from a run off it, or with the project card (#475 H1/H2)."""
     from sqlalchemy import or_
 
     from server.db import session as db_session
@@ -34,6 +35,46 @@ async def _about_you(actor, ctx):
                 query = query.where(Run.id != ctx.source_run_id)
             clean = (await db.execute(query.limit(1))).first() is None
     return replace(actor, user_present=presence.present(), conversation_clean=clean)
+
+
+# #475 H1 (the user, 2026-10-29): entries that took effect as the user's words or choice, or as an "about you"
+# entry from a clean conversation. Every other entry in a turn's context (Arslan's notes, and any kind added
+# later) is traced back to the run that wrote it.
+USER_KINDS = frozenset({"user_form", "explicit_user_request", "legacy_user_edit", "legacy_manual", "auto_noticed",
+                        "arslan_about_you"})
+
+
+async def from_off_the_list(used) -> bool:
+    """#475 H1 (the user, 2026-10-29): whether a memory entry in a turn's context (its receipt's `used`) came
+    from a run off the list, which puts the turn off it too (untrusted.off_list_in), so what it writes or says
+    counts the same later. The version in view is traced: one the user wrote or switched on (a source of
+    theirs) is clean; otherwise every run its sources name must have recorded `runs.read_outside` false. No
+    run named, a run that is not there, or NULL counts as off the list."""
+    from server.db import session as db_session
+    from server.db.companion_models import MemorySource
+    from server.db.models import Run
+    shown = {(ref.id, ref.revision) for ref in used if ref.kind == "memory"}
+    if not shown:
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(MemoryEntry.id, MemoryEntry.confirmation_kind, MemoryRevision.id,
+                                        MemoryRevision.version).join(
+            MemoryRevision, MemoryRevision.entry_id == MemoryEntry.id).where(
+            MemoryEntry.id.in_({entry for entry, _ in shown})))).all()
+        traced = {revision for entry, kind, revision, version in rows
+                  if (entry, version) in shown and kind not in USER_KINDS}
+        if not traced:
+            return False
+        sources = (await db.scalars(select(MemorySource).where(MemorySource.revision_id.in_(traced)))).all()
+        named = {source.source_ref.get("run_id") for source in sources} - {None}
+        clean = set((await db.scalars(select(Run.id).where(Run.id.in_(named), Run.read_outside.is_(False)))).all())
+    for revision in traced:
+        mine = [source for source in sources if source.revision_id == revision]
+        if any(source.author == "user" for source in mine):
+            continue
+        if not mine or any(source.source_ref.get("run_id") not in clean for source in mine):
+            return True
+    return False
 
 
 def _flagged(args, sensitivity: str = "normal") -> str:
