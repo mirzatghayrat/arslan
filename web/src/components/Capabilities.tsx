@@ -4,20 +4,20 @@ import { FileDown } from "lucide-react";
 import CapabilityTabs from "./CapabilityTabs";
 import CapabilityCatalog from "./CapabilityCatalog";
 import McpServers from "./McpServers";
-import SkillForge from "./SkillForge";
 import SkillImportPanel from "./SkillImportPanel";
 import ToolTransportWarning from "./settings/ToolTransportWarning";
 import ProfessionalMethods from "./companion/ProfessionalMethods";
 import CapabilitySwitches from "./CapabilitySwitches";
 import AddedCapabilities from "./capabilities/AddedCapabilities";
 
-type CapTab = "experts" | "abilities" | "skills" | "forge" | "mcps";
+type CapTab = "experts" | "abilities" | "skills" | "mcps";
 
 // Capability Library page: one tab bar at the top (ABILITIES | SKILLS | CONNECTIONS, and the
 // legacy experts when there are any). The MCPS tab lists the servers you added (0.1.63 C9b
 // removed the curated presets); the SKILL.md importer lives inside SKILLS. v0.1.64 CAP1a removed
 // the Discover tab, its saved candidates and the "found for later" rail: new capabilities are
-// asked for in a conversation.
+// asked for in a conversation. CAP2a removed the "Create skill" page: Arslan writes a skill when
+// asked in a conversation, and the user approves it on a card.
 /** The provider whose transport decides whether ANY of this page's equipping
  *  will have an effect. Passed in rather than fetched here: App already holds
  *  the configs, and a second fetch would give this page its own opinion of which
@@ -54,7 +54,7 @@ export default function Capabilities({ provider, experts, initialTab }: {
         ) : null}
 
         <CapabilityTabs
-          active={tab === "forge" ? "skills" : tab}
+          active={tab}
           onChange={(id) => setTab(id as CapTab)}
           tabs={[
             { id: "abilities", label: t("capabilityList.tab") },
@@ -68,11 +68,6 @@ export default function Capabilities({ provider, experts, initialTab }: {
 
         {tab === "experts" && experts}
         {tab === "abilities" && <><CapabilitySwitches onOpenTab={(next) => setTab(next)} /><AddedCapabilities /></>}
-        {(tab === "skills" || tab === "forge") && <div className="mb-5 flex justify-end">
-          <button className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary" onClick={() => setTab(tab === "forge" ? "skills" : "forge")}>
-            {t(tab === "forge" ? "workspace.backToSkills" : "workspace.createSkill")}</button>
-        </div>}
-
         {tab === "skills" && (
           <div className="space-y-8">
             <ProfessionalMethods />
@@ -86,8 +81,6 @@ export default function Capabilities({ provider, experts, initialTab }: {
             <CapabilityCatalog assign={!!experts} />
           </div>
         )}
-
-        {tab === "forge" && <SkillForge />}
 
         {tab === "mcps" && <McpServers />}
       </div>

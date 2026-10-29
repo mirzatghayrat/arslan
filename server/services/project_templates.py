@@ -115,7 +115,7 @@ def draft(template: str, finish_line: str = "", lang: str | None = None) -> list
     key = template if template in TEMPLATES else "other"
     language = lang_of(lang)
     levels = [{"name": names[language], "band": band, "description": "", "clear_condition": "",
-               "habit": False, "checkpoints": []} for band, names in TEMPLATES[key]]
+               "checkpoints": []} for band, names in TEMPLATES[key]]
     if finish_line.strip():
         levels[-1]["clear_condition"] = finish_line.strip()[:400]
     return levels

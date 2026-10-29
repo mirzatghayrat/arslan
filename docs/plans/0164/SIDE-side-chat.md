@@ -32,7 +32,7 @@
 
 | PR | What | Size (product lines, approx.) |
 |---|---|---|
-| SIDE-0 | Clickable demo mock (static, not product code) for the user to approve: selection bar, right panel with tabs, quote in the input, "Bring back to main" | — |
+| SIDE-0 | Clickable demo mock (static, not product code) for the user to approve: selection bar, right panel with tabs, quote in the input, "Bring back to main". **One mock with WB1** (user, 2026-10-29): the side-chat tabs sit in WB1's content-driven tab list, and SIDE-2 adds them through it after WB1-1 lands (`WB1-workbench.md`) | — |
 | SIDE-1 | Backend: create a side conversation (`kind=side`, parent id, branch message id); context = parent messages up to the branch point; read-only tool set; inherited permissions; outside-content mark carried; memory and lessons off; list under the parent; delete | +250 |
 | SIDE-2 | Web: selection bar, side panel with tabs / expand / close / "+", quote in input, "Bring back to main" into the main input box | +500 |
 

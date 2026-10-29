@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Board, BoardCard } from "../../api/projects";
-import ShadowStrip from "./ShadowStrip";
 import { Button } from "../kit";
 import ProjectCard, { LevelBar } from "./ProjectCard";
 import { BAND_DOT, BOARD_COLUMNS } from "./projectUi";
@@ -14,20 +13,16 @@ type View = "board" | "list";
  * it is on; Done and Dropped are only the user's. No drag and drop: Arslan says "this can
  * move" on the card, the user agrees.
  */
-export default function ProjectsBoard({ board, onOpen, onNew, onPlan, onDecide, onResume, onPause, onAuto, onNote, onHabits, busy }: {
+export default function ProjectsBoard({ board, onOpen, onNew, onPlan, onDecide, busy }: {
   board: Board; onOpen: (id: string) => void; onNew: () => void; onPlan: (id: string) => void;
   onDecide: (card: BoardCard, accept: boolean) => void; busy?: boolean;
-  onResume?: (card: BoardCard) => void; onPause?: (card: BoardCard) => void;
-  onAuto?: (on: boolean, answered: "ask" | "offer") => void; onNote?: (note: string) => void; onHabits?: () => void;
 }) {
   const { t } = useTranslation();
   const [view, setView] = useState<View>("board");
   const [showDropped, setShowDropped] = useState(false);
   const dropped = board.cards.filter(c => c.column === "dropped");
   const card = (c: BoardCard) => <ProjectCard key={c.id} card={c} busy={busy} onOpen={() => onOpen(c.id)}
-    onPlan={() => onPlan(c.id)} onDecide={(accept) => onDecide(c, accept)}
-    onResume={onResume && (() => onResume(c))} onPause={onPause && (() => onPause(c))} />;
-  const s = board.shadow;
+    onPlan={() => onPlan(c.id)} onDecide={(accept) => onDecide(c, accept)} />;
   return (
     <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5 sm:px-8" aria-label={t("projectsUI.title")}>
       <header className="flex flex-wrap items-start gap-3">
@@ -89,9 +84,6 @@ export default function ProjectsBoard({ board, onOpen, onNew, onPlan, onDecide, 
             </tr>))}</tbody>
         </table>
       )}
-
-      {board.cards.length > 0 && <ShadowStrip shadow={s} busy={busy} onAuto={(on, answered) => onAuto?.(on, answered)}
-        onNote={note => onNote?.(note)} onHabits={() => onHabits?.()} />}
     </section>
   );
 }

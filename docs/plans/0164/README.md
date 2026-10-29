@@ -19,7 +19,7 @@
 
 - **v0.1.64 先做什么（用户 10-22）：** ① 沙箱默认拒绝（含沙箱合一）→ ② 按需装能力 → ③ 本机代理加网站名单（产能允许时）。领先路线 §0.6。**#432 可能改这一条**，见 §2。
 - **S2a-3 顺延到 v0.1.64（用户 10-24）：** #375、#376、#378、#396 留着，跟默认拒绝沙箱一起审、一起合。合不进的话，「只在有风险时问」继续禁用。(Correction, SBX card 2026-10-28: it is not disabled; it is off by default and still selectable behind a warning sheet, `server/services/settings_service.py:409-415`.)
-- **外部安全审查用 Codex（用户 10-27）：** 结论再给云端审计看；日常只审碰安全面的和产品代码超过约 400 行的 PR；只读、只看公开仓库、结论写明模型；它提的每一条都要在 PR 上回应。§8「v0.1.64 的安全审查路径」。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3.
+- **外部安全审查用 Codex（用户 10-27）：** (Changed 2026-10-29: Codex also writes what Claude cannot, on `codex/` branches, never merging; STATUS "Codex to write".) 结论再给云端审计看；日常只审碰安全面的和产品代码超过约 400 行的 PR；只读、只看公开仓库、结论写明模型；它提的每一条都要在 PR 上回应。§8「v0.1.64 的安全审查路径」。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3.
 - **跑分（用户 10-27）：** 加 3 道「代码审查」题；「对 Hermes」的门槛改为同题三次全过的题数不少于 Hermes。见 M64 卡。
 - **快问的五条（用户 10-27）**、**回复风格**（10-27，以更正后那版为准）、**子会话分两步**（10-27）、**能力页和插件八条**（10-28）、**收件箱八条**（10-28，#433）。见各自的卡。
 - **v0.1.63 顺延的两处删除（用户 10-27）：** `__version__`（跟 C5b 那类清理一起）、专家时代的 REST 接口（并进 C7c）。`R63-verdict.md`「删除期限」。
@@ -91,7 +91,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | **S5a** | Modes: plan / ask every step / auto-edit / full access; current mode next to the input box, one click, per conversation; Settings keeps only the default for new conversations; plan's "start" returns to the previous mode; sub-sessions inherit only | must | After SBX, HR's e rule and S3 undo. Clickable demo to the user before UI code. Lane ②Main. |
 | **S5b** | The "auto" mode on top of S5a, **and the only PR that wires CLS into `permissions.py` `_ask`** (one writer in the hot file) | must | After CLS. **Gates built and tested in S5b:** b ("yes" recorded `by="reviewer"`, this time only, no rules or grants, never satisfies the network / unsandboxed checks), d (modes widen in order; only runs that finish inside SBX; never anything full access would still ask; no sandbox, no approvals), h (denials counted: 3 in a row within a turn, 20 per conversation and per job, then back to cards), the ledger the user can read, the one-click off, and D7's constraints that live in the wiring (an exception or timeout counts as "ask"; it only answers cards that would be asked anyway; off by default, on only after the user agrees). **"Any one unmet → the classifier does not ship" binds S5b's merge as well as CLS's:** "auto" is not offered until every gate in both cards holds. Lane ②Main; reviewed by ③Hands plus an effort=max reviewer plus Codex. **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
 | **S64-0b** | Two more mark leaks from the audit's E: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words (framed and marked when the job read outside content) | must (user, 2026-10-28) | After #438. The attachment / OCR inline code is in `arslan.py` (a hot file; goes after any open K-line PR touching it). About 20 product lines each; tests check outcomes (network command gets a card, `memory_note` does not take effect at once). `run_command` reading files stays a known limit. Lane ③Hands; effort=max plus Codex. **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
-| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406、还没人接的 PR4） | must (user, 2026-10-28: keep the parser, drop "complete the list") | Codex 审 rebase 之后的头 (now: another session's max review first, Codex only for what it cannot cover, §1.3)（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
+| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406、还没人接的 PR4） | must (user, 2026-10-28: keep the parser, drop "complete the list") | **Split (user, 2026-10-29, the cloud audit's split, as for SBX):** Claude (③Hands) writes the structural part: `bash -p`, the cleaned child-process environment, "can't read it, so ask", the parser moved off the event loop with a time limit, and the rule itself that a uniquely named program anywhere in the command asks. Codex writes the test content: differential tests, the real-shell comparison, automatic variants, #406, and the test parts of the four PRs that were stopped before. Claude does not rewrite those. Reviews as SBX's "Who writes what". **After SBX-7** (#432: once the sandbox is in, the parser is no longer the main line and S2a-3 shrinks). Codex 审 rebase 之后的头 (now: another session's max review first, Codex only for what it cannot cover, §1.3)（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
 | **ACM** | 卡片界面与文案大合并（领先路线 D 行「审批策略与作用域」；§8 和别处叫它 D1，和 v0.1.63 的 D1 卡不是一回事） | 必须 | INB、STY、S4a 跟进、S6 都挂在它上面。等 #432（权限模式会改卡片）。 |
 | **NET** | 本机代理加网站名单（§0.6 第 3 条） | 顺延候选 | 原定「产能允许时」。 |
 | 其余「执行领先」行 | L1 薄循环 + ACP、L2 内置工具按需 + 参数修复、L3 边流式边执行、L4 进度流到灵动岛和 iPhone、L6 后台进程与进程工具、L7 目标模式、L8 存记忆 + 服务端压缩、L11 文件夹规矩、L12 评审选项 + iPhone 批准、L14 公开 Terminal-Bench + Mac 题库 | 用户 10-28 已定 | L11 + K10「应该」（都小）。**L6 后台进程、L7 目标模式留在 v0.1.64，标「应该」**：L6 是新的安全面，排在 SBX 之后；L7 改主循环，跑分（M64 那套）不退步才合。其余顺延 v0.1.65。L6、L7 的卡开工时由 ②Main 写。 |
@@ -150,6 +150,7 @@ The rest of the memory plan is not in v0.1.64: items 5–10 go with memory as fi
 | **FS1** | 全屏时点 ✕ 关主窗口会黑屏（用户 10-28 报，④参谋 看了录屏）：窗口消失，整屏变黑，顶上留着 Arslan 的菜单栏，要从 Dock 彻底退出 Arslan 才恢复 | ②Main | 必须 | **原因（读 main 的代码，没在真机上跑）：** 常驻模式（0.1.41 起）关窗口是藏起来，`desktop/src-tauri/src/lib.rs:1088-1092` 收到 `CloseRequested` 后直接 `prevent_close()` + `hide()`，藏之前没有先退出全屏，macOS 给全屏窗口单开的那个桌面就空着、显示成黑的。`desktop/src-tauri/src` 里关窗口这条路上没有任何处理全屏的代码。**修法：** 关闭时窗口在全屏，就先 `set_fullscreen(false)`，等退出全屏结束（全屏状态或 resize 的事件回来）再 `hide()`；同时核 `resident::show_main`（`resident.rs:229`）从菜单栏或 Dock 重新打开时回到普通桌面。**验收：** 「全屏 → 点 ✕ → 不黑屏、回到原来的桌面 → 从菜单栏和 Dock 各打开一次、窗口正常出现」先写进 v0.1.64 冒烟清单；真机这一步要用户在场。产品代码约 +20 行 Rust；能拆出纯函数的判断（全屏时先退出再藏）就加单元测试。不是新子系统，§11 第 3 条管不到，本 PR 合并后随时可做。 |
 | **BR1** | Bridge pairing is slow (①iOS, from the user's build-24 test, 2026-10-28): `PollPace.interval` (`desktop/bridge/Sources/BridgeCore/Mailbox.swift`, ~:402) polls every 2 s only when a phone wrote in the last 120 s; while a pairing code is showing no phone has written yet, so the Mac reads every 10 s while the phone waits on 2 s. Fix: 2 s while a pairing code is open, until it is used or expires, and for 60 s after it is answered (accept or reject), so the new phone's first hello is read quickly (①iOS after build 25; #462 `cd60c056`) | ⑥Helper (①iOS reviews: Bridge) | should | No Bridge frame change. |
 | **BR2** | Duplicate file offers (same build-24 test): one reply offered the same file three times (same name and size, different file ids), once per write in the turn. The Mac should offer only the turn's final version of each path. The same root as README §8's "same file, two cards" (M3 #12): fix both together | ⑥Helper (①iOS reviews the phone side) | should | No frame change; the phone already shows one card per name. |
+| **FRONT1** | Hands' `front` parameter names a condition that never occurs (③Hands, 2026-10-29). `_FRONT` (`server/orchestrator/tool_loop.py:1904`, on click `:1956` and press `:1982`, not type) says to ask for the front only after an action "did nothing (no_effect)". `front` shipped in P2-3 (`afd9199d`). Back then the only thing that said `no_effect` for an action was Cua Driver's `suspected_noop`, and Cua was a development-only build, never in a release. So no released version could ever meet the condition. agent-desktop's `disposition.delivery` has no "delivered, nothing changed" value (`tests/fixtures/hands_contract/08_click.json`, `15_press.json`). Spec 0157 §5.1 first allowed asking after `unverifiable` too (today's `sent_unconfirmed`); the shipped text narrowed that without a stated reason. **The user picks** (③Hands put the options on 2026-10-29): (A) name `desktop_look`'s "Nothing changed since your last look." (`server/registry/hands_tools.py:859`) after a `sent_unconfirmed` action; (B) name agent-desktop's needs-focus refusal (`POLICY_DENIED`, today mapped to `use_set_value`, whose text "which Arslan never does" at `hands_contract.py:23`, `:38` is stale since borrowing came in); (C) the server reads the window again after an unconfirmed action and says `no_effect`; (D) delete `front` on click and press | ③Hands (②Main reviews the hot-file line) | should | Waits on the user's pick. Hot file: after any open K-line PR on `tool_loop.py`. Keep the text short, since it appears twice. (K7's budget measures a Mac without Hands, so `_FRONT` isn't in it.) A test pins the wording against the helper's outcome words. |
 
 ### 3.7 Code rules (user, 2026-10-28 evening, relayed by ④参谋)
 
@@ -170,6 +171,12 @@ Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` �
 | Card | What | Lane | Tier | Notes |
 |---|---|---|---|---|
 | **SB1** | Sidebar: always ordered by last activity (a message moves its conversation to the top; new ones go on top), date sections (Today / Yesterday / Previous 7 days / Previous 30 days / Older, named as on the iPhone), a time on each row or headings only (the user picks in the mock), collapse with a button and a shortcut, a "Pinned" section stored on the server, drag into a project. Card: [SB1-sidebar.md](SB1-sidebar.md) | ⑥Helper (②Main reviews the server half) | in v0.1.64 (user, 2026-10-29) | Clickable mock first. After INB4, and after the pocket deletion if that is in v0.1.64 (else it keeps `remoteFirst`). Migration 0079; the pin is its own route. Not the security surface; the user's approval says the author session auto-merges after another session's OK (quoted in the card). Groups and in-project conversation links are v0.1.65 (SUB card, "Projects"). |
+
+### 3.10 Workbench (user, 2026-10-29; relayed by ④参谋)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **WB1** | The right-hand workbench holds only what sits next to the conversation, and a tab appears only when it has content: Files (always; Task and Files merged), Progress (only while a job or sub-session runs; SUB's tree goes here), Browser (only while the user has a browser tab open; it is the user's URL reader, not Hands), side chats (SIDE). The Task tab goes. Apple-style look: a 1 px divider with no coloured hover, sentence-case grey headings. Card: [WB1-workbench.md](WB1-workbench.md) | ⑥Helper (②Main reviews) | in v0.1.64 (user, 2026-10-29) | One clickable mock together with SIDE-0, before any code. WB1 lands before SIDE-2 and SUB's progress tab, which add their tabs through it. Front end only, not the security surface; the user's approval says the author session auto-merges after another session's OK (quoted in the card). |
 
 ## 4. 合并顺序
 
@@ -197,6 +204,21 @@ SBX ──→ CAP 里跑陌生代码的部分 ──→ SUB
 SBX ──→ L6
 L7：随时可做，跑分不退步才合
 ```
+
+**Reordered 2026-10-29 (user; the cloud audit's split, SBX card "Who writes what"):**
+
+```
+SBX-2 (Codex) ─────────────┐   meanwhile Claude drafts 3a, 4a, 5a, 7 on SBX-1 (not merged)
+                           ▼
+                SBX-M (user's Mac, Codex's corpus)
+                           ▼
+   per card: Np (Codex, strict xfail until built) ──→ Na (Claude; its macOS run: all Np pass, 0 skip/xfail)   N = 3, 4, 5, 6
+                           ▼
+   3a ──→ SBX-7 ──→ S2a-3 (split: Claude structure, Codex tests) ──→ HR ──→ CLS ──→ S5a ──→ S5b
+   3a … 6a + SBX-7 ──→ SBX-8
+```
+
+The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until SBX-2 lands, and STATUS says where the chain is stuck. Cards that don't depend on SBX go ahead as before.
 
 ## 5. 分道
 

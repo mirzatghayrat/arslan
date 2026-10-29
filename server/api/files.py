@@ -163,7 +163,8 @@ async def conversation_files(conversation_id: str, db: AsyncSession = Depends(ge
     seen: set[str] = set()
     out = []
     for run_id, created in runs:
-        for item in await asyncio.to_thread(artifact_store.list_artifacts, run_id):
+        stored = await asyncio.to_thread(artifact_store.list_artifacts, run_id)
+        for item in reversed(artifact_store.final_versions(stored)):   # BR2: newest first within a run too
             key = item.get("logical_key") or item.get("filename")
             if key in seen:
                 continue

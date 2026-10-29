@@ -152,11 +152,11 @@ def parse_envelope(envelope: dict, reply: dict | None = None) -> Result:
                   hint=HINTS.get(code), reply=reply or {})
 
 
-OUTCOMES = ("done", "sent_unconfirmed", "no_effect", "partly_done", "refused")
+OUTCOMES = ("done", "sent_unconfirmed", "no_effect")
 
 
 def outcome(result: Result) -> str:
-    """What an action that succeeded really achieved, in one vocabulary for both engines
+    """What an action that succeeded really achieved, in one vocabulary
     (spec 2026-10-08-0157 §5.3). Hands says it (`outcome` in its reply); a Hands too old
     to say it is read the P0 way: agent-desktop's `delivered_verified` is done, anything
     else was sent without proof and the model must look before building on it. A word

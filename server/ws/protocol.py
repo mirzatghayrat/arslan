@@ -157,7 +157,9 @@ def propose_capability(call_id: str, card: dict) -> dict[str, Any]:
     """0.1.57 §3.1: Arslan wants to add a capability to retry a step. Emitting this installs
     NOTHING; only `confirm_capability {call_id, keys?, folders?}` from THIS window does (the
     Inbox, the phone and the island cannot approve it: the card may carry a key). `card` is
-    built by the server from the search result, never from the model's words."""
+    built by the server from the search result, never from the model's words.
+    v0.1.64 CAP2a: the same frame with `kind: "authored"` asks to save a skill the model wrote
+    (`skill_forge.propose`); there the body is the model's text, shown whole, and a yes saves it."""
     return {"type": "propose_capability", "call_id": call_id, **card}
 
 

@@ -27,7 +27,7 @@ const en = {
   empty: "Nothing in this group.", failed: "Could not change it. Try again.", loadFailed: "Could not read the list.",
   addTitle: "Add from elsewhere", addMcp: "Official MCP directory", addMcpWhat: "Install, enter a key, test",
   addLink: "Paste a GitHub link", addLinkWhat: "License and safety are checked first",
-  addMethod: "Have Arslan write a method", addMethodWhat: "Turn something you do often into a method",
+  addMethod: "Have Arslan write a method", addMethodSay: "In a conversation, say “save what we just did as a skill”",
   addFoot: "Anything new is shown to you first: where it comes from, its license, what it may touch. Arslan suggests; it does not install by itself.",
 };
 type Messages = { [Key in keyof typeof en]: string };
@@ -62,7 +62,7 @@ export const capabilityListMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "
     empty: "这一类里没有。", failed: "没改成，再试一次。", loadFailed: "读不到能力列表。",
     addTitle: "从别处加", addMcp: "官方 MCP 目录", addMcpWhat: "一键装，自动问 key、自动测试",
     addLink: "贴一个 GitHub 链接", addLinkWhat: "先查许可证和安全，再给你看",
-    addMethod: "让 Arslan 写一个方法", addMethodWhat: "把你常做的事变成可复用的方法",
+    addMethod: "让 Arslan 写一个方法", addMethodSay: "在对话里说「把刚才这套做法存成技能」",
     addFoot: "装任何东西都先给你看：来源、许可证、要什么权限。Arslan 只建议，不自己装。",
   },
   ja: {
@@ -93,7 +93,7 @@ export const capabilityListMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "
     empty: "このグループには何もありません。", failed: "変更できませんでした。もう一度お試しください。", loadFailed: "一覧を読み込めませんでした。",
     addTitle: "ほかから追加", addMcp: "公式 MCP ディレクトリ", addMcpWhat: "インストール、キー入力、テスト",
     addLink: "GitHub のリンクを貼る", addLinkWhat: "先にライセンスと安全性を確認します",
-    addMethod: "Arslan にやり方を書いてもらう", addMethodWhat: "よくすることを再利用できるやり方に",
+    addMethod: "Arslan にやり方を書いてもらう", addMethodSay: "会話で「今のやり方をスキルとして保存して」と言ってください",
     addFoot: "新しいものは必ず先に見せます：出どころ、ライセンス、何に触れるか。Arslan は提案するだけで、勝手には入れません。",
   },
   es: {
@@ -124,7 +124,7 @@ export const capabilityListMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "
     empty: "No hay nada en este grupo.", failed: "No se pudo cambiar. Inténtalo de nuevo.", loadFailed: "No se pudo leer la lista.",
     addTitle: "Añadir desde otro sitio", addMcp: "Directorio oficial de MCP", addMcpWhat: "Instalar, poner la clave, probar",
     addLink: "Pegar un enlace de GitHub", addLinkWhat: "Primero se revisan licencia y seguridad",
-    addMethod: "Que Arslan escriba un método", addMethodWhat: "Convierte algo que haces a menudo en un método",
+    addMethod: "Que Arslan escriba un método", addMethodSay: "En una conversación, di «guarda lo que acabamos de hacer como habilidad»",
     addFoot: "Todo lo nuevo se te muestra antes: de dónde viene, su licencia, qué puede tocar. Arslan sugiere; no instala por su cuenta.",
   },
   de: {
@@ -155,7 +155,7 @@ export const capabilityListMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "
     empty: "In dieser Gruppe ist nichts.", failed: "Konnte nicht geändert werden. Bitte erneut versuchen.", loadFailed: "Liste nicht lesbar.",
     addTitle: "Von anderswo hinzufügen", addMcp: "Offizielles MCP-Verzeichnis", addMcpWhat: "Installieren, Schlüssel eingeben, testen",
     addLink: "GitHub-Link einfügen", addLinkWhat: "Lizenz und Sicherheit werden zuerst geprüft",
-    addMethod: "Arslan eine Vorgehensweise schreiben lassen", addMethodWhat: "Was du oft tust, wiederverwendbar machen",
+    addMethod: "Arslan eine Vorgehensweise schreiben lassen", addMethodSay: "Sag in einem Gespräch: „Speichere das eben als Skill“",
     addFoot: "Alles Neue wird dir zuerst gezeigt: Herkunft, Lizenz, worauf es zugreifen darf. Arslan schlägt vor; es installiert nichts selbst.",
   },
   fr: {
@@ -186,7 +186,7 @@ export const capabilityListMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "
     empty: "Rien dans ce groupe.", failed: "Impossible de modifier. Réessayez.", loadFailed: "Impossible de lire la liste.",
     addTitle: "Ajouter d’ailleurs", addMcp: "Annuaire MCP officiel", addMcpWhat: "Installer, saisir la clé, tester",
     addLink: "Coller un lien GitHub", addLinkWhat: "Licence et sécurité vérifiées d’abord",
-    addMethod: "Faire écrire une méthode par Arslan", addMethodWhat: "Transformer ce que vous faites souvent en méthode",
+    addMethod: "Faire écrire une méthode par Arslan", addMethodSay: "Dans une conversation, dites « enregistre ce qu’on vient de faire comme compétence »",
     addFoot: "Tout ajout vous est d’abord montré : origine, licence, ce qu’il peut toucher. Arslan propose ; il n’installe rien seul.",
   },
 };
