@@ -171,6 +171,12 @@ Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` �
 |---|---|---|---|---|
 | **SB1** | Sidebar: always ordered by last activity (a message moves its conversation to the top; new ones go on top), date sections (Today / Yesterday / Previous 7 days / Previous 30 days / Older, named as on the iPhone), a time on each row or headings only (the user picks in the mock), collapse with a button and a shortcut, a "Pinned" section stored on the server, drag into a project. Card: [SB1-sidebar.md](SB1-sidebar.md) | ⑥Helper (②Main reviews the server half) | in v0.1.64 (user, 2026-10-29) | Clickable mock first. After INB4, and after the pocket deletion if that is in v0.1.64 (else it keeps `remoteFirst`). Migration 0079; the pin is its own route. Not the security surface; the user's approval says the author session auto-merges after another session's OK (quoted in the card). Groups and in-project conversation links are v0.1.65 (SUB card, "Projects"). |
 
+### 3.10 Workbench (user, 2026-10-29; relayed by ④参谋)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **WB1** | The right-hand workbench holds only what sits next to the conversation, and a tab appears only when it has content: Files (always; Task and Files merged), Progress (only while a job or sub-session runs; SUB's tree goes here), Browser (only while the user has a browser tab open; it is the user's URL reader, not Hands), side chats (SIDE). The Task tab goes. Apple-style look: a 1 px divider with no coloured hover, sentence-case grey headings. Card: [WB1-workbench.md](WB1-workbench.md) | ⑥Helper (②Main reviews) | in v0.1.64 (user, 2026-10-29) | One clickable mock together with SIDE-0, before any code. WB1 lands before SIDE-2 and SUB's progress tab, which add their tabs through it. Front end only, not the security surface; the user's approval says the author session auto-merges after another session's OK (quoted in the card). |
+
 ## 4. 合并顺序
 
 **两种情况都一样的（②Main、③Hands 审 #434 后改）：**
