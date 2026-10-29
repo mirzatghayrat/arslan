@@ -44,7 +44,6 @@
     "description": "Pasos reutilizables y versionados con dependencias, paralelismo limitado y aprobación explícita. Se mantienen los permisos de herramientas.",
     "loading": "Cargando flujos…",
     "operation_failed": "La operación falló. Revisa la conexión, los especialistas y las dependencias antes de reintentar.",
-    "refresh": "Actualizar",
     "saved": "Elegir versión guardada",
     "new": "Nuevo flujo",
     "name": "Nombre del flujo",

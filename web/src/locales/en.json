@@ -44,7 +44,6 @@
     "description": "Reusable, versioned steps with dependencies, bounded parallel execution and explicit approval. Existing tool permissions still apply.",
     "loading": "Loading recipes…",
     "operation_failed": "The operation failed. Check the connection, selected specialists and step dependencies, then retry.",
-    "refresh": "Refresh",
     "saved": "Choose a saved version",
     "new": "New recipe",
     "name": "Recipe name",

@@ -44,7 +44,6 @@
     "description": "Étapes réutilisables et versionnées, avec dépendances, parallélisme limité et approbation explicite. Les autorisations des outils restent applicables.",
     "loading": "Chargement des flux…",
     "operation_failed": "L’opération a échoué. Vérifiez la connexion, les spécialistes et les dépendances, puis réessayez.",
-    "refresh": "Actualiser",
     "saved": "Choisir une version enregistrée",
     "new": "Nouveau flux",
     "name": "Nom du flux",

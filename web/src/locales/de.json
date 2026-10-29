@@ -44,7 +44,6 @@
     "description": "Wiederverwendbare, versionierte Schritte mit Abhängigkeiten, begrenzter Parallelität und ausdrücklicher Freigabe. Bestehende Werkzeugrechte gelten weiterhin.",
     "loading": "Abläufe werden geladen…",
     "operation_failed": "Vorgang fehlgeschlagen. Verbindung, ausgewählte Spezialisten und Abhängigkeiten prüfen und erneut versuchen.",
-    "refresh": "Aktualisieren",
     "saved": "Gespeicherte Version wählen",
     "new": "Neuer Ablauf",
     "name": "Name des Ablaufs",
