@@ -273,7 +273,8 @@ async def test_reach_never_carries_a_secret(api, execution_db, tmp_path):
                "--secret", "--header", "mcp-papa"]                # a flag is never the value of the one before
     loose = ["Authorization: Bearer hotel", "Bearer", "india", "someone:juliet@host", "postgresql://u:kilo@localhost/db",
              "--port=8080", "@acme/mcp-tool",                # a flag with its value inline leaves the next alone
-             "mcp-envsecret"]                                # package-shaped, but the server's own secret
+             "mcp-envsecret",                                # package-shaped, but the server's own secret
+             "mcp_sk_fake_quebec", "fake/slash-romeo", "@x/y@sierralower"]   # not a package: no word "mcp" / version
     async with execution_db() as db:
         db.add_all([
             MCPServer(id=7, label="remote", command="", transport="http", host_allowed=True, status="registered",
@@ -288,8 +289,24 @@ async def test_reach_never_carries_a_secret(api, execution_db, tmp_path):
     assert rows["mcp:7"]["reach"] == "https://mcp.example.test:8443"
     assert rows["mcp:8"]["reach"] == "npx @playwright/mcp@latest @acme/mcp-tool **** some-mcp"
     for secret in ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
-                   "kilo", "lima1", "mikekey", "novq", "oscar", "papa", "envsecret", "8080", "/opt/tools"):
+                   "kilo", "lima1", "mikekey", "novq", "oscar", "papa", "envsecret", "8080", "/opt/tools", "quebec",
+                   "romeo", "sierralower"):
         assert secret not in rows["mcp:7"]["reach"] + rows["mcp:8"]["reach"], secret
+
+
+async def test_reach_keeps_a_package_after_a_flag_that_takes_no_value(api, execution_db, tmp_path):
+    """#500 final recheck: `docker run -i --rm mcp/fetch` (the Docker MCP catalogue's own form) and
+    `npx --verbose @scope/pkg` are found by their package."""
+    async with execution_db() as db:
+        db.add_all([
+            MCPServer(id=9, label="fetch", command="docker", transport="stdio", host_allowed=True, status="registered",
+                      args=["run", "-i", "--rm", "mcp/fetch"], created_at=ADDED),
+            MCPServer(id=10, label="tool", command="npx", transport="stdio", host_allowed=True, status="registered",
+                      args=["--verbose", "-q", "@scope/pkg@1.2.0"], created_at=ADDED),
+        ])
+        await db.commit()
+    rows = await _rows(api)
+    assert (rows["mcp:9"]["reach"], rows["mcp:10"]["reach"]) == ("docker mcp/fetch", "npx @scope/pkg@1.2.0")
 
 
 def test_a_connection_is_deleted_only_through_the_capabilities_list():

@@ -197,10 +197,13 @@ async def _mcp_rows() -> list[dict]:
 
 
 # What `reach` may keep of a connection's arguments (#500 rechecks: an allowlist, not a list of secret shapes): a
-# package spec (`name`, `@scope/name`, either with `@version`) in lowercase, that has a "/" or names "mcp". Every
-# flag goes, and so does the value after it, but for the flags that take none.
-_PACKAGE = re.compile(r"(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?(@[a-z0-9][a-z0-9._-]*)?")
-_NO_VALUE_FLAGS = ("-y", "--yes")
+# lowercase package spec (`name`, `@scope/name`, `org/name`) whose version, if any, is a number or a dist tag, and
+# that is a scoped package or names "mcp" as a word. Every flag goes, and so does the value after it, but for the
+# common flags that take none.
+_PACKAGE = re.compile(r"(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?"
+                      r"(@(?:[0-9][0-9a-z.+-]*|latest|next|beta|alpha|canary))?")
+_MCP_WORD = re.compile(r"(?<![a-z0-9_])mcp(?![a-z0-9_])")
+_NO_VALUE_FLAGS = ("-y", "--yes", "-i", "--rm", "--verbose", "--quiet", "-q")
 
 
 def _reach(server: dict, runtime: dict | None) -> str:
@@ -219,7 +222,7 @@ def _reach(server: dict, runtime: dict | None) -> str:
             skip = arg not in _NO_VALUE_FLAGS and "=" not in arg and (arg.startswith("--") or len(arg) == 2)
         elif skip:
             skip = False
-        elif _PACKAGE.fullmatch(arg) and ("/" in arg or "mcp" in arg):
+        elif _PACKAGE.fullmatch(arg) and ((arg.startswith("@") and "/" in arg) or _MCP_WORD.search(arg)):
             parts.append(arg)
     if server.get("url"):
         try:
