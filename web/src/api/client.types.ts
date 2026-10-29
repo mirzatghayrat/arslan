@@ -311,6 +311,8 @@ export interface StoredArtifact {
   sha256: string;
   media_type: string;
   url: string;
+  /** One file's identity across a run's versions (server artifact_store; BR2). */
+  logical_key?: string;
 }
 
 export interface SpawnSummary {

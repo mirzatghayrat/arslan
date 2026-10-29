@@ -9,11 +9,13 @@ import { useTranslation } from "react-i18next";
 /** Cards shown inline; the rest are one click away in the workbench's 任务 tab. */
 export const INLINE_FILES = 3;
 
-/** One card per path: a file written twice in a turn shows its last version. */
+/** One card per file: a file written twice in a turn shows its last version. Keyed by the
+ *  server's `logical_key` (BR2: a write's snapshot and attach_file's copy share it but not the
+ *  title), else by title. */
 export function lastVersions(files: StoredArtifact[] = []): StoredArtifact[] {
-  const byPath = new Map<string, StoredArtifact>();
-  for (const f of files) byPath.set(f.title, f);
-  return [...byPath.values()];
+  const byFile = new Map<string, StoredArtifact>();
+  for (const f of files) byFile.set(f.logical_key ?? f.title, f);
+  return [...byFile.values()];
 }
 
 /**
