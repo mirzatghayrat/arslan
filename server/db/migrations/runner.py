@@ -91,6 +91,7 @@ from .versions._0067_permissions import upgrade_sync as _m0067
 from .versions._0068_mcp_state import upgrade_sync as _m0068
 from .versions._0069_message_ids_never_reused import upgrade_sync as _m0069
 from .versions._0070_ask_every_command import upgrade_sync as _m0070
+from .versions._0071_conversation_kind import upgrade_sync as _m0071
 from .versions._0072_runs_read_outside import upgrade_sync as _m0072
 from .versions._0074_drop_discovery_candidates import upgrade_sync as _m0074
 
@@ -161,7 +162,8 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0068", _m0068),
     ("0069", _m0069),
     ("0070", _m0070),
-    ("0072", _m0072),     # 0071 (Q1+SUB) is reserved and goes before it
+    ("0071", _m0071),
+    ("0072", _m0072),
     ("0074", _m0074),
 ]
 

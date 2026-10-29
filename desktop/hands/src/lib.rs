@@ -6,8 +6,6 @@ pub mod apps;
 pub mod argv;
 pub mod borrow;
 pub mod capture;
-pub mod cua;
-pub mod cua_policy;
 pub mod glow;
 pub mod integrity;
 pub mod keyhold;

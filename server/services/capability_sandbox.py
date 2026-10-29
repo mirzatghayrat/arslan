@@ -17,9 +17,9 @@ protected paths from command_sandbox close last, even inside a granted folder.
 """
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
+
+from server.services.sandbox_profile import Profile, literal, real, subpath
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
@@ -28,45 +28,31 @@ SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/pri
                "/private/var/db/timezone", "/private/var/db/dyld")
 
 
-def _real(path) -> str:
-    return os.path.realpath(os.path.expanduser(str(path)))
-
-
-def _q(path) -> str:
-    return json.dumps(_real(path))
-
-
 def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -> str:
     """The SBPL text. `root` = the server's own folder (read/write); `folders` = granted by
     the user (read/write); `read` = extra read-only paths (Arslan's runtimes)."""
     from server.services import command_sandbox
-    lines = [
-        "(version 1)",
-        "(deny default)",
-        "(allow process-exec process-fork)",
-        "(allow signal (target same-sandbox))",
-        "(allow sysctl-read)",
-        "(allow mach-lookup)",
-        "(allow ipc-posix-shm-read* ipc-posix-shm-write-data)",
-        "(allow file-read-metadata)",
-        '(allow file-read* (literal "/"))',
-        "(allow file-read* " + " ".join(f"(subpath {_q(p)})" for p in SYSTEM_READ) + ")",
-        '(allow file-write* (literal "/dev/null"))',
-    ]
+    rules = Profile("deny")
+    rules.allow("process-exec process-fork")
+    rules.allow("signal", "(target same-sandbox)")
+    rules.allow("sysctl-read")
+    rules.allow("mach-lookup")
+    rules.allow("ipc-posix-shm-read* ipc-posix-shm-write-data")
+    rules.allow("file-read-metadata")
+    rules.allow("file-read*", literal("/"))
+    rules.allow_paths("file-read*", map(real, SYSTEM_READ))
+    rules.allow("file-write*", literal("/dev/null"))
     if network:
-        lines.append("(allow network* system-socket)")
-    if folders:
-        lines.append("(allow file-read* file-write* " + " ".join(f"(subpath {_q(p)})" for p in folders) + ")")
+        rules.allow("network* system-socket")
+    rules.allow_paths("file-read* file-write*", map(real, folders))
     # Order matters (last match wins): the protected paths close AFTER the user's grants, so a
     # granted ~ never opens ~/.ssh or Arslan's data; the server's own folder and Arslan's
     # runtimes (which live inside Arslan's data folder) open AFTER that, and only those.
-    protected = command_sandbox.default_protected()
-    lines.append("(deny file-read* file-write* network-outbound " +
-                 " ".join(f"(subpath {_q(p)})" for p in protected) + ")")
-    if read:
-        lines.append("(allow file-read* " + " ".join(f"(subpath {_q(p)})" for p in read) + ")")
-    lines.append(f"(allow file-read* file-write* (subpath {_q(root)}))")
-    return "\n".join(lines) + "\n"
+    rules.deny("file-read* file-write* network-outbound",
+               *(subpath(real(p)) for p in command_sandbox.default_protected()))
+    rules.allow_paths("file-read*", map(real, read))
+    rules.allow("file-read* file-write*", subpath(real(root)))
+    return rules.text()
 
 
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:

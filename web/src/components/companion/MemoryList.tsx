@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FileText, Globe, KeyRound, Laptop, PinOff, Search, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { api } from "../../api/client";
+import { api, ApiError } from "../../api/client";
 import { companionApi, type MemoryEntry, type MemoryProposal, type MemoryRevision, type MemoryStats, type MemoryWrite, type Project } from "../../api/companion";
 import { lessonsApi, type Lesson } from "../../api/lessons";
 import { announceProactiveChange } from "../../api/proactive";
@@ -185,7 +185,7 @@ function LearnedPractices({ lessons, busy, change }: {
     </div>;
     if (await confirmSheet({ title: t("companion.practiceOpenTitle"), body, action: t("companion.practiceTurnOn"),
       cancel: t("companion.practiceNotNow"), destructive: false }))
-      await change(() => lessonsApi.setStatus(lesson.id, "active"));
+      await change(() => lessonsApi.setStatus(lesson.id, "active", lesson.updated_at));
   };
   const row = (lesson: Lesson) => {
     const switchedOn = lesson.status === "active";
@@ -305,7 +305,11 @@ export default function MemoryList({ addRequest = 0, onAddHandled, onOpenMateria
   async function change(operation: () => Promise<unknown>) {
     setBusy(true); setError(null);
     try { await operation(); setDialog(null); await reload(); }
-    catch (cause) { setError(companionError(cause)); }
+    catch (cause) {
+      // Refused as stale: show the current version, so trying again sends it (#466 review).
+      if (cause instanceof ApiError && cause.message.includes("version_conflict")) await reload();
+      setError(companionError(cause));
+    }
     finally { setBusy(false); }
   }
   async function answer(run: () => Promise<unknown>) {
