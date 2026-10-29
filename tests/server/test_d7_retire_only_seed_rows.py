@@ -5,20 +5,17 @@ it was written:
 - imported from a SKILL.md: category "imported" (skill_import);
 - installed through Capabilities: source_id set (capability_flow);
 - written by Arslan and kept by the user: category "authored" (skill_forge.register: the create_skill
-  card and expert_conversion, v0.1.64 CAP2a);
-- authored and promoted before CAP2a: a SkillCandidate of that key with promoted_at, whatever its status
-  since (the curator retired it, reject_candidate overwrote any status). CAP2b moves these to "authored";
+  card and expert_conversion, v0.1.64 CAP2a). A skill promoted from Skill Forge before CAP2a got the
+  same mark in migration 0077 (CAP2b; its tests are in test_migration_0077.py);
 - made from a GitHub repo in Discover before v0.1.64: its key starts with "gh-" (the discovery
   centre, removed in CAP1a; its rows stay).
 
 In each case a seed row with another retired key, in the same database, is still deleted."""
-from datetime import datetime
-
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db.models import Base, SkillCandidate, SkillPack
+from server.db.models import Base, SkillPack
 from server.registry import seeder
 
 SEED = "maps"                         # a retired key, as the seeder once planted it
@@ -65,17 +62,6 @@ async def test_a_skill_installed_through_capabilities_survives_whatever_its_cate
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["promoted", "retired", "rejected"])
-async def test_an_authored_skill_under_a_retired_key_survives(db, status):
-    # "retired": the curator retired it; "rejected": reject_candidate ran on it after promotion
-    # (②Main's review of #293: it does not check the candidate is still open).
-    candidate = SkillCandidate(key="powerpoint", name="powerpoint", category="method", description="d",
-                               body="## Trigger\nx", status=status, promoted_at=datetime(2026, 10, 1))
-    assert await _boot(db, candidate, _pack("powerpoint", "method", status="registered" if status ==
-                                            "promoted" else "retired")) == {"powerpoint"}
-
-
-@pytest.mark.asyncio
 async def test_a_skill_saved_on_the_card_or_converted_from_an_expert_survives_under_a_retired_key(db, monkeypatch):
     """CAP2a: no candidate row any more. skill_forge.register (the create_skill card's yes, a converted
     former expert) marks the row "authored", and the seeder reads that as the user's."""
@@ -102,13 +88,6 @@ async def test_no_seed_category_is_the_authored_mark():
     from server.services import skill_forge
     assert not set(skill_forge.WRITTEN) & {category for _key, _name, category, *_ in seed_catalog.SKILLS}
     assert "imported" not in skill_forge.WRITTEN
-
-
-@pytest.mark.asyncio
-async def test_a_candidate_that_never_went_live_does_not_shield_a_seed_row(db):
-    candidate = SkillCandidate(key="notion", name="notion", category="method", description="d",
-                               body="## Trigger\nx", status="rejected")
-    assert await _boot(db, candidate, _pack("notion", "productivity")) == set()
 
 
 @pytest.mark.asyncio
