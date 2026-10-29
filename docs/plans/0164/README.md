@@ -19,7 +19,7 @@
 
 - **v0.1.64 先做什么（用户 10-22）：** ① 沙箱默认拒绝（含沙箱合一）→ ② 按需装能力 → ③ 本机代理加网站名单（产能允许时）。领先路线 §0.6。**#432 可能改这一条**，见 §2。
 - **S2a-3 顺延到 v0.1.64（用户 10-24）：** #375、#376、#378、#396 留着，跟默认拒绝沙箱一起审、一起合。合不进的话，「只在有风险时问」继续禁用。(Correction, SBX card 2026-10-28: it is not disabled; it is off by default and still selectable behind a warning sheet, `server/services/settings_service.py:409-415`.)
-- **外部安全审查用 Codex（用户 10-27）：** 结论再给云端审计看；日常只审碰安全面的和产品代码超过约 400 行的 PR；只读、只看公开仓库、结论写明模型；它提的每一条都要在 PR 上回应。§8「v0.1.64 的安全审查路径」。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3.
+- **外部安全审查用 Codex（用户 10-27）：** (Changed 2026-10-29: Codex also writes what Claude cannot, on `codex/` branches, never merging; STATUS "Codex to write".) 结论再给云端审计看；日常只审碰安全面的和产品代码超过约 400 行的 PR；只读、只看公开仓库、结论写明模型；它提的每一条都要在 PR 上回应。§8「v0.1.64 的安全审查路径」。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3.
 - **跑分（用户 10-27）：** 加 3 道「代码审查」题；「对 Hermes」的门槛改为同题三次全过的题数不少于 Hermes。见 M64 卡。
 - **快问的五条（用户 10-27）**、**回复风格**（10-27，以更正后那版为准）、**子会话分两步**（10-27）、**能力页和插件八条**（10-28）、**收件箱八条**（10-28，#433）。见各自的卡。
 - **v0.1.63 顺延的两处删除（用户 10-27）：** `__version__`（跟 C5b 那类清理一起）、专家时代的 REST 接口（并进 C7c）。`R63-verdict.md`「删除期限」。

@@ -88,22 +88,25 @@ The user is merging in ④参谋's order (2026-10-29). Batch 1 is done. Batch 2 
 
 ## Codex to write (user, 2026-10-29)
 
-**Why:** a safety classifier stopped ③Hands as it started SBX-2. The user had the cloud audit split SBX and S2a-3, and approved the split. What Claude cannot write goes to Codex (SBX card, "Who writes what"). Codex has no write access to the repository and opens PRs from its own fork. Reviews: Astra (highest level) in a new Codex session, never the session that wrote it. Claude reviews the non-probe plumbing. Existing review queue: [`docs/plans/0162/STATUS.md`](../0162/STATUS.md), "Codex 待审".
+**Why:** a safety classifier stopped ③Hands as it started SBX-2. The user had the cloud audit split SBX and S2a-3, and approved the split. What Claude cannot write goes to Codex (SBX card, "Who writes what"). Reviews: Astra (highest level) in a new Codex session, never the session that wrote it. Claude reviews the non-probe plumbing. The existing review queue is in [`docs/plans/0162/STATUS.md`](../0162/STATUS.md), "Codex 待审".
 
-**Where the chain is stuck:** SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; README §4 "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
+**Where the chain is stuck:** SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
 
-**Setting up the fork (the user does this; ⓪Plan only lists the steps):**
-1. Fork `mirzatghayrat/arslan` to the account Codex will push from, and connect Codex to **that fork only**. The main repository stays without Codex write access.
-2. Codex pushes a branch to the fork and opens a PR against `main` of `mirzatghayrat/arslan`.
-3. A fork PR's workflows wait for the user's approval. Open the PR's Checks and approve the run. Check once that the five jobs (backend, frontend, macos, secrets, language) all run on a fork PR. If one needs a repository secret, tell ⓪Plan which; changing the setting is yours.
-4. Each commit message ends with the author (Codex, with model and reasoning level) and the reviewer. Each PR body carries the four evidence items (`docs/sessions.md` §8) and its macOS CI run id.
-5. The user merges every Codex PR (all are on the security surface).
+**How Codex delivers (user, 2026-10-29; replaces the fork plan from earlier that day).** No new account and no fork: Codex signs in with the user's own GitHub. It may push branches and open PRs. **It never merges**, never pushes to `main`, and never pushes to another session's branch. That is an agreement the user accepted, not a technical lock: the user merges every security PR anyway.
+
+**Steps for the user:**
+1. Give the ChatGPT Codex Connector access to `mirzatghayrat/arslan` (GitHub → Settings → Applications → the connector → Repository access). Today it is limited to one unrelated public repository (`docs/plans/0162/README.md`, "「只读」怎么做到").
+2. In Codex, tell it the rules once: open PRs only, never merge, never push to `main` or to someone else's branch. If Codex has a setting to ask before pushing or merging, consider turning it on (optional).
+3. Each Codex branch starts with `codex/`. Each PR gets the label `codex`. Every commit message and PR body says "Author: Codex (model, reasoning level)" and names the reviewer, and the PR carries the four evidence items (`docs/sessions.md` §8) plus its macOS CI run id.
+4. The user merges every Codex PR (all are on the security surface).
+
+**A risk to know (⓪Plan, 2026-10-29), your call:** the connector's write access includes workflows. A branch pushed to this repository runs its own workflow files on `push` with the repository's Actions secrets. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) protects against fork PRs, not against a pushed branch. Those secrets include the updater's signing key (`release.yml:132-133`). One option: move the release secrets into a GitHub Environment that only `v*` tags can use and that needs your approval. That is a repository-settings change, so it is yours to decide.
 
 **The tasks (one paste per block).** Each task points to card sections only. Codex designs the tests' content itself from the card; nothing here spells it out.
 
 | Block | Paste this to Codex | Ready? |
 |---|---|---|
-| SBX-2 | "Write SBX-2 for mirzatghayrat/arslan from your fork: read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Open the PR from your fork with the four evidence items and the macOS CI run id." | **Yes** |
+| SBX-2 | "Write SBX-2 for mirzatghayrat/arslan on a `codex/` branch (open a PR labelled `codex`, never merge): read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Put \"Author: Codex\" and the reviewer in each commit and the PR, with the four evidence items and the macOS CI run id." | **Yes** |
 | SBX-3p … 6p | "Write SBX-Np (N = 3, 4, 5 or 6): read the SBX card's 'Who writes what' and the SBX-N row and sections it names, then write the real-seatbelt tests that what SBX-N should deny is denied, as parameters of SBX-2's harness. No product code." | After SBX-2 and SBX-M; 6p only with SBX-6 |
 | Allowlist after SBX-M | "Read the SBX-M report (`docs/plans/0164/SBX-measurement.md`) and the SBX card §2; propose the allowlist change it calls for, ≤ 50 lines." | After SBX-M |
 | S2a-3 tests | "Read `docs/plans/0162/S2a-command-three-layers.md` (S2a-3) and the S2a-3 row of `docs/plans/0164/README.md` §3; write the test content named there for #375 / #376 / #378 / #396 and #406, against the rebased heads." | After SBX-7 and ③Hands' rebase |
