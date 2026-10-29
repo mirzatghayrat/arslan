@@ -19,7 +19,7 @@
 
 - **v0.1.64 先做什么（用户 10-22）：** ① 沙箱默认拒绝（含沙箱合一）→ ② 按需装能力 → ③ 本机代理加网站名单（产能允许时）。领先路线 §0.6。**#432 可能改这一条**，见 §2。
 - **S2a-3 顺延到 v0.1.64（用户 10-24）：** #375、#376、#378、#396 留着，跟默认拒绝沙箱一起审、一起合。合不进的话，「只在有风险时问」继续禁用。(Correction, SBX card 2026-10-28: it is not disabled; it is off by default and still selectable behind a warning sheet, `server/services/settings_service.py:409-415`.)
-- **外部安全审查用 Codex（用户 10-27）：** 结论再给云端审计看；日常只审碰安全面的和产品代码超过约 400 行的 PR；只读、只看公开仓库、结论写明模型；它提的每一条都要在 PR 上回应。§8「v0.1.64 的安全审查路径」。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3.
+- **外部安全审查用 Codex（用户 10-27）：** (Changed 2026-10-29: Codex also writes what Claude cannot, on `codex/` branches, never merging; STATUS "Codex to write".) 结论再给云端审计看；日常只审碰安全面的和产品代码超过约 400 行的 PR；只读、只看公开仓库、结论写明模型；它提的每一条都要在 PR 上回应。§8「v0.1.64 的安全审查路径」。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3.
 - **跑分（用户 10-27）：** 加 3 道「代码审查」题；「对 Hermes」的门槛改为同题三次全过的题数不少于 Hermes。见 M64 卡。
 - **快问的五条（用户 10-27）**、**回复风格**（10-27，以更正后那版为准）、**子会话分两步**（10-27）、**能力页和插件八条**（10-28）、**收件箱八条**（10-28，#433）。见各自的卡。
 - **v0.1.63 顺延的两处删除（用户 10-27）：** `__version__`（跟 C5b 那类清理一起）、专家时代的 REST 接口（并进 C7c）。`R63-verdict.md`「删除期限」。
@@ -91,7 +91,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | **S5a** | Modes: plan / ask every step / auto-edit / full access; current mode next to the input box, one click, per conversation; Settings keeps only the default for new conversations; plan's "start" returns to the previous mode; sub-sessions inherit only | must | After SBX, HR's e rule and S3 undo. Clickable demo to the user before UI code. Lane ②Main. |
 | **S5b** | The "auto" mode on top of S5a, **and the only PR that wires CLS into `permissions.py` `_ask`** (one writer in the hot file) | must | After CLS. **Gates built and tested in S5b:** b ("yes" recorded `by="reviewer"`, this time only, no rules or grants, never satisfies the network / unsandboxed checks), d (modes widen in order; only runs that finish inside SBX; never anything full access would still ask; no sandbox, no approvals), h (denials counted: 3 in a row within a turn, 20 per conversation and per job, then back to cards), the ledger the user can read, the one-click off, and D7's constraints that live in the wiring (an exception or timeout counts as "ask"; it only answers cards that would be asked anyway; off by default, on only after the user agrees). **"Any one unmet → the classifier does not ship" binds S5b's merge as well as CLS's:** "auto" is not offered until every gate in both cards holds. Lane ②Main; reviewed by ③Hands plus an effort=max reviewer plus Codex. **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
 | **S64-0b** | Two more mark leaks from the audit's E: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words (framed and marked when the job read outside content) | must (user, 2026-10-28) | After #438. The attachment / OCR inline code is in `arslan.py` (a hot file; goes after any open K-line PR touching it). About 20 product lines each; tests check outcomes (network command gets a card, `memory_note` does not take effect at once). `run_command` reading files stays a known limit. Lane ③Hands; effort=max plus Codex. **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
-| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406、还没人接的 PR4） | must (user, 2026-10-28: keep the parser, drop "complete the list") | Codex 审 rebase 之后的头 (now: another session's max review first, Codex only for what it cannot cover, §1.3)（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
+| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406、还没人接的 PR4） | must (user, 2026-10-28: keep the parser, drop "complete the list") | **Split (user, 2026-10-29, the cloud audit's split, as for SBX):** Claude (③Hands) writes the structural part: `bash -p`, the cleaned child-process environment, "can't read it, so ask", the parser moved off the event loop with a time limit, and the rule itself that a uniquely named program anywhere in the command asks. Codex writes the test content: differential tests, the real-shell comparison, automatic variants, #406, and the test parts of the four PRs that were stopped before. Claude does not rewrite those. Reviews as SBX's "Who writes what". **After SBX-7** (#432: once the sandbox is in, the parser is no longer the main line and S2a-3 shrinks). Codex 审 rebase 之后的头 (now: another session's max review first, Codex only for what it cannot cover, §1.3)（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
 | **ACM** | 卡片界面与文案大合并（领先路线 D 行「审批策略与作用域」；§8 和别处叫它 D1，和 v0.1.63 的 D1 卡不是一回事） | 必须 | INB、STY、S4a 跟进、S6 都挂在它上面。等 #432（权限模式会改卡片）。 |
 | **NET** | 本机代理加网站名单（§0.6 第 3 条） | 顺延候选 | 原定「产能允许时」。 |
 | 其余「执行领先」行 | L1 薄循环 + ACP、L2 内置工具按需 + 参数修复、L3 边流式边执行、L4 进度流到灵动岛和 iPhone、L6 后台进程与进程工具、L7 目标模式、L8 存记忆 + 服务端压缩、L11 文件夹规矩、L12 评审选项 + iPhone 批准、L14 公开 Terminal-Bench + Mac 题库 | 用户 10-28 已定 | L11 + K10「应该」（都小）。**L6 后台进程、L7 目标模式留在 v0.1.64，标「应该」**：L6 是新的安全面，排在 SBX 之后；L7 改主循环，跑分（M64 那套）不退步才合。其余顺延 v0.1.65。L6、L7 的卡开工时由 ②Main 写。 |
@@ -204,6 +204,21 @@ SBX ──→ CAP 里跑陌生代码的部分 ──→ SUB
 SBX ──→ L6
 L7：随时可做，跑分不退步才合
 ```
+
+**Reordered 2026-10-29 (user; the cloud audit's split, SBX card "Who writes what"):**
+
+```
+SBX-2 (Codex) ─────────────┐   meanwhile Claude drafts 3a, 4a, 5a, 7 on SBX-1 (not merged)
+                           ▼
+                SBX-M (user's Mac, Codex's corpus)
+                           ▼
+   per card: Np (Codex, strict xfail until built) ──→ Na (Claude; its macOS run: all Np pass, 0 skip/xfail)   N = 3, 4, 5, 6
+                           ▼
+   3a ──→ SBX-7 ──→ S2a-3 (split: Claude structure, Codex tests) ──→ HR ──→ CLS ──→ S5a ──→ S5b
+   3a … 6a + SBX-7 ──→ SBX-8
+```
+
+The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until SBX-2 lands, and STATUS says where the chain is stuck. Cards that don't depend on SBX go ahead as before.
 
 ## 5. 分道
 
