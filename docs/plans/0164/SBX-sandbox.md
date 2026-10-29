@@ -4,7 +4,7 @@
 
 | Item | Content |
 |---|---|
-| Lane | **③Hands** (moved from ②Main on 2026-10-28, both agreeing; ③Hands also does the S2a-3 rebase on the same files). Written at **effort=max**. Reviewed by ②Main with an effort=max reviewer. Codex GPT-6 Astra only for parts that review cannot cover (user, 2026-10-28 evening; v0.1.64 README §1.3); when it is needed, SBX-1 + SBX-2 go together, then the rest one by one. SBX-1 shows the byte-for-byte check of all five profiles, old vs new, with `/usr/bin/diff` or `cmp` (not rtk's diff, which always exits 0). |
+| Lane | **Changed 2026-10-29: see "Who writes what" below (SBX-2 and every deny-test half go to Codex).** **③Hands** (moved from ②Main on 2026-10-28, both agreeing; ③Hands also does the S2a-3 rebase on the same files). Written at **effort=max**. Reviewed by ②Main with an effort=max reviewer. Codex GPT-6 Astra only for parts that review cannot cover (user, 2026-10-28 evening; v0.1.64 README §1.3); when it is needed, SBX-1 + SBX-2 go together, then the rest one by one. SBX-1 shows the byte-for-byte check of all five profiles, old vs new, with `/usr/bin/diff` or `cmp` (not rtk's diff, which always exits 0). |
 | Version | v0.1.64 |
 | Tier | Must (user, 2026-10-22, lead roadmap §0.6 item 1; again 2026-10-28, `docs/plans/0164/README.md:43`) |
 | Depends on | Nothing in the security chain comes before it. #432 is decided (`docs/plans/0164/README.md:41-43`). S64-0 (#438) is independent. SBX-M (the measurement on a Mac) needs the user at the Mac only to start it; it uses no keys. |
@@ -12,6 +12,26 @@
 | Gates it moves | Lead roadmap §0.6 item 1 (`docs/plans/2026-10-17-0162-lead-roadmap.md:83-85`). Row D "sandbox" (`lead-roadmap.md:249`). It is the precondition for "ask only when risky" coming back, for the classifier's baseline (CLS, S5b), for S5a, for HR, and for CAP's untrusted-code PRs. R64's security gate. |
 | Branches | `claude/0164-sbx1-profile-builder`, `claude/0164-sbx2-deny-default-base`, `claude/0164-sbx3-commands`, `claude/0164-sbx4-python-mcp-checks`, `claude/0164-sbx5-cap6b-caches`, `claude/0164-sbx6-proxy-port` (only if the user picks option N-a in Q1), `claude/0164-sbx7-counts`, `docs/0164-sbx-measurement` (SBX-M and SBX-8 reports) |
 | Migration | None expected. The ledger already has a JSON `extra` column (`server/db/models.py:493-517`, field `extra` at `:509`). The local denial count is derived from what is recorded (SBX-7). If SBX-7 finds it needs a column, it asks ②Main for the next free number, which comes after 0075 (0071 Q1, 0072 INB2, 0073 C7c-2, 0074 CAP1b, 0075 CAP1c; `docs/plans/0164/README.md` §6). |
+
+## Who writes what (user, 2026-10-29: the cloud audit's split)
+
+**This section overrides the Lane row, the PR split table's authorship and the Review list below wherever they differ.**
+
+Why: a safety classifier stopped ③Hands' response as it started SBX-2, right after it read this card. Per "Risks and rollback", that is not worked around or reworded, and it is not moved to another Claude session or model. The user then asked the cloud audit (planning audit session, read at main `c83d7ed9`) to judge only how to split SBX-2 … SBX-8 and S2a-3. The user approved the split (relayed by ④参谋, 2026-10-29). Writing work that Claude cannot do because of safeguards goes to Codex (user, 2026-10-28).
+
+| Block | Writer | Reviewed by | Merge rule |
+|---|---|---|---|
+| **SBX-2**, whole, not split. Which part was stopped is unknown, so giving any part of it to Claude would be a reworded retry | Codex | Astra (highest level), in a new Codex session, never the one that wrote it. Claude reviews only SBX-2's parts with no probe content (CI markers, harness plumbing) | The user merges |
+| **SBX-3a, 4a, 5a, 6a**, the build half of each card. 3a: the profile text, wiring to each entry point, `available()`, the private TMPDIR (location, lifetime, boot sweep), tagged writable roots, `in_scope()`, the `deny_write_after_roots` parameter, denial detection beyond EPERM, the SECURITY.md sentences, golden texts, unit tests, and tests that what should run does run. 4a: `run_python`, artifact checks, MCP onto the shared base, deleting `_SEATBELT_PROFILE`, dropping MCP's wholesale `mach-lookup`. 5a: CAP6b's refusal at the `write_file` / `edit_file` layer, the MCP grant exclusion, cache redirection. 6a: the local proxy, and the profile that allows only the proxy port | Claude (③Hands) | ②Main plus an effort=max reviewer, checking that what was built is what the card says. "Is the deny strict enough" belongs to Astra and the p tests | The user merges, after that card's p is green in CI |
+| **SBX-3p, 4p, 5p, 6p**, the real-seatbelt tests that what should be denied is denied, for each card's surface (3p the commands base; 4p MCP and Python; 5p links and shared caches; 6p the network surface) | Codex | Astra (highest level) | p may merge first; a waits for p to be green in CI |
+| **The system-service allowlist**, including SBX-M's follow-up of ≤ 50 lines. No Claude PR touches it | Codex | Astra | The user merges |
+| **SBX-M** | The user or ②Main runs Codex's corpus on the user's Mac. Claude writes the report, ids and results only; if that is stopped, Codex writes it | ②Main | Report PR |
+| **SBX-7, SBX-8** | Claude (③Hands). SBX-7 after SBX-3; SBX-8 last | ②Main plus an effort=max reviewer | As before |
+
+- **Harness:** a parameter table that already exists may gain a base name in a Claude PR. Any new kind of probe is Codex's. The audit suggests Codex makes the harness parameterised by base name, so that each entry point's deny tests are one set of parameters.
+- **In parallel:** while Codex writes SBX-2, Claude may draft 3a, 4a, 5a and 7 on SBX-1's builder. They are rebased after SBX-2 merges, and **none of them merges before SBX-M**.
+- **A Claude review stopped part-way** goes to Astra as it is, not reworded.
+- **How Codex works:** Codex has no write access to the repository. It opens PRs from its own fork (user, 2026-10-29). A fork PR's CI runs only after the user approves it. Each commit message names Codex as the author and names the reviewer. Each PR carries the four evidence items (`docs/sessions.md` §8) and its macOS CI run id. The task texts are in `docs/plans/0164/STATUS.md`, "Codex to write". They point to this section and to each card's own section, and nothing more. Codex designs the deny tests itself from the card.
 
 ## Goal
 
@@ -357,7 +377,7 @@ Total ≈ 1,880 product lines added, ≈ 390 removed (≈ 1,430 without SBX-6), 
 - **Compatibility:** the corpus in §M passes under the new profile, or each failure is listed in the report with its card cost. The bench "waiting for you" count does not rise (DeepSeek round, M64's rules).
 - **Evidence, four items per PR** (`docs/sessions.md` §8). macOS CI run id plus conclusion for every real-seatbelt claim.
 - **Review:**
-  - ②Main + an effort=max reviewer on every SBX code PR. Codex GPT-6 Astra at the highest level only for parts that review cannot cover because of safeguards (user, 2026-10-28 evening; v0.1.64 README §1.3); the PR names those parts. When Codex is needed, SBX-1 and SBX-2 go together (no behaviour change, plus a harness), then SBX-3 … SBX-7 one by one (②Main; Q10 settled);
+  - **Changed 2026-10-29: see "Who writes what".** ②Main + an effort=max reviewer on every SBX code PR. Codex GPT-6 Astra at the highest level only for parts that review cannot cover because of safeguards (user, 2026-10-28 evening; v0.1.64 README §1.3); the PR names those parts. When Codex is needed, SBX-1 and SBX-2 go together (no behaviour change, plus a harness), then SBX-3 … SBX-7 one by one (②Main; Q10 settled);
   - every reviewer's points (and Codex's, when it runs) each answered on the PR;
   - safety conclusions shown to the cloud audit (`docs/plans/0162/README.md` §8, review path).
 
