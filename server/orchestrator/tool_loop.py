@@ -1909,7 +1909,7 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
 
 # INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
-_SENSITIVE_FLAG = {"type": "boolean"}
+_SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
 
 # Hands v2 §6.3: the one way the model asks for the front.
 _FRONT = ("only after this action, done in the background, did nothing (no_effect) and you looked again: "

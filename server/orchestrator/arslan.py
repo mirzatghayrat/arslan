@@ -1129,8 +1129,7 @@ async def _every_tool() -> list[dict]:
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
         "recall": "Search the user's second brain (facts, learnings, notes) for relevant "
                   "context before answering.",
-        "remember": "Write to the user's second brain: append a fact/learning/note worth "
-                    "remembering later.",
+        "remember": "Write to the user's second brain: a fact/learning/note worth remembering.",
         "conversation_search": "Find what was said in earlier conversations with the user — their own "
                                "words and your replies — as original snippets with date and a link. "
                                "args: {query, since?, until? (YYYY-MM-DD), limit?}. Use it when the user "

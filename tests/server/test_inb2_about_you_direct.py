@@ -655,3 +655,5 @@ def test_both_write_tools_offer_the_flag():
     from server.orchestrator.tool_loop import _NATIVE_PARAM_SCHEMAS
     for key in ("remember", "memory_note"):
         assert _NATIVE_PARAM_SCHEMAS[key]["properties"]["sensitive"]["type"] == "boolean"
+    # remember is in every request and its description has no room, so its parameter says when (#475 recheck, H4).
+    assert _NATIVE_PARAM_SCHEMAS["remember"]["properties"]["sensitive"]["description"] == "true if private"

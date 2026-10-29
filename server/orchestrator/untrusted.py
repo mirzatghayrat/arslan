@@ -171,7 +171,7 @@ def mark_off_the_list() -> None:
 def known_local() -> bool:
     """Whether everything this turn took in so far is on the allowlist; outside a turn, no."""
     holder = _EXTERNAL.get()
-    return holder is not None and not holder["seen"] and not holder.get("off_list")
+    return holder is not None and not holder["seen"] and not holder["off_list"]
 
 
 # S64-0b: what a background job that may carry outside content posts (its result, the notes naming its
