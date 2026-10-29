@@ -8,8 +8,8 @@ const skipKey = (projectId: string) => `arslan.projects.retroSkipped.${projectId
 
 /**
  * Done (0.1.56 §10): a short retro, written only when asked — one call on the user's own model
- * over counted facts (what took longer than usual, how the plan changed). Up to three rules,
- * each can be kept as a plan rule. Skippable; without a model the facts stand alone.
+ * over counted facts (how long it took, how the plan changed). Skippable; without a model the
+ * facts stand alone.
  */
 export default function RetroCard({ projectId }: { projectId: string }) {
   const { t, i18n } = useTranslation();
@@ -44,26 +44,14 @@ export default function RetroCard({ projectId }: { projectId: string }) {
       {error ? t(error) : t("projectsUI.retroOfferBody")}</Notice>;
   }
   const f = retro.facts;
-  const slower = f.levels.filter(lv => lv.slower);
   return (
     <section className="flex flex-col gap-2 rounded-xl border border-border bg-background px-4 py-3" data-testid="retro">
       <h2 className="text-[13px] font-bold">{t("projectsUI.retroTitle")}</h2>
       {retro.summary && <p className="text-[13px] leading-relaxed" data-testid="retro-summary">{retro.summary}</p>}
       <ul className="flex flex-col gap-0.5 text-[12.5px] text-muted-foreground" data-testid="retro-facts">
         {f.total_days != null && <li>{t("projectsUI.retroTotal", { count: Math.round(f.total_days) })}</li>}
-        {slower.map(lv => <li key={lv.level}>{t("projectsUI.retroSlower", { level: lv.level, days: lv.days, usual: lv.usual })}</li>)}
-        {slower.length === 0 && <li>{t("projectsUI.retroNoneSlower")}</li>}
         <li>{t("projectsUI.retroChanges", { count: f.plan_changes, cut: f.cut_checkpoints })}</li>
       </ul>
-      {retro.rules.length > 0 && <ul className="flex flex-col gap-1.5" data-testid="retro-rules">
-        {retro.rules.map((rule, i) => (
-          <li key={i} className="flex items-center gap-2 text-[13px]">
-            <span className="min-w-0 flex-1">{rule.text}</span>
-            {rule.kept ? <span className="text-[12px] text-success" data-testid={`retro-kept-${i}`}>{t("projectsUI.retroKept")}</span>
-              : <Button size="sm" disabled={busy} data-testid={`retro-keep-${i}`}
-                onClick={() => void act(() => projectsApi.keepRetroRule(projectId, i))}>{t("projectsUI.retroKeep")}</Button>}
-          </li>))}
-      </ul>}
       {error && <Notice tone="error">{t(error)}</Notice>}
     </section>
   );

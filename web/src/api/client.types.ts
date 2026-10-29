@@ -376,7 +376,6 @@ export interface AppSettings {
   workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
-  projects_auto_advance?: string; // "true" | "false" (0.1.56)
   show_technical_details?: string; // "true" | "false" (0.1.58)
   heartbeat_interval_s?: string;
   lan_discovery_enabled?: string; // "true" | "false"

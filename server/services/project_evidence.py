@@ -22,7 +22,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ConversationContext, Project, ProjectCheckpoint, ProjectEvent
@@ -156,12 +156,13 @@ async def note_folder_activity(db, project: Project) -> bool:
     """§9: a file changed in the folder since the project last moved counts as activity (and
     starts a planned project in Idea, like a first conversation does)."""
     from server.api.projects import project_folder
-    from server.services import project_habits
     folder = project_folder(project)
     if folder is None:
         return False
     changed = newest_change(folder, scan_folder(folder))
-    since = await project_habits.last_activity(db, project.id) or project.created_at
+    # The newest thing that happened to the project: any event (turn, tick, file change, stage).
+    since = await db.scalar(select(func.max(ProjectEvent.created_at)).where(
+        ProjectEvent.project_id == project.id)) or project.created_at
     if changed is None or (since is not None and changed <= since):
         return False
     await project_plan.note_activity(db, project.id)

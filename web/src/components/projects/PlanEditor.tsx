@@ -37,7 +37,6 @@ export default function PlanEditor({ levels, onChange }: { levels: Level[]; onCh
                     aria-label={t("projectsUI.band")} onChange={e => set(i, { band: e.target.value as Band })}>
                     {BANDS.map(b => <option key={b} value={b}>{t(`projectsUI.col_${b}`)}</option>)}
                   </select>
-                  {lv.habit && <span className="rounded-full bg-ask-soft px-2 py-0.5 text-[11px] text-ask">{t("projectsUI.habitLevel")}</span>}
                   {locked && <span className="text-[11px] text-subtle-foreground">{t("projectsUI.clearedLocked")}</span>}
                 </div>
                 {!locked && <input className={input} value={lv.clear_condition ?? ""} maxLength={400}

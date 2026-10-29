@@ -198,31 +198,25 @@ async def _ready_with_proposal(api, execution_db, level_index=0):
     return pid, card["proposal"]["id"]
 
 
-async def test_accept_advances_and_the_streak_counts_decline_and_undo_as_misses(api, execution_db):
+async def test_accept_advances_and_a_declined_proposal_cannot_then_be_accepted(api, execution_db):
     pid, proposal = await _ready_with_proposal(api, execution_db)
     plan = (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "drop"})).json()
     assert [lv["state"] for lv in plan["levels"]] == ["cleared", "current", "todo", "todo"]
-    shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
-    assert (shadow["proposed"], shadow["accepted"], shadow["streak"]) == (1, 1, 1)
-    # A second proposal, declined: the streak resets.
+    # A second proposal, declined.
     propose = await _run(execution_db, project_plan.propose_advance)
     await propose(pid, evidence={"kind": "said", "quote": "prototype done"})
     second = (await api.get("/api/v1/projects/board")).json()["cards"][0]["proposal"]["id"]
     assert (await api.post(f"/api/v1/projects/{pid}/proposals/{second}/decline")).status_code == 200
-    shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
-    assert (shadow["proposed"], shadow["accepted"], shadow["streak"]) == (2, 1, 0)
     assert (await api.post(f"/api/v1/projects/{pid}/proposals/{second}/accept", json={"leftover": "drop"})).status_code == 409
 
 
-async def test_undoing_an_accepted_advance_reverts_it_and_counts_as_a_miss(api, execution_db):
+async def test_undoing_an_accepted_advance_reverts_it(api, execution_db):
     pid, proposal = await _ready_with_proposal(api, execution_db)
     await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "drop"})
     advance = next(e for e in (await api.get(f"/api/v1/projects/{pid}/events")).json() if e["kind"] == "advance")
     plan = (await api.post(f"/api/v1/projects/{pid}/events/{advance['id']}/undo")).json()
     assert [lv["state"] for lv in plan["levels"]][:2] == ["current", "todo"]
     assert plan["levels"][1]["started_at"] is None
-    shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
-    assert (shadow["accepted"], shadow["streak"]) == (0, 0)
 
 
 async def test_only_the_latest_advance_can_be_undone(api, execution_db):
@@ -237,14 +231,14 @@ async def test_only_the_latest_advance_can_be_undone(api, execution_db):
     assert response.status_code == 409 and response.json()["detail"]["code"] == "only_latest_advance"
 
 
-async def test_a_proposal_the_plan_moved_past_goes_stale_and_does_not_count(api, execution_db):
+async def test_a_proposal_the_plan_moved_past_goes_stale(api, execution_db):
     pid, proposal = await _ready_with_proposal(api, execution_db)
     await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})                       # cleared by hand meanwhile
     assert (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "drop"})).status_code == 200
     plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
     assert [lv["state"] for lv in plan["levels"]][:3] == ["cleared", "current", "todo"]   # not advanced twice
-    shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
-    assert shadow["proposed"] == 0
+    events = (await api.get(f"/api/v1/projects/{pid}/events")).json()
+    assert next(e for e in events if e["id"] == proposal)["outcome"] == "stale"
 
 
 async def test_the_last_level_is_proposed_as_met_but_done_stays_the_users(api, execution_db):
@@ -263,24 +257,24 @@ async def test_the_last_level_is_proposed_as_met_but_done_stays_the_users(api, e
     assert card["column"] == "done" and card["done_at"]
 
 
-async def test_with_auto_advance_on_arslan_advances_itself_but_never_past_the_last_level(api, execution_db):
+async def test_arslan_never_clears_a_level_itself_even_with_an_old_auto_advance_setting(api, execution_db):
+    """PRJ0 (user, 2026-10-28): auto-advance is gone. A setting row an older version wrote
+    changes nothing: a level with nothing left open is still only proposed."""
     from server.services import settings_service
     async with execution_db() as db:
         await settings_service._set_raw(db, "projects_auto_advance", "true")
         await db.commit()
     pid = (await _create(api))["id"]
-    # 0.1.58 §5: auto-advance only clears a level with nothing left open.
     await _plan(api, pid, [{**lv, "checkpoints": []} for lv in GAME_LEVELS[:2]])
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
     propose = await _run(execution_db, project_plan.propose_advance)
     await propose(pid, evidence={"kind": "said", "quote": "pitch done"})
     plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
-    assert [lv["state"] for lv in plan["levels"]] == ["cleared", "current"]
-    advance = next(e for e in (await api.get(f"/api/v1/projects/{pid}/events")).json() if e["kind"] == "advance")
-    assert advance["actor"] == "arslan" and advance["payload"]["evidence"]["quote"] == "pitch done"
-    await propose(pid, evidence={"kind": "said", "quote": "shipped"})     # last level: a proposal, not an advance
+    assert [lv["state"] for lv in plan["levels"]] == ["current", "todo"]
+    events = (await api.get(f"/api/v1/projects/{pid}/events")).json()
+    assert [e["kind"] for e in events if e["kind"] in ("proposal", "advance")] == ["proposal"]
     card = (await api.get("/api/v1/projects/board")).json()["cards"][0]
-    assert card["proposal"]["last"] is True and card["stage"] == "active"
+    assert card["proposal"]["last"] is False and card["proposal"]["evidence"]["quote"] == "pitch done"
 
 
 # ── re-planning keeps history ────────────────────────────────────────────────
@@ -337,7 +331,8 @@ async def test_the_board_lists_active_projects_with_counts(api):
     assert card["paused"] is True and card["column"] == "shaping" and card["left"] == 4
     assert card["current"] == {"position": 1, "name": "Idea", "started_at": card["current"]["started_at"]}
     assert board["counts"] == {"paused": 1, "archived": 1}
-    assert board["shadow"]["ask_at"] == 10 and board["shadow"]["auto_advance"] is False
+    # PRJ0: no shadow footer, no stall chip, no "pick it up".
+    assert "shadow" not in board and "stall" not in card and "next" not in card
 
 
 async def test_files_lists_the_folder_top_level_without_secrets(api, tmp_path):
@@ -628,24 +623,17 @@ async def test_without_refine_no_model_is_called(api, monkeypatch):
 async def test_refine_uses_the_models_levels_when_they_hold_the_rules(api, execution_db, monkeypatch):
     import json as _json
 
-    from server.db.models import ProjectHabit
-    async with execution_db() as db:
-        db.add(ProjectHabit(id="h1", template="game", kind="plan_rule", text="Approve the look before building",
-                            sources=[], enabled=True))
-        db.add(ProjectHabit(id="h2", template="game", kind="plan_rule", text="SWITCHED OFF RULE", sources=[], enabled=False))
-        db.add(ProjectHabit(id="h3", template="trip", kind="plan_rule", text="OTHER TYPE RULE", sources=[], enabled=True))
-        await db.commit()
     calls = _stub(monkeypatch, content=_json.dumps(GOOD))
     body = (await api.post("/api/v1/projects/draft", json={"template": "game", "finish_line": "On the App Store",
                                                              "lang": "zh", "refine": True})).json()
     assert body["source"] == "model"
     assert [lv["name"] for lv in body["levels"]] == ["Pitch", "Look approved", "Build", "Launch"]
-    assert body["levels"][1]["habit"] is True
+    assert "habit" not in body["levels"][1]          # PRJ0: a model that still sends it is ignored
     assert body["levels"][2]["checkpoints"][0]["expects"] == {"kind": "file", "pattern": "levels/*.json", "min": 1}
     (call,) = calls
     assert "Simplified Chinese" in call["system"]
     sent = _json.loads(call["user"])
-    assert sent["plan_rules"] == ["Approve the look before building"]
+    assert "plan_rules" not in sent and "habit" not in call["system"]      # PRJ0: no plan rules
     assert sent["finish_line"] == "On the App Store" and sent["levels"][0]["name"] == "点子"
 
 
