@@ -299,6 +299,23 @@ async def test_a_too_long_mcp_call_that_quotes_an_odd_name_is_framed_and_marks(m
     assert seen and "external" not in refusal
 
 
+@pytest.mark.parametrize("name, outside", [(SHADY, True), ("search_documents", False)])
+async def test_a_failed_approval_check_that_quotes_an_odd_name_is_framed_and_marks(memory, monkeypatch, name,  # noqa: F811
+                                                                                   outside):
+    async def breaks(*_a, **_k):
+        raise RuntimeError("the permission store is down")
+    monkeypatch.setattr(permissions, "decide", breaks)
+    key = await _mcp_tool(name)
+    token = untrusted.track_turn()
+    try:
+        refusal = await (await executors.resolve_executor(key)).execute({"text": "plan"})
+    finally:
+        seen = untrusted.end_turn(token)
+    assert refusal["code"] == "not_allowed" and refusal["executed"] is False
+    assert "could not check" in refusal["error"]
+    assert seen is outside and ("external" not in refusal) is outside
+
+
 # ── The review of #498: K2's tool summary rides in the next turns ──────────────────────────────
 
 def test_the_turn_summary_shows_an_odd_key_without_its_name():
