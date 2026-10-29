@@ -95,10 +95,8 @@ async def _known() -> str:
     effect as the user's own (a noticed fact, a correction), so a block holding a note from a run off the list
     (memory_tools_v2.from_off_the_list) is left out, and so is one that cannot be traced: the model then reads
     only the user's own words."""
-    from server.services import memory_tools_v2, personal_context
-    if personal_context.current() is None:
-        return ""
-    block = await personal_context.assemble(limit_tokens=memory._FACTS_TOKEN_BUDGET)
+    from server.services import memory_tools_v2
+    block = await memory.facts_context(include_sensitive=True)
     if block is None or not block.text:
         return ""
     try:

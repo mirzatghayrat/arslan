@@ -819,3 +819,27 @@ async def test_the_facts_extractor_reads_the_memory_block_only_when_nothing_in_i
     with pc.bind(_ctx()):
         await turn_facts.extract(CID, "plan my week")
     assert ("files.example.net" in prompts[0]) is shown
+
+
+async def test_a_trace_that_fails_leaves_the_block_out_too(memory, monkeypatch):
+    """J3b: the user's own note would be shown, but nothing is known to be clean when the trace fails."""
+    from arslan.models import LLMResponse
+    from server.services import turn_facts
+    await _note(MemoryActor(origin="user"))
+    prompts = []
+
+    class Model:
+        async def chat(self, system, user, **kwargs):
+            prompts.append(user)
+            return LLMResponse(usage={}, content='{"new_facts": []}', tool_calls=[])
+
+    async def adapter():
+        return Model()
+
+    async def broken(used):
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(turn_facts, "_get_adapter", adapter)
+    monkeypatch.setattr(memory_tools_v2, "from_off_the_list", broken)
+    with pc.bind(_ctx()):
+        await turn_facts.extract(CID, "plan my week")
+    assert "files.example.net" not in prompts[0]
