@@ -209,7 +209,7 @@
 
 Frames are unchanged.
 - The Overview's top-right 「＋ 新对话」 becomes 快问, with no row of recent quick asks under it. Tapping it opens the same view as today's Remote, nothing extra.
-- Past quick asks stay visible in that one page, scrolling up, like Remote today. There is no separate history list and there are no chips. The phone stacks the Mac's per-question quick conversations into one thread, oldest at the top, with a time stamp before each question. Older ones are paged with `kind: "quick"` + `before`.
-- **Follow-up window: 30 minutes.** Within it, a new message continues the last quick ask (`chat.send` with its `conversation_id`). After it, a new quick ask starts. The window is kept across restarts.
-- **No 「转成对话」 on the phone for now** (the user's choice). `conversation.update` stays in BridgeKit, unused by the UI, and the Mac side needs no change. Converting stays possible from the Mac, where Q1 #3's learning boundary applies.
-- Ordinary new conversations still start from the sidebar's ＋. A Mac without `quick` makes 快问 open Remote. Share-sheet drafts go to the quick page when the Mac says `quick`.
+- Past quick asks stay visible in that one page, scrolling up, like Remote today. There is no separate history list and there are no chips. The phone stacks the Mac's per-question quick conversations into one thread, oldest at the top, with a day line where a new day starts (each message shows its own time). Older ones are paged with `kind: "quick"` + `before`.
+- **Follow-up window: 30 minutes.** Within it, a new message continues the last quick ask (`chat.send` with its `conversation_id`). After it, a new quick ask starts. The window is kept across restarts. It counts from the last message sent into that quick ask, and is kept per Mac.
+- **No 「转成对话」 on the phone for now** (the user's choice). `conversation.update` stays in BridgeKit, unused by the UI, and the Mac side needs no change.
+- Ordinary new conversations still start from the sidebar's ＋. A Mac without `quick` makes 快问 open Remote. Share-sheet drafts go to the quick page when the Mac says `quick`. Until the Mac's pocket-deletion PR lands, a Mac that says `quick` and still lists the pocket shows it in the sidebar as 「Remote（旧）」, which can be deleted; once the Mac stops listing it, the row is gone.
