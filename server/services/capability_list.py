@@ -196,32 +196,37 @@ async def _mcp_rows() -> list[dict]:
     return rows
 
 
-# Flags whose next argument is a value that may be a secret (#500 light recheck). "-H" is a header, never help.
-_SECRET_FLAGS = ("--token", "--api-key", "--apikey", "--key", "--secret", "--password", "--header")
+# What `reach` may keep of a connection's arguments (#500 rechecks: an allowlist, not a list of secret shapes): a
+# package spec (`name`, `@scope/name`, either with `@version`) in lowercase, that has a "/" or names "mcp". Every
+# flag goes, and so does the value after it, but for the flags that take none.
+_PACKAGE = re.compile(r"(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?(@[a-z0-9][a-z0-9._-]*)?")
+_NO_VALUE_FLAGS = ("-y", "--yes")
 
 
 def _reach(server: dict, runtime: dict | None) -> str:
-    """How a connection is reached, for the page's search only (never shown): its command and arguments, or its
-    address, without anything that may be a secret (#500 light recheck). The address keeps scheme, host, port and
-    path (no userinfo, query or fragment); a NAME=value argument goes, and so does the value after a
-    secret-looking flag; what is left is masked with the server's own secrets, as its last_error is."""
+    """How a connection is reached, for the page's search only (never shown): the command's name, the arguments
+    that look like a package, and the address's scheme, host and port (no userinfo, path, query or fragment).
+    Nothing else is kept, and what is kept is masked with the server's own secrets, as its last_error is."""
+    from pathlib import PurePosixPath
     from urllib.parse import urlsplit
 
     from server.mcp.supervisor import mask_for
-    parts, skip = [server.get("command") or ""], False
+    parts, skip = [PurePosixPath(server.get("command") or "").name], False
     for arg in map(str, server.get("args") or ()):
-        if skip:
+        if arg.startswith("-"):
+            # A flag is never a value: it decides about the next argument itself. One that carries its value
+            # ("--port=1", "-HAuthorization: …") or takes none leaves the next alone.
+            skip = arg not in _NO_VALUE_FLAGS and "=" not in arg and (arg.startswith("--") or len(arg) == 2)
+        elif skip:
             skip = False
-        elif arg == "-H" or arg.lower() in _SECRET_FLAGS:
-            skip = True
-        elif "=" not in arg:
+        elif _PACKAGE.fullmatch(arg) and ("/" in arg or "mcp" in arg):
             parts.append(arg)
     if server.get("url"):
         try:
             address = urlsplit(server["url"])
             host = f"[{address.hostname}]" if ":" in (address.hostname or "") else address.hostname or ""
-            parts.append(f"{address.scheme}://{host}{f':{address.port}' if address.port else ''}{address.path}"
-                         if address.scheme and host else "")
+            if address.scheme and host:
+                parts.append(f"{address.scheme}://{host}{f':{address.port}' if address.port else ''}")
         except ValueError:                                     # a malformed address: nothing of it
             pass
     text = " ".join(part for part in parts if part)

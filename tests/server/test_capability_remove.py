@@ -257,32 +257,38 @@ async def test_a_connection_says_how_it_is_reached_and_others_do_not(api, execut
     """#500 recheck: the page's search finds a connection by its command and arguments, or its address."""
     await _seed(execution_db, tmp_path)
     rows = await _rows(api)
-    assert (rows["mcp:1"]["reach"], rows["mcp:2"]["reach"]) == ("https://mcp.example.test/", "npx")
+    assert (rows["mcp:1"]["reach"], rows["mcp:2"]["reach"]) == ("https://mcp.example.test", "npx")
     assert rows["terminal"]["reach"] is None and rows["skill:csv-tidy"]["reach"] is None
 
 
 async def test_reach_never_carries_a_secret(api, execution_db, tmp_path):
-    """#500 light recheck: `reach` is only searched, never shown, but it must not carry what may be a secret: the
-    address's userinfo, query and fragment, a NAME=value argument, the value after a secret-looking flag, or the
-    server's own secrets (its env values, masked as last_error is)."""
+    """#500 rechecks: `reach` is only searched, never shown, so it keeps only what is allowed: the command's name,
+    package-like arguments (lowercase, with a "/" or naming "mcp") and the address's scheme, host and port. Values
+    after a flag are written here to look like packages, so only the flag rule can drop them."""
     import json
 
     from server import crypto
+    flagged = ["--token", "mcp-alpha", "--access-token", "mcp-bravo", "--api_key", "mcp-charlie", "-t", "mcp-delta",
+               "-HAuthorization: Bearer echo", "--header", "mcp-foxtrot", "=".join(("API_KEY", "mcp-golf")),
+               "--secret", "--header", "mcp-papa"]                # a flag is never the value of the one before
+    loose = ["Authorization: Bearer hotel", "Bearer", "india", "someone:juliet@host", "postgresql://u:kilo@localhost/db",
+             "--port=8080", "@acme/mcp-tool",                # a flag with its value inline leaves the next alone
+             "mcp-envsecret"]                                # package-shaped, but the server's own secret
     async with execution_db() as db:
         db.add_all([
             MCPServer(id=7, label="remote", command="", transport="http", host_allowed=True, status="registered",
-                      url="https://someone:PASSWORD1@mcp.example.test:8443/mcp?key=SECRETQ1&v=2#FRAG1",
+                      url="https://someone:lima1@mcp.example.test:8443/api/mcp/s/mikekey/mcp?key=novq&v=2#oscar",
                       created_at=ADDED),
-            MCPServer(id=8, label="local", command="npx", transport="stdio", host_allowed=True, status="registered",
-                      args=["-y", "some-mcp", "--token", "SECRETT1", "=".join(("API_KEY", "SECRETA1")), "--header",
-                            "Authorization: Bearer SECRETH1", "--API-KEY", "SECRETK1", "SECRETE1"],
-                      env=crypto.encrypt(json.dumps({"TOKEN": "SECRETE1"})), created_at=ADDED),
+            MCPServer(id=8, label="local", command="/opt/tools/bin/npx", transport="stdio", host_allowed=True,
+                      status="registered", args=["-y", "@playwright/mcp@latest", *flagged, *loose, "some-mcp"],
+                      env=crypto.encrypt(json.dumps({"TOKEN": "mcp-envsecret"})), created_at=ADDED),
         ])
         await db.commit()
     rows = await _rows(api)
-    assert rows["mcp:7"]["reach"] == "https://mcp.example.test:8443/mcp"
-    assert rows["mcp:8"]["reach"].startswith("npx -y some-mcp")
-    for secret in ("PASSWORD1", "SECRETQ1", "FRAG1", "SECRETT1", "SECRETA1", "SECRETH1", "SECRETK1", "SECRETE1"):
+    assert rows["mcp:7"]["reach"] == "https://mcp.example.test:8443"
+    assert rows["mcp:8"]["reach"] == "npx @playwright/mcp@latest @acme/mcp-tool **** some-mcp"
+    for secret in ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+                   "kilo", "lima1", "mikekey", "novq", "oscar", "papa", "envsecret", "8080", "/opt/tools"):
         assert secret not in rows["mcp:7"]["reach"] + rows["mcp:8"]["reach"], secret
 
 
