@@ -203,3 +203,13 @@
   - Only a quick conversation, or a retry for one already turned. Any other id, an ordinary conversation included, gets `error` `not_found` and is left as it is (⓪Plan's review of #479, F4).
 - **`conversation.delete`** deletes a quick conversation like any other. A phone that said `quick` may also delete the pocket.
 - **Still open, ②Main:** §4b's other point (`outcomes` holds only finished tasks).
+- **A retry repeats the kind (⓪Plan's review of #486, F1):** a resend of a quick ask's first message carries the same `new_conversation_id` and `conversation_kind: "quick"`. The Bridge refuses a resend that changes the kind (`bad_request`). Without this, a refused quick send retried with only `new_conversation_id` would land as an ordinary chat, with every tool and learning. ①iOS's Q1c already resends the kind, including after a relaunch, and tests it.
+
+## Q1c on the iPhone: scope the user narrowed (2026-10-29, in ①iOS's chat)
+
+Frames are unchanged.
+- The Overview's top-right 「＋ 新对话」 becomes 快问, with no row of recent quick asks under it. Tapping it opens the same view as today's Remote, nothing extra.
+- Past quick asks stay visible in that one page, scrolling up, like Remote today. There is no separate history list and there are no chips. The phone stacks the Mac's per-question quick conversations into one thread, oldest at the top, with a time stamp before each question. Older ones are paged with `kind: "quick"` + `before`.
+- **Follow-up window: 30 minutes.** Within it, a new message continues the last quick ask (`chat.send` with its `conversation_id`). After it, a new quick ask starts. The window is kept across restarts.
+- **No 「转成对话」 on the phone for now** (the user's choice). `conversation.update` stays in BridgeKit, unused by the UI, and the Mac side needs no change. Converting stays possible from the Mac, where Q1 #3's learning boundary applies.
+- Ordinary new conversations still start from the sidebar's ＋. A Mac without `quick` makes 快问 open Remote. Share-sheet drafts go to the quick page when the Mac says `quick`.
