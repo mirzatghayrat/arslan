@@ -4,29 +4,30 @@ The profiles Arslan starts processes under are written with this module: command
 the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the artifact checks
 (`code_sandbox.computation_profile`), installed MCP servers (`capability_sandbox.profile`) and
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
-written here without changing a byte of what they produce. SBX-2 adds the default-deny base that
-SBX-3 and SBX-4 move them onto (docs/plans/0164/SBX-sandbox.md). Two texts are still written by
-hand: `command_sandbox.available()`'s probe, which SBX-3 replaces with the real commands profile,
-and `code_sandbox._SEATBELT_PROFILE`, which no product caller reaches and SBX-4 deletes.
+written here without changing a byte of what they produce, and SBX-1b changed how a path is spelt
+(below). SBX-2 adds the default-deny base that SBX-3 and SBX-4 move them onto
+(docs/plans/0164/SBX-sandbox.md). Two texts are still written by hand: `command_sandbox.available()`'s
+probe, which SBX-3 replaces with the real commands profile, and `code_sandbox._SEATBELT_PROFILE`,
+which no product caller reaches and SBX-4 deletes.
 
 What every profile relies on:
 
 - Seatbelt applies the LAST matching rule (measured 2026-10-03), so the order of the rules is the
   policy: a deny written after an allow wins over it, and the other way round.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
-- Paths are written with `json.dumps`, which escapes `"` and `\\`, so a folder name cannot add
-  rules. It also writes every non-ASCII character as `\\uXXXX`, which seatbelt does NOT decode
-  (②Main, measured on macOS 26.6.2 in #471's review): a rule on a path with a CJK or accented name
-  lands on a path that does not exist. A deny on such a protected folder misses, and an allow on
-  such a working folder refuses its writes. Main wrote paths this way before SBX-1 too; SBX-1 keeps
-  the bytes, and an SBPL string encoder (raw UTF-8) replaces `json.dumps` in the next PR.
+- A path is written as an SBPL string (`sbpl_string`): its own UTF-8, with `\\` and `"` escaped, so a
+  folder name cannot add rules, and control characters as `\\xHH`. sandbox-exec decodes those but
+  not `\\uXXXX`, which is how `json.dumps` wrote every non-ASCII character until SBX-1b: a rule on a
+  CJK- or accent-named path then landed on a path that does not exist, so a deny on such a folder
+  missed and an allow on one refused (②Main's review of #471; measured on macOS 26.6.2). Unicode
+  normalization does not matter: a rule written in NFC matches a folder stored in NFD, and the other
+  way round (measured).
 - A rule without a filter matches everything: `(allow file-read*)` opens every file. So `allow_paths`
   leaves the rule out when its list is empty, instead of writing it bare. A deny is written as the
   profile asks: over no paths it denies everything, which fails closed.
 """
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -37,14 +38,28 @@ def real(path) -> Path:
     return Path(os.path.realpath(os.path.expanduser(str(path))))
 
 
+def sbpl_string(text: str) -> str:
+    """`text` as an SBPL string literal: its own characters, `\\` and `"` escaped, control characters
+    (below U+0020, and U+007F) as `\\xHH`. For printable ASCII this is exactly what `json.dumps` wrote."""
+    out = []
+    for ch in text:
+        if ch in ('\\', '"'):
+            out.append("\\" + ch)
+        elif ch < " " or ch == "\x7f":
+            out.append(f"\\x{ord(ch):02x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def subpath(path) -> str:
     """The path and everything under it."""
-    return f"(subpath {json.dumps(str(path))})"
+    return f"(subpath {sbpl_string(str(path))})"
 
 
 def literal(path) -> str:
     """Exactly this path."""
-    return f"(literal {json.dumps(str(path))})"
+    return f"(literal {sbpl_string(str(path))})"
 
 
 def file_or_folder(path: Path) -> str:
@@ -55,7 +70,7 @@ def file_or_folder(path: Path) -> str:
 def remote_tcp(host: str, port: int) -> str:
     """An outbound TCP destination. The host must be `*` or `localhost`: sandbox-exec rejects an
     address (measured 2026-08-21, `ssh_exec`)."""
-    return f"(remote tcp {json.dumps(f'{host}:{port}')})"
+    return f"(remote tcp {sbpl_string(f'{host}:{port}')})"
 
 
 class Profile:

@@ -884,7 +884,6 @@
     "tabs": {
       "tools": "Werkzeuge",
       "skills": "Fertigkeiten",
-      "forge": "Skill-Schmiede",
       "mcps": "MCPs"
     },
     "chips": {
@@ -965,66 +964,6 @@
       "count": "{{shown}} von {{total}}",
       "no_match": "Hier passt nichts dazu. Filter zurücksetzen, um wieder alles zu sehen.",
       "matched_tools": "enthält {{tools}}"
-    }
-  },
-  "forge": {
-    "intro": "Verpacke deine eigenen Methoden in Skills. Ein Kandidat wird beobachtet, gegen die bewerteten Läufe eines echten Spawns geprüft und dann von dir freigegeben – du bist das Tor, das ihn live schaltet. Diese selbst verfassten Skills gehören zur Bibliothek.",
-    "create": {
-      "title": "Skill erstellen",
-      "submit": "Kandidat schmieden",
-      "ok": "\"{{name}}\" geschmiedet – wird unten beobachtet."
-    },
-    "fields": {
-      "key": "Schlüssel",
-      "name": "Name",
-      "category": "Kategorie",
-      "description": "Beschreibung",
-      "descriptionHint": "einzeilige Beschreibung",
-      "body": "SKILL.md-Inhalt",
-      "bodyHint": "Benötigt Metadaten sowie ## Trigger und ## Decision Rules (Entscheidungsregeln). Max. 15 KB.",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
-    },
-    "list": {
-      "title": "Kandidaten ({{count}})",
-      "refresh": "Aktualisieren",
-      "empty": "Noch keine Kandidaten – schmiede oben einen."
-    },
-    "status": {
-      "observing": "wird beobachtet",
-      "proposed": "vorgeschlagen",
-      "promoted": "freigegeben",
-      "rejected": "abgelehnt",
-      "liveLabel": "Live-Skill"
-    },
-    "promote": {
-      "button": "Freigeben",
-      "confirm": "Bestätigen – live schalten",
-      "cancel": "Abbrechen",
-      "hint": "Freigabe ist das menschliche Tor: Es registriert diesen Kandidaten als live, zuweisbaren Skill in der Bibliothek.",
-      "ok": "Freigegeben – live als \"{{key}}\".",
-      "blocked": "Freigabe blockiert."
-    },
-    "reject": {
-      "button": "Ablehnen"
-    },
-    "curator": {
-      "usage": "{{usage}} Ausführungen seit der Freigabe",
-      "score": "Ø {{score}}/10",
-      "noScore": "noch keine bewerteten Ausführungen",
-      "flagUnused": "⚠ ungenutzt",
-      "flagUnderperforming": "⚠ schwache Leistung",
-      "retire": "Stilllegen",
-      "retireConfirm": "Stilllegen – überall Zuweisung aufheben",
-      "cancel": "Abbrechen",
-      "retireHint": "zur Prüfung markiert – Stilllegen hebt alle Zuweisungen auf und verhindert neue",
-      "retired": "„{{key}}“ stillgelegt – Zuweisung bei {{count}} Experten aufgehoben."
-    },
-    "modes": {
-      "title": "Zwei Einstiegsmöglichkeiten",
-      "a_title": "A · SKILL.md einfügen",
-      "a_desc": "Den Inhalt einer vorhandenen SKILL.md unten einfügen, um einen Kandidaten zu erstellen.",
-      "b_title": "B · Geführte Erstellung",
-      "b_desc": "Methode Feld für Feld beschreiben: Schlüssel, Name, Kategorie, Beschreibung und Inhalt mit ## Trigger und Entscheidungsregeln. Kandidaten werden anhand echter bewerteter Ausführungen geprüft und von dir freigegeben."
     }
   },
   "msg": {

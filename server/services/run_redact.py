@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import EvolutionProposal, Run, RunStep, SkillCandidate
+from server.db.models import EvolutionProposal, Run, RunStep
 
 _BULKY_STEP_KEYS = ("args_full", "result_raw")
 
@@ -23,14 +23,14 @@ def _add_id(ids: set[int], rid) -> None:
 async def _protected_run_ids(db) -> set[int]:
     """Run ids that must survive the retention sweep (S2 E2, audit CRITICAL-6).
 
-    A replay Run cited by a still-live proposal or skill candidate is the two-arm original
-    text a promotion card's win-rate traces to — redacting it would sever that traceability.
-    The exemption set is the UNION, over every non-'rejected' EvolutionProposal, of BOTH
+    A replay Run cited by a still-live proposal is the two-arm original text a promotion
+    card's win-rate traces to — redacting it would sever that traceability. The exemption set
+    is the UNION, over every non-'rejected' EvolutionProposal, of BOTH
     `evidence.protected_run_ids` AND every baseline_run_id/candidate_run_id inside
     `evidence.pairs` (refresh_proposal accumulates new pairs there WITHOUT re-listing them in
-    protected_run_ids, so the pairs must be swept directly); PLUS the `samples` run ids of
-    every non-'rejected' SkillCandidate (whose evidence renders the same PromotionCard).
-    Bounded by design (each row holds ≤ 2× its pair count)."""
+    protected_run_ids, so the pairs must be swept directly). Bounded by design (each row holds
+    ≤ 2× its pair count). (v0.1.64 CAP2a: skill candidates' `samples` were never written and the
+    candidates are gone, so they no longer count.)"""
     ids: set[int] = set()
 
     rows = (await db.execute(
@@ -45,13 +45,6 @@ async def _protected_run_ids(db) -> set[int]:
             if isinstance(pair, dict):
                 _add_id(ids, pair.get("baseline_run_id"))
                 _add_id(ids, pair.get("candidate_run_id"))
-
-    srows = (await db.execute(
-        select(SkillCandidate.samples).where(SkillCandidate.status != "rejected")
-    )).scalars().all()
-    for samples in srows:
-        for rid in samples or []:
-            _add_id(ids, rid)
 
     return ids
 

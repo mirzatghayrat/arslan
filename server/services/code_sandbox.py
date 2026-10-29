@@ -135,7 +135,7 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
 
     Grant only the interpreter's installation and venv libraries, never their parent
     project or the app-data root. Resolve symlinks before constructing Seatbelt paths.
-    JSON quoting is also valid for these SBPL strings and prevents path injection.
+    Paths are written as SBPL strings (`sandbox_profile`), which prevents path injection.
     """
     executable = Path(python).absolute()
     resolved = executable.resolve()

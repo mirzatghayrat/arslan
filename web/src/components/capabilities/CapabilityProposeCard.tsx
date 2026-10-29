@@ -8,7 +8,7 @@ const host = (url: string | null) => {
   try { return url ? new URL(url).host : ""; } catch { return url ?? ""; }
 };
 
-function Row({ label, children, testId }: { label: string; children: React.ReactNode; testId?: string }) {
+export function Row({ label, children, testId }: { label: string; children: React.ReactNode; testId?: string }) {
   return (
     <div className="grid grid-cols-[64px_1fr] gap-2.5 border-b border-border py-2 text-[13px] leading-snug last:border-b-0" data-testid={testId}>
       <span className="text-muted-foreground">{label}</span><span className="min-w-0">{children}</span>

@@ -28,8 +28,7 @@ const card = (over: Partial<BoardCard>): BoardCard => ({
   left: 2, proposal: null, done_at: null, has_plan: true, ...over,
 });
 const board = (cards: BoardCard[], over: Partial<Board> = {}): Board => ({
-  cards, counts: { paused: 1, archived: 2 },
-  shadow: { proposed: 7, accepted: 6, streak: 4, ask_at: 10, asked: false, auto_advance: false }, ...over,
+  cards, counts: { paused: 1, archived: 2 }, ...over,
 });
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -50,7 +49,6 @@ describe("the board", () => {
     expect(old).toHaveTextContent("projectsUI.type_research");
     expect(within(old).getByTestId("project-plan-p3")).toBeInTheDocument();
     expect(screen.getByTestId("projects-counts")).toHaveTextContent('projectsUI.paused:{"count":1}');
-    expect(screen.getByTestId("projects-shadow")).toHaveTextContent('"streak":4');
   });
 
   it("a proposal waits on its card with its evidence; the user moves it on or not", () => {

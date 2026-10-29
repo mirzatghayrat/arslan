@@ -161,6 +161,28 @@ async def test_a_conversations_files_one_per_path_newest_first(client, tmp_path,
     assert next(f for f in files if f["title"] == "report.md")["run_id"] == ids[1]   # the last version
 
 
+async def test_within_one_run_the_files_list_has_the_last_version_newest_first(client, tmp_path, monkeypatch):
+    """BR2: a run's versions of one file are one row, the last stored (filenames carry a random
+    id, so name order is not time order); the run's files are newest first like the runs."""
+    import uuid
+    from server.db.models import Run
+    from server.services import artifact_store
+    monkeypatch.setattr(artifact_store, "root", lambda: tmp_path / "arts")
+    ids = iter(["f" * 32, "8" * 32, "0" * 32])
+    monkeypatch.setattr(artifact_store.uuid, "uuid4", lambda: uuid.UUID(next(ids)))
+    async with client.db_maker() as db:
+        run = Run(conversation_id="c", spawn_name="Arslan", user_message="x", status="recorded", kind="host", task_tokens=0)
+        db.add(run)
+        await db.commit()
+        run_id = run.id
+    artifact_store.store_bytes(run_id, "report.md", b"v1", logical_key="a" * 64)
+    artifact_store.store_bytes(run_id, "table.csv", b"x,y", logical_key="b" * 64)
+    artifact_store.store_bytes(run_id, "report.md", b"v2", logical_key="a" * 64)
+    files = (await client.get("/api/v1/conversations/c/files")).json()["files"]
+    assert [(f["title"], f["bytes"]) for f in files] == [("report.md", 2), ("table.csv", 3)]
+    assert files[0]["sha256"] == artifact_store.list_artifacts(run_id)[-1]["sha256"]
+
+
 async def test_history_rows_carry_each_replys_files(client, tmp_path, monkeypatch):
     """0.1.58 §2: a reloaded reply still shows its file cards."""
     from server.db import session as db_session

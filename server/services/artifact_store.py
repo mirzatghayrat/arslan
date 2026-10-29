@@ -11,12 +11,32 @@ import mimetypes
 import os
 import re
 import stat
+import threading
+import time
 import uuid
 from pathlib import Path
 
 MAX_FILES = 32
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_TOTAL_BYTES = 100 * 1024 * 1024
+
+_stamp_lock = threading.Lock()
+_last_stamp = 0
+
+
+def _stamp() -> int:
+    """v0.1.64 BR2: a strictly increasing storage stamp for this process. `time.time_ns()` alone
+    repeats on macOS (microsecond steps: many writes in one microsecond tie, and a tie falls back to
+    the random filename) and steps back when the wall clock does (NTP, the user changing the time)."""
+    global _last_stamp
+    with _stamp_lock:
+        _last_stamp = max(time.time_ns(), _last_stamp + 1)
+        return _last_stamp
+
+
+def _default_key(title: str) -> str:
+    """The key of a file with no path identity (a run's exported outputs, a read-back)."""
+    return hashlib.sha256(("generated:" + title).encode()).hexdigest()
 
 
 def root() -> Path:
@@ -49,9 +69,12 @@ def store_bytes(run_id: int, title: str, data: bytes, *, logical_key: str | None
         "id": f"artifact:{filename}",
         "kind": "file", "run_id": run_id, "filename": filename, "title": title[:240],
         "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
-        "logical_key": logical_key or hashlib.sha256(("generated:" + title).encode()).hexdigest(),
+        # From the stored (cut) title, so final_versions recognises the default key on read-back.
+        "logical_key": logical_key or _default_key(title[:240]),
         "media_type": mimetypes.guess_type(basename)[0] or "application/octet-stream",
         "url": f"/api/v1/runs/{run_id}/artifacts/{filename}",
+        # v0.1.64 BR2: storage order. Filenames carry a random id, so they do not sort by time.
+        "stored_at_ns": _stamp(),
     }
     # UUID + exclusive create: never overwrite another deliverable or a planted link.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -119,9 +142,26 @@ def export_workspace(run_id: int, workspace: Path, *, excluded: set[str]) -> tup
     return artifacts, warnings
 
 
+def _stored_at(item: dict, manifest: Path) -> int:
+    """When a manifest was written: its own `stored_at_ns`, or the manifest file's time for one
+    written before v0.1.64 (BR2)."""
+    value = item.get("stored_at_ns")
+    if type(value) is int:
+        return value
+    try:
+        return manifest.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
+def _in_order(found: list[tuple[int, str, dict]]) -> list[dict]:
+    return [item for _, _, item in sorted(found, key=lambda entry: (entry[0], entry[1]))]
+
+
 def list_artifacts(run_id: int) -> list[dict]:
-    out = []
-    for path in sorted(root().glob(f"run_{run_id}_*.manifest.json")):
+    """Every file the run stored, in the order it stored them (all versions)."""
+    found = []
+    for path in root().glob(f"run_{run_id}_*.manifest.json"):
         if path.is_symlink():
             continue
         try:
@@ -130,35 +170,55 @@ def list_artifacts(run_id: int) -> list[dict]:
             if item.get("run_id") == run_id and safe_filename(run_id, filename):
                 target = root() / filename
                 if not target.is_symlink() and target.is_file():
-                    out.append(item)
+                    found.append((_stored_at(item, path), filename, item))
         except (OSError, ValueError, TypeError):
             continue
-    return out
+    return _in_order(found)
 
 
-def artifacts_by_run(run_ids: list[int], *, per_run: int = 20) -> dict[int, list[dict]]:
+def final_versions(items: list[dict]) -> list[dict]:
+    """v0.1.64 BR2 / M3 #12: one entry per file, its last version, from a list in storage order.
+    `write_file` / `edit_file` store a snapshot on every write and `attach_file` stores the file
+    again; all of them carry the same `logical_key` for the same path, so the run offers that path
+    once, as it was last stored. An entry without a path identity stands alone: no key, or the
+    default title key (`_default_key`: a run's exported outputs, where two different files can
+    share a name). Order: when each final version was stored."""
+    last: dict[str, int] = {}
+    for index, item in enumerate(items):
+        key = item.get("logical_key")
+        if not key or key == _default_key(str(item.get("title", ""))):
+            key = f"#{index}"
+        last[key] = index
+    keep = set(last.values())
+    return [item for index, item in enumerate(items) if index in keep]
+
+
+def artifacts_by_run(run_ids: list[int] | None, *, per_run: int | None = 20) -> dict[int, list[dict]]:
     """0.1.58 §2: the files several runs produced, in ONE pass over the folder (history rows
-    carry each reply's files, so a reloaded reply shows its file cards)."""
-    wanted = {i for i in run_ids if isinstance(i, int) and i > 0}
-    out: dict[int, list[dict]] = {}
-    if not wanted or not root().is_dir():
-        return out
-    for path in sorted(root().glob("run_*.manifest.json")):
+    carry each reply's files, so a reloaded reply shows its file cards). One card per file:
+    each run's final versions (BR2), the latest `per_run` of them. `run_ids=None` is every run and
+    `per_run=None` no cap (the phone's per-conversation file counts); `per_run=0` is none."""
+    wanted = None if run_ids is None else {i for i in run_ids if isinstance(i, int) and i > 0}
+    found: dict[int, list[tuple[int, str, dict]]] = {}
+    if wanted is not None and not wanted or not root().is_dir():
+        return {}
+    for path in root().glob("run_*.manifest.json"):
         m = re.match(r"run_(\d+)_", path.name)
-        if not m or int(m[1]) not in wanted or path.is_symlink():
+        if not m or (wanted is not None and int(m[1]) not in wanted) or path.is_symlink():
             continue
         run_id = int(m[1])
-        if len(out.get(run_id, [])) >= per_run:
-            continue
         try:
             item = json.loads(path.read_text(encoding="utf-8"))
             filename = item.get("filename", "")
             target = root() / filename
             if item.get("run_id") == run_id and safe_filename(run_id, filename) and not target.is_symlink() and target.is_file():
-                out.setdefault(run_id, []).append(item)
+                found.setdefault(run_id, []).append((_stored_at(item, path), filename, item))
         except (OSError, ValueError, TypeError):
             continue
-    return out
+    # The latest `per_run`: a long turn's last files are the ones its reply is about.
+    def cap(items: list[dict]) -> list[dict]:
+        return items if per_run is None else items[len(items) - per_run:] if per_run > 0 else []
+    return {run_id: cap(final_versions(_in_order(entries))) for run_id, entries in found.items()}
 
 
 def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:

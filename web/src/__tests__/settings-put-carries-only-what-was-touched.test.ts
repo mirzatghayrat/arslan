@@ -135,7 +135,6 @@ describe("every settings field the UI can edit is mappable", () => {
       workspace_dir: { workspaceDir: "/tmp/ws" },
       heartbeat_enabled: { heartbeatEnabled: true },
       heartbeat_checklist: { heartbeatChecklist: "- x" },
-      projects_auto_advance: { projectsAutoAdvance: true },
       show_technical_details: { showTechnicalDetails: true },
       synthesis_model: { synthesisModel: "x/y" },
       compaction_model: { compactionModel: "x/y" },

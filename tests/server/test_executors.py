@@ -9,8 +9,9 @@ import pytest
 async def test_executor_map_covers_wired_tools():
     from server.registry.executors import EXECUTORS
 
-    core = {"web_search", "web_extract", "render_chart", "create_skill", "run_python", "run_command"}
+    core = {"web_search", "web_extract", "render_chart", "run_python", "run_command"}
     assert core <= set(EXECUTORS)  # core tools present; extras (e.g. list_my_capabilities) allowed
+    assert "create_skill" not in EXECUTORS   # v0.1.64 CAP2a: the tool loop's card, never an executor
 
 
 @pytest.mark.asyncio
