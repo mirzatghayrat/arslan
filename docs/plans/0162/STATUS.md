@@ -2,6 +2,8 @@
 
 ⓪Plan 维护，每次合并后更新。卡的详情看 [README](README.md) §2 的状态列。
 
+> **v0.1.64 status now lives in [`docs/plans/0164/STATUS.md`](../0164/STATUS.md)** (from 2026-10-28). The "Codex 待审" section below stays here and still applies.
+
 **更新于：** 2026-10-28 北京时间上午（Codex 已只读接上 GitHub）
 
 ## v0.1.63 已发布
@@ -23,6 +25,7 @@
 |---|---|---|---|
 | [#438](https://github.com/mirzatghayrat/arslan/pull/438)（S64-0） | Four leaks in the 'read outside content' mark, plus F1 | **Done.** Merged by you on 2026-10-28 (squash `3ee16b6c`); main CI run 40648762514 success. Codex, pasted by you: GPT-6.1 Terra, Extra High, with this prompt: no findings, "merge within the stated scope"; GPT-6 Astra, Extra High, with Code Review's own prompt and your instructions only: no actionable defects. Nothing to answer. What Terra listed as not reviewed (attachments and OCR, commands reading files, job results) is S64-0b and the known limit. | — |
 | [#443](https://github.com/mirzatghayrat/arslan/pull/443) (S64-0b) | Two more mark leaks: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words | **Not needed (user, 2026-10-28 evening).** ③Hands wrote it; the independent review is ②Main's with its effort=max reviewer: OK at `390aa048` (11:02 UTC), CI run 40675097201 success, no part left unreviewed. ③Hands is merging main in so CI runs on the head you merge. | — |
+| [#460](https://github.com/mirzatghayrat/arslan/pull/460) (INB1) | Learned practices take effect directly; a reason line when they don't; the "view and turn on" sheet | **Done.** Merged by you on 2026-10-28 (`55168fad`; main CI 40710426557 success) after ⓪Plan's effort=max reviewer, without Astra (the new rule above). | `server/services/lessons.py`, `server/api/lessons.py`, `server/services/proactive_service.py`, `tests/server/test_inb1_lessons_take_effect.py`, `web/src/components/companion/MemoryList.tsx`, `web/src/components/LearnedLine.tsx`, `web/src/lib/pendingMemory.ts`; `docs/plans/0164/INB-inbox-progress.md` (INB1 and its risk 1). Hunt any path other than the Memory sheet's "Turn it on" (`POST /lessons/{id}/status` active) that switches on a practice that was not in effect: merges, bulk accept, old rows, `record_applied`, background jobs, scheduled runs, the iPhone, the revert. |
 | [#375](https://github.com/mirzatghayrat/arslan/pull/375) | S2a-3 a+c：命令按完整的 shell 语法读懂才放行 | 还不能：等默认拒绝沙箱（SBX）合并、③Hands rebase 之后审新头，不审旧头。Now: another session's max review first; Codex only for the parts it cannot cover. | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#376](https://github.com/mirzatghayrat/arslan/pull/376) | S2a-3 c 的后半：经别的命令间接跑的，算没读懂 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#378](https://github.com/mirzatghayrat/arslan/pull/378) | S2a-3 b：请 macOS 在沙箱外办事的程序分两档 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
