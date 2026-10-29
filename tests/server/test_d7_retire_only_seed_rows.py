@@ -4,8 +4,10 @@ it was written:
 
 - imported from a SKILL.md: category "imported" (skill_import);
 - installed through Capabilities: source_id set (capability_flow);
-- authored and promoted: a SkillCandidate of that key with promoted_at, whatever its status since
-  (skill_forge, expert_conversion; the curator retires it, reject_candidate overwrites any status);
+- written by Arslan and kept by the user: category "authored" (skill_forge.register: the create_skill
+  card and expert_conversion, v0.1.64 CAP2a);
+- authored and promoted before CAP2a: a SkillCandidate of that key with promoted_at, whatever its status
+  since (the curator retired it, reject_candidate overwrote any status). CAP2b moves these to "authored";
 - made from a GitHub repo in Discover before v0.1.64: its key starts with "gh-" (the discovery
   centre, removed in CAP1a; its rows stay).
 
@@ -74,19 +76,32 @@ async def test_an_authored_skill_under_a_retired_key_survives(db, status):
 
 
 @pytest.mark.asyncio
-async def test_promoting_then_rejecting_through_the_forge_keeps_the_skill(db, monkeypatch, tmp_path):
+async def test_a_skill_saved_on_the_card_or_converted_from_an_expert_survives_under_a_retired_key(db, monkeypatch):
+    """CAP2a: no candidate row any more. skill_forge.register (the create_skill card's yes, a converted
+    former expert) marks the row "authored", and the seeder reads that as the user's."""
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
     import server.db.session as db_session
     from server.services import skill_forge
     monkeypatch.setattr(db_session, "AsyncSessionLocal",
                         async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False))
-    cand = await skill_forge.create_candidate(key="notion", name="Notion notes", category="method",
-                                              description="How I keep notes",
-                                              body="## Trigger\nWhen the user asks to file a note.\n\n"
-                                                   "## Decision Rules\nKeep each note short, dated and in the user's words.")
-    assert (await skill_forge.promote_candidate(cand.id))["ok"]
-    assert (await skill_forge.reject_candidate(cand.id))["ok"]
-    assert await _boot(db) == {"notion"}
+    assert await skill_forge.register(key="notion", name="Notion notes", description="How I keep notes",
+                                      body="## Trigger\nWhen the user asks to file a note.\n\n"
+                                           "## Decision Rules\nKeep each note short, dated and in the user's words.", outside=False)
+    assert await skill_forge.register(key="obsidian", name="Obsidian notes", description="How I clip pages",
+                                      body="## Trigger\nWhen the user asks to clip a page.\n\n"
+                                           "## Decision Rules\nKeep the title, the link and the date.", outside=True)
+    assert (await db.get(SkillPack, "notion")).category == skill_forge.AUTHORED
+    assert (await db.get(SkillPack, "obsidian")).category == skill_forge.AUTHORED_OUTSIDE   # #472 F1
+    assert await _boot(db) == {"notion", "obsidian"}
+
+
+@pytest.mark.asyncio
+async def test_no_seed_category_is_the_authored_mark():
+    """The mark only shields what Arslan wrote: no skill the seeder plants (or ever retired) carries it."""
+    from server.registry import seed_catalog
+    from server.services import skill_forge
+    assert not set(skill_forge.WRITTEN) & {category for _key, _name, category, *_ in seed_catalog.SKILLS}
+    assert "imported" not in skill_forge.WRITTEN
 
 
 @pytest.mark.asyncio

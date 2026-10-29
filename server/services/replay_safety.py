@@ -4,7 +4,7 @@ An evolution replay must run a spawn on a task WITHOUT touching real state, so t
 model may only see tools that are read-only or fully sandboxed and produce nothing
 persistent that a live turn would. This is an explicit ALLOW-list, not an MCP
 deny-list: everything not named here is dropped — every MCP tool (side effects on a
-real server), `create_skill` (writes a candidate row), the interactive `ask_user_choice`,
+real server), `create_skill` (asks to save a skill), the interactive `ask_user_choice`,
 and any future tool default to unsafe until proven hermetic.
 
 Why exactly these five:

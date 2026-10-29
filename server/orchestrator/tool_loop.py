@@ -1026,12 +1026,6 @@ def begin_hermetic_attempt() -> None:
 
     Production callers use this instead of `reset_hermetic_fetch_budget`, which
     is unconditional and therefore unsafe while anything else is running.
-
-    Deliberately NOT called by `skill_forge.evaluate_candidate` or
-    `evolution_loop.refresh_proposal`: those run on whatever the last attempt
-    left, and that stays true. Giving them their own refresh would turn one
-    shared 50 into 50 per caller per watcher tick, per open proposal — a
-    loosening dressed as a fix.
     """
     global _hermetic_attempts_inflight
     if _hermetic_attempts_inflight == 0:
@@ -2100,11 +2094,19 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                    "text": {"type": "string", "maxLength": 600,
                                             "description": "The entry, for add or replace. One short line."}},
                     "required": ["action", "set"], "additionalProperties": False},
+    # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
     "create_skill": {"type": "object",
-                     "properties": {"key": {"type": "string"},
-                                    "name": {"type": "string"},
-                                    "description": {"type": "string"},
-                                    "body": {"type": "string"}}},
+                     "properties": {"key": {"type": "string", "maxLength": 60,
+                                            "description": "Lowercase letters, digits and hyphens, e.g. weekly-report."},
+                                    "name": {"type": "string", "maxLength": 100},
+                                    "description": {"type": "string", "maxLength": 300,
+                                                    "description": "One line: what the skill is for."},
+                                    "body": {"type": "string",
+                                             "description": "The SKILL.md body: a '## Trigger' section (when to "
+                                                            "use it), then the method. Text only, at most 15 KB."},
+                                    "why": {"type": "string", "maxLength": 300,
+                                            "description": "What the user asked for, in a few words."}},
+                     "required": ["key", "name", "description", "body"], "additionalProperties": False},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
     "recall": {"type": "object",
@@ -3361,16 +3363,20 @@ async def _run_native(
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     continue
-                if name == "propose_capability" and (name in wired_keys or on_demand_call):
-                    # 0.1.57 §3: the install-and-retry card. A blocking ask in THIS window
-                    # (confirm_command carries it); a job or a turn nobody watches records
-                    # the find instead. On success the tools are read again, so the new
-                    # capability is callable for the retry in this same turn.
+                if name in ("propose_capability", "create_skill") and (name in wired_keys or on_demand_call):
+                    # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
+                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill). A blocking ask in THIS window (confirm_command carries it); a job or a
+                    # turn nobody watches adds nothing. On success the tools are read again, so the new
+                    # capability (or read_skill's list) is there for the rest of this turn.
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    from server.services import background_jobs, capability_flow
+                    from server.services import background_jobs, capability_flow, skill_forge
                     ask = None if background_jobs.inside_job() else getattr(confirm_command, "ask_capability", None)
-                    outcome = await capability_flow.propose(args, conversation_id=conversation_id, ask=ask, emit=emit)
+                    if name == "create_skill":
+                        outcome = await skill_forge.propose(args, conversation_id=conversation_id, ask=ask)
+                    else:
+                        outcome = await capability_flow.propose(args, conversation_id=conversation_id, ask=ask,
+                                                                emit=emit)
                     refresh = bool(outcome.pop("refresh", False))
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     if refresh:

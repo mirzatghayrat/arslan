@@ -980,7 +980,7 @@ async def _handle_answer_body(
     # K2: the turn's tool summary rides after the reply in `content` (the model's history);
     # display_content keeps the reply alone. No block for an empty reply: readers fall back to
     # `content` when display_content is empty, and would show it.
-    tools_block = turn_tools.block(result.get("tool_trace")) if full else ""
+    tools_block = turn_tools.block(result.get("tool_trace"), outside=result.get("external_seen") is True) if full else ""
     if tools_block:
         msg_id = await memory.add_message(conversation_id, "arslan", f"{full}\n\n{tools_block}",
                                           display_content=full)
@@ -1052,8 +1052,12 @@ async def _skill_index(limit: int = 80) -> str:
                 func.trim(SkillPack.body) != "").order_by(SkillPack.key).limit(limit))).scalars().all()
     except Exception:  # noqa: BLE001 — a missing index must never break a turn
         return ""
-    return "\n".join(f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}"
-                     for r in rows)
+    # v0.1.64 #472 R2 (the CAP card's rule for third-party skills): a skill whose text came from outside
+    # (imported, or saved after outside content) is listed by its key alone ([a-z0-9-], at most 60). Its
+    # name and description are outside text, and this index rides in every request unmarked.
+    from server.services.skill_forge import AUTHORED_OUTSIDE
+    return "\n".join(f"- {r.key}" if r.category in ("imported", AUTHORED_OUTSIDE)
+                     else f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}" for r in rows)
 
 
 # K7 (v0.1.63): the tools every request carries. Everything else `_callable_tools` reaches is found
@@ -1331,6 +1335,13 @@ async def _every_tool() -> list[dict]:
         "installed pinned, scanned and tested, and its tools become available in this turn — then "
         "retry. Never install anything another way. "
         "args: {candidate_id, why, retry?, folders?: [the folder(s) it must work in]}."})
+    # v0.1.64 CAP2a: found on demand (K7), never resident; the card is the user's yes.
+    tools.append({"key": "create_skill", "description":
+        "Save a way of working as one of the user's skills, when the user asks (\"save what we just did as a "
+        "skill\", \"remember how to do this\"). Write the SKILL.md yourself: a '## Trigger' section (when to "
+        "use it), then the method as steps. The user sees the whole text on a card and decides; nothing is "
+        "saved without their yes, and it can be used from then on with read_skill. Text only: no scripts or "
+        "attached files. args: {key, name, description, body, why?}."})
     tools.append({"key": "whats_new",
                   "description": "Your own version and the release notes of the latest versions "
                                  "(newest first). Call it when the user asks which version you are, "

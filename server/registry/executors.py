@@ -582,39 +582,6 @@ class ChartExecutor:
         }
 
 
-class CreateSkillExecutor:
-    """Forge a reusable method into a SkillCandidate (status 'observing'). This writes a
-    human-gated DRAFT only — it does NOT make the skill live/equippable; promotion to a
-    real SkillPack is a separate human action. Hence safe-tier (data/proposal in, no live
-    behaviour changed). Delegates to skill_forge.create_candidate, which validates the
-    SKILL.md body (## Trigger + <=15KB) and guards dup live-key / in-flight candidate."""
-
-    key = "create_skill"
-
-    async def execute(self, args: dict) -> dict:
-        from server.services import skill_forge  # lazy: avoids import cycle at module load
-        try:
-            c = await skill_forge.create_candidate(
-                key=args.get("key"),
-                name=args.get("name"),
-                category=args.get("category") or "meta",
-                description=args.get("description"),
-                body=args.get("body"),
-                source="skill_creator",
-            )
-        except ValueError as exc:
-            # Surface the error to the model (via the tool result) so it can fix + retry.
-            return {"ok": False, "external": False, "error": str(exc)}
-        return {
-            "ok": True,
-            "external": False,
-            "summary": f"Created skill candidate \"{c.name}\" (on probation: it joins the library only after "
-                       "evaluation and the user's confirmation)",
-            "candidate_id": c.id,
-            "status": c.status,
-        }
-
-
 class RunPythonExecutor:
     """Sandboxed Python execution (safe-tier). The model supplies code TEXT; the sandbox
     service is the only execution path and applies every guard unconditionally: ephemeral
@@ -859,13 +826,19 @@ class ReadSkillExecutor:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
         # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
-        # untrusted, and the turn counts as having read outside content. Arslan's own are not.
-        outside = row.category == "imported"
+        # untrusted, and the turn counts as having read outside content. So is one Arslan wrote in a
+        # conversation that had read outside content (v0.1.64 #472 F1). Arslan's own others are not.
+        from server.services.skill_forge import AUTHORED_OUTSIDE
+        outside = row.category in ("imported", AUTHORED_OUTSIDE)
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
             # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
             # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
+            # Only skill_import stores references, so only an imported skill has any: files under
+            # another skill's key are leftovers of a removed or failed import (v0.1.64 #472 F8).
+            if row.category != "imported":
+                return {"ok": False, "external": False, "error": f"no attached files: {section}"}
             fname = section[len("references/"):]
             if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
                 return {"ok": False, "external": False, "error": "invalid reference filename"}
@@ -933,7 +906,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 )
 
 EXECUTORS = {e.key: e for e in (
-    WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
+    WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
     RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
     FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),

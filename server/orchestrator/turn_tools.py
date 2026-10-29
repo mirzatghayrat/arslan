@@ -14,6 +14,10 @@ import os
 import re
 
 OPEN, CLOSE = "<turn_tools>", "</turn_tools>"
+#: The turn read outside content (an attachment, OCR text, a job's result, a tool): later code that asks
+#: whether the conversation has (skill_forge, v0.1.64 #472 R3) reads it here. DELETE-BY: when INB2's
+#: `runs.read_outside` lands (#475).
+OUTSIDE = "- this turn read outside content"
 _RESULT_CHARS = 500
 _ARG_CHARS = 160
 _COMMAND_CHARS = 80
@@ -112,10 +116,11 @@ def _line(call: dict) -> str:
     return f"{head}: {_outcome(tool, result)}"
 
 
-def block(tool_trace: list[dict] | None) -> str:
-    """The block for one turn ("" without tool calls or with the switch off)."""
+def block(tool_trace: list[dict] | None, *, outside: bool = False) -> str:
+    """The block for one turn ("" without tool calls, unless the turn read outside content, or with the
+    switch off)."""
     calls = [call for call in tool_trace or [] if isinstance(call, dict)]
-    if not calls or not enabled():
+    if not (calls or outside) or not enabled():
         return ""
     from arslan.context_budget import estimate_tokens
     lines: list[str] = []
@@ -126,4 +131,6 @@ def block(tool_trace: list[dict] | None) -> str:
         lines.append(line)
     if len(calls) > len(lines):
         lines.append(f"- … {len(calls) - len(lines)} more tool calls")
+    if outside:
+        lines.append(OUTSIDE)
     return "\n".join([OPEN, *lines, CLOSE])
