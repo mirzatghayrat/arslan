@@ -2,12 +2,24 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-28, evening.
+**Updated:** 2026-10-29.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #474 | Classifier pass lines complete; C7c answers (user, 2026-10-29) | `17f52a82` (main CI 40806097374 running) |
+| #482 | The user's 10-29 answers on INB2 F2/F4 and Q1 points 3/4 (auto-merged) | `5988cb4d` (main CI 40803537315 success; it covers every merge down to #447, whose own runs were cancelled by the next merge) |
+| #458 | SIDE card and this status page | `96c77bf1` |
+| #464 | No over-defence (sessions.md §12); EXC1 card | `0955ee49` |
+| #456 | F5b-2: delete the Cua Driver engine files | `a1462abe` |
+| #461 | CAP1a follow-up: outside names leave `propose_capability`'s sentences | `ccc48187` |
+| #466 | INB1 follow-ups (#460 review F2, F4) | `150f9d4b` |
+| #479 | Q1a: quick questions on the Mac (migration 0071) | `94957f10` |
+| #471 | SBX-1: one builder writes every seatbelt profile | `1ba98620` |
+| #447 | SBX card | `3d060b98` |
+| #481, #480, #478 | Q1 frame names, paging cursor (strictly older, whole seconds) | `7ba6686d`, `c495bcef`, `b910b9a0` |
+| #476 | Migration numbers assigned; CAP2b gets 0077 | `cfc7e77a` |
 | #443 | S64-0b: mark attachments and OCR text; frame background job results from outside content | `c2aaff29` (main CI 40731335249 running; covers #462 and #467) |
 | #462 | BR1: Bridge polls every 2 s while a pairing code is open, and for 60 s after it is answered | `cd6e7edb` |
 | #467 | sessions.md §5 "Who merges": sessions auto-merge non-security PRs (the first one merged by auto-merge) | `ba5964dd` |
@@ -39,49 +51,37 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order: ~~#451 → #448 → #445 → #446 → #444 → #454 → #428~~ (all merged; also #457). ④参谋 checked every open PR at ~15:10 UTC (heads, reviews, overlap with main); updated since.
+The user is merging in ④参谋's order (2026-10-29). Batch 1 is done except #477. Batch 2 goes one at a time, with main green between each: **#472 → #463 → #459 → #473**. A PR that turns conflicting or stale is synced by its author session and re-run before it goes to the user.
 
-**Who merges (user, 2026-10-28, confirmed in ⓪Plan's chat; written up in #467):** sessions enable GitHub auto-merge on docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, once another session has OK'd the current head and every check is green; the user merges the security surface and ordinary product code. The classifier blocked ⓪Plan's `bind_pr` for auto-merge on #453, so until that is allowed the user merges ⓪Plan's PRs too.
+**Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code.
 
-**Codex (user, 2026-10-28 evening):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex; Astra only for parts a Claude reviewer cannot review because of safeguards. #465 writes this into the plan.
-
-**Ready now** (another session's OK at the current head, green CI on it):
-- #461 (CAP F3): ⓪Plan's max reviewer at `1188c10d`; the later `9ec18990` is test-only (noted on the PR).
-- #456 (F5b-2): ②Main confirmed at `54805cfd`, CI 40677484593 success. After it merges, ⓪Plan's docs sync drops the "Cua stays behind a dev-only build switch" sentence from docs-site and docs/, with the Cua lines already planned after #428.
-- #458 (this page, SIDE card): ⑥Helper OK at `4cd3a0c0` (facts checked against GitHub); later commits only update this page.
-- #463 (BR2): ①iOS OK at `609de05d`, covering `d01381ec` (main merged in, one test line for C5b's renamed edit_file arguments); CI 40713934590 success. Bridge surface: the user merges.
-- #447 (SBX card): ③Hands OK at `017660a2` (posted on the PR), all checks green. Order: **#447 → #471 → #477**. Already all-green, so a session cannot auto-merge it: the user merges.
-- #471 (SBX-1: one profile builder, all five profiles on it): ③Hands; ②Main's max reviewer: merge after fixes, all four in at `39ac6ae0`, ②Main's recheck OK; CI 40728593104 success (macOS 60). **Ready for the user, after #447.**
-- #477 (SBX-1b: seatbelt non-ASCII path encoder; stacked on #471): ③Hands; ②Main's max review asked for one test (a non-ASCII protected file, literal, under real seatbelt), added at `f8da97c5`; recheck OK; CI 40733737208 success (macOS 69). **Ready for the user. Order: #447 → #471 → #477.** Next in the lane: SBX-2 stacked on it. Follow-up for ⓪Plan after it lands: the bench's `sandbox.sb.template` substitutes `{ROOT}`/`{HOME}` unescaped; use `sbpl_string`.
-- #472 (CAP2a: the save-a-skill card; deletes Skill Forge, the curator and candidates): independent effort=max review over five rounds; final recheck at `a130afef` (rebased onto main with #443): **merge** once CI 40735022447's backend job is green. Done: F4–F7, R1 (tidy keeps indentation), the user's "keep the mark" (F1/F2/F8: authored-outside, read as outside, conversation-wide amber line), R2 (outside skills listed by key only), R3 (outside turns stored in history). Not covered until #475 lands: pre-v0.1.63 turns, turns stored with the summary switch off, empty replies. F3 (phone-turn card) is a follow-up. Security surface: the user merges.
-- #473 (CAP1c: migration 0075 drops `capability_finds`): ⑥Helper OK at `a09b0392`; ⑤CAP fills in the CI run id and the backup note (last three archives). Drops data, so the user merges.
-- #459 (PRJ0): ⑤CAP's review at effort=max, OK at `539b684d`, CI 40682295664 success; also checked merged with current main (ruff, 218 tests, tsc, 37 web tests). The classifier blocked ⑤CAP's PR comment, so the review is recorded here; posting it is the user's call.
-
-**Waiting for CI or a re-OK:**
-- #464 (code rules, sessions.md §12, card EXC1): OK at the current head `3e4e6fb4` (③Hands at `b7059ff3`, ⑥Helper re-OK after the main merge); all checks green, so the user merges. Best after #447.
-- #466 (INB1 follow-ups F2, F4): the same effort=max reviewer rechecked twice; at `759a6bb2` (the scan-window fix and the F2 test nit added): **merge** once CI 40723524451's macos job is green (the other four passed). The conditional UPDATE (finding 4) is the user's call. Learned-practice write: the user merges.
+- #477 (SBX-1b): rebased by ③Hands onto main to drop #471's original commits; `git diff origin/main...8cc53482` is byte-identical to the reviewed `39ac6ae0..f8da97c5` (⓪Plan checked with `cmp`), so the effort=max verdict at `f8da97c5` carries over. CI 40803735528. **Last of batch 1.**
+- #472 (CAP2a): final effort=max verdict at `a130afef`, merge; CI 40735022447 success (all five jobs). Security surface. **First of batch 2.**
+- #463 (BR2): ①iOS OK at `d01381ec`; Bridge surface. After #472.
+- #459 (PRJ0): ⑤CAP's effort=max OK at `539b684d`. After #463.
+- #473 (CAP1c, migration 0075 drops `capability_finds`): main merged in at `06117e63` (only the migration-runner test conflicted: 0071 and 0075 both kept); ⓪Plan checked the diff against main is still the reviewed 4 files, 71+/1−. CI 40803555940. Drops data. Last.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
-| ②Main | INB1 follow-ups F2 + F4 (rebase on #460); after INB2 merges, learned practices use the per-conversation outside-content check too (user, 2026-10-28: a detour or machine quirk takes effect only when `runs.read_outside` says the whole conversation is clean, like "about you"; user corrections unchanged; until then the current-turn mark plus S64-0's carried marks), INB1 UI (waits for the user's mock), INB2 backend (migration 0072), C7c-2 #450 (stacked on #448), C7c-3 onward (waits for the user's answers to C7c Q1/Q2/Q4), SBX after its card |
-| ③Hands | SBX-1 #471 in review; SBX-2 (default-deny base and service allowlist as a preset, not wired; macOS behaviour tests; corpus harness) from #471's head after ②Main's findings; PRJ0's table drop 0076 after #459 |
-| ⑤CAP | CAP1b #457 (0074), CAP1c (0075, after #457), CAP2a (at max) |
-| ⑥Helper | STY #452 (draft; gated on the read test and a bench "after" run), SIDE after SUB2 |
-| ⓪Plan | M64 (baseline done, hand check #453), STY read test #454 (page with the user), mid-version M1 round, cards |
+| ②Main | INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
+| ③Hands | SBX-2 waits on the user's answer to ③Hands' question; the `hands_tools` Cua cleanup (after #456) |
+| ⑤CAP | CAP2b (0077) after #472 |
+| ①iOS | Q1c waits on the user's OK on the Quick Ask mock; it can ship with Mac 0.1.64 |
+| ⑥Helper | STY #452 (draft), SIDE after SUB2, SB1 after the pocket deletion and INB4 (mock first) |
+| ⓪Plan | M64, STY read tally, mid-version M1 round, cards; the docs-site Cua sentence in the v0.1.64 docs pass |
 
 ## Waiting on the user
 
-- The STY read page: sent to the user on 2026-10-29; the user exports the choices (JSON) to ⓪Plan, which tallies them.
-- Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md` (#447).
-- Making the `language` CI job a required check: main is green again (CI 40723824079 on `8532152f`, including `language`); the user agreed in principle and ④参谋 is walking through the ruleset setting.
-- Allowing `bind_pr` and `set_auto_merge` in the user's settings (④参谋 is walking through it); then ⓪Plan tries auto-merge on the next non-security docs PR.
-- **INB2 (#475):** F2, how a conversation counts as clean: an allowlist (no attachment, no injected knowledge, only known-local tools; `run_command` reading a file counts as outside), or marking every result that says external; plus whether the Bridge may pass the envelope `ts` as `sent_at` (a new field on the Bridge→server message). F4: how sensitive memories are recognised beyond keywords (an optional `sensitive: true` on the tools, and/or categories).
-- **Q1 card, open items 3 and 4** (②Main builds the safe defaults meanwhile): after "convert to chat", does Arslan learn from that conversation from then on, or never (default: never)? How long the pocket (Remote) stays for old phones: v0.1.65 (default) or removed this version?
-- The side-chat mock (SIDE-0), when it comes.
+- **The pocket's old messages after the deletion:** keep them on the Mac as an ordinary conversation (named after its first message, not pinned, not "Remote"), or delete them with the pocket. ②Main proposes keeping them.
+- **The Quick Ask mock (Q1c)** from ①iOS: no iPhone UI code until it is OK'd. The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64.
+- The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
+- Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md`.
+- Making the `language` CI job a required check (④参谋 is walking through it).
+- The side-chat mock (SIDE-0) and the sidebar mock (SB1-0), when they come.
 
-**Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474.
+**Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
 ## Spend
 

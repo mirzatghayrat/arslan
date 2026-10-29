@@ -165,6 +165,12 @@ Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` �
 |---|---|---|---|---|
 | **STY2** | "Deeper, not bigger": four points in Arslan's working method (go deeper not bigger, extras listed for the user; start from raw material; use the right tools; external evidence before "done"). Mostly folded into K5's existing lines. Card: STY card, section STY2 | STY's writer (⑥Helper) | must (with STY) | After STY's prompt PR (same lines). 27-task kernel bench before/after as K5, plus a scripted "done without evidence" count that must not rise; STY's read for tone. The plan-mode sections belong to S5a, behind a demo mock. |
 
+### 3.9 Sidebar (user, 2026-10-29; relayed by ④参谋)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **SB1** | Sidebar: always ordered by last activity (a message moves its conversation to the top; new ones go on top), date sections (Today / Yesterday / Previous 7 days / Previous 30 days / Older, named as on the iPhone), a time on each row or headings only (the user picks in the mock), collapse with a button and a shortcut, a "Pinned" section stored on the server, drag into a project. Card: [SB1-sidebar.md](SB1-sidebar.md) | ⑥Helper (②Main reviews the server half) | in v0.1.64 (user, 2026-10-29) | Clickable mock first. After the pocket deletion (Q1) and INB4, so no two cards edit `Sidebar.tsx` at once. Migration 0079. Not the security surface: auto-merge after another session's OK. Groups and in-project conversation links are v0.1.65 (SUB card, "Projects"). |
+
 ## 4. 合并顺序
 
 **两种情况都一样的（②Main、③Hands 审 #434 后改）：**
