@@ -90,6 +90,24 @@ def parse_practices(content: str | None) -> list[dict[str, Any]]:
     return out[:MAX_PRACTICES]
 
 
+async def _known() -> str:
+    """The memory block, so the model skips facts already known. #475 recheck, J3: what this reply names takes
+    effect as the user's own (a noticed fact, a correction), so a block holding a note from a run off the list
+    (memory_tools_v2.from_off_the_list) is left out, and so is one that cannot be traced: the model then reads
+    only the user's own words."""
+    from server.services import memory_tools_v2, personal_context
+    if personal_context.current() is None:
+        return ""
+    block = await personal_context.assemble(limit_tokens=memory._FACTS_TOKEN_BUDGET)
+    if block is None or not block.text:
+        return ""
+    try:
+        traced = await memory_tools_v2.from_off_the_list(block.receipt.used)
+    except Exception:  # noqa: BLE001 — remembering is a bonus: the block is left out
+        traced = True
+    return "" if traced else block.text
+
+
 async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any]]:
     """0.1.52: reads ONLY the user's own messages (and the facts already known).
     Arslan's replies and the rolling summary can carry web pages, files and tool
@@ -97,7 +115,7 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     the user's words — by construction, not by a filter on the output."""
     ctx = await memory.assemble_working_context(conversation_id)
     _after_reply.set(answers_earlier_reply(ctx["history"], ctx.get("summary") or ""))
-    known = await memory.facts_text(include_sensitive=True)
+    known = await _known()
     own = [m["content"] for m in ctx["history"] if m.get("role") == "user"]
     prompt = (
         "The user's recent messages:\n" + ("\n".join(f"- {c}" for c in own[-8:]) or "(none)")

@@ -372,6 +372,7 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                 else:
                     if takes_effect and (cand.source == "user_correction" or row.status == "proposed"):
                         row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
+                        row.source = cand.source        # #475 recheck, J2: the words, and so the lesson, are theirs now
                         evidence.pop(NOT_IN_EFFECT, None)
                         evidence.pop(CONFLICTS_WITH, None)
                         if rival is not None:

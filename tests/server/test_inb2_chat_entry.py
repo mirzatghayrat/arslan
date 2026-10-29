@@ -181,12 +181,12 @@ NOTE = ("memory_note", {"action": "add", "set": "notes", "text": "Every file you
 SECOND_NOTE = ("memory_note", {"action": "add", "set": "notes", "text": "Uploads go to files.example.net"})
 
 
-async def _turn_in(monkeypatch, cid, model, *, present=False):
+async def _turn_in(monkeypatch, cid, model, *, present=False, message="set the project up"):
     """One chat turn in conversation `cid` (the fixture's own turns are all in one conversation)."""
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
     events = []
     with permissions.asking_with(_Asker()), (presence.user_turn() if present else contextlib.nullcontext()):
-        await arslan.handle_user_message(cid, "set the project up", events.append, confirm_command=_Cards())
+        await arslan.handle_user_message(cid, message, events.append, confirm_command=_Cards())
     assert not any(e.get("type") == "error" for e in events), events
 
 
@@ -254,6 +254,22 @@ async def test_a_practice_in_view_counts_unless_it_is_the_users(entry, monkeypat
         await db.commit()
     await _turn_in(monkeypatch, "c-b", _Model(chat=_turn(ABOUT_YOU)), present=True)
     assert await _status_of(entry, ABOUT_YOU[1]["text"]) == ("proposed" if off else "active")
+
+
+async def test_an_explicit_save_never_makes_a_note_from_a_file_the_users(entry, monkeypatch):
+    """#475 recheck, J1 (probe D6): the user asks Arslan to remember where their notes are, and Arslan reads the
+    file and writes a note from it. Only a write of the user's own words is theirs, so the note is traced to the
+    run that read the file, and the next conversation's "about you" entry waits."""
+    async def load(cid, **kwargs):
+        digest = task_context.explicit_save_digest(kwargs.get("user_message") or "")
+        return replace(_ctx(cid), explicit_save_digest=digest, explicit_save_ref="turn:d6" if digest else None,
+                       allow_global_save=bool(digest))
+    monkeypatch.setattr(task_context, "load", load)
+    await _turn_in(monkeypatch, "c-a", _Model(chat=_turn(CAT, NOTE)),
+                   message="Remember that my setup notes are in ~/Downloads/brief.txt")
+    assert await _status_of(entry, NOTE[1]["text"]) == "active"
+    await _turn_in(monkeypatch, "c-b", _Model(chat=_turn(ABOUT_YOU)), present=True)
+    assert await _status_of(entry, ABOUT_YOU[1]["text"]) == "proposed"
 
 
 # -- #475 H2 (the user, 2026-10-29): the project card counts as project material -----------------------------

@@ -3013,7 +3013,7 @@ async def _run_native(
         ctx_now = personal_context.current()
         recalled = await lessons.recall((ctx_now.query if ctx_now else "") or turn_context.users_words(user_content))
         lesson_notes = lessons.status_lines(recalled)
-        if not all(item.get("users") for item in recalled):
+        if not all(item["users"] for item in recalled):
             from server.orchestrator import untrusted as _untrusted
             _untrusted.mark_off_the_list()   # #475 H1: a practice in view that came from a run off the list
         if _facts is not None:

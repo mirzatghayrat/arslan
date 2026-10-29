@@ -148,16 +148,19 @@ class MemoryRepository:
             raise MemoryError("memory_not_found")
         return entry
 
-    async def _source(self, entry, revision_id, actor: MemoryActor):
+    async def _source(self, entry, revision_id, actor: MemoryActor, decision=None):
         ref = {key: value for key, value in {
             "task_id": actor.task_id, "project_id": actor.project_id,
             "expert_id": actor.expert_id, "message_id": actor.source_message_id,
             "run_id": actor.source_run_id, "explicit_save_ref": actor.explicit_save_ref,
             "conversation_id": actor.conversation_id,
         }.items() if value is not None}
+        # #475 recheck, J1: the user's own words only when this write is the save the user asked for, word for word
+        # (decide_write's explicit_user_request); any other write in that turn stays Arslan's. The decision is
+        # passed in because `entry` is stale inside revise.
         source_kind = "manual" if actor.origin == "user" else (
-            "user_message" if actor.origin == "host" and actor.explicit_save_ref
-            and entry.status == "active" and actor.explicit_save_digest else actor.origin)
+            "user_message" if decision is not None and decision.confirmation_kind == "explicit_user_request"
+            else actor.origin)
         self.db.add(MemorySource(
             id=_id(), entry_id=entry.id, revision_id=revision_id, source_kind=source_kind,
             source_ref=ref, author="user" if source_kind in {"manual", "user_message"} else actor.origin,
@@ -245,7 +248,7 @@ class MemoryRepository:
             structured_value=_structured(write), previous_version=None, change_reason="created",
         ))
         await self.db.flush()
-        await self._source(entry, revision_id, actor)
+        await self._source(entry, revision_id, actor, decision)
         proposal_id, reason = None, None
         if status == "proposed":
             # INB2: why it waits (decision.reason; a topic clash with a confirmed rule is still "confirmation_required").
@@ -333,7 +336,7 @@ class MemoryRepository:
             structured_value=_structured(write), previous_version=expected_version, change_reason="user_confirmed",
         ))
         await self.db.flush()
-        await self._source(entry, revision_id, actor)
+        await self._source(entry, revision_id, actor, decision)
         await self.db.refresh(entry)
         await self._sync_index(entry.id)
         return await self.present(entry)
