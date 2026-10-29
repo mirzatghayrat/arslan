@@ -20,7 +20,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | #447 | SBX card | `3d060b98` |
 | #481, #480, #478 | Q1 frame names, paging cursor (strictly older, whole seconds) | `7ba6686d`, `c495bcef`, `b910b9a0` |
 | #476 | Migration numbers assigned; CAP2b gets 0077 | `cfc7e77a` |
-| #443 | S64-0b: mark attachments and OCR text; frame background job results from outside content | `c2aaff29` (main CI 40731335249 running; covers #462 and #467) |
+| #443 | S64-0b: mark attachments and OCR text; frame background job results from outside content | `c2aaff29` (covered with #462 and #467 by main CI 40732986853 on `cfc7e77a`, success; 40731335249 was cancelled) |
 | #462 | BR1: Bridge polls every 2 s while a pairing code is open, and for 60 s after it is answered | `cd6e7edb` |
 | #467 | sessions.md §5 "Who merges": sessions auto-merge non-security PRs (the first one merged by auto-merge) | `ba5964dd` |
 | #453 | M64 hand check of r64-m64-base: missing keywords, one T15 extra; generic T2 words left out | `8532152f` (main CI 40723824079 running; it covers #470, #468, #469 and #465 too, whose own runs were cancelled by the next merge) |
@@ -55,11 +55,11 @@ The user is merging in ④参谋's order (2026-10-29). Batch 1 is done except #4
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code.
 
-- #477 (SBX-1b): rebased by ③Hands onto main to drop #471's original commits; `git diff origin/main...8cc53482` is byte-identical to the reviewed `39ac6ae0..f8da97c5` (⓪Plan checked with `cmp`), so the effort=max verdict at `f8da97c5` carries over. CI 40803735528. **Last of batch 1.**
+- #477 (SBX-1b): rebased by ③Hands onto main to drop #471's original commits; `git diff origin/main...8cc53482` is byte-identical to the reviewed `39ac6ae0..f8da97c5` (⓪Plan checked with `cmp`), so the effort=max verdict at `f8da97c5` carries over. CI 40803735528 success. **Last of batch 1.**
 - #472 (CAP2a): final effort=max verdict at `a130afef`, merge; CI 40735022447 success (all five jobs). Security surface. **First of batch 2.**
 - #463 (BR2): ①iOS OK at `d01381ec`; Bridge surface. After #472.
 - #459 (PRJ0): ⑤CAP's effort=max OK at `539b684d`. After #463.
-- #473 (CAP1c, migration 0075 drops `capability_finds`): main merged in at `06117e63` (only the migration-runner test conflicted: 0071 and 0075 both kept); ⓪Plan checked the diff against main is still the reviewed 4 files, 71+/1−. CI 40803555940. Drops data. Last.
+- #473 (CAP1c, migration 0075 drops `capability_finds`): main merged in at `06117e63` (only the migration-runner test conflicted: 0071 and 0075 both kept); ⓪Plan checked the diff against main is still the reviewed 4 files, 71+/1−. CI 40803555940 success. Drops data. Last.
 
 ## In progress
 

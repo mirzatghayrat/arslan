@@ -78,16 +78,16 @@ Added after this card was drafted. The sub-session base in this card (v0.1.64) i
   - **v0.1.64 (this card):** the sub-session base only. Nothing from the seven points is built here, but SUB2's data must not block them: the parent link and per-project settings (memory isolation, cap) need a place to live.
   - **v0.1.64, card PRJ0 (③Hands, U2, deletions only):** remove "learn how you advance gates" (shadow / auto, `server/services/project_habits.py` and its table), rhythm stats and stall reminders. Nothing replaces these and nobody uses them (`project_habits` has 0 rows), so §11 is satisfied by deleting. The table drop is its own PR.
   - **v0.1.65:** checklist and tick data, project page, progress-board data; in the same version delete the four-column board (`web/src/components/projects/ProjectsBoard.tsx`), the template gates (`server/services/project_templates.py`) and turn the retro (`project_retro.py`) into the coordinator's final report (§11 rule 1: replace means delete). `DELETE-BY: v0.1.65` on the board and gates.
+  - **Look:** the interface version. **Before any UI code, a clickable demo for the user to approve** (user, 2026-10-28; also confirms README §2 item 7). ④参谋's sketch only sets the direction.
 - **Added 2026-10-29 (user, relayed by ④参谋; v0.1.65, with the project redesign):**
   - **Projects double as groups; there is no separate "group" feature.** The goal becomes optional. A project with no goal is a plain group, used only for tidying. Only a project with a goal gets the coordinator, the checklist and the progress bar.
   - **Conversations in one project can reach each other, in the three ways Claude desktop does:**
     - **Read:** Arslan can read, read-only, another conversation in the same project. If the conversation being read touched outside content (`runs.read_outside` is not clean, or is NULL), the turn that reads it counts as having touched outside content too. This is the same rule as INB2's allowlist.
-    - **Pass a message:** one conversation can send a line to another in the same project. It arrives labelled with the conversation it came from. It is not counted as the user's words and grants no extra permission.
+    - **Pass a message:** one conversation can send a line to another in the same project. It arrives labelled with the conversation it came from. It is not counted as the user's words and grants no extra permission. If the sending conversation is not clean (`runs.read_outside` not clean, or NULL), the receiving turn counts as having touched outside content, the same rule as Read (⑥Helper's review of #484).
     - **Delegate and collect reports:** that is SUB; nothing separate.
     - "Read" and "pass a message" touch the security surface: an effort=max reviewer, and the user merges.
   - **Moving a chat into a project:** from the next turn it follows the project's rules and memory, and the coordinator can see it. What was stored before stays where it is; nothing is moved.
   - v0.1.64's SB1 (sidebar) already lets a conversation be dragged into a project; it changes no project semantics.
-  - **Look:** the interface version. **Before any UI code, a clickable demo for the user to approve** (user, 2026-10-28; also confirms README §2 item 7). ④参谋's sketch only sets the direction.
 
 ## 改哪些文件
 
