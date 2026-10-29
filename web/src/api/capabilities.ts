@@ -3,7 +3,18 @@ import { request } from "./client";
 /** One row of GET /capabilities (0.1.55 §14, server/services/capability_list.py). */
 export interface CapabilityRow {
   key: string;
-  group: "mac" | "work" | "research" | "methods";
+  /** v0.1.64 CAP3a: the page's three groups. */
+  section: "builtin" | "skills" | "connections";
+  /** built in · installed (by you, or from a card) · authored (written by Arslan) · manual (a connection you added) */
+  origin: "builtin" | "installed" | "authored" | "manual";
+  /** Only what is not built in; the server refuses the rest too (DELETE /capabilities/{key}). */
+  deletable: boolean;
+  /** When it was last used, from the run records; null: not used yet. */
+  last_used: string | null;
+  /** The capability source of what was installed from a card (its dossier). */
+  source_id: string | null;
+  /** A professional method's version (`method:<key>` rows). */
+  revision?: number;
   /** on: offered now · off: switched off · setup: one step missing · na: cannot work here */
   state: "on" | "off" | "setup" | "na";
   /** The tool keys this row stands for when it is on. */
@@ -13,10 +24,9 @@ export interface CapabilityRow {
   reason: string | null;
   /** What the one step is: open_settings:<section>, open_tab:<tab>, connect. */
   fix: string | null;
-  /** Server-supplied name (MCP label, skill name); built-ins are named by key. */
+  /** Server-supplied name (MCP label, skill name, a revised method's); built-ins are named by key. */
   name: string | null;
   detail: string | null;
-  source: "builtin" | "mcp" | "skill";
 }
 
 /** A candidate as server/services/capability_search.py returns it (0.1.57 §2): here, a newer version in an update check. */
@@ -69,8 +79,15 @@ export const capabilitiesApi = {
   remove: (sourceId: string) => request<{ ok: boolean }>(`/capability-sources/${encodeURIComponent(sourceId)}`, { method: "DELETE" }),
   checkUpdate: (sourceId: string) => request<UpdateInfo>(`/capability-sources/${encodeURIComponent(sourceId)}/update`),
   update: (sourceId: string) => request<InstallResult>(`/capability-sources/${encodeURIComponent(sourceId)}/update`, { method: "POST" }),
+  source: (sourceId: string) => request<CapabilitySource>(`/capability-sources/${encodeURIComponent(sourceId)}`),
   list: () => request<CapabilityRow[]>("/capabilities"),
-  switch: (key: string, on: boolean) => request<CapabilityRow>(`/capabilities/${encodeURIComponent(key).replace(/%3A/g, ":")}`, {
+  switch: (key: string, on: boolean) => request<CapabilityRow>(`/capabilities/${rowPath(key)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }),
   }),
+  /** v0.1.64 CAP3a: delete one row (only a `deletable` one; the server refuses the rest). */
+  deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
 };
+
+function rowPath(key: string): string {
+  return encodeURIComponent(key).replace(/%3A/g, ":");
+}

@@ -914,9 +914,6 @@
         "other": "Other"
       }
     },
-    "sections": {
-      "import_skills": "Import skills from a repo"
-    },
     "dossier": {
       "value_label": "Value for Arslan"
     },

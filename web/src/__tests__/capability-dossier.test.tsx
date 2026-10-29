@@ -1,4 +1,5 @@
-/** 0.1.57 P4: "Arslan 加的" and its dossier (CAP1a removed the "found for later" rail and the page's candidate dossier). */
+/** 0.1.57 P4: the dossier of what was installed from a card (v0.1.64 CAP3a: opened from its row's details sheet;
+ *  the separate "Arslan 加的" list went into the one list). */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 
@@ -6,7 +7,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string, o?: Record<string, unknown>) => (o ? `${key}:${JSON.stringify(o)}` : key) }),
 }));
 
-import AddedCapabilities from "../components/capabilities/AddedCapabilities";
+import { SourceDossier } from "../components/capabilities/AddedCapabilities";
 import { ConfirmHost } from "../components/kit";
 import { capabilitiesApi, type CapabilitySource } from "../api/capabilities";
 
@@ -22,26 +23,21 @@ const SOURCE: CapabilitySource = {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-describe("added by Arslan", () => {
-  it("lists what was installed; its dossier shows the pin, the scan and the test", async () => {
-    vi.spyOn(capabilitiesApi, "sources").mockResolvedValue([SOURCE]);
-    render(<AddedCapabilities />);
-    expect(await screen.findByTestId("added-s1")).toHaveTextContent("discover.added_on");
-    fireEvent.click(screen.getByTestId("added-open-s1"));
+describe("the dossier of what was installed", () => {
+  it("the dossier shows the pin, the scan and the test", async () => {
+    render(<SourceDossier source={SOURCE} onClose={vi.fn()} onChanged={vi.fn()} />);
     expect(screen.getByTestId("source-version")).toHaveTextContent('discover.source_lock:{"sha":"823d3b6ba54d10e5"}');
     expect(screen.getByTestId("source-scan")).toHaveTextContent("discover.scan_clean");
     expect(screen.getByTestId("source-test")).toHaveTextContent('discover.source_testOk:{"count":2}');
   });
 
   it("folders, an update (what changed first, then on click), and removal (asked first)", async () => {
-    vi.spyOn(capabilitiesApi, "sources").mockResolvedValue([SOURCE]);
     const folders = vi.spyOn(capabilitiesApi, "setFolders").mockResolvedValue({ ...SOURCE, grants: { folders: ["/a", "/b"] } });
     vi.spyOn(capabilitiesApi, "checkUpdate").mockResolvedValue({ current: "1.1.2", latest: "1.2.0", newer: true,
       compare_url: "https://github.com/x/compare/v1.1.2...v1.2.0" });
     const update = vi.spyOn(capabilitiesApi, "update").mockResolvedValue({ state: "on", source_id: "s2" });
     const remove = vi.spyOn(capabilitiesApi, "remove").mockResolvedValue({ ok: true });
-    render(<><AddedCapabilities /><ConfirmHost /></>);
-    fireEvent.click(await screen.findByTestId("added-open-s1"));
+    render(<><SourceDossier source={SOURCE} onClose={vi.fn()} onChanged={vi.fn()} /><ConfirmHost /></>);
     fireEvent.change(screen.getByTestId("source-folders"), { target: { value: "/a\n\n /b " } });
     fireEvent.click(screen.getByTestId("source-folders-save"));
     await waitFor(() => expect(folders).toHaveBeenCalledWith("s1", ["/a", "/b"]));
@@ -57,11 +53,9 @@ describe("added by Arslan", () => {
   });
 
   it("no update button when it is the newest; a declined remove removes nothing", async () => {
-    vi.spyOn(capabilitiesApi, "sources").mockResolvedValue([SOURCE]);
     vi.spyOn(capabilitiesApi, "checkUpdate").mockResolvedValue({ current: "1.1.2", latest: "1.1.2", newer: false });
     const remove = vi.spyOn(capabilitiesApi, "remove").mockResolvedValue({ ok: true });
-    render(<><AddedCapabilities /><ConfirmHost /></>);
-    fireEvent.click(await screen.findByTestId("added-open-s1"));
+    render(<><SourceDossier source={SOURCE} onClose={vi.fn()} onChanged={vi.fn()} /><ConfirmHost /></>);
     fireEvent.click(screen.getByTestId("source-check-update"));
     expect(await screen.findByTestId("source-update")).toHaveTextContent("discover.source_current");
     expect(screen.queryByTestId("source-apply-update")).toBeNull();
@@ -69,12 +63,5 @@ describe("added by Arslan", () => {
     fireEvent.click(await screen.findByTestId("confirm-cancel"));
     await new Promise((r) => setTimeout(r, 20));
     expect(remove).not.toHaveBeenCalled();
-  });
-
-  it("shows nothing when Arslan added nothing", async () => {
-    vi.spyOn(capabilitiesApi, "sources").mockResolvedValue([]);
-    render(<AddedCapabilities />);
-    await waitFor(() => expect(capabilitiesApi.sources).toHaveBeenCalled());
-    expect(screen.queryByTestId("added-capabilities")).toBeNull();
   });
 });

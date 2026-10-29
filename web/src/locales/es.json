@@ -914,9 +914,6 @@
         "other": "Otros"
       }
     },
-    "sections": {
-      "import_skills": "Importar habilidades de un repositorio"
-    },
     "dossier": {
       "value_label": "Utilidad para Arslan"
     },

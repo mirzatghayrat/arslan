@@ -30,7 +30,11 @@ interface EnvRow {
  * then expose (toolset→safe) + wire (tool→safe+wired) to open the SQL choke point.
  * Tools are locked by default. Renders ONLY plain text — never server-supplied HTML.
  */
-export default function McpServers() {
+/** v0.1.64 CAP3a: the Capabilities list shows each connection's card in its details sheet (`only`), and the
+ *  hand-entry form under "Add a connection by hand" (`form`); with neither, the whole page as before. */
+export default function McpServers({ only, form = false, onChanged }: {
+  only?: number; form?: boolean; onChanged?: () => void;
+} = {}) {
   const { t: tr } = useTranslation();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [query, setQuery] = useState("");
@@ -92,6 +96,7 @@ export default function McpServers() {
       setUrl("");
       setEnvRows([{ k: "", v: "" }]);
       await loadServers();
+      onChanged?.();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -232,7 +237,7 @@ export default function McpServers() {
   // Search across what identifies a server to a person: its label, and how it
   // is reached. `command`/`url` are in the haystack because "the one I pointed
   // at notion" is how people remember these, not by the label they typed once.
-  const shownServers = servers.filter((srv) =>
+  const shownServers = only !== undefined ? servers.filter((srv) => srv.id === only) : servers.filter((srv) =>
     matches(
       {
         key: srv.label,
@@ -244,13 +249,13 @@ export default function McpServers() {
   );
 
   return (
-    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-      <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+    <div className={only !== undefined || form ? "space-y-4" : "bg-surface/60 border border-border rounded-2xl p-6 space-y-6"}>
+      {only === undefined && !form && <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
         <Plug className="w-4.5 h-4.5 text-primary" />
         <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">
           {tr("connectionsUI.servers")}
         </h3>
-      </div>
+      </div>}
 
       {error && (
         <div
@@ -263,19 +268,19 @@ export default function McpServers() {
       )}
 
       {/* Server list */}
-      {servers.length === 0 ? (
-        <p className="text-[11px] text-subtle-foreground font-sans">
+      {form ? null : servers.length === 0 ? (
+        only === undefined && <p className="text-[11px] text-subtle-foreground font-sans">
           {tr("connectionsUI.none")}
         </p>
       ) : (
         <>
-        <CapabilityFilter
+        {only === undefined && <CapabilityFilter
           testId="mcp-filter"
           value={query}
           onChange={setQuery}
           shown={shownServers.length}
           total={servers.length}
-        />
+        />}
         {shownServers.length === 0 ? (
           // A distinct message from "none registered": a query that hides
           // everything must not look like an empty library.
@@ -356,7 +361,8 @@ export default function McpServers() {
                     >
                       <RefreshCw className="w-3 h-3" /> {tr("connectionsUI.reconnect")}
                     </button>
-                    <button
+                    {/* In a details sheet the sheet's own Delete removes it (an installed one with its folder). */}
+                    {only === undefined && <button
                       type="button"
                       disabled={busy}
                       onClick={() => remove(s.id)}
@@ -364,7 +370,7 @@ export default function McpServers() {
                       className="p-1.5 rounded-lg text-subtle-foreground hover:text-danger hover:bg-danger/10 transition-all disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    </button>}
                   </div>
                 </div>
 
@@ -453,10 +459,10 @@ export default function McpServers() {
       )}
 
       {/* Add-server form */}
-      <div className="space-y-3 pt-4 border-t border-border/50">
-        <h4 className="text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+      {only === undefined && <div className={form ? "space-y-3" : "space-y-3 pt-4 border-t border-border/50"}>
+        {!form && <h4 className="text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
           {tr("connectionsUI.register")}
-        </h4>
+        </h4>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             className={inputCls}
@@ -550,7 +556,7 @@ export default function McpServers() {
         >
           <Plus className="w-4 h-4" /> {tr("connectionsUI.addServer")}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
