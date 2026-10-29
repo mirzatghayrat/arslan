@@ -34,7 +34,14 @@ _TITLE_CHARS = 60
 async def list_conversations(
     db: AsyncSession = Depends(get_session),
 ) -> list[ConversationListItem]:
-    """Every conversation that has messages, most recently active first.
+    """Every conversation that has messages, most recently active first; quick questions (Q1) are left
+    out: they have a list of their own on the phone and never reach the sidebar."""
+    return await conversation_list(db)
+
+
+async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[ConversationListItem]:
+    """Every conversation that has messages, most recently active first: the ordinary ones, or with
+    `quick` only the stored quick questions (Q1, migration 0071).
 
     🔴 The point of this endpoint is DISCOVERY. Every sibling here takes the id
     as a path parameter, which silently made the frontend's localStorage the
@@ -90,11 +97,14 @@ async def list_conversations(
     # Most recently active first. `last_at` can be None on rows predating the
     # default, so those sort last rather than blowing up the comparison.
     out.sort(key=lambda c: (c.last_at is not None, c.last_at or ""), reverse=True)
+    from server.db.companion_models import ConversationContext
+    quick_ids = set((await db.scalars(select(ConversationContext.id).where(
+        ConversationContext.id.in_([c.conversation_id for c in out]), ConversationContext.kind == "quick"))).all())
+    out = [c for c in out if (c.conversation_id in quick_ids) is quick]
     # What each one is and how it stands — the sidebar's glyphs, the phone's task list — and the
     # phone's own conversation named Remote rather than after its first message.
     from server.services import phone_reads
     extra = await phone_reads.describe(db, [c.conversation_id for c in out])
-    from server.db.companion_models import ConversationContext
     projects = dict((await db.execute(
         select(ConversationContext.id, ConversationContext.project_id).where(
             ConversationContext.id.in_([c.conversation_id for c in out]),
@@ -102,7 +112,10 @@ async def list_conversations(
     for item in out:
         for key, value in extra.get(item.conversation_id, {}).items():
             setattr(item, key, value)
+        if quick:
+            item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
+        # DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
         if item.conversation_id == phone_reads.REMOTE_ID:
             item.title = phone_reads.REMOTE_TITLE
     return out

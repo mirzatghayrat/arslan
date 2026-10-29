@@ -21,7 +21,7 @@ public final class PairingHost {
     struct Code {
         let key: Data
         let expires: Date
-        var answered: (request: PairRequest, decision: PairDecision, record: EnvelopeRecord)?
+        var answered: (request: PairRequest, decision: PairDecision, record: EnvelopeRecord, at: Date)?
     }
 
     public let macID: String, macName: String, containerID: String
@@ -55,6 +55,19 @@ public final class PairingHost {
         let b64url = json.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         return (PairingCode.scheme + b64url, id)
+    }
+
+    /// After the click the Mac keeps the fast pace this long: an accepted phone has not written as
+    /// a paired phone yet (`lastHeard` is nil) when it sends its first hello (build 25, BR1).
+    public static let answeredGrace: TimeInterval = 60
+
+    /// Pairing is under way (`PollPace`) from `newCode` until the code expires unanswered, or for
+    /// `answeredGrace` after it is answered, accepted or rejected.
+    public func isPairing(now: Date = Date()) -> Bool {
+        codes.values.contains { code in
+            guard let answered = code.answered else { return now < code.expires }
+            return now.timeIntervalSince(answered.at) < Self.answeredGrace
+        }
     }
 
     /// Open a pair.request. Throws for anything not made with a live code's key.
@@ -116,7 +129,7 @@ public final class PairingHost {
                                                                 "signature": sealed.signature.base64EncodedString()])
         let record = EnvelopeRecord(id: id, to: request.phoneID, from: macID, seq: header.seq, kind: sealed.header.kind,
                                     notify: false, sealed: data, createdAt: now)
-        code.answered = (request, decision, record)
+        code.answered = (request, decision, record, now)
         codes[request.pairingID] = code
         let peer = decision == .accept
             ? Peer(deviceID: request.phoneID, signing: try .init(rawRepresentation: request.signing), exchange: phoneExchange)

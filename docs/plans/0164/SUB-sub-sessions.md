@@ -22,7 +22,7 @@
   - 领先路线里「子 agent 统一成一个工具」就是它，不另做一套。
 - **先证明模型会用：** M64 的「拆开、分给子会话、汇总」题和反面题（一步就能做完的不开子会话）过了，工具才合。
 - **先补洞：** `delegate_work` 今天不传「读过外部内容」的标记。这个修复放进单独的安全 PR S64-0（⓪Plan 的提议，在 SUB 之外），SUB 不再自己修，只引用它，并加一个「往下传标记」的测试（见 SUB1）。
-- **本卡不做：** 项目页的总指挥 / 子会话树、子会话对上关卡检查点、关卡条跟着动，都是 v0.1.65（README §8 同一条）。旁聊用同一套底子（`kind`、父对话 id、只继承的设置），但旁聊本身另开卡，而且用户还没确认它进 v0.1.64。
+- **本卡不做：** 项目页的总指挥 / 子会话树、子会话对上关卡检查点、关卡条跟着动，都是 v0.1.65（README §8 同一条）。旁聊用同一套底子（`kind`、父对话 id、只继承的设置），但旁聊本身另开卡，而且用户还没确认它进 v0.1.64。 (Update 2026-10-28: the user put side chat into v0.1.64 as card SIDE, `docs/plans/0164/SIDE-side-chat.md`, built on this card's base.)
 - **同一版里替换（sessions §11 第 1 条）：** 新工具上线的同一版删掉 `delegate_work` 和 `TaskWorker`（SUB6 删代码，SUB7 删表）。
 
 ### main 现状（⓪Plan 读 main `8db45ef9` 核过）
@@ -88,7 +88,7 @@ Added after this card was drafted. The sub-session base in this card (v0.1.64) i
 
 > **S64-0 的实际做法（#438，③Hands 10-28）：** 「起始值」没有做成 `track_turn` 的参数，而是一个上下文 `untrusted.carried(seen)`（跑一次设一次），这样 `tool_loop.py`、`arslan.py` 都不用改。本卡凡写「`track_turn` 的起始值」，都指它：SUB3 往下传标记时写 `with untrusted.carried(True): …` 包住子会话的运行；汇总回合同理。
 
-- **修复在 S64-0**（⓪Plan 提议的单独补洞 PR，安全，effort=max 写和审，Codex 审）。S64-0 一起管：`delegate_work`、后台任务从「干净」开始、教训的合并、恢复和 `task_progress`；它给 `track_turn` 加一个起始值。
+- **修复在 S64-0**（⓪Plan 提议的单独补洞 PR，安全，effort=max 写和审，Codex 审）。S64-0 一起管：`delegate_work`、后台任务从「干净」开始、教训的合并、恢复和 `task_progress`；它给 `track_turn` 加一个起始值。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see v0.1.64 README §1.3.
 - **S64-0 里关于 `delegate_work` 的要点**（②Main、③Hands 审 #434 时提的，记在这里方便对账）：
   - 两处都要改：不再返回 `"external": False`（`task_workers.py:268`），**并且** `delegate_work` 进 `_WEB_TOOLS`（`untrusted.py:52`）和 `_OUTSIDE_TOOLS`（`:72-73`）。只改一处，文字要么完全不加框，要么只按普通工具输出加框；
   - 副作用：之后几轮的历史里，`delegate_work` 会被记成「外部内容，只留来源」（`server/orchestrator/turn_tools.py:107`），这是对的；
@@ -100,7 +100,7 @@ Added after this card was drafted. The sub-session base in this card (v0.1.64) i
 
 ### SUB2 子会话的数据：父对话、只继承的设置、列表里不出现
 
-- **迁移：** 用 Q1 那一次（`conversation_contexts` 加 `kind` 和父对话 id）。`kind` 的取值 ⓪Plan 建议：`chat`（默认）、`quick`（Q1）、`sub`（本卡）、`side`（旁聊，先留着值，不用）。Q1 的迁移如果没带父对话 id，SUB2 自己带一个迁移，向 ②Main 申请号。
+- **迁移：** 用 Q1 那一次（`conversation_contexts` 加 `kind` 和父对话 id）。`kind` 的取值 ⓪Plan 建议：`chat`（默认）、`quick`（Q1）、`sub`（本卡）、`side` (side chat: used from v0.1.64 by card SIDE, 2026-10-28)。Q1 的迁移如果没带父对话 id，SUB2 自己带一个迁移，向 ②Main 申请号。
 - `server/services/sub_sessions.py`（新）：
   - `create_child(parent_id, title)`：建子对话的 `ConversationContext`。父对话是临时对话（`temporary`）时拒（`sub_session_from_temporary`）；
   - `effective_settings(conversation_id)`：**用的时候**沿父对话一路往上，每个设置取最严的值，不在创建时复制一次。总指挥后来收紧（例如开了 `no_memory`），子会话马上跟着。`no_learning` 对 `sub` 一律开（第 9 条）。读对话设置的地方（`task_context.load` 一带）对 `kind="sub"` 改用它；

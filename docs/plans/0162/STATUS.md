@@ -2,6 +2,8 @@
 
 ⓪Plan 维护，每次合并后更新。卡的详情看 [README](README.md) §2 的状态列。
 
+> **v0.1.64 status now lives in [`docs/plans/0164/STATUS.md`](../0164/STATUS.md)** (from 2026-10-28). The "Codex 待审" section below stays here and still applies.
+
 **更新于：** 2026-10-28 北京时间上午（Codex 已只读接上 GitHub）
 
 ## v0.1.63 已发布
@@ -15,13 +17,16 @@
 
 **怎么跑（你 10-28 定的方式）：** ChatGPT 桌面版 → Code Review → 选下表里「能审」的 PR → **Review with Codex**，把下面那段提示整段粘进去，再把 `<PR 号>` 和 `<额外要看的>` 换成表里那一行。只在聊天里审：**不点 Submit review，不开自动审查，不在 Summary 或 Changes 页里写评论**（那里的评论会马上发到 GitHub）。你 10-28 装 GitHub 连接器时只勾了一个无关的公开仓库，没勾 arslan，所以 Codex 对 arslan 只有只读权限；以后也别勾 arslan（README §8）。审完把 Codex 的回复原样（带第一行的模型）贴成那个 PR 的一条评论；各会话逐条回应，回应完才合。
 
+**When (user, 2026-10-28 evening; replaces "every security PR goes to Astra"):** a PR with an OK from an independent Claude review by another session (effort=max on the security surface) does not go to Codex. Codex runs only on what a Claude reviewer cannot review because of safeguards (it refuses, or reviews only part); the PR says which part, and you run Codex on that part. Terra / Sol for large non-security PRs follow the same rule. Details: `docs/plans/0164/README.md` §1.3. So the queue below is empty unless a PR's description names a part a Claude review could not cover.
+
 **Which model (user, 2026-10-28):** PRs that touch the security surface (mark fixes, sandbox, classifier, command policy, the five modes, confirm cards, Bridge frames) use **GPT-6 Astra** at the highest reasoning level. PRs over about 400 product lines that do not touch the security surface use **GPT-6.1 Terra** (or Sol) at Extra High. **After clicking Review with Codex, paste the whole prompt below as well;** the auto-generated prompt alone does not count as a review against this list. Codex cannot see its own version, so you fill in the model line from the model drop-down. Your Code Review "Review instructions" (set 2026-10-28, apply to every repository) already say: read-only, no comments, no pushes, no merges, no file changes, no commands, reply in English, first line is the model and reasoning level.
 
 | PR | 是什么 | 能审了吗 | `<额外要看的>` |
 |---|---|---|---|
-| [#438](https://github.com/mirzatghayrat/arslan/pull/438)（S64-0） | 「读过外部内容」标记的四个漏洞，加 F1 | **Done.** Merged by you on 2026-10-28 (squash `3ee16b6c`); main CI run 40648762514 success. Codex, pasted by you: GPT-6.1 Terra, Extra High, with this prompt: no findings, "merge within the stated scope"; GPT-6 Astra, Extra High, with Code Review's own prompt and your instructions only: no actionable defects. Nothing to answer. What Terra listed as not reviewed (attachments and OCR, commands reading files, job results) is S64-0b and the known limit. | — |
-| [#443](https://github.com/mirzatghayrat/arslan/pull/443) (S64-0b) | Two more mark leaks: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words | **Ready once CI is green** (③Hands adds the run id on the PR); alongside ②Main's max review. GPT-6 Astra, highest level | `server/orchestrator/arslan.py` (`_handle_answer_body`'s `_dispatch` wrapped in `untrusted.carried(...)`, including the OCR retry); `server/orchestrator/tool_loop.py` (`run_native`, the two lines after `track_turn()`); `server/orchestrator/untrusted.py` (`carried()` yields the run's mark, `end_turn`, `JOB_RESULT_FROM_OUTSIDE`, `job_result()`, `history_from_outside()`); `server/services/background_jobs.py` (`_run` writes the mark back to `job.outside_seen`; `_report` stores the framed copy in `content` and the original in `display_content`); `tests/server/test_s64_0b_attachments_and_job_results.py`. Also every reader of `display_content or content`: `server/ws/arslan.py:80`, `server/api/phone.py:127`, `server/services/conversation_search.py:75`, `server/services/task_service.py:1144`; `memory.assemble_working_context` (history uses `content`; `clip_context` keeps the frame's header); temporary conversations are deliberately unchanged. Judge whether "a framed job result in history marks the turn" is right. |
-| [#375](https://github.com/mirzatghayrat/arslan/pull/375) | S2a-3 a+c：命令按完整的 shell 语法读懂才放行 | 还不能：等默认拒绝沙箱（SBX）合并、③Hands rebase 之后审新头，不审旧头 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
+| [#438](https://github.com/mirzatghayrat/arslan/pull/438)（S64-0） | Four leaks in the 'read outside content' mark, plus F1 | **Done.** Merged by you on 2026-10-28 (squash `3ee16b6c`); main CI run 40648762514 success. Codex, pasted by you: GPT-6.1 Terra, Extra High, with this prompt: no findings, "merge within the stated scope"; GPT-6 Astra, Extra High, with Code Review's own prompt and your instructions only: no actionable defects. Nothing to answer. What Terra listed as not reviewed (attachments and OCR, commands reading files, job results) is S64-0b and the known limit. | — |
+| [#443](https://github.com/mirzatghayrat/arslan/pull/443) (S64-0b) | Two more mark leaks: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words | **Not needed (user, 2026-10-28 evening).** ③Hands wrote it; the independent review is ②Main's with its effort=max reviewer: OK at `390aa048` (11:02 UTC), CI run 40675097201 success, no part left unreviewed. ③Hands is merging main in so CI runs on the head you merge. | — |
+| [#460](https://github.com/mirzatghayrat/arslan/pull/460) (INB1) | Learned practices take effect directly; a reason line when they don't; the "view and turn on" sheet | **Done.** Merged by you on 2026-10-28 (`55168fad`; main CI 40710426557 success) after ⓪Plan's effort=max reviewer, without Astra (the new rule above). | `server/services/lessons.py`, `server/api/lessons.py`, `server/services/proactive_service.py`, `tests/server/test_inb1_lessons_take_effect.py`, `web/src/components/companion/MemoryList.tsx`, `web/src/components/LearnedLine.tsx`, `web/src/lib/pendingMemory.ts`; `docs/plans/0164/INB-inbox-progress.md` (INB1 and its risk 1). Hunt any path other than the Memory sheet's "Turn it on" (`POST /lessons/{id}/status` active) that switches on a practice that was not in effect: merges, bulk accept, old rows, `record_applied`, background jobs, scheduled runs, the iPhone, the revert. |
+| [#375](https://github.com/mirzatghayrat/arslan/pull/375) | S2a-3 a+c：命令按完整的 shell 语法读懂才放行 | 还不能：等默认拒绝沙箱（SBX）合并、③Hands rebase 之后审新头，不审旧头。Now: another session's max review first; Codex only for the parts it cannot cover. | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#376](https://github.com/mirzatghayrat/arslan/pull/376) | S2a-3 c 的后半：经别的命令间接跑的，算没读懂 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#378](https://github.com/mirzatghayrat/arslan/pull/378) | S2a-3 b：请 macOS 在沙箱外办事的程序分两档 | 同 #375：等 SBX 合并、rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md` |
 | [#396](https://github.com/mirzatghayrat/arslan/pull/396) | S2a-3 d：拿真 shell 对照命令判定 | 同 #375：等 SBX 合并、由写它的会话 rebase 之后 | `docs/plans/0162/S2a-command-three-layers.md` 的 S2a-3 节；`docs/incidents/2026-10-24-dev-secret-read.md`。**不要运行这个 PR 的真 shell 对照测试，只读代码；它只在一次性 CI 虚拟机里跑。** |
@@ -35,7 +40,7 @@
 
 先读：
 1. PR 描述（里面有「完成证据四项」：做了什么验证、覆盖到哪、没覆盖到哪、还剩什么风险）和 diff 全文。
-2. docs/sessions.md 的 §5、§8、§9（PR 大小、完成证据、留着的旧路径要写删除条件）。
+2. docs/sessions.md 的 §5、§8、§9（PR 大小、完成证据、留着的旧路径要写删除条件）。 Also §12 (no over-defence).
 3. SECURITY.md：Arslan 对用户承诺了哪些保护。
 4. 这个 PR 额外要看的：<额外要看的>
 
@@ -44,6 +49,7 @@
 - 沙箱、确认卡、命令判定、令牌、密钥有没有绕过的路；出错、超时、限流时是放行还是拒绝（应该是拒绝或出卡）。
 - 测试有没有测后果，而不只是看代码写了；把修复删掉，测试会不会变红。
 - PR 描述说修了、代码里其实没修的；没写删除条件的旧路径或兜底。
+- Over-defence (docs/sessions.md §12): unnecessary defensive code outside the security boundaries, the same validation repeated in several layers, single-use helpers or abstractions, and broad `except` blocks that swallow errors without a comment saying why; on an execution or permission path, a swallow that fails open is a security finding.
 
 不要：运行任何命令或测试，只读代码（你在用户的个人电脑上，不在隔离环境里）；不访问家目录、~/.arslan、Arslan 的数据文件夹或任何密钥；攻击写法只写到能证明问题为止。
 
@@ -161,7 +167,7 @@ Write the whole reply in English (it is pasted onto GitHub), with these labels: 
 ## 已定、不用再问
 
 - **跑分在 v0.1.64 加「代码审查」题**（你 10-27 定）：先出 3 题，Arslan 和 Claude Code 都跑在 DeepSeek 上并排比（R63 里 Claude Code 的数字是在 Claude 上跑的，不能直接比）；Codex 用你的 Plus 加进来当参考线（它用自己的模型）。
-- **Codex 进审查流程**（你 10-27 定）：做 v0.1.64 安全审查的外部审查工具，结论再给云端审计看一遍；日常只审碰安全面的 PR 和大 PR（⓪Plan 另定：按 U2 整份删除、不碰安全面的不审，比你选的范围窄一点，你可以改），跟「他会话审」对照，不顶替；只读，不推送，不合并，只看公开仓库，不碰你的家目录和数据。**你 10-28 在 ChatGPT 桌面版的 Code Review 里连 GitHub**，只用「Review with Codex」（在聊天里审，不发到 GitHub），不开自动审查；连接器只勾了一个无关的公开仓库、没勾 arslan，Codex 对 arslan 只读，试过能打开 PR（README §8）。待审的 PR 和提示见上面「Codex 待审」；它的结论由你原样贴到 PR 上。
+- **Codex 进审查流程**（你 10-27 定）：做 v0.1.64 安全审查的外部审查工具，结论再给云端审计看一遍；日常只审碰安全面的 PR 和大 PR（⓪Plan 另定：按 U2 整份删除、不碰安全面的不审，比你选的范围窄一点，你可以改），跟「他会话审」对照，不顶替；只读，不推送，不合并，只看公开仓库，不碰你的家目录和数据。**你 10-28 在 ChatGPT 桌面版的 Code Review 里连 GitHub**，只用「Review with Codex」（在聊天里审，不发到 GitHub），不开自动审查；连接器只勾了一个无关的公开仓库、没勾 arslan，Codex 对 arslan 只读，试过能打开 PR（README §8）。待审的 PR 和提示见上面「Codex 待审」；它的结论由你原样贴到 PR 上。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover (v0.1.64 README §1.3; "When" above).
 - **v0.1.64「对 Hermes」门槛**（你 10-27 定）：同样的题，三次全过的题数不少于 Hermes。v0.1.63 只比同题时少 1 题。
 - **回复风格、项目里的「总指挥 + 子会话」**（你 10-27 定，④参谋 转）：风格放 v0.1.64，跟 D1 一起做，四条只管任务汇报这类回复，闲聊保持温度；子会话分两步，v0.1.64 先做底子，v0.1.65 做项目页。详情见 README §8。
 - **能力页和插件的八条**（你 10-28 逐条同意，④参谋 转）：并进 v0.1.64「按需加能力」那张卡，详情见 README §8。带钩子的插件先不装；钩子支持我排在 v0.1.65 之后、和预装推荐那一轮一起做，你可以改。#62 那个只筛已装能力的过滤框留着（你 10-28 定）。

@@ -16,7 +16,7 @@
 | ③Hands | 负责 Hands：`desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` |
 
 - 新开的会话往后编号（④、⑤……），开工前先在当轮 README 的分道表里登记。
-- 版本号、打 tag、发布、合并，都由用户拍板、用户点。例外：决定 U9（2026-10-18），⓪Plan 可以合并同时满足四条的 PR（CI 绿、完成证据四项齐、另一个会话审过、按当轮 README §3 的顺序）；打 tag 和发布仍只归用户。
+- 版本号、打 tag、发布、合并，都由用户拍板、用户点。例外：决定 U9（2026-10-18），⓪Plan 可以合并同时满足四条的 PR（CI 绿、完成证据四项齐、另一个会话审过、按当轮 README §3 的顺序）；打 tag 和发布仍只归用户。 **Replaced for merging (user, 2026-10-28, confirmed in ⓪Plan's chat):** sessions merge PRs that are not on the security surface themselves, through GitHub auto-merge; see §5 "Who merges". Tags and releases stay the user's.
 
 ## 2. 文件归属
 
@@ -62,12 +62,38 @@
   - 描述里写「完成证据」四项（§8）；
   - K 线 PR 要贴跑分的前后对比，没有对比不合。
 - **合并顺序**由依赖图决定，不是先到先得。顺序表在当轮 README。
+- **Who merges (user, 2026-10-28; relayed by ④参谋 and confirmed by the user in ⓪Plan's chat; replaces U9 for merging):**
+  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session's OK **at the current head**, and **every** check on that head green (not only the required ones; the `language` job, for example, is not required yet). The authoring session enables auto-merge with `ccd_pr` `set_auto_merge`; GitHub merges when the required checks pass. **Timing (found 2026-10-29):** GitHub refuses to enable auto-merge on a PR that is already mergeable ("clean status"), so enable it once the OK is in and every check that is *not* required has passed (today `language`; the ruleset requires `backend`, `frontend`, `macos`, `secrets`), while a required one is still running. If all checks are already green, a session cannot merge it (a plain `gh pr merge` is blocked); name it to the user, who merges.
+  - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping) unless the user says otherwise. The security surface here means:
+    - the outside-content mark;
+    - the sandbox;
+    - the classifier;
+    - command policy;
+    - permissions and confirm cards;
+    - the five modes;
+    - the Bridge (pairing, keys, frames, what it offers the phone);
+    - secrets and credential storage;
+    - network egress checks (`net_pin`, the SSRF allowlist);
+    - capability and MCP install checks;
+    - memory and learned-practice writes;
+    - Hands' policy;
+    - CI and repository settings (`.github/workflows/`, branch protection, required checks);
+    - dependency and lock changes (`pyproject.toml`, `uv.lock`, `package.json` and lockfiles);
+    - migrations that drop data.
+
+    Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
+  - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
+  - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
+  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
+  - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
+  - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
 - **rebase 纪律：**
   - 开 PR 前和合并前，各 rebase 一次到最新的目标分支（一般是 main；热修线是 `release/0.1.62`，见 §7）；
   - 冲突按 §3 处理；
   - 不 force-push 别人的分支；
   - 破坏性的 git 操作单独执行，不放进 `&&` 链里。
 - **说 CI 绿时**，附上 run id 和结论。
+- **Reviewing (user, 2026-10-28):** every review also points out over-defence: unnecessary defensive code, the same validation repeated in several layers, and single-use helpers or abstractions (§12).
 
 ## 6. 文档卫生
 
@@ -78,6 +104,11 @@
 - **草稿区**（系统临时目录）会被清理，不要放交付物。
 - **范围冻结：** 新想法写进当轮 README 的「下一版候选」，不进本版。删死代码不在此列，条件见 §11 第 4 条。
 - **Language (user, 2026-10-28):** everything written to GitHub is in English: code, comments, commit messages, PR titles, bodies and comments, plan docs and task cards, bundled skills, READMEs. Chinese written before 2026-10-28 is not rewritten; new lines added to an older Chinese file are English. Chat with the user stays in Chinese, and sessions give the user a Chinese summary in chat. Messages between sessions may be in either language. Exceptions: quoting exact Chinese inside an English sentence (UI labels, the user's or the model's words, session names such as ④参谋); data that has to match Chinese input (for example the secret keywords in `arslan/companion/content_policy.py` or app names in `desktop/hands/policy.json`); translation files and tables (for example `web/src/locales`, `desktop/src-tauri/native_menu_messages.json`, and the iOS `*.xcstrings` / `*.lproj`); tests, evals and fixtures whose input is Chinese; the multilingual `docs-site`; and, until the user decides, the iOS app's UI copy (its string catalog's source language is zh-Hans; comments, docs and commits in the iOS repo are English from now on). v0.1.64 adds a CI check (card LANG1 in `docs/plans/0164/README.md`) that looks only at lines a PR adds, never at whole files (about 250 files on main already contain Chinese). Commit messages, PR titles, bodies and comments are not files: they stay each session's job. The check is `scripts/check_added_chinese.py` (CI job `language`); run `python3 scripts/check_added_chinese.py --base origin/main` before pushing. It also passes a line whose Chinese is old text removed from the same file, or from the file it was renamed from (an edit around old Chinese). For a case no exception names, put the marker `lang-check: allow` on the line, or add a narrow path glob with a reason to `.github/lang-check-allow.txt`. CI runs the base commit's copy of the checker and the allowlist too, so a new exception or allowlist entry lands in its own PR before the Chinese it allows.
+- **A new card has four lines (user, 2026-10-28, relayed by ④参谋).** This applies to every new task card and every card that opens a new area, from now on (for example SIDE, ACM, HR, CLS, S5a and S5b, and later ones). Existing cards are not rewritten. Small PRs, fixes and cleanups don't need it.
+  1. **References:** how mainstream tools do it, with links. Anything a top professional would add beyond what the user asked for is **listed for the user to decide, not built** (no silent scope growth).
+  2. **Raw material:** the real data the card is built from, not a session's summary: the user's own database opened read-only (`mode=ro`, only where the session is allowed to read it; never the secret files), real logs, recordings, code at `file:line`. The session reads it; the card records only what the first bullet of this section allows: aggregate numbers, row shapes without content, and `file:line`. Never excerpts of the user's data, private chats or local paths.
+  3. **Method:** the tools, and how it will be tested: a failing test first, a mutation check, a bench task, probes through `scripts/dev/probe.sh`.
+  4. **External evidence:** what shows it is right without relying on a session's word. For example a CI run id, a test that goes red when the fix is removed, bench numbers against the baseline, the user's real-Mac smoke test, or an iPhone on a real device. "A reviewer said OK" alone does not count for this line.
 
 ## 7. 发版
 
@@ -135,3 +166,32 @@
    ```
 
    v0.1.63 到 v0.1.65 的目标是负数。这是目标，不是门槛：必要的修复不因为它不做。
+
+## 12. Code: no over-defence
+
+User, 2026-10-28 (relayed by ④参谋). Adapted for Python from OpenCode's `AGENTS.md` (Style Guide, General Principles). Measured on main `96bdf096` (`server/` and `arslan/`, tests excluded, about 65k lines): 808 `try` blocks, 294 broad handlers (`except Exception`, `BaseException` or bare), 59 of them silent swallows (the body is only `pass` (32), a constant `return` (25) or `continue` (2)). Cleanup card: EXC1 in `docs/plans/0164/README.md` §3.7.
+
+**Security boundaries (all four rules):** the security model's decided boundaries are not speculative edge cases, and checks on them are not "repeated validation". They are:
+- outside content and its mark;
+- the sandbox (Seatbelt profiles and their builder);
+- command policy;
+- permissions, the five modes and confirm cards;
+- memory, learned-practice and other persisting writes;
+- Hands' own policy (the helper's never-list);
+- secrets, tokens and local auth (the API token, the WebSocket origin check, `crypto_boot`);
+- network egress checks (the SSRF allowlist, the LAN scan);
+- capability and MCP install checks;
+- the Bridge;
+- the approval ledger.
+
+Defence there follows the security process (the user decides, a review at effort=max), not rules 1–3; rule 4's comment and fail-closed requirements apply there too, so the EXC1 check covers security code. A check repeated across a process or privilege boundary is defence in depth, not repetition: for example the Hands helper's own never-list (`server/services/hands_service.py`, `desktop/hands/src/policy.rs`) or Seatbelt on top of `terminal_policy` (`server/services/command_sandbox.py`). Anywhere else, the rules apply.
+
+1. **No speculative defence.** Before adding code for a race or edge case that is speculative or very unlikely, write down the concrete failure (what input or timing gives what wrong result), how likely it is, and what the extra code costs. Put it in the PR description. A reviewer may ask for the code to come out. Don't grow scope quietly for theoretical robustness.
+2. **Validate once, at the boundary that owns the value**, then pass typed values inward (a pydantic model, a dataclass, an enum, a `NewType`). Don't re-check the same thing at every layer. When a value is checked in more than one place, keep the check at the owning boundary and delete the rest. This is also the direction for the security model: the S64-0 and S64-0b holes came from the outside-content mark being carried by hand along many paths; the fix is to set it once at entry and honour it at every sink.
+3. **No premature abstraction.** Inline logic that is used once. Extract a helper only when it is reused, hides a genuinely complex boundary, or names a real concept. No base class, protocol, registry or factory with a single implementation.
+4. **Keep complexity down.** Avoid `try`/`except` where the error can't happen or the caller already handles it. Catch the narrowest exception you expect. Don't split one clear function into several small ones.
+   - **A broad catch that swallows** (`except Exception` or `BaseException` or a bare `except`, whose body only passes, continues or returns a constant) needs a comment on the `except` line saying why swallowing is right, for example `# noqa: BLE001 — a ledger write failure does not change the decision`. A bare `# noqa: BLE001` is not a reason. Otherwise narrow it or log it.
+   - **On an execution or permission path, a swallow fails closed** (the returned constant asks, sandboxes or refuses), and its comment says so, for example `# noqa: BLE001 — unreadable means the default: sandboxed`. A swallow that fails open there is a security bug, not a style issue.
+   - Catching `asyncio.CancelledError` and not re-raising needs the same comment (for example, awaiting a task you just cancelled during shutdown).
+
+**Reviewing (every review, by sessions and by Codex):** besides correctness and the evidence (§8), point out unnecessary defensive code, the same validation repeated in several layers, and helpers or abstractions with a single use. Name the file and line and say what to remove; the author answers each one (remove it, or state the failure mode it guards against).

@@ -113,7 +113,7 @@ async def test_a_capability_found_with_nobody_there_is_listed_too(monkeypatch):
     out = await capability_flow.propose({"candidate_id": "c1", "why": "read PDFs"}, conversation_id="conv-u",
                                         ask=None, emit=lambda e: None)
     [row] = await _rows()
-    assert out["not_added"] is True and "'pdf-tools' is missing" in out["note"]
+    assert out["not_added"] is True and out["missing"] == "pdf-tools"
     assert _policy(row, "capability") and row.target == "capability:pdf-tools"
     with permissions.asking_with(_ask):                           # a job: no row
         job = await capability_flow.propose({"candidate_id": "c1"}, conversation_id="conv-u", ask=None,

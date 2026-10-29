@@ -269,7 +269,11 @@ async def _contradicts_what_worked(text: str, conversation_id: str | None) -> bo
 
 # -- capture -------------------------------------------------------------------
 
-async def _nearest(text: str, limit: int = 2) -> list:
+async def _nearest(text: str, limit: int = 2, *, stopped: bool = False) -> list:
+    """The closest lessons in use or waiting; with `stopped`, also the ones three failures stopped, so a
+    practice Arslan finds again merges into its stopped row instead of coming back as a new active one
+    (#460 review, F2). Stopped rows are read and kept apart: they are merge targets, never rivals, so they
+    must not push a practice in use out of the rows read or out of the conflict check (#466 review)."""
     from sqlalchemy import select
 
     from arslan.companion import memory_relevance
@@ -277,11 +281,16 @@ async def _nearest(text: str, limit: int = 2) -> list:
     terms = memory_relevance.terms(text)
     if not terms:
         return []
+    recent = select(Lesson).order_by(Lesson.updated_at.desc()).limit(SCAN_LIMIT)
     async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.scalars(select(Lesson).where(Lesson.status.in_(("active", "proposed")))
-                                 .order_by(Lesson.updated_at.desc()).limit(SCAN_LIMIT))).all()
+        rows = list((await db.scalars(recent.where(Lesson.status.in_(("active", "proposed"))))).all())
+        if stopped:
+            rows += (await db.scalars(recent.where(Lesson.status == "stale"))).all()
     scored = [(memory_relevance.score(terms, f"{row.situation} {row.advice}"), row) for row in rows]
-    return [row for score, row in sorted((p for p in scored if p[0] > 0), key=lambda p: -p[0])[:limit]]
+    ranked = [row for score, row in sorted((p for p in scored if p[0] > 0), key=lambda p: -p[0])]
+    keep = ([row for row in ranked if row.status != "stale"][:limit]
+            + [row for row in ranked if row.status == "stale"][:limit])
+    return [row for row in ranked if row in keep]
 
 
 async def _yes(point: str, state: dict, conversation_id: str | None, ref: str | None = None) -> bool | None:
@@ -328,12 +337,15 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     or await _contradicts_what_worked(text, conversation_id)):
                 immediate, why = False, "not_a_correction"
         merged = conflicting = None
-        for row in await _nearest(text):
+        # F2: what Arslan finds again merges into a stopped row, which only counts up and stays stopped.
+        # A stopped row is never a rival (it failed three times in a row), and the user's own correction
+        # is the user's choice, so it never looks at stopped rows.
+        for row in await _nearest(text, stopped=cand.source != "user_correction"):
             pair = {"candidate": text, "existing": render(row)}
             if await _yes("memory.merge", pair, conversation_id):
                 merged = row
                 break
-            if await _yes("memory.conflict", pair, conversation_id):
+            if row.status != "stale" and await _yes("memory.conflict", pair, conversation_id):
                 conflicting = row
                 break
         now = datetime.utcnow()

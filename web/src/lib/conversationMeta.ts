@@ -16,6 +16,7 @@ export interface ConversationMeta {
   projectId?: string | null;
 }
 
+// DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
 export const REMOTE_ID = "pocket";
 const KINDS: ConversationKind[] = ["remote", "chat", "task", "scheduled"];
 const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "unfinished", "failed"];
@@ -23,6 +24,7 @@ const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "unfi
 export function metaFrom(rows: ServerConversation[]): Record<string, ConversationMeta> {
   const out: Record<string, ConversationMeta> = {};
   for (const row of rows) {
+    // DELETE-BY: v0.1.65 (Q1), with REMOTE_ID: the pocket read as "remote" when the server says no kind.
     const kind = KINDS.includes(row.kind as ConversationKind) ? (row.kind as ConversationKind)
       : row.conversation_id === REMOTE_ID ? "remote" : "chat";
     out[row.conversation_id] = {
@@ -38,6 +40,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
 }
 
 /** Remote first, then the rest in the order given. */
+// DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
 export function remoteFirst<T extends { id: string }>(threads: T[], meta: Record<string, ConversationMeta>): T[] {
   const isRemote = (t: T) => t.id === REMOTE_ID || meta[t.id]?.kind === "remote";
   return [...threads.filter(isRemote), ...threads.filter(t => !isRemote(t))];
