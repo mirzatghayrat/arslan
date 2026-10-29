@@ -104,6 +104,13 @@ final class QuickAskTests: XCTestCase {
             quick("d", client: "b4", id: "phone-0B0C1D2E-3F40-4152-8A6B-7C8D9E0FA1B2"),                 // not lowercase
             quick("e", client: "b5", id: "c-42"),
             quick("f", client: "b6").merging(["conversation_id": "c-42"]) { $1 },                      // two different ids
+            quick("g", client: "b7", id: Self.id + "\n"),                                              // a line break after it
+            quick("h", client: "b8", id: Self.id + "\r\n"),
+            quick("i", client: "b9", id: Self.id + "\u{2028}"),
+            quick("j", client: "b10", id: "x" + Self.id),                                              // something before it
+            quick("k", client: "b11", id: "\n" + Self.id),
+            quick("l", client: "b12", id: "phone-0b0c1d2e-3f40-1152-8a6b-7c8d9e0fa1b2"),               // a v1 UUID
+            quick("m", client: "b13", id: "phone-0b0c1d2e-3f40-4152-7a6b-7c8d9e0fa1b2"),               // not the RFC variant
         ]
         var ids: [String] = []
         for c in cases { ids.append(try await send(p, c)) }
@@ -138,6 +145,58 @@ final class QuickAskTests: XCTestCase {
         let refused = errors(try await heard(p))
         XCTAssertEqual(refused.map(\.code), ["conversation_exists"])
         XCTAssertEqual(refused.map(\.related), [taken])
+    }
+
+    /// §5.8: a refused send is not remembered as run, so the phone's retry runs it; a retry that dropped `quick`
+    /// would start an ordinary chat with every tool, and nothing stored as quick.
+    func testARetryThatDropsQuickIsRefusedAndOneThatRepeatsItRuns() async throws {
+        let p = try await pair()
+        p.backend.answers["POST " + Self.quickPath] = .failure(.code("mac_busy"))
+        p.backend.answers["/api/v1/phone/conversations/\(Self.id)/history?limit=1"] = .success(
+            ["conversation_id": Self.id, "messages": []])
+        var dropped = quick("ramen near me?", client: "c1")
+        dropped["conversation_kind"] = nil
+        var refused = [try await send(p, quick("ramen near me?", client: "c1"))]
+        try await run(p)
+        for _ in 0..<2 { refused.append(try await send(p, dropped)) }               // a second try changes nothing
+        try await run(p)
+        XCTAssertTrue(p.backend.asked.isEmpty, "never looked up as an ordinary conversation")
+        XCTAssertEqual(words(p, Self.id), [], "Arslan never sees it")
+        let got = errors(try await heard(p))
+        XCTAssertEqual(got.map(\.code), ["mac_busy", "bad_request", "bad_request"])
+        XCTAssertEqual(got.map(\.related), refused)
+
+        p.backend.answers["POST " + Self.quickPath] = .success(["conversation_id": Self.id, "kind": "quick"])
+        _ = try await send(p, quick("ramen near me?", client: "c1"))
+        try await run(p)
+        XCTAssertEqual(p.backend.posted.map(\.0), [Self.quickPath, Self.quickPath], "stored as quick on the retry")
+        XCTAssertEqual(words(p, Self.id), ["ramen near me?"])
+    }
+
+    func testARetryThatAddsQuickIsRefusedToo() async throws {
+        let p = try await pair()
+        p.backend.answers["POST " + Self.quickPath] = .success(["conversation_id": Self.id, "kind": "quick"])
+        let ordinary: [String: Any] = ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"]
+        let first = try await send(p, ordinary)                                     // its history lookup fails
+        try await run(p)
+        let added = try await send(p, quick("plan a trip", client: "n1"))
+        try await run(p)
+        XCTAssertTrue(p.backend.posted.isEmpty, "never stored as quick")
+        XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty })
+        let got = errors(try await heard(p))
+        XCTAssertEqual(got.map(\.code), ["mac_busy", "bad_request"])
+        XCTAssertEqual(got.map(\.related), [first, added])
+    }
+
+    func testANewConversationWhoseHistoryCannotBeReadIsRefused() async throws {
+        let p = try await pair()                                                    // the lookup fails: the Mac is busy
+        let sent = try await send(p, ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"])
+        try await run(p)
+        XCTAssertEqual(p.backend.asked, ["/api/v1/phone/conversations/\(Self.id)/history?limit=1"])
+        XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "not sent, not even to the pocket")
+        let got = errors(try await heard(p))
+        XCTAssertEqual(got.map(\.code), ["mac_busy"])
+        XCTAssertEqual(got.map(\.related), [sent])
     }
 
     func testThePhonesSendTimeGoesWithItsWords() async throws {
@@ -197,42 +256,90 @@ final class QuickAskTests: XCTestCase {
 
     // ------------------------------------------------------------------ the pocket
 
-    func testOnlyAPhoneThatSaysQuickMayDeleteThePocket() async throws {
-        for (capabilities, deletes) in [(PhoneFilesTests.newPhone, false), (Self.quickPhone, true)] {
-            let p = try await pair(capabilities: capabilities)
-            p.backend.answers["DELETE /api/v1/conversations/pocket"] = .success(["ok": true, "deleted": ["arslan_messages": 3]])
-            try await p.phone.send(type: "conversation.delete", body: ["conversation_id": "pocket"], to: "mac-1")
-            try await run(p)
-            XCTAssertEqual(p.backend.deleted, deletes ? ["/api/v1/conversations/pocket"] : [])
-            let got = try await heard(p)
-            XCTAssertEqual(got.map(\.type), [deletes ? "conversation.deleted" : "error"])
-        }
+    /// Two phones on one Mac: only the one that said `quick` lists its own conversations without Remote.
+    func testOnlyThePhoneThatSaidQuickMayDeleteThePocket() async throws {
+        let p = try await pair(capabilities: PhoneFilesTests.newPhone)
+        let second = Mailbox(deviceID: "iphone-2", signing: .init(), exchange: .init(), store: p.mac.store)
+        p.mac.add(peer: Peer(deviceID: "iphone-2", signing: second.signing.publicKey, exchange: second.exchange.publicKey))
+        second.add(peer: Peer(deviceID: "mac-1", signing: p.mac.signing.publicKey, exchange: p.mac.exchange.publicKey))
+        try await second.send(type: "hello", body: ["app_version": "1", "protocol_version": 1, "capabilities": Self.quickPhone], to: "mac-1")
+        try await run(p)
+        _ = try await second.receive()
+        p.backend.answers["DELETE /api/v1/conversations/pocket"] = .success(["ok": true, "deleted": ["arslan_messages": 3]])
+
+        try await p.phone.send(type: "conversation.delete", body: ["conversation_id": "pocket"], to: "mac-1")
+        try await run(p)
+        XCTAssertEqual(p.backend.deleted, [], "the phone that never said quick still shows Remote")
+        let first = try await heard(p)
+        XCTAssertEqual(first.map(\.type), ["error"])
+
+        try await second.send(type: "conversation.delete", body: ["conversation_id": "pocket"], to: "mac-1")
+        try await run(p)
+        XCTAssertEqual(p.backend.deleted, ["/api/v1/conversations/pocket"])
+        let answered = try await second.receive().filter { $0.type != "ack" }
+        XCTAssertEqual(answered.map(\.type), ["conversation.deleted"])
     }
 
     // ------------------------------------------------------------------ the backend's answers
 
     func testTheBackendsAnswersBecomeTheCodesThePhoneKnows() {
-        func code(_ status: Int, _ detail: String? = nil, notFound: String = "file_unavailable") -> String? {
-            do { try LocalBackend.check(status: status, detail: detail, notFound: notFound); return nil } catch {
+        func code(_ status: Int, _ body: String = "", notFound: String = "file_unavailable") -> String? {
+            do { try LocalBackend.check(status: status, data: Data(body.utf8), notFound: notFound); return nil } catch {
                 return (error as? BridgeError)?.code
             }
         }
-        XCTAssertNil(code(200))
-        XCTAssertEqual(code(400, "bad_request"), "bad_request")
-        XCTAssertEqual(code(409, "conversation_exists"), "conversation_exists")
-        XCTAssertEqual(code(409, "mac_busy"), "mac_busy")
+        func says(_ detail: String) -> String { #"{"detail": "\#(detail)"}"# }
+        XCTAssertNil(code(200, "<html>"))
+        XCTAssertEqual(code(400, says("bad_request")), "bad_request")
+        XCTAssertEqual(code(409, says("conversation_exists")), "conversation_exists")
+        XCTAssertEqual(code(409, says("mac_busy")), "mac_busy")
         XCTAssertEqual(code(409), "mac_busy")
-        XCTAssertEqual(code(404, "not_found"), "not_found")
-        XCTAssertEqual(code(404, "file_unavailable"), "file_unavailable", "the file reads, as before")
-        XCTAssertEqual(code(404, nil, notFound: "not_found"), "not_found")
+        XCTAssertEqual(code(409, "<html>"), "mac_busy")
+        XCTAssertEqual(code(409, #"{"detail": [{"loc": ["query", "kind"]}]}"#), "mac_busy", "a validation error names no code")
+        XCTAssertEqual(code(404, says("not_found")), "not_found")
+        XCTAssertEqual(code(404, says("file_unavailable")), "file_unavailable", "the file reads, as before")
+        XCTAssertEqual(code(404), "file_unavailable")
+        XCTAssertEqual(code(404, notFound: "not_found"), "not_found")
         XCTAssertEqual(code(413), "too_large")
         XCTAssertEqual(code(422), "malformed")
-        XCTAssertEqual(code(500), "mac_busy")
+        XCTAssertEqual(code(500, says("conversation_exists")), "mac_busy")
     }
 
-    func testTheBackendsRefusalNamesItsCode() {
-        XCTAssertEqual(LocalBackend.detail(Data(#"{"detail": "conversation_exists"}"#.utf8)), "conversation_exists")
-        XCTAssertNil(LocalBackend.detail(Data("<html>".utf8)))
-        XCTAssertNil(LocalBackend.detail(Data(#"{"detail": [{"loc": ["query", "kind"]}]}"#.utf8)), "a validation error names no code")
+    /// LocalBackend's own request path, answered in-process: the code rides in the refusal's body.
+    func testLocalBackendReadsTheCodeInTheBackendsRefusal() async throws {
+        URLProtocol.registerClass(StubBackend.self)
+        defer { URLProtocol.unregisterClass(StubBackend.self) }
+        let backend = LocalBackend(port: StubBackend.port, token: "t")
+        for (status, body, expected) in [(409, #"{"detail": "conversation_exists"}"#, "conversation_exists"),
+                                         (404, #"{"detail": "not_found"}"#, "not_found"),
+                                         (409, #"{"detail": "busy"}"#, "mac_busy")] {
+            StubBackend.answer = (status, body)
+            do {
+                _ = try await backend.post(Self.quickPath, body: [:])
+                XCTFail("\(status) \(body) was taken as an answer")
+            } catch {
+                XCTAssertEqual((error as? BridgeError)?.code, expected, body)
+            }
+        }
+        StubBackend.answer = (200, #"{"conversation_id": "x"}"#)
+        let stored = try await backend.post(Self.quickPath, body: [:])
+        XCTAssertEqual(stored["conversation_id"] as? String, "x")
     }
+}
+
+/// Answers requests to one port in-process, as `answer` says (tests only).
+final class StubBackend: URLProtocol {
+    static let port = 9                                 // the discard port: nothing real listens there
+    static var answer: (status: Int, body: String) = (200, "{}")
+
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.port == port }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let url = request.url, let response = HTTPURLResponse(url: url, statusCode: Self.answer.status, httpVersion: nil,
+                                                                    headerFields: ["Content-Type": "application/json"]) else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(Self.answer.body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

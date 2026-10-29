@@ -35,7 +35,7 @@ public actor ConversationLinks {
     // 2026-10-29): the pocket and every branch below that names it.
     /// §5.8: a conversation the phone starts names itself `phone-` and a lowercase UUID v4.
     static let phoneConversationID = try! NSRegularExpression(
-        pattern: "^phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+        pattern: #"^phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z"#)    // `$` takes a final line break
     public static let fileLimit = 20 * 1024 * 1024     // §4.6
     public static let maxAttachments = 10              // §5.7: files with one message
     public static let holdLimit: TimeInterval = 120    // §5.7: a message waits this long for its files
@@ -60,6 +60,7 @@ public actor ConversationLinks {
     var links: [String: (channel: ControlChannel, mapper: FrameMapper)] = [:]
     var touched: [String: Date] = [:]                  // when the phone last used each link
     var executed: Set<String> = []                     // client_msg_ids already run (§5.3: once)
+    var askedQuick: [String: Bool] = [:]               // client_msg_id → whether it asked for quick (§5.8: a retry repeats it)
     var startedTasks: [String: [String: Any]] = [:]    // client_task_id → task.started (a retry gets the same)
     public let status: StatusReporter?                 // a phone saying hello gets the status at once
 
@@ -233,8 +234,9 @@ public actor ConversationLinks {
         for id in ids { link(id, now: now, touch: false) }
         guard links.count > Self.maxLinks else { return }
         let live = Set(ids)
+        // DELETE-BY: the pocket's exemption, with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
         let idle = links.keys.filter { id in
-            !live.contains(id) && id != Self.pocket && links[id]?.mapper.cards.isEmpty == true    // DELETE-BY: with `pocket`
+            !live.contains(id) && id != Self.pocket && links[id]?.mapper.cards.isEmpty == true
                 && !held.contains { $0.conversationID == id } && now.timeIntervalSince(touched[id] ?? .distantPast) >= Self.idleLink
         }.sorted { (touched[$0] ?? .distantPast, $0) < (touched[$1] ?? .distantPast, $1) }
         for id in idle.prefix(links.count - Self.maxLinks) { unlink(id) }
@@ -385,7 +387,8 @@ public actor ConversationLinks {
         let named = body["conversation_id"] as? String
         guard let new = body["new_conversation_id"] as? String else {
             guard body["conversation_kind"] == nil else { throw BridgeError.code("bad_request") }
-            return named ?? Self.pocket                                    // DELETE-BY: with `pocket`
+            // DELETE-BY: no id as the pocket, with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
+            return named ?? Self.pocket
         }
         let whole = NSRange(new.startIndex..., in: new)
         guard Self.phoneConversationID.firstMatch(in: new, range: whole) != nil, named == nil || named == new else {
@@ -428,6 +431,13 @@ public actor ConversationLinks {
             case "chat.send":
                 let clientID = body["client_msg_id"] as? String ?? ""
                 guard clientID.isEmpty || (!executed.contains(clientID) && !held.contains { $0.clientID == clientID }) else { return }
+                // §5.8: a refused send is not remembered as run, so a retry that dropped `quick` would start an
+                // ordinary chat with every tool; one that changes what the first send asked for is refused.
+                let quick = body["conversation_kind"] as? String == "quick"
+                if !clientID.isEmpty {
+                    guard (askedQuick[clientID] ?? quick) == quick else { throw BridgeError.code("bad_request") }
+                    askedQuick[clientID] = quick
+                }
                 let attachments = body["attachments"] as? [[String: Any]] ?? []
                 guard attachments.count <= Self.maxAttachments else {
                     throw Refusal(code: "too_many_files", message: Self.message("too_many_files"))
@@ -446,7 +456,8 @@ public actor ConversationLinks {
             case "conversation.delete":
                 guard let id = body["conversation_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }
                 // §5.8: a phone that said `quick` shows its own list without Remote, so it may delete it.
-                guard id != Self.pocket || mailbox.has("quick", received.from) else {      // DELETE-BY: with `pocket`
+                // DELETE-BY: with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
+                guard id != Self.pocket || mailbox.has("quick", received.from) else {
                     throw Refusal(code: "malformed", message: "Remote cannot be deleted.")
                 }
                 let result = try await backend.delete("/api/v1/conversations/\(id.pathSegment)")
@@ -486,7 +497,8 @@ public actor ConversationLinks {
                 _ = try await mailbox.send(type: "conversations.result", body: result, to: received.from)
                 await linkLive(now: now)                 // §5.7: what the list shows stays live
             case "chat.history":
-                let id = body["conversation_id"] as? String ?? Self.pocket      // DELETE-BY: with `pocket`
+                // DELETE-BY: no id as the pocket, with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
+                let id = body["conversation_id"] as? String ?? Self.pocket
                 let limit = min(max(body["limit"] as? Int ?? 50, 1), 200)
                 let result = try await backend.json("/api/v1/phone/conversations/\(id.pathSegment)/history?limit=\(limit)")
                 link(id, now: now)          // the phone is looking at it: its progress, cards and results come live

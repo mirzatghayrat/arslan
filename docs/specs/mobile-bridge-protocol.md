@@ -436,7 +436,9 @@ New error codes (may travel in `error`, with `related_id` = the request): `bad_r
 - **A quick question.** `conversation_kind: "quick"` is valid only with `new_conversation_id`. The Mac
   stores the conversation as quick before the words go anywhere; if it can't, it refuses and Arslan never
   sees the text. `conversation_kind` without a new id, any other kind, or an id of another shape is
-  `bad_request`.
+  `bad_request`. A retry repeats `new_conversation_id` and `conversation_kind` unchanged: a refused send is
+  not remembered as run, so one that dropped `quick` would start an ordinary chat. The Mac remembers what
+  each `client_msg_id` asked for (while it runs) and refuses a retry that changes it with `bad_request`.
 - **The list.** `kind: "quick"` lists only quick questions; without it the list is today's, which leaves
   them out. Any other `kind` is `bad_request`. `before` is the `updated_at` of the oldest conversation the
   phone holds, sent back exactly as received: the Mac returns conversations strictly older than it, most
