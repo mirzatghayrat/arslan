@@ -9,10 +9,10 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | PR | What | Merge commit |
 |---|---|---|
 | #484 | SB1 sidebar card; projects double as groups in v0.1.65; this page | `5fcb4c17` |
-| #485 | F5b follow-up: drop the H2 codes nothing says since the Cua Driver engine went | `47bf7345` (main CI 40807766855 covers #477 and #483 too) |
+| #485 | F5b follow-up: drop the H2 codes nothing says since the Cua Driver engine went | `47bf7345` (its main CI 40807766855 was cancelled by the next merge; 40808069306 at `5fcb4c17` covers it, with #477, #483 and #484) |
 | #483 | Migrations 0078 (Q1 #3) and 0079 (SB1) logged | `3e5b61cf` |
 | #477 | SBX-1b: SBPL strings written as UTF-8, so non-ASCII paths match | `afd32481` |
-| #474 | Classifier pass lines complete; C7c answers (user, 2026-10-29) | `17f52a82` (main CI 40806097374 running) |
+| #474 | Classifier pass lines complete; C7c answers (user, 2026-10-29) | `17f52a82` (its main CI 40806097374 was cancelled by the next merge; 40808069306 at `5fcb4c17` covers it) |
 | #482 | The user's 10-29 answers on INB2 F2/F4 and Q1 points 3/4 (auto-merged) | `5988cb4d` (main CI 40803537315 success; it covers every merge down to #447, whose own runs were cancelled by the next merge) |
 | #458 | SIDE card and this status page | `96c77bf1` |
 | #464 | No over-defence (sessions.md §12); EXC1 card | `0955ee49` |
@@ -69,7 +69,7 @@ The user is merging in ④参谋's order (2026-10-29). Batch 1 is done. Batch 2 
 | Lane | Work |
 |---|---|
 | ②Main | Q1b #486 (Bridge frames; ⓪Plan's effort=max reviewer on `9249401a`), Q1 #3 (migration 0078), then the pocket deletion (the old pocket stays a Mac-only conversation; every phone frame naming it is refused, inbound and outbound: #487). INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
-| ③Hands | **SBX-2 is stopped:** a safety classifier stopped ③Hands' response as it started SBX-2 (2026-10-29), right after reading the SBX card. Per the card's "Risks and rollback", it is not worked around, reworded or moved to another session; no SBX-2 code exists (branch `claude/0164-sbx2-default-deny-preset` is clean at `47bf7345`). Waiting for the user. CLS and S5b come after SBX, so this is on v0.1.64's critical path. Then: drop `no_effect` / `partly_done` / `refused` from the Hands outcome words (deletion-only, after #485) |
+| ③Hands | **SBX-2 is stopped:** a safety classifier stopped ③Hands' response as it started SBX-2 (2026-10-29), right after reading the SBX card. Per the card's "Risks and rollback", it is not worked around, reworded or moved to another session; no SBX-2 code exists (the local branch `claude/0164-sbx2-default-deny-preset`, not pushed, is clean at `47bf7345`). Waiting for the user. CLS and S5b come after SBX, so this is on v0.1.64's critical path. Then: drop `no_effect` / `partly_done` / `refused` from the Hands outcome words (deletion-only, after #485); after #459, the 0076 table-drop PR (the user merges) |
 | ⑤CAP | CAP2b (0077) after #472 |
 | ①iOS | Q1c waits on the user's OK on the Quick Ask mock; it can ship with Mac 0.1.64 |
 | ⑥Helper | STY #452 (draft), SIDE after SUB2, SB1 after the pocket deletion and INB4 (mock first) |
