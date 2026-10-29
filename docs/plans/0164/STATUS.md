@@ -14,7 +14,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | #472 | CAP2a: delete Skill Forge, the curator and the candidates; `create_skill` becomes a card | `efa64c44` (main CI 40812701073 success) |
 | #489 | WB1 workbench card; one mock with SIDE-0 | `c83d7ed9` |
 | #488 | This page: batch 1 done; SBX-2 stopped | `77fdbc64` |
-| #487 | Q1: the pocket's old messages stay a Mac-only conversation; every phone frame naming it is refused | (auto-merged) |
+| #487 | Q1: the pocket's old messages stay a Mac-only conversation; every phone frame naming it is refused | `b17ac722` (its run 40809106133 and #488's 40809540713 were cancelled by the next merge; 40809665261 at `c83d7ed9` covers #487, #488 and #489, success) |
 | #484 | SB1 sidebar card; projects double as groups in v0.1.65; this page | `5fcb4c17` |
 | #485 | F5b follow-up: drop the H2 codes nothing says since the Cua Driver engine went | `47bf7345` (its main CI 40807766855 was cancelled by the next merge; 40808069306 at `5fcb4c17` covers it, with #477, #483 and #484) |
 | #483 | Migrations 0078 (Q1 #3) and 0079 (SB1) logged | `3e5b61cf` |
@@ -76,7 +76,7 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 | Lane | Work |
 |---|---|
 | ②Main | Q1b #486 (Bridge frames; ⓪Plan's effort=max reviewer on `9249401a`), Q1 #3 (migration 0078), then the pocket deletion (the old pocket stays a Mac-only conversation; every phone frame naming it is refused, inbound and outbound: #487). INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
-| ③Hands | **SBX-2 is stopped:** a safety classifier stopped ③Hands' response as it started SBX-2 (2026-10-29), right after reading the SBX card. Per the card's "Risks and rollback", it is not worked around, reworded or moved to another session; no SBX-2 code exists (the local branch `claude/0164-sbx2-default-deny-preset`, not pushed, is clean at `47bf7345`). Waiting for the user. CLS and S5b come after SBX, so this is on v0.1.64's critical path. Then: drop `no_effect` / `partly_done` / `refused` from the Hands outcome words (deletion-only, after #485); after #459, the 0076 table-drop PR (the user merges) |
+| ③Hands | **SBX-2 goes to Codex, whole** (user, 2026-10-29, the cloud audit's split; #493). ③Hands' local SBX-2 branch stays untouched. ③Hands writes 3a, 4a, 5a, 6a, 7 and 8 and S2a-3's structure, and starts drafting after #493 merges. #491 drops `partly_done` and `refused`, keeps `no_effect`; ②Main OK'd it at `c71045b2` (effort=max), and auto-merge is on. Its first backend run 40811544026 failed only in cargo-deny's advisory-db download (pytest 9732 passed), and the job was re-run. The 0076 table-drop PR is unblocked now that #459 is merged (`a528c3ff`). FRONT1 waits on the user's pick |
 | ⑤CAP | CAP2b (0077), unblocked now that #472 is merged |
 | ①iOS | Q1c in progress, on the scope the user narrowed on 2026-10-29 (Q1 card): 快问 replaces 「＋ 新对话」, one thread page, a 30-minute follow-up window, no 转成对话 on the phone yet |
 | ⑥Helper | STY #452 (draft), SIDE after SUB2, SB1 after the pocket deletion and INB4 (mock first) |
@@ -84,7 +84,7 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 
 ## Waiting on the user
 
-- **SBX-2, stopped by a safety classifier** (see In progress): how to proceed is the user's call.
+- **FRONT1:** which trigger Hands' `front` parameter names, from ③Hands' four options (README §3.6).
 - The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64; the TestFlight upload needs the user's nod.
 - The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md`.
