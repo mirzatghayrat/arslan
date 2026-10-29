@@ -430,15 +430,17 @@ New error codes (may travel in `error`, with `related_id` = the request): `bad_r
 `conversation_exists`.
 
 - **A new conversation.** `new_conversation_id` is `phone-` and a lowercase UUID v4, made by the phone.
-  It must still be empty: one that has messages is `conversation_exists`. `conversation_id`, if also
-  sent, must be the same id. A retry with the same `client_msg_id` gets the first result, so it never
-  trips `conversation_exists` (while the Mac runs; a restart forgets, as for every `chat.send`).
+  The Mac stores it as an ordinary chat before the words go anywhere, in the one call that also checks it
+  is still empty: one that has messages, or is a quick question, is `conversation_exists`; if the Mac can't
+  store it, it refuses and Arslan never sees the text. `conversation_id`, if also sent, must be the same
+  id. A retry with the same `client_msg_id` gets the first result, so it never trips `conversation_exists`
+  (while the Mac runs; a restart forgets, as for every `chat.send`).
 - **A quick question.** `conversation_kind: "quick"` is valid only with `new_conversation_id`. The Mac
-  stores the conversation as quick before the words go anywhere; if it can't, it refuses and Arslan never
-  sees the text. `conversation_kind` without a new id, any other kind, or an id of another shape is
-  `bad_request`. A retry repeats `new_conversation_id` and `conversation_kind` unchanged: a refused send is
-  not remembered as run, so one that dropped `quick` would start an ordinary chat. The Mac remembers what
-  each `client_msg_id` asked for (while it runs) and refuses a retry that changes it with `bad_request`.
+  stores the conversation as quick the same way. `conversation_kind` without a new id, any other kind, or an
+  id of another shape is `bad_request`. A retry repeats `new_conversation_id` and `conversation_kind`
+  unchanged: one without the kind starts an ordinary chat. The Mac reads what a conversation is from what it
+  stored, never from a message: one the phone made with no kind stored (its store failed) gets only the
+  quick tools and learns nothing, whatever names it later.
 - **The list.** `kind: "quick"` lists only quick questions; without it the list is today's, which leaves
   them out. Any other `kind` is `bad_request`. `before` is the `updated_at` of the oldest conversation the
   phone holds, sent back exactly as received: the Mac returns conversations strictly older than it, most

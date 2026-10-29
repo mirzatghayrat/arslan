@@ -28,7 +28,7 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_reads, settings_service
+from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, settings_service
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -130,17 +130,13 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
             "has_more": len(rows) > len(page)}
 
 
-#: Q1: a quick question's id, made on the phone (`phone-` and a lowercase UUID v4; card, detail A).
-_QUICK_ID = re.compile(r"phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
-
-
 @router.post("/phone/conversations/{conversation_id}/quick")
 async def phone_new_quick(conversation_id: str, db: AsyncSession = Depends(get_session)):
     """Q1: store a new conversation as a quick question before its first message runs, so that turn
     already gets only the quick tools (arslan.QUICK_TOOLS) and learns nothing. Only a phone-made id with
     no messages yet: one that has messages ran with every tool and stays what it is. A retry is fine.
     `no_memory` is left as it is."""
-    if not _QUICK_ID.fullmatch(conversation_id):
+    if not phone_ids.made_on_the_phone(conversation_id):
         raise HTTPException(400, "bad_request")
     if await db.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1)):
         raise HTTPException(409, "conversation_exists")
@@ -149,6 +145,26 @@ async def phone_new_quick(conversation_id: str, db: AsyncSession = Depends(get_s
     db.add(row)
     await db.commit()
     return {"conversation_id": conversation_id, "kind": "quick"}
+
+
+@router.post("/phone/conversations/{conversation_id}/chat")
+async def phone_new_chat(conversation_id: str, db: AsyncSession = Depends(get_session)):
+    """Q1b (#486 review, G1; the user, 2026-10-29): store an ordinary new conversation the phone started as `chat`
+    before its first message runs, in the same call that checks it is still empty, as `quick` above. A phone-made
+    id with no kind stored gets only the quick tools and learns nothing (arslan, task_context), so a quick question
+    whose store failed never runs as an ordinary chat. A quick question (or any other kind) stays what it is: only
+    `conversation.update` turns one into a chat. A retry is fine. `no_memory` and `no_learning` are left as they are."""
+    if not phone_ids.made_on_the_phone(conversation_id):
+        raise HTTPException(400, "bad_request")
+    if await db.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1)):
+        raise HTTPException(409, "conversation_exists")
+    row = await db.get(ConversationContext, conversation_id) or ConversationContext(id=conversation_id)
+    if row.kind not in (None, "chat"):
+        raise HTTPException(409, "conversation_exists")
+    row.kind = "chat"
+    db.add(row)
+    await db.commit()
+    return {"conversation_id": conversation_id, "kind": "chat"}
 
 
 class ConversationUpdate(BaseModel):

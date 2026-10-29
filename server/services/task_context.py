@@ -9,6 +9,7 @@ from arslan.companion.content_policy import normalized_memory
 from server.db import session as db_session
 from server.db.models import ConversationContext
 from server.services import personal_context as pc
+from server.services import phone_ids
 
 
 def explicit_save_digest(user_message: str) -> str | None:
@@ -67,7 +68,10 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         owner_id=row.owner_id if row else "local", project_id=row.project_id if row else None,
         model_is_local=model_is_local,
         no_memory=bool(row.no_memory) if row else False,
-        no_learning=bool(row.no_learning) if row else False,
+        # Q1b (#486 review, G1): a conversation the phone started learns only once its kind is stored (quick never),
+        # so one whose store failed never does; arslan narrows its tools the same way.
+        no_learning=(bool(row and row.no_learning)
+                     or (not (row and row.kind) and phone_ids.made_on_the_phone(conversation_id))),
         temporary=bool(row.temporary) if row else False,
         cloud_memory_allowed=bool(row.cloud_memory_allowed) if row else False,
         # On: a cloud model may use NORMAL entries in every conversation; the

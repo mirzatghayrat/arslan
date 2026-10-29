@@ -60,7 +60,6 @@ public actor ConversationLinks {
     var links: [String: (channel: ControlChannel, mapper: FrameMapper)] = [:]
     var touched: [String: Date] = [:]                  // when the phone last used each link
     var executed: Set<String> = []                     // client_msg_ids already run (§5.3: once)
-    var askedQuick: [String: Bool] = [:]               // client_msg_id → whether it asked for quick (§5.8: a retry repeats it)
     var startedTasks: [String: [String: Any]] = [:]    // client_task_id → task.started (a retry gets the same)
     public let status: StatusReporter?                 // a phone saying hello gets the status at once
 
@@ -379,10 +378,11 @@ public actor ConversationLinks {
         }
     }
 
-    /// Where a chat.send goes (§5.8). A conversation the phone starts (`new_conversation_id`) must still be
-    /// empty: a quick one is stored as quick first, so if the Mac can't store it, its words go nowhere; an
-    /// ordinary one is checked for messages. `conversation_kind` means nothing without a new id. No id at all is
-    /// the pocket.
+    /// Where a chat.send goes (§5.8). A conversation the phone starts (`new_conversation_id`) is stored with its kind
+    /// first, quick or chat, in the one call that also checks it is still empty; if the Mac can't store it, its words
+    /// go nowhere. The Mac reads what a conversation is from what it stored, never from a message: one the phone
+    /// made with no kind stored gets only the quick tools (#486 review, G1). `conversation_kind` means nothing
+    /// without a new id. No id at all is the pocket.
     func destination(of body: [String: Any]) async throws -> String {
         let named = body["conversation_id"] as? String
         guard let new = body["new_conversation_id"] as? String else {
@@ -396,8 +396,7 @@ public actor ConversationLinks {
         }
         switch body["conversation_kind"] {
         case nil:
-            let history = try await backend.json("/api/v1/phone/conversations/\(new.pathSegment)/history?limit=1")
-            guard (history["messages"] as? [Any] ?? []).isEmpty else { throw BridgeError.code("conversation_exists") }
+            _ = try await backend.post("/api/v1/phone/conversations/\(new.pathSegment)/chat", body: [:])
         case let kind as String where kind == "quick":
             _ = try await backend.post("/api/v1/phone/conversations/\(new.pathSegment)/quick", body: [:])
         default:
@@ -431,13 +430,6 @@ public actor ConversationLinks {
             case "chat.send":
                 let clientID = body["client_msg_id"] as? String ?? ""
                 guard clientID.isEmpty || (!executed.contains(clientID) && !held.contains { $0.clientID == clientID }) else { return }
-                // §5.8: a refused send is not remembered as run, so a retry that dropped `quick` would start an
-                // ordinary chat with every tool; one that changes what the first send asked for is refused.
-                let quick = body["conversation_kind"] as? String == "quick"
-                if !clientID.isEmpty {
-                    guard (askedQuick[clientID] ?? quick) == quick else { throw BridgeError.code("bad_request") }
-                    askedQuick[clientID] = quick
-                }
                 let attachments = body["attachments"] as? [[String: Any]] ?? []
                 guard attachments.count <= Self.maxAttachments else {
                     throw Refusal(code: "too_many_files", message: Self.message("too_many_files"))

@@ -130,73 +130,38 @@ final class QuickAskTests: XCTestCase {
         XCTAssertEqual(words(p, Self.id), ["ramen?"])
     }
 
-    func testANewOrdinaryConversationGoesToItsOwnIDOnlyWhileItIsEmpty() async throws {
+    /// #486 review G1 (the user, 2026-10-29): an ordinary new conversation is stored as `chat` first, in the one
+    /// call that also checks it is still empty, as a quick one is; no history lookup.
+    func testANewOrdinaryConversationIsStoredAsChatFirstThenItsWordsGoToItsOwnConversation() async throws {
         let p = try await pair()
-        p.backend.answers["/api/v1/phone/conversations/\(Self.id)/history?limit=1"] = .success(
-            ["conversation_id": Self.id, "messages": []])
-        p.backend.answers["/api/v1/phone/conversations/\(Self.other)/history?limit=1"] = .success(
-            ["conversation_id": Self.other, "messages": [["id": "1", "role": "user", "text": "hi"]]])
-        _ = try await send(p, ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"])
-        let taken = try await send(p, ["new_conversation_id": Self.other, "text": "hello", "attachments": [], "client_msg_id": "n2"])
+        let chat = "/api/v1/phone/conversations/\(Self.id)/chat", taken = "/api/v1/phone/conversations/\(Self.other)/chat"
+        p.backend.answers["POST " + chat] = .success(["conversation_id": Self.id, "kind": "chat"])
+        p.backend.answers["POST " + taken] = .failure(.code("conversation_exists"))
+        let first: [String: Any] = ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"]
+        _ = try await send(p, first)
+        _ = try await send(p, first)                                           // the phone's retry
+        let refused = try await send(p, ["new_conversation_id": Self.other, "text": "hello", "attachments": [], "client_msg_id": "n2"])
         try await run(p)
-        XCTAssertEqual(words(p, Self.id), ["plan a trip"])
-        XCTAssertTrue(p.backend.posted.isEmpty, "an ordinary one is not stored as quick")
-        XCTAssertEqual(words(p, Self.other), [], "never into a conversation that has messages")
-        let refused = errors(try await heard(p))
-        XCTAssertEqual(refused.map(\.code), ["conversation_exists"])
-        XCTAssertEqual(refused.map(\.related), [taken])
+        XCTAssertEqual(p.backend.posted.map(\.0), [chat, taken], "stored once, never as quick")
+        XCTAssertTrue(p.backend.asked.isEmpty, "no history lookup")
+        XCTAssertEqual(words(p, Self.id), ["plan a trip"], "the same client_msg_id runs once")
+        XCTAssertEqual(words(p, Self.other), [], "never into one that has messages or is a quick question")
+        let got = errors(try await heard(p))
+        XCTAssertEqual(got.map(\.code), ["conversation_exists"])
+        XCTAssertEqual(got.map(\.related), [refused])
     }
 
-    /// §5.8: a refused send is not remembered as run, so the phone's retry runs it; a retry that dropped `quick`
-    /// would start an ordinary chat with every tool, and nothing stored as quick.
-    func testARetryThatDropsQuickIsRefusedAndOneThatRepeatsItRuns() async throws {
-        let p = try await pair()
-        p.backend.answers["POST " + Self.quickPath] = .failure(.code("mac_busy"))
-        p.backend.answers["/api/v1/phone/conversations/\(Self.id)/history?limit=1"] = .success(
-            ["conversation_id": Self.id, "messages": []])
-        var dropped = quick("ramen near me?", client: "c1")
-        dropped["conversation_kind"] = nil
-        var refused = [try await send(p, quick("ramen near me?", client: "c1"))]
-        try await run(p)
-        for _ in 0..<2 { refused.append(try await send(p, dropped)) }               // a second try changes nothing
-        try await run(p)
-        XCTAssertTrue(p.backend.asked.isEmpty, "never looked up as an ordinary conversation")
-        XCTAssertEqual(words(p, Self.id), [], "Arslan never sees it")
-        let got = errors(try await heard(p))
-        XCTAssertEqual(got.map(\.code), ["mac_busy", "bad_request", "bad_request"])
-        XCTAssertEqual(got.map(\.related), refused)
-
-        p.backend.answers["POST " + Self.quickPath] = .success(["conversation_id": Self.id, "kind": "quick"])
-        _ = try await send(p, quick("ramen near me?", client: "c1"))
-        try await run(p)
-        XCTAssertEqual(p.backend.posted.map(\.0), [Self.quickPath, Self.quickPath], "stored as quick on the retry")
-        XCTAssertEqual(words(p, Self.id), ["ramen near me?"])
-    }
-
-    func testARetryThatAddsQuickIsRefusedToo() async throws {
-        let p = try await pair()
-        p.backend.answers["POST " + Self.quickPath] = .success(["conversation_id": Self.id, "kind": "quick"])
-        let ordinary: [String: Any] = ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"]
-        let first = try await send(p, ordinary)                                     // its history lookup fails
-        try await run(p)
-        let added = try await send(p, quick("plan a trip", client: "n1"))
-        try await run(p)
-        XCTAssertTrue(p.backend.posted.isEmpty, "never stored as quick")
-        XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty })
-        let got = errors(try await heard(p))
-        XCTAssertEqual(got.map(\.code), ["mac_busy", "bad_request"])
-        XCTAssertEqual(got.map(\.related), [first, added])
-    }
-
-    func testANewConversationWhoseHistoryCannotBeReadIsRefused() async throws {
-        let p = try await pair()                                                    // the lookup fails: the Mac is busy
-        let sent = try await send(p, ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"])
-        try await run(p)
-        XCTAssertEqual(p.backend.asked, ["/api/v1/phone/conversations/\(Self.id)/history?limit=1"])
-        XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "not sent, not even to the pocket")
-        let got = errors(try await heard(p))
-        XCTAssertEqual(got.map(\.code), ["mac_busy"])
-        XCTAssertEqual(got.map(\.related), [sent])
+    func testWhenTheMacCannotStoreAnOrdinaryOneItsWordsNeverReachArslan() async throws {
+        for code in ["conversation_exists", "mac_busy", "bad_request"] {
+            let p = try await pair()
+            p.backend.answers["POST /api/v1/phone/conversations/\(Self.id)/chat"] = .failure(.code(code))
+            let sent = try await send(p, ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"])
+            try await run(p)
+            XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "\(code): nothing went to Arslan, not even the pocket")
+            let got = errors(try await heard(p))
+            XCTAssertEqual(got.map(\.code), [code])
+            XCTAssertEqual(got.map(\.related), [sent])
+        }
     }
 
     func testThePhonesSendTimeGoesWithItsWords() async throws {
