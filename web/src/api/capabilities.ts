@@ -13,6 +13,8 @@ export interface CapabilityRow {
   last_used: string | null;
   /** The capability source of what was installed from a card (its dossier). */
   source_id: string | null;
+  /** How a connection is reached (its command and arguments, or its address); the search matches it. */
+  reach: string | null;
   /** A professional method's version (`method:<key>` rows). */
   revision?: number;
   /** on: offered now · off: switched off · setup: one step missing · na: cannot work here */

@@ -253,6 +253,21 @@ async def test_a_server_number_in_other_digits_is_refused(api, execution_db, tmp
     assert await _state(execution_db, tmp_path) == before
 
 
+async def test_a_connection_says_how_it_is_reached_and_others_do_not(api, execution_db, tmp_path):
+    """#500 recheck: the page's search finds a connection by its command and arguments, or its address."""
+    await _seed(execution_db, tmp_path)
+    rows = await _rows(api)
+    assert (rows["mcp:1"]["reach"], rows["mcp:2"]["reach"]) == ("https://mcp.example.test/", "npx")
+    assert rows["terminal"]["reach"] is None and rows["skill:csv-tidy"]["reach"] is None
+
+
+def test_a_connection_is_deleted_only_through_the_capabilities_list():
+    """#500 recheck: DELETE /mcp/servers/{id} skipped an installed connection's removal (no Trash, the source left
+    "installed") and had no caller left; DELETE /capabilities/mcp:<id> is the one way."""
+    from server.api import mcp as mcp_api
+    assert not [route for route in mcp_api.router.routes if "DELETE" in getattr(route, "methods", set())]
+
+
 async def test_a_row_the_server_would_refuse_offers_no_delete_whatever_its_origin(api, execution_db, tmp_path):
     """#500 review F3: deleting also needs a plain key, so the page's flag says so too; nothing writes such a key
     today."""

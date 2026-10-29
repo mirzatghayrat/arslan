@@ -12,7 +12,7 @@ vi.mock("../api/mcp", () => ({
   listMcpServers: vi.fn().mockResolvedValue([]), listMcpTools: vi.fn().mockResolvedValue([]),
 }));
 
-import CapabilitySwitches, { usedLabel } from "../components/CapabilitySwitches";
+import CapabilitySwitches, { isolate, usedLabel } from "../components/CapabilitySwitches";
 import { capabilitiesApi, type CapabilityRow } from "../api/capabilities";
 import { ApiError } from "../api/client";
 import { professionalMethodsApi } from "../api/professionalMethods";
@@ -21,7 +21,7 @@ import { OPEN_SECTION_EVENT } from "../lib/sections";
 import { capabilityListMessages } from "../locales/capabilityList";
 
 const row = (over: Partial<CapabilityRow>): CapabilityRow => ({ key: "x", section: "builtin", origin: "builtin",
-  deletable: false, last_used: null, source_id: null, state: "on", tools: [], switch: null, reason: null, fix: null,
+  deletable: false, last_used: null, source_id: null, reach: null, state: "on", tools: [], switch: null, reason: null, fix: null,
   name: null, detail: null, ...over });
 
 const SKILL = { section: "skills", origin: "installed", deletable: true, switch: "skill" } as const;
@@ -31,11 +31,12 @@ const ROWS: CapabilityRow[] = [
   row({ key: "hands", state: "setup", reason: "hands_missing", fix: "open_settings:abilities" }),
   row({ key: "web", state: "setup", reason: "no-key", fix: "open_settings:connections" }),
   row({ key: "mcp:2", section: "connections", origin: "manual", deletable: true, state: "na", reason: "runtime_missing",
-        detail: "npx", name: "Files" }),
+        detail: "npx", name: "Files", reach: "npx -y @playwright/mcp@latest" }),
   row({ key: "mcp:3", section: "connections", origin: "installed", deletable: true, source_id: "m3", state: "setup",
         reason: "mcp_error", fix: "open_tab:mcps", name: "Broken", switch: "mcp", detail: "401" }),
   ...Array.from({ length: 8 }, (_, i) => row({ key: `skill:s${i}`, ...SKILL, name: `Skill ${i}`, detail: `does ${i}` })),
   row({ key: "skill:mine", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Mine" }),
+  row({ key: "skill:gh-acme", section: "skills", origin: "installed", deletable: true, switch: "skill", name: "Acme" }),
   row({ key: "method:research", section: "skills", revision: 2, name: "Research, my way" }),
   row({ key: "method:product-design", section: "skills", revision: 1 }),
 ];
@@ -119,6 +120,7 @@ describe("capability list", () => {
     await screen.findByTestId("cap-terminal");
     fireEvent.click(screen.getByTestId("cap-more-skills"));
     for (const [key, body] of [["skill:mine", "deleteBodyAuthored"], ["skill:s0", "deleteBodyInstalledSkill"],
+      ["skill:gh-acme", "deleteBodyAuthored"],               // Discover's: no link to add it again from
       ["mcp:2", "deleteBodyManual"], ["mcp:3", "deleteBodyInstalledConnection"]]) {
       fireEvent.click(screen.getByTestId(`cap-delete-${key}`));
       expect(await screen.findByTestId("confirm-sheet")).toHaveTextContent(`capabilityList.${body}`);
@@ -156,6 +158,20 @@ describe("capability list", () => {
     fireEvent.click(within(await screen.findByTestId("confirm-sheet")).getByRole("button", { name: /^capabilityList\.delete/ }));
     expect(await within(screen.getByTestId("cap-sheet")).findByTestId("cap-sheet-error"))
       .toHaveTextContent("capabilityList.deleteRefused");
+  });
+
+  it("a connection is found by how it is reached, not only by its label", async () => {
+    vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
+    render(<CapabilitySwitches />);
+    await screen.findByTestId("cap-terminal");
+    fireEvent.change(screen.getByTestId("cap-search"), { target: { value: "@playwright" } });
+    expect(screen.getByTestId("cap-mcp:2")).toBeInTheDocument();
+    expect(screen.queryByTestId("cap-mcp:3")).toBeNull();
+  });
+
+  it("an isolated name cannot close its isolate early or reorder what follows", () => {
+    expect(isolate("Notes\u2069\u202E evil\u200F")).toBe("\u2068Notes evil\u2069");
+    expect(isolate("plain")).toBe("\u2068plain\u2069");
   });
 
   it("outside names are isolated, in the row and inside Arslan's own sentences", async () => {
@@ -243,7 +259,7 @@ describe("capability list", () => {
     vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
     render(<CapabilitySwitches />);
     await screen.findByTestId("cap-terminal");
-    expect(screen.getByTestId("cap-filter-on")).toHaveTextContent("capabilityList.filterOn:12");
+    expect(screen.getByTestId("cap-filter-on")).toHaveTextContent("capabilityList.filterOn:13");
     expect(screen.getByTestId("cap-filter-canTurnOn")).toHaveTextContent("capabilityList.filterCanTurnOn:4");
     fireEvent.click(screen.getByTestId("cap-filter-canTurnOn"));
     expect(screen.queryByTestId("cap-terminal")).toBeNull();
@@ -259,7 +275,7 @@ describe("capability list", () => {
     const box = screen.getByTestId("cap-search");
     fireEvent.change(box, { target: { value: "skill" } });
     expect(screen.queryByTestId("cap-terminal")).toBeNull();
-    expect(within(screen.getByTestId("cap-section-skills")).getAllByRole("switch")).toHaveLength(9);   // not folded
+    expect(within(screen.getByTestId("cap-section-skills")).getAllByRole("switch")).toHaveLength(10);   // not folded
     fireEvent.change(box, { target: { value: "nothing like this" } });
     expect(screen.getByTestId("cap-no-match")).toHaveTextContent("capabilityList.noMatch:nothing like this");
   });
@@ -270,7 +286,7 @@ describe("capability list", () => {
     const skills = await screen.findByTestId("cap-section-skills");
     expect(within(skills).getAllByTestId(/^cap-open-/)).toHaveLength(6);
     fireEvent.click(screen.getByTestId("cap-more-skills"));
-    expect(within(skills).getAllByTestId(/^cap-open-/)).toHaveLength(11);
+    expect(within(skills).getAllByTestId(/^cap-open-/)).toHaveLength(12);
   });
 
   it("adds by hand from the connections header and pastes a link from the side", async () => {

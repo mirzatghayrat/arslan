@@ -22,7 +22,6 @@ vi.mock("../api/mcp", () => ({
   // connect's RESPONSE is the discovered tool list — the component renders it directly
   connectMcpServer: (...a: unknown[]) => connect(...a),
   reconnectMcpServer: vi.fn(),
-  deleteMcpServer: vi.fn(),
   exposeMcpServer: vi.fn(),
   listMcpTools: (...a: unknown[]) => tools(...a),
   wireMcpTool: vi.fn(),

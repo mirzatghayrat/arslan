@@ -27,7 +27,9 @@ const DELETE_BODY: Record<string, string> = {
 };
 /** A name from outside (a SKILL.md, a server label) inside one of Arslan's sentences: isolated, so bidi controls
  *  in it cannot reorder the sentence around it (#500 review). */
-const isolate = (text: string) => `\u2068${text}\u2069`;
+export const isolate = (text: string) => `\u2068${text.replace(BIDI_CONTROLS, "")}\u2069`;
+/** Marks and controls that could close the isolate early or reorder what follows it (#500 recheck). */
+const BIDI_CONTROLS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -81,7 +83,8 @@ export default function CapabilitySwitches() {
   }
   async function remove(row: CapabilityRow) {
     const label = isolate(name(row));
-    const body = DELETE_BODY[`${row.section}:${row.origin}`];
+    // A skill made in Discover before v0.1.64 has no link to add it again from, and its text was a model's draft.
+    const body = row.key.startsWith("skill:gh-") ? "capabilityList.deleteBodyAuthored" : DELETE_BODY[`${row.section}:${row.origin}`];
     const ok = await confirmSheet({ title: t("capabilityList.deleteTitle", { name: label }), action: t("capabilityList.delete"),
       body: body ? t(body) : undefined });
     if (!ok) return;
@@ -114,7 +117,8 @@ export default function CapabilitySwitches() {
   const all = rows ?? [];
   const counts = { on: all.filter(r => r.state === "on").length, canTurnOn: all.filter(r => r.state === "off" || r.state === "setup").length };
   const inFilter = all.filter(r => filter === "all" || (filter === "on" ? r.state === "on" : r.state === "off" || r.state === "setup"));
-  const shown = inFilter.filter(r => matches({ key: r.key, name: name(r), description: what(r) }, query));
+  // A connection is also found by how it is reached ("the one I pointed at playwright").
+  const shown = inFilter.filter(r => matches({ key: r.key, name: name(r), description: [what(r), r.reach ?? ""].join(" ") }, query));
   const searching = query.trim() !== "";
   const opened = sheet?.kind === "row" ? all.find(r => r.key === sheet.key) : undefined;
 

@@ -18,7 +18,6 @@ vi.mock("../api/mcp", () => ({
   addMcpServer: vi.fn(),
   connectMcpServer: vi.fn(async () => ({})),
   reconnectMcpServer: vi.fn(),
-  deleteMcpServer: vi.fn(),
   listMcpTools: vi.fn(async () => []),
   wireMcpTool: vi.fn(),
   authorizeMcpOauth: (...a: unknown[]) => authorize(...a),

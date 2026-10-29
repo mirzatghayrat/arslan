@@ -46,9 +46,6 @@ export const setMcpServerHost = (id: number, allowed: boolean) =>
 export const reconnectMcpServer = (id: number) =>
   request<{ ok: boolean }>(`/mcp/servers/${id}/reconnect`, { method: "POST" });
 
-export const deleteMcpServer = (id: number) =>
-  request<{ ok: boolean }>(`/mcp/servers/${id}`, { method: "DELETE" });
-
 /** Kick the interactive OAuth flow; the shell must open the returned URL.
  * Provenance rule (③A): this URL travels backend → here → open_external and
  * nothing else may mint one. */

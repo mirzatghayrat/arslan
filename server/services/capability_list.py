@@ -47,14 +47,16 @@ def _row(key: str, state: str, *, tools: tuple[str, ...] = (), switch: str | Non
          reason: str | None = None, fix: str | None = None, name: str | None = None,
          detail: str | None = None, section: str = "builtin", origin: str = "builtin",
          source_id: str | None = None, uses: tuple[str, ...] | None = None, family: str | None = None,
-         removable: bool = True) -> dict:
+         removable: bool = True, reach: str | None = None) -> dict:
     """`uses`: the tools whose calls count as this row's use, whatever its state (default: `tools`); `family`:
     a tool-name prefix whose every call counts too (the browser's, Hands', Shortcuts'). `source_id`: the
     capability source of what was installed from a card (its dossier). `removable`: False when `remove` would
-    refuse the row whatever its origin (a skill key that is not a plain key), so the page offers no button."""
+    refuse the row whatever its origin (a skill key that is not a plain key), so the page offers no button.
+    `reach`: how a connection is reached (its command and arguments, or its address), which the page's search
+    matches too (#500 recheck: "the one I pointed at playwright" is how people find it)."""
     return {"key": key, "state": state, "tools": list(tools), "switch": switch, "reason": reason,
             "fix": fix, "name": name, "detail": detail, "section": section, "origin": origin,
-            "deletable": origin in DELETABLE and removable, "source_id": source_id,
+            "deletable": origin in DELETABLE and removable, "source_id": source_id, "reach": reach,
             "_uses": (tools if uses is None else uses, family)}
 
 
@@ -156,7 +158,9 @@ async def _mcp_rows() -> list[dict]:
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         # CAP3a-1: installed from a card (its capability source) or added by hand; its use is its tools'
         # calls (`mcp_<id>__…`, see capabilities()).
-        where = {"section": "connections", "source_id": installed.get(server["id"]),
+        reach = " ".join(part for part in (server.get("command") or "", *(server.get("args") or []),
+                                           server.get("url") or "") if part)
+        where = {"section": "connections", "source_id": installed.get(server["id"]), "reach": reach,
                  "origin": "installed" if server["id"] in installed else "manual"}
         missing = _runtime_missing(server)
         allowed = bool(server.get("host_allowed"))

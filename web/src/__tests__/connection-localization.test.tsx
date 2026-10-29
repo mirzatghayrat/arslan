@@ -6,7 +6,7 @@ import McpServers from "../components/McpServers";
 
 vi.mock("../api/mcp", () => ({
   listMcpServers: vi.fn(async () => []),
-  addMcpServer: vi.fn(), connectMcpServer: vi.fn(), deleteMcpServer: vi.fn(),
+  addMcpServer: vi.fn(), connectMcpServer: vi.fn(),
   exposeMcpServer: vi.fn(), listMcpTools: vi.fn(), reconnectMcpServer: vi.fn(),
   setMcpServerHost: vi.fn(), wireMcpTool: vi.fn(), authorizeMcpOauth: vi.fn(),
   getMcpOauthStatus: vi.fn(),
