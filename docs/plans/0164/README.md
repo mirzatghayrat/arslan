@@ -228,15 +228,17 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 
 | Number | Card | What | Where |
 |---|---|---|---|
-| 0071 | Q1 + SUB | The shared `kind` / parent / title columns on `conversation_contexts` | Reserved; Q1a opens it |
+| 0071 | Q1 + SUB | The shared `kind` / parent / title columns on `conversation_contexts` | Merged (#479) |
 | 0072 | INB2 | `runs.read_outside` | #475 |
 | 0073 | C7c-2 | Drop `router_decisions` | #450 |
 | 0074 | CAP1b | Drop `discovery_candidates` | Merged (#457) |
 | 0075 | CAP1c | Drop `capability_finds` | #473 |
 | 0076 | PRJ0 | Its table drop, after #459 | ③Hands |
 | 0077 | CAP2b | Drop `skill_candidates` | ⑤CAP |
+| 0078 | Q1 #3 | Where a converted quick question starts to learn, on `conversation_contexts` (the user's decision of 2026-10-29: the quick turns before it never learn) | ②Main |
+| 0079 | SB1 | Pinning a conversation in the sidebar, a flag on `conversation_contexts`; lands after the pocket deletion and INB4 | ⓪Plan's card |
 
-The next free number is 0078.
+The next free number is 0080.
 
 ## 7. 门槛（R64，草稿）
 
