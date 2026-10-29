@@ -60,6 +60,7 @@ export default function Sidebar(props: SidebarProps) {
     .slice(0, SIDEBAR_PROJECTS);
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
+  // DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
   const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "")), meta);
   const activeProject = projectOf(threads.find(thread => thread.id === activeThreadId) ?? { id: "", title: "" });
   const [openProjects, setOpenProjects] = useState<string[]>(() => {

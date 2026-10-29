@@ -10,7 +10,7 @@ host anyway, so nothing is promised about the network.
 Seatbelt applies the LAST matching rule (measured 2026-10-03): the protected
 paths come last, so they stay closed even inside a writable folder. It matches
 real paths, so every path is resolved first, and JSON-quoted (valid SBPL) so a
-folder name cannot inject rules.
+folder name cannot inject rules. The text is written with `sandbox_profile` (SBX-1).
 
 A Unix socket is reached with connect(), which the file rule does not cover
 (measured 2026-10-03: a sandboxed python3 connected to a 0600 socket inside a
@@ -31,7 +31,6 @@ conversation" — that last one is a stored grant (`outside` / `*`, S4a: `permis
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -39,15 +38,13 @@ import sys
 import tempfile
 from pathlib import Path
 
+from server.services.sandbox_profile import Profile, file_or_folder, literal, real as _real, subpath
+
 _available: bool | None = None
 
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
 # sandbox-exec prints when it cannot start inside another sandbox.
 _DENIED = re.compile(r"operation not permitted", re.I)
-
-
-def _real(path: Path | str) -> Path:
-    return Path(os.path.realpath(os.path.expanduser(str(path))))
 
 
 _CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
@@ -124,11 +121,6 @@ def default_protected() -> list[Path]:
     return [*arslan_protected(), *user_secrets()]
 
 
-def _rule(path: Path) -> str:
-    kind = "literal" if path.is_file() else "subpath"
-    return f"({kind} {json.dumps(str(path))})"
-
-
 def _inside(path: Path, folders: list[Path]) -> bool:
     return any(path == folder or folder in path.parents for folder in folders)
 
@@ -143,30 +135,28 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
     # S2a-1: no Apple Events from the sandbox. On macOS 26 any seatbelt wrapper already makes them
     # fail (-10004, measured 2026-10-20); the rule makes it explicit (they fail with -600) and holds
     # wherever that is not so. Nothing lifts it: an approved osascript cannot work inside seatbelt.
-    lines = ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+    rules = Profile("allow")
+    rules.deny("appleevent-send")
     if offline:
-        lines.append("(deny network*)")
-    lines.append('(deny file-write* (subpath "/"))')
-    if writable:
-        lines.append("(allow file-write* " + " ".join(_rule(_real(p)) for p in writable) + ")")
+        rules.deny("network*")
+    rules.deny("file-write*", subpath("/"))
+    writable = [_real(p) for p in writable]
+    rules.allow_paths("file-write*", writable, file_or_folder)
     shut = [_real(p) for p in closed]
     if shut:
-        lines.append("(deny file-read* file-write* " + " ".join(_rule(p) for p in shut) + ")")
-        open_rw = [p for p in map(_real, writable) if _inside(p, shut)]
+        rules.deny("file-read* file-write*", *map(file_or_folder, shut))
+        open_rw = [p for p in writable if _inside(p, shut)]
         open_r = [p for p in map(_real, readable) if _inside(p, shut) and p not in open_rw]
-        if open_rw:
-            lines.append("(allow file-read* file-write* " + " ".join(_rule(p) for p in open_rw) + ")")
-        if open_r:
-            lines.append("(allow file-read* " + " ".join(_rule(p) for p in open_r) + ")")
-    if protected:
-        closed = " ".join(_rule(_real(p)) for p in protected)
-        lines.append("(deny file-read* file-write* " + closed + ")")
-        lines.append("(deny network-outbound " + closed + ")")   # sockets under them
-    if copies:
-        # S2a-1 piece 5: the saved tool outputs this conversation was given, read-only and one file at
-        # a time, after the protected paths (the last rule wins). Never the folder: `ls` stays closed.
-        lines.append(_copies_rule(copies))
-    return "\n".join(lines) + "\n"
+        rules.allow_paths("file-read* file-write*", open_rw, file_or_folder)
+        rules.allow_paths("file-read*", open_r, file_or_folder)
+    shut_to_all = [file_or_folder(_real(p)) for p in protected]
+    if shut_to_all:
+        rules.deny("file-read* file-write*", *shut_to_all)
+        rules.deny("network-outbound", *shut_to_all)   # sockets under them
+    # S2a-1 piece 5: the saved tool outputs this conversation was given, read-only and one file at
+    # a time, after the protected paths (the last rule wins). Never the folder: `ls` stays closed.
+    rules.allow_paths("file-read*", map(_real, copies), literal)
+    return rules.text()
 
 
 def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
@@ -180,10 +170,6 @@ def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
                     closed=closed, readable=readable, copies=copies)]
 
 
-def _copies_rule(copies) -> str:
-    return "(allow file-read* " + " ".join(f"(literal {json.dumps(str(_real(p)))})" for p in copies) + ")"
-
-
 def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
     """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
     the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
@@ -191,14 +177,15 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
     ssh, git push, gh and aws need them out here. The saved copies this conversation was given stay
     readable, file by file (piece 5). An approved plain osascript or `shortcuts run` runs with no
     wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events."""
-    lines = ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+    rules = Profile("allow")
+    rules.deny("appleevent-send")
     if offline:
-        lines.append("(deny network*)")
-    ours = " ".join(_rule(p) for p in arslan_protected())
-    lines += [f"(deny file-read* file-write* {ours})", f"(deny network-outbound {ours})"]
-    if copies:
-        lines.append(_copies_rule(copies))
-    return "\n".join(lines) + "\n"
+        rules.deny("network*")
+    ours = [file_or_folder(p) for p in arslan_protected()]
+    rules.deny("file-read* file-write*", *ours)
+    rules.deny("network-outbound", *ours)
+    rules.allow_paths("file-read*", map(_real, copies), literal)
+    return rules.text()
 
 
 def outside_wrapper(*, offline: bool = False, copies: list[Path] = ()) -> list[str] | None:

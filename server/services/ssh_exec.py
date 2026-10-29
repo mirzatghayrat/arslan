@@ -40,6 +40,7 @@ from pathlib import Path
 
 from server.services import ssh_keys
 from server.services.code_sandbox import _seatbelt_wrapper
+from server.services.sandbox_profile import Profile, remote_tcp
 from arslan.aio import within
 
 logger = logging.getLogger(__name__)
@@ -89,8 +90,10 @@ def ssh_profile() -> str:
     """Deny all network except outbound tcp/22. See the module docstring for the
     measurement behind the `*` — a literal address here is a hard sandbox-exec
     error, not a stricter policy."""
-    return ('(version 1)\n(allow default)\n(deny network*)\n'
-            f'(allow network-outbound (remote tcp "*:{SSH_PORT}"))\n')
+    rules = Profile("allow")
+    rules.deny("network*")
+    rules.allow("network-outbound", remote_tcp("*", SSH_PORT))
+    return rules.text()
 
 
 def remote_command_line(command: str, argv: list[str]) -> str:

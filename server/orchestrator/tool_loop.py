@@ -373,7 +373,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     framed = (raw_payload if result.get("external") is False else wrap_external(raw_payload)
               if _untrusted.from_the_web(tool_key, args) else _untrusted.wrap_tool_output(raw_payload))
     if result.get("ok") and (_untrusted.counts_as_external(tool_key, args)
-                             or (tool_key == "read_skill" and result.get("external") is True)):
+                             or (tool_key in ("read_skill", "background_status")      # S64-0b: per result
+                                 and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
     # hint sits AFTER the data frame — it is OUR trusted framing (like the
@@ -2809,6 +2810,9 @@ async def run_native(**kwargs) -> dict:
     from server.orchestrator import untrusted as _untrusted
     from server.services import tool_outputs
     seen = _untrusted.track_turn()
+    if _untrusted.history_from_outside(kwargs.get("history")) or _untrusted.context_from_outside(
+            kwargs.get("user_content")):
+        _untrusted.mark_external()       # S64-0b: a job's result framed as outside content, or a summary of one
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
     copies_of = tool_outputs.conversation.set(kwargs.get("conversation_id"))

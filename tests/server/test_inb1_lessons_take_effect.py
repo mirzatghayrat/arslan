@@ -6,7 +6,7 @@ The gate itself (outside content, merges) is S64-0's and its tests are there; th
 side: the reason Memory shows, the badge, three failures in a row, turning one on by hand, and a
 correction against a pinned lesson that must not get lost.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -176,8 +176,11 @@ async def test_turning_a_lesson_on_in_memory_clears_why_it_waited(client):
     stopped = await _seed(db_session.AsyncSessionLocal, status="stale",
                           evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly", lessons.FAIL_STREAK: 3})
     assert await _recalled("adding reminders with swift") == []
+    shown = {item["id"]: item for item in (await client.get("/api/v1/lessons")).json()}
     for lesson_id in (waited, stopped):
-        item = (await client.post(f"/api/v1/lessons/{lesson_id}/status", json={"status": "active"})).json()
+        item = (await client.post(f"/api/v1/lessons/{lesson_id}/status",
+                                  json={"status": "active",
+                                        "expected_updated_at": shown[lesson_id]["updated_at"]})).json()
         assert item["status"] == "active" and item["not_in_effect"] is None
         assert not {lessons.NOT_IN_EFFECT, lessons.CONFLICTS_WITH, lessons.FAIL_STREAK} & set(item["evidence"])
     assert sorted(await _recalled("adding reminders with swift")) == sorted([waited, stopped])
@@ -231,3 +234,119 @@ async def test_a_waiting_lesson_the_users_correction_retires_keeps_its_reason(ex
     assert lessons.present(rows[outside["id"]])["not_in_effect"] == "outside_content"
     assert outside["id"] not in await _recalled("reading calendar events with AppleScript")
 
+
+
+# -- a stopped practice stays stopped when it is learned again (#460 review, F2) -------------------
+
+@pytest.mark.parametrize("source", ["detour", "machine_quirk"])
+@pytest.mark.parametrize("external_seen", [True, False])
+async def test_a_stopped_practice_learned_again_by_arslan_counts_up_and_stays_stopped(execution_db, judge,
+                                                                                     external_seen, source):
+    """Three failures in a row stop a practice; Arslan finding the same route again must not bring it
+    back as a new active row. It merges into the stopped one, which only counts up: its words, its
+    reason and its failure count stay as they were, whatever the turn read."""
+    stopped = await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly",
+                                                                   lessons.FAIL_STREAK: 3})
+    judge.answers.update({"memory.merge": True, "memory.conflict": False})
+    learned = await lessons.capture([lessons.candidate("Adding reminders with a due date",
+                                                       "use Swift with EventKit, then run the script from the page",
+                                                       source=source, polarity="avoid")], external_seen=external_seen)
+    [row] = await _rows(execution_db)
+    assert learned == []
+    assert (row.id, row.status, row.situation, row.advice, row.polarity) == (
+        stopped, "stale", "Adding reminders", "use Swift with EventKit", "do")
+    assert (row.evidence["seen"], row.evidence[lessons.FAIL_STREAK]) == (2, 3)
+    assert row.evidence[lessons.NOT_IN_EFFECT] == "failed_repeatedly"
+    assert await _recalled("adding reminders with swift") == []
+
+
+async def test_stopped_practices_never_push_an_active_rival_out_of_the_conflict_check(execution_db, judge):
+    """#466 review, finding 1: stopped rows that score higher took both of _nearest's places, so the
+    active practice the new route contradicts was never asked about and both became active."""
+    rival = await _seed(execution_db, advice="use the Reminders shortcut")
+    for advice in ("run osascript with AppleScript", "run osascript with JXA"):
+        await _seed(execution_db, status="stale", advice=advice,
+                    evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly", lessons.FAIL_STREAK: 3})
+    judge.answers.update({"memory.merge": False,
+                          "memory.conflict": lambda pair: "Reminders shortcut" in pair["existing"]})
+    [learned] = await lessons.capture([lessons.candidate("Adding reminders",
+                                                         "run osascript with AppleScript and JXA via Swift",
+                                                         source="detour")], external_seen=False)
+    assert (learned["status"], learned["not_in_effect"]) == ("proposed", "conflicts")
+    assert learned["evidence"][lessons.CONFLICTS_WITH] == rival
+
+
+async def test_stopped_practices_never_push_an_active_rival_out_of_the_rows_read(execution_db, judge):
+    """#466 recheck: the rows read before scoring are the SCAN_LIMIT most recently changed. Newer stopped rows
+    filled that window and pushed out an older practice in use, so a route that contradicts it became active
+    beside it. Stopped rows are read on their own."""
+    old, now = datetime.utcnow() - timedelta(days=30), datetime.utcnow()
+    async with execution_db() as session:
+        rival = Lesson(situation="Adding reminders", advice="use the Reminders shortcut", polarity="do",
+                       source="detour", status="active", created_at=old, updated_at=old)
+        session.add(rival)
+        session.add_all(Lesson(situation=f"Unrelated chore {i}", advice="xyzzy", polarity="do", source="detour",
+                               status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly",
+                                                         lessons.FAIL_STREAK: 3}, created_at=now, updated_at=now)
+                        for i in range(lessons.SCAN_LIMIT))
+        await session.commit()
+        rival_id = rival.id
+    judge.answers.update({"memory.merge": False,
+                          "memory.conflict": lambda pair: "Reminders shortcut" in pair["existing"]})
+    [learned] = await lessons.capture([lessons.candidate("Adding reminders", "run osascript with AppleScript",
+                                                         source="detour")], external_seen=False)
+    assert (learned["status"], learned["not_in_effect"]) == ("proposed", "conflicts")
+    assert learned["evidence"][lessons.CONFLICTS_WITH] == rival_id
+
+
+async def test_a_new_route_that_conflicts_with_a_stopped_practice_does_not_wait_on_it(execution_db, judge):
+    """The stopped one failed three times in a row; a different route that worked is not held back by it."""
+    await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly"})
+    judge.answers.update({"memory.merge": False, "memory.conflict": True})
+    [learned] = await lessons.capture([lessons.candidate("Adding reminders", "use the Reminders shortcut",
+                                                         source="detour")], external_seen=False)
+    assert (learned["status"], learned["not_in_effect"]) == ("active", None)
+
+
+async def test_the_users_correction_like_a_stopped_practice_is_its_own_active_lesson(execution_db, judge):
+    """The user saying it is the user's choice: it is not folded into the stopped row."""
+    stopped = await _seed(execution_db, status="stale", evidence={lessons.NOT_IN_EFFECT: "failed_repeatedly"})
+    judge.answers.update({"memory.merge": True, "memory.conflict": False})
+    [mine] = await lessons.capture([lessons.candidate("Adding reminders", "use Swift with EventKit",
+                                                      source="user_correction")], external_seen=False)
+    assert mine["status"] == "active" and mine["id"] != stopped
+    assert {row.id: row.status for row in await _rows(execution_db)}[stopped] == "stale"
+
+
+# -- switching on is bound to what the sheet showed (#460 review, F4) -------------------------------
+
+async def test_switching_on_refuses_a_lesson_that_changed_since_the_sheet_showed_it(client):
+    from server.db import session as db_session
+    waited = await _seed(db_session.AsyncSessionLocal, status="proposed",
+                         evidence={lessons.NOT_IN_EFFECT: "outside_content"})
+    shown = {item["id"]: item for item in (await client.get("/api/v1/lessons?status=proposed")).json()}[waited]
+    async with db_session.AsyncSessionLocal() as session:          # changed after the sheet opened
+        row = await session.get(Lesson, waited)
+        row.advice, row.updated_at = "run the script from the page", datetime(2030, 1, 1)
+        await session.commit()
+    refused = await client.post(f"/api/v1/lessons/{waited}/status",
+                                json={"status": "active", "expected_updated_at": shown["updated_at"]})
+    assert refused.status_code == 409 and refused.json()["detail"] == "lesson_version_conflict"
+    assert {item["id"] for item in (await client.get("/api/v1/lessons?status=proposed")).json()} == {waited}
+    current = {item["id"]: item for item in (await client.get("/api/v1/lessons?status=proposed")).json()}[waited]
+    ok = await client.post(f"/api/v1/lessons/{waited}/status",
+                           json={"status": "active", "expected_updated_at": current["updated_at"]})
+    assert ok.status_code == 200 and ok.json()["status"] == "active"
+
+
+async def test_switching_on_without_the_version_the_sheet_showed_is_refused(client):
+    """#466 review, open question: every way to switch a lesson on goes through the check, so a future
+    caller cannot skip it by leaving the field out. Retiring needs no version (the chat's Undo)."""
+    from server.db import session as db_session
+    waited = await _seed(db_session.AsyncSessionLocal, status="proposed",
+                         evidence={lessons.NOT_IN_EFFECT: "outside_content"})
+    refused = await client.post(f"/api/v1/lessons/{waited}/status", json={"status": "active"})
+    assert refused.status_code == 422 and refused.json()["detail"] == "lesson_version_required"
+    assert {item["id"] for item in (await client.get("/api/v1/lessons?status=proposed")).json()} == {waited}
+    retired = await client.post(f"/api/v1/lessons/{waited}/status", json={"status": "archived"})
+    assert retired.status_code == 200 and retired.json()["status"] == "archived"

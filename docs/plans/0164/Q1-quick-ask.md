@@ -95,6 +95,7 @@
    - 服务端：`server/services/phone_reads.py:22-23`（`REMOTE_ID`、`REMOTE_TITLE`）、`:263-264`（现算成 `remote`）、`server/api/conversations.py:106-107`（列表里改名 Remote）；
    - 网页：`web/src/lib/threadTitles.ts:11`、`web/src/lib/conversationMeta.ts:19`、`:27`、`:41-44`（`remoteFirst`）。
    - 开工时再 `git grep -n 'pocket\|REMOTE_ID\|remoteFirst\|sidebar.remote'` 一遍，列全了再写注释。翻译键 `sidebar.remote` 也算：它在 6 种语言的 `web/src/locales/*.json` 里是嵌套的 `remote`，上面那条 `git grep` 查不到，要另查。删的那一版用同一条 `git grep` 查不到为证。
+   - Correction (⓪Plan's review of #479, F6): the locale key `sidebar.remote` stays. `RemoteChip` in `web/src/components/OrchestratorChat.tsx`, the trace on a message the phone sent, uses it too. Only its use in `threadTitles.ts`, the pocket's title, goes with the pocket.
 8. PR 描述写完成证据四项（`docs/sessions.md` §8）。
 
 ## 验收
@@ -170,3 +171,27 @@
   - notify 收窄（INB 第 5 条）会改变所有手机（包括旧版）收到的推送，单独让用户定。
 
 **用户 10-28 定：照 ①iOS 的建议。** 翻页这一版做；改名先不做（`conversation.update` 不带 `title`，`conversation.rename` 撤掉）；「做完未看」按手机的 `hello` 降级；四行简报和子会话上手机顺延 v0.1.65。**notify 收窄（「推送只推要你做的」）还没定，单独问用户。** 10-26 §4b 的两点（`phone-<uuid>`、`outcomes` 只放已结束的任务）仍由 ②Main 定。
+
+## Frame names, fixed (②Main, 2026-10-29)
+
+①iOS builds Q1c against these. The names are ①iOS's, as the user approved on 10-28; A–C are the details this card left to ②Main.
+
+- **`hello.capabilities`:** the Mac adds `new_conversation` and `quick`; the phone adds `quick`. A Mac that says `quick` always also says `new_conversation`.
+- **`chat.send`** gains `new_conversation_id` and `conversation_kind: "quick"`. `conversation_kind` is valid only together with `new_conversation_id`, and `quick` is its only value. The Mac stores `kind=quick` before it runs the message; if it can't, it refuses, and the backend never sees the text.
+  - **A (§4b):** the phone makes `new_conversation_id` as `phone-` plus a lowercase UUID v4.
+  - **B, new error codes** (in `error`, with `related_id` = that `chat.send`):
+    - `bad_request`: `conversation_kind` without `new_conversation_id`, an unknown kind, an id not shaped `phone-<uuid>`, or an unknown `conversations.list` `kind`;
+    - `conversation_exists`: `new_conversation_id` names a conversation that already has messages.
+
+    A retry with the same `client_msg_id` gets the first result, so it never trips `conversation_exists`.
+- **`conversations.list`** gains optional `kind` (only `"quick"`: quick conversations only; absent: today's list, which leaves them out) and `before`. **`conversations.result`** gains `has_more`.
+  - **C:** `before` is the `updated_at` of the oldest conversation the phone holds, sent back exactly as received. The Mac returns conversations strictly older than it, most recent first, up to `limit`, and `has_more` says whether any remain.
+    - Times are whole seconds, so a page never splits one. A page the limit would end inside a second ends before it, and the next page starts there.
+    - A second that alone holds more than `limit` comes whole. That is the only page longer than `limit`.
+    - The phone keeps its id dedupe, accepts a page longer than `limit`, and stops on `has_more: false`. A page that brings nothing new while `has_more` is true is logged and stops the paging, without looping.
+
+    Why not inclusive (the first version of C): when one second filled a page, every request returned the same rows, and the paging could never get past them (⓪Plan's review of #479, F1, 2026-10-29; ①iOS agreed).
+- **`conversation.update {conversation_id, kind: "chat"}` → `conversation.updated {conversation_id, kind}`.** No `title`. `chat` is the only target. While a turn runs, the answer is `error` `mac_busy`.
+  - Only a quick conversation, or a retry for one already turned. Any other id, an ordinary conversation included, gets `error` `not_found` and is left as it is (⓪Plan's review of #479, F4).
+- **`conversation.delete`** deletes a quick conversation like any other. A phone that said `quick` may also delete the pocket.
+- **Still open, ②Main:** §4b's other point (`outcomes` holds only finished tasks).
