@@ -3,9 +3,7 @@
 //!
 //! - `done`: delivered, and the change was read back (or a window change seen);
 //! - `sent_unconfirmed`: delivered, no proof either way — look before building on it;
-//! - `no_effect`: delivered, nothing seems to have changed;
-//! - `partly_done`: some of it was delivered (typing);
-//! - `refused`: nothing was delivered.
+//! - `no_effect`: delivered, nothing seems to have changed.
 //!
 //! Anything an engine does not say plainly is `sent_unconfirmed`, never `done`.
 

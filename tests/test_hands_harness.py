@@ -47,10 +47,9 @@ def test_once_means_once():
     assert not oracles.once(3, 3).ok          # never ran
 
 
-def test_done_and_refused_must_be_true():
+def test_done_must_be_true():
     assert not oracles.honest("done", happened=False).ok
-    assert not oracles.honest("refused", happened=True).ok
-    for word in ("sent_unconfirmed", "no_effect", "partly_done", None):
+    for word in ("sent_unconfirmed", "no_effect", None):
         assert oracles.honest(word, happened=True).ok and oracles.honest(word, happened=False).ok
 
 

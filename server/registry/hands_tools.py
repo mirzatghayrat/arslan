@@ -1195,12 +1195,6 @@ class _DesktopAct:
             text = (f"Nothing changed: {verb} “{label}” in {app.get('name')} was delivered but the app did not "
                     "react. Look again: the element may be disabled or need the app in front. Do not repeat it "
                     "blindly.")
-        elif outcome == "partly_done":
-            text = (f"Partly done: {verb} “{label}” in {app.get('name')} stopped part way. Look at what is there "
-                    "now before doing anything else.")
-        elif outcome == "refused":
-            text = (f"Not done: {app.get('name')} refused {verb} “{label}”; nothing was delivered. Look again and "
-                    "try another way.")
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
@@ -1217,7 +1211,7 @@ class _DesktopAct:
         note = _take_visit_note()
         if note:
             text += " " + note.strip()
-        out = {"ok": outcome != "refused", "external": False, "outcome": outcome, "text": text,
+        out = {"ok": True, "external": False, "outcome": outcome, "text": text,
                "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
         return out
 
