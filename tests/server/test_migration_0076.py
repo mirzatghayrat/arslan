@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.db.migrations import runner
 from server.db.migrations.versions import _0063_project_levels as m0063
 from server.db.migrations.versions import _0076_drop_project_habits as m0076
-from server.db.models import Base, ProjectLevel
+from server.db.models import ProjectLevel
 from server.db.session import build_engine
 from server.services import storage_boot
 
@@ -45,21 +45,21 @@ def _shape(db_path) -> tuple[set[str], set[str]]:
         engine.dispose()
 
 
-def _before_0076(db_path) -> None:
-    """An install as main left it before this PR: every other migration recorded, the old model's
-    `project_levels`, 0063's `project_habits`, and a project with a level, a checkpoint and a rule."""
+async def _before_0076(db_path) -> None:
+    """An install as main left it before this PR. A real first launch, so the views and triggers a
+    real install has are there (SQLite checks them all again after DROP COLUMN). Then the old model's
+    `project_levels`, 0063's `project_habits`, 0076 forgotten, and a project with a level, a
+    checkpoint and a rule."""
+    await _boot(db_path)
     engine = sa.create_engine(f"sqlite:///{db_path}")
     try:
         with engine.begin() as conn:
-            Base.metadata.create_all(conn)
+            assert conn.execute(sa.text("SELECT count(*) FROM sqlite_master WHERE type = 'view'")).scalar()
+            assert conn.execute(sa.text("SELECT count(*) FROM sqlite_master WHERE type = 'trigger'")).scalar()
             conn.exec_driver_sql("DROP TABLE project_levels")
             conn.exec_driver_sql(OLD_LEVELS)
             m0063.upgrade_sync(conn)        # makes project_habits; project_levels exists, so it stays as above
-            runner._ensure_table(conn)
-            for vid, _ in runner.MIGRATIONS:
-                if vid != "0076":
-                    conn.execute(sa.text("INSERT INTO schema_version(version, applied_at) VALUES (:v, :t)"),
-                                 {"v": vid, "t": "2026-10-29T00:00:00"})
+            conn.exec_driver_sql("DELETE FROM schema_version WHERE version = '0076'")
             conn.exec_driver_sql(
                 "INSERT INTO projects (id, owner_id, name, kind, summary, collection_ids, status, version,"
                 " created_at, updated_at) VALUES ('p1', 'local', 'Sample', 'general', '', '[]', 'active', 1,"
@@ -80,7 +80,7 @@ def _before_0076(db_path) -> None:
 
 async def test_an_install_from_before_loses_the_rules_and_the_column_and_keeps_its_levels(tmp_path):
     db = tmp_path / "before.db"
-    _before_0076(db)
+    await _before_0076(db)
     await _boot(db)
     tables, columns = _shape(db)
     assert "project_habits" not in tables
@@ -101,7 +101,7 @@ async def test_an_install_from_before_loses_the_rules_and_the_column_and_keeps_i
 async def test_a_level_can_be_added_after_the_upgrade(tmp_path):
     """The old table had `habit` NOT NULL with no default, and the model no longer writes it."""
     db = tmp_path / "before.db"
-    _before_0076(db)
+    await _before_0076(db)
     await _boot(db)
     engine = build_engine(f"sqlite+aiosqlite:///{db}")
     try:
