@@ -31,6 +31,9 @@ from server.db import session as db_session
 
 SECTIONS = ("builtin", "skills", "connections")
 DELETABLE = ("installed", "authored", "manual")
+# A key the server may delete by: what every skill writer makes (skill_forge, skill_import, the seeder). The key
+# names the scripts folder, and `{key:path}` lets "/" through (#499 review F3).
+_SKILL_KEY = re.compile(r"[a-z0-9-]+")
 
 # Built-in switches: capability key -> (settings key, default when unset).
 SETTING_SWITCHES = {
@@ -44,12 +47,14 @@ SETTING_SWITCHES = {
 def _row(key: str, state: str, *, tools: tuple[str, ...] = (), switch: str | None = None,
          reason: str | None = None, fix: str | None = None, name: str | None = None,
          detail: str | None = None, section: str = "builtin", origin: str = "builtin",
-         source_id: str | None = None, uses: tuple[str, ...] | None = None) -> dict:
-    """`uses`: the tools whose calls count as this row's use, whatever its state (default: `tools`).
-    `source_id`: the capability source of what was installed from a card (its dossier)."""
+         source_id: str | None = None, uses: tuple[str, ...] | None = None, family: str | None = None) -> dict:
+    """`uses`: the tools whose calls count as this row's use, whatever its state (default: `tools`); `family`:
+    a tool-name prefix whose every call counts too (the browser's, Hands', Shortcuts'). `source_id`: the
+    capability source of what was installed from a card (its dossier)."""
     return {"key": key, "state": state, "tools": list(tools), "switch": switch, "reason": reason,
             "fix": fix, "name": name, "detail": detail, "section": section, "origin": origin,
-            "deletable": origin in DELETABLE, "source_id": source_id, "_uses": tools if uses is None else uses}
+            "deletable": origin in DELETABLE, "source_id": source_id,
+            "_uses": (tools if uses is None else uses, family)}
 
 
 async def _builtin_rows() -> list[dict]:
@@ -80,23 +85,23 @@ async def _builtin_rows() -> list[dict]:
     rows.append(_row("terminal", "on" if shell else "off", switch="setting",
                      tools=("run_command",) if shell else (), uses=("run_command",)))
     if agent_browser.available():
-        rows.append(_row("browser", "on", tools=("browser_open", "browser_look"),
+        rows.append(_row("browser", "on", tools=("browser_open", "browser_look"), family="browser_",
                          detail="first_use_setup" if managed_browser.status()["reason"] == "setup_required" else None))
     else:
         why = managed_browser.status()["reason"]
         rows.append(_row("browser", "na", reason="not_macos" if why == "macos_required" else "runtime_missing",
-                         detail="node" if why == "node_required" else None, uses=("browser_open", "browser_look")))
-    rows.append(_row("shortcuts", "on", tools=("mac_list_shortcuts",)) if darwin
-                else _row("shortcuts", "na", reason="not_macos", uses=("mac_list_shortcuts",)))
+                         detail="node" if why == "node_required" else None, family="browser_"))
+    rows.append(_row("shortcuts", "on", tools=("mac_list_shortcuts",), family="mac_") if darwin
+                else _row("shortcuts", "na", reason="not_macos", family="mac_"))
     if not darwin:
-        rows.append(_row("hands", "na", reason="not_macos", uses=("desktop_apps", "desktop_look")))
+        rows.append(_row("hands", "na", reason="not_macos", family="desktop_"))
     elif not hands_client.available():
         rows.append(_row("hands", "setup", reason="hands_missing", fix="open_settings:abilities",
-                         uses=("desktop_apps", "desktop_look")))
+                         family="desktop_"))
     else:
         on = hands_tools.desktop_available()
         rows.append(_row("hands", "on" if on else "off", switch="hands",
-                         tools=("desktop_apps", "desktop_look") if on else (), uses=("desktop_apps", "desktop_look")))
+                         tools=("desktop_apps", "desktop_look") if on else (), family="desktop_"))
 
     # Research and making
     resolved = await _search_provider()
@@ -150,7 +155,7 @@ async def _mcp_rows() -> list[dict]:
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         # CAP3a-1: installed from a card (its capability source) or added by hand; its use is its tools'
         # calls (`mcp_<id>__…`, see capabilities()).
-        where = {"section": "connections", "uses": (), "source_id": installed.get(server["id"]),
+        where = {"section": "connections", "source_id": installed.get(server["id"]),
                  "origin": "installed" if server["id"] in installed else "manual"}
         missing = _runtime_missing(server)
         allowed = bool(server.get("host_allowed"))
@@ -194,13 +199,16 @@ async def _installed_servers() -> dict[int, str]:
 
 
 def _skill_origin(pack) -> str:
-    """By the marks D7 reads as the user's (seeder._USERS_SKILL): installed from a card (`source_id`), pasted
-    as a link ("imported") or made in Discover before v0.1.64 ("gh-" keys); written by Arslan
-    (skill_forge.WRITTEN); anything else the seeder planted."""
+    """By the marks D7 reads as the user's (seeder._USERS_SKILL): written by Arslan (skill_forge.WRITTEN; a skill
+    promoted from Skill Forge before CAP2a got one of those marks in migration 0077), installed from a card
+    (`source_id`), pasted as a link ("imported") or made in Discover before v0.1.64 ("gh-" keys, which no seed
+    key is; tested); anything else the seeder planted. Written first: create_skill takes "gh-" keys too."""
     from server.services import skill_forge
+    if pack.category in skill_forge.WRITTEN:
+        return "authored"
     if pack.source_id or pack.category == "imported" or pack.key.startswith("gh-"):
         return "installed"
-    return "authored" if pack.category in skill_forge.WRITTEN else "builtin"
+    return "builtin"
 
 
 async def _skill_rows() -> list[dict]:
@@ -211,7 +219,7 @@ async def _skill_rows() -> list[dict]:
         ).order_by(SkillPack.key))).scalars().all()
     return [_row(f"skill:{p.key}", "off" if p.enabled is False else "on", switch="skill",
                  name=p.name, detail=p.description[:160] if p.description else None,
-                 section="skills", origin=_skill_origin(p), source_id=p.source_id, uses=())
+                 section="skills", origin=_skill_origin(p), source_id=p.source_id)
             for p in packs]
 
 
@@ -226,8 +234,8 @@ async def _method_rows() -> list[dict]:
         await db.commit()                          # the defaults, written on first read
         used = dict((await db.execute(select(TaskWorker.method_key, func.max(TaskWorker.created_at))
                                       .group_by(TaskWorker.method_key))).all())
-    return [{**_row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills",
-                    uses=()), "revision": m["revision"], "_last": used.get(m["key"])} for m in methods]
+    return [{**_row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills"),
+             "revision": m["revision"], "_last": used.get(m["key"])} for m in methods]
 
 
 # read_skill's key, from the call's stored arguments (`args_summary`: its JSON, cut at 200 characters).
@@ -257,21 +265,43 @@ def _when(*times) -> str | None:
     return latest.isoformat() + "Z" if latest else None
 
 
+async def _servers_added() -> dict[int, datetime]:
+    """When each connection was added. A server id is reused once the newest one is deleted (mcp_servers.id
+    has no AUTOINCREMENT), so a call before that is the old server's (#499 review F5)."""
+    from server.db.models import MCPServer
+    async with db_session.AsyncSessionLocal() as db:
+        return dict((await db.execute(select(MCPServer.id, MCPServer.created_at))).all())
+
+
 async def capabilities() -> list[dict]:
     rows = [*await _builtin_rows(), *await _mcp_rows(), *await _skill_rows(), *await _method_rows()]
     tools, skills = await _last_used()
+    added = await _servers_added()
     for row in rows:
-        uses = row.pop("_uses")
+        uses, family = row.pop("_uses")
         if "_last" in row:
             row["last_used"] = _when(row.pop("_last"))
-        elif row["key"].startswith("mcp:"):
-            prefix = f"mcp_{row['key'][4:]}__"
-            row["last_used"] = _when(*(when for key, when in tools.items() if key.startswith(prefix)))
+        elif (server := _server_id(row["key"])) is not None:
+            since = added.get(server)
+            row["last_used"] = _when(*(when for key, when in tools.items()
+                                       if key.startswith(f"mcp_{server}__") and (since is None or when >= since)))
         elif row["key"].startswith("skill:"):
             row["last_used"] = _when(skills.get(row["key"][6:]))
         else:
-            row["last_used"] = _when(*(tools.get(key) for key in uses))
+            row["last_used"] = _when(*(tools.get(key) for key in uses),
+                                     *(when for key, when in tools.items() if family and key.startswith(family)))
     return rows
+
+
+def _server_id(key: str) -> int | None:
+    """`mcp:<id>` with ASCII digits only: str.isdigit() also takes "١" (int() reads it as 1) and "²"."""
+    tail = key[4:] if key.startswith("mcp:") else ""
+    return int(tail) if tail.isascii() and tail.isdigit() else None
+
+
+def safe_skill_key(key: str | None) -> bool:
+    """Whether a stored skill key may name a folder under skill_scripts/ (#499 review F3)."""
+    return bool(key and _SKILL_KEY.fullmatch(key))
 
 
 class NotSwitchable(Exception):
@@ -288,10 +318,10 @@ async def switch(key: str, on: bool) -> None:
     if key == "hands":
         hands_service.update_settings(enabled=on)
         return
-    if key.startswith("mcp:") and key[4:].isdigit():
-        if not any(s["id"] == int(key[4:]) for s in await mcp_service.list_servers()):
+    if (server := _server_id(key)) is not None:
+        if not any(s["id"] == server for s in await mcp_service.list_servers()):
             raise NotSwitchable(key)
-        await mcp_service.set_host_allowed(int(key[4:]), on)
+        await mcp_service.set_host_allowed(server, on)
         return
     if key.startswith("skill:"):
         from server.db.models import SkillPack
@@ -317,15 +347,18 @@ async def remove(key: str) -> None:
     """Delete one row the page shows a delete button for (`deletable`), and refuse every other here, on the
     server (the CAP card, security surface): a built-in tool or skill is only switched. A skill goes with its
     capability source marked removed and its scripts to the Trash. A connection installed from a card goes
-    through capability_install.remove (its folder to the Trash); one added by hand through delete_server."""
-    if key.startswith("skill:") and key[6:]:
+    through capability_install.remove (its folder to the Trash); one added by hand through delete_server.
+    A skill key that is not a plain key is refused before anything is read."""
+    if key.startswith("skill:") and safe_skill_key(key[6:]):
         return await _remove_skill(key[6:])
-    if key.startswith("mcp:") and key[4:].isdigit():
-        return await _remove_server(int(key[4:]))
+    if (server := _server_id(key)) is not None:
+        return await _remove_server(server)
     raise NotRemovable(key)
 
 
 async def _remove_skill(skill_key: str) -> None:
+    """The scripts go to the Trash before the row goes: a failed move leaves the skill whole, never a row-less
+    folder the next skill of that key would pick up (#499 review F4)."""
     from server import config
     from server.db.models import CapabilitySource, SkillPack
     from server.services import capability_install
@@ -335,12 +368,15 @@ async def _remove_skill(skill_key: str) -> None:
             raise NotFound(skill_key)
         if _skill_origin(pack) not in DELETABLE:
             raise NotRemovable(skill_key)
-        source = await db.get(CapabilitySource, pack.source_id) if pack.source_id else None
-        await db.delete(pack)
+    capability_install.to_trash(config.data_dir() / "skill_scripts" / skill_key)
+    async with db_session.AsyncSessionLocal() as db:
+        pack = await db.get(SkillPack, skill_key)
+        source = await db.get(CapabilitySource, pack.source_id) if pack and pack.source_id else None
+        if pack is not None:
+            await db.delete(pack)
         if source is not None:
             source.state = "removed"
         await db.commit()
-    capability_install.to_trash(config.data_dir() / "skill_scripts" / skill_key)
 
 
 async def _remove_server(server_id: int) -> None:

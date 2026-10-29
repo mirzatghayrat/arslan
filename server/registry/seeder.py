@@ -7,13 +7,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from sqlalchemy import and_, delete, exists, not_, or_
+from sqlalchemy import delete, not_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import arslan.skills
 from arslan.skills.skillpack import SkillPack as _SkillPackSpec
 from server.db import session as db_session
-from server.db.models import SkillCandidate, SkillPack, Tool, Toolset
+from server.db.models import SkillPack, Tool, Toolset
 from server.registry.seed_catalog import SKILLS, TOOLSETS
 from server.services import skill_forge
 
@@ -85,16 +85,13 @@ def _skill_body(key: str) -> str | None:
 
 # D7: a skill row the user brought in, whatever its key. Every SkillPack writer but the seeder
 # leaves one of these: skill_import "imported"; capability_flow a source_id; skill_forge (the
-# create_skill card and expert_conversion) the category "authored" (v0.1.64 CAP2a); before CAP2a,
-# a candidate that went live — told by promoted_at, set at promotion and never cleared (the
-# curator retired it, and reject_candidate overwrote any status). CAP2b gives those rows the
-# "authored" mark and drops this clause with the table. The discovery centre (removed in v0.1.64
-# CAP1a) left "gh-" keys, which no retired key is (tested).
+# create_skill card and expert_conversion) the category "authored" or "authored-outside" (v0.1.64
+# CAP2a). A skill promoted from Skill Forge before CAP2a got one of those in migration 0077 (CAP2b).
+# The discovery centre (removed in v0.1.64 CAP1a) left "gh-" keys, which no retired key is (tested).
 _USERS_SKILL = or_(
     SkillPack.category == "imported",
     SkillPack.category.in_(skill_forge.WRITTEN),
     SkillPack.source_id.is_not(None),
-    exists().where(and_(SkillCandidate.key == SkillPack.key, SkillCandidate.promoted_at.is_not(None))),
 )
 
 
