@@ -98,6 +98,24 @@ def reaches_network(command: str) -> bool:
     return bool(_NETWORK_COMMAND.search(command or ""))
 
 
+# S64-0c: an MCP tool's key carries its server's raw tool name (`mcp_tool_key`), so a key whose name breaks
+# the MCP name rule may carry the server's words (a line break, an instruction). Wherever one is shown to the
+# model, the turn has read outside content.
+_MCP_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+_MCP_KEY = re.compile(r"mcp_\d+__(.*)", re.S)
+
+
+def breaks_mcp_name_rule(name: str) -> bool:
+    """A tool name the MCP rule does not allow: it is 1-128 characters of A-Za-z0-9_.- (no spaces)."""
+    return not _MCP_NAME.fullmatch(name or "")
+
+
+def odd_mcp_key(key: str) -> bool:
+    """An MCP tool's key whose name part breaks the MCP name rule."""
+    found = _MCP_KEY.fullmatch(key or "")
+    return bool(found) and breaks_mcp_name_rule(found.group(1))
+
+
 def track_turn() -> contextvars.Token:
     """A turn's holder. It starts clean unless its run carries outside content in (`carried`)."""
     run = _CARRIED.get()

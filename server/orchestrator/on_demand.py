@@ -65,6 +65,13 @@ def _first_sentence(text: str) -> str:
     return (text[:end.start()] if end else text)[:240]
 
 
+def _odd_key_in(keys) -> bool:
+    """S64-0c: an answer that shows a key carrying a server's odd tool name is outside content (the tool
+    loop frames it and marks the turn)."""
+    from server.orchestrator.untrusted import odd_mcp_key
+    return any(odd_mcp_key(key) for key in keys)
+
+
 def find(query: str, candidates: list[dict], params_of, *, limit: int = 5) -> dict:
     """Rank `candidates` (the callable tools the request was not shown) against `query`: words of the
     name count twice, words of the description once. Ties keep the candidates' order (built-ins as
@@ -86,11 +93,11 @@ def find(query: str, candidates: list[dict], params_of, *, limit: int = 5) -> di
         else:
             found.append({"name": tool["key"], **entry})
     if found:
-        return {"ok": True, "external": False, "tools": found,
+        return {"ok": True, "external": _odd_key_in(t["name"] for t in found), "tools": found,
                 "summary": f"{len(found)} tool(s) found",
                 "note": "Call one with use_tool {name, arguments}."}
     names = [t["key"] for t in candidates]
-    return {"ok": True, "external": False, "tools": [], "summary": "no tool matched",
+    return {"ok": True, "external": _odd_key_in(names[:30]), "tools": [], "summary": "no tool matched",
             "note": "No tool matched those words. Try other English keywords. Tools you can reach: "
                     + ", ".join(names[:30]) + (f" and {len(names) - 30} more" if len(names) > 30 else "")}
 
