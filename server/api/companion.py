@@ -266,6 +266,9 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
     row = await repo.db.get(ConversationContext, conversation_id)
     if row and row.owner_id != USER.owner_id:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
+    if row and row.kind == "quick" and not body.no_learning:
+        # #490 review, 5: a quick question learns nothing until the user turns it into a chat (phone.py, Q1 #3).
+        raise HTTPException(409, detail={"code": "quick_question_learns_nothing"})
     if body.temporary:
         from server.db.models import ArslanMessage
         if await repo.db.scalar(select(ArslanMessage.id).where(

@@ -4,19 +4,24 @@ from the moment it is turned, and its quick turns before that never teach.
 Turning it clears `no_learning` and stores where learning starts
 (`conversation_contexts.learns_after_message_id`, migration 0078). Clearing alone is not enough: the facts
 extractor reads the user's recent messages, not only the latest one, so the first ordinary turn would learn
-from the quick ones too.
+from the quick ones too. What this covers is the facts extractor; remember and memory_note in later turns may
+still draw on the quick turns in the model's history (server/api/phone.py says what remains).
 """
 import asyncio
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
 
 from arslan.models import LLMResponse
-from server.db.companion_models import ConversationContext
+from server.db.companion_models import ConversationContext, MemorySuppression
 from server.db.migrations import runner
 from server.db.migrations.versions import _0078_quick_learns_after as m0078
 from server.db.models import ArslanMessage
+from server.db.task_models import CompanionTask
+from server.services import background_jobs
+from server.ws import arslan as ws_arslan
 
 Q = "phone-6b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b"
 
@@ -74,7 +79,7 @@ async def _say(db_maker, conversation_id, text, role="user") -> int:
 async def test_turning_a_quick_question_starts_its_learning_after_its_last_message(client):
     await client.post(f"/api/v1/phone/conversations/{Q}/quick")
     await _say(client.db_maker, Q, "I am vegetarian")
-    last = await _say(client.db_maker, Q, "Noted: no meat.", role="assistant")
+    last = await _say(client.db_maker, Q, "Noted: no meat.", role="arslan")
     got = await client.post(f"/api/v1/phone/conversations/{Q}/update", json={"kind": "chat"})
     assert got.status_code == 200
     row = await _row(client, Q)
@@ -99,15 +104,9 @@ async def test_a_retry_leaves_what_the_user_set_since(client):
 
 # -- what the facts extractor reads -----------------------------------------------------------------------
 
-@pytest.mark.parametrize("turned", [True, False], ids=["turned", "ordinary"])
-async def test_the_facts_extractor_reads_only_the_users_messages_after_the_turn(execution_db, monkeypatch, turned):
+async def _recent(monkeypatch, conversation_id, latest) -> str:
+    """The user's recent messages as the facts extractor puts them before the model."""
     from server.services import turn_facts
-    await _say(execution_db, Q, "Noted: no meat.", role="assistant")
-    last = await _say(execution_db, Q, "I am vegetarian")      # its quick turn's reply never came: the turn's last message
-    await _say(execution_db, Q, "Plan dinner for two")
-    async with execution_db() as db:
-        db.add(ConversationContext(id=Q, kind="chat", learns_after_message_id=last if turned else None))
-        await db.commit()
     prompts = []
 
     class Model:
@@ -118,13 +117,90 @@ async def test_the_facts_extractor_reads_only_the_users_messages_after_the_turn(
     async def adapter():
         return Model()
     monkeypatch.setattr(turn_facts, "_get_adapter", adapter)
-    await turn_facts.extract(Q, "Plan dinner for two")
-    recent = prompts[0].split("User's latest message:")[0]
+    await turn_facts.extract(conversation_id, latest)
+    return prompts[0].split("User's latest message:")[0]
+
+
+@pytest.mark.parametrize("cid", [Q, "c-mac"], ids=["phone-made", "any-id"])
+@pytest.mark.parametrize("turned", [True, False], ids=["turned", "ordinary"])
+async def test_the_facts_extractor_reads_only_the_users_messages_after_the_turn(execution_db, monkeypatch, turned, cid):
+    """Whatever the id looks like (#490 review, 6: the boundary is read for every conversation), and never Arslan's
+    replies after it (4)."""
+    await _say(execution_db, cid, "Noted: no meat.", role="arslan")
+    last = await _say(execution_db, cid, "I am vegetarian")    # its quick turn's reply never came: the turn's last message
+    await _say(execution_db, cid, "Here is a vegan plan for two.", role="arslan")
+    await _say(execution_db, cid, "Plan dinner for two")
+    async with execution_db() as db:
+        db.add(ConversationContext(id=cid, kind="chat", learns_after_message_id=last if turned else None))
+        await db.commit()
+    recent = await _recent(monkeypatch, cid, "Plan dinner for two")
     assert "Plan dinner for two" in recent
     assert ("I am vegetarian" in recent) is not turned
+    assert "vegan plan" not in recent
+
+
+async def test_a_message_behind_a_forgotten_memory_is_never_read_after_the_turn(execution_db, monkeypatch):
+    """#490 review, 2: after the turn the extractor reads the history as memory allows it
+    (memory_history.eligible_messages): the source of a deleted memory entry never seeds memory again."""
+    last = await _say(execution_db, Q, "weather?")
+    forgotten = await _say(execution_db, Q, "I am vegan")
+    await _say(execution_db, Q, "Plan dinner for two")
+    async with execution_db() as db:
+        db.add(ConversationContext(id=Q, kind="chat", learns_after_message_id=last))
+        db.add(MemorySuppression(source_kind="message_id", source_id=str(forgotten), entry_id="deleted",
+                                 cutoff_at=datetime(2026, 10, 29, 9, 0, 0)))
+        await db.commit()
+    recent = await _recent(monkeypatch, Q, "Plan dinner for two")
+    assert "Plan dinner for two" in recent and "I am vegan" not in recent
 
 
 # -- the next turn teaches ---------------------------------------------------------------------------------
+
+# -- #490 review, 1: never while anything runs in the conversation ------------------------------------------------
+
+@pytest.mark.parametrize("busy", ["turn", "job", "running", "verifying"])
+async def test_turning_waits_while_anything_runs_in_the_conversation(client, monkeypatch, busy):
+    """A chat turn holds the conversation's lock from before it loads the quick context and stores its message,
+    and registers its run only later; a job or a task may run on after a turn. Turned meanwhile, the boundary
+    would land below the running quick turn's own message, and that turn would read the kind as a chat."""
+    await client.post(f"/api/v1/phone/conversations/{Q}/quick")
+    await _say(client.db_maker, Q, "I am vegan")
+    lock = ws_arslan._turn_lock(Q)
+    if busy == "turn":
+        await lock.acquire()
+    elif busy == "job":
+        monkeypatch.setattr(background_jobs, "jobs_for",
+                            lambda cid: [SimpleNamespace(phase="running")] if cid == Q else [])
+    else:
+        async with client.db_maker() as db:
+            db.add(CompanionTask(id="task-q", owner_id="local", conversation_id=Q, phase=busy, attempt_id="a",
+                                 budget={}))
+            await db.commit()
+    try:
+        got = await client.post(f"/api/v1/phone/conversations/{Q}/update", json={"kind": "chat"})
+    finally:
+        if lock.locked():
+            lock.release()
+        ws_arslan._turn_locks.pop(Q, None)
+    assert got.status_code == 409 and got.json()["detail"] == "mac_busy"
+    row = await _row(client, Q)
+    assert (row.kind, row.no_learning, row.learns_after_message_id) == ("quick", True, None)
+
+
+@pytest.mark.parametrize("no_learning, status", [(False, 409), (True, 200)], ids=["switch-on", "keep-off"])
+async def test_the_window_cannot_switch_learning_on_for_a_quick_question(client, no_learning, status):
+    """#490 review, 5 (from #479): a quick question learns nothing until it is turned into a chat."""
+    await client.post(f"/api/v1/phone/conversations/{Q}/quick")
+    row = await _row(client, Q)
+    got = await client.put(f"/api/v1/conversations/{Q}/context", json={
+        "expected_version": row.version, "no_memory": False, "no_learning": no_learning, "temporary": False,
+        "cloud_memory_allowed": False, "allow_sensitive": False})
+    assert got.status_code == status, got.text
+    if status == 409:
+        assert got.json()["detail"]["code"] == "quick_question_learns_nothing"
+    after = await _row(client, Q)
+    assert (after.kind, after.no_learning) == ("quick", True)
+
 
 async def test_a_turned_quick_question_teaches_from_its_next_turn(execution_db, monkeypatch):
     """Q1a's own check, one step on: the same turn that taught nothing while the conversation was quick

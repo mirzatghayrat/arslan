@@ -28,6 +28,7 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
+from server.db.task_models import CompanionTask
 from server.services import artifact_store, background_jobs, desktop_status, phone_reads, settings_service
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
@@ -160,25 +161,42 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
                                     db: AsyncSession = Depends(get_session)):
     """Q1's `conversation.update`: a quick question becomes an ordinary chat, with every tool from its next
     turn. Only a quick question, or one already turned (a retry after a lost reply): an ordinary conversation,
-    or SUB's `sub`, is `not_found` here and left as it is. Refused while a turn runs (the Bridge answers
-    `mac_busy`). From then on it learns like an ordinary conversation, and its quick turns never teach (the
-    user, 2026-10-29; card, #3): the turn clears `no_learning` and stores its last message, after which the
+    or SUB's `sub`, is `not_found` here and left as it is. From then on it learns like an ordinary conversation
+    (the user, 2026-10-29; card, #3): the turn clears `no_learning` and stores its last message, after which the
     facts extractor reads (`learns_after_message_id`, migration 0078). A retry changes neither: the user may
-    have switched learning off in the window since."""
-    from server.services import run_registry, turn_journal
+    have switched learning off in the window since.
+
+    Not covered here (the other half of "its quick turns never teach"): remember and memory_note in later turns
+    may still draw on the quick turns, which stay in the model's history. With INB2 (#475), a quick turn that
+    called any of its four tools is recorded as having read outside content, so an "about you" entry written in
+    the turned conversation waits for the user; a quick turn with no tool holds only the model's own answer.
+
+    Refused while anything runs in the conversation (#490 review, 1; the Bridge answers `mac_busy`): a chat turn
+    holds the conversation's lock from before it loads the quick context and stores its message, and registers
+    its run only later; a job or a task may run on after a turn. The lock is held while it is turned, so a
+    message queued behind it runs afterwards, as an ordinary turn."""
+    from server.services import background_jobs, run_registry
+    from server.ws import arslan as ws_arslan
     if body.kind != "chat":
         raise HTTPException(400, "bad_request")
     row = await db.get(ConversationContext, conversation_id)
     if row is None or row.kind not in ("quick", "chat"):
         raise HTTPException(404, "not_found")
-    if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
+    lock = ws_arslan._turn_lock(conversation_id)
+    if lock.locked():
         raise HTTPException(409, "mac_busy")
-    if row.kind == "quick":
-        row.no_learning = False
-        row.learns_after_message_id = await db.scalar(select(func.max(ArslanMessage.id)).where(
-            ArslanMessage.conversation_id == conversation_id)) or 0
-    row.kind = "chat"
-    await db.commit()
+    async with lock:
+        if run_registry.active_for(conversation_id) or any(
+                job.phase != "finished" for job in background_jobs.jobs_for(conversation_id)) or await db.scalar(
+                select(CompanionTask.id).where(CompanionTask.conversation_id == conversation_id,
+                                               CompanionTask.phase.in_(("running", "verifying"))).limit(1)):
+            raise HTTPException(409, "mac_busy")
+        if row.kind == "quick":
+            row.no_learning = False
+            row.learns_after_message_id = await db.scalar(select(func.max(ArslanMessage.id)).where(
+                ArslanMessage.conversation_id == conversation_id)) or 0
+        row.kind = "chat"
+        await db.commit()
     return {"conversation_id": conversation_id, "kind": "chat"}
 
 

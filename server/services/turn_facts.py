@@ -92,24 +92,23 @@ def parse_practices(content: str | None) -> list[dict[str, Any]]:
 
 async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
     """The user's recent messages. Q1 #3 (the user, 2026-10-29): a quick question turned into a chat learns
-    from then on and its quick turns never teach, so for one, only the messages after the turn
-    (`learns_after_message_id`, migration 0078). Only an id the phone made can have been one (the quick
-    endpoint takes nothing else), so other conversations are read as before, without a lookup."""
+    from then on, so for one, only the user's messages after the turn (`learns_after_message_id`, migration
+    0078), read as memory allows (memory_history.eligible_messages: a deleted entry's source never seeds memory
+    again). Every conversation is looked up, whatever its id looks like. What remains of "its quick turns never
+    teach" is in server/api/phone.py (phone_update_conversation)."""
     from sqlalchemy import select
 
     from server.db import session as db_session
     from server.db.companion_models import ConversationContext
     from server.db.models import ArslanMessage
-    if not conversation_id.startswith("phone-"):
-        return [m["content"] for m in history if m.get("role") == "user"]
+    from server.services.memory_history import eligible_messages
     async with db_session.AsyncSessionLocal() as db:
         after = await db.scalar(select(ConversationContext.learns_after_message_id).where(
             ConversationContext.id == conversation_id))
         if after is None:
             return [m["content"] for m in history if m.get("role") == "user"]
-        rows = (await db.scalars(select(ArslanMessage.content).where(
-            ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user",
-            ArslanMessage.id > after).order_by(ArslanMessage.id.desc()).limit(8))).all()
+        rows = (await db.scalars(eligible_messages(conversation_id).with_only_columns(ArslanMessage.content).where(
+            ArslanMessage.role == "user", ArslanMessage.id > after).order_by(ArslanMessage.id.desc()).limit(8))).all()
     return list(reversed(rows))
 
 
