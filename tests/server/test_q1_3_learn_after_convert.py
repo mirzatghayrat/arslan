@@ -187,6 +187,57 @@ async def test_turning_waits_while_anything_runs_in_the_conversation(client, mon
     assert (row.kind, row.no_learning, row.learns_after_message_id) == ("quick", True, None)
 
 
+async def test_a_turn_that_arrives_while_it_is_turned_waits_and_runs_as_a_chat(client, monkeypatch):
+    """#490 recheck: the lock is held while it is turned, so a turn that arrives then (the window's user_message
+    takes the lock first) waits, and finds a chat."""
+    await client.post(f"/api/v1/phone/conversations/{Q}/quick")
+    await _say(client.db_maker, Q, "weather?")
+    lock = ws_arslan._turn_lock(Q)
+    seen = {}
+
+    async def turn():
+        async with lock:
+            seen["kind"] = (await _row(client, Q)).kind
+    real = background_jobs.jobs_for
+
+    def jobs_for(conversation_id):                     # asked while it is turned: a turn arrives now
+        if conversation_id == Q and "turn" not in seen:
+            seen["locked"] = lock.locked()
+            seen["turn"] = asyncio.get_running_loop().create_task(turn())
+        return real(conversation_id)
+    monkeypatch.setattr(background_jobs, "jobs_for", jobs_for)
+    try:
+        got = await client.post(f"/api/v1/phone/conversations/{Q}/update", json={"kind": "chat"})
+        await seen["turn"]
+    finally:
+        ws_arslan._turn_locks.pop(Q, None)
+    assert got.status_code == 200
+    assert (seen["locked"], seen["kind"]) == (True, "chat")
+
+
+@pytest.mark.parametrize("busy", ["turn", "job"])
+async def test_the_window_cannot_change_a_conversations_switches_while_something_runs_in_it(client, monkeypatch, busy):
+    """#490 recheck: the context PUT relied on turn_journal.active, which nothing sets. A turn holds the lock from
+    before it loads the switches it runs with, and a job may run on after a turn."""
+    lock = ws_arslan._turn_lock("c-mac")
+    if busy == "turn":
+        await lock.acquire()
+    else:
+        monkeypatch.setattr(background_jobs, "jobs_for",
+                            lambda cid: [SimpleNamespace(phase="running")] if cid == "c-mac" else [])
+    try:
+        got = await client.put("/api/v1/conversations/c-mac/context", json={
+            "expected_version": 0, "no_memory": True, "no_learning": True, "temporary": False,
+            "cloud_memory_allowed": False, "allow_sensitive": False})
+    finally:
+        if lock.locked():
+            lock.release()
+        ws_arslan._turn_locks.pop("c-mac", None)
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "conversation_running"
+    async with client.db_maker() as db:
+        assert await db.get(ConversationContext, "c-mac") is None
+
+
 @pytest.mark.parametrize("no_learning, status", [(False, 409), (True, 200)], ids=["switch-on", "keep-off"])
 async def test_the_window_cannot_switch_learning_on_for_a_quick_question(client, no_learning, status):
     """#490 review, 5 (from #479): a quick question learns nothing until it is turned into a chat."""

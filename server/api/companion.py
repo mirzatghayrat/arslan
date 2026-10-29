@@ -249,15 +249,12 @@ async def receipt_memory(conversation_id: str, receipt_id: str, entry_id: str, r
 
 @router.put("/conversations/{conversation_id}/context")
 async def update_conversation_context(conversation_id: str, body: ConversationSettings, repo=Depends(_repository, scope="function")):
-    from server.services import run_registry, turn_journal
+    from server.services import conversation_busy
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
-    if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
-        raise HTTPException(409, detail={"code": "conversation_running"})
-    from server.db.models import CompanionTask
-    if await repo.db.scalar(select(CompanionTask.id).where(
-            CompanionTask.conversation_id == conversation_id, CompanionTask.owner_id == USER.owner_id,
-            CompanionTask.phase.in_(("running", "verifying"))).limit(1)):
+    # #490 recheck: a turn holds the conversation's lock from before it loads the switches it runs with
+    # (turn_journal.active, the old check here, is never set); a job or task may run on after it.
+    if await conversation_busy.busy(repo.db, conversation_id):
         raise HTTPException(409, detail={"code": "conversation_running"})
     if body.project_id:
         project = await repo.db.get(Project, body.project_id)

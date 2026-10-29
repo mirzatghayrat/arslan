@@ -28,7 +28,6 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.db.task_models import CompanionTask
 from server.services import artifact_store, background_jobs, desktop_status, phone_reads, settings_service
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
@@ -169,13 +168,14 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
     Not covered here (the other half of "its quick turns never teach"): remember and memory_note in later turns
     may still draw on the quick turns, which stay in the model's history. With INB2 (#475), a quick turn that
     called any of its four tools is recorded as having read outside content, so an "about you" entry written in
-    the turned conversation waits for the user; a quick turn with no tool holds only the model's own answer.
+    the turned conversation waits for the user. A quick turn with no tool is not recorded so: what the user said
+    in it may still be saved as an "about you" entry directly.
 
     Refused while anything runs in the conversation (#490 review, 1; the Bridge answers `mac_busy`): a chat turn
     holds the conversation's lock from before it loads the quick context and stores its message, and registers
     its run only later; a job or a task may run on after a turn. The lock is held while it is turned, so a
     message queued behind it runs afterwards, as an ordinary turn."""
-    from server.services import background_jobs, run_registry
+    from server.services import conversation_busy
     from server.ws import arslan as ws_arslan
     if body.kind != "chat":
         raise HTTPException(400, "bad_request")
@@ -186,10 +186,7 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
     if lock.locked():
         raise HTTPException(409, "mac_busy")
     async with lock:
-        if run_registry.active_for(conversation_id) or any(
-                job.phase != "finished" for job in background_jobs.jobs_for(conversation_id)) or await db.scalar(
-                select(CompanionTask.id).where(CompanionTask.conversation_id == conversation_id,
-                                               CompanionTask.phase.in_(("running", "verifying"))).limit(1)):
+        if await conversation_busy.busy(db, conversation_id, holding_lock=True):
             raise HTTPException(409, "mac_busy")
         if row.kind == "quick":
             row.no_learning = False
