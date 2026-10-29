@@ -151,6 +151,30 @@ final class QuickAskTests: XCTestCase {
         XCTAssertEqual(got.map(\.related), [refused])
     }
 
+    /// ①iOS's case: Q1c reads conversation_exists as "it got there", so a conversation the Mac stored whose words did
+    /// not get through must run on the retry (same id, kind and client_msg_id), stored again while still empty.
+    func testAStoredConversationWhoseWordsDidNotGetThroughRunsOnTheRetry() async throws {
+        for kind in ["quick", nil] as [String?] {
+            let p = try await pair()
+            let path = "/api/v1/phone/conversations/\(Self.id)/" + (kind ?? "chat")
+            p.backend.answers["POST " + path] = .success(["conversation_id": Self.id, "kind": kind ?? "chat"])
+            _ = p.channels.open(conversationID: Self.id) { _ in }
+            p.channels.opened[Self.id]?.failures = 1                          // the socket was not up yet
+            var body: [String: Any] = ["new_conversation_id": Self.id, "text": "ramen near me?", "attachments": [],
+                                       "client_msg_id": "c1"]
+            if let kind { body["conversation_kind"] = kind }
+            let first = try await send(p, body)
+            try await run(p)
+            _ = try await send(p, body)
+            try await run(p)
+            XCTAssertEqual(p.backend.posted.map(\.0), [path, path], "\(kind ?? "chat"): stored again, still empty")
+            XCTAssertEqual(words(p, Self.id), ["ramen near me?"], "\(kind ?? "chat"): the retry runs, once")
+            let got = errors(try await heard(p))
+            XCTAssertEqual(got.map(\.code), ["mac_busy"])
+            XCTAssertEqual(got.map(\.related), [first])
+        }
+    }
+
     func testWhenTheMacCannotStoreAnOrdinaryOneItsWordsNeverReachArslan() async throws {
         for code in ["conversation_exists", "mac_busy", "bad_request"] {
             let p = try await pair()
