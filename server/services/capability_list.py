@@ -29,7 +29,6 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 
-SECTIONS = ("builtin", "skills", "connections")
 DELETABLE = ("installed", "authored", "manual")
 # A key the server may delete by: what every skill writer makes (skill_forge, skill_import, the seeder). The key
 # names the scripts folder, and `{key:path}` lets "/" through (#499 review F3).
@@ -47,13 +46,15 @@ SETTING_SWITCHES = {
 def _row(key: str, state: str, *, tools: tuple[str, ...] = (), switch: str | None = None,
          reason: str | None = None, fix: str | None = None, name: str | None = None,
          detail: str | None = None, section: str = "builtin", origin: str = "builtin",
-         source_id: str | None = None, uses: tuple[str, ...] | None = None, family: str | None = None) -> dict:
+         source_id: str | None = None, uses: tuple[str, ...] | None = None, family: str | None = None,
+         removable: bool = True) -> dict:
     """`uses`: the tools whose calls count as this row's use, whatever its state (default: `tools`); `family`:
     a tool-name prefix whose every call counts too (the browser's, Hands', Shortcuts'). `source_id`: the
-    capability source of what was installed from a card (its dossier)."""
+    capability source of what was installed from a card (its dossier). `removable`: False when `remove` would
+    refuse the row whatever its origin (a skill key that is not a plain key), so the page offers no button."""
     return {"key": key, "state": state, "tools": list(tools), "switch": switch, "reason": reason,
             "fix": fix, "name": name, "detail": detail, "section": section, "origin": origin,
-            "deletable": origin in DELETABLE, "source_id": source_id,
+            "deletable": origin in DELETABLE and removable, "source_id": source_id,
             "_uses": (tools if uses is None else uses, family)}
 
 
@@ -219,7 +220,7 @@ async def _skill_rows() -> list[dict]:
         ).order_by(SkillPack.key))).scalars().all()
     return [_row(f"skill:{p.key}", "off" if p.enabled is False else "on", switch="skill",
                  name=p.name, detail=p.description[:160] if p.description else None,
-                 section="skills", origin=_skill_origin(p), source_id=p.source_id)
+                 section="skills", origin=_skill_origin(p), source_id=p.source_id, removable=safe_skill_key(p.key))
             for p in packs]
 
 

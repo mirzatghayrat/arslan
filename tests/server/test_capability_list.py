@@ -261,5 +261,5 @@ async def test_rows_that_have_no_switch_refuse_one(api):
 
 async def test_sections_are_the_three_the_page_draws(api):
     rows = (await api.get("/api/v1/capabilities")).json()
-    assert {r["section"] for r in rows} <= set(capability_list.SECTIONS)
+    assert {r["section"] for r in rows} <= {"builtin", "skills", "connections"}
     assert {r["state"] for r in rows} <= {"on", "off", "setup", "na"}

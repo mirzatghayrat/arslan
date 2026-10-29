@@ -44,14 +44,14 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("Authorize", () => {
   it("appears on an http server whose error is an authorization failure", async () => {
     servers.mockResolvedValue([httpServer]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByText("Remote")).toBeTruthy());
     expect(screen.getByTestId("mcp-authorize-3")).toBeTruthy();
   });
 
   it("does not appear on a stdio server, whatever its error says", async () => {
     servers.mockResolvedValue([{ ...httpServer, transport: "stdio", command: "npx" }]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByText("Remote")).toBeTruthy());
     expect(screen.queryByTestId("mcp-authorize-3")).toBeNull();
   });
@@ -60,7 +60,7 @@ describe("Authorize", () => {
     // An unreachable host needs a network fix, not a browser round-trip; the
     // button would send the user through a flow that cannot help.
     servers.mockResolvedValue([{ ...httpServer, last_error: "connect timeout" }]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByText("Remote")).toBeTruthy());
     expect(screen.queryByTestId("mcp-authorize-3")).toBeNull();
   });
@@ -69,7 +69,7 @@ describe("Authorize", () => {
     servers.mockResolvedValue([httpServer]);
     authorize.mockResolvedValue({ auth_url: "https://auth.example/a" });
     oauthStatus.mockResolvedValue({ state: "done", error: "" });
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByTestId("mcp-authorize-3")).toBeTruthy());
     fireEvent.click(screen.getByTestId("mcp-authorize-3"));
     await waitFor(() => expect(openExternal).toHaveBeenCalledWith("https://auth.example/a"));
@@ -80,7 +80,7 @@ describe("Authorize", () => {
     servers.mockResolvedValue([httpServer]);
     authorize.mockResolvedValue({ auth_url: "https://auth.example/a" });
     oauthStatus.mockResolvedValue({ state: "error", error: "authorization refused: access_denied" });
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByTestId("mcp-authorize-3")).toBeTruthy());
     fireEvent.click(screen.getByTestId("mcp-authorize-3"));
     await waitFor(() => expect(screen.getByText(/access_denied/)).toBeTruthy());

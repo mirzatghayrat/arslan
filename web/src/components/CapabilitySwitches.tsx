@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, KeyRound, MessageSquare, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { capabilitiesApi, type CapabilityRow } from "../api/capabilities";
+import { ApiError } from "../api/client";
 import { matches } from "../lib/capabilitySearch";
 import { formatUiDate } from "../lib/localeFormatting";
 import { openSection } from "../lib/sections";
@@ -19,6 +20,14 @@ const NOTES = new Set(["own_folder_only", "first_use_setup"]);
 const FOLD_AFTER = 6;
 const DOT = { on: "bg-[#34C759]", off: "bg-subtle-foreground", setup: "bg-ask", na: "bg-subtle-foreground" } as const;
 const DAY = 86_400_000;
+/** What a delete loses, by what the row is (#500 review): said plainly, never "switched off". */
+const DELETE_BODY: Record<string, string> = {
+  "skills:authored": "capabilityList.deleteBodyAuthored", "skills:installed": "capabilityList.deleteBodyInstalledSkill",
+  "connections:manual": "capabilityList.deleteBodyManual", "connections:installed": "capabilityList.deleteBodyInstalledConnection",
+};
+/** A name from outside (a SKILL.md, a server label) inside one of Arslan's sentences: isolated, so bidi controls
+ *  in it cannot reorder the sentence around it (#500 review). */
+const isolate = (text: string) => `\u2068${text}\u2069`;
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -68,12 +77,13 @@ export default function CapabilitySwitches() {
   function fix(row: CapabilityRow) {
     const [what, where] = (row.fix ?? "").split(":");
     if (what === "open_settings") openSection("settings", where);
-    else setSheet({ kind: "row", key: row.key });          // a connection's card (connect, sign in) is in its sheet
+    else open({ kind: "row", key: row.key });              // a connection's card (connect, sign in) is in its sheet
   }
   async function remove(row: CapabilityRow) {
-    const label = name(row);
+    const label = isolate(name(row));
+    const body = DELETE_BODY[`${row.section}:${row.origin}`];
     const ok = await confirmSheet({ title: t("capabilityList.deleteTitle", { name: label }), action: t("capabilityList.delete"),
-      body: t(row.section === "skills" ? "capabilityList.deleteBodySkill" : "capabilityList.deleteBodyConnection") });
+      body: body ? t(body) : undefined });
     if (!ok) return;
     setBusy(row.key); setError(null);
     try {
@@ -81,9 +91,17 @@ export default function CapabilitySwitches() {
       setSheet(null);
       toast(t("capabilityList.deleted", { name: label }));
       await load();
-    } catch { setError(t("capabilityList.deleteFailed")); }
+    } catch (failure) {
+      // Already gone (404) or not deletable (409): the list was out of date, so it is read again and says which.
+      // Anything else may pass on a second try.
+      const status = failure instanceof ApiError ? failure.status : 0;
+      setError(t(status === 404 ? "capabilityList.deleteGone" : status === 409 ? "capabilityList.deleteRefused"
+        : "capabilityList.deleteFailed", { name: label }));
+      if (status === 404 || status === 409) await load();
+    }
     finally { setBusy(null); }
   }
+  function open(next: Sheet) { setError(null); setSheet(next); }
 
   const isMethod = (row: CapabilityRow) => row.key.startsWith("method:");
   const name = (row: CapabilityRow) => row.name
@@ -104,13 +122,14 @@ export default function CapabilitySwitches() {
     const switchable = r.switch !== null && (r.state === "on" || r.state === "off");
     return <div key={r.key} data-testid={`cap-${r.key}`} data-state={r.state}
       className={`flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0 ${r.state === "na" ? "opacity-55" : ""}`}>
-      <button type="button" data-testid={`cap-open-${r.key}`} onClick={() => setSheet({ kind: "row", key: r.key })}
+      <button type="button" data-testid={`cap-open-${r.key}`} onClick={() => open({ kind: "row", key: r.key })}
         className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className="flex flex-wrap items-center gap-2 text-[14px]">{name(r)}
+        <span className="flex flex-wrap items-center gap-2 text-[14px]"><bdi>{name(r)}</bdi>
           <span className="inline-flex items-center gap-1 text-[11px] text-subtle-foreground">
             <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${DOT[r.state]}`} />{t(`capabilityList.state_${r.state}`)}</span></span>
         <span className="text-[12px] text-subtle-foreground">
-          {[what(r), t(`capabilityList.origin_${r.origin}`), used(r)].filter(Boolean).join(" · ")}
+          {/* What it does can be outside text: isolated, so it cannot pass for the origin beside it (#500 review). */}
+          {what(r) && <><bdi>{what(r)}</bdi> · </>}{t(`capabilityList.origin_${r.origin}`)} · {used(r)}
           {r.section === "builtin" && r.detail && NOTES.has(r.detail) ? <> · {t(`capabilityList.detail_${r.detail}`)}</> : null}
           {r.state === "setup" && r.reason === "mcp_error" && r.detail ? <> · <span className="font-mono">{r.detail}</span></> : null}
         </span>
@@ -156,7 +175,7 @@ export default function CapabilitySwitches() {
           <h2 className="flex items-baseline gap-2 px-1 text-[12px] font-semibold text-muted-foreground">{t(`capabilityList.section_${section}`)}
             <span className="font-normal text-subtle-foreground">{inSection.length}</span>
             {section === "connections" && <button type="button" data-testid="cap-add-manual" className="ml-auto font-normal hover:text-foreground"
-              onClick={() => setSheet({ kind: "manual" })}>{t("capabilityList.addByHand")} ›</button>}</h2>
+              onClick={() => open({ kind: "manual" })}>{t("capabilityList.addByHand")} ›</button>}</h2>
           {inSection.length > 0 && <div className="overflow-hidden rounded-xl border border-border bg-surface">
             {(folded ? inSection.slice(0, FOLD_AFTER) : inSection).map(row)}
             {inSection.length > FOLD_AFTER && !searching && <button type="button" data-testid={`cap-more-${section}`} aria-expanded={!folded}
@@ -177,7 +196,7 @@ export default function CapabilitySwitches() {
           <span className="flex min-w-0 flex-1 flex-col"><span className="text-[13px]">{t("capabilityList.addSay")}</span>
             <span className="text-[12px] text-subtle-foreground">{t("capabilityList.addSayWhat")}</span></span>
         </div>
-        <button type="button" data-testid="cap-add-link" onClick={() => setSheet({ kind: "link" })}
+        <button type="button" data-testid="cap-add-link" onClick={() => open({ kind: "link" })}
           className="flex w-full items-center gap-2.5 border-t border-border px-3.5 py-2.5 text-left hover:bg-fill">
           <KeyRound size={14} className="shrink-0 text-subtle-foreground" />
           <span className="flex min-w-0 flex-1 flex-col"><span className="text-[13px]">{t("capabilityList.addLink")}</span>
@@ -192,7 +211,7 @@ export default function CapabilitySwitches() {
       </div>
       <p className="px-1 text-[12px] leading-relaxed text-subtle-foreground">{t("capabilityList.addFoot")}</p>
     </aside>
-    {opened && <CapabilitySheet row={opened} name={name(opened)} what={what(opened)} used={used(opened)}
+    {opened && <CapabilitySheet row={opened} name={name(opened)} what={what(opened)} used={used(opened)} error={error}
       onClose={() => setSheet(null)} onDelete={row => void remove(row)} onChanged={() => void load()} />}
     {sheet?.kind === "link" && <Dialog open onClose={() => setSheet(null)} width={640} testId="cap-link-sheet" padded title={t("capabilityList.addLink")}>
       <SkillImportPanel onImported={() => void load()} /></Dialog>}

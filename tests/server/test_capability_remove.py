@@ -253,6 +253,18 @@ async def test_a_server_number_in_other_digits_is_refused(api, execution_db, tmp
     assert await _state(execution_db, tmp_path) == before
 
 
+async def test_a_row_the_server_would_refuse_offers_no_delete_whatever_its_origin(api, execution_db, tmp_path):
+    """#500 review F3: deleting also needs a plain key, so the page's flag says so too; nothing writes such a key
+    today."""
+    async with execution_db() as db:
+        db.add(_pack("odd_key", "imported"))
+        await db.commit()
+    row = (await _rows(api))["skill:odd_key"]
+    assert (row["origin"], row["deletable"]) == ("installed", False)
+    response = await api.delete("/api/v1/capabilities/skill:odd_key")
+    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+
+
 async def test_a_skill_arslan_wrote_under_a_gh_key_reads_as_written(api, execution_db, tmp_path):
     """#499 review F7: create_skill takes "gh-" keys too; what Arslan wrote is checked first."""
     async with execution_db() as db:

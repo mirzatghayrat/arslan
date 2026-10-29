@@ -48,7 +48,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("server-level Allow Arslan", () => {
   it("renders one switch per server, checked from host_allowed", async () => {
     servers.mockResolvedValue([base]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByText("Playwright")).toBeTruthy());
     const toggle = screen.getByTestId("mcp-host-3") as HTMLInputElement;
     expect(toggle.checked).toBe(true);
@@ -56,7 +56,7 @@ describe("server-level Allow Arslan", () => {
 
   it("click calls the server-level endpoint with the flipped value", async () => {
     servers.mockResolvedValue([base]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByTestId("mcp-host-3")).toBeTruthy());
     fireEvent.click(screen.getByTestId("mcp-host-3"));
     await waitFor(() => expect(setHost).toHaveBeenCalledWith(3, false));
@@ -64,7 +64,7 @@ describe("server-level Allow Arslan", () => {
 
   it("renders unchecked when host_allowed is off", async () => {
     servers.mockResolvedValue([{ ...base, host_allowed: false }]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByTestId("mcp-host-3")).toBeTruthy());
     expect((screen.getByTestId("mcp-host-3") as HTMLInputElement).checked).toBe(false);
   });
@@ -76,7 +76,7 @@ describe("server-level Allow Arslan", () => {
       tier: "orchestrator", status: "registered", suggested_tier: "orchestrator",
       host_enabled: false,
     }]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByText("Playwright")).toBeTruthy());
     fireEvent.click(screen.getByText("Connect"));
     await waitFor(() => expect(screen.getByText("browser_click")).toBeTruthy());
@@ -86,7 +86,7 @@ describe("server-level Allow Arslan", () => {
 
   it("the expose checkbox reflects the backend's real state, not a hardcoded false", async () => {
     servers.mockResolvedValue([{ ...base, exposed: true }]);
-    render(<McpServers />);
+    render(<McpServers only={3} />);
     await waitFor(() => expect(screen.getByText("Playwright")).toBeTruthy());
     const expose = screen.getByTestId("mcp-expose-3") as HTMLInputElement;
     expect(expose.checked).toBe(true);

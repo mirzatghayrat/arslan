@@ -5,7 +5,7 @@ import { professionalMethodsApi, type ProfessionalMethod } from "../api/professi
 import McpServers from "./McpServers";
 import { SourceDossier } from "./capabilities/AddedCapabilities";
 import { MethodEditor } from "./companion/ProfessionalMethods";
-import { Button, Dialog, Tag } from "./kit";
+import { Button, Dialog, Notice, Tag } from "./kit";
 
 /**
  * One row's details on the Capabilities list (v0.1.64 CAP3a, the mock the user approved): what it does, where
@@ -15,8 +15,10 @@ import { Button, Dialog, Tag } from "./kit";
  * - a connection: its card (sign in, connect, tools). "MCP" is named only here.
  * Delete only on a `deletable` row; the server refuses the rest too.
  */
-export default function CapabilitySheet({ row, name, what, used, onClose, onDelete, onChanged }: {
+export default function CapabilitySheet({ row, name, what, used, error, onClose, onDelete, onChanged }: {
   row: CapabilityRow; name: string; what: string; used: string;
+  /** A failed delete, said here: the list behind the sheet cannot be seen (#500 review). */
+  error?: string | null;
   onClose: () => void; onDelete: (row: CapabilityRow) => void; onChanged: () => void;
 }) {
   const { t } = useTranslation();
@@ -36,10 +38,10 @@ export default function CapabilitySheet({ row, name, what, used, onClose, onDele
   const link = (label: string, testId: string, onClick: () => void) => (
     <button type="button" data-testid={testId} className="underline hover:text-foreground" onClick={onClick}>{label}</button>);
   return <Dialog open onClose={onClose} width={600} testId="cap-sheet" padded
-    title={<span className="flex items-center gap-2"><Tag>{t(`capabilityList.kind_${kind}`)}</Tag>{name}</span>}>
+    title={<span className="flex items-center gap-2"><Tag>{t(`capabilityList.kind_${kind}`)}</Tag><bdi>{name}</bdi></span>}>
     <div className="flex flex-col gap-4">
       <div>
-        {what && line(t("capabilityList.sheetWhat"), what, "cap-sheet-what")}
+        {what && line(t("capabilityList.sheetWhat"), <bdi>{what}</bdi>, "cap-sheet-what")}
         {line(t("capabilityList.sheetOrigin"), <>{t(`capabilityList.origin_${row.origin}`)}
           {row.source_id && <> · {link(t("capabilityList.sheetDossier"), "cap-sheet-dossier",
             () => void open(() => capabilitiesApi.source(row.source_id!), setSource))}</>}</>, "cap-sheet-origin")}
@@ -50,6 +52,7 @@ export default function CapabilitySheet({ row, name, what, used, onClose, onDele
         </>, "cap-sheet-version")}
       </div>
       {failed && <p role="alert" className="text-[12px] text-danger-strong">{t("capabilityList.loadFailed")}</p>}
+      {error && <Notice tone="error" role="alert" testId="cap-sheet-error">{error}</Notice>}
       {server !== undefined && <McpServers only={server} onChanged={onChanged} />}
       {row.origin === "builtin" && row.switch !== null &&
         <p className="text-[12px] text-subtle-foreground" data-testid="cap-sheet-builtin">{t("capabilityList.builtinHint")}</p>}
