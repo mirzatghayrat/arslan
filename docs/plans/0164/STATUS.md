@@ -8,6 +8,13 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
+| #473 | CAP1c: migration 0075 drops `capability_finds` | `4e44843f` (main CI 40819237121 success) |
+| #459 | PRJ0: delete learned gate-advancing, rhythm stats and stall reminders | `a528c3ff` (main CI 40817737252 success) |
+| #463 | BR2: a turn offers each file once, its last version | `63d58666` (main CI 40816568246 success) |
+| #472 | CAP2a: delete Skill Forge, the curator and the candidates; `create_skill` becomes a card | `efa64c44` (main CI 40812701073 success) |
+| #489 | WB1 workbench card; one mock with SIDE-0 | `c83d7ed9` |
+| #488 | This page: batch 1 done; SBX-2 stopped | `77fdbc64` |
+| #487 | Q1: the pocket's old messages stay a Mac-only conversation; every phone frame naming it is refused | `b17ac722` (its run 40809106133 and #488's 40809540713 were cancelled by the next merge; 40809665261 at `c83d7ed9` covers #487, #488 and #489, success) |
 | #484 | SB1 sidebar card; projects double as groups in v0.1.65; this page | `5fcb4c17` |
 | #485 | F5b follow-up: drop the H2 codes nothing says since the Cua Driver engine went | `47bf7345` (its main CI 40807766855 was cancelled by the next merge; 40808069306 at `5fcb4c17` covers it, with #477, #483 and #484) |
 | #483 | Migrations 0078 (Q1 #3) and 0079 (SB1) logged | `3e5b61cf` |
@@ -55,34 +62,34 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order (2026-10-29). Batch 1 is done. Batch 2 goes one at a time, with main green between each: **#472 → #463 → #459 → #473**. A PR that turns conflicting or stale is synced by its author session and re-run before it goes to the user.
+Both of the user's batches are merged, and main is green after each one. Nothing is ready yet; these are in review:
 
-**Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code.
+- **#475 (INB2):** the effort=max recheck at `40e8a8ab` said merge after fixes. ②Main fixed H3 and H4 at `8834ed0a`. The user picked H1 "trace notes back" and H2 "count the project card" (2026-10-29), and ②Main is building both, tests first. The same reviewer then rechecks. Security surface: the user merges.
+- **#486 (Q1b, Bridge frames):** the effort=max review at `9249401a` asked for small changes. F1: a retry must repeat `conversation_kind`, and the Bridge refuses a kind-changing resend. F2: the id regex must end with `\z`. F3: four test gaps. With ②Main. Bridge surface: the user merges.
+- **#490 (Q1 #3, migration 0078):** ⓪Plan's effort=max reviewer is on it. Security surface (when Arslan learns): the user merges.
+- **#491 (Hands outcome words):** deletion-only, `no_effect` kept (`desktop_open` still says it). ②Main reviews, then auto-merge.
 
-- #472 (CAP2a): final effort=max verdict at `a130afef`, merge; CI 40735022447 success (all five jobs). Security surface. **First of batch 2.**
-- #463 (BR2): ①iOS OK at `d01381ec`; Bridge surface. After #472.
-- #459 (PRJ0): ⑤CAP's effort=max OK at `539b684d`. After #463.
-- #473 (CAP1c, migration 0075 drops `capability_finds`): main merged in at `06117e63` (only the migration-runner test conflicted: 0071 and 0075 both kept); ⓪Plan checked the diff against main is still the reviewed 4 files, 71+/1−. CI 40803555940 success. Drops data. Last.
+**Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
 | ②Main | Q1b #486 (Bridge frames; ⓪Plan's effort=max reviewer on `9249401a`), Q1 #3 (migration 0078), then the pocket deletion (the old pocket stays a Mac-only conversation; every phone frame naming it is refused, inbound and outbound: #487). INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
-| ③Hands | **SBX-2 is stopped:** a safety classifier stopped ③Hands' response as it started SBX-2 (2026-10-29), right after reading the SBX card. Per the card's "Risks and rollback", it is not worked around, reworded or moved to another session; no SBX-2 code exists (the local branch `claude/0164-sbx2-default-deny-preset`, not pushed, is clean at `47bf7345`). Waiting for the user. CLS and S5b come after SBX, so this is on v0.1.64's critical path. Then: drop `no_effect` / `partly_done` / `refused` from the Hands outcome words (deletion-only, after #485); after #459, the 0076 table-drop PR (the user merges) |
-| ⑤CAP | CAP2b (0077) after #472 |
-| ①iOS | Q1c waits on the user's OK on the Quick Ask mock; it can ship with Mac 0.1.64 |
+| ③Hands | **SBX-2 goes to Codex, whole** (user, 2026-10-29, the cloud audit's split; #493). ③Hands' local SBX-2 branch stays untouched. ③Hands writes 3a, 4a, 5a, 6a, 7 and 8 and S2a-3's structure, and starts drafting after #493 merges. #491 drops `partly_done` and `refused`, keeps `no_effect`; ②Main OK'd it at `c71045b2` (effort=max), and auto-merge is on. Its first backend run 40811544026 failed only in cargo-deny's advisory-db download (pytest 9732 passed), and the job was re-run. The 0076 table-drop PR is unblocked now that #459 is merged (`a528c3ff`). FRONT1 waits on the user's pick |
+| ⑤CAP | CAP2b (0077), unblocked now that #472 is merged |
+| ①iOS | Q1c in progress, on the scope the user narrowed on 2026-10-29 (Q1 card): 快问 replaces 「＋ 新对话」, one thread page, a 30-minute follow-up window, no 转成对话 on the phone yet |
 | ⑥Helper | STY #452 (draft), SIDE after SUB2, SB1 after the pocket deletion and INB4 (mock first) |
 | ⓪Plan | M64, STY read tally, mid-version M1 round, cards; the docs-site Cua sentence in the v0.1.64 docs pass |
 
 ## Waiting on the user
 
-- **SBX-2, stopped by a safety classifier** (see In progress): how to proceed is the user's call.
-- **The Quick Ask mock (Q1c)** from ①iOS: no iPhone UI code until it is OK'd. The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64.
+- **FRONT1:** which trigger Hands' `front` parameter names, from ③Hands' four options (README §3.6).
+- The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64; the TestFlight upload needs the user's nod.
 - The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md`.
 - Making the `language` CI job a required check (④参谋 is walking through it).
-- The side-chat mock (SIDE-0) and the sidebar mock (SB1-0), when they come.
+- The one mock for SIDE-0 and WB1, and the sidebar mock SB1-0, when they come.
 
 **Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The pocket's old messages stay as a Mac-only conversation (#487). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
