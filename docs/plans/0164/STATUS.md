@@ -2,12 +2,16 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-29.
+**Updated:** 2026-10-29, evening.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #484 | SB1 sidebar card; projects double as groups in v0.1.65; this page | `5fcb4c17` |
+| #485 | F5b follow-up: drop the H2 codes nothing says since the Cua Driver engine went | `47bf7345` (main CI 40807766855 covers #477 and #483 too) |
+| #483 | Migrations 0078 (Q1 #3) and 0079 (SB1) logged | `3e5b61cf` |
+| #477 | SBX-1b: SBPL strings written as UTF-8, so non-ASCII paths match | `afd32481` |
 | #474 | Classifier pass lines complete; C7c answers (user, 2026-10-29) | `17f52a82` (main CI 40806097374 running) |
 | #482 | The user's 10-29 answers on INB2 F2/F4 and Q1 points 3/4 (auto-merged) | `5988cb4d` (main CI 40803537315 success; it covers every merge down to #447, whose own runs were cancelled by the next merge) |
 | #458 | SIDE card and this status page | `96c77bf1` |
@@ -51,11 +55,10 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-The user is merging in ④参谋's order (2026-10-29). Batch 1 is done except #477. Batch 2 goes one at a time, with main green between each: **#472 → #463 → #459 → #473**. A PR that turns conflicting or stale is synced by its author session and re-run before it goes to the user.
+The user is merging in ④参谋's order (2026-10-29). Batch 1 is done. Batch 2 goes one at a time, with main green between each: **#472 → #463 → #459 → #473**. A PR that turns conflicting or stale is synced by its author session and re-run before it goes to the user.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code.
 
-- #477 (SBX-1b): rebased by ③Hands onto main to drop #471's original commits; `git diff origin/main...8cc53482` is byte-identical to the reviewed `39ac6ae0..f8da97c5` (⓪Plan checked with `cmp`), so the effort=max verdict at `f8da97c5` carries over. CI 40803735528 success. **Last of batch 1.**
 - #472 (CAP2a): final effort=max verdict at `a130afef`, merge; CI 40735022447 success (all five jobs). Security surface. **First of batch 2.**
 - #463 (BR2): ①iOS OK at `d01381ec`; Bridge surface. After #472.
 - #459 (PRJ0): ⑤CAP's effort=max OK at `539b684d`. After #463.
@@ -65,8 +68,8 @@ The user is merging in ④参谋's order (2026-10-29). Batch 1 is done except #4
 
 | Lane | Work |
 |---|---|
-| ②Main | INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
-| ③Hands | SBX-2 waits on the user's answer to ③Hands' question; the `hands_tools` Cua cleanup (after #456) |
+| ②Main | Q1b #486 (Bridge frames; ⓪Plan's effort=max reviewer on `9249401a`), Q1 #3 (migration 0078), then the pocket deletion (the old pocket stays a Mac-only conversation; every phone frame naming it is refused, inbound and outbound: #487). INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
+| ③Hands | **SBX-2 is stopped:** a safety classifier stopped ③Hands' response as it started SBX-2 (2026-10-29), right after reading the SBX card. Per the card's "Risks and rollback", it is not worked around, reworded or moved to another session; no SBX-2 code exists (branch `claude/0164-sbx2-default-deny-preset` is clean at `47bf7345`). Waiting for the user. CLS and S5b come after SBX, so this is on v0.1.64's critical path. Then: drop `no_effect` / `partly_done` / `refused` from the Hands outcome words (deletion-only, after #485) |
 | ⑤CAP | CAP2b (0077) after #472 |
 | ①iOS | Q1c waits on the user's OK on the Quick Ask mock; it can ship with Mac 0.1.64 |
 | ⑥Helper | STY #452 (draft), SIDE after SUB2, SB1 after the pocket deletion and INB4 (mock first) |
@@ -74,14 +77,14 @@ The user is merging in ④参谋's order (2026-10-29). Batch 1 is done except #4
 
 ## Waiting on the user
 
-- **The pocket's old messages after the deletion:** keep them on the Mac as an ordinary conversation (named after its first message, not pinned, not "Remote"), or delete them with the pocket. ②Main proposes keeping them.
+- **SBX-2, stopped by a safety classifier** (see In progress): how to proceed is the user's call.
 - **The Quick Ask mock (Q1c)** from ①iOS: no iPhone UI code until it is OK'd. The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64.
 - The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md`.
 - Making the `language` CI job a required check (④参谋 is walking through it).
 - The side-chat mock (SIDE-0) and the sidebar mock (SB1-0), when they come.
 
-**Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
+**Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The pocket's old messages stay as a Mac-only conversation (#487). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
 ## Spend
 
