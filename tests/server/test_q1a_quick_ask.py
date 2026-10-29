@@ -303,8 +303,8 @@ async def test_converting_a_quick_question_makes_it_an_ordinary_chat(client):
     got = await client.post(f"/api/v1/phone/conversations/{Q1}/update", json={"kind": "chat"})
     assert got.status_code == 200 and got.json() == {"conversation_id": Q1, "kind": "chat"}
     row = await _row(client, Q1)
-    # Whether it starts learning is the user's open question (card, #3); until then it doesn't.
-    assert (row.kind, row.no_learning) == ("chat", True)
+    # It learns from now on (card, #3; the user, 2026-10-29): test_q1_3_learn_after_convert.py.
+    assert (row.kind, row.no_learning) == ("chat", False)
     again = await client.post(f"/api/v1/phone/conversations/{Q1}/update", json={"kind": "chat"})
     assert again.status_code == 200 and (await _row(client, Q1)).kind == "chat"      # a retry after a lost reply
 

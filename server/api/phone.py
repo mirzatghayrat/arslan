@@ -21,7 +21,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
@@ -161,8 +161,10 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
     """Q1's `conversation.update`: a quick question becomes an ordinary chat, with every tool from its next
     turn. Only a quick question, or one already turned (a retry after a lost reply): an ordinary conversation,
     or SUB's `sub`, is `not_found` here and left as it is. Refused while a turn runs (the Bridge answers
-    `mac_busy`). Whether it then starts learning is the user's open question (card, #3); until they decide,
-    `no_learning` stays as it is."""
+    `mac_busy`). From then on it learns like an ordinary conversation, and its quick turns never teach (the
+    user, 2026-10-29; card, #3): the turn clears `no_learning` and stores its last message, after which the
+    facts extractor reads (`learns_after_message_id`, migration 0078). A retry changes neither: the user may
+    have switched learning off in the window since."""
     from server.services import run_registry, turn_journal
     if body.kind != "chat":
         raise HTTPException(400, "bad_request")
@@ -171,6 +173,10 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
         raise HTTPException(404, "not_found")
     if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
         raise HTTPException(409, "mac_busy")
+    if row.kind == "quick":
+        row.no_learning = False
+        row.learns_after_message_id = await db.scalar(select(func.max(ArslanMessage.id)).where(
+            ArslanMessage.conversation_id == conversation_id)) or 0
     row.kind = "chat"
     await db.commit()
     return {"conversation_id": conversation_id, "kind": "chat"}

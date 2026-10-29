@@ -28,6 +28,9 @@ class ConversationContext(Base):
     # today, worked out on each read. `parent_id`: SUB's link to the conversation that started it.
     kind = Column(String(20), nullable=True)
     parent_id = Column(String(100), nullable=True)
+    # 0078 (Q1 #3): a quick question turned into a chat learns only from the messages after this one; NULL is
+    # every other conversation (all of its messages).
+    learns_after_message_id = Column(Integer, nullable=True)
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

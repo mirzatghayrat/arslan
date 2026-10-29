@@ -90,6 +90,29 @@ def parse_practices(content: str | None) -> list[dict[str, Any]]:
     return out[:MAX_PRACTICES]
 
 
+async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
+    """The user's recent messages. Q1 #3 (the user, 2026-10-29): a quick question turned into a chat learns
+    from then on and its quick turns never teach, so for one, only the messages after the turn
+    (`learns_after_message_id`, migration 0078). Only an id the phone made can have been one (the quick
+    endpoint takes nothing else), so other conversations are read as before, without a lookup."""
+    from sqlalchemy import select
+
+    from server.db import session as db_session
+    from server.db.companion_models import ConversationContext
+    from server.db.models import ArslanMessage
+    if not conversation_id.startswith("phone-"):
+        return [m["content"] for m in history if m.get("role") == "user"]
+    async with db_session.AsyncSessionLocal() as db:
+        after = await db.scalar(select(ConversationContext.learns_after_message_id).where(
+            ConversationContext.id == conversation_id))
+        if after is None:
+            return [m["content"] for m in history if m.get("role") == "user"]
+        rows = (await db.scalars(select(ArslanMessage.content).where(
+            ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user",
+            ArslanMessage.id > after).order_by(ArslanMessage.id.desc()).limit(8))).all()
+    return list(reversed(rows))
+
+
 async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any]]:
     """0.1.52: reads ONLY the user's own messages (and the facts already known).
     Arslan's replies and the rolling summary can carry web pages, files and tool
@@ -98,7 +121,7 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     ctx = await memory.assemble_working_context(conversation_id)
     _after_reply.set(answers_earlier_reply(ctx["history"], ctx.get("summary") or ""))
     known = await memory.facts_text(include_sensitive=True)
-    own = [m["content"] for m in ctx["history"] if m.get("role") == "user"]
+    own = await _own_words(conversation_id, ctx["history"])
     prompt = (
         "The user's recent messages:\n" + ("\n".join(f"- {c}" for c in own[-8:]) or "(none)")
         + f"\n\n{known}\n\nUser's latest message:\n{user_message}"
