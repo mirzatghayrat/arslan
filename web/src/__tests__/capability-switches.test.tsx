@@ -115,12 +115,14 @@ describe("capability list", () => {
   });
 
   it("the delete question says what is lost, by what the row is", async () => {
-    vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
+    vi.spyOn(capabilitiesApi, "list").mockResolvedValue([...ROWS, row({ key: "skill:gh-carded", section: "skills",
+      origin: "installed", deletable: true, switch: "skill", name: "Carded", source_id: "s9" })]);
     render(<><CapabilitySwitches /><ConfirmHost /></>);
     await screen.findByTestId("cap-terminal");
     fireEvent.click(screen.getByTestId("cap-more-skills"));
     for (const [key, body] of [["skill:mine", "deleteBodyAuthored"], ["skill:s0", "deleteBodyInstalledSkill"],
       ["skill:gh-acme", "deleteBodyAuthored"],               // Discover's: no link to add it again from
+      ["skill:gh-carded", "deleteBodyInstalledSkill"],       // a card's, which Discover overwrote: files and a link
       ["mcp:2", "deleteBodyManual"], ["mcp:3", "deleteBodyInstalledConnection"]]) {
       fireEvent.click(screen.getByTestId(`cap-delete-${key}`));
       expect(await screen.findByTestId("confirm-sheet")).toHaveTextContent(`capabilityList.${body}`);
