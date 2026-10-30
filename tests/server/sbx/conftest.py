@@ -1,9 +1,7 @@
 """The SBX tests fail on a broken macOS sandbox, rather than skipping it."""
 import platform
-import hashlib
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -40,16 +38,13 @@ def sbx(tmp_path, request, record_property):
     base = getattr(request, "param", "default-deny")
     parameters = getattr(getattr(request.node, "callspec", None), "params", {})
     harness = Harness(tmp_path, base, parameters.get("mode", NetworkMode.NONE))
-    # Syntax errors and nested/unavailable seatbelt are failures on macOS.
-    result = harness.run(["/usr/bin/true"])
-    assert result.returncode == 0, result.stderr
-    record_property("macos", platform.mac_ver()[0])
-    record_property("hardware", platform.machine())
-    record_property("os_build", subprocess.check_output(["/usr/bin/sw_vers", "-buildVersion"], text=True).strip())
-    yield harness
-    harness.record_profile(record_property)
-    if output := request.config.getoption("--sbx-artifacts"):
-        text = harness.profile()
-        folder = Path(output)
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / (hashlib.sha256(text.encode()).hexdigest() + ".sb")).write_text(text)
+    try:
+        # Syntax errors and nested/unavailable seatbelt are failures on macOS.
+        result = harness.run(["/usr/bin/true"], probe="fixture-smoke")
+        assert result.returncode == 0, result.stderr
+        record_property("macos", platform.mac_ver()[0])
+        record_property("hardware", platform.machine())
+        record_property("os_build", subprocess.check_output(["/usr/bin/sw_vers", "-buildVersion"], text=True).strip())
+        yield harness
+    finally:
+        harness.record_executions(record_property, request.config.getoption("--sbx-artifacts"))

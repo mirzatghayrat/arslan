@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -19,10 +20,12 @@ DENY_BASES = ("default-deny",)
 
 
 class Harness:
-    def __init__(self, root: Path, base: str, network=NetworkMode.NONE):
+    def __init__(self, root: Path, base: str, network=NetworkMode.NONE, *, executions=None):
         self.root = root.resolve()
         self.base = base
         self.network = network
+        # Historical controls share the owning test's evidence stream.
+        self.executions = [] if executions is None else executions
         self.work = self.root / "work"
         self.home = self.root / "home"
         self.temp = self.root / "temp"
@@ -74,7 +77,7 @@ class Harness:
             return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE)
         raise NotImplementedError(f"no profile adapter for {self.base}")
 
-    def run(self, argv, *, profile=None, timeout=30, discard=False):
+    def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False):
         """Bound a process group, including grandchildren; never retain service output."""
         text = self.profile() if profile is None else profile
         with subprocess.Popen(
@@ -83,20 +86,42 @@ class Harness:
             stderr=subprocess.DEVNULL if discard else subprocess.PIPE, text=True,
             start_new_session=True,
         ) as process:
+            execution = {
+                "sequence": len(self.executions) + 1, "probe": probe,
+                "base": self.base, "network": self.network.value,
+                "profile_override": profile is not None,
+                "profile_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "profile_text": text,
+            }
+            self.executions.append(execution)
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                execution["result"] = "timeout"
+                raise
+            else:
+                execution["result"] = "completed"
             finally:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass  # The entire group has already exited.
                 process.wait()
+                execution["returncode"] = process.returncode
         return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
     def python(self, source: str, *args, **kwargs):
         return self.run([sys.executable, "-I", "-c", source, *map(str, args)], **kwargs)
 
-    def record_profile(self, record_property):
+    def record_executions(self, record_property, artifact_dir=None):
         record_property("base", self.base)
-        record_property("network", self.network.value)
-        record_property("profile_sha256", hashlib.sha256(self.profile().encode()).hexdigest())
+        # Report only safe metadata; exact texts containing local paths stay local.
+        record_property("executions", json.dumps([
+            {key: value for key, value in execution.items() if key != "profile_text"}
+            for execution in self.executions
+        ], sort_keys=True))
+        if artifact_dir is not None:
+            folder = Path(artifact_dir)
+            folder.mkdir(parents=True, exist_ok=True)
+            for execution in self.executions:
+                (folder / (execution["profile_sha256"] + ".sb")).write_bytes(execution["profile_text"].encode())

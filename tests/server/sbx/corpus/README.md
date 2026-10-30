@@ -20,8 +20,8 @@ The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
 an availability skip. The current set adds 293 cases: 71 assertion gates and
 222 measurement rows. Together with the existing 69, the job must expect 362.
-PR #508 set the CI count to 359; a separate Claude CI change must raise it to
-362 for the three added localhost measurements. The mirror guard fails until then.
+The separate CI change in PR #524 sets the expected count to 362, including
+the three localhost measurements.
 
 ## Reading results
 
@@ -32,11 +32,21 @@ successful compatibility or security result. The terminal summary and JUnit
 properties preserve those distinctions. Inspect them before approving SBX-M.
 A hard-link `boundary-open` requires a follow-up before SBX-3 merges.
 
-Every executed row records its base name, network mode, exact profile SHA-256,
-macOS release/build and architecture. Version probes also record tool versions.
-The optional artifact directory saves the exact text under its SHA-256. These
-files contain scratch paths and must not be committed. The report records ids,
-versions, hashes, outcomes, gaps and card costs only; never raw service output.
+Every row records macOS release/build and architecture. Its `executions` JUnit
+property is a JSON list with one entry per launched subprocess: sequence number,
+probe label, base, configured network mode, whether the profile was overridden,
+exact profile SHA-256, completion/timeout result and return code. The test id plus
+sequence identifies the invocation. This includes the fixture smoke probe,
+historical controls, custom port-denial profiles and every mode in a multi-mode
+test. The mode is adapter context; an explicit override's exact text is authoritative.
+A completed subprocess is not necessarily an accepted operation; interpret its
+return code together with the named probe's assertions or measurement outcome.
+Unexecuted optional/tool-unavailable probes have no execution entry beyond smoke.
+Version probes also record tool versions. The optional artifact directory saves
+each captured profile text under its SHA-256, never a profile regenerated at
+teardown. These files contain local paths and must not be committed. The report
+records ids, versions, hashes, outcomes, gaps and card costs only; never raw
+command arguments, profile text or service output.
 
 `harness.py` selects `legacy-commands`, `default-deny`, or `outside-floor` by
 name. Legacy uses today's real command builder and its writable/protected roots

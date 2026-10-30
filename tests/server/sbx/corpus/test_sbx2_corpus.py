@@ -131,7 +131,7 @@ exit(finished && ok ? 0 : 1)
         return
     try:
         version = case.name.endswith("-version")
-        result = sbx.run(case.argv, timeout=45, discard=not version)
+        result = sbx.run(case.argv, timeout=45, discard=not version, probe=case.name)
     except subprocess.TimeoutExpired:
         outcome, code = "timeout", None
     else:
@@ -172,7 +172,7 @@ with socket.socket() as server:
                 peer.sendall(b'y')
                 assert client.recv(1) == b'y'
         print('ok')
-""")
+""", probe="localhost-dev-server-bind-and-fetch")
     record_property("probe", "localhost-dev-server-bind-and-fetch")
     record_property("outcome", result.stdout.strip() if result.returncode == 0 else "tool-failed")
     record_property("returncode", result.returncode)
@@ -195,7 +195,7 @@ except OSError as exc:
     print('refused')
 else:
     print('writable')
-""", target)
+""", target, probe="hardlink-write")
     assert result.returncode == 0, result.stderr
     record_property("outcome", "boundary-open" if target.read_text() != "original" else "refused")
     # SBX-M must open a follow-up before SBX-3 if the candidate says boundary-open.
@@ -211,7 +211,7 @@ import os, subprocess, sys
 child = subprocess.Popen([sys.executable, '-I', '-c',
     "import pathlib,time,os; time.sleep(.1); pathlib.Path(os.environ['TMPDIR'],'child').write_text('ok')"])
 assert child.wait(timeout=5) == 0
-""")
+""", probe="background-child-temp")
     record_property("outcome", "ok" if result.returncode == 0 else "tool-failed")
     # This tests child access, not the SBX-3 Run lifetime/boot sweep (not built yet).
 
@@ -240,7 +240,7 @@ with socket.socket(socket.AF_UNIX) as sock:
         print(exc.errno)
     else:
         print(0)
-""", path)
+""", path, probe=kind)
     assert result.returncode == 0, result.stderr
     record_property("connect_errno", int(result.stdout))
     record_property("outcome", "reachable" if int(result.stdout) == 0 else "unreachable")

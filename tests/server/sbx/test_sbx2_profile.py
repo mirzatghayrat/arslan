@@ -1,6 +1,10 @@
 """Portable checks for the unused SBX-2 preset and the corpus contract."""
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock
+import hashlib
+import json
+import subprocess
 import tempfile
 
 import pytest
@@ -114,3 +118,87 @@ def test_missing_tool_inside_shell_is_reported_before_execution(tmp_path, monkey
     corpus.test_compatibility_measurement(h, case, NetworkMode.NONE, properties.__setitem__)
     assert properties["outcome"] == "tool-unavailable"
     assert properties["missing_tools"] == "absent-sbx-tool"
+
+
+@pytest.fixture
+def sandbox_process(monkeypatch):
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.communicate.return_value = ("private stdout", "private stderr")
+    process.returncode = 7
+    launch = Mock(return_value=process)
+    monkeypatch.setattr("tests.server.sbx.harness.subprocess.Popen", launch)
+    monkeypatch.setattr("tests.server.sbx.harness.os.killpg", Mock())
+    return launch, process
+
+
+def test_evidence_and_artifacts_match_every_executed_profile(tmp_path, monkeypatch, sandbox_process):
+    launch, _ = sandbox_process
+    h = Harness(tmp_path, "default-deny")
+    for mode in NetworkMode:
+        h.network = mode
+        h.run(["/usr/bin/true"], probe="mode-" + mode.value)
+    override = h.profile(denied_ports=[43210])
+    h.run(["/usr/bin/true"], probe="arslan-port-refusal", profile=override)
+    control = Harness(tmp_path, "outside-floor", NetworkMode.ANY_DECLARED, executions=h.executions)
+    control.run(["/usr/bin/true"], probe="historical-control")
+
+    # Teardown must not regenerate any profile, even if the adapter state changed.
+    h.network = NetworkMode.NONE
+    monkeypatch.setattr(h, "profile", lambda: pytest.fail("teardown regenerated a profile"))
+    properties = {}
+    artifacts = tmp_path / "artifacts"
+    h.record_executions(properties.__setitem__, artifacts)
+    executions = json.loads(properties["executions"])
+    assert len(executions) == len(launch.call_args_list) == 6
+    for sequence, (execution, call) in enumerate(zip(executions, launch.call_args_list), 1):
+        argv = call.args[0]
+        assert argv[:2] == ["/usr/bin/sandbox-exec", "-p"]
+        actual_text = argv[2]
+        digest = hashlib.sha256(actual_text.encode()).hexdigest()
+        assert execution["profile_sha256"] == digest
+        assert (artifacts / (digest + ".sb")).read_bytes() == actual_text.encode()
+        assert execution["sequence"] == sequence
+        assert execution["result"] == "completed" and execution["returncode"] == 7
+        assert "profile_text" not in execution
+    assert [e["network"] for e in executions[:4]] == [mode.value for mode in NetworkMode]
+    assert [e["probe"] for e in executions[:4]] == ["mode-" + mode.value for mode in NetworkMode]
+    assert executions[4]["probe"] == "arslan-port-refusal"
+    assert executions[4]["profile_override"] is True
+    assert executions[4]["profile_sha256"] != executions[3]["profile_sha256"]
+    assert executions[5]["base"] == "outside-floor"
+    assert "private stdout" not in properties["executions"]
+    assert "private stderr" not in properties["executions"]
+
+
+def test_timed_out_execution_keeps_its_profile_and_result(tmp_path, sandbox_process):
+    launch, process = sandbox_process
+    process.communicate.side_effect = subprocess.TimeoutExpired("probe", 0.1)
+    process.returncode = -9
+    h = Harness(tmp_path, "default-deny")
+    with pytest.raises(subprocess.TimeoutExpired):
+        h.run(["/usr/bin/true"], probe="timed-out-probe", timeout=0.1)
+    properties = {}
+    h.record_executions(properties.__setitem__)
+    execution, = json.loads(properties["executions"])
+    assert execution["result"] == "timeout" and execution["returncode"] == -9
+    assert execution["profile_sha256"] == hashlib.sha256(launch.call_args.args[0][2].encode()).hexdigest()
+    process.wait.assert_called_once()
+
+
+def test_fixture_smoke_failure_still_records_executed_profile(tmp_path, sandbox_process):
+    from tests.server.sbx.conftest import sbx
+
+    launch, _ = sandbox_process
+    properties = {}
+    artifacts = tmp_path / "artifacts"
+    request = SimpleNamespace(node=SimpleNamespace(get_closest_marker=lambda name: object()),
+                              config=SimpleNamespace(getoption=lambda name: artifacts))
+    fixture = sbx.__wrapped__(tmp_path, request, properties.__setitem__)
+    with pytest.raises(AssertionError, match="private stderr"):
+        next(fixture)
+    execution, = json.loads(properties["executions"])
+    assert execution["probe"] == "fixture-smoke"
+    actual_text = launch.call_args.args[0][2]
+    assert execution["profile_sha256"] == hashlib.sha256(actual_text.encode()).hexdigest()
+    assert (artifacts / (execution["profile_sha256"] + ".sb")).read_text() == actual_text

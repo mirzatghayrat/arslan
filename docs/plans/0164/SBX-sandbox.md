@@ -236,15 +236,6 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 ### 3. Network
 
-**SBX-2 interim decision (user, 2026-10-30):** CI run 41002402918 measured that
-Seatbelt's `localhost` bind filter also permits wildcard binds. The unused
-default-deny candidate therefore denies all binds/listens in every network mode.
-The localhost dev-server promise below is deferred: its bind-and-fetch check
-remains an SBX-M measurement under each base, with refusal expected for the
-candidate, while wildcard-bind refusal remains a hard assertion. Restoring
-localhost servers (a brokered listener or another approach) needs a card decision
-before SBX-3 wires this preset. This does not change existing product presets.
-
 - Mode "proxy" (Q1 option N-a):
   - the commands preset allows `network-outbound` only to `localhost:<proxy port>`;
   - DNS from inside is denied (the proxy resolves);

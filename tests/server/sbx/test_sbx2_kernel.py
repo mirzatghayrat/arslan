@@ -47,12 +47,13 @@ def test_service_policy_and_reachability(sbx, mode, service, record_property):
     argv = [sys.executable, "-I", str(PROBE), "mach-lookup", service]
     # This control queries reachability only: no RPC, no credential or UI access.
     for base in ("legacy-commands", "outside-floor"):
-        control = Harness(sbx.root, base, mode).run(argv)
+        control = Harness(sbx.root, base, mode, executions=sbx.executions).run(
+            argv, probe="mach-lookup-control")
         assert control.returncode == 0, control.stderr
         observed = json.loads(control.stdout)
         assert observed["policy"] == 0
         record_property(base + "-lookup", observed["lookup"])
-    result = sbx.run(argv)
+    result = sbx.run(argv, probe="mach-lookup")
     assert result.returncode == 0, result.stderr
     answer = json.loads(result.stdout)
     assert answer["policy"] == 1, answer  # 1102 (absent service) alone cannot pass.
@@ -64,13 +65,14 @@ def test_service_policy_and_reachability(sbx, mode, service, record_property):
 def test_preference_policy_distinguishes_reads_from_writes(sbx):
     domain = "com.arslan.sbx-probe." + uuid.uuid4().hex
     for operation, expected in (("user-preference-read", 0), ("user-preference-write", 1)):
-        result = sbx.run([sys.executable, "-I", str(PROBE), operation, domain])
+        result = sbx.run([sys.executable, "-I", str(PROBE), operation, domain], probe=operation)
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["policy"] == expected
     # Only the candidate attempts a write; the baseline never does. Delete the
     # unique domain immediately if the restriction regresses and it is accepted.
     try:
-        result = sbx.run(["/usr/bin/defaults", "write", domain, "probe", "-string", "sbx"], discard=True)
+        result = sbx.run(["/usr/bin/defaults", "write", domain, "probe", "-string", "sbx"],
+                         discard=True, probe="preference-write")
         assert result.returncode != 0
         read = subprocess.run(["/usr/bin/defaults", "read", domain, "probe"], env=sbx.env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
@@ -88,10 +90,11 @@ def test_launch_submission_is_refused(sbx):
     job.write_bytes(plistlib.dumps({"Label": label, "ProgramArguments": ["/usr/bin/true"]}))
     domain = f"user/{os.getuid()}"
     control = sbx.run(["/bin/launchctl", "print", domain],
-                      profile="(version 1)(allow default)", discard=True)
+                      profile="(version 1)(allow default)", discard=True, probe="launchd-domain-control")
     assert control.returncode == 0, "launchd domain unavailable; not denial evidence"
     try:
-        result = sbx.run(["/bin/launchctl", "bootstrap", domain, str(job)], discard=True)
+        result = sbx.run(["/bin/launchctl", "bootstrap", domain, str(job)],
+                         discard=True, probe="launch-submit")
         assert result.returncode != 0
         read = subprocess.run(["/bin/launchctl", "print", f"{domain}/{label}"], env=sbx.env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
@@ -122,11 +125,12 @@ with socket.socket(socket.AF_UNIX) as sock:
     else:
         print(0)
 """
-            control = sbx.python(source, path, profile="(version 1)(allow default)")
+            control = sbx.python(source, path, profile="(version 1)(allow default)",
+                                 probe="unix-socket-control")
             assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
             for mode in NetworkMode:
                 sbx.network = mode
-                result = sbx.python(source, path)
+                result = sbx.python(source, path, probe="unix-socket-refusal")
                 assert result.returncode == 0, result.stderr
                 assert int(result.stdout) in (errno.EPERM, errno.EACCES)
 
@@ -152,7 +156,7 @@ for path, action in ((sys.argv[1], 'write'), (sys.argv[2], 'read'), (sys.argv[2]
         raise AssertionError('boundary allowed')
 print('checked')
 """
-    result = sbx.python(source, readable, secret)
+    result = sbx.python(source, readable, secret, probe="filesystem-boundaries")
     assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
     assert readable.read_text() == "public" and secret.read_text() == "private"
 
@@ -171,7 +175,7 @@ assert os.read(master, 3) == b'sbx'
 os.close(master)
 os.close(slave)
 print('checked')
-""")
+""", probe="same-sandbox-signals-and-pty")
     assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
     # The external target belongs to this test. If confinement regresses, only
     # this disposable sleeper receives the signal, never pytest or another app.
@@ -186,7 +190,7 @@ except OSError as exc:
     assert exc.errno == errno.EPERM, exc
 else:
     raise AssertionError('signal outside sandbox allowed')
-""", outside.pid)
+""", outside.pid, probe="external-signal-refusal")
             assert denied.returncode == 0, denied.stderr
             assert outside.poll() is None
         finally:
@@ -227,7 +231,7 @@ for prefix, allowed in ((os.environ['SBX_IPC_PREFIX'], True), ('/sbx-other-', Fa
         assert error in (errno.EPERM, errno.EACCES), error
 print('checked')
 """
-    result = sbx.python(source)
+    result = sbx.python(source, probe="private-ipc")
     assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
 
 
@@ -235,7 +239,8 @@ print('checked')
 @macos
 def test_apple_events_refused_without_contacting_an_app(sbx):
     result = sbx.run(["/usr/bin/osascript", "-e",
-                      'tell application id "com.arslan.sbx-probe.nonexistent" to get name'], discard=True)
+                      'tell application id "com.arslan.sbx-probe.nonexistent" to get name'],
+                     discard=True, probe="apple-event-send")
     assert result.returncode != 0
     # A missing application is not proof: ask the kernel for the operation too.
     check = sbx.python("""
@@ -244,7 +249,7 @@ lib = C.CDLL('/usr/lib/libsandbox.dylib')
 lib.sandbox_check.argtypes = [C.c_int, C.c_char_p, C.c_int]
 flag = C.c_int.in_dll(lib, 'SANDBOX_CHECK_NO_REPORT').value
 assert lib.sandbox_check(os.getpid(), b'appleevent-send', flag) == 1
-""")
+""", probe="apple-event-policy")
     assert check.returncode == 0, check.stderr
 
 
@@ -267,9 +272,10 @@ with socket.socket() as sock:
     else:
         print(0)
 """
-        allowed = sbx.python(source, port)
+        allowed = sbx.python(source, port, probe="loopback-connect")
         assert allowed.returncode == 0 and allowed.stdout.strip() == "0", allowed.stderr
-        denied = sbx.python(source, port, profile=sbx.profile(denied_ports=[port]))
+        denied = sbx.python(source, port, profile=sbx.profile(denied_ports=[port]),
+                            probe="arslan-port-refusal")
         assert denied.returncode == 0, denied.stderr
         assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
     result = sbx.python("""
@@ -291,7 +297,7 @@ for family, hosts in ((socket.AF_INET, ('0.0.0.0', '127.0.0.1')),
             assert exc.errno in (errno.EPERM, errno.EACCES), exc
         else:
             raise AssertionError('listen allowed')
-""")
+""", probe="listener-refusal")
     assert result.returncode == 0, result.stderr
 
 
@@ -312,5 +318,5 @@ except OSError as exc:
 else:
     os.close(fd)
     raise AssertionError('unlisted device writable')
-""")
+""", probe="device-writes")
     assert result.returncode == 0, result.stderr
