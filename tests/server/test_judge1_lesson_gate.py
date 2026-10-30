@@ -152,3 +152,26 @@ async def test_the_ledger_is_pruned_while_the_app_runs(execution_db, router, mon
     monkeypatch.setattr(judgment, "prune", counting)
     await judgment.judge("memory.worth", {"kind": "detour", "candidate": "y", "evidence": "{}"})
     assert pruned == []                                                      # at most once per PRUNE_EVERY_S
+
+
+async def test_a_lesson_learned_then_deleted_leaves_no_row_holding_its_words(client, router, monkeypatch):
+    """②Main's review of #567 (M1): a lesson's words are also asked about while it is still a candidate
+    (memory.worth, and merge or conflict under another lesson's ref). Those questions are kept as digests."""
+    from server.db import session as db_session
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
+    async with client.db_maker() as session:                 # an earlier lesson, so merge and conflict are asked
+        session.add(Lesson(situation=f"Exporting the {MARK} files", advice="use the archive tool with --full",
+                           polarity="do", source="detour", status="active", evidence={}))
+        await session.commit()
+    words = "Exporting the QUARTERLYARCHIVE files with checksums"
+    with pc.bind(LOCAL):
+        await lessons.capture([lessons.candidate(words, "verify every checksum after writing", source="detour")],
+                              conversation_id="c-judge1", external_seen=False)
+    async with client.db_maker() as session:
+        new = (await session.scalars(select(Lesson).where(Lesson.situation == words))).one()
+        asked = (await session.scalars(select(Judgment.point))).all()
+    assert {"memory.worth", "memory.merge", "memory.conflict"} <= set(asked)   # it was asked about, as a candidate
+    assert (await client.delete(f"/api/v1/lessons/{new.id}")).status_code == 200
+    async with client.db_maker() as session:
+        kept = [str(state) for state in (await session.scalars(select(Judgment.state))).all()]
+    assert not any("checksum" in state or MARK in state for state in kept)     # neither its words nor the other's

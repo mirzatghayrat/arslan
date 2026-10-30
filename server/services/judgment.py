@@ -55,6 +55,10 @@ class DecisionPoint:
     mode: str                        # off | shadow | active
     threshold: float = 0.9
     after_turn: bool = False         # runs after the answer (every point does since C4)
+    # JUDGE1 (②Main's review of #567, M1): the ledger keeps a digest of each field, not the field. For points whose
+    # state is memory text (a candidate lesson or an existing one): the ledger outlives the lesson's deletion, and
+    # its rows are not all keyed to that lesson. scripts/judgment_replay.py cannot replay these points.
+    redact: bool = False
 
 
 REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
@@ -62,14 +66,14 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
     DecisionPoint("memory.worth",
                   "Is this worth remembering for future conversations with this user (a stable preference, "
                   "a fix that will matter again, a quirk of this machine), rather than a one-off?",
-                  ("kind", "candidate", "evidence"), "active", 0.7, after_turn=True),
+                  ("kind", "candidate", "evidence"), "active", 0.7, after_turn=True, redact=True),
     DecisionPoint("memory.merge",
                   "Does the candidate say the same thing as the existing entry (a duplicate or a more precise "
                   "version of it)?",
-                  ("candidate", "existing"), "active", 0.8, after_turn=True),
+                  ("candidate", "existing"), "active", 0.8, after_turn=True, redact=True),
     DecisionPoint("memory.conflict",
                   "Does the candidate advise the opposite of the existing entry for the same situation?",
-                  ("candidate", "existing"), "active", 0.8, after_turn=True),
+                  ("candidate", "existing"), "active", 0.8, after_turn=True, redact=True),
     DecisionPoint("memory.applied",
                   "Did the assistant act on this lesson in the steps shown?",
                   ("lesson", "steps"), "active", 0.7, after_turn=True),
@@ -156,12 +160,15 @@ async def _tokens_today(db) -> int:
 
 async def judge(point_name: str, state: dict, *, ref: str | None = None,
                 conversation_id: str | None = None) -> Verdict | None:
-    """Ask, record, answer. None = no answer (off, cap, timeout, error): the caller falls back."""
+    """Ask, record, answer. None = no answer (off, cap, timeout, error): the caller falls back. A point marked
+    `redact` is recorded as digests of its fields (and `ref`), never the fields."""
     point = REGISTRY.get(point_name)
     if point is None or point.mode == "off":
         return None
     small = minimal_state(point, state)
-    digest = state_hash(point.name, small)
+    kept = {key: "sha256:" + hashlib.sha256(str(value).encode()).hexdigest()[:16]
+            for key, value in small.items()} if point.redact else small
+    digest = state_hash(point.name, kept)
     from server.db.models import Judgment
     verdict = probability = model = error = None
     started = time.monotonic()
@@ -196,7 +203,7 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
     latency = int((time.monotonic() - started) * 1000)
     try:
         async with db_session.AsyncSessionLocal() as db:
-            row = Judgment(point=point.name, mode=point.mode, state=small, state_hash=digest, verdict=verdict,
+            row = Judgment(point=point.name, mode=point.mode, state=kept, state_hash=digest, verdict=verdict,
                            probability=probability, latency_ms=latency, model=(str(model)[:80] if model else None),
                            error=error, ref=(ref or None) and str(ref)[:80], conversation_id=conversation_id)
             db.add(row)

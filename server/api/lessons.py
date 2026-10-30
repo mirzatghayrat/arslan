@@ -80,7 +80,8 @@ async def delete_lesson(lesson_id: int):
         if row is None:
             raise HTTPException(404, "lesson_not_found")
         await db.delete(row)
-        # JUDGE1: what the judgments ledger kept of it (merge, conflict, applied; Activity shows the rows) goes too.
+        # JUDGE1: the judgments ledger's rows keyed to it (merge, conflict, applied) go too. The candidate side of a
+        # question is never kept as text (judgment's `redact`), so no row elsewhere still holds this lesson's words.
         await db.execute(delete(Judgment).where(Judgment.ref == f"lesson:{lesson_id}"))
         await db.commit()
     return {"id": lesson_id, "deleted": True}
