@@ -31,6 +31,7 @@ conversation" — that last one is a stored grant (`outside` / `*`, S4a: `permis
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -85,6 +86,38 @@ def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
     shared = [_real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
     scope = [_real(workspace), *([_real(temp)] if temp is not None else [])]
     return [*(Root(str(p), IN_SCOPE) for p in scope), *(Root(str(p), SHARED_CACHE) for p in shared), *_DEVICES]
+
+
+# Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the
+# historical baseline (tests/server/sbx/harness.py), and `profile()` with no devices and nothing in
+# `deny_write_after_roots` writes main's text byte for byte. No product path calls them
+# (test_sbx3_commands.py pins that). DELETE-BY: v0.1.64, together with that adapter, after SBX-M records the
+# baseline and before this PR leaves draft (docs/plans/0164/SBX-sandbox.md, "SBX-2 harness retention").
+_CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
+
+
+def _darwin_user_dir() -> Path | None:
+    try:
+        temp = os.confstr(_CS_DARWIN_USER_TEMP_DIR)
+    except (ValueError, OSError):
+        return None
+    return _real(temp).parent if temp else None
+
+
+def temp_roots() -> list[Path]:
+    tmp = _real(tempfile.gettempdir())
+    user = tmp.parent if tmp.name == "T" else tmp
+    roots = [user]
+    darwin = _darwin_user_dir()
+    if darwin is not None and darwin not in roots:
+        roots.append(darwin)
+    return [*roots, _real("/private/tmp"), _real("/private/var/tmp")]
+
+
+def default_writable(workspace: Path) -> list[Path]:
+    home = Path.home()
+    return [_real(workspace), *temp_roots(), Path("/dev"),
+            _real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
 
 
 def in_scope(path, roots: list[Root]) -> bool:

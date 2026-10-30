@@ -2,6 +2,8 @@
 
 ⓪Plan, 2026-10-30. The user asked, relayed by ④参谋 (「转给 ⓪Plan」), for the long-term approach over minimal patches, with "no over-defence" (`docs/sessions.md` §12) and mainstream practice weighed in each card. ④参谋 drafted the scope. ⓪Plan re-checked the references at main `b3f31303`. Lane: ⑤CAP for all three. Each card is its own PR, written at effort=max with an independent effort=max review, and the user merges (security surface).
 
+**Decided on 2026-10-30 (user, relayed by ④参谋): mainstream practice for all three.** SKF1 changes meaning (below), UNI1b is a notice only, and SEC1 is an optional offer. The decisions are recorded in full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-30".
+
 | Card | Tier | Order |
 |---|---|---|
 | SKF1 skill framing becomes an allowlist | should | first, small |
@@ -9,6 +11,8 @@
 | SEC1 secrets in connection URLs and args move to the encrypted store | could (v0.1.65 candidate) | after SKF1 and UNI1 |
 
 ## SKF1: skill framing becomes an allowlist
+
+**Changed by the user on 2026-10-30 (D2).** Every skill the user has is trusted and read unframed, as in Claude Code and Codex. SKF1 keeps its one function (`skill_trust`) as the single place that decides, but the trusted set now covers every skill, and reading a skill no longer marks the turn. Origin marks stay as data for deletion and display. Skills of unknown origin are deletable. The text below is the earlier design; #519 is reworked to match, with a fresh effort=max review.
 
 **Today.** `read_skill` frames a skill as outside content only when `row.category in ("imported", AUTHORED_OUTSIDE)` (`server/registry/executors.py:852`). That is a denylist: any other category reads as Arslan's own. The gh- skills (old Discover, distilled from GitHub READMEs) got through exactly that way until #502 (migration 0080) marked them.
 
@@ -35,6 +39,8 @@
 4. **External evidence.** A CI run id. The unknown-category test goes red when the allowlist is reverted to the denylist.
 
 ## UNI1: one name sanitizer at every entry point; bodies flagged, not stripped
+
+**UNI1b (user, 2026-10-30, D3):** the invisible-character count is a notice only, like GitHub's hidden-Unicode warning. It never blocks an import or a save, and changes nothing in the body beyond what UNI1a already does. It still needs the mock first.
 
 **Today.** The checks are scattered:
 - the MCP name rule `breaks_mcp_name_rule` / `_MCP_NAME` (`server/orchestrator/untrusted.py:99-103`, from #495 and #498);
@@ -66,6 +72,8 @@
 4. **External evidence.** A CI run id; the ZWNJ test going red on today's `_visible`; the user's OK on the notice mock.
 
 ## SEC1: secrets in connection URLs and args move to the encrypted store; one display function
+
+**User, 2026-10-30 (D3):** the move is an optional one-click offer, as in Claude Code's `${VAR}` and VS Code's password inputs. It never blocks adding, updating or starting a connection. The storage stays as #536 built it: a `${NAME}` placeholder plus the encrypted column (0081), because moving the value into `env` would change what is sent (below).
 
 **Today.** A connection's `env` is already encrypted at rest and masked on read (`server/services/mcp_service.py:1`, `:29-30`, `:75`). OAuth tokens are encrypted (`server/mcp/oauth_flow.py:51`). Secrets typed into the **URL** or the **command args** are stored in plain text and shown raw: `mcp_service.py:74` returns args and `:75` the URL, as stored.
 

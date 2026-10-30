@@ -154,3 +154,14 @@ async def test_the_work_folder_the_devices_and_a_pty_still_work(tmp_path):
     assert result["sandbox"] == "workspace" and result["ok"], result
     assert (tmp_path / "made.txt").read_text() == "hi\n"
     assert result["stdout"].split() == ["4", "ok"]
+
+
+def test_only_sbx2s_harness_calls_the_baseline_helpers():
+    """`default_writable` and `temp_roots` stay only for the harness's historical baseline (DELETE-BY in
+    command_sandbox.py); no product path writes a profile from them."""
+    import re
+    root = Path(__file__).resolve().parents[3]
+    callers = sorted(str(p.relative_to(root)) for folder in ("server", "arslan", "scripts", "tests")
+                     for p in (root / folder).rglob("*.py")
+                     if re.search(r"\b(default_writable|temp_roots)\(", p.read_text(encoding="utf-8")))
+    assert callers == ["server/services/command_sandbox.py", "tests/server/sbx/harness.py"]

@@ -418,7 +418,7 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
 async def _fire(task: ScheduledTask) -> None:
     from server.orchestrator import untrusted
-    from server.services import task_context
+    from server.services import presence, task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
     from server.services import desktop_status
 
@@ -428,7 +428,8 @@ async def _fire(task: ScheduledTask) -> None:
     # content. Its prompt may come from a turn that had read some, and after one "this conversation"
     # the schedule card is not shown again. DELETE-BY: v0.1.64, with S2a-3 PR4 (scheduled runs get
     # read-only commands back): it records outside_seen on the scheduled task, read here instead.
-    with desktop_status.working(cid, title=task.name, kind="scheduled"):   # keeps the Mac awake while the fire runs (0.1.41)
+    # INB2: nobody is there when a stored prompt fires, also when "fire now" ran from a present turn.
+    with desktop_status.working(cid, title=task.name, kind="scheduled"), presence.not_present():   # keeps the Mac awake (0.1.41)
         with untrusted.carried(True):
             return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
                                                     headless=True)
