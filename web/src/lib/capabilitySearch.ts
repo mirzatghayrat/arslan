@@ -1,15 +1,14 @@
 /**
- * Filtering what you ALREADY have (Capability Library).
+ * Filtering what you ALREADY have (the Capabilities list).
  *
- * The Discover tab already has a search box, and it searches GitHub — things
- * you do not have yet. There was no way to search the other direction, so on a
- * page listing dozens of toolsets, skills and servers the only way to find one
- * was to scroll. That is the gap this closes; it is deliberately not a second
- * discovery surface.
+ * It only narrows what is installed and never reaches the network: something
+ * new is asked for in a conversation (v0.1.64 CAP1a removed the Discover tab and
+ * its GitHub search). Without it, finding one row among dozens of tools, skills
+ * and servers meant scrolling.
  *
- * Matching lives here rather than inline in three components because the three
- * lists have different shapes and the RULES should not: one query, matched the
- * same way everywhere, and testable without rendering anything.
+ * Matching lives here rather than inline in the components because their lists
+ * have different shapes and the RULES should not: one query, matched the same
+ * way everywhere, and testable without rendering anything.
  *
  * The nested case is the one that earns its keep. Someone looking for
  * `web_search` is looking for a TOOL, and tools live inside toolsets — so a

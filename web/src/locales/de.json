@@ -44,7 +44,6 @@
     "description": "Wiederverwendbare, versionierte Schritte mit Abhängigkeiten, begrenzter Parallelität und ausdrücklicher Freigabe. Bestehende Werkzeugrechte gelten weiterhin.",
     "loading": "Abläufe werden geladen…",
     "operation_failed": "Vorgang fehlgeschlagen. Verbindung, ausgewählte Spezialisten und Abhängigkeiten prüfen und erneut versuchen.",
-    "refresh": "Aktualisieren",
     "saved": "Gespeicherte Version wählen",
     "new": "Neuer Ablauf",
     "name": "Name des Ablaufs",
@@ -861,12 +860,6 @@
     "configure": "Konfigurieren",
     "open_channel": "Gespräch öffnen",
     "calibrate": "Anpassen",
-    "tool_hub_title": "Werkzeuge und Repositorys entdecken",
-    "tool_hub_subtitle": "MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.",
-    "tool_hub_coming_soon": "Demnächst",
-    "tool_hub_search_placeholder": "MCP/tool discovery — coming soon...",
-    "tool_hub_evaluate": "Spezifikation bewerten",
-    "tool_hub_presets_label": "Quick Presets (coming soon):",
     "back_to_ledger": "Zurück zur Expertenübersicht",
     "active_slot": "Aktiver Platz",
     "equip_tools": "Werkzeuge hinzufügen",
@@ -922,9 +915,6 @@
         "other": "Andere"
       }
     },
-    "sections": {
-      "import_skills": "Fertigkeiten aus Repository importieren"
-    },
     "dossier": {
       "value_label": "Nutzen für Arslan"
     },
@@ -969,7 +959,6 @@
       "placeholder": "Vorhandenes filtern…",
       "clear": "Filter zurücksetzen",
       "count": "{{shown}} von {{total}}",
-      "no_match": "Hier passt nichts dazu. Filter zurücksetzen, um wieder alles zu sehen.",
       "matched_tools": "enthält {{tools}}"
     }
   },
@@ -1422,8 +1411,6 @@
     "phoneBody": "Dieses iPhone erreicht Arslan erst nach erneutem Koppeln wieder.",
     "noteTitle": "Diese Notiz löschen?",
     "noteBody": "„{{title}}“ wird samt Verknüpfungen gelöscht. Das lässt sich nicht rückgängig machen.",
-    "mcpTitle": "„{{name}}“ entfernen?",
-    "mcpBody": "Die Verbindung und ihre Werkzeuge werden entfernt, gespeicherte Schlüssel ebenfalls.",
     "runTitle": "Details dieses Laufs leeren?",
     "runBody": "Prompts und Werkzeugausgaben werden gelöscht. Das Ergebnis im Chat bleibt.",
     "conversationTitle": "Diese Unterhaltung löschen?",

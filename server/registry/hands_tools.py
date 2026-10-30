@@ -274,7 +274,8 @@ class _BrowserTool:
         except ValueError as exc:
             return {"ok": False, "external": False, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "external": False, "error": f"browser: {str(exc)[:400]}"}
+            # The browser's own text (a page's URL, what it answered): framed like page content (S64-0c).
+            return {"ok": False, "error": f"browser: {str(exc)[:400]}"}
         # Page content is untrusted external text: framed as such by the tool loop.
         return {"ok": True, "external": True, "text": text,
                 "summary": f"{self.action} · {agent_browser.current_url() or ''}"[:200]}

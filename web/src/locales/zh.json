@@ -44,7 +44,6 @@
     "description": "把步骤保存为可复用版本，设置依赖、并行上限和人工确认点。每次工具调用仍受原有权限约束。",
     "loading": "正在加载任务流程…",
     "operation_failed": "操作失败。请检查连接、所选专家和步骤依赖后重试。",
-    "refresh": "刷新",
     "saved": "选择已保存的版本",
     "new": "新建流程",
     "name": "流程名称",
@@ -861,12 +860,6 @@
     "configure": "配置",
     "open_channel": "打开频道",
     "calibrate": "校准",
-    "tool_hub_title": "全局工具集成发现与评估引擎",
-    "tool_hub_subtitle": "发现、评估并连接 MCP 服务器与集成。",
-    "tool_hub_coming_soon": "即将推出",
-    "tool_hub_search_placeholder": "粘贴 GitHub 仓库，评估其是否可作为 MCP 服务器…",
-    "tool_hub_evaluate": "评估规范",
-    "tool_hub_presets_label": "推荐 MCP 服务器",
     "back_to_ledger": "返回活跃专家账本",
     "active_slot": "活跃插槽",
     "equip_tools": "配备工具库",
@@ -922,9 +915,6 @@
         "other": "其他"
       }
     },
-    "sections": {
-      "import_skills": "从仓库导入技能"
-    },
     "dossier": {
       "value_label": "对 Arslan 的价值"
     },
@@ -969,7 +959,6 @@
       "placeholder": "在已有的里面找…",
       "clear": "清除筛选",
       "count": "{{shown}} / {{total}}",
-      "no_match": "这里没有匹配的。清除筛选可以看到全部。",
       "matched_tools": "包含 {{tools}}"
     }
   },
@@ -1422,8 +1411,6 @@
     "phoneBody": "这台 iPhone 连不上 Arslan 了，除非重新配对。",
     "noteTitle": "删除这篇笔记？",
     "noteBody": "「{{title}}」和它的链接会一起删掉，不能撤销。",
-    "mcpTitle": "移除「{{name}}」？",
-    "mcpBody": "这个连接和它的工具会被移除，为它保存的 key 也会删掉。",
     "runTitle": "清除这次运行的细节？",
     "runBody": "提示词和工具输出会被抹掉，对话里的结果保留。",
     "conversationTitle": "删除这个对话？",

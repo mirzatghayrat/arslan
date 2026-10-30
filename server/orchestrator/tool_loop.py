@@ -372,9 +372,12 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     from server.orchestrator import untrusted as _untrusted
     framed = (raw_payload if result.get("external") is False else wrap_external(raw_payload)
               if _untrusted.from_the_web(tool_key, args) else _untrusted.wrap_tool_output(raw_payload))
-    if result.get("ok") and (_untrusted.counts_as_external(tool_key, args)
-                             or (tool_key in ("read_skill", "background_status")      # S64-0b: per result
-                                 and result.get("external") is True)):
+    # S64-0c: a failure counts once the call reached the outside (an MCP server's error, a network command's
+    # output on a non-zero exit); only a result that says it never left (`executed: False`) does not.
+    reached = result.get("executed") is not False
+    if reached and (_untrusted.counts_as_external(tool_key, args)
+                    or (tool_key in ("read_skill", "background_status", "find_tools")  # S64-0b/0c: per result
+                        and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
     if not _untrusted.known_local_call(tool_key, result):
         _untrusted.mark_off_the_list()       # INB2 (#475 F2): any call off the user's allowlist, run or not
@@ -1335,10 +1338,16 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
             return not_ready
     import difflib
     near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
-    return {"ok": False, "external": False, "code": "tool_unavailable",
-            "error": f"tool '{tool_key}' is not available to you"
-                     + (f"; available tools include: {', '.join(near)}" if near else "")
-                     + "; you may escalate a need instead"}
+    result = {"ok": False, "external": False, "code": "tool_unavailable",
+              "error": f"tool '{tool_key}' is not available to you"
+                       + (f"; available tools include: {', '.join(near)}" if near else "")
+                       + "; you may escalate a need instead"}
+    from server.orchestrator import untrusted
+    if any(untrusted.odd_mcp_key(key) for key in near):
+        # S64-0c: a key it lists carries a server's odd tool name: framed (no external: False), and marked.
+        untrusted.mark_external()
+        del result["external"]
+    return result
 
 
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
@@ -2385,6 +2394,9 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
 
     0.1.63 K3: sorted by name, `escalate` last. The table renders before Claude's cached system, so its
     order is part of the cache key; tools loaded later (K7) are appended after it, never sorted in."""
+    from server.orchestrator import untrusted
+    if any(untrusted.odd_mcp_key(t["key"]) for t in wired):
+        untrusted.mark_external()       # S64-0c: a key in the table carries a server's odd tool name
     schemas: list[dict] = []
     resident = sorted((t for t in wired if not t.get("appended")), key=lambda tool: tool["key"])
     for t in resident + [t for t in wired if t.get("appended")]:

@@ -72,8 +72,15 @@ def _key_arg(tool: str, args: dict) -> str:
         if key == "query" and tool in _PRIVATE_QUERY:
             continue
         if isinstance(args.get(key), str) and args[key].strip():
-            return _arg(key, args[key], _ARG_CHARS)
+            return _arg(key, _shown(args[key]) if key == "name" else args[key], _ARG_CHARS)
     return ""
+
+
+def _shown(key: str) -> str:
+    """S64-0c (the review of #498): this block rides in the next turns, so a key that carries a server's odd
+    tool name is shown without the name."""
+    from server.orchestrator.untrusted import odd_mcp_key
+    return key.split("__", 1)[0] + "__<odd name>" if odd_mcp_key(key) else key
 
 
 def _outcome(tool: str, result: dict) -> str:
@@ -107,7 +114,7 @@ def _line(call: dict) -> str:
     args = call.get("args") if isinstance(call.get("args"), dict) else {}
     result = call.get("result") if isinstance(call.get("result"), dict) else {}
     key = _key_arg(tool, args)
-    head = f"- {tool}" + (f" {key}" if key else "")
+    head = f"- {_shown(tool)}" + (f" {key}" if key else "")
     if result.get("external") is True or counts_as_external(tool, args):
         if result.get("ok", True):
             return head + ": external content, source only"

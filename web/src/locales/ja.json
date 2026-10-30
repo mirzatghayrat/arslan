@@ -44,7 +44,6 @@
     "description": "依存関係、並列実行の上限、承認ポイントを持つ手順をバージョンとして再利用できます。既存のツール権限は引き続き適用されます。",
     "loading": "フローを読み込み中…",
     "operation_failed": "操作に失敗しました。接続、担当エージェント、手順の依存関係を確認して再試行してください。",
-    "refresh": "更新",
     "saved": "保存済みバージョンを選択",
     "new": "新規フロー",
     "name": "フロー名",
@@ -861,12 +860,6 @@
     "configure": "設定",
     "open_channel": "会話を開く",
     "calibrate": "調整",
-    "tool_hub_title": "ツールとリポジトリを探す",
-    "tool_hub_subtitle": "MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.",
-    "tool_hub_coming_soon": "近日対応",
-    "tool_hub_search_placeholder": "MCP/tool discovery — coming soon...",
-    "tool_hub_evaluate": "仕様を評価",
-    "tool_hub_presets_label": "Quick Presets (coming soon):",
     "back_to_ledger": "エキスパート一覧に戻る",
     "active_slot": "有効な枠",
     "equip_tools": "ツールを追加",
@@ -922,9 +915,6 @@
         "other": "その他"
       }
     },
-    "sections": {
-      "import_skills": "リポジトリからスキルをインポート"
-    },
     "dossier": {
       "value_label": "Arslan での用途"
     },
@@ -969,7 +959,6 @@
       "placeholder": "手元のものを絞り込む…",
       "clear": "フィルターを解除",
       "count": "{{shown}} / {{total}}",
-      "no_match": "一致するものはありません。フィルターを解除すると全部表示されます。",
       "matched_tools": "{{tools}} を含む"
     }
   },
@@ -1422,8 +1411,6 @@
     "phoneBody": "この iPhone は再ペアリングするまで Arslan に接続できません。",
     "noteTitle": "このノートを削除しますか？",
     "noteBody": "「{{title}}」とそのリンクが削除されます。元に戻せません。",
-    "mcpTitle": "「{{name}}」を削除しますか？",
-    "mcpBody": "接続とそのツールが削除されます。保存したキーも削除されます。",
     "runTitle": "この実行の詳細を消去しますか？",
     "runBody": "プロンプトとツール出力が消去されます。会話の結果は残ります。",
     "conversationTitle": "この会話を削除しますか？",
