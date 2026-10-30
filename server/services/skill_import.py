@@ -175,7 +175,10 @@ _ODD_PATH = re.compile(r"[?#%\\\x00-\x1f\x7f]")
 
 
 def _plain_path(path) -> bool:
-    return isinstance(path, str) and bool(path) and not _ODD_PATH.search(path)
+    """And no `.`, `..` or empty segment, no leading `/` (#539 recheck: httpx collapses `..`, so a path could
+    name another repository)."""
+    return (isinstance(path, str) and bool(path) and not _ODD_PATH.search(path) and not path.startswith("/")
+            and all(segment not in ("", ".", "..") for segment in path.split("/")))
 
 
 async def _fetch_raw(owner: str, repo: str, path: str, sha: str | None = None) -> str:
@@ -278,13 +281,23 @@ async def import_skill(ref: str, path: str) -> dict:
     """Import ONE skill faithfully: `prepare_skill`, the same scan the install card runs, then `install_prepared`.
     Re-validates everything server-side (never trust the UI). A blocked scan writes nothing (#539 review 3: the
     import panel installed with no scan, and under the user's D2 its skills read unframed)."""
-    from server.services import capability_scan
     prepared = await prepare_skill(ref, path)
-    scan = capability_scan.scan_skill(prepared["skill_md"], prepared["scripts"], prepared["references"])
+    scan = scan_prepared(prepared)
     if scan["level"] == "blocked":
         rules = ", ".join(sorted({f["rule"] for f in scan["findings"] if f["level"] == "high"}))
         raise ValueError(f"blocked by the safety check: {rules}")
     return {**await install_prepared(prepared), "scan": scan}
+
+
+def scan_prepared(prepared: dict) -> dict:
+    """The one scan of a prepared skill, for the install card and the import panel alike: the whole SKILL.md as
+    fetched, its name and description as YAML decodes them (what is stored and, under the user's D2, read
+    unframed; a folded scalar or a quoted escape decodes to text the raw file does not show: #539 recheck), every
+    script, dotfiles included, and every reference."""
+    from server.services import capability_scan
+    info = prepared["info"]
+    return capability_scan.scan_skill(f"{prepared['skill_md']}\n{info['name']}\n{info['description']}",
+                                      prepared["scripts"], prepared["references"])
 
 
 async def prepare_skill(ref: str, path: str) -> dict:
@@ -317,6 +330,8 @@ async def prepare_skill(ref: str, path: str) -> dict:
         sizes[file_path] = len(content.encode("utf-8"))
         return content
 
+    if path not in paths:                                     # a file of that commit's tree, nothing else
+        raise ValueError("no such SKILL.md at that commit")
     raw = _keep(path, await _fetch_raw(owner, repo, path, sha))
     info = parse_skill_md(raw, path)
     if info is None:

@@ -147,7 +147,7 @@ async def prepare_skill(c: dict) -> tuple[dict, dict]:
         # branch or tag of that name.
         raise ValueError("the library named no full commit")
     prepared = await skill_import.prepare_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"])
-    return prepared, capability_scan.scan_skill(prepared["skill_md"], prepared["scripts"], prepared["references"])
+    return prepared, skill_import.scan_prepared(prepared)
 
 
 async def install_skill(c: dict, owner_id: str = "local", *, prepared: dict | None = None,
