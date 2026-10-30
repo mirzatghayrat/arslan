@@ -6,11 +6,11 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import Lesson
+from server.db.models import Judgment, Lesson
 from server.services import lessons
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -80,5 +80,7 @@ async def delete_lesson(lesson_id: int):
         if row is None:
             raise HTTPException(404, "lesson_not_found")
         await db.delete(row)
+        # JUDGE1: what the judgments ledger kept of it (merge, conflict, applied; Activity shows the rows) goes too.
+        await db.execute(delete(Judgment).where(Judgment.ref == f"lesson:{lesson_id}"))
         await db.commit()
     return {"id": lesson_id, "deleted": True}

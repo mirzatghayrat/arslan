@@ -36,6 +36,8 @@ AFTER_TURN_TIMEOUT_S = 15.0
 DAILY_TOKEN_CAP = 200_000          # ~$0.05/day at DeepSeek flash prices; above it, no judging
 KEEP_DAYS = 90
 KEEP_ROWS = 20_000
+PRUNE_EVERY_S = 3600               # JUDGE1: pruned while the app runs too (at most this often), not only at boot
+_last_prune = {"at": time.monotonic()}
 MAX_FIELD_CHARS = 400
 
 _SYSTEM = (
@@ -203,6 +205,12 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
     except Exception as exc:  # noqa: BLE001
         logger.info("judgment not recorded: %s", type(exc).__name__)
         return None
+    if time.monotonic() - _last_prune["at"] >= PRUNE_EVERY_S:
+        _last_prune["at"] = time.monotonic()
+        try:
+            await prune()
+        except Exception as exc:  # noqa: BLE001 — a missed prune is retried within the hour; the answer stands
+            logger.info("judgments not pruned: %s", type(exc).__name__)
     if verdict is None or probability is None:
         return None
     return Verdict(verdict, probability, judgment_id)

@@ -285,6 +285,15 @@ async def _indexed_matches(db, rows, query_terms: frozenset[str]) -> set[str]:
     return result
 
 
+def may_show_memory(ctx: TaskMemoryContext | None) -> bool:
+    """Whether any memory may be put in front of a model in this context: assemble's gates (a trusted context,
+    not temporary, memory on, and a local model or cloud memory allowed). Lessons' recall and the judge's
+    questions about stored lessons ask it too (JUDGE1); `model_is_local` already covers every configured slot,
+    the judge's router slot included (llm_factory.memory_models_are_local, which fails closed)."""
+    return (ctx is not None and (ctx.lease is None or ctx.lease.active) and not ctx.temporary and not ctx.no_memory
+            and (ctx.model_is_local or ctx.cloud_memory_effective))
+
+
 async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
                    limit_tokens: int = 1200) -> PersonalContext | None:
     ctx = context or current()
