@@ -72,6 +72,7 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
             system_prompt=prompt["system_prompt"], injected_kb=prompt["injected_kb"],
             injected_kb_sources=prompt.get("injected_kb_sources"),
             status_override="cancelled" if cancelled else None,
+            read_outside=run_trace.outside(),         # INB2: None when no turn of the run ended
         )
 
     async def run() -> str | None:

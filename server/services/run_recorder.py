@@ -299,6 +299,7 @@ class RunRecorder:
                         injected_kb_sources: list | None = None,
                         replay: bool = False,
                         status_override: Literal["cancelled", "interrupted"] | None = None,
+                        read_outside: bool | None = None,
                         ) -> int:
         """Persist steps + run metadata and (for live runs only) schedule judge scoring.
 
@@ -339,6 +340,7 @@ class RunRecorder:
                         run.ended_at = ended
                         run.total_ms = total_ms
                         run.task_tokens = tokens
+                        run.read_outside = read_outside      # INB2: None (no record) counts as yes
                         # E2: belt-and-suspenders — the live recorder always finalizes a live run at
                         # epoch 1 and persists the continuation flag on the row (start() already set
                         # them; re-affirm here so no live finalize path can leave the columns unset).

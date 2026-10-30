@@ -90,6 +90,44 @@ def parse_practices(content: str | None) -> list[dict[str, Any]]:
     return out[:MAX_PRACTICES]
 
 
+async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
+    """The user's recent messages. Q1 #3 (the user, 2026-10-29): a quick question turned into a chat learns
+    from then on, so for one, only the user's messages after the turn (`learns_after_message_id`, migration
+    0078), read as memory allows (memory_history.eligible_messages: a deleted entry's source never seeds memory
+    again). Every conversation is looked up, whatever its id looks like. What remains of "its quick turns never
+    teach" is in server/api/phone.py (phone_update_conversation)."""
+    from sqlalchemy import select
+
+    from server.db import session as db_session
+    from server.db.companion_models import ConversationContext
+    from server.db.models import ArslanMessage
+    from server.services.memory_history import eligible_messages
+    async with db_session.AsyncSessionLocal() as db:
+        after = await db.scalar(select(ConversationContext.learns_after_message_id).where(
+            ConversationContext.id == conversation_id))
+        if after is None:
+            return [m["content"] for m in history if m.get("role") == "user"]
+        rows = (await db.scalars(eligible_messages(conversation_id).with_only_columns(ArslanMessage.content).where(
+            ArslanMessage.role == "user", ArslanMessage.id > after).order_by(ArslanMessage.id.desc()).limit(8))).all()
+    return list(reversed(rows))
+
+
+async def _known() -> str:
+    """The memory block, so the model skips facts already known. #475 recheck, J3: what this reply names takes
+    effect as the user's own (a noticed fact, a correction), so a block holding a note from a run off the list
+    (memory_tools_v2.from_off_the_list) is left out, and so is one that cannot be traced: the model then reads
+    only the user's own words."""
+    from server.services import memory_tools_v2
+    block = await memory.facts_context(include_sensitive=True)
+    if block is None or not block.text:
+        return ""
+    try:
+        traced = await memory_tools_v2.from_off_the_list(block.receipt.used)
+    except Exception:  # noqa: BLE001 — remembering is a bonus: the block is left out
+        traced = True
+    return "" if traced else block.text
+
+
 async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any]]:
     """0.1.52: reads ONLY the user's own messages (and the facts already known).
     Arslan's replies and the rolling summary can carry web pages, files and tool
@@ -97,8 +135,8 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     the user's words — by construction, not by a filter on the output."""
     ctx = await memory.assemble_working_context(conversation_id)
     _after_reply.set(answers_earlier_reply(ctx["history"], ctx.get("summary") or ""))
-    known = await memory.facts_text(include_sensitive=True)
-    own = [m["content"] for m in ctx["history"] if m.get("role") == "user"]
+    known = await _known()
+    own = await _own_words(conversation_id, ctx["history"])
     prompt = (
         "The user's recent messages:\n" + ("\n".join(f"- {c}" for c in own[-8:]) or "(none)")
         + f"\n\n{known}\n\nUser's latest message:\n{user_message}"
@@ -135,9 +173,13 @@ async def capture(conversation_id: str, user_message: str, emit, *, recheck=None
         logger.info("turn facts skipped: %s", type(exc).__name__)
         return 0
     for fact in created:
-        emit({"type": "memory_proposed" if getattr(fact, "status", "active") != "active" else "fact_saved",
+        waiting = getattr(fact, "status", "active") != "active"
+        emit({"type": "memory_proposed" if waiting else "fact_saved",
               "content": fact.content, "sensitive": fact.sensitive,
-              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None)})
+              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None),
+              # INB2: which proposal it waits as, and why (window socket only; the Bridge never forwards it).
+              **({"proposal_id": getattr(fact, "proposal_id", None), "reason": getattr(fact, "reason", None)}
+                 if waiting else {})})
     if created:
         try:
             from server.services import recap_service
