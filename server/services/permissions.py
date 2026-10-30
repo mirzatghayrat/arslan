@@ -204,13 +204,15 @@ async def decide(req: Request, ctx: Context) -> Decision:
     return _done(await _ask(req, ctx, mode))
 
 
-async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[Decision]:
+async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str = "") -> list[Decision]:
     """One card for several requests of one kind (Hands' DesktopAccess). Those already allowed
     are left off the card; one answer covers every one shown; decisions in input order.
 
-    The card is the generic `propose_action`, built from the requests' joined details so that it
-    names every one of them (their own frames are not used), and it offers the choices of their
-    one kind. A list of mixed kinds is a caller bug, since a money step on an app's card would be
+    The card is a `propose_action` built from the requests' joined details, so that it names every one
+    of them, and it offers the choices of their one kind. When their own cards share a kind (an app's),
+    it is that kind of card, naming each request as its own card did, so a window says it in its own
+    words; otherwise it is the generic card. `why` is the model's reason, which the card shows as the
+    model's words (`title` is Arslan's and never carries it). A list of mixed kinds is a caller bug, since a money step on an app's card would be
     offered "this conversation": it raises ValueError, whatever the store holds — as does any
     request of a kind outside `KINDS`, before any of them is looked up."""
     _forget_last()
@@ -227,9 +229,16 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     shown = [r for r, d in zip(reqs, out) if d is None]
     decided = None
     if shown:
+        detail = "\n".join(r.detail or r.target for r in shown)
+        cards = {(r.frame or {}).get("kind") for r in shown}
+        frame = None
+        if len(cards) == 1 and None not in cards:
+            from server.ws import protocol
+            frame = protocol.propose_action(uuid.uuid4().hex, cards.pop(),
+                                            ", ".join(r.frame.get("target") or r.target for r in shown), detail)
         combined = Request(
-            kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title,
-            detail="\n".join(r.detail or r.target for r in shown),
+            kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title, why=why,
+            detail=detail, frame=frame,
             always_label=(", ".join(r.always_label for r in shown)
                           if all(r.always_label for r in shown) else ""),
             conversation_ok=all(r.conversation_ok for r in shown),

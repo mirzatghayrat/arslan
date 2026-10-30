@@ -1552,10 +1552,12 @@ class DesktopAccessExecutor:
         await hands_service.migrate_always()
         requests = [_app_request(a, f"· {a['name']} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}",
                                  step="access") for a in found]
+        # The title is Arslan's words; the model's why rides on its own and the card shows it as the model's
+        # (⓪Plan's review of #548: it was in the title, which the web showed as the heading the user approves).
         decisions = await permissions.decide_many(
-            requests, _context(),
-            title=f"Use {', '.join(a['name'] for a in found)[:100]} for this: {why[:150]}? Deleting, sending and "
-                  "paying still ask every time.")
+            requests, _context(), why=why[:150],
+            title=f"Use {', '.join(a['name'] for a in found)[:100]}? Deleting, sending and paying still ask "
+                  "every time.")
         refused = next((d for d in decisions if not d.allowed), None)
         if refused is not None:
             return _no(refused, "these apps")

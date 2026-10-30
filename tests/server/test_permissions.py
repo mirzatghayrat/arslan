@@ -181,6 +181,28 @@ async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():
     assert len(asker.frames) == 1
 
 
+async def test_decide_many_speaks_in_the_requests_own_card_when_they_share_one():
+    """Requests that share a card kind are asked on that kind of card, naming each of them, and the model's why
+    rides on its own. Requests with no card, or with cards of different kinds, get the generic card."""
+    from server.ws import protocol
+
+    def framed(bundle, name, kind="desktop_app"):
+        return replace(app(bundle), detail=f"· {name}",            # as hands_tools._app_request builds one
+                       frame=protocol.propose_action("x", kind, name, f"· {name}"))
+    asker = Asker(yes("task"), yes("task"), yes("task"))
+    with permissions.asking_with(asker):
+        await permissions.decide_many([framed("com.apple.Notes", "Notes"), framed("com.apple.mail", "Mail")], CTX,
+                                      title="Use Notes, Mail?", why="the model's reason")
+        await permissions.decide_many([framed("com.apple.reminders", "Reminders"), app("com.apple.Safari")], CTX,
+                                      title="Use Reminders, Safari?")
+        await permissions.decide_many([framed("com.apple.Pages", "Pages"),
+                                       framed("com.apple.Numbers", "Numbers", kind="browser_site")], CTX, title="t")
+    shared, missing, mixed = asker.frames
+    assert (shared["kind"], shared["target"], shared["why"]) == ("desktop_app", "Notes, Mail", "the model's reason")
+    assert shared["title"] == "Use Notes, Mail?" and shared["detail"] == "· Notes\n· Mail"
+    assert (missing["kind"], mixed["kind"]) == ("app", "app") and "why" not in missing
+
+
 async def test_decide_many_hides_always_when_any_app_cannot_be_remembered():
     asker = Asker(yes("conversation"))
     reqs = [app("com.apple.Notes"),
