@@ -64,6 +64,7 @@ describe("memory controls", () => {
     vi.spyOn(companionApi, "noticedEarlier").mockResolvedValueOnce({ count: 2 }).mockResolvedValue({ count: 0 });
     const accept = vi.spyOn(companionApi, "acceptNoticedEarlier").mockResolvedValue({ accepted: 2 });
     render(<MemoryList />);
+    fireEvent.click(await screen.findByRole("button", { name: /memoryPage\.toSort/ }));   // INB2: "To sort" is folded
     expect(await screen.findByTestId("noticed-earlier")).toHaveTextContent("companion.noticedEarlier");
     expect(accept).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("companion.useAll"));
@@ -124,6 +125,7 @@ describe("memory controls", () => {
     ] as unknown as MemoryProposal[]);
     render(<MemoryList />);
     const review = async (key: string) => {
+      fireEvent.click(await screen.findByRole("button", { name: /memoryPage\.toSort/ }));   // INB2: "To sort" is folded
       const row = await screen.findByTestId(`pending-memory-${key}`);
       fireEvent.click(within(row).getByText(/memoryPage\.review/));
     };

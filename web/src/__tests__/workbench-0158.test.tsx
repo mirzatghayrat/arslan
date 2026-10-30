@@ -1,7 +1,7 @@
 /**
  * 0.1.58 §2–§3: files Arslan writes show as cards and open in the reader; the reader shows
  * each kind of file the way it is read (HTML only sandboxed); paths in replies open the reader
- * or reveal in Finder; one workbench with 任务 / 文件 / 浏览器.
+ * or reveal in Finder; one workbench (since WB1: Working folder / Progress / Browser).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +36,7 @@ const blob = (text: string) => new Blob([text]);
 
 beforeEach(() => {
   useArslanStore.setState(initialArslanState(), true);
-  useWorkbench.setState({ open: false, tab: "task", reader: null, folder: null });
+  useWorkbench.setState({ open: false, tab: "files", reader: null, folder: null });
   _resetPathCache();
   files.home.mockResolvedValue({ path: "~/Arslan", project: null });
   files.conversationFiles.mockResolvedValue({ files: [] });
@@ -80,7 +80,7 @@ describe("files a reply wrote", () => {
     render(<ReplyArtifacts files={[art("r/a.md", 1), art("r/b.csv", 2), art("r/c.pdf", 3), art("r/d.png", 4)]} />);
     expect(screen.getAllByTestId("file-card")).toHaveLength(3);
     fireEvent.click(screen.getByTestId("reply-more-files"));
-    expect(useWorkbench.getState()).toMatchObject({ open: true, tab: "task" });
+    expect(useWorkbench.getState()).toMatchObject({ open: true, tab: "overview" });    // WB1-2: Deliverables
     fireEvent.click(screen.getByTestId("file-card-open-a.md"));
     expect(useWorkbench.getState().reader).toMatchObject({ kind: "artifact", file: { title: "r/a.md" } });
   });
@@ -172,14 +172,14 @@ describe("paths in a reply", () => {
 });
 
 describe("the workbench", () => {
-  it("one panel: 任务 / 文件 / 浏览器, files of THIS conversation, the reader over the tabs", async () => {
+  it("one panel: files of THIS conversation in Overview, the folder in Working folder, the reader over the tabs", async () => {
     files.conversationFiles.mockResolvedValue({ files: [{ ...art("报告/a.md"), created_at: "2026-10-09T08:00:00" }] });
     files.list.mockResolvedValue({ path: "~/Arslan", root: "~/Arslan", crumbs: [{ name: "Arslan", path: "~/Arslan" }], total: 2, more: false,
       entries: [{ name: "报告", path: "~/Arslan/报告", is_dir: true, bytes: null, modified: "2026-10-09T08:00:00" },
                 { name: "a.md", path: "~/Arslan/报告/a.md", is_dir: false, bytes: 10, modified: "2026-10-09T08:00:00" }] });
-    useWorkbench.getState().show("task");
+    useWorkbench.getState().show("overview");
     render(<Workbench conversationId="c1" taskId={null} temporary={false} />);
-    expect(await screen.findByTestId("task-files")).toHaveTextContent("a.md");
+    expect(await screen.findByTestId("conv-files")).toHaveTextContent("a.md");
     expect(files.conversationFiles).toHaveBeenCalledWith("c1");
     fireEvent.click(screen.getByTestId("workbench-tab-files"));
     const row = await screen.findByTestId("files-row-a.md");
@@ -197,7 +197,7 @@ describe("the workbench", () => {
 
   it("⋯ holds keep-awake and close", async () => {
     apiMock.updateSettings.mockResolvedValue({ keep_awake_enabled: false });
-    useWorkbench.getState().show("task");
+    useWorkbench.getState().show("files");
     render(<Workbench conversationId="c1" taskId={null} temporary={false} />);
     fireEvent.click(screen.getByTestId("workbench-more"));
     fireEvent.click(screen.getByTestId("workbench-keep-awake"));

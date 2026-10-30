@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, X } from "lucide-react";
+import { Activity, Folder, Globe, LayoutList, MoreHorizontal, X, type LucideIcon } from "lucide-react";
 import { api } from "../../api/client";
 import { filesApi, type ConversationFile } from "../../api/files";
+import { backgroundJobsApi } from "../../api/tasks";
 import { useDismissable } from "../../hooks/useDismissable";
 import { OPEN_ARTIFACT, validArtifact } from "../../lib/workDock";
 import { useArslanStore } from "../../stores/arslanStore";
@@ -10,11 +11,17 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { READER_WIDTH, useWorkbench, type WorkbenchTab } from "../../stores/workbenchStore";
 import WorkDock from "../WorkDock";
 import FilesTab from "./FilesTab";
+import OverviewTab, { type OverviewModels } from "./OverviewTab";
+import ProgressTab, { type Job } from "./ProgressTab";
 import Reader from "./Reader";
-import TaskTab from "./TaskTab";
 
-const TABS: WorkbenchTab[] = ["task", "files", "browser"];
+// WB1 (user, 2026-10-30): a fixed row, always shown, drawn as icons with a tooltip (WB1-2: four words
+// plus side chats overflow the row). Later tabs come from "+" (SIDE, SUB).
+const TABS: WorkbenchTab[] = ["overview", "files", "progress", "browser"];
+const LABEL: Record<WorkbenchTab, string> = { overview: "workbench.overview", files: "workbench.folder", progress: "workbench.progress", browser: "workbench.browser" };
+const ICON: Record<WorkbenchTab, LucideIcon> = { overview: LayoutList, files: Folder, progress: Activity, browser: Globe };
 const REFRESH_MS = 10_000;
+const JOBS_MS = 5_000;
 
 function MoreMenu({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
@@ -45,13 +52,15 @@ function MoreMenu({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * The right-hand workbench (0.1.58 §3, decision 7): one panel instead of 当前任务 + the dock —
- * 任务 (what runs, this conversation's files, its project and folder), 文件 (browse its folder in
- * Arslan), 浏览器 (the existing browser tabs) — and the reader sliding over them. Resizable from
+ * The right-hand workbench (0.1.58 §3, decision 7; WB1 in v0.1.64): one panel with a fixed row —
+ * Working folder (the conversation's folder, and for now the files it made), Progress (what runs,
+ * with stop) and Browser (the user's URL reader) — and the reader sliding over them. Resizable from
  * its left edge; the reader widens it while open. It never opens by itself.
  */
-export default function Workbench({ conversationId, taskId, temporary }: {
+export default function Workbench({ conversationId, taskId, temporary, models, onOpenCapabilities, onOpenSettings }: {
   conversationId: string; taskId: string | null; temporary: boolean;
+  /** WB1-2: what Overview needs from App (the model chip's props, and where its links go). */
+  models?: OverviewModels; onOpenCapabilities?: () => void; onOpenSettings?: (section: string) => void;
 }) {
   const { t } = useTranslation();
   const { open, tab, reader, width, show, close, openReader, closeReader, setWidth } = useWorkbench();
@@ -76,30 +85,53 @@ export default function Workbench({ conversationId, taskId, temporary }: {
     return () => { alive = false; clearInterval(timer); };
   }, [open, conversationId, items.length]);
 
+  // The job poll lives here (it was Task's), so Progress shows its count while another tab is selected.
+  const storeJobs = useArslanStore((s) => s.jobs);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const loadJobs = useCallback(async () => {
+    try {
+      const r = await backgroundJobsApi.list(conversationId);
+      setJobs(r.jobs.filter((j) => j.phase !== "finished") as Job[]);
+    } catch { /* keep the last list */ }
+  }, [conversationId]);
+  useEffect(() => {
+    if (!open) return;
+    void loadJobs();
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadJobs(); }, JOBS_MS);
+    return () => clearInterval(timer);
+  }, [open, loadJobs, storeJobs]);
+
   const touched = useMemo(() => new Set(files.map((f) => f.title)), [files]);
   if (!open) return null;
   const shownWidth = reader ? Math.max(width, READER_WIDTH) : width;
   return (
     <aside aria-label={t("workbench.toggle")} data-testid="workbench" style={{ width: shownWidth, maxWidth: "60vw" }}
       className="relative z-20 flex h-full min-w-0 shrink-0 flex-col border-l border-border bg-sidebar">
+      {/* WB1: the panel's 1 px border is the line; this 8 px strip is only the hit area. Hover darkens the
+          line a little; only a keyboard focus shows a ring, so a mouse drag never leaves it lit. */}
       <div role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t("dock.resize")}
-        className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none hover:bg-primary/25 focus:bg-primary/25"
+        className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none outline-none after:absolute after:left-1 after:top-0 after:h-full after:w-px after:content-[''] hover:after:bg-border-strong focus-visible:ring-2 focus-visible:ring-ring"
         onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); setWidth(width + (e.key === "ArrowLeft" ? 20 : -20)); } }}
         onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
         onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setWidth(window.innerWidth - e.clientX); }}
         onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)} />
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="inline-flex rounded-lg bg-fill p-0.5 text-[12.5px]" role="tablist">
-          {TABS.map((k) => <button key={k} type="button" role="tab" aria-selected={tab === k && !reader} data-testid={`workbench-tab-${k}`}
-            onClick={() => show(k)} className={`rounded-md px-3 py-1 ${tab === k && !reader ? "bg-background font-semibold shadow-sm" : "text-muted-foreground"}`}>
-            {t(`workbench.${k}`)}</button>)}
+          {TABS.map((k) => { const Icon = ICON[k]; return <button key={k} type="button" role="tab" aria-selected={tab === k && !reader}
+            data-testid={`workbench-tab-${k}`} aria-label={t(LABEL[k])} title={t(LABEL[k])} onClick={() => show(k)}
+            className={`relative inline-flex items-center rounded-md px-2.5 py-1 ${tab === k && !reader ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            <Icon size={15} aria-hidden />
+            {k === "progress" && jobs.length > 0 && <span data-testid="workbench-progress-count"
+              className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-info px-1 text-[9px] font-semibold leading-3.5 text-white">{jobs.length}</span>}</button>; })}
         </span>
         <MoreMenu onClose={close} />
       </header>
       <div className="relative min-h-0 flex-1">
         <div hidden={!!reader} className="h-full">
-          {tab === "task" && <TaskTab conversationId={conversationId} files={files} home={home.path} project={home.project} />}
+          {tab === "overview" && <OverviewTab conversationId={conversationId} files={files} home={home.path} models={models}
+            onOpenCapabilities={onOpenCapabilities} onOpenSettings={onOpenSettings} />}
           {tab === "files" && <FilesTab home={home.path} touched={touched} />}
+          {tab === "progress" && <ProgressTab jobs={jobs} reload={() => void loadJobs()} />}
           {tab === "browser" && <WorkDock embedded open onOpen={() => {}} onClose={close} conversationId={conversationId} taskId={taskId} temporary={temporary} />}
         </div>
         {/* keyed per file: a new file starts from "reading…", never from the last file's view */}
