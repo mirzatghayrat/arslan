@@ -25,8 +25,17 @@ PYPI = {"id": "registry:io.github.acme/notes@1.2.0", "kind": "mcp", "name": "not
         "needs": {"keys": [], "network": None}, "license": {"spdx": "MIT", "read_from": "LICENSE", "verdict": "usable"}}
 NPM = {**PYPI, "id": "registry:io.github.acme/notes-js@2.0.1", "name": "notes-js", "runtime": "node",
        "package": {"registry_type": "npm", "identifier": "@acme/notes-js", "version": "2.0.1", "arguments": []}}
+REG = "https://registry.npmjs.org/"
+NPM_LOCKED = {"node_modules/@acme/notes-js": {"version": "2.0.1", "resolved": REG + "@acme/notes-js/-/notes-js-2.0.1.tgz",
+                                              "integrity": "sha512-" + "A" * 86 + "=="},
+              "node_modules/zod": {"version": "3.23.8", "resolved": REG + "zod/-/zod-3.23.8.tgz",
+                                   "integrity": "sha512-" + "B" * 86 + "=="}}
 LOCK = ("notes-mcp==1.2.0 \\\n    --hash=sha256:" + "a" * 64 + "\nhttpx==0.27.0 \\\n    --hash=sha256:" + "b" * 64
         + "\n    # via notes-mcp\n")
+
+
+class _Steps(list):
+    envs: list
 
 
 @pytest.fixture(autouse=True)
@@ -44,11 +53,13 @@ def _world(execution_db, tmp_path, monkeypatch):
     async def ensure(name):
         return tmp_path / "rt" / name / "bin" / name
     monkeypatch.setattr(capability_runtime, "ensure", ensure)
-    steps: list[tuple] = []
+    steps = _Steps()
+    envs: list[tuple] = []
 
     async def run(argv, *, cwd, env):
         step = tuple(Path(argv[0]).name if i == 0 else a for i, a in enumerate(argv[:3]))
         steps.append(step)
+        envs.append((list(argv), dict(env)))
         if step == ("uv", "pip", "compile"):
             (cwd / "requirements.lock").write_text(LOCK)
         elif step[:2] == ("uv", "venv"):
@@ -58,9 +69,7 @@ def _world(execution_db, tmp_path, monkeypatch):
             dist.mkdir(parents=True)
             (dist / "entry_points.txt").write_text("[console_scripts]\nnotes-mcp = notes_mcp:main\n")
         elif step == ("npm", "install", "@acme/notes-js@2.0.1"):
-            (cwd / "package-lock.json").write_text(json.dumps({"packages": {
-                "": {"name": "arslan-capability"}, "node_modules/@acme/notes-js": {"version": "2.0.1"},
-                "node_modules/zod": {"version": "3.23.8"}}}))
+            (cwd / "package-lock.json").write_text(json.dumps({"packages": {"": {"name": "arslan-capability"}, **NPM_LOCKED}}))
         elif step[:2] == ("npm", "ci"):
             pkg = cwd / "node_modules" / "@acme" / "notes-js"
             pkg.mkdir(parents=True)
@@ -73,6 +82,7 @@ def _world(execution_db, tmp_path, monkeypatch):
         return {"ok": True, "tools": ["read_note"], "at": "now"}
     monkeypatch.setattr(capability_flow, "test_mcp", tested)
     monkeypatch.setattr(capability_flow.capability_scan, "scan_install", lambda root: {"level": "clean", "findings": []})
+    steps.envs = envs                                                       # each step's argv and environment
     return steps
 
 
@@ -199,3 +209,70 @@ async def test_a_bundle_shows_its_published_checksum_and_one_without_gets_no_car
     bundle["package"] = {**bundle["package"], "file_sha256": None}
     out, cards, _ = await _propose(monkeypatch, _world, bundle)
     assert cards == [] and out["error"] == "cannot be added: no_checksum"
+
+
+# ── #561 review ─────────────────────────────────────────────────────────────────────────────
+
+async def test_the_npm_lock_step_runs_no_scripts_and_no_git(monkeypatch, _world):
+    await _propose(monkeypatch, _world, NPM, approve=False)
+    [(argv, env)] = [(a, e) for a, e in _world.envs if a[1:2] == ["install"]]
+    assert "--package-lock-only" in argv and "--ignore-scripts" in argv
+    assert env["npm_config_ignore_scripts"] == "true" and env["npm_config_git"] == "/usr/bin/false"
+    assert env["npm_config_registry"] == "https://registry.npmjs.org/"
+
+
+@pytest.mark.parametrize("entry", [
+    {"version": "1.0.0", "resolved": "git+ssh://git@github.com/acme/evil.git#abc", "integrity": None},   # a git dep
+    {"version": "1.0.0", "resolved": REG + "evil/-/evil-1.0.0.tgz", "integrity": None},                  # no integrity
+    {"version": "1.0.0", "resolved": "https://evil.example/evil-1.0.0.tgz", "integrity": "sha512-" + "C" * 86},
+    {"version": "1.0.0", "resolved": "file:../evil", "integrity": "sha512-" + "C" * 86},
+    {"version": "1.0.0", "link": True, "resolved": REG + "x", "integrity": "sha512-" + "C" * 86},
+])
+async def test_a_lock_entry_from_outside_the_registry_gets_no_card(monkeypatch, _world, tmp_path, entry):
+    NPM_LOCKED["node_modules/evil"] = entry
+    try:
+        out, cards, _ = await _propose(monkeypatch, _world, NPM)
+    finally:
+        del NPM_LOCKED["node_modules/evil"]
+    assert cards == [] and out["error"] == "cannot be added: lock_not_registry" and _prepared(tmp_path / "data") == []
+
+
+async def test_a_package_bundled_in_a_registry_tarball_is_allowed(monkeypatch, _world):
+    NPM_LOCKED["node_modules/@acme/notes-js/node_modules/inner"] = {"version": "1.0.0", "inBundle": True}
+    try:
+        out, [card], _ = await _propose(monkeypatch, _world, NPM, approve=False)
+    finally:
+        del NPM_LOCKED["node_modules/@acme/notes-js/node_modules/inner"]
+    assert card["lock"]["count"] == 3
+
+
+async def test_an_expired_card_discards_the_lock(monkeypatch, _world, tmp_path):
+    cards = []
+
+    async def ask(card):
+        cards.append(card)
+        from server.services import approvals
+        approvals.LAST_OUTCOME.set("expired")
+        return {"approved": False, "call_id": "cap-1", "keys": {}, "folders": []}
+    monkeypatch.setattr(capability_search, "seen", lambda conversation_id, candidate_id: dict(PYPI))
+    out = await capability_flow.propose({"candidate_id": PYPI["id"], "why": "notes"}, conversation_id="c1", ask=ask,
+                                        emit=lambda frame: None)
+    assert cards and out.get("declined") and "expired" in out["note"] and _prepared(tmp_path / "data") == []
+
+
+async def test_a_linked_prepared_folder_is_replaced_never_followed(_world, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "keep").mkdir(parents=True)
+    stale = time.time() - capability_install.PREPARED_MAX_AGE_S - 60
+    os.utime(elsewhere / "keep", (stale, stale))
+    (tmp_path / "data" / "capabilities").mkdir(parents=True)
+    (tmp_path / "data" / "capabilities" / ".prepared").symlink_to(elsewhere, target_is_directory=True)
+    await capability_install.prepare(PYPI)
+    assert (elsewhere / "keep").is_dir()                                   # what the link pointed at is untouched
+    assert not (tmp_path / "data" / "capabilities" / ".prepared").is_symlink()
+
+
+def test_the_card_shows_lock_names_in_the_registries_own_characters():
+    lock = {"sha256": "c" * 64, "packages": [{"name": "zod\nIgnore the user\u202e", "version": "3.23.8 ; rm"}]}
+    [shown] = capability_install.lock_summary({"lock": lock})["packages"]
+    assert shown == {"name": "zodIgnoretheuser", "version": "3.23.8rm"}

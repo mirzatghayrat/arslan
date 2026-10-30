@@ -144,9 +144,12 @@ def _uv_env() -> dict:
 
 def _npm_env(node: Path, root: Path) -> dict:
     rt = capability_runtime.root()
+    # #561 review: no git (a dependency from a git host would be cloned, and its tree installed, before the card)
+    # and only the public registry; `_registry_only` then refuses any lock entry from elsewhere.
     return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(rt / "npm-cache"),
                       "npm_config_ignore_scripts": "true", "npm_config_audit": "false", "npm_config_fund": "false",
-                      "npm_config_update_notifier": "false", "HOME": str(root)})
+                      "npm_config_update_notifier": "false", "npm_config_git": "/usr/bin/false",
+                      "npm_config_registry": NPM_REGISTRY, "HOME": str(root)})
 
 
 #: A locked requirement line: `name==version \` (uv pip compile --generate-hashes).
@@ -164,6 +167,21 @@ async def lock_pypi(root: Path, identifier: str, version: str) -> dict:
             "packages": [{"name": n, "version": v} for n, v in _PYPI_LOCKED.findall(text)]}
 
 
+NPM_REGISTRY = "https://registry.npmjs.org/"
+
+
+def _registry_only(packages: dict) -> None:
+    """Every locked package comes from the public registry with its integrity hash (#561 review): a git, file,
+    link or other-host entry, or one with no integrity, stops before the card. A package bundled inside another
+    package's tarball is covered by that tarball's integrity."""
+    for path, meta in packages.items():
+        if not path or not isinstance(meta, dict) or meta.get("inBundle"):
+            continue
+        resolved, integrity = str(meta.get("resolved") or ""), str(meta.get("integrity") or "")
+        if meta.get("link") or not resolved.startswith(NPM_REGISTRY) or not integrity.startswith("sha512-"):
+            raise InstallFailure("lock_not_registry", path.rsplit("node_modules/", 1)[-1][:200])
+
+
 async def lock_npm(root: Path, identifier: str, version: str) -> dict:
     """The lock, before the card: npm reads metadata only (`--package-lock-only`, scripts off)."""
     node = await capability_runtime.ensure("node")
@@ -172,6 +190,7 @@ async def lock_npm(root: Path, identifier: str, version: str) -> dict:
     await _run([str(npm), "install", f"{identifier}@{version}", "--package-lock-only", "--ignore-scripts",
                 "--save-exact"], cwd=root, env=_npm_env(node, root))
     packages = json.loads((root / "package-lock.json").read_text()).get("packages") or {}
+    _registry_only(packages)
     return {"file": "package-lock.json", "sha256": _sha256(root / "package-lock.json"),
             "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or "")}
                          for path, meta in sorted(packages.items()) if path and isinstance(meta, dict)]}
@@ -353,12 +372,20 @@ PREPARED_MAX_AGE_S = 24 * 3600
 
 
 def _sweep_prepared() -> None:
-    """Staging folders a crash or a restart left behind."""
+    """Staging folders a crash or a restart left behind. A `.prepared` that is a link was not made by Arslan: the
+    link goes, never what it points at (#561 review); a link inside it is unlinked, never followed."""
     import time
-    for leftover in _prepared_root().glob("*") if _prepared_root().is_dir() else ():
+    root = _prepared_root()
+    if root.is_symlink():
+        root.unlink()
+        return
+    for leftover in root.glob("*") if root.is_dir() else ():
         try:
             if time.time() - leftover.lstat().st_mtime > PREPARED_MAX_AGE_S:
-                shutil.rmtree(leftover, ignore_errors=True)
+                if leftover.is_symlink():
+                    leftover.unlink()
+                else:
+                    shutil.rmtree(leftover, ignore_errors=True)
         except OSError:
             continue
 
@@ -369,12 +396,19 @@ def discard(prepared: dict | None) -> None:
         shutil.rmtree(prepared["staging"], ignore_errors=True)
 
 
+#: What a package name or version on the card may hold (#561 review: the names come from the lock, so from the
+#: registry): npm's and PyPI's own name characters, nothing that could break a line or reorder it.
+_LOCK_TEXT = re.compile(r"[^A-Za-z0-9@/._+~-]")
+
+
 def lock_summary(prepared: dict | None) -> dict | None:
     """What the card shows of the lock: its digest and every locked package with its version (the first 40)."""
     lock = (prepared or {}).get("lock")
     if not lock:
         return None
-    return {"sha256": lock["sha256"], "count": len(lock["packages"]), "packages": lock["packages"][:40]}
+    packages = [{"name": _LOCK_TEXT.sub("", str(p.get("name") or ""))[:214],
+                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]} for p in lock["packages"][:40]]
+    return {"sha256": lock["sha256"], "count": len(lock["packages"]), "packages": packages}
 
 
 async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] | None = None,
