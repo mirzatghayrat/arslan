@@ -749,6 +749,16 @@
     "more": "更多"
   },
   "sidebar": {
+    "pinFailed": "没能置顶，请再试一次。",
+    "pinned": "已置顶",
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "today": "今天",
+    "yesterday": "昨天",
+    "previous7": "7 天内",
+    "earlier": "更早",
+    "hide": "隐藏边栏",
+    "show": "显示边栏",
     "new_session": "新对话",
     "spawns_ledger": "专家账本",
     "active_chats": "活跃对话",

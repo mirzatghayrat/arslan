@@ -87,7 +87,9 @@ def test_the_window_that_asked_answers_a_hands_card_in_its_own_turn(app_client, 
 
 
 def test_declining_in_the_window_declines_the_card(app_client, hands, monkeypatch):
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
+    # The card lasts 30 s and the answer must decide it well before (20 s), so load cannot make the two meet
+    # (LOAD4: 5 s and 2 s, and a loaded run took 3.8 s).
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 30)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "what does my Notes window show?"})
@@ -98,6 +100,6 @@ def test_declining_in_the_window_declines_the_card(app_client, hands, monkeypatc
         decided_in = time.monotonic() - sent
         _collect_until(ws, "stream_end", max_frames=80)
     assert after[-1]["tool"] == "desktop_look" and after[-1]["ok"] is False
-    # Declined by the answer, not by the card running out (5 s): the window's reply was read.
-    assert decided_in < 2, f"decided after {decided_in:.1f} s: the card expired, nobody read the answer"
+    # Declined by the answer, not by the card running out (30 s): the window's reply was read.
+    assert decided_in < 20, f"decided after {decided_in:.1f} s: the card expired, nobody read the answer"
     assert hands.ops("snapshot") == []

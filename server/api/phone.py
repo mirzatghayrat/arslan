@@ -21,7 +21,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
@@ -177,27 +177,48 @@ async def phone_update_conversation(conversation_id: str, body: ConversationUpda
                                     db: AsyncSession = Depends(get_session)):
     """Q1's `conversation.update`: a quick question becomes an ordinary chat, with every tool from its next
     turn. Only a quick question, or one already turned (a retry after a lost reply): an ordinary conversation,
-    or SUB's `sub`, is `not_found` here and left as it is. Refused while a turn runs (the Bridge answers
-    `mac_busy`). Whether it then starts learning is the user's open question (card, #3); until they decide,
-    `no_learning` stays as it is."""
-    from server.services import run_registry, turn_journal
+    or SUB's `sub`, is `not_found` here and left as it is. From then on it learns like an ordinary conversation
+    (the user, 2026-10-29; card, #3): the turn clears `no_learning` and stores its last message, after which the
+    facts extractor reads (`learns_after_message_id`, migration 0078). One the phone made with no kind stored is
+    read as quick (below) and turned the same way, its row made here. A retry changes neither: the user may
+    have switched learning off in the window since.
+
+    Not covered here (the other half of "its quick turns never teach"): remember and memory_note in later turns
+    may still draw on the quick turns, which stay in the model's history. With INB2 (#475), a quick turn that
+    called any of its four tools is recorded as having read outside content, so an "about you" entry written in
+    the turned conversation waits for the user. A quick turn with no tool is not recorded so: what the user said
+    in it may still be saved as an "about you" entry directly.
+
+    Refused while anything runs in the conversation (#490 review, 1; the Bridge answers `mac_busy`): a chat turn
+    holds the conversation's lock from before it loads the quick context and stores its message, and registers
+    its run only later; a job or a task may run on after a turn. The lock is held while it is turned, so a
+    message queued behind it runs afterwards, as an ordinary turn."""
+    from server.services import conversation_busy
+    from server.ws import arslan as ws_arslan
     if body.kind != "chat":
         raise HTTPException(400, "bad_request")
     row = await db.get(ConversationContext, conversation_id)
     stored = row.kind if row else None
     # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of), once it
     # has messages; with none it was never started.
-    if phone_ids.kind_of(conversation_id, stored) not in ("quick", "chat") or (stored is None and not await db.scalar(
+    kind = phone_ids.kind_of(conversation_id, stored)
+    if kind not in ("quick", "chat") or (stored is None and not await db.scalar(
             select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1))):
         raise HTTPException(404, "not_found")
-    if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
+    lock = ws_arslan._turn_lock(conversation_id)
+    if lock.locked():
         raise HTTPException(409, "mac_busy")
-    row = row or ConversationContext(id=conversation_id)
-    if stored is None:
-        row.no_learning = True          # as a quick question's, which turning leaves as it is (card, #3)
-    row.kind = "chat"
-    db.add(row)
-    await db.commit()
+    async with lock:
+        if await conversation_busy.busy(db, conversation_id, holding_lock=True):
+            raise HTTPException(409, "mac_busy")
+        row = row or ConversationContext(id=conversation_id)
+        if kind == "quick":
+            row.no_learning = False
+            row.learns_after_message_id = await db.scalar(select(func.max(ArslanMessage.id)).where(
+                ArslanMessage.conversation_id == conversation_id)) or 0
+        row.kind = "chat"
+        db.add(row)
+        await db.commit()
     return {"conversation_id": conversation_id, "kind": "chat"}
 
 

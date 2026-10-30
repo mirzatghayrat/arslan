@@ -749,6 +749,16 @@
     "more": "Más"
   },
   "sidebar": {
+    "pinFailed": "No se pudo fijar. Inténtalo de nuevo.",
+    "pinned": "Fijadas",
+    "pin": "Fijar",
+    "unpin": "Dejar de fijar",
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "previous7": "Últimos 7 días",
+    "earlier": "Anteriores",
+    "hide": "Ocultar barra lateral",
+    "show": "Mostrar barra lateral",
     "new_session": "Nueva conversación",
     "spawns_ledger": "Lista de expertos",
     "active_chats": "Conversaciones activas",
