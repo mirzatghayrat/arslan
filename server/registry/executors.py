@@ -845,11 +845,11 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
-        # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
-        # untrusted, and the turn counts as having read outside content. So is one Arslan wrote in a
-        # conversation that had read outside content (v0.1.64 #472 F1). Arslan's own others are not.
-        from server.services.skill_forge import AUTHORED_OUTSIDE
-        outside = row.category in ("imported", AUTHORED_OUTSIDE)
+        # 0.1.57 decision 5: a skill from outside is read like a web page — wrapped as untrusted, and the
+        # turn counts as having read outside content. Only Arslan's own are not: a seed row, or one Arslan
+        # wrote with no outside content in the conversation (v0.1.64 SKF1: an allowlist, skill_trust).
+        from server.registry import skill_trust
+        outside = not skill_trust.reads_as_own(row)
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):

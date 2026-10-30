@@ -87,6 +87,17 @@ describe("capability list", () => {
     for (const key of ["skill:s0", "mcp:2", "mcp:3"]) expect(screen.getByTestId(`cap-delete-${key}`)).toBeInTheDocument();
   });
 
+  it("a skill of unknown origin says so and has no delete button (SKF1)", async () => {
+    vi.spyOn(capabilitiesApi, "list").mockResolvedValue([...ROWS, row({ key: "skill:stray", section: "skills",
+      origin: "unknown", deletable: false, switch: "skill", name: "Stray" })]);
+    render(<CapabilitySwitches />);
+    await screen.findByTestId("cap-terminal");
+    fireEvent.click(screen.getByTestId("cap-more-skills"));
+    expect(screen.getByTestId("cap-skill:stray")).toHaveTextContent("capabilityList.origin_unknown");
+    expect(screen.queryByTestId("cap-delete-skill:stray")).toBeNull();
+    for (const lang of Object.values(capabilityListMessages)) expect(lang.origin_unknown).toBeTruthy();
+  });
+
   it("delete asks first, then deletes, says so and reloads; no deletes nothing", async () => {
     const list = vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
     const del = vi.spyOn(capabilitiesApi, "deleteRow").mockResolvedValue({ ok: true });
