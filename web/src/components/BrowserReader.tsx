@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, RefreshCw, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { browserApi, type ReaderAction, type ReaderFrame } from "../api/browser";
+import { addressOrSearch } from "../lib/browserAddress";
 
 const button = "rounded-md border border-border p-2 hover:bg-surface disabled:opacity-40";
 
@@ -66,9 +67,16 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
   }
   return <div className="flex h-full min-h-0 flex-col">
     <p className="border-b border-border p-3 text-xs leading-relaxed text-muted-foreground">{t("dock.readerLimits")}</p>
-    <form className="flex gap-2 p-3" onSubmit={event => { event.preventDefault(); void act({ action: "navigate", url: url.trim() }); }}>
-      <input type="url" required pattern="https://.*" maxLength={4000} aria-label={t("browser.url")}
-        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm" placeholder="https://example.com"
+    <form className="flex gap-2 p-3" onSubmit={event => {
+      event.preventDefault();
+      // WB1: words go to Bing, an address without a scheme gets https://, other schemes are refused here.
+      const target = addressOrSearch(url);
+      if (!target) { setError("browser.httpsOnly"); return; }
+      setUrl(target);
+      void act({ action: "navigate", url: target });
+    }}>
+      <input type="text" maxLength={4000} aria-label={t("browser.url")} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm" placeholder={t("browser.searchOrAddress")}
         value={url} onChange={event => setUrl(event.target.value)} disabled={busy} />
       <button className={button} disabled={busy || !url.trim()} aria-label={t("browser.open")}><ArrowRight size={16} /></button>
     </form>

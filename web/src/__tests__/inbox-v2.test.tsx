@@ -1,6 +1,6 @@
 /** 0.1.55 §12: the Inbox is everything waiting for the user's decision — cards to
- *  approve (answered here, over HTTP), and memory waiting for an OK (two sources, one list; learned
- *  practices left it in v0.1.64, INB1). */
+ *  approve (answered here, over HTTP). Memory left it in v0.1.64: learned practices with INB1, the rest
+ *  with INB2 (Memory's "To sort" list, tested in memory-page-v3). */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from "@testing-library/react";
 
@@ -9,10 +9,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 import * as client from "../api/client";
-import { companionApi } from "../api/companion";
-import { lessonsApi } from "../api/lessons";
 import InboxApprovals from "../components/proactive/InboxApprovals";
-import InboxMemory from "../components/proactive/InboxMemory";
 import InboxRefused from "../components/proactive/InboxRefused";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import en from "../locales/en.json";
@@ -21,7 +18,6 @@ import ja from "../locales/ja.json";
 import es from "../locales/es.json";
 import de from "../locales/de.json";
 import fr from "../locales/fr.json";
-import { loadPendingMemory } from "../lib/pendingMemory";
 import { ANSWER_GUARD_MS } from "../components/kit";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -287,29 +283,5 @@ describe("Not done while you were away", () => {
         expect(words.inbox[key], `${lang} inbox.${key}`).not.toMatch(NO[lang]);
       }
     }
-  });
-});
-
-describe("memory waiting for your OK", () => {
-  it("merges the two sources, and one failing source hides nothing else; practices are not among them", async () => {
-    vi.spyOn(companionApi, "proposals").mockResolvedValue([{ id: 1, target_id: "e1", target_version: 1, reason: "",
-      candidate: null, entry: { content: "体检报告里的血压数据", sensitivity: "sensitive", created_at: "2026-10-06T00:00:00Z" } }] as never);
-    vi.spyOn(client.api, "listMemoryProposals").mockRejectedValue(new Error("down"));
-    vi.spyOn(lessonsApi, "list").mockResolvedValue([
-      { id: 7, status: "proposed", text: "读大表格 → 先看表头", created_at: "2026-10-07T00:00:00Z" },
-      { id: 8, status: "active", text: "not waiting", created_at: "2026-10-07T00:00:00Z" }] as never);
-    const items = await loadPendingMemory(((k: string) => k) as never);
-    expect(items.map((i) => [i.source, i.text, i.sensitive])).toEqual([["memory", "体检报告里的血压数据", true]]);
-  });
-
-  it("a sensitive one is kept for local models only, with the sensitivity acknowledged", async () => {
-    vi.spyOn(companionApi, "proposals").mockResolvedValue([{ id: 3, target_id: "e3", target_version: 1, reason: "",
-      candidate: null, entry: { content: "血压", sensitivity: "sensitive", created_at: "2026-10-06T00:00:00Z" } }] as never);
-    vi.spyOn(client.api, "listMemoryProposals").mockResolvedValue([]);
-    vi.spyOn(lessonsApi, "list").mockResolvedValue([]);
-    const resolve = vi.spyOn(companionApi, "resolveProposal").mockResolvedValue({} as never);
-    render(<InboxMemory />);
-    fireEvent.click(await screen.findByText("pendingMemory.keepLocal"));
-    await waitFor(() => expect(resolve).toHaveBeenCalledWith(3, true, true, false));
   });
 });

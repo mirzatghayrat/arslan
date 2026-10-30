@@ -33,6 +33,8 @@
     "setup_notice": "将固定版本的开源浏览器下载到 Arslan 数据目录，可能需要几分钟和数百 MB 空间，无需账号或付费 API。",
     "setup": "下载浏览器运行环境",
     "url": "公开 HTTPS 地址",
+    "searchOrAddress": "用 Bing 搜索，或输入网址",
+    "httpsOnly": "这里只打开 https:// 地址。",
     "open": "预览",
     "stop": "停止",
     "blocked": "已阻止或限制的连接：{{n}}",
@@ -252,11 +254,18 @@
     "thinking": "思考中……",
     "stopRun": "停止",
     "remembered": "记住了：{{text}}",
-    "wantsToRemember": "Arslan 想记住：{{text}}",
     "rememberedUndo": "撤销",
     "rememberedUndone": "已撤销",
-    "rememberedReview": "去「记忆」里确认",
-    "rememberedChanged": "之后已有改动，到「记忆」里看"
+    "rememberedChanged": "之后已有改动，到「记忆」里看",
+    "memoryAsk": "想记住一条敏感的：{{text}}",
+    "memoryKeptLocal": "记住了（只在本机用）：{{text}}",
+    "memorySkipped": "好，这条不记。",
+    "memoryWaits": "想记住：{{text}}，先放进「待整理」，因为{{reason}}",
+    "memoryWhy_external_seen": "这段对话读过网页等外部内容",
+    "memoryWhy_not_present": "这不是你在场时写的",
+    "memoryWhy_sensitive": "它是敏感的",
+    "memoryWhy_confirmation_required": "要你确认一下",
+    "memorySeeInMemory": "去「记忆」里看"
   },
   "clarify_card": {
     "answered": "已选择"
@@ -1360,8 +1369,6 @@
     "stalled": "停住了",
     "changed": "有变化",
     "other": "其他",
-    "memoryWaiting": "记忆等你确认",
-    "memoryOpen": "去「记忆」里看全部",
     "watching": "正在盯着",
     "muted": "不再提醒",
     "addWatch": "再盯一个网页或文件夹",
@@ -1378,15 +1385,14 @@
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",
-    "keep": "留下",
-    "keepLocal": "留下，只给本机用",
-    "drop": "不要",
-    "apply": "合并",
+    "keep": "记住",
+    "keepLocal": "记住（只在本机用）",
+    "drop": "不用",
+    "apply": "照做",
     "source": {
       "memory": "关于你",
       "curation": "整理"
-    },
-    "sensitive": "敏感"
+    }
   },
   "confirm": {
     "delete": "删除",
