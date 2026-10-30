@@ -199,7 +199,7 @@ final class ConversationLinksTests: XCTestCase {
 
     func testACardCarriesItsConversationsTitle() async throws {
         let backend = FakeBackend()
-        backend.answers["/api/v1/phone/conversations?limit=100"] = .success(["conversations": [["id": "c-42", "title": "Trip to Kashgar", "updated_at": "t"]]])
+        backend.answers["/api/v1/phone/conversations?limit=100"] = .success(["conversations": [["id": "c-42", "title": "Trip to Acme City", "updated_at": "t"]]])
         let (_, mac, phone, channels, links) = setUpPair(backend: backend)
         try await phone.send(type: "chat.send", body: ["conversation_id": "c-42", "text": "plan", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         try await phone.send(type: "chat.send", body: ["text": "hi", "attachments": [], "client_msg_id": "c2"], to: "mac-1")
@@ -208,7 +208,7 @@ final class ConversationLinksTests: XCTestCase {
         await channels.opened["c-42"]?.onFrame(["type": "propose_schedule", "call_id": "s2", "name": "Weekly", "when": "Mon"])
         await channels.opened["pocket"]?.onFrame(["type": "propose_schedule", "call_id": "s3", "name": "Daily", "when": "9:00"])
         let cards = try await phone.receive().filter { $0.type == "approval.request" }.map { $0.envelope["body"] as? [String: Any] ?? [:] }
-        XCTAssertEqual(cards.map { $0["task_title"] as? String }, ["Trip to Kashgar", "Trip to Kashgar", "Arslan"])
+        XCTAssertEqual(cards.map { $0["task_title"] as? String }, ["Trip to Acme City", "Trip to Acme City", "Arslan"])
         XCTAssertEqual(backend.asked.filter { $0.contains("conversations?") }.count, 2, "once per conversation")
     }
 
