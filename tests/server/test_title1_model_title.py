@@ -9,6 +9,9 @@ text the model reads uses it: nobody to ask (both places), a card nobody answere
 """
 import pytest
 
+from server.db import session as db_session
+from server.db.models import Tool
+from server.mcp import discovery
 from server.registry import executors
 from server.services import permission_store, permissions
 from server.services.permissions import Context, Request
@@ -66,8 +69,14 @@ async def test_a_request_without_a_model_title_is_named_as_its_card():
     assert "Use Notes? needs the user's OK" in await permissions.refuse_unattended(plain, CTX)
 
 
-async def test_an_mcp_card_nobody_answered_is_named_by_the_cleaned_label(memory):  # noqa: F811
+@pytest.mark.parametrize("hints", [None, {"destructiveHint": True}], ids=["ordinary", "destructive"])
+async def test_an_mcp_card_nobody_answered_is_named_by_the_cleaned_label(memory, hints):  # noqa: F811
     key = await _mcp_tool("search_documents", label=ODD_LABEL)
+    if hints:                                   # the destructive branch builds its own request
+        async with db_session.AsyncSessionLocal() as s:
+            (await s.get(Tool, key)).annotations = hints
+            await s.commit()
+        assert discovery.destructive(hints)
     asker = Asker({"by": None})
     with permissions.asking_with(asker):
         refusal = await (await executors.resolve_executor(key)).execute({"text": "plan"})
