@@ -29,6 +29,19 @@ async def switch_capability(key: str, body: Switch) -> dict:
     return row or {"key": key}
 
 
+@router.delete("/capabilities/{key:path}")
+async def remove_capability(key: str) -> dict:
+    """v0.1.64 CAP3a-1: delete what the user installed, Arslan wrote or the user added by hand; refuse the rest
+    (a built-in is only switched), whatever the page shows."""
+    try:
+        await capability_list.remove(key)
+    except capability_list.NotFound as exc:
+        raise HTTPException(status_code=404, detail={"code": "not_found"}) from exc
+    except capability_list.NotRemovable as exc:
+        raise HTTPException(status_code=409, detail={"code": "not_removable"}) from exc
+    return {"ok": True}
+
+
 # ── 0.1.57 §7: what Arslan installed — its dossier, folders, updates, removal ──
 
 def _dossier_error(exc) -> HTTPException:
