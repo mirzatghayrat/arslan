@@ -33,6 +33,8 @@
     "setup_notice": "Lädt eine festgelegte Version eines Open-Source-Browsers in Arslans Datenordner. Dies kann einige Minuten und mehrere hundert MB benötigen. Kein Konto oder kostenpflichtiger API-Zugang nötig.",
     "setup": "Browser herunterladen",
     "url": "Öffentliche HTTPS-Adresse",
+    "searchOrAddress": "Mit Bing suchen oder Adresse eingeben",
+    "httpsOnly": "Hier öffnen sich nur https://-Adressen.",
     "open": "Vorschau",
     "stop": "Stoppen",
     "blocked": "Blockierte oder begrenzte Verbindungen: {{n}}",

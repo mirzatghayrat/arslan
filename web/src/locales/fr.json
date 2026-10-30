@@ -33,6 +33,8 @@
     "setup_notice": "Télécharge une version fixe d’un navigateur open source dans le dossier de données d’Arslan. Cela peut prendre quelques minutes et plusieurs centaines de Mo. Aucun compte ni API payante requis.",
     "setup": "Télécharger le navigateur",
     "url": "Adresse HTTPS publique",
+    "searchOrAddress": "Rechercher avec Bing ou saisir une adresse",
+    "httpsOnly": "Seules les adresses https:// s’ouvrent ici.",
     "open": "Aperçu",
     "stop": "Arrêter",
     "blocked": "Connexions bloquées ou limitées : {{n}}",

@@ -33,6 +33,8 @@
     "setup_notice": "将固定版本的开源浏览器下载到 Arslan 数据目录，可能需要几分钟和数百 MB 空间，无需账号或付费 API。",
     "setup": "下载浏览器运行环境",
     "url": "公开 HTTPS 地址",
+    "searchOrAddress": "用 Bing 搜索，或输入网址",
+    "httpsOnly": "这里只打开 https:// 地址。",
     "open": "预览",
     "stop": "停止",
     "blocked": "已阻止或限制的连接：{{n}}",
