@@ -195,6 +195,8 @@ packages = ["arslan"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 timeout = 120
+# SBX evidence uses testcase properties, which are supported by the xunit1 schema.
+junit_family = "xunit1"
 # Platform markers, so a CI job can SELECT the tests that only mean something on
 # one OS instead of a hand-kept file list that rots. Registered here because an
 # unregistered mark is a warning at collection and, worse, `-m <name>` silently
@@ -202,6 +204,7 @@ timeout = 120
 # a local variable, and `pytest -m macos_only` deselected all 3161 tests without
 # complaining.
 markers = [
+    "sbx_mac: SBX-M corpus on real macOS; measurement outcomes are JUnit properties, kernel denials are assertions.",
     "macos: only meaningful on macOS (native frameworks — Vision, seatbelt). Arslan ships a macOS dmg, so these are the tests closest to what users run, and CI has never executed one.",
     "linux_only: only meaningful off macOS (asserts the fail-closed path a macOS host does not take).",
     "real_mcp: spawns real stdio MCP test servers (tests/server/fixtures/fake_mcp_server.py); lifts the spawn/download guard in tests/conftest.py and nothing else — never skipped.",

@@ -300,7 +300,7 @@ async def test_a_one_off_detour_is_skipped(execution_db, judge, monkeypatch):
 
 # -- the user's correction, from turn_facts -------------------------------------
 
-async def test_a_correction_in_the_users_words_becomes_a_lesson(monkeypatch):
+async def test_a_correction_in_the_users_words_becomes_a_lesson(execution_db, monkeypatch):
     from server.services import turn_facts
     captured = []
 
@@ -454,7 +454,7 @@ async def test_no_judge_answer_on_the_contradiction_check_waits(execution_db, ju
     assert learned["status"] == "proposed"
 
 
-async def test_turn_facts_marks_a_first_message(monkeypatch):
+async def test_turn_facts_marks_a_first_message(execution_db, monkeypatch):
     from server.services import turn_facts
     captured = []
 
