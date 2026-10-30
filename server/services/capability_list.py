@@ -267,7 +267,7 @@ def _skill_origin(pack) -> str:
     from server.services import skill_forge
     if pack.category in skill_forge.WRITTEN:
         return "authored"
-    if pack.source_id or pack.category == "imported":
+    if skill_trust.has_users_mark(pack):                          # imported, or a capability source
         return "installed"
     return "builtin" if skill_trust.reads_as_own(pack) else "unknown"
 

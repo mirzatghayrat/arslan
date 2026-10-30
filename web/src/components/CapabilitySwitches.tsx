@@ -83,10 +83,8 @@ export default function CapabilitySwitches() {
   }
   async function remove(row: CapabilityRow) {
     const label = isolate(name(row));
-    // A skill made in Discover before v0.1.64 has no link to add it again from, and its text was a model's draft;
-    // one a card installed (a source; Discover overwrote its row) has its files and its link (#500 recheck).
-    const discover = row.key.startsWith("skill:gh-") && !row.source_id;
-    const body = discover ? "capabilityList.deleteBodyAuthored" : DELETE_BODY[`${row.section}:${row.origin}`];
+    // By origin alone: a Discover skill reads "authored" since migration 0080 and SKF1 (no key rule, #519 review).
+    const body = DELETE_BODY[`${row.section}:${row.origin}`];
     const ok = await confirmSheet({ title: t("capabilityList.deleteTitle", { name: label }), action: t("capabilityList.delete"),
       body: body ? t(body) : undefined });
     if (!ok) return;

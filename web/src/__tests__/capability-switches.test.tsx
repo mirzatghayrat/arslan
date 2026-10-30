@@ -36,7 +36,7 @@ const ROWS: CapabilityRow[] = [
         reason: "mcp_error", fix: "open_tab:mcps", name: "Broken", switch: "mcp", detail: "401" }),
   ...Array.from({ length: 8 }, (_, i) => row({ key: `skill:s${i}`, ...SKILL, name: `Skill ${i}`, detail: `does ${i}` })),
   row({ key: "skill:mine", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Mine" }),
-  row({ key: "skill:gh-acme", section: "skills", origin: "installed", deletable: true, switch: "skill", name: "Acme" }),
+  row({ key: "skill:gh-acme", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Acme" }),  // Discover's, after 0080
   row({ key: "method:research", section: "skills", revision: 2, name: "Research, my way" }),
   row({ key: "method:product-design", section: "skills", revision: 1 }),
 ];
@@ -95,7 +95,11 @@ describe("capability list", () => {
     fireEvent.click(screen.getByTestId("cap-more-skills"));
     expect(screen.getByTestId("cap-skill:stray")).toHaveTextContent("capabilityList.origin_unknown");
     expect(screen.queryByTestId("cap-delete-skill:stray")).toBeNull();
-    for (const lang of Object.values(capabilityListMessages)) expect(lang.origin_unknown).toBeTruthy();
+    for (const lang of Object.values(capabilityListMessages)) expect(lang.origin_unknown && lang.unknownHint).toBeTruthy();
+    fireEvent.click(screen.getByTestId("cap-open-skill:stray"));          // the sheet says why there is no delete
+    const sheet = await screen.findByTestId("cap-sheet");
+    expect(within(sheet).getByTestId("cap-sheet-unknown")).toHaveTextContent("capabilityList.unknownHint");
+    expect(within(sheet).queryByTestId("cap-sheet-delete")).toBeNull();
   });
 
   it("delete asks first, then deletes, says so and reloads; no deletes nothing", async () => {
@@ -132,7 +136,7 @@ describe("capability list", () => {
     await screen.findByTestId("cap-terminal");
     fireEvent.click(screen.getByTestId("cap-more-skills"));
     for (const [key, body] of [["skill:mine", "deleteBodyAuthored"], ["skill:s0", "deleteBodyInstalledSkill"],
-      ["skill:gh-acme", "deleteBodyAuthored"],               // Discover's: no link to add it again from
+      ["skill:gh-acme", "deleteBodyAuthored"],               // Discover's, by its origin: no link to add it again from
       ["skill:gh-carded", "deleteBodyInstalledSkill"],       // a card's, which Discover overwrote: files and a link
       ["mcp:2", "deleteBodyManual"], ["mcp:3", "deleteBodyInstalledConnection"]]) {
       fireEvent.click(screen.getByTestId(`cap-delete-${key}`));
