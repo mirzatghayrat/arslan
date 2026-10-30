@@ -63,22 +63,24 @@ The panel holds only things that sit next to the conversation, the way Claude de
 The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 session rail」, 「这个概览可以是默认，不过这样以来 那个一排就太挤了」.
 1. **A new fixed tab, Overview, comes first and is the default.** It replaces Files as the default and as the fallback when a selected side chat closes. The row is Overview, Files, Progress, Browser, then side chats; later additions still come from "+".
 2. **The four fixed tabs are icons**, each with a tooltip and an aria-label, like Claude desktop's pane icons. Progress carries its count as a small badge. Side chats stay as words, since four words plus side chats overflow the row.
-3. **Overview has three parts, all built from data the app already has.** No new endpoint (⓪Plan checked main):
+3. **Overview has four parts, all built from data the app already has.** No new endpoint (⓪Plan checked main):
    - **Environment:**
      - the conversation's model, with today's picker as "Change";
      - the project folder, with "Show in Finder";
      - the iPhone remote (Bridge) on or off: `phone_bridge_enabled` in the settings (`web/src/api/adapters.ts:123`).
+   - **Deliverables**, right after Environment. The user said 「概览里 再加一个 output 我觉得很有用」, and when asked, chose 「产出的东西（交付物）」. It lists the files this conversation produced, newest first: the same list as the top of the Files tab. Clicking one opens it in the reader, and "All in Files" switches to the Files tab. The heading reuses the existing string `validation.artifacts` ("Deliverables").
    - **Context:** "Context N% used" with used/window, a bar, and five rows using the ring's existing strings (`models.partSystem`, `partTools`, `partContext`, `partHistory`, `partTurn`) and the `contextEstimated` note (`web/src/locales/models.ts:25-27`). It reuses `ringRows()` from `ConversationModelChip.tsx`, the K4b breakdown.
    - **Connectors:** only the MCP servers that need something: "Needs sign-in" with "Sign in", and "Can't connect" with "Retry". Then "The other N are connected" with "Manage", which opens Capabilities.
      - The data is `GET /mcp/servers` (`web/src/api/mcp.ts:7`). It already returns `state` and `shown` (`server/services/mcp_service.py`, `_to_dict`), with `needs_auth`, `failed` and `parked` among the states (`server/mcp/supervisor.py:78-79`).
      - The web type `McpServer` (`web/src/api/client.types.ts:990`) still lacks `state` and `shown`, so WB1-2 adds them to the type.
 
    Background jobs and changed files aren't repeated here, because they are in Progress and Files.
-4. **New strings, in all six languages:** overview, envH, ctxH, conH, change, bridge, needsSignIn, signIn, cantConnect, retry, othersOk, manage.
+4. **New strings, in all six languages:** overview, envH, ctxH, conH, change, bridge, needsSignIn, signIn, cantConnect, retry, othersOk, manage, allFiles.
 5. **Tests:**
    - Overview is the default and comes first;
    - the four icons have labels;
    - the Context rows equal `ringRows()` for the same input;
+   - Deliverables equals the conversation's files, newest first, and clicking one opens the reader;
    - Connectors lists only servers that aren't OK, and its count of the rest is right;
    - closing a selected side chat falls back to Overview.
 
