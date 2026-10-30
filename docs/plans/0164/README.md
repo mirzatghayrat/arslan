@@ -196,6 +196,13 @@ Small cards, each its own PR. Tests come first, and none is a new subsystem.
 | **UNI1** | One name sanitizer at every entry point. Bodies are flagged ("N invisible characters"), not stripped; only Tag characters are removed. This also fixes `create_skill` dropping ZWNJ, ZWJ, LRM/RLM and VS16 from bodies (`skill_forge.py:59`, `:85-89`, `:167`), which breaks Persian spelling, emoji sequences and RTL text. The "N invisible characters" notice needs a mock first | ⑤CAP | should | Same card. After SKF1. |
 | **SEC1** | Secrets typed into connection URLs or args are offered a one-click move to a `${NAME}` placeholder, with the value in a separate encrypted store filled at connect time (not `env`, which is the HTTP header map); one display function that never shows a stored secret. Likely needs a migration number from ②Main | ⑤CAP | could (v0.1.65 candidate) | Same card. After SKF1 and UNI1. Kept small (§12). |
 
+### 3.13 Next-round candidates from WB1 (user, 2026-10-30)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **BRW1** | A real browser instead of the screenshot reader: the user can click on the page and sign in | — | v0.1.65 candidate | Security surface: a card of its own, and the user merges. From WB1's browser decisions. |
+| **BRW2** | One browser that the user and the agent both see, as Claude desktop's pane does: Hands' pages show in the workbench, and the user can take over | — | v0.1.65 candidate | Same surface as BRW1. |
+
 ## 4. 合并顺序
 
 **两种情况都一样的（②Main、③Hands 审 #434 后改）：**
