@@ -2,7 +2,7 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-30, afternoon.
+**Updated:** 2026-10-30, evening.
 
 ## Merged for v0.1.64 (newest first)
 
@@ -74,23 +74,12 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-Only PRs with an independent effort=max review OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one. Heads as of 2026-10-30.
+Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
 
-**Ready now:**
-1. **#486** (Q1b, Bridge frames) at `1a198ad6`. Recheck approved through `b41f613e`. The glance at `7bd6dac4` found it sound, and `1a198ad6` adds only the one missing test. CI green.
-2. **#495** (CAP1a follow-up, MCP labels and odd tool names) at `ec66aa21`. Recheck approved, and the user's "mark odd names" is built. CI green. **Merge it before #498.**
-
-**Approved, waiting on a sync with main** (#494's 0076 made them conflict, only in the migration lists):
-- **#475** (INB2): final review "merge" at `714ddd5b`. ②Main merges main in, then the reviewer confirms the diff is unchanged.
-- **#496** (CAP2b, 0077, split by source): recheck "ready" at `23a3d5e2`. ⑤CAP merges main in, keeping 0075, 0076, 0077 in order.
-
-**Approved, merges last:**
-- **#490** (Q1 #3, 0078): glance OK at `60aac4f2`. After #475 and #486 land, ②Main merges main in. That merge follows the reviewer's `phone_update_conversation` spec, and the PUT-lock commit comes on top. The reviewer glances at the merge, then the user merges.
-- **#498** (S64-0c): ④参谋's effort=max reviewer approved `35cfffe3`, and `af7b58f8` adds the missing test. After #495 lands, ③Hands rebases and drops its copy of the name rule, with fresh CI and a re-OK.
-
-**#500** (CAP3a-2, the one-list page): approved by ④参谋's effort=max reviewer. It was retargeted to main; ⑤CAP merged main in at `4e740474`, and its own diff matches the reviewed one line for line. CI 40992511103 is running. The user merges.
-
-**Suggested order:** #486 → #495 → #475 (after sync) → #496 (after sync) → #490 (after its merge) → #498 (after rebase). Whichever of the migration PRs lands second syncs first.
+1. **#475** (INB2) at `b97d7947`, which merges main in with no change to the PR's own diff (⓪Plan compared the added and removed lines; 52 files, +2287/−340). Final review: "merge" at `714ddd5b`. **Merge once its CI is green.**
+2. **#512** (FRONT1: A plus the corrected B) at `4eeca06c`, which merges main in. ⓪Plan's effort=max review is running on `5d08b538`. It goes after #475 (hot file).
+3. **#490** (Q1 #3, migration 0078): after #475, ②Main merges main in per the reviewer's spec, plus the PUT-lock commit and the `kind_of` PUT guard. The reviewer then glances at it, and it merges last of these.
+4. **#507** (SBX-2, Codex): not ready. Its macOS job has 3 real failures for Codex to fix, and the plumbing review asked for fixes. Astra's review is the user's to start. **#508** (ci.yml 69 → 359) is OK'd; the user merges it into the Codex branch.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -98,26 +87,28 @@ Only PRs with an independent effort=max review OK **at the current head** and gr
 
 | Lane | Work |
 |---|---|
-| ②Main | Q1b #486 (Bridge frames; ⓪Plan's effort=max reviewer on `9249401a`), Q1 #3 (migration 0078), then the pocket deletion (the old pocket stays a Mac-only conversation; every phone frame naming it is refused, inbound and outbound: #487). INB2 #475: the user's F2 (allowlist) and F4 (`sensitive: true`) at `40e8a8ab`, main merged in at `4420c21a`; ⓪Plan's effort=max reviewer is rechecking `4420c21a..40e8a8ab`. Then Q1b (Bridge frames, `sent_at`), then Q1 #3 (conversion boundary, migration 0078), then the pocket deletion. #483 logs migrations 0078/0079 |
-| ③Hands | **SBX-2 goes to Codex, whole** (user, 2026-10-29, the cloud audit's split; #493). ③Hands' local SBX-2 branch stays untouched. ③Hands writes 3a, 4a, 5a, 6a, 7 and 8 and S2a-3's structure, and starts drafting after #493 merges. #491 drops `partly_done` and `refused`, keeps `no_effect`; ②Main OK'd it at `c71045b2` (effort=max), and auto-merge is on. Its first backend run 40811544026 failed only in cargo-deny's advisory-db download (pytest 9732 passed), and the job was re-run. The 0076 table-drop PR is unblocked now that #459 is merged (`a528c3ff`). FRONT1 waits on the user's pick |
-| ⑤CAP | CAP2b (0077), unblocked now that #472 is merged |
-| ①iOS | Q1c in progress, on the scope the user narrowed on 2026-10-29 (Q1 card): 快问 replaces 「＋ 新对话」, one thread page, a 30-minute follow-up window, no 转成对话 on the phone yet |
-| ⑥Helper | STY #452 (draft), SIDE after SUB2, SB1 after the pocket deletion and INB4 (mock first) |
-| ⓪Plan | M64, STY read tally, mid-version M1 round, cards; the docs-site Cua sentence in the v0.1.64 docs pass |
+| ②Main | #475 waits for CI and the user. Next: the chat-liveness load-tolerance fix (test-only), then the pocket-deletion prep (it waits on the user's go), then #490's merge after #475 |
+| ③Hands | #512 (FRONT1) in review. Draft PRs for SBX-3a, 4a, 5a and 7 on SBX-1's builder (they stay unmerged until SBX-2 and SBX-M land). Then NAME1 and TITLE1 |
+| ⑤CAP | SKF1, then UNI1a (the backend; UNI1b's notice needs a mock first), then SEC1 and MCPOUT1 |
+| ⑥Helper | The final SB1-0 and WB1-0 mocks are sent, each with a "left for you to pick" bar. STY #452 rebases onto main. Then WB1-1 on main (web only) |
+| ①iOS | Q1c is done: build 30 is on TestFlight (the user OK'd it on 2026-10-29). An independent review of its Bridge contract commit is running. The real-Mac end-to-end needs a 0.1.64 dev build on the user's Mac |
+| Codex (via ⑦Codex) | SBX-2 #507 fixes |
+| ⓪Plan | Reviews as PRs open; STATUS; the cut proposal (#515) |
 
 ## Waiting on the user
 
-- **SB1 sidebar sections:** match the iPhone (「今天」 / 「昨天」 / 「7 天内」 / 「更早」 with month folds), or add a 30-day section on both apps. Also: a time on each row or headings only, and Pinned above or below Projects. All three are toggles in the SB1-0 mock.
-- **SB1 raw material:** a read-only count of your conversations by section. ⑥Helper's query was blocked, so you run it or allow it.
-- **Merges:** the list above, in that order.
-- **SBX-2:** paste the SBX-2 task to Codex (plan A). It can start now; the chain HR → CLS → S5a → S5b waits on it.
-- **Mocks:** ⑥Helper is building SB1-0 (sidebar) and the shared WB1-0 / SIDE-0 (workbench and side chat) as clickable demos.
-- **Release secrets into an Environment:** once the user has the originals of the updater's private key and the Apple certificate, move every `APPLE_*` and `TAURI_*` secret into a GitHub Environment that needs the user's approval, and add `environment:` to both workflows. After that, Codex may push by itself (plan B).
-- **A session card from ②Main:** "Make the chat liveness tests load-tolerant", for the test_chat_liveness_0159 flake under full local load.
-- The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64; the TestFlight upload needs the user's nod.
-- The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
-- Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md`.
-- Making the `language` CI job a required check (④参谋 is walking through it).
+- **The v0.1.64 cut:** [CUT-proposal.md](CUT-proposal.md). Ship without the security chain's tail? It asks four questions. If the cut is adopted, follow-up: `settings_service.py:408-411`'s docstring (and any Settings or release-note wording) says ask_risky's judgement is completed in v0.1.64 (S2a-3). That would become v0.1.65 (④参谋).
+- **Merges:** the "Ready" list above, in that order.
+- **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`) than the current key (`98eec4a75f7e`, regenerated after the bold-around-code fix), so they can't be tallied. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
+- **Mocks, one sitting:**
+  - SB1-0: the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects;
+  - WB1-0: the tab name, "Working folder" or "Project folder".
+- **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
+- **SBX-2 (#507):** relay the macOS failures and the plumbing findings to Codex; start the Astra review session; merge #508 into the Codex branch.
+- **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
+- **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
+- **Making the `language` CI job required:** #504 merged with it red. That's a repository setting, so the user does it.
+- **A session card from ②Main:** "Make the chat liveness tests load-tolerant" (②Main is doing it now).
 
 **Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The pocket's old messages stay as a Mac-only conversation (#487). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
