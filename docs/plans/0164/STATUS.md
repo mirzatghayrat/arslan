@@ -2,12 +2,19 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-30.
+**Updated:** 2026-10-30, afternoon.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #504 | Follow-up cards NAME1, TITLE1, MCPOUT1 | `b3f31303` |
+| #502 | CAP gh- follow-up: migration 0080 marks old Discover skills as outside | `12ff908f` (main CI 40990735670 success) |
+| #499 | CAP3a-1: capability rows (section, origin, deletable, last used); DELETE refuses built-ins | `89675b4d` |
+| #496 | CAP2b: migration 0077, promoted skills marked by source; drops skill_candidates | `5f4047bd` (main CI 40985240648 success) |
+| #495 | CAP1a follow-up: MCP labels; odd tool names mark the turn | `d153f293` |
+| #486 | Q1b: the Bridge takes Quick Chat and new conversations | `cd56cc8a` |
+| #501 | This page, 10-30 | `3192ba1b` |
 | #494 | PRJ0: migration 0076 drops `project_habits` and `project_levels.habit` | `80de850a` (main CI 40976699220 running when this was written) |
 | #497 | Codex plan A: Codex commits locally, the user pushes | `2eb00abb` (main CI 40838498833 success) |
 | #493 | SBX and S2a-3 split between Claude and Codex; Codex queue; reordered chain | `e1f505ce` |
@@ -81,7 +88,7 @@ Only PRs with an independent effort=max review OK **at the current head** and gr
 - **#490** (Q1 #3, 0078): glance OK at `60aac4f2`. After #475 and #486 land, ②Main merges main in. That merge follows the reviewer's `phone_update_conversation` spec, and the PUT-lock commit comes on top. The reviewer glances at the merge, then the user merges.
 - **#498** (S64-0c): ④参谋's effort=max reviewer approved `35cfffe3`, and `af7b58f8` adds the missing test. After #495 lands, ③Hands rebases and drops its copy of the name rule, with fresh CI and a re-OK.
 
-**In review:** #499 (CAP3a-1, the delete rule; ⓪Plan's effort=max reviewer is on it). #500 (CAP3a-2, the one-list page) is waiting for its review.
+**#500** (CAP3a-2, the one-list page): approved by ④参谋's effort=max reviewer. It was retargeted to main; ⑤CAP merged main in at `4e740474`, and its own diff matches the reviewed one line for line. CI 40992511103 is running. The user merges.
 
 **Suggested order:** #486 → #495 → #475 (after sync) → #496 (after sync) → #490 (after its merge) → #498 (after rebase). Whichever of the migration PRs lands second syncs first.
 
@@ -100,7 +107,6 @@ Only PRs with an independent effort=max review OK **at the current head** and gr
 
 ## Waiting on the user
 
-- **#499 (CAP3a-1): may the Capabilities page delete skills you wrote and connections you added by hand?** The card said only what Arslan installed is deletable. The PR also deletes `authored` / `authored-outside` skills and hand-added connections. A copy of the skill's SKILL.md now goes to the Trash first, so a delete can be undone either way.
 - **SB1 sidebar sections:** match the iPhone (今天 / 昨天 / 7 天内 / 更早 with month folds), or add a 30-day section on both apps. Also: a time on each row or headings only, and Pinned above or below Projects. All three are toggles in the SB1-0 mock.
 - **SB1 raw material:** a read-only count of your conversations by section. ⑥Helper's query was blocked, so you run it or allow it.
 - **Merges:** the list above, in that order.
@@ -172,6 +178,10 @@ That is a repository-settings change. The `environment:` lines for the two workf
 - MCP tool descriptions from an approved server stay unmarked, as a stated limit;
 - the English name is "Quick Chat";
 - Codex works under plan A.
+
+**Decided on 2026-10-30 (user, relayed by ④参谋):**
+- **Deletable scope:** skills Arslan wrote (`authored` and `authored-outside`) and connections the user added by hand may be deleted, as #499 and #500 built them. Built-in and seeded items stay non-deletable (409). The deleted skill's text goes to the Trash.
+- **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
 
 ## Spend
 
