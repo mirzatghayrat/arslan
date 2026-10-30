@@ -33,6 +33,8 @@
     "setup_notice": "Descarga una versión fija de un navegador de código abierto en la carpeta de datos de Arslan. Puede tardar unos minutos y ocupar varios cientos de MB. No requiere cuenta ni API de pago.",
     "setup": "Descargar navegador",
     "url": "Dirección HTTPS pública",
+    "searchOrAddress": "Busca con Bing o escribe una dirección",
+    "httpsOnly": "Aquí solo se abren direcciones https://.",
     "open": "Vista previa",
     "stop": "Detener",
     "blocked": "Conexiones bloqueadas o limitadas: {{n}}",
