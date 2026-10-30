@@ -26,7 +26,7 @@
 
 ## What to build
 
-The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Files, Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的＋打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
+The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Files, Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的『+』打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
 
 1. **Files (always there, and the default tab):** this conversation's files on top, the folder browser below, and the working folder in the tab's header row with today's "Reveal in Finder" (moved from `TaskTab.tsx:84-85`). Task and Files merge into this one tab.
 2. **Progress (always in the row):** one "doing what" line per background job or sub-session, with a stop button (today's Task "working" list, `TaskTab.tsx:45-57`). The tab shows a count while jobs run, and "Nothing is running in the background." when none are. SUB's sub-session tree goes here (SUB card). The job poll (`TaskTab.tsx:31-41`) moves up to the Workbench, so the count updates while another tab is selected.
@@ -50,7 +50,7 @@ The panel holds only things that sit next to the conversation, the way Claude de
    - The divider has no `bg-primary` in any state and no non-visible `focus:` background (a test on the class list).
    - A mutation check on the row order and the side-chat fallback.
    - `git grep` that `workbench.task`, `TaskTab` and `OPEN_PROJECT_EVENT` are gone, or carry a `DELETE-BY` if a locale key must stay for one release; `workbench-0158.test.tsx` (`:39`, `:67`, `:164`, `:184`) is updated, not deleted.
-4. **External evidence:** CI run ids; the visibility tests going red when the rule is removed; the user's real-Mac smoke (the divider after a drag, a job starting and ending, opening and closing a browser tab), added to `SMOKE.md`.
+4. **External evidence:** CI run ids; the row-order and fallback tests going red under the mutation; the user's real-Mac smoke (the divider after a drag, the Progress count and empty sentence as a job starts and ends; the browser's empty state), added to `SMOKE.md`.
 
 ## PRs
 
