@@ -178,6 +178,16 @@ Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` �
 |---|---|---|---|---|
 | **WB1** | The right-hand workbench holds only what sits next to the conversation, and a tab appears only when it has content: Files (always; Task and Files merged), Progress (only while a job or sub-session runs; SUB's tree goes here), Browser (only while the user has a browser tab open; it is the user's URL reader, not Hands), side chats (SIDE). The Task tab goes. Apple-style look: a 1 px divider with no coloured hover, sentence-case grey headings. Card: [WB1-workbench.md](WB1-workbench.md) | ⑥Helper (②Main reviews) | in v0.1.64 (user, 2026-10-29) | One clickable mock together with SIDE-0, before any code. WB1 lands before SIDE-2 and SUB's progress tab, which add their tabs through it. Front end only, not the security surface; the user's approval says the author session auto-merges after another session's OK (quoted in the card). |
 
+### 3.11 Follow-ups found in review (2026-10-30)
+
+Small cards, each its own PR. Tests come first, and none is a new subsystem.
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **NAME1** | Native function names are provider-safe. An MCP tool key that breaks a provider's function-name rule (letters, digits, `_` and `-` within the provider's length), for example one with a dot or a line break, can make the provider refuse the whole request, as one bad MCP schema did to every chat in 0.1.61. `_SchemaDrops` handles schemas, not names. Fix: send each tool to the provider under a safe alias, keep a reversible map back to the real key, and test each provider's rule. The provider-refusal note (`server/orchestrator/tool_loop.py:765`) then shows the alias, not the raw key | ③Hands | should | Found in the review of #498 (③Hands' question 2). Security surface (tool table), so the user merges. |
+| **TITLE1** | The model-facing approval texts are built from the cleaned label. Today `server/services/permissions.py` builds `_UNATTENDED`, `_EXPIRED` and `_declined_text` from the card's raw title, and the MCP executor swaps the cleaned label in afterwards. That swap only works on an exact match. Fix: build those texts from a model-facing title that uses the cleaned label, keep the raw label on the card, and drop the swap. Test: a text quoting only part of the title still shows the cleaned label | ③Hands | could | From the re-OK of #498 at `78a371d4`. Today all four `model_text` sites (`permissions.py:425`, `:436`, `:461`, `:471`) quote the whole title, so the swap holds. |
+| **MCPOUT1** | Arslan's own MCP server hands outside text to other agents as its own. `list_capabilities` (`server/mcp_server/tools.py:67-87`) returns every skill's description and every connected server's label unframed to external MCP clients, including imported, `authored-outside` and gh- skills. Fix: list outside skills by key only, with their origin, the way `read_skill`'s index does, and label servers through `outside_label` | ⑤CAP | could | Found by #502's reviewer; it predates that PR. Outbound only: nothing Arslan reads changes. |
+
 ## 4. 合并顺序
 
 **两种情况都一样的（②Main、③Hands 审 #434 后改）：**
