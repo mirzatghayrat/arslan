@@ -350,7 +350,10 @@ def skill_to_trash(pack) -> None:
     leaves the skill whole, never a row-less folder the next skill of that key would pick up (#499 review F4),
     and no copy behind. The copy is a SKILL.md skill_import reads again: a skill's text is only in the
     database, and one Arslan wrote is nowhere else (#499 second review 5). Nothing for a key that is not a
-    plain key (F3)."""
+    plain key (F3). A folder that is a link is refused: the copy would be written through it, and only the
+    link would go to the Trash (#499 recheck 1)."""
+    import os
+
     import yaml
 
     from server import config
@@ -358,19 +361,33 @@ def skill_to_trash(pack) -> None:
     if not safe_skill_key(pack.key):
         return
     folder = config.data_dir() / "skill_scripts" / pack.key
-    made = not folder.exists()
-    folder.mkdir(parents=True, exist_ok=True)
+    if folder.is_symlink():
+        raise NotRemovable(pack.key)
+    made, wrote = not folder.exists(), False
     copy = folder / "SKILL.md"
     head = yaml.safe_dump({"name": pack.name or pack.key, "description": pack.description or ""},
                           allow_unicode=True, sort_keys=False)
-    copy.write_text(f"---\n{head}---\n\n{(pack.body or '').strip()}\n", encoding="utf-8")
     try:
+        folder.mkdir(parents=True, exist_ok=True)
+        if os.path.lexists(copy):
+            copy.unlink()                   # a stray name, a link or another file's second name: only it goes
+        _write_new(copy, f"---\n{head}---\n\n{(pack.body or '').strip()}\n")
+        wrote = True
         capability_install.to_trash(folder)
     except Exception:
-        copy.unlink(missing_ok=True)
-        if made:
+        if wrote:
+            copy.unlink(missing_ok=True)
+        if made and folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
         raise
+
+
+def _write_new(path, text: str) -> None:
+    """Write a file that did not exist, never through a link (#499 recheck 1)."""
+    import os
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as out:
+        out.write(text)
 
 
 async def _remove_skill(skill_key: str) -> None:

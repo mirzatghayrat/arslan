@@ -372,14 +372,103 @@ async def test_a_dot_key_never_names_a_folder(api, execution_db, tmp_path, key):
     assert (tmp_path / "data" / "skill_scripts" / "csv-tidy" / "run.py").is_file()
 
 
+FIELDS = {"key", "group", "state", "tools", "switch", "reason", "fix", "name", "detail", "source", "section",
+          "origin", "deletable", "last_used"}
+
+
 async def test_no_row_carries_what_it_counts_as_use(api, execution_db, tmp_path):
     """#499 second review 4: the tools a row counts were stashed in the row and popped later, so any path
-    that skipped the pop would send them to the client."""
+    that skipped the pop would send them to the client. The recheck: and under any other name (mutant N8)."""
     from server.services import capability_list
     await _seed(execution_db, tmp_path)
     rows = [*await capability_list._builtin_rows(), *await capability_list._mcp_rows(),
             *await capability_list._skill_rows()]
-    assert rows and not [row["key"] for row in rows if "_uses" in row]
+    assert rows and not [row["key"] for row in rows if set(row) != FIELDS - {"last_used"}]
+    sent = (await api.get("/api/v1/capabilities")).json()
+    assert sent and not [row["key"] for row in sent if set(row) != FIELDS]
+
+
+def _linked(folder: Path, target: Path) -> None:
+    import shutil
+    shutil.rmtree(folder)
+    folder.symlink_to(target, target_is_directory=True)
+
+
+@pytest.mark.parametrize("via", ["list", "dossier"])
+async def test_a_scripts_folder_that_is_a_link_is_never_written_through(api, execution_db, tmp_path, via):
+    """#499 recheck 1: the copy of the text would overwrite the link target's own SKILL.md, and only the link
+    would go to the Trash. Arslan never makes such a link; the delete is refused and nothing changes."""
+    await _seed(execution_db, tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "SKILL.md").write_text("theirs\n")
+    _linked(tmp_path / "data" / "skill_scripts" / "deck", outside)
+    before = await _state(execution_db, tmp_path)
+    url = "/api/v1/capabilities/skill:deck" if via == "list" else "/api/v1/capability-sources/sk2"
+    response = await api.delete(url)
+    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+    assert await _state(execution_db, tmp_path) == before
+    assert (outside / "SKILL.md").read_text() == "theirs\n" and (tmp_path / "data" / "skill_scripts" / "deck").is_symlink()
+
+
+@pytest.mark.parametrize("kind", ["symlink", "hardlink"])
+async def test_a_skill_md_name_inside_the_folder_never_reaches_its_target(api, execution_db, monkeypatch, tmp_path, kind):
+    """#499 recheck 1: a SKILL.md link (or a second name of another file) inside the folder: the copy is a new
+    file of its own, and the target is never written, neither when the delete goes through nor when it fails."""
+    import os
+    from server.services import capability_install, capability_list
+    await _seed(execution_db, tmp_path)
+    victim = tmp_path / "victim.md"
+    victim.write_text("theirs\n")
+    name = tmp_path / "data" / "skill_scripts" / "xlsx" / "SKILL.md"
+    name.symlink_to(victim) if kind == "symlink" else os.link(victim, name)
+    with monkeypatch.context() as patch:
+        patch.setattr(capability_install, "to_trash", _stuck)
+        with pytest.raises(OSError):
+            await capability_list.remove("skill:xlsx")
+    assert victim.read_text() == "theirs\n"
+    before = await _state(execution_db, tmp_path)
+    assert (await api.delete("/api/v1/capabilities/skill:xlsx")).status_code == 200
+    assert victim.read_text() == "theirs\n"
+    copy = tmp_path / "home" / ".Trash" / "Arslan capability xlsx" / "SKILL.md"
+    assert not copy.is_symlink() and "## Trigger" in copy.read_text()
+    assert await _state(execution_db, tmp_path) == _without(before, skill="xlsx", source="sk1")
+
+
+async def test_a_failed_write_of_the_copy_leaves_no_folder(api, execution_db, monkeypatch, tmp_path):
+    """#499 recheck nit: a skill with no scripts folder gets one only for the copy, and keeps none if the copy
+    cannot be written."""
+    from server.services import capability_list
+
+    def full(path, text):
+        raise OSError("disk full")
+    await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
+    monkeypatch.setattr(capability_list, "_write_new", full)
+    with pytest.raises(OSError):
+        await capability_list.remove("skill:weekly-report")
+    assert await _state(execution_db, tmp_path) == before
+
+
+async def test_a_failed_server_delete_keeps_the_source_and_a_retry_completes(api, execution_db, monkeypatch, tmp_path):
+    """#499 recheck 2: capability_install.remove caught every error from delete_server as "already gone", but
+    delete_server is quiet about a missing server, so the catch only hid a real failure, and the source was
+    marked removed with its server still there."""
+    from server.services import capability_list, mcp_service
+    real = mcp_service.delete_server
+
+    async def broken(server_id):
+        raise RuntimeError("database is locked")
+    await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
+    monkeypatch.setattr(mcp_service, "delete_server", broken)
+    with pytest.raises(RuntimeError):
+        await capability_list.remove("mcp:2")
+    assert (await _source(execution_db, "m1")).state == "installed" and (await _source(execution_db, "m1")).mcp_server_id == 2
+    assert (await _state(execution_db, tmp_path))["servers"] == before["servers"]
+    monkeypatch.setattr(mcp_service, "delete_server", real)
+    await capability_list.remove("mcp:2")
+    assert await _state(execution_db, tmp_path) == _without(before, server=2, source="m1")
 
 
 @pytest.mark.parametrize("key", ["mcp:١", "mcp:²"])

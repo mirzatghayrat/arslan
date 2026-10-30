@@ -346,10 +346,9 @@ async def remove(source_id: str) -> None:
         server_id = row.mcp_server_id
     to_trash(capabilities_root() / source_id)
     if server_id:
-        try:
-            await mcp_service.delete_server(server_id)
-        except Exception:  # noqa: BLE001 — already gone
-            logger.info("capability %s: server %s already gone", source_id, server_id)
+        # Quiet about a server already gone; any other failure keeps the source as it is, and a retry
+        # completes (#499 recheck 2: a catch here only hid real failures).
+        await mcp_service.delete_server(server_id)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(CapabilitySource, source_id)
         row.state, row.mcp_server_id = "removed", None
