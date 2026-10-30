@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import type { StoredArtifact } from "../api/client.types";
 
-export type WorkbenchTab = "task" | "files" | "browser";
+/** WB1 (v0.1.64): a fixed row, Working folder (id "files"), Progress and Browser. Task is gone. */
+export type WorkbenchTab = "files" | "progress" | "browser";
 /** What the reader shows: a file Arslan delivered (its snapshot), or a file on disk by path. */
 export type ReaderSource = { kind: "artifact"; file: StoredArtifact } | { kind: "path"; path: string };
 
@@ -18,15 +19,15 @@ function savedWidth(): number {
 }
 
 /**
- * The right-hand workbench (0.1.58 §3): one panel with 任务 / 文件 / 浏览器 and a reader that
- * slides over them. It never opens by itself (0.1.42 rule) — only a click opens it: the title
- * bar toggle, a file card, a path in a reply, "后台 N".
+ * The right-hand workbench (0.1.58 §3, WB1): one panel with Working folder / Progress / Browser and
+ * a reader that slides over them. It never opens by itself (0.1.42 rule) — only a click opens it:
+ * the title bar toggle, a file card, a path in a reply, "后台 N".
  */
 interface WorkbenchState {
   open: boolean;
   tab: WorkbenchTab;
   reader: ReaderSource | null;
-  /** The 文件 tab's folder (null = the conversation's own folder). */
+  /** The Working folder tab's folder (null = the conversation's own folder). */
   folder: string | null;
   width: number;
   show: (tab?: WorkbenchTab) => void;
@@ -40,7 +41,7 @@ interface WorkbenchState {
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   open: false,
-  tab: "task",
+  tab: "files",
   reader: null,
   folder: null,
   width: savedWidth(),

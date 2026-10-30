@@ -76,11 +76,10 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
 
-1. **#475** (INB2) at `b97d7947`, which merges main in with no change to the PR's own diff (⓪Plan compared the added and removed lines; 52 files, +2287/−340). Final review: "merge" at `714ddd5b`. **Merge once its CI is green.**
+1. **#490** (Q1 #3, migration 0078) at `b9acf73b`: it merges #475 and #486 in, and adds the PUT-lock and `kind_of` guard follow-up. CI 41021432398 is a success. **Ready once ⓪Plan's reviewer's final glance says OK** (it's running).
 **Next, not ready yet (don't merge these):**
 
 2. **#512** (FRONT1: A plus the corrected B) at `4eeca06c`, which merges main in. ⓪Plan's effort=max review is running on `5d08b538`. It goes after #475 (hot file).
-3. **#490** (Q1 #3, migration 0078): after #475, ②Main merges main in per the reviewer's spec, plus the PUT-lock commit and the `kind_of` PUT guard. The reviewer then glances at it, and it merges last of these.
 4. **#507** (SBX-2, Codex): not ready. Its macOS job has 3 real failures for Codex to fix, and the plumbing review asked for fixes. Astra's review is the user's to start. **#508** (ci.yml 69 → 359) is OK'd; the user merges it into the Codex branch.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
@@ -99,12 +98,9 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 ## Waiting on the user
 
-- **The v0.1.64 cut:** [CUT-proposal.md](CUT-proposal.md). Ship without the security chain's tail? It asks four questions. If the cut is adopted, follow-up: `settings_service.py:408-411`'s docstring (and any Settings or release-note wording) says ask_risky's judgement is completed in v0.1.64 (S2a-3). That would become v0.1.65 (④参谋).
 - **Merges:** the "Ready" list above, in that order.
 - **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`), and every row in them is empty: the export happened half a minute after that page was made. So the read hasn't been done yet. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
-- **Mocks, one sitting:**
-  - SB1-0: the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects;
-  - WB1-0: the tab name, "Working folder" or "Project folder".
+- **SB1-0 mock picks:** the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects. (WB1's tab name is decided: Working folder.)
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
 - **SBX-2 (#507):** relay the macOS failures and the plumbing findings to Codex; start the Astra review session; merge #508 into the Codex branch.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
@@ -175,6 +171,8 @@ That is a repository-settings change. The `environment:` lines for the two workf
 - **Deletable scope:** skills Arslan wrote (`authored` and `authored-outside`) and connections the user added by hand may be deleted, as #499 and #500 built them. Built-in and seeded items stay non-deletable (409). The deleted skill's text goes to the Trash.
 - **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
 - **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). ③Hands is building it; it merges after #475.
+
+**Not adopted (user, 2026-10-30):** the v0.1.64 cut (#515). The user's words: 「现在没有按"截断方案"吧，我不太想一直有任务推到后面只为了快上线新版本 我只是想要合理推进 不要老是原地踏步」. The scope stays as planned. What the user wants is steady, visible progress: every lane busy on its next card, reviews in parallel, no PR left idle on a sync or a review, and Codex's next SBX block queued as soon as the previous one lands. Progress is reported as PRs merged per round and what moved on the critical path.
 
 ## Spend
 

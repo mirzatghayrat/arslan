@@ -500,6 +500,9 @@ class Run(Base):
     # replay_gate.build_corpus excludes it. NULL = predates the column, which
     # for those rows is chronologically equivalent to False.
     has_images = Column(Boolean, nullable=True)
+    # v0.1.64 INB2 (migration 0072): whether the run's turns read outside content. NULL = no record (a run
+    # from before 0072, one that crashed before its turn ended, one still running), which counts as yes.
+    read_outside = Column(Boolean, nullable=True)
     error_kind = Column(String(60), nullable=True)    # structured error class/category
     error_text = Column(Text, nullable=True)          # error message (truncated by the recorder)
     system_prompt = Column(Text, nullable=True)       # SENSITIVE: assembled system prompt (retention-governed)
