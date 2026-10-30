@@ -6,9 +6,8 @@ the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
 written here without changing a byte of what they produce, and SBX-1b changed how a path is spelt
 (below). SBX-2 adds the default-deny base that SBX-3 and SBX-4 move them onto
-(docs/plans/0164/SBX-sandbox.md). One text is still written by hand: `code_sandbox._SEATBELT_PROFILE`,
-which no product caller reaches and SBX-4 deletes. (`command_sandbox.available()` starts the real
-commands profile since SBX-3.)
+(docs/plans/0164/SBX-sandbox.md). No text is written by hand any more: `command_sandbox.available()`
+starts the real commands profile (SBX-3), and `code_sandbox._SEATBELT_PROFILE` is gone (SBX-4).
 
 What every profile relies on:
 
