@@ -196,11 +196,12 @@ def _plain(text: str, keep: str = "") -> str:
 _LABEL_CHARS = re.compile(r"[^A-Za-z0-9._/ -]+")
 
 
-def _label(text, limit: int = 100) -> str:
+def outside_label(text, limit: int = 100) -> str:
     """A name from outside (a registry entry, a repository, a SKILL.md, an MCP server's tool), as a tool result
     hands it to the model: its own field, never inside Arslan's sentence; letters, digits and ``._/ -`` only,
-    one line, at most `limit` characters (③Hands' review of #449)."""
-    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""))).split())[:limit].strip()
+    one line, at most `limit` characters (③Hands' review of #449). list_my_capabilities and the MCP status line use it too."""
+    # A new line or a tab separates words, as in the status line before #495 (O2), instead of gluing them.
+    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""), keep="\t\n\v\f\r")).split())[:limit].strip()
 
 
 def _ledger_url(url) -> str | None:
@@ -251,7 +252,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             # no card was shown (⓪Plan, S7).
             await permissions.refuse_unattended(request, context)
         _outside_text()
-        return {"ok": False, "not_added": True, "missing": _label(cand.get("name")),
+        return {"ok": False, "not_added": True, "missing": outside_label(cand.get("name")),
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was added. Say in "
                         "your answer that the capability you proposed (`missing`) is not there and that the user "
                         "can add it by asking for it in a conversation."}
@@ -277,13 +278,13 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         # ③Hands' review of #449: the names are the server's and the source's own text, so they go in their own
         # fields, and the sentence Arslan tells the model stays Arslan's.
         if cand["kind"] == "mcp":
-            found = {"tools": [_label(t, 80) for t in (result.get("tools") or [])[:20]]}
+            found = {"tools": [outside_label(t, 80) for t in (result.get("tools") or [])[:20]]}
             what = "its tools (`tools`)"
         else:
-            found = {"skill": _label(result.get("skill"), 80)}
+            found = {"skill": outside_label(result.get("skill"), 80)}
             what = "the skill (`skill`; read it with read_skill)"
         _outside_text()
-        return {"ok": True, "installed": _label(cand.get("name")), **found, "refresh": True,
+        return {"ok": True, "installed": outside_label(cand.get("name")), **found, "refresh": True,
                 "note": f"Installed, tested and switched on: {what}. Retry the step that failed now."}
     if result["state"] == "blocked":
         rules = ", ".join(f["rule"] for f in result["scan"]["findings"] if f["level"] == "high")
