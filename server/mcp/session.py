@@ -391,6 +391,8 @@ class MCPSessionManager:
                 if (isinstance(exc, asyncio.CancelledError) and task is not None
                         and not task.cancelling()):
                     if transport != "http" and _only_broken_pipe(cleanup):
+                        # Kept for the next time this is debugged: `from None` drops the group itself.
+                        logger.debug("MCP open: broken pipe on a closed stdio program %s", sid, exc_info=cleanup)
                         raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED,
                                                        message="Connection closed")) from None
                     raise cleanup from None
