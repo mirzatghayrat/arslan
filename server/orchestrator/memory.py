@@ -357,14 +357,19 @@ async def facts_text(*, include_sensitive: bool = False,
     them. Spawn dispatch, sandbox drafts and replay ambient keep the safe default, so a forgotten
     flag gives less, never a private fact in a spawn prompt.
     """
+    result = await facts_context(include_sensitive=include_sensitive, limit_tokens=limit_tokens)
+    return result.text if result else ""
+
+
+async def facts_context(*, include_sensitive: bool = False, limit_tokens: int = _FACTS_TOKEN_BUDGET):
+    """facts_text's block with its receipt (which entries are in it); None with no context (#475 recheck, J3)."""
     from dataclasses import replace
     from server.services.personal_context import assemble, current
     context = current()
     if context is None:
-        return ""
-    result = await assemble(context=replace(context, allow_sensitive=context.allow_sensitive and include_sensitive),
-                            limit_tokens=limit_tokens)
-    return result.text if result else ""
+        return None
+    return await assemble(context=replace(context, allow_sensitive=context.allow_sensitive and include_sensitive),
+                          limit_tokens=limit_tokens)
 
 
 async def user_turn_count(conversation_id: str) -> int:

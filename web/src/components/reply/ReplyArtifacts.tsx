@@ -38,7 +38,7 @@ export default function ReplyArtifacts({ activity, files = [] }: { activity?: To
       {activity?.artifactPptx && <DeckDownloadCard {...activity.artifactPptx} />}
       {files.length > 0 && <div className="flex flex-wrap gap-2" data-testid="reply-files">
         {files.slice(0, INLINE_FILES).map((f) => <FileCard key={`${f.run_id}-${f.filename}`} file={f} />)}
-        {files.length > INLINE_FILES && <button type="button" onClick={() => show("task")} data-testid="reply-more-files"
+        {files.length > INLINE_FILES && <button type="button" onClick={() => show("overview")} data-testid="reply-more-files"
           className="self-center text-[12px] text-subtle-foreground hover:text-foreground">{t("workbench.moreFiles", { count: files.length - INLINE_FILES })} ›</button>}
       </div>}
     </div>
