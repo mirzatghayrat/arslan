@@ -112,19 +112,19 @@ In any order unless noted. Every verdict below is posted on its PR with the sha.
 1. **#537** (LOAD2 part 2) at `4352ee1b`: ⑤CAP's OK, CI green. Product code.
 2. **#542** (ci.yml: a strict xfail counts as ran; every xfail pins `raises=`) at `8e67f6b6`: ③Hands' effort=max OK, CI green. Touches `.github`; before SBX-3p's first push.
 3. **#547** (NAME1: provider-safe tool names) at `0b59f0be`: ⓪Plan's effort=max OK, re-OKs through `0b59f0be`; CI green (its macOS job re-ran after the SBX-2 finding below, which is unrelated).
-4. **#548** (TITLE1) at `97627182`: ⓪Plan's effort=max OK, re-OK at this head.
-5. **#526** (UNI1a, migration 0082) at `e2f155b6`: ⓪Plan's effort=max recheck OK, CI green. **#526 and #548 together:** they merge cleanly, but `test_title1_model_title.py:85` then fails; the second to merge updates it (③Hands or ⑤CAP).
+4. **#526** (UNI1a, migration 0082) at `e2f155b6`: ⓪Plan's effort=max recheck OK, CI green. **Merge this one before #548.**
+5. **#548** (TITLE1) at `97627182`: ⓪Plan's effort=max OK, re-OK at this head. **Don't merge it right after #526:** together they break `test_title1_model_title.py:85`. After #526 lands, ③Hands rebases #548 and updates that test; merge #548 at its new head once it has a re-OK.
 6. **#536** (SEC1, server half, migration 0081) at `dfdd1e5a`: ⓪Plan's effort=max recheck OK, CI green.
 7. **#545** (WB1-3: Overview's Changes) at `1ca9f05e`: ②Main's endpoint OK; ④参谋's web review "merge" at this head; CI green.
 8. **#553** (DIFF1 server half: the line-diff endpoint) at `85135033`: ②Main's effort=max re-review OK. Stacked on #545, so after it.
 9. **#555** (EXC1a: silent broad `pass` handlers get a reason or a log) at `d984b12d`: ②Main's OK. It touches hot files by a line or two; it merges after #547, #519, #452 and #375, or ⑥Helper rebases it.
-10. **#519** (SKF1 for D2) at `0de987d2`: ⓪Plan's effort=max OK after three rechecks. **Only after #539's F1/F3/F4 are on main.**
+10. **#539** (CAP4a-1: a skill's card shows what was fetched, scanned and hashed at one commit) at `7b43b92f`: ④参谋's effort=max reviewer says merge, on its third round; CI 41051353420 green. Low follow-ups go to CAP4a-3 (a per-key install lock, the wider `skipped` list, the short-sha prefix).
+11. **#519** (SKF1 for D2) at `0de987d2`: ⓪Plan's effort=max OK after three rechecks. **Right after #539.**
+12. **#554** (Hands' DesktopAccess card: Arslan's own heading, the model's `why` on its own line) at `f0d7f6ff`: ⓪Plan's effort=max OK, CI green. ③Hands may fold in three lows first (clean the apps' names, a model-argument test, why only on the shared-kind card); if it does, wait for the re-OK.
 
 **Under review or on hold (don't merge these):**
 
 - **#519** (SKF1, reworked for D2) at `b8ef5881`: changes requested (posted). The code matches D2, but the skill install card still tells the user a skill is "Read like a web page"; under D2 that card is the guard, so it must say Arslan follows the skill's text. Two test gaps close two surviving mutants. **Merge order (④参谋's review of #539, adopted):** under D2 install time is the only guard for skills, so #519 merges only after #539's F1 (the scan level is computed after findings are cut to 20), F3 (the import panel installs with no scan; in #539 or a small CAP5 import-scan PR) and F4 (the frontmatter name and description aren't scanned) are on main. This doesn't change D2; it makes the install-time guard real before the read-time frame comes off.
-- **#539** (CAP4a-1): F1–F9 fixed at `98f52a42`; ④参谋's recheck is "fix then merge (small)": F4's decoded frontmatter wasn't scanned, and the scan call sites had no tests. ⑤CAP has the fixes committed and is running the full suite.
-- **#554** (Hands' DesktopAccess card: a fixed heading; the model's `why` on its own line) at `f0d7f6ff`: ⓪Plan's effort=max review is running. The card's heading text changes; the before and after are at the top of the PR body.
 - **#525** (Q1 #4, retire the pocket): ②Main fixed F1–F4 in `71dbc0ce`; its full suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
 - **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted (the tripwire is text-only; approving a re-run erases the denial); ③Hands takes it after the rebases. 3a is rebased at `c596ed3d`. The wiring onto the default-deny base waits for SBX-M and the listening decision (card :255).
@@ -142,7 +142,7 @@ In any order unless noted. Every verdict below is posted on its PR with the sha.
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
 | Codex (via ⑦Codex) | SBX-2 merged. SBX-3p waits on SBX-M, then the paste |
 | ④参谋 | #539 reviewed (fix then merge) |
-| ⓪Plan | #554's review; the SBX-2 port-deny investigation; this page |
+| ⓪Plan | #525's look; the SBX-2 port-deny investigation; this page |
 
 ## Waiting on the user
 
