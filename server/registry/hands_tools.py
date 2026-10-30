@@ -37,6 +37,9 @@ from server.services import approvals
 
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
 _OUTPUT_LIMIT = 8_000
+# A look that found no change since the last one. `_FRONT` (tool_loop.py) quotes it as the sign that a
+# background action did nothing, and a test keeps the two the same (FRONT1).
+NOTHING_CHANGED = "Nothing changed since your last look."
 
 
 def _conversation_and_job() -> tuple[str | None, str | None]:
@@ -796,14 +799,14 @@ class DesktopLookExecutor:
             asked = args["window"][:80]
             window, titles, only = await _window_id(_target(app), args["window"], job_id)
             if window is None:
-                listed = ", ".join(f"“{t[:60]}”" for t in titles[:8])
+                listed = ", ".join(f"“{hands_contract.one_line(t)[:60]}”" for t in titles[:8])
                 return _not_run({"ok": False, "external": False, "code": "window_not_found",
                                  "error": f"{app['name']} has no window titled like “{asked}” on this screen. "
                                           + (f"Its windows here: {listed}. Look with one of these titles, or "
                                              "without `window` to see its front window." if listed else
                                              "Look without `window` to see its front window.")})
             if only:
-                shown = f", “{titles[0][:60]}”" if titles and titles[0] else ""
+                shown = f", “{hands_contract.one_line(titles[0])[:60]}”" if titles and titles[0] else ""
                 window_note = (f"No window of {app['name']} is titled like “{asked}”; this is its only "
                                f"window{shown}.\n")
             call["window_id"] = window
@@ -848,7 +851,7 @@ class DesktopLookExecutor:
                 capture, shot_note = await _screenshot(app, read, conversation_id, job_id)
             changed = None if args.get("ref") else look_diff.since_last(
                 job_id or conversation_id or "", bundle, window, data.get("tree") or {})
-            text = (f"{app['name']} — window “{window}”. Refs [@…] work for actions in this piece of work; "
+            text = (f"{app['name']} — window “{hands_contract.one_line(window)}”. Refs [@…] work for actions in this piece of work; "
                     "an entry with “… inside” opens with desktop_look {app, ref}.\n")
             if capture:
                 text += (f"A screenshot of this window ({capture['width']}×{capture['height']} px) is attached; "
@@ -857,7 +860,7 @@ class DesktopLookExecutor:
             if changed:
                 text += f"Changed since your last look: {changed}\n"
             elif changed == "":
-                text += "Nothing changed since your last look.\n"
+                text += NOTHING_CHANGED + "\n"
             text += hands_contract.render_tree(data.get("tree") or {},
                                                place=hands_contract.placer(capture) if capture else None)
             if capture:
@@ -868,7 +871,7 @@ class DesktopLookExecutor:
                        screenshot_bytes=len(capture.get("data") or "") * 3 // 4)
                 return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200],
                         "images": [{"mime_type": capture["mime"], "data": capture["data"]}],
-                        "image_label": f"{app['name']} · {window or capture.get('title') or 'window'}"[:120]}
+                        "image_label": f"{app['name']} · {hands_contract.one_line(window or capture.get('title') or 'window')}"[:120]}
         text = _take_visit_note() + window_note + (not_seen or "") + text
         _trace("look", app, "ok", started)
         # Window contents are other people's text: framed as untrusted by the tool loop.
@@ -1320,7 +1323,8 @@ def _menu_path(args: dict) -> list[str]:
 
 class DesktopMenuExecutor(_DesktopAct):
     """Hands v2 §5.5: a menu item chosen in the background by its path (Hands presses it through
-    accessibility; nothing comes to the front). Risky labels (delete, send, quit…) ask every time."""
+    accessibility; nothing comes to the front). Risky labels (delete, send, submit…, `hands_service.risky_label`)
+    ask every time."""
     key = "desktop_menu"
     op = "menu"
 

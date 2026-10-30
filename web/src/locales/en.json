@@ -33,6 +33,8 @@
     "setup_notice": "Downloads a pinned open-source browser into Arslan's data folder. This can take a few minutes and several hundred MB. No account or paid API is needed.",
     "setup": "Download browser runtime",
     "url": "Public HTTPS address",
+    "searchOrAddress": "Search with Bing or enter an address",
+    "httpsOnly": "Only https:// addresses open here.",
     "open": "Preview",
     "stop": "Stop",
     "blocked": "Blocked or limited connections: {{n}}",
@@ -252,11 +254,18 @@
     "thinking": "Thinking...",
     "stopRun": "Stop",
     "remembered": "Remembered: {{text}}",
-    "wantsToRemember": "Arslan would like to remember: {{text}}",
     "rememberedUndo": "Undo",
     "rememberedUndone": "Undone",
-    "rememberedReview": "Review in Memory",
-    "rememberedChanged": "Changed since — see Memory"
+    "rememberedChanged": "Changed since — see Memory",
+    "memoryAsk": "Arslan would like to remember something sensitive: {{text}}",
+    "memoryKeptLocal": "Remembered, this Mac only: {{text}}",
+    "memorySkipped": "OK, not remembered.",
+    "memoryWaits": "Arslan would like to remember: {{text}}. It waits in “To sort” because {{reason}}.",
+    "memoryWhy_external_seen": "this conversation read web pages or other outside content",
+    "memoryWhy_not_present": "you weren't there when it was written",
+    "memoryWhy_sensitive": "it is sensitive",
+    "memoryWhy_confirmation_required": "it needs your OK",
+    "memorySeeInMemory": "See in Memory"
   },
   "clarify_card": {
     "answered": "Choice sent"
@@ -1360,8 +1369,6 @@
     "stalled": "Stopped",
     "changed": "Changed",
     "other": "Other",
-    "memoryWaiting": "Memory waiting for your OK",
-    "memoryOpen": "Open Memory",
     "watching": "Watching",
     "muted": "Not reminding",
     "addWatch": "Watch another page or folder",
@@ -1378,15 +1385,14 @@
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",
-    "keep": "Keep",
-    "keepLocal": "Keep, local models only",
-    "drop": "Don't",
+    "keep": "Remember",
+    "keepLocal": "Remember, this Mac only",
+    "drop": "No",
     "apply": "Apply",
     "source": {
       "memory": "About you",
       "curation": "Tidy-up"
-    },
-    "sensitive": "Sensitive"
+    }
   },
   "confirm": {
     "delete": "Delete",

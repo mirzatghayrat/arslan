@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BrowserReader from "../components/BrowserReader";
 import { browserApi, type ReaderFrame } from "../api/browser";
 
@@ -139,3 +139,33 @@ it.each(["browser.navigation_failed", "browser.frame_too_large", "browser.stale_
       ["browser.runtime_failed", "browser.session_expired"].includes(code) ? 2 : 1,
     );
   });
+
+describe("the address field (WB1)", () => {
+  it("sends words to Bing, adds https:// to a bare address, keeps https://, refuses other schemes", async () => {
+    const { addressOrSearch, SEARCH_URL } = await import("../lib/browserAddress");
+    expect(addressOrSearch("time machine apfs")).toBe(`${SEARCH_URL}time%20machine%20apfs`);
+    expect(addressOrSearch("备份 照片")).toBe(`${SEARCH_URL}${encodeURIComponent("备份 照片")}`);
+    expect(addressOrSearch("example.com")).toBe("https://example.com");
+    expect(addressOrSearch("apple.com/support?x=1")).toBe("https://apple.com/support?x=1");
+    // a port is passed through; the backend opens 443 only (browser_proxy.validate_url), so this one uses it
+    expect(addressOrSearch("example.com:443/a")).toBe("https://example.com:443/a");
+    expect(addressOrSearch("  https://a.example/x  ")).toBe("https://a.example/x");
+    for (const bad of ["http://a.example", "file:///etc/hosts", "javascript:alert(1)", "ftp://a.example"]) expect(addressOrSearch(bad)).toBeNull();
+    expect(addressOrSearch("   ")).toBeNull();
+  });
+
+  it("navigates to the Bing URL for words, and says why for http://", async () => {
+    render(<BrowserReader conversationId="conversation" taskId={null} onTitle={() => {}} />);
+    const field = screen.getByLabelText("browser.url");
+    expect(field).toHaveAttribute("type", "text");
+    expect(field).toHaveAttribute("placeholder", "browser.searchOrAddress");
+    fireEvent.change(field, { target: { value: "http://a.example" } });
+    fireEvent.click(screen.getByLabelText("browser.open"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("browser.httpsOnly");
+    expect(browserApi.createReader).not.toHaveBeenCalled();
+    fireEvent.change(field, { target: { value: "weather kashgar" } });
+    fireEvent.click(screen.getByLabelText("browser.open"));
+    await waitFor(() => expect(browserApi.readerAction).toHaveBeenCalledWith("session",
+      { action: "navigate", url: "https://www.bing.com/search?q=weather%20kashgar" }));
+  });
+});
