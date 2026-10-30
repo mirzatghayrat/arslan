@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from server.config import settings as _settings
 from server.orchestrator import llm_errors
-from server.services import ocr_fallback
+from server.services import ocr_fallback, phone_ids
 from server.db import session as db_session
 from server.orchestrator import (
     env_snapshot,
@@ -855,7 +855,8 @@ async def _handle_answer_body(
             return await _run_answer(user_content)
 
     try:
-        quick = await _stored_kind(conversation_id) == "quick"
+        # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
+        quick = phone_ids.kind_of(conversation_id, await _stored_kind(conversation_id)) == "quick"
         narrow = quick
     except Exception:  # noqa: BLE001 — an unreadable kind gets the four tools, never every tool (Q1 card, rule 4)
         quick, narrow = False, True
