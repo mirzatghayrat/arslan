@@ -184,6 +184,21 @@ async def test_an_unknown_call_is_told_the_names_it_can_call(monkeypatch):
     assert sent_name(sent[0]) in listed and set(listed) <= set(openai_names(sent[0]))
 
 
+@pytest.mark.parametrize("mangle", [str.upper, lambda name: name[:-1] + ("0" if name[-1] != "0" else "1"),
+                                    lambda name: name[:-10]], ids=["case-folded", "one character off", "no hash"])
+async def test_a_name_that_only_looks_like_a_tool_runs_nothing(monkeypatch, mangle):
+    """The way back is an exact lookup: a name close to one the request gave runs no tool."""
+    sent = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        return httpx.Response(200, json=openai_call(mangle(sent_name(body))) if len(sent) == 1 else OPENAI_END)
+    _, reader = await run(monkeypatch, deepseek(handler), DOTTED)
+    answer = next(m["content"] for m in sent[1]["messages"] if m.get("role") == "tool")
+    assert reader.calls == [] and "is not available to you" in answer
+
+
 # ── Claude ───────────────────────────────────────────────────────────────────────────
 
 CLAUDE_END = {"role": "assistant", "stop_reason": "end_turn", "usage": {"input_tokens": 2, "output_tokens": 1},
@@ -250,6 +265,27 @@ async def test_gemini_gets_names_it_takes_and_answers_each_call_by_its_name(monk
     called = [p["functionCall"]["name"] for p in parts if "functionCall" in p]
     answered = [p["functionResponse"]["name"] for p in parts if "functionResponse" in p]
     assert called == answered and len(called) == 1                          # the response answers its call by name
+
+
+async def test_gemini_answers_a_call_by_the_name_the_model_wrote(monkeypatch):
+    """K7's find_tools shows real keys, and a direct call by one runs: its response carries that name too."""
+    sent = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        if len(sent) > 1:
+            return httpx.Response(200, json=GEMINI_END)
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [
+            {"functionCall": {"name": DOTTED, "args": {"path": "a.txt"}, "id": "fc1"}, "thoughtSignature": "ts"}]}}]})
+    adapter = LLMAdapter("gemini", "gemini-x")
+    adapter._provider = GeminiProvider("gemini-x", api_key="k", transport=httpx.MockTransport(handler))
+    result, reader = await run(monkeypatch, adapter, DOTTED)
+    assert result["final"] == "Done." and reader.calls == [{"path": "a.txt"}]
+    parts = [p for c in sent[1]["contents"] for p in c.get("parts") or []]
+    called = [p["functionCall"]["name"] for p in parts if "functionCall" in p]
+    answered = [p["functionResponse"]["name"] for p in parts if "functionResponse" in p]
+    assert called == answered == [DOTTED]
 
 
 async def test_the_legacy_rendering_answers_gemini_by_the_same_name(monkeypatch):

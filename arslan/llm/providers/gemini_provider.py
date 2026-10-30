@@ -128,8 +128,12 @@ class GeminiProvider(BaseLLMProvider):
         included). Each result answers its call with a functionResponse whose `response` is the
         result itself: the JSON object a tool returned, or {"output": text} for anything else
         (an untrusted result keeps its data frame). Screenshots, host-run results and the step's
-        status follow as their own parts in the same user turn; same-role turns merge."""
+        status follow as their own parts in the same user turn; same-role turns merge.
+        NAME1: a response is named as the call it answers was replayed, by id.
+        That is the name the model wrote, which is not always the one the tool list gave it.
+        For example, K7's find_tools shows real keys."""
         calls: dict[str, dict] = {}
+        replayed: dict[str, str] = {}           # functionCall id -> the name in the replayed parts
         turns: list[tuple[str, list[dict[str, Any]]]] = []
         for m in messages:
             role = m.get("role")
@@ -138,12 +142,17 @@ class GeminiProvider(BaseLLMProvider):
                     calls[call["id"]] = call
                 cont = m.get("_continuation") or {}
                 if cont.get("protocol") == "gemini":
+                    for part in cont["provider_content"].get("parts") or []:
+                        called = part.get("functionCall") if isinstance(part, dict) else None
+                        if isinstance(called, dict) and called.get("id") and isinstance(called.get("name"), str):
+                            replayed[called["id"]] = called["name"]
                     turns.append(("assistant", [{"type": "provider_content", **cont["provider_content"]}]))
                 else:
                     turns.append(("assistant", [{"type": "text", "text": m.get("content") or ""}]))
             elif role == "tool" and not m.get("_synthetic"):
-                response = {"type": "function_response", "name": m["name"], "response": _structured(m["content"])}
                 provider_id = (calls.get(m.get("tool_call_id")) or {}).get("provider_id")
+                response = {"type": "function_response", "name": replayed.get(provider_id) or m["name"],
+                            "response": _structured(m["content"])}
                 if provider_id:
                     response["id"] = provider_id
                 turns.append(("user", [response]))
