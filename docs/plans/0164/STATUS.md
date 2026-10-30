@@ -107,6 +107,13 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 ## Waiting on the user
 
+- **CAP4a-2: when the runtime downloads (⑤CAP).** The card says resolve → lock → card. Making a lock needs a runtime (uv for PyPI, npm for npm), which today downloads only after the user says yes. The options:
+  - (a) download Arslan's own pinned, checksummed runtime before the card;
+  - (b) if the runtime is missing, show the card without a lock and stop the install if the lock pulls in anything the card didn't name;
+  - (c) recommended: first a small card that only asks to download the runtime, then the real card with its lock. This keeps "nothing downloads before a yes".
+
+  CAP4a-1 (skills pinned to a sha, with every file scanned and hashed before the card) goes ahead meanwhile.
+- **UNI1b and SEC1 mocks** (⑤CAP), sent as private links.
 - **Merges:** the "Ready" list above, in that order.
 - **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`), and every row in them is empty: the export happened half a minute after that page was made. So the read hasn't been done yet. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
 - **SB1-0 mock picks:** the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects. (WB1's tab name is decided: Working folder.)
