@@ -163,6 +163,19 @@ In any order unless noted. Every verdict below is posted on its PR with the sha.
 - **UNI1b mock:** ⑤CAP's mock shows the invisible-character markers on the save card. Option B is recommended. Pick one, or ask for changes.
 - **INB2 and skills under D2 (from #519's review):** INB2's allowlist (`untrusted.py:168`) still counts a skill read as "off the list", so after reading a skill, "about you" memories wait for the user instead of taking effect. D2 covered reading, not memory. Recommended: keep it as is, since memory writes are the stricter surface, and record it as a stated limit. The alternative is to treat a skill read as clean, like D2.
 - **An SBX-2 deny that let a connection through once (③Hands, on macOS 26.6.2):** `test_sbx2_kernel.py::test_listener_refusal_and_arslan_port_exclusion[any-declared-default-deny]` connected to a denied port (errno 0) once in a 14-minute run, and passed 4 of 4 alone. It goes into SBX-M as a repeat loop (hundreds of runs, each errno recorded, and a check that the connecting process was the sandboxed one). What follows is your call once that's measured.
+- **The INB card's open questions** (`INB-inbox-progress.md`, "开工前要用户定的"; ②Main holds the INB pieces that depend on them, and INB3's server half and its page mock go ahead). ⓪Plan's recommendations are the card's own:
+  1. Bridge frames: `done_unseen` on `conversations.result` for phones that say they support it, and a four-line brief plus "needs you" on `status.snapshot` under Quick Chat. Both can wait; they don't block the Mac side.
+  2. iPhone notifications: only "needs you" items, so the phone no longer sounds when something finishes (①iOS asked for this to be asked on its own).
+  3. The Mac stops popping "done" notifications too, and web-page and folder-change ones. And during Do Not Disturb, does an approval card still pop?
+  4. Sensitive keywords: add a "family" category, with ⓪Plan listing the words in the PR for you to check. Any other category?
+  5. The run receipt in v0.1.64 covers only runs you weren't present for (background, scheduled, sub-sessions). Runs you were present for come later, with bench numbers (recommended).
+  6. A scheduled task's "what done looks like": written at the start of each run, with no migration (recommended), or stored when the task is created (a new column).
+  7. Once the Inbox's three tabs go: snoozed and handled reminders show on their own rows in the scheduled-tasks page and in the conversation, as "snoozed until …" or "handled", with no separate list (recommended).
+  8. "Not done while you were away" counts as handled when it's older than your last visit (recommended; no ledger change), or by a new "handled" mark on `approval_events`.
+  9. The morning report setting goes, replaced by the progress page's four-line brief.
+  10. The four-line brief uses template sentences in v0.1.64, with no model call (recommended).
+  11. A learned practice is paused after 3 failures in a row, as scheduled tasks are (recommended).
+  (12, who does INB3–INB9, is ⓪Plan's to settle: ②Main keeps them.) INB3, INB4, INB5 and INB7 are new web UI, so each also needs your OK on a mock first.
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
 - **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
