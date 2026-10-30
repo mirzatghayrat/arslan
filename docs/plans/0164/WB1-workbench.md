@@ -26,15 +26,20 @@
 
 ## What to build
 
-The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Files, Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的『+』打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
+The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Working folder (first called Files), Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的『+』打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
 
-1. **Files (always there):** this conversation's files on top, the folder browser below, and the working folder in the tab's header row with today's "Reveal in Finder" (moved from `TaskTab.tsx:84-85`). Task and Files merge into this one tab.
-2. **Progress (always in the row):** one "doing what" line per background job or sub-session, with a stop button (today's Task "working" list, `TaskTab.tsx:45-57`). The tab shows a count while jobs run, and "Nothing is running in the background." when none are. SUB's sub-session tree goes here (SUB card). The job poll (`TaskTab.tsx:31-41`) moves up to the Workbench, so the count updates while another tab is selected.
+1. **Working folder (always there; renamed from Files, user, 2026-10-30):** the user's words: 「我看 files from this conversation 就是 output 你看看files改成啥？项目目录？还是怎么说」. The tab is the folder only:
+   - the existing name `workbench.folder` ("Working folder");
+   - a folder bar with today's "Reveal in Finder" (moved from `TaskTab.tsx:84-85`);
+   - the filter, and the list with today's touched dot, with `workbench.touched` ("Touched in this conversation") as the dot's legend.
+
+   "Working folder" rather than a project word, because not every conversation is in a project: it is the project's folder when there is one and the default workspace otherwise. Task merges in here. **In WB1-1** this conversation's files stay at the top of this tab. **WB1-2** moves them into Overview's Deliverables, so they are listed in one place only.
+2. **Progress (always in the row):** one "doing what" line per background job or sub-session, with a stop button (today's Task "working" list, `TaskTab.tsx:45-57`). The tab shows a count while jobs run, and the existing `workbench.nothingRunning` ("Nothing running in the background.") when none are. SUB's sub-session tree goes here (SUB card). The job poll (`TaskTab.tsx:31-41`) moves up to the Workbench, so the count updates while another tab is selected.
 3. **Browser (always in the row):** the user's URL reader, not Hands (⑥Helper's review). It starts with today's empty state and "New browser tab". The title bar's globe button goes (see "Browser decisions").
 4. **Side chat 1, 2, … (per the SIDE card)** come after the three fixed tabs and can be closed. **"+"** starts a side chat directly; it becomes a menu once there is a second kind of thing to open.
-5. **The Task tab goes.** The project already shows in the sidebar and opens from the conversation's header row (`App.tsx:667-670`), so it isn't repeated here. The two buttons that open "task" are redirected: the background-jobs chip (`App.tsx:697`) to Progress, a reply's "more files" (`ReplyArtifacts.tsx:39`) to Files. The store's default becomes "files" (`workbenchStore.ts:4`, `:43`). `OPEN_PROJECT_EVENT`, its import (`App.tsx:45`) and its listener (`:434-441`) go in the same PR (§11).
+5. **The Task tab goes.** The project already shows in the sidebar and opens from the conversation's header row (`App.tsx:667-670`), so it isn't repeated here. The two buttons that open "task" are redirected: the background-jobs chip (`App.tsx:697`) to Progress, a reply's "more files" (`ReplyArtifacts.tsx:39`) to Working folder in WB1-1, then to Overview once WB1-2 lands. The store's default becomes "files" (`workbenchStore.ts:4`, `:43`). `OPEN_PROJECT_EVENT`, its import (`App.tsx:45`) and its listener (`:434-441`) go in the same PR (§11).
 6. **Unchanged:** the reader on top; the panel closed by default, opened only by a click; the width remembered.
-7. **When a side chat is closed while selected:** the panel falls back to Overview (WB1-2) and stays open; until WB1-2 lands, Files. The fixed tabs never disappear.
+7. **When a side chat is closed while selected:** the panel falls back to Overview (WB1-2) and stays open; until WB1-2 lands, Working folder. The fixed tabs never disappear.
 8. **Apple-style look**, copying the references, not adding decoration (the iPhone build 22 lesson):
    - **Divider:** a 1 px light grey line. Hover changes only the cursor, and at most darkens the line slightly. No coloured block. Use `focus-visible:` for the keyboard ring, so the arrow-key resize (`Workbench.tsx:87`) stays reachable and a mouse drag never lights it. The hit area may stay wider than the line.
    - **Panel:** the sidebar's soft background, no heavy border. Tabs keep today's segmented control.
@@ -46,7 +51,7 @@ The panel holds only things that sit next to the conversation, the way Claude de
 1. **References:** Claude desktop's right-hand panel: artifacts and files beside the chat, with tabs shown when there is something to show (https://claude.ai). Finder's and Notes' split-view dividers, and Xcode's inspector pane: a thin line and a resize cursor, no colour (Apple's Human Interface Guidelines, "Split views", https://developer.apple.com/design/human-interface-guidelines/split-views). The author looks at each first-hand before the mock and notes in the PR what it does. **Extras listed for the user, not built:** a keyboard shortcut to show or hide the panel; a badge on the Progress tab when something finishes while it is hidden.
 2. **Raw material:** the code at `file:line` above, and the user's screenshot of the lit divider (kept by ④参谋; nothing from it goes in the repo). The divider staying lit is confirmed by the code; the author still notes the real-Mac look in the PR.
 3. **Method:**
-   - vitest first, red on main: the row is Files, Progress, Browser in that order, with Files the default; Progress shows the running count and the empty sentence; Browser starts empty with "New browser tab"; Task is gone; the jobs chip opens Progress and "more files" opens Files; "Reveal in Finder" is in the Files header; "+" starts a side chat; closing a selected side chat falls back to Files; the reader still covers the tabs; the width is still remembered; the title bar has one button.
+   - vitest first, red on main: the row is Working folder, Progress, Browser in that order, with Working folder the default (Overview in WB1-2); Progress shows the running count and the empty sentence; Browser starts empty with "New browser tab"; Task is gone; the jobs chip opens Progress and "more files" opens Working folder (Overview after WB1-2); "Reveal in Finder" is in the Working folder header; "+" starts a side chat; closing a selected side chat falls back to the default tab; the reader still covers the tabs; the width is still remembered; the title bar has one button.
    - The divider has no `bg-primary` in any state and no non-visible `focus:` background (a test on the class list).
    - A mutation check on the row order and the side-chat fallback.
    - `git grep` that `workbench.task`, `TaskTab` and `OPEN_PROJECT_EVENT` are gone, or carry a `DELETE-BY` if a locale key must stay for one release; `workbench-0158.test.tsx` (`:39`, `:67`, `:164`, `:184`) is updated, not deleted.
@@ -55,20 +60,20 @@ The panel holds only things that sit next to the conversation, the way Claude de
 ## PRs
 
 - **WB1-0 = SIDE-0, one mock:** the panel structure, when tabs appear, where side chats sit, the divider and the look. Static HTML, not product code. The user OKs it before anything else starts. SIDE's mock items (selection bar, quote in the input, "Bring back to main") are in the same file.
-- **WB1-1 tabs and look** (web only, about +250/−200 lines plus tests): merge Task into Files, the fixed row, the divider, the headings. **§11:** `TaskTab.tsx` is deleted in the same PR; its running list moves into the Progress tab.
+- **WB1-1 tabs and look** (web only, about +250/−200 lines plus tests): merge Task into the Working folder tab, the fixed row, the divider, the headings. **§11:** `TaskTab.tsx` is deleted in the same PR; its running list moves into the Progress tab.
 - SIDE-2 and SUB's progress tree then add their tabs through WB1's tab list.
 
 ## WB1-2: Overview tab and icon tabs (user, 2026-10-30, in ⑥Helper's chat; chosen on the mock as "Go with it")
 
 The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 session rail」, 「这个概览可以是默认，不过这样以来 那个一排就太挤了」.
-1. **A new fixed tab, Overview, comes first and is the default.** It replaces Files as the default and as the fallback when a selected side chat closes. The row is Overview, Files, Progress, Browser, then side chats; later additions still come from "+".
+1. **A new fixed tab, Overview, comes first and is the default.** It replaces Working folder as the default and as the fallback when a selected side chat closes. The row is Overview, Working folder, Progress, Browser, then side chats; later additions still come from "+".
 2. **The four fixed tabs are icons**, each with a tooltip and an aria-label, like Claude desktop's pane icons. Progress carries its count as a small badge. Side chats stay as words, since four words plus side chats overflow the row.
 3. **Overview has four parts, all built from data the app already has, and a fifth (Changes, WB1-3) that needs one read-only endpoint.** The first four need no new endpoint (⓪Plan checked main):
    - **Environment:**
      - the conversation's model, with today's picker as "Change";
      - the project folder, with "Show in Finder";
      - the iPhone remote (Bridge) on or off: `phone_bridge_enabled` in the settings (`web/src/api/adapters.ts:123`).
-   - **Deliverables**, right after Environment. The user said 「概览里 再加一个 output 我觉得很有用」, and when asked, chose 「产出的东西（交付物）」. It lists the files this conversation produced, newest first: the same list as the top of the Files tab. Clicking one opens it in the reader, and "All in Files" switches to the Files tab. The heading reuses the existing string `validation.artifacts` ("Deliverables").
+   - **Deliverables**, right after Environment. The user said 「概览里 再加一个 output 我觉得很有用」, and when asked, chose 「产出的东西（交付物）」. It lists every file this conversation produced, newest first, and is the one place they are listed (they leave the Working folder tab in this PR). Clicking one opens it in the reader. The heading reuses `validation.artifacts` ("Deliverables"), and the empty sentence reuses `workbench.noConvFiles`. A reply's "more files" now opens Overview.
    - **Context:** "Context N% used" with used/window, a bar, and five rows using the ring's existing strings (`models.partSystem`, `partTools`, `partContext`, `partHistory`, `partTurn`) and the `contextEstimated` note (`web/src/locales/models.ts:25-27`). It reuses `ringRows()` from `ConversationModelChip.tsx`, the K4b breakdown.
    - **Connectors:** only the MCP servers that need something: "Needs sign-in" with "Sign in", and "Can't connect" with "Retry". Then "The other N are connected" with "Manage", which opens Capabilities.
      - The data is `GET /mcp/servers` (`web/src/api/mcp.ts:7`). It already returns `state` and `shown` (`server/services/mcp_service.py`, `_to_dict`), with `needs_auth`, `failed` and `parked` among the states (`server/mcp/supervisor.py:78-79`).
@@ -90,7 +95,7 @@ The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 s
        - an undone turn shows no undo;
        - the endpoint returns 404 for an unknown conversation and never lists another conversation's runs;
        - an expired or swept run isn't listed.
-4. **New strings, in all six languages:** overview, envH, ctxH, conH, change, bridge, needsSignIn, signIn, cantConnect, retry, othersOk, manage, allFiles.
+4. **New strings, in all six languages:** overview, envH, ctxH, conH, change, bridge, needsSignIn, signIn, cantConnect, retry, othersOk, manage.
 5. **Tests:**
    - Overview is the default and comes first;
    - the four icons have labels;
@@ -112,7 +117,7 @@ The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 s
   Both are on the security surface: each needs its own card, and the user merges. They are recorded in the v0.1.64 README §3.13.
 - **Not taken:** a single view menu in place of the row of tabs. The user said 「左上角只放一个 这个不对 这里还是变回原来的」, so the panel keeps its row of tabs.
 - **Title bar: one button** (user, 2026-10-30: 「标题栏只留一个按钮」). Only the panel button stays, and the globe goes. The blue Background chip still shows while a job runs.
-  - **Pending:** its icon. ⑥Helper recommends keeping the mirrored pair, as Xcode does for its navigator and inspector: the sidebar's collapse button at the top left with the line on the left (lucide `PanelLeft`), and the panel's at the top right with the line on the right (`PanelRight`, as today).
+  - **Icon: the mirrored pair** (user, 2026-10-30: 「可以那先保持左右镜像吧」), as Xcode does for its navigator and inspector. The sidebar's collapse button sits at the top left with the line on the left (lucide `PanelLeft`). The panel's button sits at the top right with the line on the right (`PanelRight`, as today).
 - **Not taken:** marking up a page or screenshot and sending it, as in Claude desktop's annotation bar (user: 「2在页面上画标记再发给我 我用的不多 可以不做」). The /btw-style side question is SIDE, and the shared browser is BRW2.
 
 ## Not here
