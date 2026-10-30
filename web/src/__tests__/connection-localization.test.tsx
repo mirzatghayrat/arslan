@@ -6,7 +6,7 @@ import McpServers from "../components/McpServers";
 
 vi.mock("../api/mcp", () => ({
   listMcpServers: vi.fn(async () => []),
-  addMcpServer: vi.fn(), connectMcpServer: vi.fn(), deleteMcpServer: vi.fn(),
+  addMcpServer: vi.fn(), connectMcpServer: vi.fn(),
   exposeMcpServer: vi.fn(), listMcpTools: vi.fn(), reconnectMcpServer: vi.fn(),
   setMcpServerHost: vi.fn(), wireMcpTool: vi.fn(), authorizeMcpOauth: vi.fn(),
   getMcpOauthStatus: vi.fn(),
@@ -17,10 +17,8 @@ afterEach(() => { cleanup(); void i18n.changeLanguage("en"); });
 describe("connection language coverage", () => {
   it.each(SUPPORTED_LANGUAGES)("renders translated controls and accessible names in %s", async language => {
     await i18n.changeLanguage(language);
-    render(<McpServers />);
+    render(<McpServers form />);
     const messages = connectionMessages[language];
-    expect(screen.getByRole("heading", { name: messages.servers })).toBeTruthy();
-    expect(screen.getByText(messages.none)).toBeTruthy();
     expect(screen.getByRole("textbox", { name: messages.label })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: messages.transport })).toBeTruthy();
     expect(screen.getByRole("button", { name: messages.addServer })).toBeTruthy();

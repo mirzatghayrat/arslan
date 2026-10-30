@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { capabilitiesApi, type CapabilitySource, type UpdateInfo } from "../../api/capabilities";
 import { companionError } from "../companion/errors";
 import { Button, Dialog, Notice, Tag, confirmSheet } from "../kit";
 
-function SourceDossier({ source, onClose, onChanged }: { source: CapabilitySource; onClose: () => void; onChanged: () => void }) {
+/** The dossier of what was installed from a card (0.1.57 §7): license, version, checks, folders, updates.
+ *  v0.1.64 CAP3a: opened from that row's details sheet in the Capabilities list. */
+export function SourceDossier({ source, onClose, onChanged }: { source: CapabilitySource; onClose: () => void; onChanged: () => void }) {
   const { t } = useTranslation();
   const [row, setRow] = useState(source);
   const [folders, setFolders] = useState((source.grants.folders ?? []).join("\n"));
@@ -67,34 +69,5 @@ function SourceDossier({ source, onClose, onChanged }: { source: CapabilitySourc
         </div>
       </div>
     </Dialog>
-  );
-}
-
-/** "Arslan 加的" (0.1.57 §7): what was installed through the loop, each with its dossier. */
-export default function AddedCapabilities() {
-  const { t } = useTranslation();
-  const [rows, setRows] = useState<CapabilitySource[] | null>(null);
-  const [open, setOpen] = useState<CapabilitySource | null>(null);
-  const load = useCallback(async () => {
-    try { setRows(await capabilitiesApi.sources()); } catch { setRows([]); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-  if (!rows || rows.length === 0) return null;
-  return (
-    <section className="mt-6 flex flex-col gap-1.5" data-testid="added-capabilities">
-      <h3 className="px-1 text-[12px] font-semibold text-muted-foreground">{t("discover.added_title")}</h3>
-      <ul className="overflow-hidden rounded-xl border border-border bg-background">
-        {rows.map(r => <li key={r.id} className="flex items-center gap-3 border-t border-border px-3.5 py-2 text-[13px] first:border-t-0"
-          data-testid={`added-${r.id}`}>
-          <Tag>{t(`discover.kind_${r.kind}`)}</Tag>
-          <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
-          <span className="font-mono text-[11.5px] text-muted-foreground">{r.version ?? ""}</span>
-          <span className={`text-[12px] ${r.state === "installed" && r.test?.ok !== false ? "text-success" : "text-danger-strong"}`}>
-            {t(r.state === "installed" && r.test?.ok !== false ? "discover.added_on" : "discover.added_failed")}</span>
-          <Button size="sm" onClick={() => setOpen(r)} data-testid={`added-open-${r.id}`}>{t("discover.added_dossier")}</Button>
-        </li>)}
-      </ul>
-      {open && <SourceDossier source={open} onClose={() => setOpen(null)} onChanged={() => void load()} />}
-    </section>
   );
 }

@@ -44,7 +44,6 @@
     "description": "Pasos reutilizables y versionados con dependencias, paralelismo limitado y aprobación explícita. Se mantienen los permisos de herramientas.",
     "loading": "Cargando flujos…",
     "operation_failed": "La operación falló. Revisa la conexión, los especialistas y las dependencias antes de reintentar.",
-    "refresh": "Actualizar",
     "saved": "Elegir versión guardada",
     "new": "Nuevo flujo",
     "name": "Nombre del flujo",
@@ -854,12 +853,6 @@
     "configure": "Configurar",
     "open_channel": "Abrir conversación",
     "calibrate": "Ajustar",
-    "tool_hub_title": "Descubrir herramientas y repositorios",
-    "tool_hub_subtitle": "MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.",
-    "tool_hub_coming_soon": "Próximamente",
-    "tool_hub_search_placeholder": "MCP/tool discovery — coming soon...",
-    "tool_hub_evaluate": "Evaluar especificación",
-    "tool_hub_presets_label": "Quick Presets (coming soon):",
     "back_to_ledger": "Volver a expertos",
     "active_slot": "Espacio activo",
     "equip_tools": "Añadir herramientas",
@@ -915,9 +908,6 @@
         "other": "Otros"
       }
     },
-    "sections": {
-      "import_skills": "Importar habilidades de un repositorio"
-    },
     "dossier": {
       "value_label": "Utilidad para Arslan"
     },
@@ -962,7 +952,6 @@
       "placeholder": "Filtrar lo que ya tienes…",
       "clear": "Borrar filtro",
       "count": "{{shown}} de {{total}}",
-      "no_match": "Aquí no coincide nada. Borra el filtro para verlo todo de nuevo.",
       "matched_tools": "contiene {{tools}}"
     }
   },
@@ -1418,8 +1407,6 @@
     "phoneBody": "Este iPhone no podrá conectar con Arslan hasta que lo vuelvas a emparejar.",
     "noteTitle": "¿Eliminar esta nota?",
     "noteBody": "«{{title}}» se elimina con sus enlaces. No se puede deshacer.",
-    "mcpTitle": "¿Quitar «{{name}}»?",
-    "mcpBody": "Se quitan la conexión y sus herramientas, y también sus claves guardadas.",
     "runTitle": "¿Borrar los detalles de esta ejecución?",
     "runBody": "Se borran los prompts y la salida de herramientas. El resultado en el chat se queda.",
     "conversationTitle": "¿Eliminar esta conversación?",

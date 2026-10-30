@@ -44,7 +44,6 @@
     "description": "Étapes réutilisables et versionnées, avec dépendances, parallélisme limité et approbation explicite. Les autorisations des outils restent applicables.",
     "loading": "Chargement des flux…",
     "operation_failed": "L’opération a échoué. Vérifiez la connexion, les spécialistes et les dépendances, puis réessayez.",
-    "refresh": "Actualiser",
     "saved": "Choisir une version enregistrée",
     "new": "Nouveau flux",
     "name": "Nom du flux",
@@ -854,12 +853,6 @@
     "configure": "Configurer",
     "open_channel": "Ouvrir la conversation",
     "calibrate": "Ajuster",
-    "tool_hub_title": "Découvrir des outils et dépôts",
-    "tool_hub_subtitle": "MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.",
-    "tool_hub_coming_soon": "Bientôt",
-    "tool_hub_search_placeholder": "MCP/tool discovery — coming soon...",
-    "tool_hub_evaluate": "Évaluer la spécification",
-    "tool_hub_presets_label": "Quick Presets (coming soon):",
     "back_to_ledger": "Retour à la liste des experts",
     "active_slot": "Emplacement actif",
     "equip_tools": "Ajouter des outils",
@@ -915,9 +908,6 @@
         "other": "Autres"
       }
     },
-    "sections": {
-      "import_skills": "Importer des compétences d’un dépôt"
-    },
     "dossier": {
       "value_label": "Intérêt pour Arslan"
     },
@@ -962,7 +952,6 @@
       "placeholder": "Filtrer ce que vous avez…",
       "clear": "Effacer le filtre",
       "count": "{{shown}} sur {{total}}",
-      "no_match": "Rien ici ne correspond. Effacez le filtre pour tout revoir.",
       "matched_tools": "contient {{tools}}"
     }
   },
@@ -1418,8 +1407,6 @@
     "phoneBody": "Cet iPhone ne pourra plus joindre Arslan avant un nouvel appairage.",
     "noteTitle": "Supprimer cette note ?",
     "noteBody": "« {{title}} » est supprimée avec ses liens. C’est définitif.",
-    "mcpTitle": "Retirer « {{name}} » ?",
-    "mcpBody": "La connexion et ses outils sont retirés, ses clés enregistrées aussi.",
     "runTitle": "Effacer les détails de cette exécution ?",
     "runBody": "Les prompts et sorties d’outils sont effacés. Le résultat dans la discussion reste.",
     "conversationTitle": "Supprimer cette conversation ?",

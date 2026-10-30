@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   addMcpServer,
   connectMcpServer,
-  deleteMcpServer,
   exposeMcpServer,
   listMcpServers,
   listMcpTools,
@@ -75,13 +74,6 @@ describe("mcp client", () => {
     expect(f.mock.calls[0][0]).toContain("/mcp/tools/mcp_2__a%2Fb/wire");
   });
 
-  it("deleteMcpServer DELETEs /mcp/servers/:id", async () => {
-    const f = mockFetch({ ok: true });
-    await deleteMcpServer(7);
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/mcp/servers/7");
-    expect(init.method).toBe("DELETE");
-  });
 
   it("addMcpServer POSTs http transport + url fields", async () => {
     const f = mockFetch({ id: 2 });

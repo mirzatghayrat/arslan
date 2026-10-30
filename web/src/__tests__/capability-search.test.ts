@@ -1,11 +1,8 @@
 /**
- * Filtering what you already have (Capability Library).
- *
- * The Discover tab's search box looks OUTWARD — it searches GitHub for things
- * you do not have. Nothing looked inward, so finding an installed toolset among
- * dozens meant scrolling. These are the matching rules, tested without
- * rendering, because the same rules serve three lists with three different
- * shapes and only the rules should be shared.
+ * Filtering what you already have (the Capabilities list). It looks inward
+ * only; something new is asked for in a conversation. These are the matching
+ * rules, tested without rendering, because the same rules serve lists of
+ * different shapes and only the rules should be shared.
  */
 import { describe, test, expect } from "vitest";
 import {

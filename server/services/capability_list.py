@@ -1,7 +1,7 @@
 """What Arslan can do for you, as switches (0.1.55 §14).
 
 One row per thing a person would recognise ("the terminal", "web search", "GitHub"),
-grouped by what it does. Each row is in one of four states:
+in one of three sections (built-in, skills, connections). Each row is in one of four states:
 
   on     offered to the model now
   off    the user switched it off — not offered
@@ -29,7 +29,6 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 
-GROUPS = ("mac", "work", "research", "methods")             # DELETE-BY: CAP3a-2 (#500), with `group`, `source`
 DELETABLE = ("installed", "authored", "manual")
 # A key the server may delete by: what every skill writer makes (skill_forge, skill_import, the seeder). The key
 # names the scripts folder, and `{key:path}` lets "/" through (#499 review F3).
@@ -50,15 +49,20 @@ class _Row(dict):
     __slots__ = ("uses",)
 
 
-def _row(key: str, group: str, state: str, *, tools: tuple[str, ...] = (), switch: str | None = None,
+def _row(key: str, state: str, *, tools: tuple[str, ...] = (), switch: str | None = None,
          reason: str | None = None, fix: str | None = None, name: str | None = None,
-         detail: str | None = None, source: str = "builtin", section: str = "builtin",
-         origin: str = "builtin", uses: tuple[str, ...] | None = None, family: str | None = None) -> _Row:
+         detail: str | None = None, section: str = "builtin", origin: str = "builtin",
+         source_id: str | None = None, uses: tuple[str, ...] | None = None, family: str | None = None,
+         removable: bool = True, reach: str | None = None) -> _Row:
     """`uses`: the tools whose calls count as this row's use, whatever its state (default: `tools`); `family`:
-    a tool-name prefix whose every call counts too (the browser's, Hands', Shortcuts')."""
-    row = _Row(key=key, group=group, state=state, tools=list(tools), switch=switch, reason=reason, fix=fix,
-               name=name, detail=detail, source=source, section=section, origin=origin,
-               deletable=origin in DELETABLE)
+    a tool-name prefix whose every call counts too (the browser's, Hands', Shortcuts'). `source_id`: the
+    capability source of what was installed from a card (its dossier). `removable`: False when `remove` would
+    refuse the row whatever its origin (a skill key that is not a plain key), so the page offers no button.
+    `reach`: how a connection is reached (its command and arguments, or its address), which the page's search
+    matches too (#500 recheck: "the one I pointed at playwright" is how people find it)."""
+    row = _Row(key=key, state=state, tools=list(tools), switch=switch, reason=reason, fix=fix, name=name,
+               detail=detail, section=section, origin=origin, deletable=origin in DELETABLE and removable,
+               source_id=source_id, reach=reach)
     row.uses = (tools if uses is None else uses, family)
     return row
 
@@ -84,45 +88,45 @@ async def _builtin_rows() -> list[dict]:
     # working folder stays readable and writable either way, so the off row says so
     # rather than claiming file tools vanished.
     file_tools = ("read_file", "list_dir", "search_files", "attach_file") + (("write_file", "edit_file") if workspace else ())
-    rows.append(_row("files", "mac", "on" if default_read else "off", switch="setting",
+    rows.append(_row("files", "on" if default_read else "off", switch="setting",
                      tools=file_tools if default_read else (),
                      uses=("read_file", "list_dir", "search_files", "attach_file", "write_file", "edit_file"),
                      detail=None if default_read else ("own_folder_only" if workspace is not None else None)))
-    rows.append(_row("terminal", "mac", "on" if shell else "off", switch="setting",
+    rows.append(_row("terminal", "on" if shell else "off", switch="setting",
                      tools=("run_command",) if shell else (), uses=("run_command",)))
     if agent_browser.available():
-        rows.append(_row("browser", "mac", "on", tools=("browser_open", "browser_look"), family="browser_",
+        rows.append(_row("browser", "on", tools=("browser_open", "browser_look"), family="browser_",
                          detail="first_use_setup" if managed_browser.status()["reason"] == "setup_required" else None))
     else:
         why = managed_browser.status()["reason"]
-        rows.append(_row("browser", "mac", "na", reason="not_macos" if why == "macos_required" else "runtime_missing",
+        rows.append(_row("browser", "na", reason="not_macos" if why == "macos_required" else "runtime_missing",
                          detail="node" if why == "node_required" else None, family="browser_"))
-    rows.append(_row("shortcuts", "mac", "on", tools=("mac_list_shortcuts",), family="mac_") if darwin
-                else _row("shortcuts", "mac", "na", reason="not_macos", family="mac_"))
+    rows.append(_row("shortcuts", "on", tools=("mac_list_shortcuts",), family="mac_") if darwin
+                else _row("shortcuts", "na", reason="not_macos", family="mac_"))
     if not darwin:
-        rows.append(_row("hands", "mac", "na", reason="not_macos", family="desktop_"))
+        rows.append(_row("hands", "na", reason="not_macos", family="desktop_"))
     elif not hands_client.available():
-        rows.append(_row("hands", "mac", "setup", reason="hands_missing", fix="open_settings:abilities",
+        rows.append(_row("hands", "setup", reason="hands_missing", fix="open_settings:abilities",
                          family="desktop_"))
     else:
         on = hands_tools.desktop_available()
-        rows.append(_row("hands", "mac", "on" if on else "off", switch="hands",
+        rows.append(_row("hands", "on" if on else "off", switch="hands",
                          tools=("desktop_apps", "desktop_look") if on else (), family="desktop_"))
 
     # Research and making
     resolved = await _search_provider()
     if resolved.provider is None:
-        rows.append(_row("web", "research", "setup", reason=resolved.reason, fix="open_settings:connections",
+        rows.append(_row("web", "setup", reason=resolved.reason, fix="open_settings:connections",
                          tools=("web_extract",), uses=("web_search", "web_extract")))
     else:
-        rows.append(_row("web", "research", "on", tools=("web_search", "web_extract")))
-    rows.append(_row("charts", "research", "on", tools=("render_chart",)))
+        rows.append(_row("web", "on", tools=("web_search", "web_extract")))
+    rows.append(_row("charts", "on", tools=("render_chart",)))
 
     # Work
-    rows.append(_row("schedule", "work", "on", tools=("schedule_task", "list_my_tasks", "cancel_task")))
-    rows.append(_row("lan", "work", "on" if lan else "off", switch="setting",
+    rows.append(_row("schedule", "on", tools=("schedule_task", "list_my_tasks", "cancel_task")))
+    rows.append(_row("lan", "on" if lan else "off", switch="setting",
                      tools=("scan_local_network",) if lan else (), uses=("scan_local_network",)))
-    rows.append(_row("ssh", "work", "on" if ssh else "off", switch="setting",
+    rows.append(_row("ssh", "on" if ssh else "off", switch="setting",
                      tools=(("ssh_probe", "enroll_node") + (("ssh_run", "list_nodes") if enrolled else ()))
                      if ssh else (), uses=("ssh_probe", "enroll_node", "ssh_run", "list_nodes")))
     return rows
@@ -153,15 +157,20 @@ async def _mcp_rows() -> list[dict]:
     page must not say "on" while the model is offered none of its tools."""
     from server.mcp.supervisor import ready_now
     from server.services import mcp_service
+    from server.db.models import MCPServer
+    from server.mcp.discovery import runtime_dict
     rows = []
     installed = await _installed_servers()
+    async with db_session.AsyncSessionLocal() as db:            # each server's own secrets, to mask `reach`
+        runtimes = {srv.id: runtime_dict(srv) for srv in (await db.execute(select(MCPServer))).scalars()}
     # the stored legacy status: "never connected" (registered) and an old error decide the row below;
     # `last_error` comes masked (final review I-2)
     for server in await mcp_service.list_servers(stored_status=True):
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         # CAP3a-1: installed from a card (its capability source) or added by hand; its use is its tools'
         # calls (`mcp_<id>__…`, see capabilities()).
-        where = {"source": "mcp", "section": "connections",
+        where = {"section": "connections", "source_id": installed.get(server["id"]),
+                 "reach": _reach(server, runtimes.get(server["id"])),
                  "origin": "installed" if server["id"] in installed else "manual"}
         missing = _runtime_missing(server)
         allowed = bool(server.get("host_allowed"))
@@ -172,26 +181,66 @@ async def _mcp_rows() -> list[dict]:
         starting = server.get("state") == "starting" or (
             allowed and connected and not ready_now(server["id"], server.get("state")))
         if missing:
-            rows.append(_row(key, "work", "na", reason="runtime_missing", detail=missing, name=name, **where))
+            rows.append(_row(key, "na", reason="runtime_missing", detail=missing, name=name, **where))
         elif not allowed and server.get("state") == "off":
             # switched off reads "off" whatever its old status says (an install whose test failed is
             # left off with `status` error); the old error stays visible as the detail (Task 8 review M-1)
-            rows.append(_row(key, "work", "off", name=name, **where, switch="mcp",
+            rows.append(_row(key, "off", name=name, **where, switch="mcp",
                              detail=(server.get("last_error") or "")[:200] or None))
         elif server.get("status") == "error":
-            rows.append(_row(key, "work", "setup", reason="mcp_error", fix="open_tab:mcps", name=name, **where,
+            rows.append(_row(key, "setup", reason="mcp_error", fix="open_tab:mcps", name=name, **where,
                              detail=(server.get("last_error") or "")[:200] or None, switch="mcp"))
         elif starting:
             # 0.1.61: starting by itself — no Connect fix to press (ruling 5: no new UI words in PR 4).
-            rows.append(_row(key, "work", "setup", reason="not_connected", name=name, **where,
+            rows.append(_row(key, "setup", reason="not_connected", name=name, **where,
                              switch="mcp"))
         elif not connected:
-            rows.append(_row(key, "work", "setup", reason="not_connected", fix="connect", name=name, **where,
+            rows.append(_row(key, "setup", reason="not_connected", fix="connect", name=name, **where,
                              switch="mcp"))
         else:
             # connected: switched on means ready in this process (`starting` above), else the user's off
-            rows.append(_row(key, "work", "on" if allowed else "off", name=name, **where, switch="mcp"))
+            rows.append(_row(key, "on" if allowed else "off", name=name, **where, switch="mcp"))
     return rows
+
+
+# What `reach` may keep of a connection's arguments (#500 rechecks: an allowlist, not a list of secret shapes): a
+# lowercase package spec (`name`, `@scope/name`, `org/name`) whose version, if any, is a number or a dist tag, and
+# that is a scoped package or names "mcp" as a word. Every flag goes, and so does the value after it, but for the
+# common flags that take none.
+_PACKAGE = re.compile(r"(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?"
+                      r"(@(?:[0-9][0-9a-z.+-]*|latest|next|beta|alpha|canary))?")
+_MCP_WORD = re.compile(r"(?<![a-z0-9_])mcp(?![a-z0-9_])")
+_NO_VALUE_FLAGS = ("-y", "--yes", "-i", "--rm", "--verbose", "--quiet", "-q")
+
+
+def _reach(server: dict, runtime: dict | None) -> str:
+    """How a connection is reached, for the page's search only (never shown): the command's name, the arguments
+    that look like a package, and the address's scheme, host and port (no userinfo, path, query or fragment).
+    Nothing else is kept, and what is kept is masked with the server's own secrets, as its last_error is."""
+    from pathlib import PurePosixPath
+    from urllib.parse import urlsplit
+
+    from server.mcp.supervisor import mask_for
+    parts, skip = [PurePosixPath(server.get("command") or "").name], False
+    for arg in map(str, server.get("args") or ()):
+        if arg.startswith("-"):
+            # A flag is never a value: it decides about the next argument itself. One that carries its value
+            # ("--port=1", "-HAuthorization: …") or takes none leaves the next alone.
+            skip = arg not in _NO_VALUE_FLAGS and "=" not in arg and (arg.startswith("--") or len(arg) == 2)
+        elif skip:
+            skip = False
+        elif _PACKAGE.fullmatch(arg) and ((arg.startswith("@") and "/" in arg) or _MCP_WORD.search(arg)):
+            parts.append(arg)
+    if server.get("url"):
+        try:
+            address = urlsplit(server["url"])
+            host = f"[{address.hostname}]" if ":" in (address.hostname or "") else address.hostname or ""
+            if address.scheme and host:
+                parts.append(f"{address.scheme}://{host}{f':{address.port}' if address.port else ''}")
+        except ValueError:                                     # a malformed address: nothing of it
+            pass
+    text = " ".join(part for part in parts if part)
+    return mask_for(runtime, text) if runtime else text
 
 
 async def _installed_servers() -> dict[int, str]:
@@ -227,10 +276,29 @@ async def _skill_rows() -> list[dict]:
         packs = (await db.execute(select(SkillPack).where(
             SkillPack.status == "registered", SkillPack.body.is_not(None), func.trim(SkillPack.body) != "",
         ).order_by(SkillPack.key))).scalars().all()
-    return [_row(f"skill:{p.key}", "methods", "off" if p.enabled is False else "on", switch="skill",
-                 name=p.name, detail=p.description[:160] if p.description else None, source="skill",
-                 section="skills", origin=_skill_origin(p))
+    return [_row(f"skill:{p.key}", "off" if p.enabled is False else "on", switch="skill",
+                 name=p.name, detail=p.description[:160] if p.description else None,
+                 section="skills", origin=_skill_origin(p), source_id=p.source_id, removable=safe_skill_key(p.key))
             for p in packs]
+
+
+async def _method_rows() -> list[dict]:
+    """The professional methods sit with the skills (v0.1.64 CAP3a; the CAP card, with SUB): built in, never
+    switched or deleted here, revised in their editor (`revision`). Named by key while unrevised (the page
+    translates it). Last used: the newest helper a task ran with it."""
+    from server.db.worker_models import TaskWorker
+    from server.services import professional_methods
+    async with db_session.AsyncSessionLocal() as db:
+        methods = await professional_methods.list_methods(db)
+        await db.commit()                          # the defaults, written on first read
+        used = dict((await db.execute(select(TaskWorker.method_key, func.max(TaskWorker.created_at))
+                                      .group_by(TaskWorker.method_key))).all())
+    rows = []
+    for m in methods:
+        row = _row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills")
+        row.update(revision=m["revision"], last_used=_when(used.get(m["key"])))
+        rows.append(row)
+    return rows
 
 
 # read_skill's key, from the call's stored arguments (`args_summary`: its JSON, cut at 200 characters).
@@ -262,7 +330,7 @@ def _when(*times) -> str | None:
 
 async def capabilities() -> list[dict]:
     from server.db.models import MCPServer
-    rows = [*await _builtin_rows(), *await _mcp_rows(), *await _skill_rows()]
+    rows = [*await _builtin_rows(), *await _mcp_rows(), *await _skill_rows(), *await _method_rows()]
     tools, skills = await _last_used()
     # When each connection was added. A server id is reused once the newest one is deleted (mcp_servers.id
     # has no AUTOINCREMENT), so a call before that is the old server's (#499 review F5).
@@ -270,6 +338,8 @@ async def capabilities() -> list[dict]:
         added = dict((await db.execute(select(MCPServer.id, MCPServer.created_at))).all())
     for row in rows:
         uses, family = row.uses
+        if "last_used" in row:                                       # a method row says its own
+            continue
         if (server := _server_id(row["key"])) is not None:
             since = added.get(server)
             row["last_used"] = _when(*(when for key, when in tools.items()

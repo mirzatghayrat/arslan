@@ -173,7 +173,3 @@ async def reconnect(server_id: int):
     return {"ok": True}
 
 
-@router.delete("/servers/{server_id}")
-async def delete_server(server_id: int):
-    await mcp_service.delete_server(server_id)
-    return {"ok": True}

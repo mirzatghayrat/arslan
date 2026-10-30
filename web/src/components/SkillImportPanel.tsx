@@ -9,7 +9,8 @@ import { scanSkills, importSkill, type SkillScanResult } from '../api/discovery'
  * scripts/*.py for the sandbox. The license gate is enforced server-side; this panel
  * only mirrors the verdict (importable / reason).
  */
-export default function SkillImportPanel() {
+/** `onImported`: the Capabilities list reloads, so the new skill shows (v0.1.64 CAP3a). */
+export default function SkillImportPanel({ onImported }: { onImported?: () => void } = {}) {
   const { t } = useTranslation();
   const [ref, setRef] = useState('');
   const [subpath, setSubpath] = useState('');
@@ -42,6 +43,7 @@ export default function SkillImportPanel() {
     try {
       await importSkill(ref.trim(), path);
       setImported((prev) => ({ ...prev, [path]: true }));
+      onImported?.();
     } catch (e) {
       setImportErr((prev) => ({ ...prev, [path]: String(e instanceof Error ? e.message : e) }));
     } finally {

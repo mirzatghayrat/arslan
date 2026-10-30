@@ -8,14 +8,15 @@
  * warns, but the person ticking a box here chose their provider months ago and
  * is not going to open Settings first.
  *
- * The insertion is ABOVE the tab bar on purpose: one place, all six tabs,
- * including MCPS — which is where the most confident false claim in the app
- * lives.
+ * The insertion is ABOVE the list on purpose: one place for every section,
+ * including the connections, which is where the most confident false claim in
+ * the app lives (v0.1.64 CAP3a: one list, no tabs).
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import Capabilities from "../components/Capabilities";
 import * as transport from "../lib/toolTransport";
+import { capabilitiesApi } from "../api/capabilities";
 import "../i18n";
 
 vi.mock("../api/mcp", () => ({
@@ -65,29 +66,27 @@ describe("the Capability Library says when equipping will have no effect", () =>
     expect(screen.queryByTestId("tool-transport-warning")).toBeNull();
   });
 
-  test("the notice sits above the tab bar, so it is on every tab", () => {
-    // Testing the POSITION, not just the presence: rendered inside one tab's
-    // panel it would vanish the moment someone clicked MCPS — the tab that
-    // needed it most.
+  test("the notice sits above the list, so it is over every section", () => {
+    // Testing the POSITION, not just the presence: rendered inside one section
+    // it would scroll away or be folded with it — the connections needed it most.
     render(<Capabilities provider="unknown-provider" />);
     const notice = screen.getByTestId("tool-transport-warning");
-    const tablist = screen.getByRole("tablist");
-    expect(notice.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(notice.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-    // And it is not inside any tab panel, which is the shape that would make it
-    // disappear on tab change.
-    expect(notice.closest('[role="tabpanel"]')).toBeNull();
+    expect(notice.closest("section")).toBeNull();
   });
 
-  test("it is still there after switching to the MCPS tab", async () => {
-    // The behavioural version of the position test. MCPS is the tab where
-    // someone ticks "Allow Arslan (all tools)" on a server whose tools will
-    // never be transported — the most confident false claim in the app — so
-    // "the notice survives that click" is the thing worth asserting, not just
-    // where it sits in the DOM.
+  test("it is still there while a connection is being added by hand", async () => {
+    // The behavioural version of the position test. Adding a server and ticking
+    // "Allow Arslan (all tools)" on one whose tools will never be transported is
+    // the most confident false claim in the app, so "the notice survives opening
+    // that sheet" is the thing worth asserting, not just where it sits in the DOM.
+    vi.spyOn(capabilitiesApi, "list").mockResolvedValue([]);
     render(<Capabilities provider="unknown-provider" />);
     expect(screen.getByTestId("tool-transport-warning")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /Connections & permissions/i }));
+    fireEvent.click(await screen.findByTestId("cap-add-manual"));
+    expect(await screen.findByTestId("cap-manual-sheet")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("tool-transport-warning")).toBeInTheDocument());
   });

@@ -388,8 +388,8 @@ async def test_a_dot_key_never_names_a_folder(api, execution_db, tmp_path, key):
     assert (tmp_path / "data" / "skill_scripts" / "csv-tidy" / "run.py").is_file()
 
 
-FIELDS = {"key", "group", "state", "tools", "switch", "reason", "fix", "name", "detail", "source", "section",
-          "origin", "deletable", "last_used"}
+FIELDS = {"key", "state", "tools", "switch", "reason", "fix", "name", "detail", "section", "origin", "deletable",
+          "source_id", "reach", "last_used"}
 
 
 async def test_no_row_carries_what_it_counts_as_use(api, execution_db, tmp_path):
@@ -398,10 +398,15 @@ async def test_no_row_carries_what_it_counts_as_use(api, execution_db, tmp_path)
     from server.services import capability_list
     await _seed(execution_db, tmp_path)
     rows = [*await capability_list._builtin_rows(), *await capability_list._mcp_rows(),
-            *await capability_list._skill_rows()]
-    assert rows and not [row["key"] for row in rows if set(row) != FIELDS - {"last_used"}]
+            *await capability_list._skill_rows(), *await capability_list._method_rows()]
+    assert {row["key"].split(":")[0] for row in rows} >= {"terminal", "mcp", "skill", "method"}
+
+    def fields(row) -> set[str]:                                 # a method row says its revision and last use
+        return FIELDS | {"revision"} if row["key"].startswith("method:") else FIELDS
+    assert not [row["key"] for row in rows
+                if set(row) != fields(row) - (set() if row["key"].startswith("method:") else {"last_used"})]
     sent = (await api.get("/api/v1/capabilities")).json()
-    assert sent and not [row["key"] for row in sent if set(row) != FIELDS]
+    assert sent and not [row["key"] for row in sent if set(row) != fields(row)]
 
 
 def _linked(folder: Path, target: Path) -> None:
@@ -499,6 +504,81 @@ async def test_a_server_number_in_other_digits_is_refused(api, execution_db, tmp
     assert await _state(execution_db, tmp_path) == before
 
 
+async def test_a_connection_says_how_it_is_reached_and_others_do_not(api, execution_db, tmp_path):
+    """#500 recheck: the page's search finds a connection by its command and arguments, or its address."""
+    await _seed(execution_db, tmp_path)
+    rows = await _rows(api)
+    assert (rows["mcp:1"]["reach"], rows["mcp:2"]["reach"]) == ("https://mcp.example.test", "npx")
+    assert rows["terminal"]["reach"] is None and rows["skill:csv-tidy"]["reach"] is None
+
+
+async def test_reach_never_carries_a_secret(api, execution_db, tmp_path):
+    """#500 rechecks: `reach` is only searched, never shown, so it keeps only what is allowed: the command's name,
+    package-like arguments (lowercase, with a "/" or naming "mcp") and the address's scheme, host and port. Values
+    after a flag are written here to look like packages, so only the flag rule can drop them."""
+    import json
+
+    from server import crypto
+    flagged = ["--token", "mcp-alpha", "--access-token", "mcp-bravo", "--api_key", "mcp-charlie", "-t", "mcp-delta",
+               "-HAuthorization: Bearer echo", "--header", "mcp-foxtrot", "=".join(("API_KEY", "mcp-golf")),
+               "--secret", "--header", "mcp-papa"]                # a flag is never the value of the one before
+    loose = ["Authorization: Bearer hotel", "Bearer", "india", "someone:juliet@host", "postgresql://u:kilo@localhost/db",
+             "--port=8080", "@acme/mcp-tool",                # a flag with its value inline leaves the next alone
+             "mcp-envsecret",                                # package-shaped, but the server's own secret
+             "mcp_sk_fake_quebec", "fake/slash-romeo", "@x/y@sierralower"]   # not a package: no word "mcp" / version
+    async with execution_db() as db:
+        db.add_all([
+            MCPServer(id=7, label="remote", command="", transport="http", host_allowed=True, status="registered",
+                      url="https://someone:lima1@mcp.example.test:8443/api/mcp/s/mikekey/mcp?key=novq&v=2#oscar",
+                      created_at=ADDED),
+            MCPServer(id=8, label="local", command="/opt/tools/bin/npx", transport="stdio", host_allowed=True,
+                      status="registered", args=["-y", "@playwright/mcp@latest", *flagged, *loose, "some-mcp"],
+                      env=crypto.encrypt(json.dumps({"TOKEN": "mcp-envsecret"})), created_at=ADDED),
+        ])
+        await db.commit()
+    rows = await _rows(api)
+    assert rows["mcp:7"]["reach"] == "https://mcp.example.test:8443"
+    assert rows["mcp:8"]["reach"] == "npx @playwright/mcp@latest @acme/mcp-tool **** some-mcp"
+    for secret in ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+                   "kilo", "lima1", "mikekey", "novq", "oscar", "papa", "envsecret", "8080", "/opt/tools", "quebec",
+                   "romeo", "sierralower"):
+        assert secret not in rows["mcp:7"]["reach"] + rows["mcp:8"]["reach"], secret
+
+
+async def test_reach_keeps_a_package_after_a_flag_that_takes_no_value(api, execution_db, tmp_path):
+    """#500 final recheck: `docker run -i --rm mcp/fetch` (the Docker MCP catalogue's own form) and
+    `npx --verbose @scope/pkg` are found by their package."""
+    async with execution_db() as db:
+        db.add_all([
+            MCPServer(id=9, label="fetch", command="docker", transport="stdio", host_allowed=True, status="registered",
+                      args=["run", "-i", "--rm", "mcp/fetch"], created_at=ADDED),
+            MCPServer(id=10, label="tool", command="npx", transport="stdio", host_allowed=True, status="registered",
+                      args=["--verbose", "-q", "@scope/pkg@1.2.0"], created_at=ADDED),
+        ])
+        await db.commit()
+    rows = await _rows(api)
+    assert (rows["mcp:9"]["reach"], rows["mcp:10"]["reach"]) == ("docker mcp/fetch", "npx @scope/pkg@1.2.0")
+
+
+def test_a_connection_is_deleted_only_through_the_capabilities_list():
+    """#500 recheck: DELETE /mcp/servers/{id} skipped an installed connection's removal (no Trash, the source left
+    "installed") and had no caller left; DELETE /capabilities/mcp:<id> is the one way."""
+    from server.api import mcp as mcp_api
+    assert not [route for route in mcp_api.router.routes if "DELETE" in getattr(route, "methods", set())]
+
+
+async def test_a_row_the_server_would_refuse_offers_no_delete_whatever_its_origin(api, execution_db, tmp_path):
+    """#500 review F3: deleting also needs a plain key, so the page's flag says so too; nothing writes such a key
+    today."""
+    async with execution_db() as db:
+        db.add(_pack("odd_key", "imported"))
+        await db.commit()
+    row = (await _rows(api))["skill:odd_key"]
+    assert (row["origin"], row["deletable"]) == ("installed", False)
+    response = await api.delete("/api/v1/capabilities/skill:odd_key")
+    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+
+
 async def test_a_skill_arslan_wrote_under_a_gh_key_reads_as_written(api, execution_db, tmp_path):
     """#499 review F7: create_skill takes "gh-" keys too; what Arslan wrote is checked first."""
     async with execution_db() as db:
@@ -578,3 +658,45 @@ async def test_a_switched_off_row_still_says_when_it_was_last_used(api, executio
     assert (await api.put("/api/v1/capabilities/terminal", json={"on": False})).status_code == 200
     terminal = (await _rows(api))["terminal"]
     assert terminal["state"] == "off" and terminal["tools"] == [] and terminal["last_used"] == "2026-10-25T09:00:00Z"
+
+
+async def test_installed_rows_carry_their_source_and_others_none(api, execution_db, tmp_path):
+    """CAP3a-2: the details sheet opens an installed capability's dossier by its source."""
+    await _seed(execution_db, tmp_path)
+    rows = await _rows(api)
+    assert (rows["skill:xlsx"]["source_id"], rows["mcp:2"]["source_id"]) == ("sk1", "m1")
+    assert {rows[key]["source_id"] for key in ("skill:csv-tidy", "skill:weekly-report", "mcp:1", "terminal")} == {None}
+    assert not {"group", "source"} & set(rows["terminal"])                     # the old fields are gone
+
+
+async def test_the_professional_methods_sit_with_the_skills_built_in_with_their_version(api, execution_db, tmp_path):
+    """CAP3a-2 (the CAP card, with SUB): methods are skills on the page; not switched or deleted here; last used
+    is the newest helper a task ran with one."""
+    from server.services import professional_methods
+    await _seed(execution_db, tmp_path)
+    async with execution_db() as db:
+        await professional_methods.revise(db, "research", 1, "Research, my way", "Cite every claim.")
+        await db.commit()
+    await _used_method(execution_db, "research", datetime(2026, 10, 27, 9))
+    rows = await _rows(api)
+    methods = {key: row for key, row in rows.items() if key.startswith("method:")}
+    assert set(methods) == {f"method:{key}" for key in professional_methods.DEFAULTS}
+    research = methods["method:research"]
+    assert (research["section"], research["origin"], research["deletable"], research["switch"], research["state"]) \
+        == ("skills", "builtin", False, None, "on")
+    assert (research["revision"], research["name"], research["last_used"]) == (2, "Research, my way", "2026-10-27T09:00:00Z")
+    unrevised = next(row for key, row in methods.items() if key != "method:research")
+    assert (unrevised["revision"], unrevised["name"], unrevised["last_used"]) == (1, None, None)
+    response = await api.delete("/api/v1/capabilities/method:research")
+    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+
+
+async def _used_method(execution_db, key: str, when: datetime) -> None:
+    """A helper a task ran with the method. Only its method and time matter here, so the task and attempt it
+    points at are not made (foreign keys off for this one write)."""
+    from server.db.worker_models import TaskWorker
+    async with execution_db() as db:
+        await (await db.connection()).exec_driver_sql("PRAGMA foreign_keys=OFF")
+        db.add(TaskWorker(id="w1", task_id="t1", attempt_id="a1", spec_revision=1, method_key=key, method_revision=2,
+                          fingerprint="f", brief={}, status="completed", created_at=when))
+        await db.commit()
