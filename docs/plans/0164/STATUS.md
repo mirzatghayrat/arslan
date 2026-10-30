@@ -2,12 +2,15 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-30, late evening.
+**Updated:** 2026-10-30, night.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #528 | LOAD2 and LOAD3 cards; this page, late evening | `f2b2038a` |
+| #512 | FRONT1: when the model may ask Hands for the front (A), and an honest needs-focus refusal (B, corrected) | `b19d4dbb` |
+| #490 | Q1 #3: a quick question turned into a chat learns from then on (migration 0078) | `7b6ebea1` |
 | #534 | Tests: a card's wait is a clock jump, not a real sleep (LOAD2 part 1) | `7e2dcd70` |
 | #533 | STATUS: the CAP4a-2 runtime question for the user | `561535b0` |
 | #532 | Tests: a job's result is read after the job reports it (LOAD2) | `bd380ab5` |
@@ -92,17 +95,18 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
 
-1. **#490** (Q1 #3, migration 0078) at `b9acf73b`. CI is green.
-2. **#512** (FRONT1: A plus the corrected B) at `85b6f46c`. CI is green.
-3. **#519** (SKF1: which skills read as Arslan's own is an allowlist) at `60d02f77`. CI is green.
+None right now. #507 joins this list once ⓪Plan's plumbing re-OK at `8751d6f7` is posted on the PR.
 
-**Under review, not ready yet (don't merge these):**
+**Under review or on hold (don't merge these):**
 
-- **#526** (UNI1a) at `a3a5255d` and **#536** (SEC1, server half): ⓪Plan's effort=max reviews are running.
-- **#525** (Q1 #4, retire the pocket): ②Main fixed the review's F1–F4 in `71dbc0ce` (on a merge of main); its full backend suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
-- **#527** (MCPOUT1): stacked on #519; retargeted to main once #519 merges.
-- **#507** (SBX-2, Codex) at `8751d6f7`: all five checks are green. Astra's review is posted (08:51Z): Medium 1 is fixed by #524, and Medium 2 is addressed in `8751d6f7`. Left: confirm the Medium 2 fix, and ⓪Plan's plumbing re-OK at `8751d6f7`.
-- **#520, #531, #535** (SBX-3a, 4a, 5a, ③Hands): drafts. They don't merge before SBX-2 and SBX-M.
+- **#519** (SKF1): **on hold.** The user's decision D2 (below) changes what it should do; ⑤CAP reworks it, then a fresh effort=max review.
+- **#526** (UNI1a) at `a3a5255d`: changes requested (posted on the PR). The high finding is the save-card padding hole (#472 F5) coming back.
+- **#536** (SEC1, server half): ⓪Plan's effort=max review is running.
+- **#537** (LOAD2 part 2, `server/mcp/session.py`): ⑤CAP reviews; the user merges (product code).
+- **#525** (Q1 #4, retire the pocket): ②Main fixed the review's F1–F4 in `71dbc0ce`; its full backend suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
+- **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left of it after D2.
+- **#507** (SBX-2, Codex) at `8751d6f7`: all five checks are green, and Astra's two reviews are posted ("fix then merge" at `bf2d85d0`, "merge" for `6810e000` → `8751d6f7`). ⓪Plan's plumbing re-OK at `8751d6f7` is running; the user merges after it is posted.
+- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts. They don't merge before SBX-2 and SBX-M.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -111,31 +115,20 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 | Lane | Work |
 |---|---|
 | ②Main | #525 after F1–F4 (pocket retirement); C7c-2 #450 |
-| ③Hands | SBX-3a #520, 4a #531, 5a #535 drafts; SBX-7 next; then NAME1 and TITLE1 |
-| ⑤CAP | CAP4a-1 (skills pinned to a sha, scanned and hashed before the card); CAP4a-2 waits on the runtime question below. Its PRs #519, #526, #527, #536 are open |
-| ⑥Helper | LOAD2 part 2 (`server/mcp/session.py`, stdio's closed pipe) after #534; then LOAD3; WB1-3; STY #452 waits on the read |
+| ③Hands | SBX drafts #520, #531, #535, #538 are all open; next NAME1, then TITLE1 |
+| ⑤CAP | #526's fixes and #519's rework for D2 first; then CAP4a-1 and CAP4a-2 (option a); #536 under review; #527 after D2 |
+| ⑥Helper | #537 (LOAD2 part 2) under review; SB1-1 (the mock is OK'd); STY #452 (the read no longer blocks it); LOAD3; WB1-3 |
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
-| Codex (via ⑦Codex) | SBX-2 #507 fixes |
-| ⓪Plan | Reviews of #526 and #536 (effort=max); this page; LOAD3 card (README §3.11b) |
+| Codex (via ⑦Codex) | SBX-2 #507 is ready for the user's merge once the plumbing re-OK is posted; then SBX-3p…6p after SBX-M |
+| ⓪Plan | #507 plumbing re-OK; #536 review; this page |
 
 ## Waiting on the user
 
-- **CAP4a-2: when the runtime downloads (⑤CAP).** The card says resolve → lock → card. Making a lock needs a runtime (uv for PyPI, npm for npm), which today downloads only after the user says yes. The options:
-  - (a) download Arslan's own pinned, checksummed runtime before the card;
-  - (b) if the runtime is missing, show the card without a lock and stop the install if the lock pulls in anything the card didn't name;
-  - (c) recommended: first a small card that only asks to download the runtime, then the real card with its lock. This keeps "nothing downloads before a yes".
-
-  CAP4a-1 (skills pinned to a sha, with every file scanned and hashed before the card) goes ahead meanwhile.
-- **UNI1b and SEC1 mocks** (⑤CAP), sent as private links.
-- **Merges:** the "Ready" list above, in that order.
-- **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`), and every row in them is empty: the export happened half a minute after that page was made. So the read hasn't been done yet. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
-- **SB1-0 mock picks:** the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects. (WB1's tab name is decided: Working folder.)
+- **UNI1b and SEC1 mocks** (⑤CAP), sent as private links. UNI1b's mock also shows the markers for invisible characters on the save card (#526's review).
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
-- **SBX-2 (#507):** merge it once Medium 2 and the plumbing re-OK are confirmed (security surface).
+- **SBX-2 (#507):** merge it once ⓪Plan's plumbing re-OK is posted (security surface). Then SBX-M on your Mac.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
-- **0077's `authored` skip (#519 review, low):** 0077 leaves alone any promoted candidate's row already labelled `authored`. The old Forge and create_skill accepted any category, so a skill_creator row labelled literally `authored` still reads as Arslan's own. Recommended: drop `authored` from 0077's `_UNMARKED` before v0.1.64 ships; no released build has 0077.
-- **`unknown` skills (#519):** not deletable today (D7), and they can be switched off. Should they be deletable like `authored`? No real row is `unknown` today.
 
 **Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The pocket's old messages stay as a Mac-only conversation (#487). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
@@ -202,6 +195,13 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - **Deletable scope:** skills Arslan wrote (`authored` and `authored-outside`) and connections the user added by hand may be deleted, as #499 and #500 built them. Built-in and seeded items stay non-deletable (409). The deleted skill's text goes to the Trash.
 - **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
 - **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). It is #512: OK from the security side at `7dd5eade`, with a small window-title fix to land before the user merges.
+
+**Decided on 2026-10-30, night (user, relayed by ④参谋).** The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直接按主流做法： Claude Code 和 Codex 对装过的技能一律信任，读的时候不加框。（2）也按主流做法；3.也按主流做法」 and 「SB1 侧栏、STY 盲读 都可以 刚看了demo」. Recorded in full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-30", and [CAPX-followups.md](CAPX-followups.md).
+- **D1, CAP4a-2: option (a).** Arslan's own pinned, checksummed uv and Node runtime makes the lock before the card; one card shows the locked versions.
+- **D2, skills follow mainstream practice:** every skill the user has is trusted and read unframed, as in Claude Code and Codex. Origin marks stay as data for deletion and display. Skills of unknown origin are deletable. #519 is reworked to match; 0077's `authored` skip is moot. Stated limit: the same trust model as MCP descriptions from approved servers; the guard is at install time.
+- **D3:** UNI1b is a notice only, never blocking. SEC1's move is an optional offer that never blocks a connection; #536's storage (`${NAME}` plus the encrypted column) stays.
+- **SB1-0:** the user is fine with either option on all three toggles, so the mock's recommended defaults are taken; ⑥Helper names them in SB1-1.
+- **STY:** the user has no preference between the two sides of the read, so the read no longer blocks #452. The card's bench gate is unchanged.
 
 **Not adopted (user, 2026-10-30):** the v0.1.64 cut (#515). The user's words: 「现在没有按"截断方案"吧，我不太想一直有任务推到后面只为了快上线新版本 我只是想要合理推进 不要老是原地踏步」. The scope stays as planned. What the user wants is steady, visible progress: every lane busy on its next card, reviews in parallel, no PR left idle on a sync or a review, and Codex's next SBX block queued as soon as the previous one lands. Progress is reported as PRs merged per round and what moved on the critical path.
 
