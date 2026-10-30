@@ -1,6 +1,6 @@
 """MEM1 (#559), its fail-safe through the real judge (②Main's point 7: no model means no merge, never a merge on a
 guess). #559's own test fakes `judgment.judge` returning None; these go through judgment.judge itself, so the ways
-it gives no answer are the real ones: judging switched off, the daily token cap, no model, a timeout. In each, the
+it gives no answer are the real ones: judging switched off, memory.same's own daily cap, no model, a timeout. In each, the
 same meaning in other words is stored as a new entry. A positive control shows a real "yes" does merge."""
 import asyncio
 import dataclasses
@@ -52,16 +52,16 @@ async def test_a_real_yes_merges(memory, model):  # noqa: F811
 
 
 async def test_judging_switched_off_stores_a_new_entry(memory, model, monkeypatch):  # noqa: F811
-    point = judgment.REGISTRY["memory.merge"]
-    monkeypatch.setitem(judgment.REGISTRY, "memory.merge", dataclasses.replace(point, mode="off"))
+    point = judgment.REGISTRY["memory.same"]
+    monkeypatch.setitem(judgment.REGISTRY, "memory.same", dataclasses.replace(point, mode="off"))
     await _write("remember", FIRST)
     await _write("remember", SAME)
     assert model.calls == 0 and len(await _rows(memory)) == 2
 
 
 async def test_over_the_daily_cap_stores_a_new_entry(memory, model, monkeypatch):  # noqa: F811
-    async def spent(db):
-        return judgment.DAILY_TOKEN_CAP
+    async def spent(db, budget="judgment"):
+        return judgment.MEMORY_SAME_DAILY_CAP if budget == "judgment.memory_same" else 0   # its own share is spent
     monkeypatch.setattr(judgment, "_tokens_today", spent)
     await _write("remember", FIRST)
     await _write("remember", SAME)
@@ -83,7 +83,7 @@ async def test_no_model_stores_a_new_entry(memory, monkeypatch):  # noqa: F811
     await _write("remember", SAME)
     assert len(await _rows(memory)) == 2
     async with memory() as session:
-        errors = (await session.scalars(select(Judgment.error).where(Judgment.point == "memory.merge"))).all()
+        errors = (await session.scalars(select(Judgment.error).where(Judgment.point == "memory.same"))).all()
     assert errors == ["ModelNotConfiguredError"]
 
 
