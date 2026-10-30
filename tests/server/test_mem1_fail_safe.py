@@ -69,12 +69,22 @@ async def test_over_the_daily_cap_stores_a_new_entry(memory, model, monkeypatch)
 
 
 async def test_no_model_stores_a_new_entry(memory, monkeypatch):  # noqa: F811
-    async def none():
-        raise RuntimeError("no model configured")
-    monkeypatch.setattr(judgment, "_adapter", none)
+    """The real path: no provider configured, so llm_factory.build_adapter raises ModelNotConfiguredError
+    (_legacy_build_adapter) before any network call, and the judge records that and answers nothing. tests/conftest.py
+    stubs judgment._adapter for every test, so its own two lines are put back here."""
+    from server.db.models import Judgment
+    from server.services.llm_factory import build_adapter, build_slot_adapter
+
+    async def real_adapter():                                               # judgment._adapter, as written
+        slotted = await build_slot_adapter("router_config_id")
+        return slotted if slotted is not None else await build_adapter(role="router")
+    monkeypatch.setattr(judgment, "_adapter", real_adapter)
     await _write("remember", FIRST)
     await _write("remember", SAME)
     assert len(await _rows(memory)) == 2
+    async with memory() as session:
+        errors = (await session.scalars(select(Judgment.error).where(Judgment.point == "memory.merge"))).all()
+    assert errors == ["ModelNotConfiguredError"]
 
 
 async def test_a_judge_that_times_out_stores_a_new_entry(memory, model, monkeypatch):  # noqa: F811
