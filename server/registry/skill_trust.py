@@ -17,14 +17,21 @@ from server.registry.seed_catalog import SKILLS
 from server.services.skill_forge import AUTHORED, WRITTEN
 
 SEEDED = frozenset(key for key, *_ in SKILLS)
-#: D7's user marks on the category (seeder._USERS_SKILL also counts a source_id).
-_USER_CATEGORIES = ("imported", *WRITTEN)
+#: D7's user marks, in one place (#519 review): a category one of these, or a capability source. seeder._USERS_SKILL
+#: is built from them; `has_users_mark` is the same rule on a row.
+USER_CATEGORIES = ("imported", *WRITTEN)
+
+
+def has_users_mark(pack) -> bool:
+    """One of D7's user marks: the user brought this skill in, whatever its key."""
+    return pack.source_id is not None or pack.category in USER_CATEGORIES
 
 
 def reads_as_own(pack) -> bool:
-    """Whether a skill row reads as Arslan's own: a seed row, or one Arslan wrote. Anything else is outside."""
-    if pack.source_id:
+    """Whether a skill row reads as Arslan's own: a seed row, or one Arslan wrote. Anything else is outside. A source
+    is any source_id that is not NULL, as D7 counts it."""
+    if pack.source_id is not None:
         return False
     if pack.category == AUTHORED:
         return True
-    return pack.key in SEEDED and pack.category not in _USER_CATEGORIES
+    return pack.key in SEEDED and not has_users_mark(pack)

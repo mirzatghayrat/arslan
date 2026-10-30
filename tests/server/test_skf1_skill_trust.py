@@ -48,19 +48,31 @@ async def api(execution_db, monkeypatch, tmp_path):
         yield client
 
 
-async def _seen(api) -> dict[str, tuple[bool, str]]:
-    """What each reader makes of each row: read_skill's `external`, the index line, the page's origin."""
+async def _seen(api, execution_db) -> dict[str, tuple[bool, str]]:
+    """What each reader makes of each row: read_skill's `external` (the whole text, a section, and a text over
+    the cap: three returns, #519 review M17/M19), the index line, the page's origin."""
+    from sqlalchemy import select
+
     from server.orchestrator.arslan import _skill_index
     from server.registry.executors import ReadSkillExecutor
     index = (await _skill_index(limit=500)).splitlines()
     rows = {row["key"]: row for row in (await api.get("/api/v1/capabilities")).json()}
+    reads = {key: [await ReadSkillExecutor().execute({"key": key}),
+                   await ReadSkillExecutor().execute({"key": key, "section": "## Trigger"})] for key, *_ in ROWS}
+    async with execution_db() as db:                                  # every text over read_skill's cap
+        for pack in (await db.execute(select(SkillPack))).scalars():
+            pack.body = "## Trigger\nx\n" + "y " * 5000
+        await db.commit()
     seen = {}
     for key, *_ in ROWS:
-        out = await ReadSkillExecutor().execute({"key": key})
+        long = await ReadSkillExecutor().execute({"key": key})
+        assert "## Trigger" in long["body"] and len(long["body"]) < 9000, key       # the over-cap return
+        external = {out["external"] for out in (*reads[key], long)}
+        assert len(external) == 1, key                                 # the three returns agree
         listed_by_key_alone = f"- {key}" in index
-        assert listed_by_key_alone == out["external"], key            # the index and read_skill agree
+        assert {listed_by_key_alone} == external, key                  # the index and read_skill agree
         assert listed_by_key_alone or any(line.startswith(f"- {key} — Name of {key}:") for line in index), key
-        seen[key] = (not out["external"], rows[f"skill:{key}"]["origin"])
+        seen[key] = (not listed_by_key_alone, rows[f"skill:{key}"]["origin"])
     return seen
 
 
@@ -71,16 +83,16 @@ def test_the_trusted_set_is_seed_rows_and_what_arslan_wrote():
                                                                  fromlist=["SKILLS"]).SKILLS}
 
 
-async def test_every_reader_reads_a_row_by_the_one_allowlist(api):
+async def test_every_reader_reads_a_row_by_the_one_allowlist(api, execution_db):
     """The red case before SKF1: a category no writer marks (or none, or a card's row whose category was
     overwritten) read unframed, its name in every request's index, and showed as built in."""
-    assert await _seen(api) == {key: expected for (key, *_), expected in ROWS.items()}
+    assert await _seen(api, execution_db) == {key: expected for (key, *_), expected in ROWS.items()}
 
 
-async def test_every_reader_asks_the_one_function(api, monkeypatch):
+async def test_every_reader_asks_the_one_function(api, execution_db, monkeypatch):
     """Switch the function to "nothing is Arslan's own": every reader follows, the seed row included."""
     monkeypatch.setattr(skill_trust, "reads_as_own", lambda pack: False)
-    seen = await _seen(api)
+    seen = await _seen(api, execution_db)
     assert not [key for key, (own, _) in seen.items() if own]
     assert seen["skill-creator"] == (False, "unknown")
 
