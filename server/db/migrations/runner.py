@@ -95,6 +95,7 @@ from .versions._0071_conversation_kind import upgrade_sync as _m0071
 from .versions._0072_runs_read_outside import upgrade_sync as _m0072
 from .versions._0074_drop_discovery_candidates import upgrade_sync as _m0074
 from .versions._0075_drop_capability_finds import upgrade_sync as _m0075
+from .versions._0076_drop_project_habits import upgrade_sync as _m0076
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -167,6 +168,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0072", _m0072),
     ("0074", _m0074),
     ("0075", _m0075),
+    ("0076", _m0076),
 ]
 
 
