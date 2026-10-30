@@ -8,23 +8,34 @@ into its own encrypted column (`mcp_servers.secrets`, migration 0081), and `fill
 starts (`discovery.runtime_dict`), the way Claude Code expands `${VAR}` in its MCP config. Nothing moves without
 being asked; the click that asks is the card's (SEC1b, behind its mock).
 
-- `find`: the secret-looking parts of an address and its arguments, by where they are, never their values.
+- `find`: the secret-looking parts of an address and its arguments, by where they are, never their values. A part
+  is `{"where": "url"|"arg", "index": the argument, "at": "password"|"user"|"path"|"query"|"header", "key", "n"}`.
 - `move`: one part out, a placeholder in. `fill`: the placeholders back to values. `shown`: an address and
-  arguments with every secret-looking part masked, for every place that shows them.
+  arguments with every secret-looking part masked, for every place that shows them. `missing`: the placeholders
+  with no stored value.
+All three work on the raw text by position (`_spans`), so a moved value is stored as written and `fill` gives the
+original back byte for byte (#536 review).
 """
 from __future__ import annotations
 
 import math
 import re
 from collections import Counter
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import unquote, unquote_plus
 
 PLACEHOLDER = re.compile(r"\$\{([A-Z][A-Z0-9_]{0,63})\}")
-#: A query key or flag that names a secret.
-_SECRET_WORDS = re.compile(r"token|secret|password|passwd|pwd|api[_-]?key|apikey|access[_-]?key|auth|credential"
-                           r"|signature|sig|private[_-]?key|session|key", re.I)
-#: The value of a flag that takes none of these is never taken for a secret by its name alone.
-_FLAG = re.compile(r"--?([A-Za-z][A-Za-z0-9_-]*)(?:=(.*))?$")
+#: The last word of a query key, flag, `NAME=` or header name that names a secret. Matched as a word, never as a
+#: substring (#536 review 5: `--max-tokens 1000` and `--keyboard` are not secrets; `--token-limit` neither).
+_SECRET_LAST = frozenset({"token", "secret", "password", "passwd", "pwd", "key", "apikey", "auth", "authorization",
+                          "credential", "credentials", "signature", "sig", "bearer", "pat", "authtoken", "accesstoken",
+                          "apitoken", "secretkey", "privatekey", "accesskey", "sessiontoken", "clientsecret"})
+#: Values that name a kind of credential, or none, rather than being one.
+_NOT_A_SECRET = frozenset({"true", "false", "yes", "no", "none", "null", "oauth", "basic", "bearer", "token", "env"})
+_FLAG = re.compile(r"--?([A-Za-z][A-Za-z0-9_-]*)(?:=(.*))?$", re.S)
+_HEADER_FLAGS = frozenset({"header", "headers", "h"})
+#: `Name: value`, a scheme word (`Bearer`, `Basic`, `token`) before the value left in place.
+_HEADER = re.compile(r"\s*([A-Za-z0-9_-]+)\s*:\s*(?:(?:bearer|basic|token)\s+)?(.*?)\s*", re.I | re.S)
+_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 _MASK = "●●●●"
 
 
@@ -43,54 +54,117 @@ def _random_looking(value: str) -> bool:
     return -sum(n / len(value) * math.log2(n / len(value)) for n in counts.values()) > 3.5
 
 
-def _secret_value(key: str, value: str) -> bool:
-    return bool(value) and not PLACEHOLDER.fullmatch(value) and (bool(_SECRET_WORDS.search(key))
-                                                              or _random_looking(value))
+def _names_secret(key) -> bool:
+    words = [w.lower() for w in re.split(r"[^A-Za-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(key or ""))) if w]
+    return bool(words) and words[-1] in _SECRET_LAST
 
 
-def find(url: str | None, args) -> list[dict]:
-    """The secret-looking parts: a URL's password, a query value whose key names a secret (or that reads like a
-    key), a flag's value whose flag names one (`--api-key VALUE`, `--token=VALUE`), a `NAME=VALUE` argument
-    whose name does, and any argument that reads like a key. Positions only; a placeholder is not a secret."""
-    parts: list[dict] = []
-    if url:
-        try:
-            split = urlsplit(url)
-            password = split.password
-        except ValueError:
-            split, password = None, None
-        if password and not PLACEHOLDER.fullmatch(password):
-            parts.append({"where": "password"})
-        if split is not None:
-            for key, value in parse_qsl(split.query, keep_blank_values=True):
-                if _secret_value(key, value):
-                    parts.append({"where": "query", "key": key})
+def _secret_value(key, value: str) -> bool:
+    if not value or PLACEHOLDER.search(value) or value.lower() in _NOT_A_SECRET:
+        return False
+    return _names_secret(key) or _random_looking(value)
+
+
+def _url_spans(text: str) -> list[tuple[dict, int, int]]:
+    """The secret-looking spans of one URL, over its raw text (never decoded and encoded again, so `move` and
+    `fill` give back the URL byte for byte: percent-encoding, `%40` in a user name, IPv6 brackets, a bad port;
+    #536 review 2 and 3): the password; a user name that reads like a key; a path segment that does; a query
+    value whose key names a secret or that reads like a key."""
+    m = _URL.match(text)
+    if not m:
+        return []
+    out: list[tuple[dict, int, int]] = []
+    start = m.end()
+    end = min([i for i in (text.find(c, start) for c in "/?#") if i != -1] or [len(text)])
+    at = text.rfind("@", start, end)
+    if at != -1:
+        user, colon, password = text[start:at].partition(":")
+        if colon and password and not PLACEHOLDER.search(password):
+            out.append(({"at": "password"}, start + len(user) + 1, at))
+        elif not colon and _random_looking(unquote(user)):
+            out.append(({"at": "user"}, start, start + len(user)))
+    hash_at = text.find("#", end)
+    query_at = text.find("?", end, hash_at if hash_at != -1 else len(text))
+    path_end = min([i for i in (query_at, hash_at) if i != -1] or [len(text)])
+    pos = end
+    for n, segment in enumerate(text[end:path_end].split("/")):
+        if segment and not PLACEHOLDER.search(segment) and _random_looking(unquote(segment)):
+            out.append(({"at": "path", "n": n}, pos, pos + len(segment)))
+        pos += len(segment) + 1
+    if query_at != -1:
+        pos, seen = query_at + 1, Counter()
+        for piece in text[query_at + 1:hash_at if hash_at != -1 else len(text)].split("&"):
+            key_raw, eq, value_raw = piece.partition("=")
+            key = unquote_plus(key_raw)
+            n, seen[key] = seen[key], seen[key] + 1
+            if eq and _secret_value(key, unquote_plus(value_raw)):
+                value_at = pos + len(key_raw) + 1
+                out.append(({"at": "query", "key": key, "n": n}, value_at, value_at + len(value_raw)))
+            pos += len(piece) + 1
+    return out
+
+
+def _header_span(text: str, offset: int) -> list[tuple[dict, int, int]]:
+    """`Authorization: Bearer <token>` (mcp-remote's `--header`): the value after the scheme word."""
+    m = _HEADER.fullmatch(text)
+    if m and m.group(2) and not PLACEHOLDER.search(m.group(2)) and (
+            _names_secret(m.group(1)) or _random_looking(m.group(2))) and m.group(2).lower() not in _NOT_A_SECRET:
+        return [({"at": "header", "key": m.group(1).lower()}, offset + m.start(2), offset + m.end(2))]
+    return []
+
+
+def _spans(url: str | None, args) -> list[tuple[dict, int | None, int, int]]:
+    """Every secret-looking part, as (part, where it is: None for the address or an argument's index, start,
+    end). One list that `find`, `move` and `shown` all read, so they always agree."""
+    out = [({"where": "url", **part}, None, s, e) for part, s, e in _url_spans(url or "")]
     args = [str(arg) for arg in (args or ())]
     for i, arg in enumerate(args):
         flag = _FLAG.match(arg)
         prev = _FLAG.match(args[i - 1]) if i else None
-        if flag and flag.group(2) is not None:                          # --token=VALUE
-            if _secret_value(flag.group(1), flag.group(2)):
-                parts.append({"where": "arg", "index": i, "key": flag.group(1).lower()})
+        found: list[tuple[dict, int, int]] = []
+        if _URL.match(arg):                                                 # mcp-remote https://…?token=…
+            found = _url_spans(arg)
+        elif flag and flag.group(2) is not None:                            # --token=VALUE, --header=…
+            value_at = arg.index("=") + 1
+            if flag.group(1).lower() in _HEADER_FLAGS:
+                found = _header_span(flag.group(2), value_at)
+            elif _secret_value(flag.group(1), flag.group(2)):
+                found = [({"key": flag.group(1).lower()}, value_at, len(arg))]
         elif flag:
             continue
-        elif prev and prev.group(2) is None and _secret_value(prev.group(1), arg):   # --api-key VALUE
-            parts.append({"where": "arg", "index": i, "key": prev.group(1).lower()})
+        elif prev and prev.group(2) is None and prev.group(1).lower() in _HEADER_FLAGS:   # --header "Name: v"
+            found = _header_span(arg, 0)
+        elif prev and prev.group(2) is None and _secret_value(prev.group(1), arg):         # --api-key VALUE
+            found = [({"key": prev.group(1).lower()}, 0, len(arg))]
         elif "=" in arg and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", arg.partition("=")[0]):  # NAME=VALUE
             name, _, value = arg.partition("=")
             if _secret_value(name, value):
-                parts.append({"where": "arg", "index": i, "key": name.lower()})
-        elif _random_looking(arg):
-            parts.append({"where": "arg", "index": i})
-    return parts
+                found = [({"key": name.lower()}, len(name) + 1, len(arg))]
+        elif _random_looking(arg) and not PLACEHOLDER.search(arg):
+            found = [({}, 0, len(arg))]
+        out += [({"where": "arg", "index": i, **part}, i, s, e) for part, s, e in found]
+    return out
+
+
+def find(url: str | None, args) -> list[dict]:
+    """The secret-looking parts of an address and its arguments, by where they are, never their values. Pure
+    string work: it never raises, so finding never blocks an add or a list (the user's D3)."""
+    return [part for part, *_ in _spans(url, args)]
+
+
+def missing(url: str | None, args, values: dict) -> list[str]:
+    """The placeholders with no stored value, by name (#536 review: the start sent `${NAME}` as text, and
+    nothing named it)."""
+    text = " ".join([url or "", *[str(arg) for arg in (args or ())]])
+    return sorted({m.group(1) for m in PLACEHOLDER.finditer(text)} - set(values or {}))
 
 
 def suggest_name(label: str | None, part: dict) -> str:
     """`NOTES_TOKEN`: the connection's name and the part's key, upper case, letters, digits and `_` only."""
     words = [w for w in re.split(r"[^A-Za-z0-9]+", f"{label or ''} {part.get('key') or ''}") if w]
-    if part["where"] == "password":
-        words.append("password")
-    if not part.get("key") and part["where"] != "password":
+    if part.get("at") in ("password", "user"):
+        words.append(part["at"])
+    elif not part.get("key"):
         words.append("secret")
     name = "_".join(words).upper() or "CONNECTION_SECRET"
     name = name if name[0].isalpha() else "CONNECTION_" + name
@@ -98,8 +172,7 @@ def suggest_name(label: str | None, part: dict) -> str:
 
 
 def _position(part: dict) -> tuple:
-    """Where a part is: the URL's password, a query key, or an argument's index."""
-    return (part.get("where"), part.get("index") if part.get("where") == "arg" else part.get("key"))
+    return tuple(part.get(field) for field in ("where", "index", "at", "key")) + (part.get("n") or 0,)
 
 
 def _check_name(name: str) -> None:
@@ -107,66 +180,42 @@ def _check_name(name: str) -> None:
         raise NothingToMove("a name is upper-case letters, digits and _, starting with a letter")
 
 
+def _replace(url: str | None, args: list[str], target: int | None, start: int, end: int, text: str):
+    if target is None:
+        return url[:start] + text + url[end:], args
+    args = list(args)
+    args[target] = args[target][:start] + text + args[target][end:]
+    return url, args
+
+
 def move(url: str | None, args, part: dict, name: str, values: dict) -> tuple[str | None, list[str], dict]:
-    """`part` out of the address or arguments, `${name}` in its place; the value goes into a copy of `values`."""
+    """`part` out of the address or arguments, `${name}` in its place; its text, exactly as written, goes into a
+    copy of `values` under `name`."""
     _check_name(name)
     args, values = [str(arg) for arg in (args or ())], dict(values)
-    if _position(part) not in {_position(found) for found in find(url, args)}:
+    spans = {_position(found): (target, s, e) for found, target, s, e in _spans(url, args)}
+    if _position(part) not in spans:
         raise NothingToMove("nothing to move there")
     if name in values:
         raise NothingToMove(f"the name {name} is taken")
-    where = part["where"]
-    if where == "password":
-        split = urlsplit(url)
-        values[name] = split.password
-        host = split.hostname or ""
-        netloc = f"{quote(split.username or '', safe='')}:${{{name}}}@{host}{f':{split.port}' if split.port else ''}"
-        return urlunsplit(split._replace(netloc=netloc)), args, values
-    if where == "query":
-        split = urlsplit(url)
-        pairs, done = [], False
-        for key, value in parse_qsl(split.query, keep_blank_values=True):
-            if key == part["key"] and not done and _secret_value(key, value):
-                values[name], value, done = value, f"${{{name}}}", True
-            pairs.append((key, value))
-        query = urlencode(pairs, safe="${}")
-        return urlunsplit(split._replace(query=query)), args, values
-    i = int(part["index"])
-    arg = args[i]
-    flag = _FLAG.match(arg)
-    if flag and flag.group(2) is not None:
-        values[name], args[i] = flag.group(2), arg[: arg.index("=") + 1] + f"${{{name}}}"
-    elif "=" in arg and not flag and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", arg.partition("=")[0]):
-        values[name], args[i] = arg.partition("=")[2], arg.partition("=")[0] + f"=${{{name}}}"
-    else:
-        values[name], args[i] = arg, f"${{{name}}}"
+    target, start, end = spans[_position(part)]
+    values[name] = (url if target is None else args[target])[start:end]
+    url, args = _replace(url, args, target, start, end, "${" + name + "}")
     return url, args, values
 
 
 def fill(url: str | None, args, values: dict) -> tuple[str | None, list[str]]:
-    """The placeholders back to their values; one with no value is left as written. A value is never read again
-    for placeholders (no recursion)."""
+    """The placeholders back to their values; one with no value is left as written (`missing` names it). A value
+    is never read again for placeholders (no recursion)."""
     def sub(text: str) -> str:
         return PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text)
     return (sub(url) if url else url), [sub(str(arg)) for arg in (args or ())]
 
 
 def shown(url: str | None, args) -> tuple[str | None, list[str]]:
-    """An address and arguments as every place may show them: each secret-looking part masked."""
+    """An address and arguments as every place may show them: each secret-looking part masked, nothing else
+    changed (never re-encoded, never raising)."""
     args = [str(arg) for arg in (args or ())]
-    for part in find(url, args):
-        if part["where"] == "password":
-            split = urlsplit(url)
-            host = split.hostname or ""
-            url = urlunsplit(split._replace(netloc=f"{split.username or ''}:{_MASK}@{host}"
-                                                   f"{f':{split.port}' if split.port else ''}"))
-        elif part["where"] == "query":
-            split = urlsplit(url)
-            pairs = [(k, _MASK if k == part["key"] and _secret_value(k, v) else v)
-                     for k, v in parse_qsl(split.query, keep_blank_values=True)]
-            url = urlunsplit(split._replace(query=urlencode(pairs, safe="●")))
-        else:
-            arg = args[part["index"]]
-            head, eq, _ = arg.partition("=")
-            args[part["index"]] = f"{head}={_MASK}" if eq and (head.startswith("-") or head.isidentifier()) else _MASK
+    for _, target, start, end in sorted(_spans(url, args), key=lambda span: span[2], reverse=True):
+        url, args = _replace(url, args, target, start, end, _MASK)
     return url, args

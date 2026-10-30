@@ -21,6 +21,7 @@ def upgrade_sync(connection) -> None:
 
 
 def downgrade_sync(connection) -> None:
-    """Nothing to undo: an older build ignores the column, and a connection whose secret moved keeps a placeholder
-    an older build cannot fill (it then fails to connect and says so; moving it back is a click in this build)."""
+    """Nothing to undo here. An older build refuses this database at boot (runner.assert_supported_schema does not
+    know 0081) and runs only on its own upgrade backup, so it never reads the column. Moving a secret back into the
+    address or arguments is not offered yet (SEC1b's card)."""
     return

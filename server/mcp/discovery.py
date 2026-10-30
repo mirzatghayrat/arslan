@@ -80,7 +80,7 @@ def runtime_dict(srv) -> dict:
     if getattr(srv, "secrets", None):
         try:
             secrets = json.loads(crypto.decrypt(srv.secrets))
-        except Exception:  # noqa: BLE001 — unreadable: the placeholders stay, and the start says what is missing
+        except Exception:  # noqa: BLE001 — unreadable: the placeholders stay; the list names them (secrets_missing)
             secrets = {}
     url, args = connection_secrets.fill(srv.url, srv.args or [], secrets)
     return {"id": srv.id, "transport": srv.transport or "stdio",

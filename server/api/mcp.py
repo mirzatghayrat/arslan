@@ -1,8 +1,10 @@
 """MCP server config + connect/expose/wire/health endpoints."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server.auth import require_auth
 from server.services import mcp_service
@@ -163,9 +165,19 @@ async def set_host(server_id: int, body: ServerHostBody):
     return {"ok": True}
 
 
+class SecretPart(BaseModel):
+    """Where a secret sits, as `connection_secrets.find` names it (#536 review §12: an untyped dict let an
+    unhashable value through to a 500)."""
+    where: Literal["url", "arg"]
+    index: int | None = None
+    at: Literal["password", "user", "path", "query", "header"] | None = None
+    key: str | None = Field(default=None, max_length=200)
+    n: int = 0
+
+
 class MoveSecretBody(BaseModel):
-    part: dict
-    name: str
+    part: SecretPart
+    name: str = Field(max_length=64)
 
 
 @router.post("/servers/{server_id}/secrets")
@@ -175,7 +187,7 @@ async def move_secret(server_id: int, body: MoveSecretBody):
     server. The answer is the connection as listed: the moved value is in none of it."""
     from server.services import connection_secrets
     try:
-        return await mcp_service.move_secret(server_id, body.part, body.name)
+        return await mcp_service.move_secret(server_id, body.part.model_dump(exclude_none=True), body.name)
     except connection_secrets.NothingToMove as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
