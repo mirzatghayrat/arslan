@@ -311,6 +311,19 @@ async def test_two_gemini_calls_that_share_an_id_are_each_answered_by_their_own_
     assert called == answered and len(set(called)) == 2
 
 
+def test_gemini_pairs_no_names_when_the_replayed_parts_and_the_calls_differ_in_number():
+    """A guard: if a call were ever dropped after the reply, no response would take another call's name."""
+    calls = [{"id": "c1", "name": "web_search", "arguments": {}, "arguments_raw": "{}", "provider_id": "fc1"},
+             {"id": "c2", "name": "web_extract", "arguments": {}, "arguments_raw": "{}", "provider_id": "fc2"}]
+    parts = {"provider": "gemini", "parts": [{"functionCall": {"name": "web_extract", "args": {}, "id": "fc2"}}]}
+    messages = [trajectory.request("go"),
+                trajectory.assistant(None, calls, continuation={"protocol": "gemini", "provider_content": parts}),
+                trajectory.tool_result("c1", "web_search", "one"), trajectory.tool_result("c2", "web_extract", "two")]
+    wire = GeminiProvider("gemini-x", api_key="k").build_trajectory_messages("S", messages)
+    answered = [b["name"] for m in wire for b in m["content"] if isinstance(b, dict) and b.get("type") == "function_response"]
+    assert answered == ["web_search", "web_extract"]
+
+
 async def test_the_legacy_rendering_answers_gemini_by_the_same_name(monkeypatch):
     """The legacy rendering replays Gemini's parts and its own function response (trajectory.to_legacy)."""
     monkeypatch.setenv("ARSLAN_TOOL_PROTOCOL", "legacy")

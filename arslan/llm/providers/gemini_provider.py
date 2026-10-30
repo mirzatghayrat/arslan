@@ -145,9 +145,13 @@ class GeminiProvider(BaseLLMProvider):
                 if cont.get("protocol") == "gemini":
                     parts = [part.get("functionCall") for part in cont["provider_content"].get("parts") or []
                              if isinstance(part, dict) and isinstance(part.get("functionCall"), dict)]
-                    for call, part in zip(m.get("tool_calls") or [], parts):
-                        if isinstance(part.get("name"), str):
-                            replayed[call["id"]] = part["name"]
+                    calls_here = m.get("tool_calls") or []
+                    # 1:1 as _parse_response built them and run_native keeps them (unique_ids renames ids only).
+                    # If that ever stops holding, nothing is paired, and responses keep the trajectory's names.
+                    if len(parts) == len(calls_here):
+                        for call, part in zip(calls_here, parts):
+                            if isinstance(part.get("name"), str):
+                                replayed[call["id"]] = part["name"]
                     turns.append(("assistant", [{"type": "provider_content", **cont["provider_content"]}]))
                 else:
                     turns.append(("assistant", [{"type": "text", "text": m.get("content") or ""}]))
