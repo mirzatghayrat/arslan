@@ -26,15 +26,15 @@
 
 ## What to build
 
-The panel holds only things that sit next to the conversation, the way Claude desktop does it. **A tab appears only when it has something in it.**
+The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Files, Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的＋打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
 
 1. **Files (always there, and the default tab):** this conversation's files on top, the folder browser below, and the working folder in the tab's header row with today's "Reveal in Finder" (moved from `TaskTab.tsx:84-85`). Task and Files merge into this one tab.
-2. **Progress (only while this conversation has a background job or a sub-session running):** one "doing what" line each, with a stop button (today's Task "working" list, `TaskTab.tsx:45-57`). SUB's sub-session tree goes here (SUB card). The job poll (`TaskTab.tsx:31-41`) moves up to the Workbench, so the tab can appear while Files is selected.
-3. **Browser (only while the user has a browser tab open):** shown when saved dock tabs exist, or after the title-bar Globe button opens it with today's empty state and "New browser"; it goes when its last tab closes, and an empty Browser opened by the Globe button goes when the user picks another tab without adding a page. **This differs from the relayed wording ("when Hands has a page open"):** this browser is the user's URL reader, and nothing on the Hands side opens pages here (⑥Helper's review); the rule "a tab appears only when it has content" is kept. To know the count while another tab is selected, it is read outside WorkDock (`restoreDock`, or a store field).
-4. **Side chat 1, 2, … (per the SIDE card).**
+2. **Progress (always in the row):** one "doing what" line per background job or sub-session, with a stop button (today's Task "working" list, `TaskTab.tsx:45-57`). The tab shows a count while jobs run, and "Nothing is running in the background." when none are. SUB's sub-session tree goes here (SUB card). The job poll (`TaskTab.tsx:31-41`) moves up to the Workbench, so the count updates while another tab is selected.
+3. **Browser (always in the row):** the user's URL reader, not Hands (⑥Helper's review). It starts with today's empty state and "New browser tab". The title bar's globe button goes (see "Browser decisions").
+4. **Side chat 1, 2, … (per the SIDE card)** come after the three fixed tabs and can be closed. **"+"** starts a side chat directly; it becomes a menu once there is a second kind of thing to open.
 5. **The Task tab goes.** The project already shows in the sidebar and opens from the conversation's header row (`App.tsx:667-670`), so it isn't repeated here. The two buttons that open "task" are redirected: the background-jobs chip (`App.tsx:697`) to Progress, a reply's "more files" (`ReplyArtifacts.tsx:39`) to Files. The store's default becomes "files" (`workbenchStore.ts:4`, `:43`). `OPEN_PROJECT_EVENT`, its import (`App.tsx:45`) and its listener (`:434-441`) go in the same PR (§11).
 6. **Unchanged:** the reader on top; the panel closed by default, opened only by a click; the width remembered.
-7. **When a tab disappears while selected** (a job ends, the user closes the last browser tab): the panel falls back to Files and does not close. The mock shows it.
+7. **When a side chat is closed while selected:** the panel falls back to Files and stays open. The fixed tabs never disappear.
 8. **Apple-style look**, copying the references, not adding decoration (the iPhone build 22 lesson):
    - **Divider:** a 1 px light grey line. Hover changes only the cursor, and at most darkens the line slightly. No coloured block. Use `focus-visible:` for the keyboard ring, so the arrow-key resize (`Workbench.tsx:87`) stays reachable and a mouse drag never lights it. The hit area may stay wider than the line.
    - **Panel:** the sidebar's soft background, no heavy border. Tabs keep today's segmented control.
@@ -46,9 +46,9 @@ The panel holds only things that sit next to the conversation, the way Claude de
 1. **References:** Claude desktop's right-hand panel: artifacts and files beside the chat, with tabs shown when there is something to show (https://claude.ai). Finder's and Notes' split-view dividers, and Xcode's inspector pane: a thin line and a resize cursor, no colour (Apple's Human Interface Guidelines, "Split views", https://developer.apple.com/design/human-interface-guidelines/split-views). The author looks at each first-hand before the mock and notes in the PR what it does. **Extras listed for the user, not built:** a keyboard shortcut to show or hide the panel; a badge on the Progress tab when something finishes while it is hidden.
 2. **Raw material:** the code at `file:line` above, and the user's screenshot of the lit divider (kept by ④参谋; nothing from it goes in the repo). The divider staying lit is confirmed by the code; the author still notes the real-Mac look in the PR.
 3. **Method:**
-   - vitest first, red on main: Files is always present and the default; Progress appears with a running job (while Files is selected) and goes when it ends; Browser appears with a saved or opened dock tab and goes with its last tab; Task is gone; the jobs chip opens Progress and "more files" opens Files; "Reveal in Finder" is in the Files header; a selected tab that disappears falls back to Files; the reader still covers the tabs; the width is still remembered.
+   - vitest first, red on main: the row is Files, Progress, Browser in that order, with Files the default; Progress shows the running count and the empty sentence; Browser starts empty with "New browser tab"; Task is gone; the jobs chip opens Progress and "more files" opens Files; "Reveal in Finder" is in the Files header; "+" starts a side chat; closing a selected side chat falls back to Files; the reader still covers the tabs; the width is still remembered; the title bar has one button.
    - The divider has no `bg-primary` in any state and no non-visible `focus:` background (a test on the class list).
-   - A mutation check on the "tab has content" rule.
+   - A mutation check on the row order and the side-chat fallback.
    - `git grep` that `workbench.task`, `TaskTab` and `OPEN_PROJECT_EVENT` are gone, or carry a `DELETE-BY` if a locale key must stay for one release; `workbench-0158.test.tsx` (`:39`, `:67`, `:164`, `:184`) is updated, not deleted.
 4. **External evidence:** CI run ids; the visibility tests going red when the rule is removed; the user's real-Mac smoke (the divider after a drag, a job starting and ending, opening and closing a browser tab), added to `SMOKE.md`.
 
@@ -67,10 +67,9 @@ The panel holds only things that sit next to the conversation, the way Claude de
 
   Both are on the security surface: each needs its own card, and the user merges. They are recorded in the v0.1.64 README §3.13.
 - **Not taken:** a single view menu in place of the row of tabs. The user said 「左上角只放一个 这个不对 这里还是变回原来的」, so the panel keeps its row of tabs.
-- **Pending the user's OK on the mock ("Title bar: One button / Today's"):**
-  - the title bar keeps one button, the panel button, and the globe button goes;
-  - the panel header's "+" becomes "New…", with "New side chat" and "New browser tab";
-  - the blue Background chip still shows while a job runs.
+- **Title bar: one button** (user, 2026-10-30: 「标题栏只留一个按钮」). Only the panel button stays, and the globe goes. The blue Background chip still shows while a job runs.
+  - **Pending:** its icon. ⑥Helper recommends keeping the mirrored pair, as Xcode does for its navigator and inspector: the sidebar's collapse button at the top left with the line on the left (lucide `PanelLeft`), and the panel's at the top right with the line on the right (`PanelRight`, as today).
+- **Not taken:** marking up a page or screenshot and sending it, as in Claude desktop's annotation bar (user: 「2在页面上画标记再发给我 我用的不多 可以不做」). The /btw-style side question is SIDE, and the shared browser is BRW2.
 
 ## Not here
 
