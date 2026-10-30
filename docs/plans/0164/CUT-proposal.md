@@ -1,5 +1,7 @@
 # v0.1.64 cut: a proposal for the user
 
+> **Not adopted (user, 2026-10-30).** The scope stays as planned; nothing moves to v0.1.65 just to ship sooner. See STATUS, "Not adopted". This page is kept as the record of what was proposed.
+
 ⓪Plan, 2026-10-30, at the user's request relayed by ④参谋: "push the project; we need progress, not percentages". For the user to decide. Nothing here changes a gate or the scope until the user says so (`docs/sessions.md`: the plan's gates and scope are the user's).
 
 ## Where it stands
