@@ -2,12 +2,13 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-30, late night.
+**Updated:** 2026-10-30, after midnight's reviews.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #544 | This page, late night | `da4cc46d` |
 | #541 | Tests: LOAD3, the budget credit after a card is guarded; three load flakes fixed | `9506dc23` |
 | #540 | The user's decisions D1–D3 on capabilities; this page, night | `ee9b7b54` |
 | #507 | SBX-2 (Codex): the default-deny preset and the macOS corpus, staged and not wired. Astra's two reviews are posted; ⓪Plan's plumbing re-OK at `8751d6f7` is posted, and what landed is exactly that commit | `aace2b11` (main CI 41031727159 success) |
@@ -100,19 +101,20 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 The user is out; these wait for their return.
 
-1. **#537** (LOAD2 part 2: a stdio program that exits early is a closed connection) at `4352ee1b`. ⑤CAP's OK covers this head, and CI is green. Product code, so the user merges it.
-2. **#542** (ci.yml: the macOS step counts a strict xfail as ran, for SBX's p tests), by ⓪Plan. It needs ③Hands' OK and a green macOS job first. It touches `.github`, so the user merges it, before SBX-3p's first push.
+1. **#537** (LOAD2 part 2: a stdio program that exits early is a closed connection) at `4352ee1b`. ⑤CAP's OK covers this head, and CI is green. Product code, so the user merges it. It also fixes the stdio flake that turns #539's CI red.
+2. **#542** (ci.yml: the macOS step counts a strict xfail as ran; a guard requires every xfail to pin `raises=`), by ⓪Plan, at `8e67f6b6`. ③Hands' effort=max OK covers this head. It touches `.github`, so the user merges it, before SBX-3p's first push.
 
 **Under review or on hold (don't merge these):**
 
-- **#519** (SKF1): **on hold.** The user's decision D2 changes what it should do; ⑤CAP reworks it, then a fresh effort=max review.
-- **#526** (UNI1a) at `a3a5255d`: changes requested (posted). High: the save-card padding hole (#472 F5) is back.
-- **#536** (SEC1, server half) at `1f661a60`: changes requested (posted). Must fix: the new column isn't rewrapped with the other ciphertext; a bad-port password URL breaks the server list (the one place SEC1 blocks an add, against D3); `fill` doesn't round-trip the URL.
-- **#539** (CAP4a-1): ④参谋's effort=max review is running.
-- **#543** (SB1-1, sidebar; front end, auto-merges after an OK): changes requested (posted). High: the server's naive-UTC `last_at` is read as local time, so sections are off by the UTC offset.
+- **#519** (SKF1, reworked for D2) at `b8ef5881`: ⓪Plan's fresh effort=max review is running. **Merge order (④参谋's review of #539, adopted):** under D2 install time is the only guard for skills, so #519 merges only after #539's F1 (the scan level is computed after findings are cut to 20), F3 (the import panel installs with no scan; in #539 or a small CAP5 import-scan PR) and F4 (the frontmatter name and description aren't scanned) are on main. This doesn't change D2; it makes the install-time guard real before the read-time frame comes off.
+- **#539** (CAP4a-1) at `fb4ac918`: "fix then merge" (④参谋, effort=max). F2 is a regression against main: leftover files under `skill_scripts/<key>/` merge in unscanned. CI is red only on the stdio flake #537 fixes.
+- **#526** (UNI1a): ⑤CAP is fixing the review's findings, with migration 0082 for a one-off clean of stored names.
+- **#536** (SEC1, server half) at `1f661a60`: changes requested (posted). Must fix: the new column isn't rewrapped; a bad-port password URL breaks the server list; `fill` doesn't round-trip the URL.
+- **#545** (WB1-3: Overview's Changes, with a read-only `GET /conversations/{id}/changes`) at `69c7ec35`: ②Main reviews the endpoint; the user merges (server code).
+- **#543** (SB1-1, sidebar): OK at `8c591fee` after the UTC fix; auto-merging (front end, the user's SB1 exception).
 - **#525** (Q1 #4, retire the pocket): ②Main fixed F1–F4 in `71dbc0ce`; its full suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
-- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2. They don't merge before SBX-M. ⓪Plan's early read of #538 is running.
+- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted: `ref` is the right home, but the never-uploaded tripwire is text-only and three leak mutants pass it, and approving a re-run erases the denial.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -122,18 +124,20 @@ The user is out; these wait for their return.
 |---|---|
 | ②Main | #525 after F1–F4 (pocket retirement); C7c-2 #450 |
 | ③Hands | NAME1, then TITLE1; rebasing the four SBX drafts; reviewing #542 |
-| ⑤CAP | #526's fixes, #519's rework for D2, #536's fixes; CAP4a-1 is #539; then CAP4a-2 (option a) |
-| ⑥Helper | #543's fixes; WB1-3. STY's bench was stopped by the classifier (below) |
+| ⑤CAP | #526's fixes; #539's F1–F4 (and the import scan); then #536's fixes; CAP4a-2 (option a) after |
+| ⑥Helper | SB1-2 (pin and drag, migration 0079; auto-merges per the SB1 exception after ②Main's OK). WB1 is done (WB1-3 is #545). STY's bench was stopped by the classifier (below) |
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
 | Codex (via ⑦Codex) | SBX-2 merged. SBX-3p waits on SBX-M, then the paste |
-| ④参谋 | #539's effort=max review |
-| ⓪Plan | #538's early read; re-checks as fixes land; this page |
+| ④参谋 | #539 reviewed (fix then merge) |
+| ⓪Plan | #519's effort=max review; re-checks as fixes land; this page |
 
 ## Waiting on the user
 
 - **UNI1b and SEC1 mocks** (⑤CAP), sent as private links. UNI1b's mock also shows the markers for invisible characters on the save card (#526's review).
 - **Skills from before CAP4's checks (D2's remaining half, ②Main's review of #540):** the old Discover page's `gh-` skills, Skill Forge's promoted ones and `create_skill` output written from outside text never passed an install card, a scan or a pinned sha, and under D2 they read unframed. Re-check them once (a one-time scan, or a prompt to review them in Capabilities), or leave them as they are? They keep their origin mark and can be deleted.
 - **STY's bench (blocked by the classifier in ⑥Helper's session, "Create Unsafe Agents"; not routed to another session):** the 27-task K5-style run before and after STY, on DeepSeek through the proxy, about $4–5 (the proxy is at about $8 of $20). Two checkouts are ready in ⑥Helper's worktrees, before at `e8580458` and after at `4c20bb11`. Run it yourself, or allow ⑥Helper to run it. ⑥Helper has the command. #452 stays a draft until then.
+- **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
+- **Load flakes seen once locally (candidates for a LOAD4 card if they repeat on CI):** `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
 - **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
