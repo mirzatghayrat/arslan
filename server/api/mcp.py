@@ -163,6 +163,25 @@ async def set_host(server_id: int, body: ServerHostBody):
     return {"ok": True}
 
 
+class MoveSecretBody(BaseModel):
+    part: dict
+    name: str
+
+
+@router.post("/servers/{server_id}/secrets")
+async def move_secret(server_id: int, body: MoveSecretBody):
+    """SEC1: one secret-looking part of a connection's address or arguments into its encrypted store, a `${name}`
+    placeholder in its place (the card's click is SEC1b). 409 when there is nothing to move there, 404 for no such
+    server. The answer is the connection as listed: the moved value is in none of it."""
+    from server.services import connection_secrets
+    try:
+        return await mcp_service.move_secret(server_id, body.part, body.name)
+    except connection_secrets.NothingToMove as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/servers/{server_id}/reconnect")
 async def reconnect(server_id: int):
     """A fresh start now (0.1.61 §B1); the server list says how it went."""

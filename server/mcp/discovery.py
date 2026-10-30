@@ -73,8 +73,18 @@ def runtime_dict(srv) -> dict:
             env = json.loads(crypto.decrypt(srv.env))
         except Exception:  # noqa: BLE001
             env = {}
+    # SEC1: a moved secret is a `${NAME}` placeholder in the stored url/args, filled in here; `secrets` goes
+    # with the dict so masking knows the values (spawn_env.secret_forms).
+    from server.services import connection_secrets
+    secrets = {}
+    if getattr(srv, "secrets", None):
+        try:
+            secrets = json.loads(crypto.decrypt(srv.secrets))
+        except Exception:  # noqa: BLE001 — unreadable: the placeholders stay, and the start says what is missing
+            secrets = {}
+    url, args = connection_secrets.fill(srv.url, srv.args or [], secrets)
     return {"id": srv.id, "transport": srv.transport or "stdio",
-            "command": srv.command, "args": srv.args or [], "url": srv.url, "env": env,
+            "command": srv.command, "args": args, "url": url, "env": env, "secrets": secrets,
             # 0.1.57 §5.3: installed capabilities start under their seatbelt profile.
             "sandbox": getattr(srv, "sandbox", None)}
 
