@@ -781,9 +781,15 @@ export default function App() {
             )}
           </div>
         </main>
+        {/* WB1-2: Overview shows this conversation's model with the composer chip's own picker. */}
         {activeSection === 'arslan' && <Workbench conversationId={activeThreadId}
           taskId={dockTaskFrame?.conversation_id === activeThreadId ? dockTaskFrame.task_id : null}
-          temporary={Boolean(activeThread.temporary)} />}
+          temporary={Boolean(activeThread.temporary)}
+          models={{ configs: providerConfigs, llmProviders,
+            onSetDefault: async (id) => { await setPrimaryProviderConfig(id); listProviderConfigs().then(setProviderConfigs).catch(() => {}); },
+            onManage: () => { setSettingsInitialSection('models'); setActiveSection('settings'); } }}
+          onOpenCapabilities={() => setActiveSection('capabilities')}
+          onOpenSettings={(section) => { setSettingsInitialSection(resolveSection(section)); setActiveSection('settings'); }} />}
       </div>
       </main>
 

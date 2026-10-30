@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, X } from "lucide-react";
+import { Activity, Folder, Globe, LayoutList, MoreHorizontal, X, type LucideIcon } from "lucide-react";
 import { api } from "../../api/client";
 import { filesApi, type ConversationFile } from "../../api/files";
 import { backgroundJobsApi } from "../../api/tasks";
@@ -11,13 +11,15 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { READER_WIDTH, useWorkbench, type WorkbenchTab } from "../../stores/workbenchStore";
 import WorkDock from "../WorkDock";
 import FilesTab from "./FilesTab";
+import OverviewTab, { type OverviewModels } from "./OverviewTab";
 import ProgressTab, { type Job } from "./ProgressTab";
 import Reader from "./Reader";
 
-// WB1 (user, 2026-10-30): a fixed row, always shown. The ids stay; Working folder's label is
-// workbench.folder (the user may still pick "Project folder"). Later tabs come from "+" (SIDE, SUB).
-const TABS: WorkbenchTab[] = ["files", "progress", "browser"];
-const LABEL: Record<WorkbenchTab, string> = { files: "workbench.folder", progress: "workbench.progress", browser: "workbench.browser" };
+// WB1 (user, 2026-10-30): a fixed row, always shown, drawn as icons with a tooltip (WB1-2: four words
+// plus side chats overflow the row). Later tabs come from "+" (SIDE, SUB).
+const TABS: WorkbenchTab[] = ["overview", "files", "progress", "browser"];
+const LABEL: Record<WorkbenchTab, string> = { overview: "workbench.overview", files: "workbench.folder", progress: "workbench.progress", browser: "workbench.browser" };
+const ICON: Record<WorkbenchTab, LucideIcon> = { overview: LayoutList, files: Folder, progress: Activity, browser: Globe };
 const REFRESH_MS = 10_000;
 const JOBS_MS = 5_000;
 
@@ -55,8 +57,10 @@ function MoreMenu({ onClose }: { onClose: () => void }) {
  * with stop) and Browser (the user's URL reader) — and the reader sliding over them. Resizable from
  * its left edge; the reader widens it while open. It never opens by itself.
  */
-export default function Workbench({ conversationId, taskId, temporary }: {
+export default function Workbench({ conversationId, taskId, temporary, models, onOpenCapabilities, onOpenSettings }: {
   conversationId: string; taskId: string | null; temporary: boolean;
+  /** WB1-2: what Overview needs from App (the model chip's props, and where its links go). */
+  models?: OverviewModels; onOpenCapabilities?: () => void; onOpenSettings?: (section: string) => void;
 }) {
   const { t } = useTranslation();
   const { open, tab, reader, width, show, close, openReader, closeReader, setWidth } = useWorkbench();
@@ -113,17 +117,20 @@ export default function Workbench({ conversationId, taskId, temporary }: {
         onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)} />
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="inline-flex rounded-lg bg-fill p-0.5 text-[12.5px]" role="tablist">
-          {TABS.map((k) => <button key={k} type="button" role="tab" aria-selected={tab === k && !reader} data-testid={`workbench-tab-${k}`}
-            onClick={() => show(k)} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 ${tab === k && !reader ? "bg-background font-semibold shadow-sm" : "text-muted-foreground"}`}>
-            {t(LABEL[k])}
+          {TABS.map((k) => { const Icon = ICON[k]; return <button key={k} type="button" role="tab" aria-selected={tab === k && !reader}
+            data-testid={`workbench-tab-${k}`} aria-label={t(LABEL[k])} title={t(LABEL[k])} onClick={() => show(k)}
+            className={`relative inline-flex items-center rounded-md px-2.5 py-1 ${tab === k && !reader ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            <Icon size={15} aria-hidden />
             {k === "progress" && jobs.length > 0 && <span data-testid="workbench-progress-count"
-              className="min-w-4 rounded-full bg-info/15 px-1 text-[10px] font-semibold leading-4 text-info">{jobs.length}</span>}</button>)}
+              className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-info px-1 text-[9px] font-semibold leading-3.5 text-white">{jobs.length}</span>}</button>; })}
         </span>
         <MoreMenu onClose={close} />
       </header>
       <div className="relative min-h-0 flex-1">
         <div hidden={!!reader} className="h-full">
-          {tab === "files" && <FilesTab home={home.path} touched={touched} files={files} />}
+          {tab === "overview" && <OverviewTab conversationId={conversationId} files={files} home={home.path} models={models}
+            onOpenCapabilities={onOpenCapabilities} onOpenSettings={onOpenSettings} />}
+          {tab === "files" && <FilesTab home={home.path} touched={touched} />}
           {tab === "progress" && <ProgressTab jobs={jobs} reload={() => void loadJobs()} />}
           {tab === "browser" && <WorkDock embedded open onOpen={() => {}} onClose={close} conversationId={conversationId} taskId={taskId} temporary={temporary} />}
         </div>

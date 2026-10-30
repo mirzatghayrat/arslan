@@ -147,7 +147,8 @@ describe("the address field (WB1)", () => {
     expect(addressOrSearch("备份 照片")).toBe(`${SEARCH_URL}${encodeURIComponent("备份 照片")}`);
     expect(addressOrSearch("example.com")).toBe("https://example.com");
     expect(addressOrSearch("apple.com/support?x=1")).toBe("https://apple.com/support?x=1");
-    expect(addressOrSearch("example.com:8443/a")).toBe("https://example.com:8443/a");
+    // a port is passed through; the backend opens 443 only (browser_proxy.validate_url), so this one uses it
+    expect(addressOrSearch("example.com:443/a")).toBe("https://example.com:443/a");
     expect(addressOrSearch("  https://a.example/x  ")).toBe("https://a.example/x");
     for (const bad of ["http://a.example", "file:///etc/hosts", "javascript:alert(1)", "ftp://a.example"]) expect(addressOrSearch(bad)).toBeNull();
     expect(addressOrSearch("   ")).toBeNull();
