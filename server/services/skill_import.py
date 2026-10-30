@@ -64,12 +64,16 @@ def parse_skill_md(raw: str) -> dict | None:
         return None
     if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
         return None
-    body = raw[m.end():].strip()
-    if not body:
+    # UNI1: the name and description through the one name cleaner; the body keeps ordinary text, and loses
+    # only Tag and control characters (`cleaned` says whether it lost any).
+    from server.orchestrator import untrusted
+    written = raw[m.end():].strip()
+    body = untrusted.clean_body(written).strip()
+    name, description = untrusted.clean_name(meta["name"], 100), untrusted.clean_name(meta["description"], 300)
+    if not body or not name or not description:
         return None
-    key = re.sub(r"[^a-z0-9]+", "-", str(meta["name"]).lower()).strip("-")[:60]
-    return {"key": key, "name": str(meta["name"])[:100],
-            "description": str(meta["description"])[:300], "body": body}
+    key = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60]
+    return {"key": key, "name": name, "description": description, "body": body, "cleaned": body != written}
 
 
 def _license_gate(spdx: str | None) -> str | None:
@@ -309,7 +313,9 @@ async def import_skill(ref: str, path: str) -> dict:
             stored_refs.append(fname)
 
     today = datetime.now(timezone.utc).date().isoformat()
-    attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} at {sha[:12]} "
+    # "verbatim" only when nothing went (UNI1: Tag and control characters do).
+    attribution = (f"> Imported {'with hidden characters removed' if info.get('cleaned') else 'verbatim'} "
+                   f"from https://github.com/{meta['full_name']} at {sha[:12]} "
                    f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
     body = attribution + info["body"]
     if stored:

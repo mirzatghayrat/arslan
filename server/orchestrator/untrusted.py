@@ -100,7 +100,52 @@ _MCP_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 
 
 def breaks_mcp_name_rule(name) -> bool:
+    """MCP's own ASCII rule for a tool name, kept apart from `clean_name`: it decides whether a name is the
+    server's own words (outside content), not how a name is cleaned (UNI1)."""
     return not _MCP_NAME.fullmatch(str(name))
+
+
+# v0.1.64 UNI1 (docs/plans/0164/CAPX-followups.md): one cleaner for names, one rule for skill bodies.
+#: Invisible, though not in a "C" category: the combining grapheme joiner, the Hangul fillers, the blank braille
+#: pattern and the variation selectors (#472 review F4). A name made only of these would show blank.
+_NAME_INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+#: An emoji subdivision flag: the black flag, tag letters or digits, and the cancel tag (England, Scotland, Wales).
+_TAG_FLAG = re.compile("\U0001f3f4[\U000e0030-\U000e0039\U000e0061-\U000e007a]{1,8}\U000e007f")
+_TAGS = re.compile("[\U000e0000-\U000e007f]")
+
+
+def clean_name(text, limit: int) -> str:
+    """A name or another one-line field, wherever it comes in: a skill's name and description, an MCP server's
+    label, a capability source's name. An allowlist: letters, marks, numbers, punctuation and symbols, and one
+    space between words. Control, format (bidi, zero-width), private-use, unassigned and the other invisible
+    characters go, so what is stored is what shows; any white space or line break becomes one space. At most
+    `limit` characters. `outside_label` (what the model is shown of an outside name) builds on it."""
+    import unicodedata
+    kept = []
+    for ch in str(text or ""):
+        category = unicodedata.category(ch)
+        if category[0] in "LMNPS":
+            kept.append(ch)
+        elif category[0] == "Z" or ch.isspace():
+            kept.append(" ")
+    return " ".join(_NAME_INVISIBLE.sub("", "".join(kept)).split())[:limit].strip()
+
+
+def clean_body(text) -> str:
+    """A skill's text, wherever it comes in (the save card, an import). Ordinary text is kept byte for byte,
+    format characters included: Persian's ZWNJ, emoji ZWJ sequences, VS16 (U+FE0F, as in the red heart emoji), LRM/RLM, and bidi override
+    and isolate controls, which the cards show escaped so they still show exactly what is stored. Removed:
+    Unicode Tag characters (U+E0000–E007F, the hidden-text smuggling vector), but those that make an emoji
+    subdivision flag; and the C0 and C1 control characters but tab and new line, which are not text (a NUL, an
+    escape sequence's ESC, a bell). A carriage return becomes a new line."""
+    import unicodedata
+    text = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    parts, last = [], 0
+    for flag in _TAG_FLAG.finditer(text):
+        parts += [_TAGS.sub("", text[last:flag.start()]), flag.group()]
+        last = flag.end()
+    text = "".join(parts) + _TAGS.sub("", text[last:])
+    return "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch) != "Cc")
 
 
 def reaches_network(command: str) -> bool:

@@ -95,6 +95,10 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
         raise ValueError("http transport requires a url")
     if transport == "stdio" and not (command or "").strip():
         raise ValueError("stdio transport requires a command")
+    from server.orchestrator import untrusted
+    label = untrusted.clean_name(label, 80)                 # UNI1: one cleaner for names, wherever they come in
+    if not label:
+        raise ValueError("a label is required")
     async with db_session.AsyncSessionLocal() as db:
         # Dedup guard: return existing row if (label, url) or (label, command, args) already present
         existing = None

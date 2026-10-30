@@ -180,6 +180,21 @@ async def test_an_install_is_pinned_switched_off_and_sandboxed(execution_db, dat
     assert runtime_dict(server)["sandbox"] == server.sandbox          # what the launch reads
 
 
+async def test_an_installs_names_go_through_the_one_name_cleaner(execution_db, data, monkeypatch):
+    """UNI1a: a card's name is outside text; its source name and its server's label are cleaned as they come in
+    (no bidi override, zero-width or Tag character, one line)."""
+    from server.db.models import CapabilitySource, MCPServer
+
+    async def mit(repo):
+        return "MIT", "LICENSE"
+    monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "install_pypi", _fake_pypi)
+    row = await ci.install({**CAND, "name": "Excel\u202e\u200b  server\U000e0041\nlike that"}, folders=[])
+    async with execution_db() as db:
+        server, saved = await db.get(MCPServer, row.mcp_server_id), await db.get(CapabilitySource, row.id)
+    assert (saved.name, server.label) == ("Excel server like that", "Excel server like that")
+
+
 async def test_a_license_that_is_not_usable_stops_before_any_download(execution_db, data, monkeypatch):
     downloads = []
 

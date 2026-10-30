@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import re
-import unicodedata
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -54,9 +53,6 @@ _HISTORY_OUTSIDE = ("external content, source only", "more tool calls")
 #: `skill_script`, read_skill's `references/` section, the "Bundled" headings). This tool writes text only.
 _USES_FILES = re.compile(r"skill_script|[\"']?section[\"']?\s*:\s*[\"']references/|^#+\s*bundled\s+(?:scripts|references)",
                          re.I | re.M)
-#: Invisible, though not in a "C" category: variation selectors, the combining grapheme joiner, the Hangul
-#: fillers and the blank braille pattern (#472 review F4). A name made only of these would show blank.
-_INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
 #: The longest run of white space kept inside a line, and the leading indentation kept as written: code and
 #: YAML nest deep, and their indentation is their meaning (#472 recheck R1).
 _RUN_MAX = 16
@@ -82,13 +78,6 @@ def validate(key: str, name: str, description: str, body: str) -> list[str]:
     return errors
 
 
-def _visible(text, keep: str = "") -> str:
-    """Without control or format characters (a bidi override, a zero-width space) but those in `keep`, and
-    without the other invisible ones: the card shows exactly what is stored."""
-    return _INVISIBLE.sub("", "".join(ch for ch in str(text or "")
-                                      if ch in keep or not unicodedata.category(ch).startswith("C")))
-
-
 def _tidy(body: str) -> str:
     """Blank padding cannot push the end of the text out of sight in the card's box (#472 review F5, recheck
     R1): the Unicode line and paragraph separators become line breaks (read_skill splits on them too), no
@@ -105,7 +94,8 @@ def _tidy(body: str) -> str:
 
 
 def _line(text, limit: int) -> str:
-    return " ".join(_visible(text).split())[:limit]
+    from server.orchestrator import untrusted
+    return untrusted.clean_name(text, limit)           # UNI1: one cleaner for names, wherever they come in
 
 
 def _files_stored(key: str) -> bool:
@@ -164,7 +154,10 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     key = str(args.get("key") or "").strip()
     name = _line(args.get("name"), _NAME_MAX)
     description = _line(args.get("description"), _LINE_MAX)
-    body = _tidy(_visible(args.get("body"), keep="\n\t"))
+    # UNI1: ordinary text is kept, format characters included (ZWNJ, ZWJ, VS16, LRM/RLM, a bidi control the card
+    # shows escaped); only Tag and control characters go. Until UNI1 every category-C character went.
+    from server.orchestrator import untrusted
+    body = _tidy(untrusted.clean_body(args.get("body")))
     tidied = body != str(args.get("body") or "").strip() + "\n"
     why = _line(args.get("why"), _LINE_MAX)
     errors = validate(key, name, description, body) + (

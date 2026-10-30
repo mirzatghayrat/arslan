@@ -33,6 +33,7 @@ import httpx
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer
+from server.orchestrator import untrusted
 from server.services import capability_runtime
 from arslan.aio import within
 
@@ -271,7 +272,8 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
     needs = candidate.get("needs") or {"keys": [], "network": None}
     grants = grants_for(folders, needs)
     row = CapabilitySource(
-        id=source_id, owner_id=owner_id, kind="mcp", name=str(candidate.get("name"))[:120],
+        id=source_id, owner_id=owner_id, kind="mcp",
+        name=untrusted.clean_name(candidate.get("name"), 120) or "connection",      # UNI1; also the server's label
         candidate_id=str(candidate.get("id"))[:300], source_url=candidate.get("source_url"), repo=candidate.get("repo"),
         version=(candidate.get("package") or {}).get("version") or candidate.get("version"),
         license_spdx=spdx, license_path=license_path, stars=candidate.get("stars"),

@@ -116,7 +116,7 @@ async def test_a_background_job_saves_nothing_and_writes_no_row():
     ({"body": "## Trigger\n" + "x" * (skill_forge.MAX_SKILL_BYTES + 10)}, "KB limit"),
     ({"key": "Weekly Report"}, "key must be"),
     ({"key": "w" * 61}, "at most 60"),
-    ({"name": " ​ "}, "name is required"),
+    ({"name": " \u200b "}, "name is required"),
     ({"name": "\u3164\u3164"}, "name is required"),                     # Hangul fillers only (review F4)
     ({"body": BODY + '\nRun it with run_python {"skill_script": "weekly-report/build.py"}.\n'}, "attached files"),
     ({"body": BODY + '\nRead read_skill {"key": "weekly-report", "section": "references/layout.md"}.\n'},
@@ -164,14 +164,18 @@ async def test_a_skill_of_that_key_written_while_the_card_waits_is_not_overwritt
 HIDDEN = "\ufe0f\u034f\u115f\u1160\u3164\uffa0\u2800\U000e0100"
 
 
-async def test_the_card_shows_what_is_stored_without_hidden_characters():
-    """A bidi override or a zero-width character could make the card read differently from the text kept."""
-    seen = []
-    await _propose({"name": "Weekly‮ report\n" + HIDDEN, "description": "A one-page​ report" + HIDDEN,
-                    "body": BODY + "Always cite the notes.‮​\x07" + HIDDEN + "\n"}, ask=_window(seen=seen))
+async def test_the_card_shows_what_is_stored_names_clean_and_the_body_as_written():
+    """#472 F4 under UNI1 (CAPX-followups.md): a name loses every hidden character, so a bidi override or a
+    zero-width character cannot make the card's title read differently. The body keeps ordinary text, format
+    characters included (the card shows a bidi control escaped; UNI1b counts the rest), and loses only Tag and
+    control characters. What the card shows is what is stored."""
+    seen, tag = [], "\U000e0041"
+    await _propose({"name": "Weekly\u202e report\n" + HIDDEN, "description": "A one-page\u200b report" + HIDDEN,
+                    "body": BODY + "Always cite the notes.\u202e\u200b\x07" + HIDDEN + tag + "\n"},
+                   ask=_window(seen=seen))
     [card] = seen
     assert card["name"] == "Weekly report" and card["description"] == "A one-page report"
-    assert not set(card["body"]) & ({"‮", "​", "\x07"} | set(HIDDEN)) and "Always cite the notes." in card["body"]
+    assert "Always cite the notes.\u202e\u200b" + HIDDEN + "\n" in card["body"] and not {"\x07", tag} & set(card["body"])
     pack = (await _skills())["weekly-report"]
     assert (pack.name, pack.description, pack.body) == (card["name"], card["description"], card["body"])
 

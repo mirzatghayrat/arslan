@@ -32,7 +32,7 @@ describe("the capability card", () => {
   it("shows what, where from, the license read at the source, how it runs, and what it needs", () => {
     render(<AskSlot send={() => {}} />);
     frame(CARD);
-    expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_title:{"name":"excel-mcp-server"}');
+    expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_title:{"name":"\u2068excel-mcp-server\u2069"}');   // isolated (UNI1a)
     expect(screen.getByTestId("capability-card-license")).toHaveTextContent("MIT");
     expect(screen.getByTestId("capability-card-license")).toHaveTextContent("discover.lic_readFrom");
     expect(screen.getByTestId("capability-card-runs")).toHaveTextContent("discover.card_runSandbox");
@@ -77,7 +77,7 @@ describe("the capability card", () => {
     useArslanStore.setState(initialArslanState(), true);
     render(<AskSlot send={() => {}} />);
     frame({ ...CARD, call_id: "cap-2", kind: "skill", runtime: "skill", runtime_download: null, keys: [], folders: [] });
-    expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_titleSkill:{"name":"excel-mcp-server"}');
+    expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_titleSkill:{"name":"\u2068excel-mcp-server\u2069"}');   // isolated (UNI1a)
     expect(screen.getByTestId("capability-card-runs")).toHaveTextContent("discover.card_runSkill");
   });
 

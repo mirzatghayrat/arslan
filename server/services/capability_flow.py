@@ -201,7 +201,8 @@ def outside_label(text, limit: int = 100) -> str:
     hands it to the model: its own field, never inside Arslan's sentence; letters, digits and ``._/ -`` only,
     one line, at most `limit` characters (③Hands' review of #449). list_my_capabilities and the MCP status line use it too."""
     # A new line or a tab separates words, as in the status line before #495 (O2), instead of gluing them.
-    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""), keep="\t\n\v\f\r")).split())[:limit].strip()
+    from server.orchestrator import untrusted
+    return " ".join(_LABEL_CHARS.sub(" ", untrusted.clean_name(text, 100_000)).split())[:limit].strip()   # UNI1
 
 
 def _ledger_url(url) -> str | None:

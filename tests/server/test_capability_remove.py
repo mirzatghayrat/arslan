@@ -266,7 +266,7 @@ async def test_a_deleted_skills_text_goes_to_the_trash_with_its_files(api, execu
     assert (await api.delete(f"/api/v1/capabilities/skill:{key}")).status_code == 200
     folder = tmp_path / "home" / ".Trash" / f"Arslan capability {key}"
     assert skill_import.parse_skill_md((folder / "SKILL.md").read_text(encoding="utf-8")) == {
-        "key": key, "name": key.replace("-", " ").title(), "description": "d", "body": "## Trigger\nx"}
+        "key": key, "name": key.replace("-", " ").title(), "description": "d", "body": "## Trigger\nx", "cleaned": False}
     assert {p.name for p in folder.iterdir()} == ({"SKILL.md"} if key == "weekly-report" else {"SKILL.md", "run.py"})
 
 
