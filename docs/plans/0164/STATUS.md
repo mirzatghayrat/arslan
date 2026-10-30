@@ -8,6 +8,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
+| #507 | SBX-2 (Codex): the default-deny preset and the macOS corpus, staged and not wired. Astra's two reviews are posted; ⓪Plan's plumbing re-OK is checked against what landed | `aace2b11` |
 | #528 | LOAD2 and LOAD3 cards; this page, late evening | `f2b2038a` |
 | #512 | FRONT1: when the model may ask Hands for the front (A), and an honest needs-focus refusal (B, corrected) | `b19d4dbb` |
 | #490 | Q1 #3: a quick question turned into a chat learns from then on (migration 0078) | `7b6ebea1` |
@@ -95,7 +96,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
 
-None right now. #507 joins this list once ⓪Plan's plumbing re-OK at `8751d6f7` is posted on the PR.
+None right now. The user is out; every security-surface merge waits for their return.
 
 **Under review or on hold (don't merge these):**
 
@@ -105,7 +106,6 @@ None right now. #507 joins this list once ⓪Plan's plumbing re-OK at `8751d6f7`
 - **#537** (LOAD2 part 2, `server/mcp/session.py`): ⑤CAP reviews; the user merges (product code).
 - **#525** (Q1 #4, retire the pocket): ②Main fixed the review's F1–F4 in `71dbc0ce`; its full backend suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left of it after D2.
-- **#507** (SBX-2, Codex) at `8751d6f7`: all five checks are green, and Astra's two reviews are posted ("fix then merge" at `bf2d85d0`, "merge" for `6810e000` → `8751d6f7`). ⓪Plan's plumbing re-OK at `8751d6f7` is running; the user merges after it is posted.
 - **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts. They don't merge before SBX-2 and SBX-M.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
@@ -115,18 +115,18 @@ None right now. #507 joins this list once ⓪Plan's plumbing re-OK at `8751d6f7`
 | Lane | Work |
 |---|---|
 | ②Main | #525 after F1–F4 (pocket retirement); C7c-2 #450 |
-| ③Hands | SBX drafts #520, #531, #535, #538 are all open; next NAME1, then TITLE1 |
+| ③Hands | SBX drafts #520, #531, #535, #538 rebase onto main now that SBX-2 is in; NAME1, then TITLE1 |
 | ⑤CAP | #526's fixes and #519's rework for D2 first; then CAP4a-1 and CAP4a-2 (option a); #536 under review; #527 after D2 |
 | ⑥Helper | #537 (LOAD2 part 2) under review; SB1-1 (the mock is OK'd); STY #452 (the read no longer blocks it); LOAD3; WB1-3 |
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
-| Codex (via ⑦Codex) | SBX-2 #507 is ready for the user's merge once the plumbing re-OK is posted; then SBX-3p…6p after SBX-M |
-| ⓪Plan | #507 plumbing re-OK; #536 review; this page |
+| Codex (via ⑦Codex) | SBX-2 merged (#507). SBX-3p is ready to paste when the user is back; it needs SBX-M first |
+| ⓪Plan | #507 plumbing re-OK against what landed; #536 review; #538 early read; this page |
 
 ## Waiting on the user
 
 - **UNI1b and SEC1 mocks** (⑤CAP), sent as private links. UNI1b's mock also shows the markers for invisible characters on the save card (#526's review).
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
-- **SBX-2 (#507):** merge it once ⓪Plan's plumbing re-OK is posted (security surface). Then SBX-M on your Mac.
+- **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
 
@@ -136,7 +136,7 @@ None right now. #507 joins this list once ⓪Plan's plumbing re-OK at `8751d6f7`
 
 **Why:** a safety classifier stopped ③Hands as it started SBX-2. The user had the cloud audit split SBX and S2a-3, and approved the split. What Claude cannot write goes to Codex (SBX card, "Who writes what"). Reviews: Astra (highest level) in a new Codex session, never the session that wrote it. Claude reviews the non-probe plumbing. The existing review queue is in [`docs/plans/0162/STATUS.md`](../0162/STATUS.md), "Codex 待审".
 
-**Where the chain is stuck:** SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
+**Where the chain is (2026-10-30, night):** SBX-2 is merged (#507, `aace2b11`); next is SBX-M on the user's Mac. Before that it was stuck at SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
 
 **How Codex delivers: plan A (user, 2026-10-29, final for now).** Codex writes and commits locally and does not push. The ChatGPT Codex Connector keeps its current access, which does not include `arslan`. The user pushes Codex's branch and opens the PR. The rules stay the same:
 - branches start with `codex/`, and PRs carry the label `codex`;
