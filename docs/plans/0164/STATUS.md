@@ -2,12 +2,14 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-30, night, after NAME1 and TITLE1's reviews.
+**Updated:** 2026-10-30, late night (after the CAP rechecks).
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #552 | LOAD4 card; this page | `bc2d814b` |
+| #551 | Tests: LOAD4, four waits a loaded machine overran | `8e112bf7` |
 | #550 | SB1-2: pin and drag in the sidebar (migration 0079) | `b7fdbc78` |
 | #549 | SBX card: the listening sources read; one more SBX-M measurement | `56712874` |
 | #546 | This page: #519 merges after #539's scan fixes | `a98ad04a` |
@@ -105,19 +107,24 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 The user is out; these wait for their return.
 
+In any order unless noted. Every verdict below is posted on its PR with the sha.
+
 1. **#537** (LOAD2 part 2) at `4352ee1b`: ⑤CAP's OK, CI green. Product code.
-2. **#542** (ci.yml: a strict xfail counts as ran; every xfail pins `raises=`) at `8e67f6b6`: ③Hands' effort=max OK, CI green. Touches `.github`. Before SBX-3p's first push.
-3. **#548** (TITLE1: the model's approval texts are built from the cleaned label) at `97627182`: ⓪Plan's effort=max OK at `5355f808`, re-OK at `97627182` (tests only). Merge after CI on this head is green.
-4. **#547** (NAME1: provider-safe tool names) at `983d7e22`: ⓪Plan's effort=max OK at `2eaadba9`, re-OKs at `3bd18f84` and `983d7e22`. Merge after CI on this head is green. #548 and #526 both touch `executor.py:275-280`, so whichever lands second rebases.
+2. **#542** (ci.yml: a strict xfail counts as ran; every xfail pins `raises=`) at `8e67f6b6`: ③Hands' effort=max OK, CI green. Touches `.github`; before SBX-3p's first push.
+3. **#547** (NAME1: provider-safe tool names) at `0b59f0be`: ⓪Plan's effort=max OK, re-OKs through `0b59f0be`; CI green (its macOS job re-ran after the SBX-2 finding below, which is unrelated).
+4. **#548** (TITLE1) at `97627182`: ⓪Plan's effort=max OK, re-OK at this head.
+5. **#526** (UNI1a, migration 0082) at `e2f155b6`: ⓪Plan's effort=max recheck OK, CI green. **#526 and #548 together:** they merge cleanly, but `test_title1_model_title.py:85` then fails; the second to merge updates it (③Hands or ⑤CAP).
+6. **#536** (SEC1, server half, migration 0081) at `dfdd1e5a`: ⓪Plan's effort=max recheck OK, CI green.
+7. **#545** (WB1-3: Overview's Changes) at `1ca9f05e`: ②Main's endpoint OK; ④参谋's web review "merge" at this head; CI green.
+8. **#553** (DIFF1 server half: the line-diff endpoint) at `85135033`: ②Main's effort=max re-review OK. Stacked on #545, so after it.
+9. **#555** (EXC1a: silent broad `pass` handlers get a reason or a log) at `d984b12d`: ②Main's OK. It touches hot files by a line or two; it merges after #547, #519, #452 and #375, or ⑥Helper rebases it.
+10. **#519** (SKF1 for D2) at `0de987d2`: ⓪Plan's effort=max OK after three rechecks. **Only after #539's F1/F3/F4 are on main.**
 
 **Under review or on hold (don't merge these):**
 
 - **#519** (SKF1, reworked for D2) at `b8ef5881`: changes requested (posted). The code matches D2, but the skill install card still tells the user a skill is "Read like a web page"; under D2 that card is the guard, so it must say Arslan follows the skill's text. Two test gaps close two surviving mutants. **Merge order (④参谋's review of #539, adopted):** under D2 install time is the only guard for skills, so #519 merges only after #539's F1 (the scan level is computed after findings are cut to 20), F3 (the import panel installs with no scan; in #539 or a small CAP5 import-scan PR) and F4 (the frontmatter name and description aren't scanned) are on main. This doesn't change D2; it makes the install-time guard real before the read-time frame comes off.
-- **#539** (CAP4a-1) at `fb4ac918`: "fix then merge" (④参谋, effort=max). F2 is a regression against main: leftover files under `skill_scripts/<key>/` merge in unscanned. CI is red only on the stdio flake #537 fixes.
-- **#526** (UNI1a) at `8890ad68`: ⑤CAP's answer to the review is pushed, with migration 0082 for a one-off clean of stored names; ⓪Plan's effort=max recheck is running. The card markers wait for the user's pick in the UNI1b mock.
-- **#536** (SEC1, server half) at `1f661a60`: changes requested (posted). Must fix: the new column isn't rewrapped; a bad-port password URL breaks the server list; `fill` doesn't round-trip the URL.
-- **#545** (WB1-3: Overview's Changes) at `b236cebb`: ②Main's endpoint OK at `f221ca0f` stands (the server is unchanged since). ④参谋's web review asked for fixes (a stale list from the previous conversation, with working Undo, was the high one); they're in, and ④参谋's recheck is pending. The user merges.
-- **#551** (LOAD4, tests only) at `6fda6e9c`: ⓪Plan's OK; auto-merging.
+- **#539** (CAP4a-1): F1–F9 fixed at `98f52a42`; ④参谋's recheck is "fix then merge (small)": F4's decoded frontmatter wasn't scanned, and the scan call sites had no tests. ⑤CAP has the fixes committed and is running the full suite.
+- **#554** (Hands' DesktopAccess card: a fixed heading; the model's `why` on its own line) at `f0d7f6ff`: ⓪Plan's effort=max review is running. The card's heading text changes; the before and after are at the top of the PR body.
 - **#525** (Q1 #4, retire the pocket): ②Main fixed F1–F4 in `71dbc0ce`; its full suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
 - **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted (the tripwire is text-only; approving a re-run erases the denial); ③Hands takes it after the rebases. 3a is rebased at `c596ed3d`. The wiring onto the default-deny base waits for SBX-M and the listening decision (card :255).
@@ -129,13 +136,13 @@ The user is out; these wait for their return.
 | Lane | Work |
 |---|---|
 | ②Main | #525 after F1–F4 (pocket retirement); C7c-2 #450 |
-| ③Hands | SBX drafts: 3a rebased, then 4a, 5a, 7; #538's follow-ups; then DesktopAccess's card heading (it includes the model's `why`; found in #548's review) |
-| ⑤CAP | #526's fixes; #539's F1–F4 (and the import scan); then #536's fixes; CAP4a-2 (option a) after |
-| ⑥Helper | SB1 and WB1 are done (WB1-3 is #545). Next: DIFF1 (line diffs in Changes; mock first, server half meanwhile), with EXC1 as filler. LOAD4 is #551. STY waits on its bench (below) |
+| ③Hands | The four SBX drafts are on 3a and SBX-2 (3a `c596ed3d`, 4a `1e9dba8d`, 5a `d5853f85`, 7 `654ea062`, with #538's follow-ups in). DesktopAccess is #554. Next: whatever the port-deny investigation needs |
+| ⑤CAP | #539's last two fixes; CAP4a-2 (option a) is built, and its PR opens after the full suite; CAP4a-3 (license at the version's commit, start-time source checks, the "download and run" scan rule, allowlist settings) next; MCPOUT1's small follow-up after #519 |
+| ⑥Helper | DIFF1's server half is #553; its web half waits for the user's mock picks. EXC1a is #555; EXC1b (the `return`/`continue` handlers) is next, stacked on it. STY waits on its bench (below) |
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
 | Codex (via ⑦Codex) | SBX-2 merged. SBX-3p waits on SBX-M, then the paste |
 | ④参谋 | #539 reviewed (fix then merge) |
-| ⓪Plan | #526's recheck; re-checks as fixes land; this page |
+| ⓪Plan | #554's review; the SBX-2 port-deny investigation; this page |
 
 ## Waiting on the user
 
@@ -144,6 +151,9 @@ The user is out; these wait for their return.
 - **STY's bench (blocked by the classifier in ⑥Helper's session, "Create Unsafe Agents"; not routed to another session):** the 27-task K5-style run before and after STY, on DeepSeek through the proxy, about $4–5 (the proxy is at about $8 of $20). Two checkouts are ready in ⑥Helper's worktrees, before at `e8580458` and after at `4c20bb11`. Run it yourself, or allow ⑥Helper to run it. ⑥Helper has the command. #452 stays a draft until then.
 - **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
 - **(Done: the load flakes below are LOAD4, #551.)** Earlier note: `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
+- **SBX-2: a declared port deny let a connection through, now twice** (③Hands' Mac; GitHub's macOS runner, run 41043463120). Recorded on #507. SBX-2 isn't wired to anything, so users aren't exposed, and no SBX PR wires the base in until it's explained. A lead from sandbox-runtime's source: Seatbelt's `localhost` doesn't match an IPv4-mapped address, so in the any-declared mode a mapped connect could miss the deny and hit the `*:*` allow. ⓪Plan's effort=max investigation is testing that. SBX-M repeats it on your Mac.
+- **CAP4a-2: ship the runtimes in the app, or fetch them on first need (⑤CAP):** shipping adds about 70 MB, and the lock still needs the network, so offline gains little. Fetching relies on the SHA-256 pinned in the repo; shipping is covered by Arslan's signature and notarization. Both need a release to move the pin. Recommended: keep fetching. Nothing waits on it.
+- **DIFF1-0 mock (⑥Helper):** two picks: a unified or side-by-side diff, and whether files that were made or deleted also open. The web half waits on these.
 - **UNI1b mock:** ⑤CAP's mock shows the invisible-character markers on the save card. Option B is recommended. Pick one, or ask for changes.
 - **INB2 and skills under D2 (from #519's review):** INB2's allowlist (`untrusted.py:168`) still counts a skill read as "off the list", so after reading a skill, "about you" memories wait for the user instead of taking effect. D2 covered reading, not memory. Recommended: keep it as is, since memory writes are the stricter surface, and record it as a stated limit. The alternative is to treat a skill read as clean, like D2.
 - **An SBX-2 deny that let a connection through once (③Hands, on macOS 26.6.2):** `test_sbx2_kernel.py::test_listener_refusal_and_arslan_port_exclusion[any-declared-default-deny]` connected to a denied port (errno 0) once in a 14-minute run, and passed 4 of 4 alone. It goes into SBX-M as a repeat loop (hundreds of runs, each errno recorded, and a check that the connecting process was the sandboxed one). What follows is your call once that's measured.
