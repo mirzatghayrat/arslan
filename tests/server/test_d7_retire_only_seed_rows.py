@@ -8,7 +8,8 @@ it was written:
   card and expert_conversion, v0.1.64 CAP2a), or "authored-outside". A skill promoted from Skill Forge
   before CAP2a got one of those in migration 0077 (CAP2b; its tests are in test_migration_0077.py);
 - made from a GitHub repo in Discover before v0.1.64: its key starts with "gh-" (the discovery
-  centre, removed in CAP1a; its rows stay).
+  centre, removed in CAP1a; its rows stay), and migration 0080 marked it "imported" or
+  "authored-outside" (its tests are in test_migration_0080.py).
 
 In each case a seed row with another retired key, in the same database, is still deleted."""
 import pytest
