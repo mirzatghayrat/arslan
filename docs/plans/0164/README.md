@@ -178,6 +178,12 @@ Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` �
 |---|---|---|---|---|
 | **WB1** | The right-hand workbench holds only what sits next to the conversation, in a fixed row (user, 2026-10-30): Files (the default; Task and Files merged), Progress (a count while jobs run; SUB's tree goes here), Browser (the user's URL reader, not Hands), then side chats; later additions open from "+". The title bar keeps one button. The Task tab goes. Apple-style look: a 1 px divider with no coloured hover, sentence-case grey headings. Card: [WB1-workbench.md](WB1-workbench.md) | ⑥Helper (②Main reviews) | in v0.1.64 (user, 2026-10-29) | One clickable mock together with SIDE-0, before any code. WB1 lands before SIDE-2 and SUB's progress tab, which add their tabs through it. Front end only, not the security surface; the user's approval says the author session auto-merges after another session's OK (quoted in the card). |
 
+### 3.10b After WB1-3 (user, 2026-10-30, in a side chat with ⑥Helper)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **DIFF1** | Line diffs in Overview's Changes. The user asked 「arslan 的 改动也像Claude的一样能看到 PR，code 改了第几行啥的？」. Clicking an "Edited" text file (code, Markdown, config, CSV) opens the reader with a line diff of removed and added lines, like Claude's changes view. Office files, images and PDFs keep just "Edited". The diff is S3's saved pre-change copy against the file now, so it exists only while the turn can still be undone (WB1-3's limit). It needs a read-only server endpoint per changed path (saved copy vs current, with a size cap and a text-only check) and a diff view in the reader. **Not in it:** PRs and branches. Arslan works in folders, not git; knowing that a task sits in a git repo would be a separate idea | ⑥Helper (②Main reviews the endpoint) | v0.1.64 if time allows, else v0.1.65 | After WB1-3, which provides the list of changed paths. Server plus web, so the user merges. |
+
 ### 3.11 Follow-ups found in review (2026-10-30)
 
 Small cards, each its own PR. Tests come first, and none is a new subsystem.
