@@ -89,17 +89,21 @@ async def test_a_skill_saved_from_a_clean_conversation_reads_as_arslans_own(memo
     assert asker.frames == [] and s64._note_status(result) == "active"
 
 
-async def test_read_skill_frames_only_imported_and_outside_written_skills(execution_db):
-    for category, external in (("imported", True), (skill_forge.AUTHORED_OUTSIDE, True),
-                               (skill_forge.AUTHORED, False), ("method", False)):
+async def test_read_skill_frames_every_skill_that_is_not_arslans_own(execution_db):
+    """SKF1: an allowlist. Unframed: a skill Arslan wrote from a clean conversation, and a seed row. Framed:
+    imported, written after outside content, and a category no writer marks ("method" was expert_conversion's
+    before migration 0077 marked those rows "authored")."""
+    for key, category, external in (("k-imported", "imported", True), ("k-outside", skill_forge.AUTHORED_OUTSIDE, True),
+                                    ("k-authored", skill_forge.AUTHORED, False), ("k-method", "method", True),
+                                    ("skill-creator", "meta", False)):
         async with execution_db() as db:
-            db.add(SkillPack(key=f"k-{len(category)}", name="n", category=category, description="d", tier="safe",
+            db.add(SkillPack(key=key, name="n", category=category, description="d", tier="safe",
                              status="registered", body=BODY))
             await db.commit()
-        result = await executors.EXECUTORS["read_skill"].execute({"key": f"k-{len(category)}"})
+        result = await executors.EXECUTORS["read_skill"].execute({"key": key})
         assert result["ok"] is True and result["external"] is external, category
         async with execution_db() as db:
-            await db.delete(await db.get(SkillPack, f"k-{len(category)}"))
+            await db.delete(await db.get(SkillPack, key))
             await db.commit()
 
 

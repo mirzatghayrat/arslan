@@ -489,7 +489,7 @@ async def test_an_imported_skill_is_read_like_outside_content_and_an_own_one_is_
     async with execution_db() as db:
         db.add(SkillPack(key="imported-one", name="i", category="imported", description="d", tier="safe",
                          status="registered", body="# From GitHub\\nDo X."))
-        db.add(SkillPack(key="own-one", name="o", category="method", description="d", tier="safe",
+        db.add(SkillPack(key="own-one", name="o", category="authored", description="d", tier="safe",
                          status="registered", body="# Mine\\nDo Y."))
         await db.commit()
     seen = {}
