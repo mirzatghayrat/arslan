@@ -188,6 +188,14 @@ Small cards, each its own PR. Tests come first, and none is a new subsystem.
 | **TITLE1** | The model-facing approval texts are built from the cleaned label. Today `server/services/permissions.py` builds `_UNATTENDED` and `_EXPIRED` from the card's raw title. The MCP executor then swaps the cleaned label into those two and into its own fallback, `f"{title} was not allowed."` (`server/mcp/executor.py:307-308` after #498). The executor's user-no branch already writes its own words with the cleaned label. Its swap only works on an exact match. **Fix:** add a model-facing title on `permissions.Request` that defaults to `title`, use it in all four `model_text` sites (`_UNATTENDED` twice, `_EXPIRED`, `_declined_text`) and in the executor's fallback, have only the MCP executor set it, and drop the swap. **Test:** for a request whose card title has an odd raw label, every model text shows the model title and never the raw label: `refuse_unattended`, no asker, expired, declined. #498's `test_an_mcp_refusal_names_the_server_by_its_label` stays green, since it pins the card's title unchanged | ③Hands | could | From the re-OK of #498 at `78a371d4`. After #498, which this removes the swap from. Today the four `model_text` sites (`permissions.py:425`, `:436`, `:461`, `:471`) are the only ones, and all quote the whole title. Security surface (approval texts), so the user merges. |
 | **MCPOUT1** | Arslan's own MCP server hands outside text to other agents as its own. `list_capabilities` (`server/mcp_server/tools.py:67-87`) returns every skill's description and every connected server's label unframed to external MCP clients, including imported, `authored-outside` and gh- skills. Fix: list outside skills by key only, with their origin, the way `read_skill`'s index does, and label servers through `outside_label` | ⑤CAP | could | Found by #502's reviewer; it predates that PR. Outbound only: nothing Arslan reads changes. |
 
+### 3.12 Capability follow-ups (user, 2026-10-30: the long-term approach; relayed by ④参谋)
+
+| Card | What | Lane | Tier | Notes |
+|---|---|---|---|---|
+| **SKF1** | Skill framing becomes an allowlist: only built-in, seeded and `authored` read unframed; any other or unknown category is framed | ⑤CAP | should | Card: [CAPX-followups.md](CAPX-followups.md). First. |
+| **UNI1** | One name sanitizer at every entry point. Bodies are flagged ("N invisible characters"), not stripped; only Tag characters are removed. This also fixes `create_skill` dropping ZWJ/ZWNJ from bodies (`skill_forge.py:85-89`, `:167`), which breaks Uyghur and Arabic text | ⑤CAP | should | Same card. After SKF1. |
+| **SEC1** | Secrets typed into connection URLs or args are offered a one-click move into the encrypted `env` or a header; one "outside display" function | ⑤CAP | could (v0.1.65 candidate) | Same card. After SKF1 and UNI1. Kept small (§12). |
+
 ## 4. 合并顺序
 
 **两种情况都一样的（②Main、③Hands 审 #434 后改）：**
