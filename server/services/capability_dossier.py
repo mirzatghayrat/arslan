@@ -94,6 +94,11 @@ async def remove(source_id: str) -> None:
                 capability_list.skill_to_trash(pack)
             except capability_list.NotRemovable as exc:            # its folder is a link (#499 recheck 1)
                 raise DossierError("not_removable") from exc
+        elif pack is None and capability_list.safe_skill_key(row.skill_key):
+            # Nothing holds the key: the folder is this source's leftover, which run_python could still load
+            # (#499 recheck nit). to_trash moves a link itself.
+            from server import config
+            capability_install.to_trash(config.data_dir() / "skill_scripts" / row.skill_key)
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, row.skill_key) if ours else None
             if pack is not None:

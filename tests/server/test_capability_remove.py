@@ -339,6 +339,22 @@ async def test_a_dossier_source_naming_a_skill_it_did_not_install_removes_only_i
     assert await _state(execution_db, tmp_path) == {**before, "sources": {**before["sources"], "sk3": "removed"}}
 
 
+async def test_the_dossier_moves_a_folder_whose_skill_is_already_gone(api, execution_db, tmp_path):
+    """#499 recheck nit: a source whose skill row is gone left skill_scripts/<key> on disk, where run_python's
+    skill_script could still load it. Nothing holds the key, so its folder goes to the Trash (no copy: no text)."""
+    await _seed(execution_db, tmp_path)
+    (tmp_path / "data" / "skill_scripts" / "orphan").mkdir()
+    (tmp_path / "data" / "skill_scripts" / "orphan" / "run.py").write_text("print('hi')\n")
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="sk4", kind="skill", name="orphan", candidate_id="c", needs={}, grants={},
+                                state="installed", skill_key="orphan", created_at=INSTALLED))
+        await db.commit()
+    before = await _state(execution_db, tmp_path)
+    assert (await api.delete("/api/v1/capability-sources/sk4")).status_code == 200
+    assert await _state(execution_db, tmp_path) == _without(before, skill="orphan", source="sk4")
+    assert {p.name for p in (tmp_path / "home" / ".Trash" / "Arslan capability orphan").iterdir()} == {"run.py"}
+
+
 async def test_the_dossier_removes_its_own_skill_and_keeps_it_on_a_failed_move(api, execution_db, monkeypatch, tmp_path):
     """#499 second review 3 (D1): the dossier's own removal moves the files first too."""
     from server.services import capability_dossier, capability_install
