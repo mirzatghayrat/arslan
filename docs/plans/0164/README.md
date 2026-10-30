@@ -193,8 +193,8 @@ Small cards, each its own PR. Tests come first, and none is a new subsystem.
 | Card | What | Lane | Tier | Notes |
 |---|---|---|---|---|
 | **SKF1** | Skill framing becomes an allowlist: only built-in, seeded and `authored` read unframed; any other or unknown category is framed | ⑤CAP | should | Card: [CAPX-followups.md](CAPX-followups.md). First. |
-| **UNI1** | One name sanitizer at every entry point. Bodies are flagged ("N invisible characters"), not stripped; only Tag characters are removed. This also fixes `create_skill` dropping ZWJ/ZWNJ from bodies (`skill_forge.py:85-89`, `:167`), which breaks Uyghur and Arabic text | ⑤CAP | should | Same card. After SKF1. |
-| **SEC1** | Secrets typed into connection URLs or args are offered a one-click move into the encrypted `env` or a header; one "outside display" function | ⑤CAP | could (v0.1.65 candidate) | Same card. After SKF1 and UNI1. Kept small (§12). |
+| **UNI1** | One name sanitizer at every entry point. Bodies are flagged ("N invisible characters"), not stripped; only Tag characters are removed. This also fixes `create_skill` dropping ZWNJ, ZWJ, LRM/RLM and VS16 from bodies (`skill_forge.py:59`, `:85-89`, `:167`), which breaks Persian spelling, emoji sequences and RTL text. The "N invisible characters" notice needs a mock first | ⑤CAP | should | Same card. After SKF1. |
+| **SEC1** | Secrets typed into connection URLs or args are offered a one-click move to a `${NAME}` placeholder, with the value in a separate encrypted store filled at connect time (not `env`, which is the HTTP header map); one display function that never shows a stored secret. Likely needs a migration number from ②Main | ⑤CAP | could (v0.1.65 candidate) | Same card. After SKF1 and UNI1. Kept small (§12). |
 
 ## 4. 合并顺序
 
