@@ -33,6 +33,16 @@ def _r(rule_id, level, where, pattern, flags=re.I):
     return Rule(rule_id, level, where, re.compile(pattern, flags))
 
 
+#: A download from a link followed by running or installing it, a shell or PowerShell fed a download (`$(curl …)`,
+#: `<(curl …)`, `iwr … | iex`), or making a download executable. The sentences it must find and must not are in
+#: tests/server/test_capability_scan_rules.py only (the card: CAP4).
+_DOWNLOAD_AND_RUN = (r"\b(download|fetch|grab)\b[^\n]{0,160}https?://\S+[^\n]{0,120}\b(run|execute|launch|install)\b"
+                     r"|\b(run|execute|launch)\b[^\n]{0,60}\b(installer|binary|executable)\b[^\n]{0,60}https?://"
+                     r"|[$<]\(\s*(curl|wget)\b"
+                     r"|\b(iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]{0,200}\|\s*iex\b"
+                     r"|\bchmod\s+\+x\b[^\n]{0,200}https?://|https?://[^\n]{0,200}\bchmod\s+\+x\b")
+
+
 RULES = (
     # Instructions a skill gives the model.
     _r("hidden_instruction", "high", "text",
@@ -45,6 +55,11 @@ RULES = (
        r"\b(send|post|upload|forward|transmit|exfiltrat\w*)\s+(the\s+|all\s+|any\s+|your\s+|their\s+)?"
        r"(user'?s?\s+)?(api[_ ]?keys?|access\s+tokens?|auth\w*\s+tokens?|passwords?|secrets?|credentials|ssh\s+keys?)\b"),
     _r("url_in_instructions", "note", "text", r"https?://[^\s)>\"']+"),
+    # v0.1.64 CAP4a-3 (the ClawHavoc path): a skill telling the user or the agent to fetch something and run it,
+    # outside a pipe. A skill's instructions and its scripts only: a package's own files (an MCP server's README)
+    # often show such a line for its own install.
+    _r("download_and_run", "high", "text", _DOWNLOAD_AND_RUN),
+    _r("download_and_run", "high", "skill_code", _DOWNLOAD_AND_RUN),
     # Code (skill scripts, package files).
     _r("pipe_to_shell", "high", "any", r"\b(curl|wget)\b[^|\n]{0,200}\|\s*(ba|z)?sh\b"),
     _r("run_decoded_code", "high", "code",
