@@ -8,7 +8,12 @@ function load(): boolean {
   try { return localStorage.getItem(COLLAPSED_KEY) === "1"; } catch { return false; }
 }
 
-interface SidebarState { collapsed: boolean; setCollapsed: (collapsed: boolean) => void; reload: () => void }
+interface SidebarState {
+  collapsed: boolean; setCollapsed: (collapsed: boolean) => void; reload: () => void;
+  /** SB1-2: a pin or unpin this window just made, shown at once; the server's list (polled) has the last word
+   *  once it agrees, and a failed request takes it back. */
+  pins: Record<string, boolean>; setPin: (conversationId: string, pinned: boolean | null) => void;
+}
 
 export const useSidebar = create<SidebarState>((set) => ({
   collapsed: load(),
@@ -18,4 +23,10 @@ export const useSidebar = create<SidebarState>((set) => ({
   },
   /** Read the remembered state again (a fresh window does this at start; tests use it as a reload). */
   reload: () => set({ collapsed: load() }),
+  pins: {},
+  setPin: (conversationId, pinned) => set((s) => {
+    const pins = { ...s.pins };
+    if (pinned === null) delete pins[conversationId]; else pins[conversationId] = pinned;
+    return { pins };
+  }),
 }));

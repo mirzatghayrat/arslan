@@ -187,6 +187,8 @@ export interface ServerConversation {
   job?: { id: string; step: string; done: number; total: number } | null;
   /** 0.1.58 §4: the project it belongs to, if any. */
   project_id?: string | null;
+  /** SB1-2: pinned to the top of the sidebar. */
+  pinned?: boolean;
 }
 
 /**

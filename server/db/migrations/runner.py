@@ -98,6 +98,7 @@ from .versions._0075_drop_capability_finds import upgrade_sync as _m0075
 from .versions._0076_drop_project_habits import upgrade_sync as _m0076
 from .versions._0077_drop_skill_candidates import upgrade_sync as _m0077
 from .versions._0078_quick_learns_after import upgrade_sync as _m0078
+from .versions._0079_conversation_pinned import upgrade_sync as _m0079
 from .versions._0080_mark_discover_skills_outside import upgrade_sync as _m0080
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
@@ -174,6 +175,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0076", _m0076),
     ("0077", _m0077),
     ("0078", _m0078),
+    ("0079", _m0079),
     ("0080", _m0080),
 ]
 

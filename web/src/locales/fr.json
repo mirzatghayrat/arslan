@@ -749,6 +749,10 @@
     "more": "Plus"
   },
   "sidebar": {
+    "pinFailed": "Impossible d’épingler. Réessayez.",
+    "pinned": "Épinglées",
+    "pin": "Épingler",
+    "unpin": "Désépingler",
     "today": "Aujourd’hui",
     "yesterday": "Hier",
     "previous7": "7 derniers jours",
