@@ -98,9 +98,11 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
     # default, so those sort last rather than blowing up the comparison.
     out.sort(key=lambda c: (c.last_at is not None, c.last_at or ""), reverse=True)
     from server.db.companion_models import ConversationContext
-    quick_ids = set((await db.scalars(select(ConversationContext.id).where(
-        ConversationContext.id.in_([c.conversation_id for c in out]), ConversationContext.kind == "quick"))).all())
-    out = [c for c in out if (c.conversation_id in quick_ids) is quick]
+    from server.services import phone_ids
+    kinds = dict((await db.execute(select(ConversationContext.id, ConversationContext.kind).where(
+        ConversationContext.id.in_([c.conversation_id for c in out])))).all())
+    # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
+    out = [c for c in out if (phone_ids.kind_of(c.conversation_id, kinds.get(c.conversation_id)) == "quick") is quick]
     # What each one is and how it stands — the sidebar's glyphs, the phone's task list — and the
     # phone's own conversation named Remote rather than after its first message.
     from server.services import phone_reads
@@ -115,7 +117,7 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
         if quick:
             item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
-        # DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
+        # DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
         if item.conversation_id == phone_reads.REMOTE_ID:
             item.title = phone_reads.REMOTE_TITLE
     return out
