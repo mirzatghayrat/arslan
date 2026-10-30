@@ -107,7 +107,7 @@ async def test_a_conversation_with_messages_but_no_runs_has_no_changes(client, w
     assert (await _changes(client, "c3")).json() == {"turns": []}
 
 
-async def test_expired_swept_and_older_copies_are_not_listed(client, ws, monkeypatch):
+async def test_an_old_copy_the_sweep_kept_is_listed_as_an_undo_would_take_it_but_swept_and_older_are_not(client, ws, monkeypatch):
     monkeypatch.setattr(checkpoints, "_tidy", lambda newest: None)               # no sweep runs meanwhile
     expired = await _turn(client, ws, lambda: (ws / "notes.md").write_text("one"))
     age = checkpoints.KEEP_S + 60                                              # past its age; not swept yet
@@ -121,4 +121,5 @@ async def test_expired_swept_and_older_copies_are_not_listed(client, ws, monkeyp
     earlier = await _turn(client, ws, lambda: (ws / "notes.md").write_text("three"))
     _manifest_edit(earlier, created_at=lambda t: t - 3600)                     # a copy older than its run
     kept = await _turn(client, ws, lambda: (ws / "notes.md").write_text("four"))
-    assert [t["run_id"] for t in (await _changes(client)).json()["turns"]] == [kept]
+    # Past KEEP_S but not swept yet: summary() and a restore still take it, so it is listed (②Main's review).
+    assert [t["run_id"] for t in (await _changes(client)).json()["turns"]] == [kept, expired]

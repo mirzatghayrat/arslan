@@ -631,14 +631,16 @@ def _tidy_locked(newest: int) -> None:
             total -= sizes[rid]
 
 
-def changes(run_id: int, not_before: float, now: float | None = None) -> list[dict] | None:
+def changes(run_id: int, not_before: float) -> dict | None:
     """WB1-3: what this run did in the user's folders, path by path, for Overview's Changes: `made` (absent
-    when the folder was saved), `deleted` (gone when the run ended) or `edited`. None when it can't be told:
-    no copy, an earlier run's copy under the same id (`not_before`, as `summary`), or one past KEEP_S that the
-    sweep has not removed yet, so the list covers exactly the turns an undo can still take back. `.git`
-    is left out (it goes back whole); paths are relative to their folder, with the folder alongside."""
+    when the folder was saved), `deleted` (gone when the run ended) or `edited`; and whether it was undone.
+    None when there is no copy, or the copy is an earlier run's under the same id (`not_before`): the same
+    rule as `summary` and a restore, so the list covers exactly the turns an undo can still take back (②Main's
+    review of #545: no separate age rule). Only what an undo can put back is listed: changes it could not save
+    (`not_saved`) are not. `.git` is left out (it goes back whole); paths are relative to their folder, with
+    the folder alongside. One manifest read; a caller runs it off the event loop."""
     data = manifest(run_id)
-    if data is None or data["created_at"] < not_before or (now if now is not None else time.time()) - data["created_at"] > KEEP_S:
+    if data is None or data["created_at"] < not_before:
         return None
     out = []
     for entry in data["roots"]:
@@ -647,7 +649,7 @@ def changes(run_id: int, not_before: float, now: float | None = None) -> list[di
                 continue
             kind = "made" if state.get("saved") is None else "deleted" if state.get("now") is None else "edited"
             out.append({"folder": entry["path"], "path": rel, "kind": kind})
-    return out
+    return {"paths": out, "undone": bool(data.get("restored_at"))}
 
 
 def summary(run_id: int, not_before: float) -> dict:

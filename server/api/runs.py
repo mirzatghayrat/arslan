@@ -1,6 +1,7 @@
 """Read-only Run replay + evaluation endpoint."""
 from __future__ import annotations
 
+import asyncio
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -590,16 +591,19 @@ async def conversation_changes(conversation_id: str, db: AsyncSession = Depends(
     if not runs and (await db.execute(select(ArslanMessage.id).where(
             ArslanMessage.conversation_id == conversation_id).limit(1))).first() is None:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
-    turns = []
-    for run in runs:
-        paths = checkpoints.changes(run.id, _started(run))
-        if not paths:
-            continue
-        data = checkpoints.manifest(run.id) or {}
-        turns.append({"run_id": run.id,
-                      "at": run.started_at.replace(tzinfo=timezone.utc).isoformat() if run.started_at else None,
-                      "undone": bool(data.get("restored_at")), "paths": paths})
-    return {"turns": turns}
+    wanted = [(run.id, _started(run), run.started_at) for run in runs]
+
+    def read() -> list[dict]:                 # file reads, one manifest per run: off the event loop (②Main)
+        turns = []
+        for run_id, not_before, started in wanted:
+            found = checkpoints.changes(run_id, not_before)
+            if not found or not found["paths"]:
+                continue
+            turns.append({"run_id": run_id,
+                          "at": started.replace(tzinfo=timezone.utc).isoformat() if started else None,
+                          "undone": found["undone"], "paths": found["paths"]})
+        return turns
+    return {"turns": await asyncio.to_thread(read)}
 
 
 async def _with_history(undone: dict) -> dict:
