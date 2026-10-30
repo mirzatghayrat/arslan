@@ -288,6 +288,29 @@ async def test_gemini_answers_a_call_by_the_name_the_model_wrote(monkeypatch):
     assert called == answered == [DOTTED]
 
 
+async def test_two_gemini_calls_that_share_an_id_are_each_answered_by_their_own_name(monkeypatch):
+    """The k-th response answers the k-th call: an id two calls share never decides the name."""
+    sent = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        if len(sent) > 1:
+            return httpx.Response(200, json=GEMINI_END)
+        name = next(d["name"] for d in body["tools"][0]["functionDeclarations"] if d["description"] == READ)
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [
+            {"functionCall": {"name": DOTTED, "args": {"path": "a.txt"}, "id": "fc1"}},
+            {"functionCall": {"name": name, "args": {"path": "b.txt"}, "id": "fc1"}}]}}]})
+    adapter = LLMAdapter("gemini", "gemini-x")
+    adapter._provider = GeminiProvider("gemini-x", api_key="k", transport=httpx.MockTransport(handler))
+    result, reader = await run(monkeypatch, adapter, DOTTED)
+    assert result["final"] == "Done." and reader.calls == [{"path": "a.txt"}, {"path": "b.txt"}]
+    parts = [p for c in sent[1]["contents"] for p in c.get("parts") or []]
+    called = [p["functionCall"]["name"] for p in parts if "functionCall" in p]
+    answered = [p["functionResponse"]["name"] for p in parts if "functionResponse" in p]
+    assert called == answered and len(set(called)) == 2
+
+
 async def test_the_legacy_rendering_answers_gemini_by_the_same_name(monkeypatch):
     """The legacy rendering replays Gemini's parts and its own function response (trajectory.to_legacy)."""
     monkeypatch.setenv("ARSLAN_TOOL_PROTOCOL", "legacy")
