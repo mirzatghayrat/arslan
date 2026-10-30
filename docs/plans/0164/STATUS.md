@@ -77,6 +77,8 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
 
 1. **#475** (INB2) at `b97d7947`, which merges main in with no change to the PR's own diff (⓪Plan compared the added and removed lines; 52 files, +2287/−340). Final review: "merge" at `714ddd5b`. **Merge once its CI is green.**
+**Next, not ready yet (don't merge these):**
+
 2. **#512** (FRONT1: A plus the corrected B) at `4eeca06c`, which merges main in. ⓪Plan's effort=max review is running on `5d08b538`. It goes after #475 (hot file).
 3. **#490** (Q1 #3, migration 0078): after #475, ②Main merges main in per the reviewer's spec, plus the PUT-lock commit and the `kind_of` PUT guard. The reviewer then glances at it, and it merges last of these.
 4. **#507** (SBX-2, Codex): not ready. Its macOS job has 3 real failures for Codex to fix, and the plumbing review asked for fixes. Astra's review is the user's to start. **#508** (ci.yml 69 → 359) is OK'd; the user merges it into the Codex branch.
@@ -99,7 +101,7 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 - **The v0.1.64 cut:** [CUT-proposal.md](CUT-proposal.md). Ship without the security chain's tail? It asks four questions. If the cut is adopted, follow-up: `settings_service.py:408-411`'s docstring (and any Settings or release-note wording) says ask_risky's judgement is completed in v0.1.64 (S2a-3). That would become v0.1.65 (④参谋).
 - **Merges:** the "Ready" list above, in that order.
-- **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`) than the current key (`98eec4a75f7e`, regenerated after the bold-around-code fix), so they can't be tallied. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
+- **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`), and every row in them is empty: the export happened half a minute after that page was made. So the read hasn't been done yet. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
 - **Mocks, one sitting:**
   - SB1-0: the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects;
   - WB1-0: the tab name, "Working folder" or "Project folder".
