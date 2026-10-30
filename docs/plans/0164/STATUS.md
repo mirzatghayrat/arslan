@@ -8,6 +8,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
+| #534 | Tests: a card's wait is a clock jump, not a real sleep (LOAD2 part 1) | `7e2dcd70` |
 | #533 | STATUS: the CAP4a-2 runtime question for the user | `561535b0` |
 | #532 | Tests: a job's result is read after the job reports it (LOAD2) | `bd380ab5` |
 | #530 | WB1-2: Overview is the workbench's default tab; the fixed tabs become icons | `2044f5b3` |
@@ -98,10 +99,9 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 **Under review, not ready yet (don't merge these):**
 
 - **#526** (UNI1a) at `a3a5255d` and **#536** (SEC1, server half): ⓪Plan's effort=max reviews are running.
-- **#534** (LOAD2 part 1, tests only): CI is green; it auto-merges after another session's OK.
-- **#525** (Q1 #4, retire the pocket): ②Main is fixing the review's F1 and F2; it also waits on the user's go after Q1c ships.
+- **#525** (Q1 #4, retire the pocket): ②Main fixed the review's F1–F4 in `71dbc0ce` (on a merge of main); its full backend suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
 - **#527** (MCPOUT1): stacked on #519; retargeted to main once #519 merges.
-- **#507** (SBX-2, Codex): its macOS job had 3 real failures for Codex to fix. #524 (the 362-case count) is merged into its branch. Astra's review is the user's to start.
+- **#507** (SBX-2, Codex) at `8751d6f7`: all five checks are green. Astra's review is posted (08:51Z): Medium 1 is fixed by #524, and Medium 2 is addressed in `8751d6f7`. Left: confirm the Medium 2 fix, and ⓪Plan's plumbing re-OK at `8751d6f7`.
 - **#520, #531, #535** (SBX-3a, 4a, 5a, ③Hands): drafts. They don't merge before SBX-2 and SBX-M.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
@@ -110,7 +110,7 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 | Lane | Work |
 |---|---|
-| ②Main | #525's F1 and F2 (pocket retirement); C7c-2 #450; the liveness-test card |
+| ②Main | #525 after F1–F4 (pocket retirement); C7c-2 #450 |
 | ③Hands | SBX-3a #520, 4a #531, 5a #535 drafts; SBX-7 next; then NAME1 and TITLE1 |
 | ⑤CAP | CAP4a-1 (skills pinned to a sha, scanned and hashed before the card); CAP4a-2 waits on the runtime question below. Its PRs #519, #526, #527, #536 are open |
 | ⑥Helper | LOAD2 part 2 (`server/mcp/session.py`, stdio's closed pipe) after #534; then LOAD3; WB1-3; STY #452 waits on the read |
@@ -131,11 +131,9 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 - **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`), and every row in them is empty: the export happened half a minute after that page was made. So the read hasn't been done yet. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
 - **SB1-0 mock picks:** the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects. (WB1's tab name is decided: Working folder.)
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
-- **SBX-2 (#507):** relay the macOS failures and the plumbing findings to Codex; start the Astra review session; merge #508 into the Codex branch.
+- **SBX-2 (#507):** merge it once Medium 2 and the plumbing re-OK are confirmed (security surface).
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
-- **Making the `language` CI job required:** #504 merged with it red. That's a repository setting, so the user does it.
-- **A session card from ②Main:** "Make the chat liveness tests load-tolerant" (②Main is doing it now).
 - **0077's `authored` skip (#519 review, low):** 0077 leaves alone any promoted candidate's row already labelled `authored`. The old Forge and create_skill accepted any category, so a skill_creator row labelled literally `authored` still reads as Arslan's own. Recommended: drop `authored` from 0077's `_UNMARKED` before v0.1.64 ships; no released build has 0077.
 - **`unknown` skills (#519):** not deletable today (D7), and they can be switched off. Should they be deletable like `authored`? No real row is `unknown` today.
 
