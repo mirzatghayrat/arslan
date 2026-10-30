@@ -34,6 +34,9 @@ const row = "flex min-w-0 items-center gap-2 py-1 text-[12.5px]";
 const KIND_COLOR = { made: "text-success", edited: "text-muted-foreground", deleted: "text-danger" } as const;
 /** A turn's paths shown before "N more" (④参谋's review of #545: a run can list thousands). */
 export const PATHS_SHOWN = 6;
+/** Changes reloads this often while shown, as the panel's file poll: a turn's checkpoint is written after the turn
+ * ends (host_run's finally), so the reload at its end can come before it (④参谋's recheck of PR 545). */
+export const CHANGES_MS = 10_000;
 /** "a/b/c.txt" as its name and the folder before it: a long path keeps its name in view. */
 function splitPath(path: string): [string, string] {
   const i = path.lastIndexOf("/");
@@ -85,6 +88,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
   const [opened, setOpened] = useState<number[]>([]);
   const heading = useRef<HTMLHeadingElement>(null);
+  const opener = useRef<HTMLButtonElement | null>(null);
   const turns = useArslanStore((s) => s.items.length);          // a turn that changed files but delivered none
   // Another conversation's turns never show here, nor its undo (④参谋's review of #545): the list is emptied
   // when the conversation changes, an answer for one no longer shown is dropped, and "no such conversation"
@@ -103,7 +107,12 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
     }
   }, [conversationId]);
   useEffect(() => { void loadChanges(); }, [loadChanges, files.length, turns]);
-  const askUndo = async (runId: number) => {
+  useEffect(() => {
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadChanges(); }, CHANGES_MS);
+    return () => clearInterval(timer);
+  }, [loadChanges]);
+  const askUndo = async (runId: number, button: HTMLButtonElement) => {
+    opener.current = button;
     try { setUndo({ runId, info: await api.runCheckpoint(runId) }); } catch { toast(t("process.undoFailed")); }
   };
 
@@ -158,7 +167,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
               <span className="min-w-0 flex-1 truncate">{turn.at ? formatUiDateTime(turn.at, i18n.language) : ""}</span>
               {turn.undone ? <span className="shrink-0 rounded bg-fill px-1.5 text-[10.5px]" data-testid={`overview-undone-${turn.run_id}`}>
                 {t("workbench.undone")}</span>
-                : <button type="button" className={link} onClick={() => void askUndo(turn.run_id)}
+                : <button type="button" className={link} onClick={(e) => void askUndo(turn.run_id, e.currentTarget)}
                   data-testid={`overview-undo-${turn.run_id}`}>{t("process.undoTurn")}</button>}
             </div>
             <ul className="mt-0.5 space-y-0.5">{shown.map((p) => {
@@ -166,7 +175,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
               return <li key={`${p.folder}/${p.path}`} className="flex min-w-0 items-center gap-2 text-[12.5px]"
                 title={isolate(`${p.folder}/${p.path}`)}>
                 <span className={`min-w-12 shrink-0 text-[11px] ${KIND_COLOR[p.kind]}`}>{t(`workbench.${p.kind}`)}</span>
-                <span className="shrink-0 truncate" data-testid="overview-change-name">{isolate(name)}</span>
+                <span className="min-w-0 max-w-[70%] truncate" data-testid="overview-change-name">{isolate(name)}</span>
                 {dir && <span className="min-w-0 flex-1 truncate text-[11px] text-subtle-foreground" dir="rtl">{isolate(dir)}</span>}
               </li>;
             })}</ul>
@@ -177,9 +186,10 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
         })}</ul>
         {undo && <UndoTurnSheet runId={undo.runId} info={undo.info} onClose={() => {
           setUndo(null);
-          void loadChanges();
-          // The Undo button that opened the sheet may be gone now: focus the section, not the page.
-          requestAnimationFrame(() => heading.current?.focus());
+          // Back to the Undo button that opened the sheet (Cancel); once the list shows the turn undone, that
+          // button is gone, so the section's heading, not the page.
+          void loadChanges().then(() => requestAnimationFrame(() =>
+            (opener.current?.isConnected ? opener.current : heading.current)?.focus()));
         }} />}
       </section>}
 

@@ -30,7 +30,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useWorkbench } from "../stores/workbenchStore";
 import { _resetChipCatalogs, ringRows } from "../components/models/ConversationModelChip";
 import Workbench from "../components/workbench/Workbench";
-import { connectorSummary, newestFirst, PATHS_SHOWN } from "../components/workbench/OverviewTab";
+import { CHANGES_MS, connectorSummary, newestFirst, PATHS_SHOWN } from "../components/workbench/OverviewTab";
 import { ApiError } from "../api/client";
 
 const cfg = { id: 1, provider: "deepseek", model: "deepseek-chat", is_primary: true, label: "DeepSeek" } as ProviderConfig;
@@ -272,7 +272,8 @@ describe("Changes after review (④参谋, PR 545)", () => {
   });
 
   it("undoes that turn's run, then reloads and keeps focus in the section", async () => {
-    files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });
+    // The server lists the turn as undone once the undo is done, so its Undo button goes.
+    files.changes.mockImplementation(async () => ({ turns: [turn(12, ["a.txt"], client.api.undoTurn.mock.calls.length > 0)] }));
     client.api.runCheckpoint.mockResolvedValue(info);
     client.api.undoTurn.mockResolvedValue({ files: { runs: [] } });
     useWorkbench.getState().show("overview");
@@ -282,6 +283,46 @@ describe("Changes after review (④参谋, PR 545)", () => {
     await waitFor(() => expect(client.api.undoTurn).toHaveBeenCalledWith(12, "files", undefined));
     await waitFor(() => expect(files.changes.mock.calls.length).toBeGreaterThanOrEqual(2));
     await waitFor(() => expect(document.activeElement?.textContent).toBe("workbench.chH"));
+  });
+
+  it("puts focus back on the Undo button when the sheet is cancelled", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });
+    client.api.runCheckpoint.mockResolvedValue(info);
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    fireEvent.click(await screen.findByTestId("undo-cancel"));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("overview-undo-12")));
+    expect(client.api.undoTurn).not.toHaveBeenCalled();
+  });
+
+  it("empties the list when the conversation changes, even if the new one's answer fails", async () => {
+    files.changes.mockResolvedValueOnce({ turns: [turn(12, ["a.txt"])] });
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();     // positive control
+    files.changes.mockRejectedValue(new Error("offline"));                        // not a 404: no empty list from it
+    view.rerender(<Workbench conversationId="c2" taskId={null} temporary={false}
+      models={{ configs: [cfg], llmProviders: [], onSetDefault: vi.fn() }} />);
+    await waitFor(() => expect(files.changes).toHaveBeenLastCalledWith("c2"));
+    expect(screen.queryByTestId("overview-changes")).toBeNull();
+  });
+
+  it("shows a turn whose checkpoint was written after the turn ended, at the next poll", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      files.changes.mockResolvedValue({ turns: [] });                             // the turn ended, finish not yet run
+      useWorkbench.getState().show("overview");
+      mount();
+      act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r", role: "arslan", text: "done" }] } as never); });
+      await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(2));
+      expect(screen.queryByTestId("overview-changes")).toBeNull();
+      files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });          // finish has written it now
+      await act(async () => { vi.advanceTimersByTime(CHANGES_MS); });
+      expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says so when the undo can't be read", async () => {
