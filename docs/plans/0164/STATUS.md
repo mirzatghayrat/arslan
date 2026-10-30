@@ -8,6 +8,15 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 | PR | What | Merge commit |
 |---|---|---|
+| #523 | SBX: listening denied for now; decide how it returns before SBX-3 (user, 2026-10-30) | `35afe571` |
+| #521 | Tests: the still-working beat test waits until the turn is recorded | `9b89f1d9` (main CI 41021298870 success; the runs on `48da0348`, `2e59cee4`, `ddedabcd`, `5af69382` and `0628d26c` were cancelled by the next merge, and this one covers them) |
+| #522 | Q1: kind-changing resend wording matches the code | `0628d26c` |
+| #517 | WB1-1: the workbench is a fixed row (Working folder, Progress, Browser); the Task tab goes; Bing words in the address field | `5af69382` |
+| #518 | DIFF1 and DIFF2 cards | `ddedabcd` |
+| #514 | WB1-3 Changes; Working folder chosen | `2e59cee4` |
+| #475 | INB2: "about you" memories take effect when the user is present and the conversation is clean | `48da0348` |
+| #515 | The v0.1.64 cut proposal (not adopted, see below) | `2e8a3b65` |
+| #513 | WB1-2 Overview; FRONT1 decided | `e8580458` |
 | #504 | Follow-up cards NAME1, TITLE1, MCPOUT1 | `b3f31303` |
 | #502 | CAP gh- follow-up: migration 0080 marks old Discover skills as outside | `12ff908f` (main CI 40990735670 success) |
 | #499 | CAP3a-1: capability rows (section, origin, deletable, last used); DELETE refuses built-ins | `89675b4d` |
@@ -79,7 +88,7 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 1. **#490** (Q1 #3, migration 0078) at `b9acf73b`: it merges #475 and #486 in, and adds the PUT-lock and `kind_of` guard follow-up. CI 41021432398 is a success. **Ready once ⓪Plan's reviewer's final glance says OK** (it's running).
 **Next, not ready yet (don't merge these):**
 
-2. **#512** (FRONT1: A plus the corrected B) at `4eeca06c`, which merges main in. ⓪Plan's effort=max review is running on `5d08b538`. It goes after #475 (hot file).
+2. **#512** (FRONT1: A plus the corrected B) at `e3a46233`. It conflicts with main, so ③Hands is syncing it, and ⓪Plan's reviewer is rechecking the fixes for F1–F3. Not ready.
 4. **#507** (SBX-2, Codex): not ready. Its macOS job has 3 real failures for Codex to fix, and the plumbing review asked for fixes. Astra's review is the user's to start. **#508** (ci.yml 69 → 359) is OK'd; the user merges it into the Codex branch.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
@@ -88,13 +97,13 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 | Lane | Work |
 |---|---|
-| ②Main | #475 waits for CI and the user. Next: the chat-liveness load-tolerance fix (test-only), then the pocket-deletion prep (it waits on the user's go), then #490's merge after #475 |
-| ③Hands | #512 (FRONT1) in review. Draft PRs for SBX-3a, 4a, 5a and 7 on SBX-1's builder (they stay unmerged until SBX-2 and SBX-M land). Then NAME1 and TITLE1 |
-| ⑤CAP | SKF1, then UNI1a (the backend; UNI1b's notice needs a mock first), then SEC1 and MCPOUT1 |
-| ⑥Helper | The final SB1-0 and WB1-0 mocks are sent, each with a "left for you to pick" bar. STY #452 rebases onto main. Then WB1-1 on main (web only) |
+| ②Main | #490 (waits on the reviewer's final glance). The pocket-deletion PR (committed; it opens as a draft once its suite is green, and waits on the user's go) |
+| ③Hands | #512 sync and recheck. SBX-3a is draft #520 (part 1; the private TMPDIR next; it doesn't merge before SBX-2 and SBX-M). Then 4a, 5a, 7, NAME1, TITLE1. The ci.yml bump to 362 for #507 |
+| ⑤CAP | SKF1 is #519 (effort=max review on `e6b339ce`), then UNI1a (the backend; UNI1b's notice needs a mock first), then SEC1 and MCPOUT1 |
+| ⑥Helper | WB1-1 merged (#517). STY #452 rebased (a draft until the user's read). Next: WB1-2 (Overview), then WB1-3 |
 | ①iOS | Q1c is done: build 30 is on TestFlight (the user OK'd it on 2026-10-29). An independent review of its Bridge contract commit is running. The real-Mac end-to-end needs a 0.1.64 dev build on the user's Mac |
 | Codex (via ⑦Codex) | SBX-2 #507 fixes |
-| ⓪Plan | Reviews as PRs open; STATUS; the cut proposal (#515) |
+| ⓪Plan | Reviews as PRs open (#490, #512, #519, #507 plumbing, iOS bde7b9f); STATUS. The cut proposal #515 was not adopted |
 
 ## Waiting on the user
 
