@@ -467,11 +467,16 @@ with no `conversation_id` meant it. It is retired once the iPhone's Quick Ask sh
   a `chat.send` and a `chat.history` that name no conversation. Builds up to 27 send Share-sheet drafts that
   way; they show the error, and the Mac never re-creates the pocket.
 - The Bridge never links it, so no `chat.event`, `job.event`, `approval.request`, file offer or Mac-typed
-  message about it reaches a phone, and a card in it is answered on the Mac only. `conversations.result`
-  never lists it, and `status.snapshot` leaves out its jobs.
+  message about it reaches a phone, and a card in it is answered on the Mac only. The Mac leaves it out of
+  `conversations.result` before the page is cut, `status.snapshot` leaves out its jobs, and `run.get` for one
+  of its runs is `not_found` (a run id is a number, so a phone could name one it was never sent).
+- Builds up to 27 send a Share-sheet draft's files (`file.offer`, which names no conversation) before its
+  `chat.send`: the Mac saves them in Inbox/iPhone and reads their text, then refuses the send, so those copies
+  stay there.
 - Not covered: `status.snapshot.waiting_approvals` (and `activity.waiting`) count cards in every
-  conversation, the pocket's included; they name no conversation. `run.get` and `file.get` name a run or a
-  file, not a conversation: a phone can only name ones it was sent before the pocket was retired.
+  conversation, the pocket's included; they name no conversation. `file.get` names a file: an id carries 64
+  random bits (`run_<n>_<16 hex>_<name>`) and is learned only from a run result or an event, which no longer
+  name the pocket, so only a phone that kept one from before can fetch that file.
 
 ### 5.4 Error codes
 

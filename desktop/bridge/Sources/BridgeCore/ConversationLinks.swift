@@ -34,7 +34,8 @@ public actor ConversationLinks {
     /// 2026-10-29): its old messages stay on the Mac as an ordinary conversation, read and continued there only.
     /// A phone frame that names it is refused `not_found` before anything reaches the Mac, and so is a chat.send or
     /// chat.history that names no conversation (which meant the pocket). It is never linked, so nothing about it
-    /// reaches a phone, and it is never in a phone's list or status.
+    /// reaches a phone; the Mac leaves it out of the phone's list (server/services/phone_ids.py), and its jobs and
+    /// runs never reach a phone either (StatusReporter, run.get).
     public static let pocket = "pocket"
     /// §5.8: a conversation the phone starts names itself `phone-` and a lowercase UUID v4.
     static let phoneConversationID = try! NSRegularExpression(
@@ -485,10 +486,7 @@ public actor ConversationLinks {
                     guard let time = before as? String else { throw BridgeError.code("bad_request") }
                     query += "&before=\(time.pathSegment)"                // a time's + must not arrive as a space
                 }
-                var result = try await backend.json("/api/v1/phone/conversations?\(query)")
-                if let rows = result["conversations"] as? [[String: Any]] {            // Q1 #4: never the pocket
-                    result["conversations"] = rows.filter { $0["id"] as? String != Self.pocket }
-                }
+                let result = try await backend.json("/api/v1/phone/conversations?\(query)")
                 _ = try await mailbox.send(type: "conversations.result", body: result, to: received.from)
                 await linkLive(now: now)                 // §5.7: what the list shows stays live
             case "chat.history":
@@ -500,6 +498,9 @@ public actor ConversationLinks {
             case "run.get":
                 guard let run = body["run_id"] as? Int else { throw BridgeError.code("malformed") }
                 let result = try await backend.json("/api/v1/phone/runs/\(run)")
+                // A run id is a number, so a phone can name one it was never sent (#525 review, F1): one in the
+                // retired pocket is not there, and its files' ids go nowhere.
+                guard result["conversation_id"] as? String != Self.pocket else { throw BridgeError.code("not_found") }
                 _ = try await mailbox.send(type: "run.result", body: result, to: received.from)
             case "task.start":
                 let clientID = body["client_task_id"] as? String ?? ""

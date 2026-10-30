@@ -270,18 +270,6 @@ final class QuickAskTests: XCTestCase {
         XCTAssertTrue(p.channels.opened.isEmpty, "never linked")
     }
 
-    func testThePocketIsNeverListedForAPhone() async throws {
-        let p = try await pair()
-        p.backend.answers["/api/v1/phone/conversations?limit=20"] = .success(["conversations": [
-            ["id": ConversationLinks.pocket, "title": "what's on today?", "updated_at": "2026-10-30T08:00:00Z", "kind": "chat"],
-            ["id": "trip", "title": "Trip", "updated_at": "2026-10-29T08:00:00Z", "kind": "chat"]], "has_more": false])
-        try await p.phone.send(type: "conversations.list", body: ["limit": 20], to: "mac-1")
-        try await run(p)
-        let said = try await heard(p)
-        let result = try XCTUnwrap(said.first { $0.type == "conversations.result" })
-        XCTAssertEqual((body(result)["conversations"] as? [[String: Any]])?.map { $0["id"] as? String }, ["trip"])
-    }
-
     /// The Mac lists the conversations it keeps live by recency, the pocket included when the window used it last.
     /// It stays unlinked, so a turn in it on the Mac puts nothing on the wire for any phone.
     func testThePocketIsNeverLinkedEvenWhenTheMacListsItLive() async throws {
@@ -292,6 +280,24 @@ final class QuickAskTests: XCTestCase {
         XCTAssertEqual(Set(p.channels.opened.keys), ["trip"])
         let said = try await heard(p)
         XCTAssertEqual(said.map(\.type), ["hello"])
+    }
+
+    /// A run id is a number, so a phone can name a run it was never sent, a turn typed in the pocket on the Mac
+    /// included (#525 review, F1). One whose result names the pocket is not there, and its files' ids go nowhere.
+    func testARunInThePocketIsNotFound() async throws {
+        let p = try await pair()
+        p.backend.answers["/api/v1/phone/runs/88"] = .success(["run_id": 88, "conversation_id": ConversationLinks.pocket,
+                                                              "title": "typed in the pocket on the Mac",
+                                                              "files": [["id": "run_88_0123456789abcdef_a.md"]]])
+        p.backend.answers["/api/v1/phone/runs/87"] = .success(["run_id": 87, "conversation_id": "task-ab12", "title": "Q3"])
+        let refused = try await p.phone.send(type: "run.get", body: ["run_id": 88], to: "mac-1").id
+        try await p.phone.send(type: "run.get", body: ["run_id": 87], to: "mac-1")
+        try await run(p)
+        let got = try await heard(p)
+        XCTAssertEqual(got.map(\.type), ["error", "run.result"])
+        XCTAssertEqual(errors(got).map(\.code), ["not_found"])
+        XCTAssertEqual(errors(got).map(\.related), [refused])
+        XCTAssertEqual(body(got[1])["run_id"] as? Int, 87)
     }
 
     func testAJobInThePocketIsLeftOutOfThePhonesStatus() async throws {

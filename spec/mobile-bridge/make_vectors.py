@@ -73,6 +73,8 @@ def positives() -> list[dict]:
                    "exchange_public_key": r.b64(r.public_exchange(raw(MAC, "exchangeKey")))}
     approval = {"approval_id": "appr-1", "action": "Delete 3 files", "target": "~/Arslan/old", "risk": "delete",
                 "task_id": "task-1", "task_title": "Tidy downloads", "expires_at": "2026-10-03T00:05:00Z"}
+    # Sealing fixtures: the `pocket` in the bodies below is sample text, kept so the vectors stay byte-identical.
+    # The conversation itself is retired (protocol §5.9), and the Mac never sends a frame naming it.
     return [
         crypto_vector("phone-message", PHONE, MAC, envelope(PHONE, MAC, "chat.send", {
             "text": "Vector request", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),

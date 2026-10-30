@@ -34,17 +34,17 @@ def _message(id_, cid, role, text, at, run_id=None, display=None):
 async def test_the_list_is_newest_first_with_protocol_timestamps(client):
     await _seed(client, [
         _message(1, "trip", "user", "Plan a  trip to Acme City", "2026-10-01T08:00:00"),
-        _message(2, "pocket", "user", "remind me", "2026-10-03T09:30:15.123456"),
+        _message(2, "c-remind", "user", "remind me", "2026-10-03T09:30:15.123456"),
         _message(3, "trip", "arslan", "Sure", "2026-10-02T08:00:00"),
     ])
     got = (await client.get("/api/v1/phone/conversations")).json()
     assert got == {"conversations": [
-        {"id": "pocket", "title": "remind me", "updated_at": "2026-10-03T09:30:15Z",
+        {"id": "c-remind", "title": "remind me", "updated_at": "2026-10-03T09:30:15Z",
          "kind": "chat", "state": "idle", "origin": "mac", "preview": "remind me", "files": 0},
         {"id": "trip", "title": "Plan a trip to Acme City", "updated_at": "2026-10-02T08:00:00Z",
          "kind": "chat", "state": "idle", "origin": "mac", "preview": "Sure", "files": 0},
-    ], "has_more": False}, "the retired pocket is an ordinary conversation to the Mac (Q1 #4; the Bridge keeps it from phones)"
-    assert [c["id"] for c in (await client.get("/api/v1/phone/conversations?limit=1")).json()["conversations"]] == ["pocket"]
+    ], "has_more": False}
+    assert [c["id"] for c in (await client.get("/api/v1/phone/conversations?limit=1")).json()["conversations"]] == ["c-remind"]
     assert (await client.get("/api/v1/phone/conversations?limit=0")).status_code == 422
 
 
