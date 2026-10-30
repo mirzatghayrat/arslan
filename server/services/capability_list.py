@@ -43,21 +43,28 @@ SETTING_SWITCHES = {
 }
 
 
+class _Row(dict):
+    """A row as the page gets it; `uses` is not in it (#499 second review 4: a key popped before sending
+    would leak on any path that skipped the pop)."""
+    __slots__ = ("uses",)
+
+
 def _row(key: str, state: str, *, tools: tuple[str, ...] = (), switch: str | None = None,
          reason: str | None = None, fix: str | None = None, name: str | None = None,
          detail: str | None = None, section: str = "builtin", origin: str = "builtin",
          source_id: str | None = None, uses: tuple[str, ...] | None = None, family: str | None = None,
-         removable: bool = True, reach: str | None = None) -> dict:
+         removable: bool = True, reach: str | None = None) -> _Row:
     """`uses`: the tools whose calls count as this row's use, whatever its state (default: `tools`); `family`:
     a tool-name prefix whose every call counts too (the browser's, Hands', Shortcuts'). `source_id`: the
     capability source of what was installed from a card (its dossier). `removable`: False when `remove` would
     refuse the row whatever its origin (a skill key that is not a plain key), so the page offers no button.
     `reach`: how a connection is reached (its command and arguments, or its address), which the page's search
     matches too (#500 recheck: "the one I pointed at playwright" is how people find it)."""
-    return {"key": key, "state": state, "tools": list(tools), "switch": switch, "reason": reason,
-            "fix": fix, "name": name, "detail": detail, "section": section, "origin": origin,
-            "deletable": origin in DELETABLE and removable, "source_id": source_id, "reach": reach,
-            "_uses": (tools if uses is None else uses, family)}
+    row = _Row(key=key, state=state, tools=list(tools), switch=switch, reason=reason, fix=fix, name=name,
+               detail=detail, section=section, origin=origin, deletable=origin in DELETABLE and removable,
+               source_id=source_id, reach=reach)
+    row.uses = (tools if uses is None else uses, family)
+    return row
 
 
 async def _builtin_rows() -> list[dict]:
@@ -237,12 +244,16 @@ def _reach(server: dict, runtime: dict | None) -> str:
 
 
 async def _installed_servers() -> dict[int, str]:
-    """Connections installed from a card: server id -> its capability source."""
-    from server.db.models import CapabilitySource
+    """Connections installed from a card: server id -> its capability source. Only a source that is not removed,
+    and only the server that was there when it was installed: a scan-blocked install deleted its server and kept
+    the number, as every removal did before v0.1.64, and the next server added may get that number
+    (mcp_servers.id has no AUTOINCREMENT; #499 second review 1)."""
+    from server.db.models import CapabilitySource, MCPServer
     async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.execute(select(CapabilitySource.mcp_server_id, CapabilitySource.id).where(
-            CapabilitySource.kind == "mcp", CapabilitySource.mcp_server_id.is_not(None),
-            CapabilitySource.state != "removed"))).all()
+        rows = (await db.execute(select(CapabilitySource.mcp_server_id, CapabilitySource.id).join(
+            MCPServer, MCPServer.id == CapabilitySource.mcp_server_id).where(
+            CapabilitySource.kind == "mcp", CapabilitySource.state != "removed",
+            MCPServer.created_at <= CapabilitySource.installed_at))).all()
     return {server_id: source_id for server_id, source_id in rows}
 
 
@@ -282,8 +293,12 @@ async def _method_rows() -> list[dict]:
         await db.commit()                          # the defaults, written on first read
         used = dict((await db.execute(select(TaskWorker.method_key, func.max(TaskWorker.created_at))
                                       .group_by(TaskWorker.method_key))).all())
-    return [{**_row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills"),
-             "revision": m["revision"], "_last": used.get(m["key"])} for m in methods]
+    rows = []
+    for m in methods:
+        row = _row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills")
+        row.update(revision=m["revision"], last_used=_when(used.get(m["key"])))
+        rows.append(row)
+    return rows
 
 
 # read_skill's key, from the call's stored arguments (`args_summary`: its JSON, cut at 200 characters).
@@ -313,23 +328,19 @@ def _when(*times) -> str | None:
     return latest.isoformat() + "Z" if latest else None
 
 
-async def _servers_added() -> dict[int, datetime]:
-    """When each connection was added. A server id is reused once the newest one is deleted (mcp_servers.id
-    has no AUTOINCREMENT), so a call before that is the old server's (#499 review F5)."""
-    from server.db.models import MCPServer
-    async with db_session.AsyncSessionLocal() as db:
-        return dict((await db.execute(select(MCPServer.id, MCPServer.created_at))).all())
-
-
 async def capabilities() -> list[dict]:
+    from server.db.models import MCPServer
     rows = [*await _builtin_rows(), *await _mcp_rows(), *await _skill_rows(), *await _method_rows()]
     tools, skills = await _last_used()
-    added = await _servers_added()
+    # When each connection was added. A server id is reused once the newest one is deleted (mcp_servers.id
+    # has no AUTOINCREMENT), so a call before that is the old server's (#499 review F5).
+    async with db_session.AsyncSessionLocal() as db:
+        added = dict((await db.execute(select(MCPServer.id, MCPServer.created_at))).all())
     for row in rows:
-        uses, family = row.pop("_uses")
-        if "_last" in row:
-            row["last_used"] = _when(row.pop("_last"))
-        elif (server := _server_id(row["key"])) is not None:
+        uses, family = row.uses
+        if "last_used" in row:                                       # a method row says its own
+            continue
+        if (server := _server_id(row["key"])) is not None:
             since = added.get(server)
             row["last_used"] = _when(*(when for key, when in tools.items()
                                        if key.startswith(f"mcp_{server}__") and (since is None or when >= since)))
@@ -394,9 +405,9 @@ class NotFound(Exception):
 async def remove(key: str) -> None:
     """Delete one row the page shows a delete button for (`deletable`), and refuse every other here, on the
     server (the CAP card, security surface): a built-in tool or skill is only switched. A skill goes with its
-    capability source marked removed and its scripts to the Trash. A connection installed from a card goes
-    through capability_install.remove (its folder to the Trash); one added by hand through delete_server.
-    A skill key that is not a plain key is refused before anything is read."""
+    capability source marked removed, and its scripts and a copy of its text to the Trash. A connection
+    installed from a card goes through capability_install.remove (its folder to the Trash); one added by hand
+    through delete_server. A skill key that is not a plain key is refused before anything is read."""
     if key.startswith("skill:") and safe_skill_key(key[6:]):
         return await _remove_skill(key[6:])
     if (server := _server_id(key)) is not None:
@@ -404,19 +415,43 @@ async def remove(key: str) -> None:
     raise NotRemovable(key)
 
 
-async def _remove_skill(skill_key: str) -> None:
-    """The scripts go to the Trash before the row goes: a failed move leaves the skill whole, never a row-less
-    folder the next skill of that key would pick up (#499 review F4)."""
+def skill_to_trash(pack) -> None:
+    """Move a skill's scripts folder to the Trash with a copy of its text, before its row goes: a failed move
+    leaves the skill whole, never a row-less folder the next skill of that key would pick up (#499 review F4),
+    and no copy behind. The copy is a SKILL.md skill_import reads again: a skill's text is only in the
+    database, and one Arslan wrote is nowhere else (#499 second review 5). Nothing for a key that is not a
+    plain key (F3)."""
+    import yaml
+
     from server import config
-    from server.db.models import CapabilitySource, SkillPack
     from server.services import capability_install
+    if not safe_skill_key(pack.key):
+        return
+    folder = config.data_dir() / "skill_scripts" / pack.key
+    made = not folder.exists()
+    folder.mkdir(parents=True, exist_ok=True)
+    copy = folder / "SKILL.md"
+    head = yaml.safe_dump({"name": pack.name or pack.key, "description": pack.description or ""},
+                          allow_unicode=True, sort_keys=False)
+    copy.write_text(f"---\n{head}---\n\n{(pack.body or '').strip()}\n", encoding="utf-8")
+    try:
+        capability_install.to_trash(folder)
+    except Exception:
+        copy.unlink(missing_ok=True)
+        if made:
+            folder.rmdir()
+        raise
+
+
+async def _remove_skill(skill_key: str) -> None:
+    from server.db.models import CapabilitySource, SkillPack
     async with db_session.AsyncSessionLocal() as db:
         pack = await db.get(SkillPack, skill_key)
         if pack is None:
             raise NotFound(skill_key)
         if _skill_origin(pack) not in DELETABLE:
             raise NotRemovable(skill_key)
-    capability_install.to_trash(config.data_dir() / "skill_scripts" / skill_key)
+    skill_to_trash(pack)
     async with db_session.AsyncSessionLocal() as db:
         pack = await db.get(SkillPack, skill_key)
         source = await db.get(CapabilitySource, pack.source_id) if pack and pack.source_id else None
@@ -428,9 +463,11 @@ async def _remove_skill(skill_key: str) -> None:
 
 
 async def _remove_server(server_id: int) -> None:
+    from server.db.models import MCPServer
     from server.services import capability_install, mcp_service
-    if not any(s["id"] == server_id for s in await mcp_service.list_servers()):
-        raise NotFound(server_id)
+    async with db_session.AsyncSessionLocal() as db:
+        if await db.get(MCPServer, server_id) is None:
+            raise NotFound(server_id)
     source_id = (await _installed_servers()).get(server_id)
     if source_id:
         await capability_install.remove(source_id)
