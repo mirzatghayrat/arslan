@@ -273,6 +273,9 @@ class MCPProxyExecutor:
         ctx = permissions.Context(current.conversation_id if current else None,
                                   job_id=background_jobs._inside_job.get())
         title = f"Use {srv.label}\u2019s {self.external_name}?"
+        # The card shows the user the label as installed; the model reads it as a label (`label_of`, #495
+        # O2), so each refusal below names the server that way (S64-0c, the recheck of #498).
+        shown = label_of(srv)
         extra = {"mcp_server": srv.label, "mcp_tool": self.external_name}
         if read_only(self.annotations):
             await permissions.record_standing(permissions.Request(
@@ -283,7 +286,7 @@ class MCPProxyExecutor:
             # target off it and the yes would cover arguments nobody saw. Refused, never cut (not even
             # under a grant: every call that is not read-only has arguments a card can show in full).
             return self._refusal("too_long_to_show",
-                                 f"Not sent: the arguments of {srv.label}\u2019s {self.external_name} are "
+                                 f"Not sent: the arguments of {shown}\u2019s {self.external_name} are "
                                  f"{len(detail)} characters, more than a card can show the user "
                                  f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed.")
         frame = protocol.propose_action(uuid.uuid4().hex, "mcp_tool", target, detail)
@@ -297,9 +300,12 @@ class MCPProxyExecutor:
         if decision.allowed:
             return None
         code = {"user": "declined", "expired": "no_answer", "policy": "no_one_to_ask"}.get(decision.by, "not_allowed")
-        error = (f"The user did not allow {srv.label}\u2019s {self.external_name}."
-                 f"{' They said: ' + decision.note if decision.note else ''} Do not retry; report it."
-                 if decision.by == "user" else decision.model_text or f"{title} was not allowed.")
+        if decision.by == "user":
+            error = (f"The user did not allow {shown}\u2019s {self.external_name}."
+                     f"{' They said: ' + decision.note if decision.note else ''} Do not retry; report it.")
+        else:       # permissions' own words quote the card's title
+            error = (decision.model_text or f"{title} was not allowed.").replace(
+                title, f"Use {shown}\u2019s {self.external_name}?")
         return self._refusal(code, error)
 
     async def execute(self, args: dict) -> dict:
@@ -313,7 +319,7 @@ class MCPProxyExecutor:
             refused = await self._approve(srv, args)
         except Exception:  # noqa: BLE001 — a failed check is a refusal that never reached the server
             logger.warning("mcp approval failed for %s", self.key, exc_info=True)
-            refused = self._refusal("not_allowed", f"Not sent: Arslan could not check whether {srv.label}\u2019s "
+            refused = self._refusal("not_allowed", f"Not sent: Arslan could not check whether {label_of(srv)}\u2019s "
                                                    f"{self.external_name} may run. Tell the user.")
         if refused is not None:
             return refused

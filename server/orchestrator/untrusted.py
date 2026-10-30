@@ -109,15 +109,9 @@ def reaches_network(command: str) -> bool:
 
 
 # S64-0c: an MCP tool's key carries its server's raw tool name (`mcp_tool_key`), so a key whose name breaks
-# the MCP name rule may carry the server's words (a line break, an instruction). Wherever one is shown to the
-# model, the turn has read outside content.
-_MCP_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+# the MCP name rule (`breaks_mcp_name_rule` above) may carry the server's words (a line break, an
+# instruction). Wherever one is shown to the model, the turn has read outside content.
 _MCP_KEY = re.compile(r"mcp_\d+__(.*)", re.S)
-
-
-def breaks_mcp_name_rule(name) -> bool:
-    """A tool name the MCP rule does not allow: it is 1-128 characters of A-Za-z0-9_.- (no spaces)."""
-    return not _MCP_NAME.fullmatch(str(name))
 
 
 def odd_mcp_key(key: str) -> bool:
