@@ -166,11 +166,11 @@ def _app_request(app: dict, detail: str, *, step: str = "", frame_kind: str = "d
     from server.ws import protocol
     from server.services.hands_contract import shown_name
     bundle = str(app.get("bundle_id") or app.get("name") or "")
-    name = str(app.get("name") or bundle)
+    name = shown_name(app.get("name"), fallback=bundle)          # the card, "Always" and the ledger show it so
     return permissions.Request(
-        kind="app", target=bundle, title=f"Use {shown_name(name)}?", detail=detail,
+        kind="app", target=bundle, title=f"Use {name}?", detail=detail,
         always_label=hands_service.always_label(bundle, name),
-        frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or shown_name(name))[:300], detail),
+        frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or name)[:300], detail),
         extra={"app": name, "bundle_id": bundle, **({"step": step[:200]} if step else {})})
 
 
@@ -552,7 +552,9 @@ def _went_to_window(reply: dict) -> None:
     """Hands went to the desktop where the app's window is: say so to the model, and come back
     when the work that went there (this chat turn or background job) ends."""
     from server.services import desktop_status
-    app = ((reply.get("visit") or {}).get("app") if isinstance(reply.get("visit"), dict) else None) or "the app"
+    from server.services.hands_contract import shown_name
+    app = shown_name((reply.get("visit") or {}).get("app") if isinstance(reply.get("visit"), dict) else None) \
+        or "the app"
     _visit_note.set(f"Arslan went to the desktop where {app}'s window is (the screen edge glows; the user's "
                     "keys are held and given back). It comes back when this work ends, or at once if the user "
                     f"touches anything: keep the steps in {app} together.\n")
@@ -650,13 +652,22 @@ async def _resolve_app(name: str, job_id: str | None):
     app = (result.data or {}).get("app")
     if not isinstance(app, dict) or not app.get("name"):
         return None, hands_contract.Result(ok=False, code="app_not_running", refused=True)
-    return app, None
+    return _shown(app), None
+
+
+def _shown(app: dict) -> dict:
+    """An app as Hands gave it, with `name` cleaned for every card and result the app reaches (⓪Plan's review of
+    #554): one line, no control or format characters, else its bundle id. Hands is still told the app by its
+    bundle id, else by the name it gave (`hands_name`, see `_target`)."""
+    from server.services import hands_contract
+    return {**app, "hands_name": app.get("hands_name") or app.get("name"),
+            "name": hands_contract.shown_name(app.get("name"), fallback=str(app.get("bundle_id") or ""))}
 
 
 def _target(app: dict) -> str:
     """How Hands is told which app (§15 A19): its bundle id — another running app may share its
     name (WeChat's helper is also "WeChat") — else its name."""
-    return str(app.get("bundle_id") or app.get("name") or "")
+    return str(app.get("bundle_id") or app.get("hands_name") or app.get("name") or "")
 
 
 async def _window_id(app: str, title: str, job_id: str | None) -> tuple[str | None, list[str], bool]:
@@ -749,6 +760,7 @@ class DesktopAppsExecutor:
     timeout_s = RUN_S + 30
 
     async def execute(self, args: dict) -> dict:
+        from server.services import hands_contract
         if not desktop_available():
             return _unavailable()
         result = await _hands("list_apps", {})
@@ -758,7 +770,8 @@ class DesktopAppsExecutor:
                  "click_only": " (click and scroll only)"}
         # §15 A19: a helper may carry its app's name (WeChat's WeChatAppEx is also "WeChat").
         helper = " (a background helper with no Dock icon: usually not the app meant)"
-        lines = [f"- {a.get('name')} — {a.get('bundle_id')}{notes.get(a.get('tier'), '')}"
+        lines = [f"- {hands_contract.shown_name(a.get('name'), fallback=str(a.get('bundle_id') or ''))} — "
+                 f"{a.get('bundle_id')}{notes.get(a.get('tier'), '')}"
                  f"{helper if a.get('regular') is False else ''}"
                  for a in (result.data or {}).get("apps") or []
                  if a.get("bundle_id")]    # helper processes (agent-desktop itself, measured) have none
@@ -1101,11 +1114,11 @@ class _DesktopAct:
 
     def _risky(self, args: dict, target: dict, app: dict) -> str | None:
         """Why this action asks every time, or None."""
-        from server.services import hands_service
+        from server.services import hands_contract, hands_service
         label = target.get("name") if isinstance(target, dict) else None
         role = str(target.get("role") or "").lower() if isinstance(target, dict) else ""
         if self.op in ("click", "select") and role not in _CONTENT_ROLES and hands_service.risky_label(label):
-            return f"“{label}”"
+            return f"“{hands_contract.shown_name(label, 120)}”"
         return None
 
     async def execute(self, args: dict) -> dict:
@@ -1140,7 +1153,7 @@ class _DesktopAct:
             if not described.ok:
                 _trace(self.op, name, described.code or "error", started)
                 return _failed(described, app=name, nothing_sent=True)
-            app = described.data.get("app") or {"name": name}
+            app = _shown(described.data.get("app") or {"name": name})
             target = described.data.get("target") or {}
             tier = described.data.get("tier")
             if tier in _TIER_ALLOWS and self.op not in _TIER_ALLOWS[tier]:
@@ -1148,7 +1161,7 @@ class _DesktopAct:
             if target.get("password") and self.op in ("type", "set_value"):
                 return _failed(hands_contract.Result(ok=False, code="password_field", refused=True))
         bundle = str(app.get("bundle_id") or app.get("name"))
-        label = target.get("name") or args.get("element") or ""
+        label = hands_contract.shown_name(target.get("name") or args.get("element") or "", 120)
         if self.op == "menu":
             label = " › ".join(_menu_path(args))
         if (other := _scheduled_count(run, bundle)) is not None:
