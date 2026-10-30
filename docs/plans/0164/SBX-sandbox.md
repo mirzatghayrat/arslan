@@ -249,10 +249,16 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the proxy has no site list (NET adds it later, `lead-roadmap.md:87-91`). Its value in v0.1.64 is that the kernel lets out nothing else (no raw sockets, no DNS channel) and the proxy can log host names locally;
   - S2a-1's offline rule becomes `(deny network*)` including the proxy port, as today.
 - Mode "as today" (Q1 option N-b): network open in the sandbox, S2a-1 cut unchanged; proxy-only moves to NET (v0.1.65).
-- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface, so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
+- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (the user's finding, not yet measured in this repo; SBX-M measures it), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
   - SBX-2's candidate preset denies all listening (`network-bind` and inbound);
   - "local dev servers work" is postponed;
-  - **before SBX-3 wires the base into commands, this card must decide how listening comes back** without opening all interfaces. Options to weigh then include a fixed port range, a check before the command runs, a loopback-only helper, or listening that a card grants;
+  - **before SBX-3 wires the base into commands, this card must decide how listening comes back** without opening all interfaces. Options to weigh then (③Hands, 2026-10-30; none of them is seatbelt-only):
+    1. a loopback relay outside the sandbox: the server listens on a Unix socket under its own TMPDIR or work folder, which seatbelt can confine by path, and Arslan listens on `127.0.0.1:<port>` and relays to it. It only works for servers that can listen on a Unix socket, such as Node's `listen(path)`, uvicorn/gunicorn `--uds`, nginx or PostgreSQL. Most framework dev servers can't by default;
+    2. a Network Extension content filter keyed on the process. This is the only kernel-side per-process way to refuse inbound traffic that isn't loopback. It needs a system extension, its entitlement and the user's approval. It's heavy, but it's also where NET could sit later;
+    3. a check after the bind that stops a listener on an address that isn't loopback. That's a detector, not a boundary;
+    4. listening that a card grants for one run.
+
+    Before deciding, read at the source how Anthropic's sandbox-runtime writes its `allowLocalBinding` rule on macOS, and whether it notes the same all-interfaces behaviour;
   - until that is decided, the bind and inbound bullets below describe the goal, not the preset, and a dev server inside the sandbox gets the usual re-run card.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
