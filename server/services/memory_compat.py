@@ -55,15 +55,22 @@ async def save_facts(facts):
         if any(fact_dedup.similar(content, other) for other in known):
             continue
         known.append(content)
-        # MEM1: the same meaning in other words updates the older entry (memory_merge); a merge is not a new
-        # memory, so it is not announced ("remembered … [Undo]" would undo the older entry).
-        match = await memory_merge.same_meaning(content, kind="preference", scope=scope, core=None,
-                                                owner_id=actor.owner_id, conversation_id=ctx.conversation_id)
+        # MEM1: the same meaning in other words updates the older entry (memory_merge). A refresh is not a new
+        # memory, so it is not announced ("remembered … [Undo]" would undo the older entry); a proposal it makes or
+        # joins is, as INB2's memory_proposed, in the write's own words (②Main's review of #559, L2).
+        match = await memory_merge.same_meaning(content, ctx=ctx, kind="preference", scope=scope, core=None,
+                                                sensitive=bool(fact.get("sensitive")))
         try:
             async with repository() as repo:
                 write = MemoryWrite(content=content, scope=scope,
                                     sensitivity="sensitive" if fact.get("sensitive") else "normal")
-                if match is not None and await repo.merge_into(match.id, match.version, write, actor) is not None:
+                merged = await repo.merge_into(match.id, match.version, write, actor) if match else None
+                if merged is not None:
+                    if merged.get("proposal_id"):
+                        dto = await fact_dto(repo, await repo.get(merged["id"]))
+                        dto.content, dto.status = content, "proposed"
+                        dto.proposal_id, dto.reason = merged["proposal_id"], merged.get("reason")
+                        result.append(dto)
                     continue
                 value = await repo.create(write, actor)
                 dto = await fact_dto(repo, await repo.get(value["id"]))

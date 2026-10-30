@@ -68,6 +68,11 @@ _SYSTEM = (
 # one-off task state: a path, a local address or port, what the user is doing right now. Cheap and deliberately
 # narrow: a durable fact that happens to match is lost, never a guess stored.
 _GENDERED = re.compile(r"\b(?:he|she|him|his|her|hers|himself|herself)\b", re.IGNORECASE)
+# A pronoun in a fact that also names another person is about that person (②Main's review of #559, L3).
+_SOMEONE_ELSE = re.compile(
+    r"\b(?:sister|brother|mother|father|mom|mum|dad|wife|husband|spouse|partner|girlfriend|boyfriend|son|daughter"
+    r"|child|kid|parent|grand(?:mother|father|ma|pa)|aunt|uncle|cousin|niece|nephew|friend|colleague|coworker"
+    r"|boss|manager|teacher|doctor|neighbou?r|roommate)s?\b", re.IGNORECASE)
 _TASK_STATE = re.compile(
     r"(?<![\w/])(?:~/|/(?:[\w.-]+/)+)|\b[A-Za-z]:\\"                          # a path
     r"|\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?|\bports?\s*\d{2,5}\b|端口\s*\d+"  # a local address; lang-check: allow (Chinese input to match)
@@ -89,7 +94,8 @@ def parse(content: str | None) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         text = " ".join(str(item.get("content") or "").split())[:MAX_FACT_CHARS]
-        if text and not _GENDERED.search(text) and not _TASK_STATE.search(text):
+        guessed = _GENDERED.search(text) and not _SOMEONE_ELSE.search(text)
+        if text and not guessed and not _TASK_STATE.search(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]
 
