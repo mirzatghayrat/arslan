@@ -37,8 +37,8 @@ def _world(execution_db, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
     (tmp_path / "data").mkdir()
 
-    async def mit(repo):
-        return "MIT", "LICENSE"
+    async def mit(repo, version=None):
+        return "MIT", f"LICENSE@v{version}" if version else "LICENSE@HEAD"
     monkeypatch.setattr(capability_install, "source_license", mit)
 
     async def ensure(name):
@@ -106,6 +106,7 @@ async def test_a_pypi_card_shows_the_lock_and_a_yes_installs_from_it(monkeypatch
     assert card["lock"] == {"sha256": hashlib.sha256(LOCK.encode()).hexdigest(), "count": 2,
                             "packages": [{"name": "notes-mcp", "version": "1.2.0"}, {"name": "httpx", "version": "0.27.0"}]}
     assert card["runtime_download"] is None                                # Arslan's own runtime is ready first
+    assert card["license"] == {"spdx": "MIT", "read_from": "LICENSE@v1.2.0"}  # CAP4a-3: what the gate read
     assert _world == [("uv", "pip", "compile"), ("uv", "venv", "venv"), ("uv", "pip", "install")]   # one resolve
     async with db_session.AsyncSessionLocal() as db:
         row = (await db.execute(__import__("sqlalchemy").select(CapabilitySource))).scalars().one()
@@ -144,7 +145,7 @@ async def test_a_declined_card_installs_nothing_and_keeps_no_lock(monkeypatch, _
 
 
 async def test_a_license_that_is_not_usable_resolves_nothing_and_shows_no_card(monkeypatch, _world):
-    async def gpl(repo):
+    async def gpl(repo, version=None):
         return None, "LICENSE"
     monkeypatch.setattr(capability_install, "source_license", gpl)
     out, cards, _ = await _propose(monkeypatch, _world, PYPI)

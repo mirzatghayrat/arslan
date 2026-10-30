@@ -97,7 +97,8 @@ async def test_the_card_is_built_from_the_search_result_not_the_models_words(exe
                                    "folders": [str(tmp_path / "Downloads"), "/nonexistent", "/"], "name": "evil-name",
                                    "license": "MIT-but-not"}, conversation_id="c-card", ask=_ask(seen=seen), emit=lambda e: None)
     card = seen[0]
-    assert card["name"] == "excel-mcp-server" and card["license"] == {"spdx": "MIT", "read_from": "github:LICENSE"}
+    # CAP4a-3: the license is what the gate read at the source (here fake_capability_prepare's), never the model's.
+    assert card["name"] == "excel-mcp-server" and card["license"] == {"spdx": "MIT", "read_from": "LICENSE"}
     assert card["folders"] == [str((tmp_path / "Downloads").resolve())]
     assert card["network"] is True                            # it asks for a secret key → a service
     assert [k["name"] for k in card["keys"]] == ["EXCEL_TOKEN"] and card["retry"] == "read the formulas"

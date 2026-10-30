@@ -268,7 +268,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             prepared = await capability_install.prepare(cand)
         except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
             return {"ok": False, "error": f"cannot be added: {exc.code}"}
-        card.update(lock=capability_install.lock_summary(prepared))
+        # CAP4a-3: the license the gate read, at the version being installed (`<file>@<ref>`), not the search's.
+        spdx, read_from = prepared["license"]
+        card.update(lock=capability_install.lock_summary(prepared), license={"spdx": spdx, "read_from": read_from})
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     try:

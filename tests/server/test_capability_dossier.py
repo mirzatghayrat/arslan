@@ -25,7 +25,7 @@ async def _installed(execution_db, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
     (tmp_path / "data").mkdir()
 
-    async def mit(repo):
+    async def mit(repo, version=None):
         return "MIT", "LICENSE"
 
     async def lock(root, identifier, version):                 # CAP4a-2: the lock before the card
