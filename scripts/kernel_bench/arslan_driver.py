@@ -102,7 +102,9 @@ class TurnTracker:
     jobs_open: set = field(default_factory=set)
     final_text: list = field(default_factory=list)
     approvals: int = 0
-    sandbox_cards: int = 0
+    # SBX-7: cards to run outside the sandbox, apart: asked up front, or a re-run after it stopped a command.
+    outside_cards: int = 0
+    retry_cards: int = 0
     declined: int = 0
     actions_declined: int = 0
     last_activity: float = 0.0
@@ -201,7 +203,10 @@ class TurnTracker:
             # outside the bench folder): declined, except Reminders for T1, which is the task.
             return frame.get("rule") != "apple-events" or "-T1-" in self.run_dir
         if frame.get("sandbox"):
-            self.sandbox_cards += 1
+            if frame["sandbox"] == "retry":
+                self.retry_cards += 1
+            else:
+                self.outside_cards += 1
             return False
         rule = frame.get("rule") or ""
         if rule == "apple-events":
@@ -284,7 +289,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                 if n < len(prompts):
                     snapshot(run_dir, n)
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
-            "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
+            "outside_cards": tracker.outside_cards, "retry_cards": tracker.retry_cards, "declined": tracker.declined,
             "actions_declined": tracker.actions_declined,
             "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}

@@ -26,14 +26,19 @@ def record(*, tool: str, args, result, ok: bool, error: str | None, ms: int | No
     except Exception:  # noqa: BLE001
         args_full = str(args)
     result_str = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, default=str)
-    buf.append({
+    entry = {
         "tool": tool,
         "args_full": _cap(args_full),
         "result_raw": _cap(result_str),
         "ok": bool(ok),
         "error": (_cap(error) if error else None),
         "ms": ms,
-    })
+    }
+    # SBX-7: a sandbox denial's code, kept whole however long the output that `result_raw` cuts.
+    denial = result.get("sandbox_denial") if isinstance(result, dict) else None
+    if isinstance(denial, str):
+        entry["denial"] = denial[:20]
+    buf.append(entry)
 
 
 def snapshot() -> list[dict]:

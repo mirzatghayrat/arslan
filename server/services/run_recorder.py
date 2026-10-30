@@ -468,4 +468,4 @@ class RunRecorder:
                 continue
             s["detail"] = {**s["detail"], "args_full": entry["args_full"],
                             "result_raw": entry["result_raw"], "error": entry.get("error")}
-            s["ref"] = {**s["ref"], "ok": entry["ok"]}
+            s["ref"] = {**s["ref"], "ok": entry["ok"], **({"denial": entry["denial"]} if entry.get("denial") else {})}

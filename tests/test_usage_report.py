@@ -25,7 +25,7 @@ CREATE TABLE run_steps (id INTEGER PRIMARY KEY, run_id INTEGER, kind TEXT, ref T
                         detail TEXT, duration_ms INTEGER);
 CREATE TABLE companion_tasks (id TEXT PRIMARY KEY, phase TEXT, pause_reason TEXT, created_at TEXT);
 CREATE TABLE approval_events (id INTEGER PRIMARY KEY, created_at TEXT, kind TEXT, target TEXT,
-                              detail TEXT, decided_by TEXT, decision TEXT);
+                              detail TEXT, decided_by TEXT, decision TEXT, extra TEXT);
 CREATE TABLE judgments (id INTEGER PRIMARY KEY, point TEXT, state TEXT, outcome TEXT,
                         created_at TEXT);
 CREATE TABLE conversation_events (id INTEGER PRIMARY KEY, kind TEXT, ref TEXT, summary TEXT,

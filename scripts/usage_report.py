@@ -107,6 +107,9 @@ SCHEMA_400 = (MODEL_CALL_FAILED + " AND instr(error_text, 'HTTP 400') > 0 AND ("
 WAITING = "phase = 'waiting_user'"
 # turn_facts.py:105 (facts) and orchestrator/memory.py:165 (summary), after the answer
 FACTS, SUMMARY = "scope = 'memory_facts'", "scope = 'memory'"
+# SBX-7: a run_command step whose result carried a sandbox denial code (run_recorder keeps it on `ref`), and the
+# ledger's outside cards by `extra.sandbox`: a re-run after the sandbox stopped a command, or asked up front.
+DENIED, SANDBOX_CARD = _json("s.ref", "denial") + " IS NOT NULL", _json("extra", "sandbox")
 
 # (sql, names): one row of counts per week. Every `?` pair is the week's (start, end).
 WEEKLY = [
@@ -125,6 +128,9 @@ WEEKLY = [
      f"FROM approval_events WHERE {_week('created_at')}", ("cards_shown", "cards_auto")),
     (f"SELECT {_n(FACTS)}, {_n(SUMMARY)} FROM usage_ledger WHERE {_week('ts')}",
      ("memory_facts", "memory")),
+    (f"SELECT {_n(DENIED)} {STEPS} AND {TOOL} = 'run_command'", ("rc_sandbox_denied",)),
+    (f"SELECT {_n(SANDBOX_CARD + ' = ' + _lit('retry'))}, {_n(SANDBOX_CARD + ' = ' + _lit('outside'))} "
+     f"FROM approval_events WHERE {_week('created_at')}", ("retry_cards", "outside_cards")),
 ]
 # name -> GROUP BY query: (code, count) or, for tools, (code, calls, failed).
 BREAKDOWNS = {
@@ -271,6 +277,13 @@ def render(weeks: list[date], data: dict) -> str:
            "reach the ledger only after S4a. (The judgments table's command-card rows went with "
            "the shadow judge in C4; old ones age out under KEEP_DAYS.)")
     split("### Cards shown, by kind (ledger)", plain(data["shown_by_kind"]))
+    weekly("## Sandbox", ["Commands it stopped", "Re-run cards", "Asked up front", "Re-run share"],
+           lambda w: [w["rc_sandbox_denied"], w["retry_cards"], w["outside_cards"],
+                      _pct(w["retry_cards"], w["retry_cards"] + w["outside_cards"])],
+           "SBX-7; counts only, and never sent anywhere. Commands it stopped: run_command steps whose "
+           "result carried a sandbox denial code (EPERM so far, so a floor, not an exact count). Cards: "
+           "the ledger's outside cards by `extra.sandbox`, written from SBX-7 on: a re-run after the "
+           "sandbox stopped a command, or asked up front.")
     weekly("## Post-turn model calls", ["memory_facts rows", "memory rows"],
            lambda w: [w["memory_facts"], w["memory"]],
            "usage_ledger rows: one per scope and model, so about one per call (a scope that "
