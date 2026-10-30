@@ -23,7 +23,7 @@ from arslan.companion.design import reference_data
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite, decide_write, naive_utc
 from server.db import session as db_session
 from server.db.models import (
-    ArslanSummary, MemoryDeletion, MemoryEntry, MemoryLegacyMap, MemoryProposal,
+    ArslanSummary, Judgment, MemoryDeletion, MemoryEntry, MemoryLegacyMap, MemoryProposal,
     MemoryRevision, MemorySource, MemoryStoreState, MemorySuppression, Project, Run,
 )
 
@@ -589,6 +589,8 @@ class MemoryRepository:
             MemoryRevision.entry_id == entry_id, MemoryRevision.id != revision_id))
         await self.db.execute(update(MemoryProposal).where(MemoryProposal.target_entry_id == entry_id)
                               .values(candidate=None, status="dismissed", reason="target_deleted"))
+        # MEM1 (JUDGE1's rule): the judge's rows about this entry go too (they keep digests, never its text).
+        await self.db.execute(delete(Judgment).where(Judgment.ref == f"memory:{entry_id}"))
         # Legacy derived snapshots predate receipt-level provenance. Invalidate them
         # rather than letting an old summary/prompt silently restore deleted memory.
         await self.db.execute(delete(ArslanSummary))
@@ -654,6 +656,7 @@ class MemoryRepository:
                 MemoryRevision.entry_id == entry.id, MemoryRevision.id != revision_id))
             await self.db.execute(update(MemoryProposal).where(MemoryProposal.target_entry_id == entry.id)
                                   .values(candidate=None, status="dismissed", reason="turn_undone"))
+            await self.db.execute(delete(Judgment).where(Judgment.ref == f"memory:{entry.id}"))
             await self._sync_index(entry.id)
         for _entry, sources in trimmed:
             await self.db.execute(delete(MemorySource).where(MemorySource.id.in_([s.id for s in sources])))

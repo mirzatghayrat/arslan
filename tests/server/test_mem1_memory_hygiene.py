@@ -276,7 +276,7 @@ async def test_the_judgments_ledger_keeps_no_memory_text(memory, monkeypatch):  
     kept = json.dumps(row.state)
     assert row.verdict is True and len(await _entries(memory)) == 1         # it did merge
     assert "short" not in kept and "brief" not in kept                       # neither text
-    assert row.ref == f"entry:{first['id']}"                                 # which entry, by id
+    assert row.ref == f"memory:{first['id']}"                                # which entry, by id
     assert all(value.startswith("sha256:") for value in row.state.values())
 
 
@@ -366,3 +366,33 @@ async def test_a_sensitive_candidate_is_not_sent_where_a_prompt_could_not_show_i
     assert asked == []
     await _write("remember", SAME, entry={"sensitive": True}, ctx=_ctx(allow_sensitive=True))
     assert any(state["existing"] == FIRST for state in asked)                # positive control
+
+
+async def test_deleting_the_entry_deletes_the_judgments_about_it(memory, judge):  # noqa: F811
+    from server.db.models import Judgment
+    from arslan.companion.memory import MemoryActor
+    from server.services.memory_repository import repository
+    first = await _write("remember", FIRST)
+    async with memory() as session:
+        session.add_all([Judgment(point="memory.same", mode="active", state={}, state_hash="h", ref=f"memory:{first['id']}"),
+                         Judgment(point="memory.same", mode="active", state={}, state_hash="h", ref="memory:another")])
+        await session.commit()
+    async with repository() as repo:
+        entry = await repo.get(first["id"])
+        await repo.delete_entry(entry.id, entry.version, MemoryActor(origin="user"))
+    async with memory() as session:
+        assert (await session.scalars(select(Judgment.ref))).all() == ["memory:another"]
+
+
+async def test_undoing_the_turn_that_taught_it_deletes_the_judgments_about_it(memory, judge):  # noqa: F811
+    from server.db.models import Judgment
+    from server.services.memory_repository import repository
+    run_id = await _run(memory, read_outside=False)
+    first = await _write("remember", FIRST, ctx=_ctx(run_id))
+    async with memory() as session:
+        session.add(Judgment(point="memory.same", mode="active", state={}, state_hash="h", ref=f"memory:{first['id']}"))
+        await session.commit()
+    async with repository() as repo:
+        assert await repo.forget_turns("c-inb2", set(), {run_id}) == 1          # the entry went with its turn
+    async with memory() as session:
+        assert (await session.scalars(select(Judgment.ref))).all() == []

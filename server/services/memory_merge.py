@@ -9,7 +9,8 @@ then decides what the write may do to it (INB2: a write that would wait never re
 What the judge is shown follows the rule for memory in any prompt (②Main's review of #559, H1): nothing when no memory
 may be shown in this context (personal_context.may_show_memory), and only entries whose sensitivity and use that
 context allows (personal_context.shown_to_model); a candidate the context could not show is not asked about either.
-The judgments ledger keeps the entry's id (`ref`) and digests, never either text (the point's `redact`).
+The judgments ledger keeps the entry's id (`ref=memory:<id>`) and digests, never either text (the point's
+`redact`); deleting or forgetting the entry deletes those rows (MemoryRepository, JUDGE1's rule).
 
 Not merged at all: the user's explicit request to remember something (its words are theirs, M1).
 
@@ -66,7 +67,7 @@ async def same_meaning(content: str, *, ctx, kind: str, scope, core: str | None,
     point = judgment.REGISTRY["memory.same"]
     for _, entry_id, version, text in nearest:
         verdict = await judgment.judge("memory.same", {"candidate": content, "existing": text},
-                                       ref=f"entry:{entry_id}", conversation_id=ctx.conversation_id)
+                                       ref=f"memory:{entry_id}", conversation_id=ctx.conversation_id)
         if verdict is None:
             return None                                   # no answer: no merge on a guess
         if verdict.yes(point.threshold):
