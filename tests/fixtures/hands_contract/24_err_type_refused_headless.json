@@ -15,7 +15,7 @@
  "expect": {
   "ok": false,
   "code": "POLICY_DENIED",
-  "hint": "use_set_value",
+  "hint": "needs_focus",
   "run": "not_reproducible",
   "note": "recorded 2026-10-03 with the fixture never activated: headless typing needs a focused field and Hands never takes focus; whether it is refused depends on the desktop, so the live check skips it"
  },

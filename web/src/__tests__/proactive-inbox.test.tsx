@@ -9,6 +9,7 @@ import * as client from "../api/client";
 import { ApiError } from "../api/client";
 import type { ProactiveItem } from "../api/proactive";
 import ProactiveInbox from "../components/proactive/ProactiveInbox";
+import { companionApi } from "../api/companion";
 
 const api = vi.hoisted(() => ({
   items: vi.fn(), accept: vi.fn(), snooze: vi.fn(), dismiss: vi.fn(), seen: vi.fn(), scan: vi.fn(),
@@ -102,6 +103,15 @@ describe("what is shown", () => {
     expect(await screen.findByText("Nothing needs your attention")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Choose what to watch" }));
     expect(p.onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("memory that waits is not in the Inbox: it is sorted in Memory, and the Inbox stays empty (INB2)", async () => {
+    const proposals = vi.spyOn(companionApi, "proposals").mockResolvedValue([{ id: 1, target_id: "e", target_version: 1,
+      candidate: null, reason: "sensitive", entry: { content: "x", sensitivity: "sensitive", created_at: "2026-10-06T00:00:00Z" } }] as never);
+    await show([]);
+    expect(await screen.findByText("Nothing needs your attention")).toBeTruthy();
+    expect(screen.queryByTestId("inbox-memory")).toBeNull();
+    expect(proposals).not.toHaveBeenCalled();
   });
 
   it("says when the list could not be loaded, and retries", async () => {
