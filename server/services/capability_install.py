@@ -335,20 +335,22 @@ def to_trash(path: Path, prefix: str = "Arslan capability") -> Path | None:
 
 
 async def remove(source_id: str) -> None:
-    """Switch off and remove: the server row goes, the folder goes to the Trash."""
+    """Switch off and remove. The folder goes to the Trash first, so a failed move changes nothing; then the
+    server row goes, and the source is marked removed and lets go of the server's number, which the next
+    server added may get (mcp_servers.id has no AUTOINCREMENT; v0.1.64 #499 second review)."""
     from server.services import mcp_service
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(CapabilitySource, source_id)
         if row is None:
             raise InstallFailure("not_found")
         server_id = row.mcp_server_id
+    to_trash(capabilities_root() / source_id)
     if server_id:
         try:
             await mcp_service.delete_server(server_id)
         except Exception:  # noqa: BLE001 — already gone
             logger.info("capability %s: server %s already gone", source_id, server_id)
-    to_trash(capabilities_root() / source_id)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(CapabilitySource, source_id)
-        row.state = "removed"
+        row.state, row.mcp_server_id = "removed", None
         await db.commit()

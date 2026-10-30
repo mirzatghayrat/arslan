@@ -36,6 +36,8 @@ def _pack(key: str, category: str, **extra) -> SkillPack:
 
 
 SCRIPTS = ("csv-tidy", "xlsx", "deck", "designed-html-report")        # skills with a scripts folder
+LEFTOVER = "csv-tidy-2"           # a folder no row holds, named with another key as a prefix (#499 review 2)
+INSTALLED = datetime(2026, 10, 1)                                      # when the card installed them
 ADDED = datetime(2026, 9, 1)                                           # when the connections were added
 
 
@@ -44,10 +46,12 @@ async def _seed(execution_db, tmp_path) -> None:
     for key in SCRIPTS:
         (tmp_path / "data" / "skill_scripts" / key).mkdir(parents=True)
         (tmp_path / "data" / "skill_scripts" / key / "run.py").write_text("print('hi')\n")
+    (tmp_path / "data" / "skill_scripts" / LEFTOVER).mkdir()
     (tmp_path / "data" / "capabilities" / "m1").mkdir(parents=True)
     async with execution_db() as db:
         db.add_all([
             _pack("designed-html-report", "creative"),                   # planted by the seeder
+            _pack("ghostwriter", "dev"),                                 # planted too: "gh" but not "gh-"
             _pack("csv-tidy", "imported"),                               # pasted a link (skill_import)
             _pack("xlsx", "productivity", source_id="sk1"),              # installed from a card
             _pack("deck", "productivity", source_id="sk2"),              # installed from a card too
@@ -65,7 +69,7 @@ async def _seed(execution_db, tmp_path) -> None:
             MCPServer(id=3, label="notes", command="", url="https://notes.example.test/", transport="http",
                       host_allowed=True, status="registered", created_at=ADDED),
             CapabilitySource(id="m1", kind="mcp", name="excel", candidate_id="c", needs={}, grants={},
-                             state="installed", mcp_server_id=2, created_at=datetime(2026, 10, 1)),
+                             state="installed", mcp_server_id=2, created_at=INSTALLED, installed_at=INSTALLED),
         ])
         await db.commit()
 
@@ -100,7 +104,7 @@ async def test_each_row_says_its_section_its_origin_and_whether_it_can_be_delete
     rows = await _rows(api)
     seen = {key: (rows[key]["section"], rows[key]["origin"], rows[key]["deletable"]) for key in (
         "terminal", "files", "skill:designed-html-report", "skill:csv-tidy", "skill:xlsx", "skill:weekly-report",
-        "skill:page-notes", "skill:gh-acme-notes", "mcp:1", "mcp:2")}
+        "skill:page-notes", "skill:gh-acme-notes", "skill:ghostwriter", "mcp:1", "mcp:2")}
     assert seen == {
         "terminal": ("builtin", "builtin", False),
         "files": ("builtin", "builtin", False),
@@ -110,6 +114,7 @@ async def test_each_row_says_its_section_its_origin_and_whether_it_can_be_delete
         "skill:weekly-report": ("skills", "authored", True),
         "skill:page-notes": ("skills", "authored", True),
         "skill:gh-acme-notes": ("skills", "installed", True),
+        "skill:ghostwriter": ("skills", "builtin", False),
         "mcp:1": ("connections", "manual", True),
         "mcp:2": ("connections", "installed", True),
     }
@@ -219,26 +224,162 @@ async def test_the_dossier_never_moves_a_folder_outside_the_scripts_folder(execu
     (tmp_path / "data" / "victim").mkdir(parents=True)
     (tmp_path / "data" / "skill_scripts").mkdir()                    # so "../victim" resolves
     async with execution_db() as db:
+        db.add(_pack("../victim", "imported", source_id="bad"))       # its own skill, so the key alone guards
         db.add(CapabilitySource(id="bad", kind="skill", name="x", candidate_id="c", needs={}, grants={},
                                 state="installed", skill_key="../victim", created_at=datetime(2026, 10, 1)))
         await db.commit()
     await capability_dossier.remove("bad")
-    assert (tmp_path / "data" / "victim").is_dir()
+    assert (tmp_path / "data" / "victim").is_dir() and not (tmp_path / "data" / "victim" / "SKILL.md").exists()
+    assert not (tmp_path / "home" / ".Trash").exists()
 
 
-async def test_a_failed_move_to_the_trash_keeps_the_skill(api, execution_db, monkeypatch, tmp_path):
+def _stuck(path, prefix="Arslan capability"):
+    raise OSError("Trash not writable")
+
+
+async def _source(execution_db, source_id: str) -> CapabilitySource:
+    async with execution_db() as db:
+        return await db.get(CapabilitySource, source_id)
+
+
+@pytest.mark.parametrize("key", ["csv-tidy", "weekly-report"])
+async def test_a_failed_move_to_the_trash_keeps_the_skill(api, execution_db, monkeypatch, tmp_path, key):
     """#499 review F4: the files go to the Trash before the row goes, so a failed move leaves the skill whole,
-    never a row-less scripts folder the next skill of that key would pick up."""
+    never a row-less scripts folder the next skill of that key would pick up. Nor the copy of its text: a skill
+    with files keeps only them, and one without gets no folder."""
     from server.services import capability_install, capability_list
-
-    def stuck(path, prefix="Arslan capability"):
-        raise OSError("Trash not writable")
     await _seed(execution_db, tmp_path)
     before = await _state(execution_db, tmp_path)
-    monkeypatch.setattr(capability_install, "to_trash", stuck)
+    monkeypatch.setattr(capability_install, "to_trash", _stuck)
     with pytest.raises(OSError):
-        await capability_list.remove("skill:csv-tidy")
+        await capability_list.remove(f"skill:{key}")
     assert await _state(execution_db, tmp_path) == before
+    assert {p.name for p in (tmp_path / "data" / "skill_scripts" / "csv-tidy").iterdir()} == {"run.py"}
+
+
+@pytest.mark.parametrize("key", ["weekly-report", "csv-tidy", "xlsx"])
+async def test_a_deleted_skills_text_goes_to_the_trash_with_its_files(api, execution_db, tmp_path, key):
+    """#499 second review 5: a skill's text lives only in the database, and a written one's nowhere else, so a
+    delete keeps a copy: a SKILL.md the importer reads again goes to the Trash, with any files it came with."""
+    from server.services import skill_import
+    await _seed(execution_db, tmp_path)
+    assert (await api.delete(f"/api/v1/capabilities/skill:{key}")).status_code == 200
+    folder = tmp_path / "home" / ".Trash" / f"Arslan capability {key}"
+    assert skill_import.parse_skill_md((folder / "SKILL.md").read_text(encoding="utf-8")) == {
+        "key": key, "name": key.replace("-", " ").title(), "description": "d", "body": "## Trigger\nx"}
+    assert {p.name for p in folder.iterdir()} == ({"SKILL.md"} if key == "weekly-report" else {"SKILL.md", "run.py"})
+
+
+async def test_a_failed_move_to_the_trash_keeps_an_installed_connection(api, execution_db, monkeypatch, tmp_path):
+    """#499 second review 1: capability_install.remove deleted the server before its folder moved, so a failed
+    move left a gone server and a source still "installed" pointing at its freed number. The Trash goes
+    first now, as for a skill."""
+    from server.services import capability_install, capability_list
+    await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
+    monkeypatch.setattr(capability_install, "to_trash", _stuck)
+    with pytest.raises(OSError):
+        await capability_list.remove("mcp:2")
+    assert await _state(execution_db, tmp_path) == before
+    assert (await _source(execution_db, "m1")).mcp_server_id == 2
+
+
+async def test_a_removed_connection_lets_go_of_its_server_number(api, execution_db, tmp_path):
+    """mcp_servers.id has no AUTOINCREMENT: the next connection added by hand may get the same number."""
+    await _seed(execution_db, tmp_path)
+    assert (await api.delete("/api/v1/capabilities/mcp:2")).status_code == 200
+    assert (await _source(execution_db, "m1")).mcp_server_id is None
+
+
+async def test_a_source_left_pointing_at_a_number_never_claims_another_server(api, execution_db, tmp_path):
+    """#499 second review 1: a scan-blocked install deleted its server and kept the number (capability_flow:
+    remove, then "failed"), and so did every removal before this fix. A server is a source's only while the
+    source is not removed and if the server was there when the source was installed."""
+    await _seed(execution_db, tmp_path)
+    later = datetime(2026, 10, 20)
+    async with execution_db() as db:
+        db.add_all([
+            CapabilitySource(id="m4", kind="mcp", name="blocked", candidate_id="c", needs={}, grants={},
+                             state="failed", mcp_server_id=4, created_at=INSTALLED, installed_at=INSTALLED),
+            MCPServer(id=4, label="later", command="", url="https://later.example.test/", transport="http",
+                      host_allowed=True, status="registered", created_at=later),
+            CapabilitySource(id="m0", kind="mcp", name="gone", candidate_id="c", needs={}, grants={},
+                             state="removed", mcp_server_id=3, created_at=INSTALLED, installed_at=INSTALLED),
+        ])
+        await db.commit()
+    rows = await _rows(api)
+    assert [rows[key]["origin"] for key in ("mcp:2", "mcp:3", "mcp:4")] == ["installed", "manual", "manual"]
+    before = await _state(execution_db, tmp_path)
+    assert (await api.delete("/api/v1/capabilities/mcp:4")).status_code == 200
+    assert await _state(execution_db, tmp_path) == _without(before, server=4)     # by hand: m4 is not touched
+
+
+async def test_a_stale_dossier_removal_never_deletes_a_skill_saved_later_under_its_key(api, execution_db, tmp_path):
+    """#499 second review 2: the dossier deleted whichever skill held the key, and took removed sources."""
+    await _seed(execution_db, tmp_path)
+    assert (await api.delete("/api/v1/capabilities/skill:xlsx")).status_code == 200        # sk1 is removed
+    async with execution_db() as db:
+        db.add(_pack("xlsx", "authored"))                                                   # saved later
+        await db.commit()
+    before = await _state(execution_db, tmp_path)
+    response = await api.delete("/api/v1/capability-sources/sk1")
+    assert (response.status_code, response.json()["detail"]) == (404, {"code": "source_not_found"})
+    assert await _state(execution_db, tmp_path) == before
+
+
+async def test_a_dossier_source_naming_a_skill_it_did_not_install_removes_only_itself(api, execution_db, tmp_path):
+    """#499 second review 2: a source naming a seed key deleted the seed and moved its scripts."""
+    await _seed(execution_db, tmp_path)
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="sk3", kind="skill", name="report", candidate_id="c", needs={}, grants={},
+                                state="installed", skill_key="designed-html-report", created_at=INSTALLED))
+        await db.commit()
+    before = await _state(execution_db, tmp_path)
+    assert (await api.delete("/api/v1/capability-sources/sk3")).status_code == 200
+    assert await _state(execution_db, tmp_path) == {**before, "sources": {**before["sources"], "sk3": "removed"}}
+
+
+async def test_the_dossier_removes_its_own_skill_and_keeps_it_on_a_failed_move(api, execution_db, monkeypatch, tmp_path):
+    """#499 second review 3 (D1): the dossier's own removal moves the files first too."""
+    from server.services import capability_dossier, capability_install
+    await _seed(execution_db, tmp_path)
+    before = await _state(execution_db, tmp_path)
+    with monkeypatch.context() as patch:
+        patch.setattr(capability_install, "to_trash", _stuck)
+        with pytest.raises(OSError):
+            await capability_dossier.remove("sk2")
+    assert await _state(execution_db, tmp_path) == before
+    await capability_dossier.remove("sk2")
+    assert await _state(execution_db, tmp_path) == _without(before, skill="deck", source="sk2")
+    assert {p.name for p in (tmp_path / "home" / ".Trash" / "Arslan capability deck").iterdir()} == {"run.py", "SKILL.md"}
+
+
+@pytest.mark.parametrize("key", [".", ".."])
+async def test_a_dot_key_never_names_a_folder(api, execution_db, tmp_path, key):
+    """#499 second review 3 (M07): stored or asked for, "." would name skill_scripts/ itself and ".." the data
+    folder."""
+    from server.services import capability_list
+    await _seed(execution_db, tmp_path)
+    async with execution_db() as db:
+        db.add(_pack(key, "imported"))
+        await db.commit()
+    before = await _state(execution_db, tmp_path)
+    with pytest.raises(capability_list.NotRemovable):
+        await capability_list.remove(f"skill:{key}")
+    response = await api.delete(f"/api/v1/capabilities/skill:{key}")
+    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+    assert await _state(execution_db, tmp_path) == before
+    assert (tmp_path / "data" / "skill_scripts" / "csv-tidy" / "run.py").is_file()
+
+
+async def test_no_row_carries_what_it_counts_as_use(api, execution_db, tmp_path):
+    """#499 second review 4: the tools a row counts were stashed in the row and popped later, so any path
+    that skipped the pop would send them to the client."""
+    from server.services import capability_list
+    await _seed(execution_db, tmp_path)
+    rows = [*await capability_list._builtin_rows(), *await capability_list._mcp_rows(),
+            *await capability_list._skill_rows()]
+    assert rows and not [row["key"] for row in rows if "_uses" in row]
 
 
 @pytest.mark.parametrize("key", ["mcp:١", "mcp:²"])

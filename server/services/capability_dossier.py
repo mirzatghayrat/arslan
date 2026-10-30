@@ -51,7 +51,7 @@ async def sources(owner_id: str = "local") -> list[dict]:
 async def source(source_id: str, owner_id: str = "local") -> CapabilitySource:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(CapabilitySource, source_id)
-    if row is None or row.owner_id != owner_id:
+    if row is None or row.owner_id != owner_id or row.state == "removed":     # #499 second review 2
         raise DossierError("source_not_found")
     return row
 
@@ -82,14 +82,17 @@ async def set_folders(source_id: str, folders: list[str]) -> dict:
 async def remove(source_id: str) -> None:
     row = await source(source_id)
     if row.kind == "skill":
-        from server import config
         from server.db.models import SkillPack
         from server.services import capability_list
-        # The scripts first, and only under skill_scripts/ (#499 review F3, F4; see capability_list.remove).
-        if capability_list.safe_skill_key(row.skill_key):
-            capability_install.to_trash(config.data_dir() / "skill_scripts" / row.skill_key)
+        # Only the skill this source installed: the key may since hold another skill, or name a seed
+        # (#499 second review 2). Its files first, as capability_list.remove does (#499 review F3, F4).
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, row.skill_key) if row.skill_key else None
+        ours = pack is not None and pack.source_id == source_id
+        if ours:
+            capability_list.skill_to_trash(pack)
+        async with db_session.AsyncSessionLocal() as db:
+            pack = await db.get(SkillPack, row.skill_key) if ours else None
             if pack is not None:
                 await db.delete(pack)
             stored = await db.get(CapabilitySource, source_id)

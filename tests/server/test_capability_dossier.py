@@ -124,7 +124,7 @@ async def test_removing_a_skill_moves_its_files_to_the_trash(execution_db, monke
     (tmp_path / "skill_scripts" / "csv-tidy").mkdir(parents=True)
     async with execution_db() as db:
         db.add(SkillPack(key="csv-tidy", name="c", category="imported", description="d", tier="safe",
-                         status="registered", body="x"))
+                         status="registered", body="x", source_id="sk1"))    # as capability_flow installs it
         db.add(CapabilitySource(id="sk1", kind="skill", name="c", candidate_id="c", needs={}, grants={},
                                 state="installed", skill_key="csv-tidy", created_at=datetime.utcnow()))
         await db.commit()
