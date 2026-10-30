@@ -91,6 +91,12 @@ describe("the sidebar", () => {
     expect(titles()).toEqual(["new", "mid", "old"]);
   });
 
+  it("opens the month that holds the open conversation", () => {
+    render(<Sidebar {...baseProps} threads={threads} meta={timed} activeThreadId="old" />);
+    expect(within(screen.getByTestId("sidebar-month-2026-09")).getAllByRole("button")[0]).toHaveAttribute("aria-expanded", "true");
+    expect(titles()).toContain("old");
+  });
+
   it("moves a conversation to the top at once when this window sees activity in it", () => {
     render(<Sidebar {...baseProps} threads={threads} meta={timed} />);
     act(() => { useRecency.getState().touch("mid"); });                       // a message sent or a reply finished

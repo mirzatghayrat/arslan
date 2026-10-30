@@ -59,6 +59,7 @@ export default function Sidebar(props: SidebarProps) {
   const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [openMonths, setOpenMonths] = useState<string[]>([]);
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
   const collapsed = useSidebar((s) => s.collapsed);
   const setCollapsed = useSidebar((s) => s.setCollapsed);
   const touched = useRecency((s) => s.touched);
@@ -96,6 +97,13 @@ export default function Sidebar(props: SidebarProps) {
   // DELETE-BY: with remoteFirst above: Remote stays above the date sections.
   const isRemote = (thread: ArslanThread) => thread.id === REMOTE_ID || meta[thread.id]?.kind === "remote";
   const sections = groupByDay(activeThreads.filter(thread => !isRemote(thread)), at, new Date(), i18n?.resolvedLanguage || i18n?.language);
+  // The month holding the open conversation opens with it, once per conversation (⓪Plan's review of
+  // PR 543): the open row is never hidden in a fold; the user can still fold it again.
+  const activeMonth = sections.months.find(month => month.rows.some(thread => thread.id === activeThreadId))?.id ?? null;
+  if (activeMonth && openedFor !== activeThreadId) {
+    setOpenedFor(activeThreadId);
+    if (!openMonths.includes(activeMonth)) setOpenMonths([...openMonths, activeMonth]);
+  }
   const activeProject = projectOf(threads.find(thread => thread.id === activeThreadId) ?? { id: "", title: "" });
   const [openProjects, setOpenProjects] = useState<string[]>(() => {
     const saved = loadOpen();
