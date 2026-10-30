@@ -190,8 +190,9 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
     owner, repo = parsed
     meta = await github_eval.fetch_repo(owner, repo)
     license_block = _license_gate(meta["license"])
-
-    paths = await _tree_paths(owner, repo)
+    # CAP4a-1: the listing reads one pinned commit (it read HEAD) and says which; the import then pins to it.
+    sha = await head_sha(owner, repo)
+    paths = await _tree_paths(owner, repo, sha)
     sub = (subpath or "").strip("/")
     skill_paths = [p for p in paths if p.endswith("SKILL.md")
                    and (not sub or p.startswith(sub + "/") or p == f"{sub}/SKILL.md")]
@@ -202,7 +203,7 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
 
     skills = []
     for p in skill_paths:
-        raw = await _fetch_raw(owner, repo, p)
+        raw = await _fetch_raw(owner, repo, p, sha)
         info = parse_skill_md(raw)
         entry: dict = {"path": p, "scripts": _scripts_for(p, paths),
                        "references": _references_for(p, paths)}
@@ -211,7 +212,7 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
         else:
             entry.update(key=info["key"], name=info["name"], description=info["description"],
                          body_bytes=len(info["body"].encode("utf-8")))
-            spdx, source = await _skill_license(owner, repo, p, paths, meta["license"])
+            spdx, source = await _skill_license(owner, repo, p, paths, meta["license"], sha)
             block = _skill_license_block(spdx, source)
             entry.update(license=spdx, license_source=source)
             if block:
@@ -225,7 +226,7 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
                 entry.update(importable=True, reason=None)
         skills.append(entry)
     return {"repo": {"full_name": meta["full_name"], "html_url": meta["html_url"],
-                     "license": meta["license"], "stars": meta["stars"]},
+                     "license": meta["license"], "stars": meta["stars"]}, "commit": sha,
             "license_ok": license_block is None or any(e.get("importable") for e in skills),
             "license_note": license_block if not any(e.get("license_source", "repo") != "repo" for e in skills) else None,
             "skills": skills}
@@ -235,12 +236,18 @@ _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 
 async def import_skill(ref: str, path: str) -> dict:
-    """Import ONE skill faithfully. Re-validates everything server-side (never trust the UI).
+    """Import ONE skill faithfully: `prepare_skill`, then `install_prepared`. Re-validates everything server-side
+    (never trust the UI)."""
+    return await install_prepared(await prepare_skill(ref, path))
 
-    0.1.57 §5.2: pinned. `ref` may name the commit (`owner/repo@<sha>`, what a dossier
-    recorded); without one, the import pins to the commit the default branch points at now.
-    Every file is fetched AT that commit and its SHA-256 returned, so the dossier can say
-    exactly what was installed."""
+
+async def prepare_skill(ref: str, path: str) -> dict:
+    """Fetch ONE skill whole at one pinned commit, in memory: nothing is written (v0.1.64 CAP4a-1: the card is
+    built from this, scanned and hashed, and a yes installs exactly it).
+
+    0.1.57 §5.2: pinned. `ref` may name the commit (`owner/repo@<sha>`, what a dossier or the import panel's
+    listing recorded); without one, the import pins to the commit the default branch points at now. Every file
+    is fetched AT that commit and its SHA-256 kept, so the dossier can say exactly what was installed."""
     ref, _, sha = (ref or "").partition("@")
     parsed = github_eval.parse_repo_ref(ref)
     if parsed is None:
@@ -267,49 +274,51 @@ async def import_skill(ref: str, path: str) -> dict:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
+    async with db_session.AsyncSessionLocal() as db:
+        if await db.get(SkillPack, info["key"]) is not None:
+            raise ValueError(f"skill '{info['key']}' already exists in the library")
 
-    key = info["key"]
+    # bundled scripts (flat names, .py only, capped) and references (flat basenames, .md/.txt only, the same
+    # per-file and per-skill caps; PC-3 mounts these read-only), kept in memory until `install_prepared`.
+    scripts: dict[str, str] = {}
+    for sp in _scripts_for(path, paths)[:_MAX_SCRIPTS]:
+        content = await _fetch_raw(owner, repo, sp, sha)
+        fname = sp.rsplit("/", 1)[-1]
+        if len(content.encode("utf-8")) <= _MAX_SCRIPT_BYTES and re.fullmatch(r"[A-Za-z0-9._-]+\.py", fname):
+            scripts[fname] = _keep(sp, content)
+    references: dict[str, str] = {}
+    for rp in _references_for(path, paths)[:_MAX_REFERENCES]:
+        content = await _fetch_raw(owner, repo, rp, sha)
+        fname = rp.rsplit("/", 1)[-1]
+        if (len(content.encode("utf-8")) <= _MAX_REFERENCE_BYTES and re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname)
+                and fname not in references):          # a basename collision from a nested ref: keep the first
+            references[fname] = _keep(rp, content)
+    return {"key": info["key"], "info": info, "full_name": meta["full_name"], "commit": sha, "license": spdx,
+            "license_source": source, "scripts": scripts, "references": references, "files": files}
+
+
+async def install_prepared(prepared: dict) -> dict:
+    """Write exactly what `prepare_skill` fetched: its scripts and references under data_dir/skill_scripts/<key>/,
+    then the row. No second fetch, so what was scanned and shown is what is installed (CAP4a-1)."""
+    key, info, sha = prepared["key"], prepared["info"], prepared["commit"]
     async with db_session.AsyncSessionLocal() as db:
         if await db.get(SkillPack, key) is not None:
             raise ValueError(f"skill '{key}' already exists in the library")
-
-    # bundled scripts → data_dir/skill_scripts/<key>/ (flat names, .py only, capped)
-    script_paths = _scripts_for(path, paths)[:_MAX_SCRIPTS]
-    stored: list[str] = []
-    if script_paths:
+    stored, stored_refs = list(prepared["scripts"]), list(prepared["references"])
+    if stored:
         script_dir = _data_dir() / "skill_scripts" / key
         script_dir.mkdir(parents=True, exist_ok=True)
-        for sp in script_paths:
-            content = await _fetch_raw(owner, repo, sp, sha)
-            if len(content.encode("utf-8")) > _MAX_SCRIPT_BYTES:
-                continue
-            fname = sp.rsplit("/", 1)[-1]
-            if not re.fullmatch(r"[A-Za-z0-9._-]+\.py", fname):
-                continue
-            (script_dir / fname).write_text(_keep(sp, content), encoding="utf-8")
-            stored.append(fname)
-
-    # bundled references → data_dir/skill_scripts/<key>/references/ (flat basenames,
-    # .md/.txt only, same per-file + per-skill caps as scripts; PC-3 mounts these read-only).
-    ref_paths = _references_for(path, paths)[:_MAX_REFERENCES]
-    stored_refs: list[str] = []
-    if ref_paths:
+        for fname, content in prepared["scripts"].items():
+            (script_dir / fname).write_text(content, encoding="utf-8")
+    if stored_refs:
         ref_dir = _data_dir() / "skill_scripts" / key / "references"
         ref_dir.mkdir(parents=True, exist_ok=True)
-        for rp in ref_paths:
-            content = await _fetch_raw(owner, repo, rp, sha)
-            if len(content.encode("utf-8")) > _MAX_REFERENCE_BYTES:
-                continue
-            fname = rp.rsplit("/", 1)[-1]
-            if not re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
-                continue
-            if fname in stored_refs:  # basename collision from a nested ref — keep the first
-                continue
-            (ref_dir / fname).write_text(_keep(rp, content), encoding="utf-8")
-            stored_refs.append(fname)
+        for fname, content in prepared["references"].items():
+            (ref_dir / fname).write_text(content, encoding="utf-8")
 
+    spdx, source = prepared["license"], prepared["license_source"]
     today = datetime.now(timezone.utc).date().isoformat()
-    attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} at {sha[:12]} "
+    attribution = (f"> Imported verbatim from https://github.com/{prepared['full_name']} at {sha[:12]} "
                    f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
     body = attribution + info["body"]
     if stored:
@@ -331,4 +340,4 @@ async def import_skill(ref: str, path: str) -> dict:
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],
             "scripts": stored, "references": stored_refs, "license": spdx,
-            "license_source": source, "commit": sha, "files": files}
+            "license_source": source, "commit": sha, "files": prepared["files"]}
