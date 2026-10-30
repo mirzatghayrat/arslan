@@ -14,8 +14,9 @@ already read, by whether it has a source_id:
   source_id, so every row it marked is in this group.
 - a source_id -> "imported": a skill a card installed (skill_import, then capability_flow) whose row Discover
   overwrote, its category too. This gives back the card's mark.
-It only makes reading stricter, and it drops nothing. The draft's own category is lost; nothing reads it since
-CAP3a's one list.
+Each row ends framed and listed by key alone; it drops nothing. One thing opens again: a card's row, once more
+"imported", has its own scanned files served by read_skill, framed, as before Discover overwrote it (#502
+recheck). The draft's own category is lost; nothing reads it since CAP3a's one list.
 
 Every non-seed "gh-" row came from Discover, apart from a skill imported or saved on the create_skill card
 under such a name: those are already marked outside, or "authored" since 0.1.64 (CAP2a), which no upgrading
