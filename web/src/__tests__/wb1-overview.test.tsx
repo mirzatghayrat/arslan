@@ -14,7 +14,7 @@ const { files, jobsApi, mcp, client, conv } = vi.hoisted(() => ({
   files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn(), changes: vi.fn() },
   jobsApi: { list: vi.fn(), stop: vi.fn() },
   mcp: { listMcpServers: vi.fn(), reconnectMcpServer: vi.fn() },
-  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn(), api: { runCheckpoint: vi.fn() } },
+  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn(), api: { runCheckpoint: vi.fn(), undoTurn: vi.fn() } },
   conv: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
 }));
 vi.mock("../api/files", () => ({ filesApi: files }));
@@ -30,7 +30,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useWorkbench } from "../stores/workbenchStore";
 import { _resetChipCatalogs, ringRows } from "../components/models/ConversationModelChip";
 import Workbench from "../components/workbench/Workbench";
-import { connectorSummary, newestFirst } from "../components/workbench/OverviewTab";
+import { connectorSummary, newestFirst, PATHS_SHOWN } from "../components/workbench/OverviewTab";
+import { ApiError } from "../api/client";
 
 const cfg = { id: 1, provider: "deepseek", model: "deepseek-chat", is_primary: true, label: "DeepSeek" } as ProviderConfig;
 const PARTS = { system: 1000, tools: 3000, context: 500, history: 4000, turn: 1500 };
@@ -192,7 +193,120 @@ describe("Changes (WB1-3)", () => {
   });
 });
 
+describe("Changes after review (④参谋, PR 545)", () => {
+  const turn = (run_id: number, paths: string[], undone = false) => ({ run_id, at: "2026-10-30T09:31:00Z", undone,
+    paths: paths.map((path) => ({ folder: "~/Arslan", path, kind: "edited" as const })) });
+  const info = { exists: true, changed: 1, created: 0, skipped: [], excluded: [], overlap: [], later: [], running: false,
+    restored_at: null, expires_at: "2026-11-06T00:00:00", conversation: false };
+
+  it("never shows another conversation's turns: a new one with no runs (404) shows none", async () => {
+    files.changes.mockResolvedValueOnce({ turns: [turn(12, ["a.txt"])] });
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();     // positive control
+    files.changes.mockRejectedValueOnce(new ApiError("not found", 404, { code: "conversation_not_found" }));
+    view.rerender(<Workbench conversationId="c2" taskId={null} temporary={false}
+      models={{ configs: [cfg], llmProviders: [], onSetDefault: vi.fn() }} />);
+    await waitFor(() => expect(files.changes).toHaveBeenLastCalledWith("c2"));
+    await waitFor(() => expect(screen.queryByTestId("overview-changes")).toBeNull());
+  });
+
+  it("empties the list when its own conversation is gone (404), but keeps it through any other failure", async () => {
+    files.changes.mockResolvedValueOnce({ turns: [turn(12, ["a.txt"])] });
+    useWorkbench.getState().show("overview");
+    mount();
+    expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();
+    files.changes.mockRejectedValueOnce(new Error("offline"));
+    act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r1", role: "arslan", text: "x" }] } as never); });
+    await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("overview-turn-12")).toBeInTheDocument();          // offline: the last list stays
+    files.changes.mockRejectedValueOnce(new ApiError("not found", 404, { code: "conversation_not_found" }));
+    act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r1", role: "arslan", text: "x" },
+      { kind: "message", id: "r2", role: "arslan", text: "y" }] } as never); });             // one more turn
+    await waitFor(() => expect(screen.queryByTestId("overview-changes")).toBeNull());
+  });
+
+  it("drops a late answer for the conversation no longer shown", async () => {
+    let answerA: (value: { turns: unknown[] }) => void = () => {};
+    files.changes.mockImplementationOnce(() => new Promise((resolve) => { answerA = resolve; }));
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    await waitFor(() => expect(files.changes).toHaveBeenCalledWith("c1"));
+    files.changes.mockResolvedValue({ turns: [] });
+    view.rerender(<Workbench conversationId="c2" taskId={null} temporary={false}
+      models={{ configs: [cfg], llmProviders: [], onSetDefault: vi.fn() }} />);
+    await waitFor(() => expect(files.changes).toHaveBeenLastCalledWith("c2"));
+    await act(async () => { answerA({ turns: [turn(12, ["a.txt"])] }); });
+    expect(screen.queryByTestId("overview-changes")).toBeNull();
+  });
+
+  it("reloads when a turn ends, even one that delivered no file", async () => {
+    useWorkbench.getState().show("overview");
+    mount();
+    await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(1));
+    act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r", role: "arslan", text: "done" }] } as never); });
+    await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(2));
+  });
+
+  it("marks an undone turn and folds a long one after a few rows", async () => {
+    const many = Array.from({ length: PATHS_SHOWN + 2 }, (_, i) => `dir/sub/file-${i}.txt`);
+    files.changes.mockResolvedValue({ turns: [turn(12, many), turn(11, ["old.md"], true)] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const t11 = await screen.findByTestId("overview-turn-11");
+    expect(within(t11).getByTestId("overview-undone-11")).toHaveTextContent("workbench.undone");
+    const t12 = screen.getByTestId("overview-turn-12");
+    expect(within(t12).getAllByTestId("overview-change-name")).toHaveLength(PATHS_SHOWN);
+    expect(within(t12).getByTestId("overview-more-12")).toHaveTextContent('workbench.morePaths:{"count":2}');
+    fireEvent.click(within(t12).getByTestId("overview-more-12"));
+    expect(within(t12).getAllByTestId("overview-change-name")).toHaveLength(PATHS_SHOWN + 2);
+    expect(within(t12).getAllByTestId("overview-change-name")[0].textContent).toBe("\u2068file-0.txt\u2069");   // the name, isolated
+  });
+
+  it("isolates a name, so a right-to-left override can't fake its extension", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["invoice\u202Etxt.exe"])] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const name = await screen.findByTestId("overview-change-name");
+    expect(name.textContent).toBe("\u2068invoicetxt.exe\u2069");
+  });
+
+  it("undoes that turn's run, then reloads and keeps focus in the section", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });
+    client.api.runCheckpoint.mockResolvedValue(info);
+    client.api.undoTurn.mockResolvedValue({ files: { runs: [] } });
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    fireEvent.click(await screen.findByTestId("undo-files"));
+    await waitFor(() => expect(client.api.undoTurn).toHaveBeenCalledWith(12, "files", undefined));
+    await waitFor(() => expect(files.changes.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("workbench.chH"));
+  });
+
+  it("says so when the undo can't be read", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });
+    client.api.runCheckpoint.mockRejectedValue(new Error("offline"));
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    await waitFor(() => expect(screen.queryByTestId("undo-turn")).toBeNull());
+    expect(client.api.runCheckpoint).toHaveBeenCalledWith(12);
+  });
+});
+
 describe("Connectors with nothing to say", () => {
+  it("is shown with only ready servers, and with only failing ones", async () => {
+    mcp.listMcpServers.mockResolvedValueOnce([server(1, "ready")]);
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-connectors-ok")).toBeInTheDocument();
+    view.unmount();
+    mcp.listMcpServers.mockResolvedValueOnce([server(2, "failed")]);
+    mount();
+    expect(await screen.findByTestId("overview-connector-2")).toBeInTheDocument();
+  });
+
   it("is left out when every server is off or starting (#530 review)", async () => {
     mcp.listMcpServers.mockResolvedValue([server(1, "off"), server(2, "starting")]);
     useWorkbench.getState().show("overview");
