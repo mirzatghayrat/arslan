@@ -14,6 +14,8 @@ export interface ConversationMeta {
   job?: ConversationJob | null;
   /** 0.1.58 §4: the project it belongs to (null = none). */
   projectId?: string | null;
+  /** SB1: the server's last activity (ISO), for the sidebar's order and sections. */
+  lastAt?: string | null;
 }
 
 // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
@@ -34,6 +36,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
       files: typeof row.files === "number" ? row.files : 0,
       job: row.job ?? null,
       projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null,
+      lastAt: typeof row.last_at === "string" && row.last_at ? row.last_at : null,
     };
   }
   return out;

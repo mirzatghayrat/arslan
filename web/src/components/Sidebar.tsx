@@ -1,14 +1,18 @@
 import BrandMark from './BrandMark';
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Section } from "../lib/sections";
-import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Inbox, Activity } from "lucide-react";
+import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Inbox, Activity, PanelLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { REMOTE_ID, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { groupByDay, newestFirst } from "../lib/sidebarOrder";
+import { useRecency } from "../stores/recencyStore";
+import { useSidebar } from "../stores/sidebarStore";
+export { COLLAPSED_KEY } from "../stores/sidebarStore";
 import { Smartphone } from "lucide-react";
 
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean; projectId?: string }
@@ -20,6 +24,11 @@ export const SIDEBAR_PROJECTS = 8;
 /** Conversations shown under an expanded project before "全部 N 个". */
 export const PROJECT_CHATS = 5;
 const OPEN_KEY = "arslan_sidebar_projects_open";
+/** SB1: ⌃⌘S, Apple's standard Show/Hide Sidebar (unused elsewhere in Arslan: no key handler or native menu item takes it). */
+export function isToggleSidebarKey(event: KeyboardEvent): boolean {
+  return event.ctrlKey && event.metaKey && !event.altKey && !event.shiftKey && (event.code === "KeyS" || event.key.toLowerCase() === "s");
+}
+
 
 function loadOpen(): string[] {
   try { const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; }
@@ -47,11 +56,33 @@ export default function Sidebar(props: SidebarProps) {
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
     onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, meta = {},
     projects = [], onStartInProject, onOpenProject, onMoveToProject } = props;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const live = threads.filter(thread => !thread.archived);
+  const [openMonths, setOpenMonths] = useState<string[]>([]);
+  const collapsed = useSidebar((s) => s.collapsed);
+  const setCollapsed = useSidebar((s) => s.setCollapsed);
+  const touched = useRecency((s) => s.touched);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isToggleSidebarKey(event)) return;
+      event.preventDefault();
+      const state = useSidebar.getState();
+      state.setCollapsed(!state.collapsed);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  // SB1: last activity, the later of this window's (a message sent, a reply, a new conversation) and
+  // the server's. null = no time yet (a new conversation before its first message): newest.
+  const at = (thread: ArslanThread): number | null => {
+    const server = meta[thread.id]?.lastAt ? Date.parse(meta[thread.id]!.lastAt!) : NaN;
+    const local = touched[thread.id];
+    if (local == null && Number.isNaN(server)) return null;
+    return Math.max(local ?? -Infinity, Number.isNaN(server) ? -Infinity : server);
+  };
+  const live = newestFirst(threads.filter(thread => !thread.archived), at);
   const projectOf = (thread: ArslanThread) => meta[thread.id]?.projectId ?? thread.projectId ?? null;
-  // 0.1.58 §4: projects ranked by their latest conversation (the thread list is newest first),
+  // 0.1.58 §4: projects ranked by their latest conversation (`live` is newest first, SB1),
   // then the ones without any by when they changed; the top few form the group.
   const rank = new Map<string, number>();
   live.forEach((thread, i) => { const p = projectOf(thread); if (p && !rank.has(p)) rank.set(p, i); });
@@ -62,6 +93,9 @@ export default function Sidebar(props: SidebarProps) {
   // 最近 keeps only conversations that are not under a project shown above.
   // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
   const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "")), meta);
+  // DELETE-BY: with remoteFirst above: Remote stays above the date sections.
+  const isRemote = (thread: ArslanThread) => thread.id === REMOTE_ID || meta[thread.id]?.kind === "remote";
+  const sections = groupByDay(activeThreads.filter(thread => !isRemote(thread)), at, new Date(), i18n?.resolvedLanguage || i18n?.language);
   const activeProject = projectOf(threads.find(thread => thread.id === activeThreadId) ?? { id: "", title: "" });
   const [openProjects, setOpenProjects] = useState<string[]>(() => {
     const saved = loadOpen();
@@ -99,9 +133,14 @@ export default function Sidebar(props: SidebarProps) {
         projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject} />}
     </div>;
   }
+  function toggleMonth(id: string) {
+    setOpenMonths(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+  const heading = (key: string) => <div className="mb-1 mt-2 px-3 text-xs text-muted-foreground first:mt-0" data-testid={`sidebar-section-${key}`}>
+    {t(`sidebar.${key}`)}</div>;
   function renderProject(project: SidebarProject) {
     const open = openProjects.includes(project.id);
-    const chats = live.filter(thread => projectOf(thread) === project.id);
+    const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
       <div className="group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-foreground hover:bg-foreground/[0.02]">
         <button type="button" aria-expanded={open} onClick={() => toggleProject(project.id)}
@@ -124,8 +163,20 @@ export default function Sidebar(props: SidebarProps) {
       </div>}
     </div>;
   }
+  const toggleLabel = t(collapsed ? "sidebar.show" : "sidebar.hide");
+  // SB1: collapsed, only the show button stays, beside the window's traffic lights (the mirror of the
+  // workbench's PanelRight at the top right, user 2026-10-30).
+  if (collapsed) return <button type="button" onClick={() => setCollapsed(false)} data-testid="sidebar-show"
+    aria-label={toggleLabel} title={`${toggleLabel} (⌃⌘S)`}
+    className="fixed left-[78px] top-[9px] z-50 rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
+    <PanelLeft size={15} /></button>;
   return <aside className="relative z-40 flex h-full w-52 shrink-0 select-none flex-col border-r border-border bg-sidebar/95 lg:w-60">
-    <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="h-[41px] shrink-0" />
+    <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="relative h-[41px] shrink-0">
+      <button type="button" onClick={() => setCollapsed(true)} data-testid="sidebar-hide" aria-label={toggleLabel}
+        title={`${toggleLabel} (⌃⌘S)`}
+        className="absolute right-2 top-[9px] rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
+        <PanelLeft size={15} /></button>
+    </div>
     <div data-tauri-drag-region="deep" className="flex shrink-0 items-center gap-3 px-5 pb-3">
       <BrandMark alt="Arslan" className="h-9 w-9 object-contain" draggable={false} />
       <h1 className="text-sm font-semibold">Arslan</h1>
@@ -157,8 +208,24 @@ export default function Sidebar(props: SidebarProps) {
             {projects.length > shownProjects.length && onOpenProject && <button type="button" onClick={() => onChangeSection("projects")}
               className="px-3 py-1 text-[11px] text-subtle-foreground hover:text-foreground">{t("sidebar.allProjects")} ›</button>}
           </div>}
-          <div className="mb-2 px-3 text-xs text-muted-foreground">{t("workspace.recentConversations")}</div>
-          {activeThreads.map(thread => renderThread(thread, false))}
+          {activeThreads.filter(isRemote).map(thread => renderThread(thread, false))}
+          {/* SB1: the iPhone's sections (lib/sidebarOrder); time in the headings only, none on rows. */}
+          {sections.today.length > 0 && <>{heading("today")}{sections.today.map(thread => renderThread(thread, false))}</>}
+          {sections.yesterday.length > 0 && <>{heading("yesterday")}{sections.yesterday.map(thread => renderThread(thread, false))}</>}
+          {sections.week.length > 0 && <>{heading("previous7")}{sections.week.map(thread => renderThread(thread, false))}</>}
+          {sections.months.length > 0 && <>{heading("earlier")}
+            {sections.months.map(month => {
+              const open = openMonths.includes(month.id);
+              return <div key={month.id} data-testid={`sidebar-month-${month.id}`}>
+                <button type="button" aria-expanded={open} onClick={() => toggleMonth(month.id)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs text-foreground hover:bg-foreground/[0.02]">
+                  <span className="min-w-0 flex-1 truncate">{month.title}</span>
+                  <span className="shrink-0 tabular-nums text-subtle-foreground">{month.rows.length}</span>
+                  <ChevronRight size={12} className={`shrink-0 text-subtle-foreground transition-transform ${open ? "rotate-90" : ""}`} aria-hidden />
+                </button>
+                {open && month.rows.map(thread => renderThread(thread, false))}
+              </div>;
+            })}</>}
           {archivedThreads.length > 0 && <div className="mt-2 border-t border-border/40 pt-2">
             <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground">

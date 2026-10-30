@@ -749,6 +749,12 @@
     "more": "More"
   },
   "sidebar": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "previous7": "Previous 7 Days",
+    "earlier": "Earlier",
+    "hide": "Hide sidebar",
+    "show": "Show sidebar",
     "new_session": "New conversation",
     "spawns_ledger": "Spawns Ledger",
     "active_chats": "Active Chats",

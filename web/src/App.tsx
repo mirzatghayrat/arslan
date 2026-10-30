@@ -43,6 +43,8 @@ import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import Workbench from './components/workbench/Workbench';
 import { useWorkbench } from './stores/workbenchStore';
+import { useRecency } from './stores/recencyStore';
+import { useSidebar } from './stores/sidebarStore';
 import { resolveSection, type SettingsSectionId } from './components/settings/sectionRegistry';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
@@ -219,6 +221,9 @@ export default function App() {
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
     useArslanStore.getState().handleFrame(raw as ArslanServerMessage);
+    // SB1: a reply that finished, or a result a job posted, moves this conversation to the top now.
+    const type = (raw as { type?: unknown } | null)?.type;
+    if ((type === 'stream_end' || type === 'message') && activeThreadIdRef.current) useRecency.getState().touch(activeThreadIdRef.current);
   }, []);
 
   // Connect to the live orchestrator WebSocket using the active thread's id as
@@ -284,6 +289,7 @@ export default function App() {
     // only text-bearing attachments ride to the backend as attached_context below.
     useArslanStore.getState().addUserMessage(text, attached?.display);
     useArslanStore.getState().setThinking(true);
+    useRecency.getState().touch(activeThreadIdRef.current);      // SB1: a sent message moves it to the top
     wsSend({
       type: 'user_message',
       content: text,
@@ -400,6 +406,7 @@ export default function App() {
     // backend will send an empty `history` frame for the new conversation_id).
     useArslanStore.getState().resetForNewConversation();
     setThreads(prev => [...prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)), newThread]);
+    useRecency.getState().touch(threadId);                       // SB1: a new conversation goes to the top
     setActiveThreadId(threadId);
     setActiveSection('arslan');
     setPanelView('default');
@@ -429,6 +436,7 @@ export default function App() {
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   // 0.1.58 §3: the workbench, and how many background jobs run in this conversation ("后台 N").
   const workbench = useWorkbench();
+  const sidebarCollapsed = useSidebar((s) => s.collapsed);
   const runningJobs = useArslanStore((s) => Object.values(s.jobs).filter((j) => j.phase !== 'finished').length);
   // 0.1.58 §1: a reply's ⋯ → "在「动态」里看这一轮" opens Activity with that run in its drawer.
   useEffect(() => {
@@ -637,7 +645,7 @@ export default function App() {
               everywhere rather than only in chat. "deep" covers the labels
               inside; Tauri's drag script skips real controls on its own. */}
           <div data-tauri-drag-region="deep" data-testid="workspace-bar"
-            className="h-14 shrink-0 gap-3 border-b border-border px-4 lg:px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+            className={`h-14 shrink-0 gap-3 border-b border-border px-4 lg:px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30 ${sidebarCollapsed ? 'pl-[120px] lg:pl-[120px]' : ''}`}>
             {activeSection === 'settings' && <span className="absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground pointer-events-none">Arslan</span>}
             {/* The label is a CONVERSATION thing, so it appears only there.
                 The BAR itself stays on every section, and that is not tidiness:
