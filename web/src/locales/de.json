@@ -773,7 +773,6 @@
     "fromPhone": "Vom iPhone gestartet",
     "glyph": {
       "waiting": "Wartet auf deine Freigabe",
-      "remote": "Remote · dein iPhone",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
       "done": "Fertig",

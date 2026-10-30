@@ -773,7 +773,6 @@
     "fromPhone": "由 iPhone 发起",
     "glyph": {
       "waiting": "等你批准",
-      "remote": "Remote · 你的 iPhone",
       "working": "进行中",
       "progress": "进行中：{{done}} / {{total}}",
       "done": "已完成",

@@ -773,7 +773,6 @@
     "fromPhone": "iPhone から開始",
     "glyph": {
       "waiting": "承認待ち",
-      "remote": "Remote · あなたの iPhone",
       "working": "進行中",
       "progress": "進行中：{{done}} / {{total}}",
       "done": "完了",

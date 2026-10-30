@@ -54,47 +54,47 @@ final class ConversationLinksTests: XCTestCase {
 
     func testThePhonesWordsGoToTheirConversationOnceMarkedFromPhone() async throws {
         let (_, mac, phone, channels, links) = setUpPair()
-        try await phone.send(type: "chat.send", body: ["text": "find flights", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
-        try await phone.send(type: "chat.send", body: ["text": "find flights", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "find flights", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "find flights", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         try await phone.send(type: "chat.send", body: ["conversation_id": "c-42", "text": "hi", "attachments": [], "client_msg_id": "c2"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
-        XCTAssertEqual(channels.opened["pocket"]?.sent.count, 1, "the same client_msg_id runs once")
-        XCTAssertEqual(channels.opened["pocket"]?.sent.first?["source"] as? String, "phone")
+        XCTAssertEqual(channels.opened["c-1"]?.sent.count, 1, "the same client_msg_id runs once")
+        XCTAssertEqual(channels.opened["c-1"]?.sent.first?["source"] as? String, "phone")
         XCTAssertEqual(channels.opened["c-42"]?.sent.first?["content"] as? String, "hi")
     }
 
     func testAnswersAndCardsGoBackAndTheApprovalReachesItsConversation() async throws {
         let (_, mac, phone, channels, links) = setUpPair()
-        try await phone.send(type: "chat.send", body: ["text": "tidy", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "tidy", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
-        let pocket = try XCTUnwrap(channels.opened["pocket"])
-        await pocket.onFrame(["type": "propose_run_command", "call_id": "k1", "pretty": "rm old/", "reason": "delete"])
-        await pocket.onFrame(["type": "stream_start"])
-        await pocket.onFrame(["type": "stream_chunk", "content": "Done."])
-        await pocket.onFrame(["type": "stream_end"])
+        let chat = try XCTUnwrap(channels.opened["c-1"])
+        await chat.onFrame(["type": "propose_run_command", "call_id": "k1", "pretty": "rm old/", "reason": "delete"])
+        await chat.onFrame(["type": "stream_start"])
+        await chat.onFrame(["type": "stream_chunk", "content": "Done."])
+        await chat.onFrame(["type": "stream_end"])
         let got = try await phone.receive()
         XCTAssertEqual(got.map(\.type), ["approval.request", "chat.event"])
         XCTAssertEqual((got[1].envelope["body"] as? [String: Any])?["text"] as? String, "Done.")
         try await phone.send(type: "approval.answer", body: ["approval_id": "k1", "decision": "approve", "auth": "faceid", "ts": "t"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
-        XCTAssertEqual(pocket.sent.last?["type"] as? String, "confirm_run_command")
+        XCTAssertEqual(chat.sent.last?["type"] as? String, "confirm_run_command")
     }
 
     func testAnApprovalGoesToTheConversationThatHoldsTheCard() async throws {
         let (_, mac, phone, channels, links) = setUpPair()
-        try await phone.send(type: "chat.send", body: ["text": "a", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "a", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         try await phone.send(type: "chat.send", body: ["conversation_id": "c-42", "text": "b", "attachments": [], "client_msg_id": "c2"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
-        let other = try XCTUnwrap(channels.opened["c-42"]), pocket = try XCTUnwrap(channels.opened["pocket"])
+        let other = try XCTUnwrap(channels.opened["c-42"]), chat = try XCTUnwrap(channels.opened["c-1"])
         await other.onFrame(["type": "propose_workspace_write", "call_id": "w9", "action": "Write", "path": "a.md"])
-        await pocket.onFrame(["type": "propose_schedule", "call_id": "s7", "name": "Daily", "when": "9:00"])
+        await chat.onFrame(["type": "propose_schedule", "call_id": "s7", "name": "Daily", "when": "9:00"])
         _ = try await phone.receive()
         try await phone.send(type: "approval.answer", body: ["approval_id": "w9", "decision": "approve", "auth": "faceid", "ts": "t"], to: "mac-1")
         try await phone.send(type: "approval.answer", body: ["approval_id": "s7", "decision": "approve", "auth": "faceid", "ts": "t"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
         // Each answer reaches the conversation that holds its card, whatever the order.
         XCTAssertEqual(other.sent.compactMap { $0["type"] as? String }.filter { $0.hasPrefix("confirm_") }, ["confirm_workspace_write"])
-        XCTAssertEqual(pocket.sent.compactMap { $0["type"] as? String }.filter { $0.hasPrefix("confirm_") }, ["confirm_schedule"])
+        XCTAssertEqual(chat.sent.compactMap { $0["type"] as? String }.filter { $0.hasPrefix("confirm_") }, ["confirm_schedule"])
     }
 
     func testAnUnknownCardOrTypeAnswersWithAnError() async throws {
@@ -113,14 +113,14 @@ final class ConversationLinksTests: XCTestCase {
     func testTheListAndAHistoryGoBackToThePhoneThatAsked() async throws {
         let backend = FakeBackend()
         let list: [String: Any] = ["conversations": [["id": "trip", "title": "Trip", "updated_at": "2026-10-03T09:30:15Z"]]]
-        let history: [String: Any] = ["conversation_id": "pocket", "messages": [
+        let history: [String: Any] = ["conversation_id": "c-1", "messages": [
             ["id": "3", "role": "assistant", "text": "Done.", "ts": "2026-10-03T09:30:15Z", "attachments": []]]]
         backend.answers["/api/v1/phone/conversations?limit=100"] = .success(list)
-        backend.answers["/api/v1/phone/conversations/pocket/history?limit=50"] = .success(history)
+        backend.answers["/api/v1/phone/conversations/c-1/history?limit=50"] = .success(history)
         backend.answers["/api/v1/phone/conversations/a%20b%2Fc/history?limit=1"] = .success(["conversation_id": "a b/c", "messages": []])
         let (_, mac, phone, _, links) = setUpPair(backend: backend)
         try await phone.send(type: "conversations.list", body: ["limit": 500], to: "mac-1")
-        try await phone.send(type: "chat.history", body: ["limit": 50], to: "mac-1")          // no id: the pocket conversation
+        try await phone.send(type: "chat.history", body: ["conversation_id": "c-1", "limit": 50], to: "mac-1")
         try await phone.send(type: "chat.history", body: ["conversation_id": "a b/c", "limit": 0], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
         let got = try await phone.receive()
@@ -159,13 +159,13 @@ final class ConversationLinksTests: XCTestCase {
         let file: [String: Any] = ["id": "run_7_ab_plan.md", "name": "plan.md", "size": 8, "mime_type": "text/markdown", "sha256": "00"]
         backend.answers["/api/v1/phone/runs/7/files"] = .success(["files": [file]])
         let (_, mac, phone, channels, links) = setUpPair(backend: backend)
-        try await phone.send(type: "chat.send", body: ["text": "plan", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "plan", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
-        let pocket = try XCTUnwrap(channels.opened["pocket"])
-        await pocket.onFrame(["type": "stream_start"])
-        await pocket.onFrame(["type": "stream_chunk", "content": "Here."])
-        await pocket.onFrame(["type": "stream_end", "message_id": 3, "run_id": 7])
-        await pocket.onFrame(["type": "stream_end", "message_id": 4])          // no run, nothing to ask
+        let chat = try XCTUnwrap(channels.opened["c-1"])
+        await chat.onFrame(["type": "stream_start"])
+        await chat.onFrame(["type": "stream_chunk", "content": "Here."])
+        await chat.onFrame(["type": "stream_end", "message_id": 3, "run_id": 7])
+        await chat.onFrame(["type": "stream_end", "message_id": 4])          // no run, nothing to ask
         let got = try await phone.receive()
         XCTAssertEqual(got.map(\.type), ["chat.event", "file.offer", "chat.event"])
         XCTAssertNil(got[1].asset)
@@ -183,18 +183,18 @@ final class ConversationLinksTests: XCTestCase {
 
     func testAMessageThatDidNotGoThroughRunsOnThePhonesRetry() async throws {
         let (_, mac, phone, channels, links) = setUpPair()
-        let pocket = channels.open(conversationID: "pocket") { _ in } as! FakeChannel
-        pocket.failures = 1
-        let message: [String: Any] = ["text": "在干嘛", "attachments": [], "client_msg_id": "c1"]
+        let chat = channels.open(conversationID: "c-1") { _ in } as! FakeChannel
+        chat.failures = 1
+        let message: [String: Any] = ["conversation_id": "c-1", "text": "在干嘛", "attachments": [], "client_msg_id": "c1"]
         try await phone.send(type: "chat.send", body: message, to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
-        XCTAssertTrue(pocket.sent.isEmpty)
+        XCTAssertTrue(chat.sent.isEmpty)
         let heard = try await phone.receive()
         XCTAssertEqual(heard.filter { $0.type == "error" }.count, 1, "the phone hears it failed")
         try await phone.send(type: "chat.send", body: message, to: "mac-1")          // the phone's retry
         try await phone.send(type: "chat.send", body: message, to: "mac-1")          // and a duplicate after it
         for received in try await mac.receive() { await links.handle(received) }
-        XCTAssertEqual(pocket.sent.compactMap { $0["content"] as? String }, ["在干嘛"], "once, on the retry")
+        XCTAssertEqual(chat.sent.compactMap { $0["content"] as? String }, ["在干嘛"], "once, on the retry")
     }
 
     func testACardCarriesItsConversationsTitle() async throws {
@@ -202,11 +202,11 @@ final class ConversationLinksTests: XCTestCase {
         backend.answers["/api/v1/phone/conversations?limit=100"] = .success(["conversations": [["id": "c-42", "title": "Trip to Acme City", "updated_at": "t"]]])
         let (_, mac, phone, channels, links) = setUpPair(backend: backend)
         try await phone.send(type: "chat.send", body: ["conversation_id": "c-42", "text": "plan", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
-        try await phone.send(type: "chat.send", body: ["text": "hi", "attachments": [], "client_msg_id": "c2"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-7", "text": "hi", "attachments": [], "client_msg_id": "c2"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
         await channels.opened["c-42"]?.onFrame(["type": "propose_schedule", "call_id": "s1", "name": "Daily", "when": "9:00"])
         await channels.opened["c-42"]?.onFrame(["type": "propose_schedule", "call_id": "s2", "name": "Weekly", "when": "Mon"])
-        await channels.opened["pocket"]?.onFrame(["type": "propose_schedule", "call_id": "s3", "name": "Daily", "when": "9:00"])
+        await channels.opened["c-7"]?.onFrame(["type": "propose_schedule", "call_id": "s3", "name": "Daily", "when": "9:00"])   // not listed
         let cards = try await phone.receive().filter { $0.type == "approval.request" }.map { $0.envelope["body"] as? [String: Any] ?? [:] }
         XCTAssertEqual(cards.map { $0["task_title"] as? String }, ["Trip to Acme City", "Trip to Acme City", "Arslan"])
         XCTAssertEqual(backend.asked.filter { $0.contains("conversations?") }.count, 2, "once per conversation")
@@ -214,10 +214,10 @@ final class ConversationLinksTests: XCTestCase {
 
     func testABusyAnswerSaysWhichRequestItAnswers() async throws {
         let (_, mac, phone, channels, links) = setUpPair()
-        let pocket = channels.open(conversationID: "pocket") { _ in } as! FakeChannel
-        pocket.failures = 1
-        pocket.failure = URLError(.networkConnectionLost)       // a socket that dropped, not a Bridge error
-        let sent = try await phone.send(type: "chat.send", body: ["text": "在干嘛", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        let chat = channels.open(conversationID: "c-1") { _ in } as! FakeChannel
+        chat.failures = 1
+        chat.failure = URLError(.networkConnectionLost)         // a socket that dropped, not a Bridge error
+        let sent = try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "在干嘛", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
         let error = try await phone.receive().first { $0.type == "error" }
         XCTAssertEqual((error?.envelope["body"] as? [String: Any])?["related_id"] as? String, sent.id)

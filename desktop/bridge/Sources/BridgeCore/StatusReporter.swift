@@ -45,7 +45,9 @@ public final class StatusReporter {
 
     func snapshot(now: Date) async throws -> [String: Any] {
         var body = try await backend.json("/api/v1/phone/status")
-        body["jobs"] = (body["jobs"] as? [[String: Any]] ?? []).map { FrameMapper.jobEvent($0, conversationID: "") }
+        body["jobs"] = (body["jobs"] as? [[String: Any]] ?? [])
+            .filter { $0["conversation_id"] as? String != ConversationLinks.pocket }     // retired (Q1 #4): never on a phone
+            .map { FrameMapper.jobEvent($0, conversationID: "") }
         body["device_name"] = deviceName
         body["last_seen"] = ISO8601DateFormatter().string(from: now)
         return body

@@ -8,7 +8,7 @@ import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import type { ConversationMeta } from "../lib/conversationMeta";
 import { Smartphone } from "lucide-react";
 
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean; projectId?: string }
@@ -60,8 +60,7 @@ export default function Sidebar(props: SidebarProps) {
     .slice(0, SIDEBAR_PROJECTS);
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
-  // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-  const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "")), meta);
+  const activeThreads = live.filter(thread => !grouped.has(projectOf(thread) ?? ""));
   const activeProject = projectOf(threads.find(thread => thread.id === activeThreadId) ?? { id: "", title: "" });
   const [openProjects, setOpenProjects] = useState<string[]>(() => {
     const saved = loadOpen();
@@ -91,8 +90,8 @@ export default function Sidebar(props: SidebarProps) {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
       }} className={rowClass(active)}>
       {active && marker}<ConversationGlyph meta={meta[thread.id]} />
-      <span className={`min-w-0 flex-1 truncate ${meta[thread.id]?.kind === "remote" ? "font-semibold" : ""}`}>{threadDisplayTitle(thread, t, meta[thread.id]?.kind)}</span>
-      {meta[thread.id]?.origin === "phone" && meta[thread.id]?.kind !== "remote" &&
+      <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread, t)}</span>
+      {meta[thread.id]?.origin === "phone" &&
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
         onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}

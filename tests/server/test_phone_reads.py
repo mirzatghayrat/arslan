@@ -39,11 +39,11 @@ async def test_the_list_is_newest_first_with_protocol_timestamps(client):
     ])
     got = (await client.get("/api/v1/phone/conversations")).json()
     assert got == {"conversations": [
-        {"id": "pocket", "title": "Remote", "updated_at": "2026-10-03T09:30:15Z",
-         "kind": "remote", "state": "idle", "origin": "mac", "preview": "remind me", "files": 0},
+        {"id": "pocket", "title": "remind me", "updated_at": "2026-10-03T09:30:15Z",
+         "kind": "chat", "state": "idle", "origin": "mac", "preview": "remind me", "files": 0},
         {"id": "trip", "title": "Plan a trip to Acme City", "updated_at": "2026-10-02T08:00:00Z",
          "kind": "chat", "state": "idle", "origin": "mac", "preview": "Sure", "files": 0},
-    ], "has_more": False}, "the phone's own conversation is named Remote, everywhere"
+    ], "has_more": False}, "the retired pocket is an ordinary conversation to the Mac (Q1 #4; the Bridge keeps it from phones)"
     assert [c["id"] for c in (await client.get("/api/v1/phone/conversations?limit=1")).json()["conversations"]] == ["pocket"]
     assert (await client.get("/api/v1/phone/conversations?limit=0")).status_code == 422
 

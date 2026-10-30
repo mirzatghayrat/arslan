@@ -1,11 +1,11 @@
-import { Check, Clock, MessageSquare, RadioTower, X } from "lucide-react";
+import { Check, Clock, MessageSquare, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ConversationMeta } from "../lib/conversationMeta";
 
 /** One glyph per conversation: what it is and how it stands, the same language as the iPhone's
  *  task list — a progress ring while a task runs, amber "!" when it waits for you, green check when
  *  done, a yellow broken ring with a dash when it ended without getting it done, red cross when it
- *  stopped, a clock for scheduled work, a signal tower for Remote. */
+ *  stopped, a clock for scheduled work. */
 export default function ConversationGlyph({ meta, size = 15 }: { meta?: ConversationMeta; size?: number }) {
   const { t } = useTranslation();
   const label = (key: string) => t(`sidebar.glyph.${key}`);
@@ -16,9 +16,6 @@ export default function ConversationGlyph({ meta, size = 15 }: { meta?: Conversa
     return <span role="img" aria-label={label("waiting")} title={label("waiting")}
       className="flex shrink-0 items-center justify-center rounded-full border-2 border-warning text-[9px] font-extrabold leading-none text-warning"
       style={{ width: size, height: size }}>!</span>;
-  }
-  if (meta.kind === "remote") {
-    return <RadioTower size={size} className="shrink-0 text-foreground" role="img" aria-label={label("remote")} />;
   }
   if (meta.state === "working") {
     const r = 6, c = 2 * Math.PI * r;

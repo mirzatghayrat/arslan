@@ -169,7 +169,7 @@ async def test_each_conversation_says_its_kind_state_and_origin(client, artifact
                                      phase="running", step="run_command npm test", results={"answer-delivered": "passed", "c1": "passed"})
     with desktop_status.awaiting_approval("ask"):
         rows = {c["id"]: c for c in (await client.get("/api/v1/phone/conversations?limit=50")).json()["conversations"]}
-    assert (rows["pocket"]["kind"], rows["pocket"]["title"], rows["pocket"]["origin"]) == ("remote", "Remote", "phone")
+    assert (rows["pocket"]["kind"], rows["pocket"]["title"], rows["pocket"]["origin"]) == ("chat", "在干嘛", "phone")   # Q1 #4
     assert (rows["task-ab"]["kind"], rows["task-ab"]["state"], rows["task-ab"]["origin"]) == ("task", "done", "phone")
     assert rows["scheduled-3"]["kind"] == "scheduled"
     assert (rows["trip"]["kind"], rows["trip"]["files"], rows["trip"]["preview"]) == ("chat", 1, "行程排好了，见附件")
