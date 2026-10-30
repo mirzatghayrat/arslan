@@ -175,7 +175,7 @@ In any order unless noted. Every verdict below is posted on its PR with the sha.
   9. The morning report setting goes, replaced by the progress page's four-line brief.
   10. The four-line brief uses template sentences in v0.1.64, with no model call (recommended).
   11. A learned practice is paused after 3 failures in a row, as scheduled tasks are (recommended).
-  (12, who does INB3–INB9, is ⓪Plan's to settle: ②Main keeps them.) INB3, INB4, INB5 and INB7 are new web UI, so each also needs your OK on a mock first.
+  (12, who does INB3–INB9, is ⓪Plan's to settle: ②Main keeps them.) INB3, INB4, INB5 and INB7 are new web UI, so each also needs your OK on a mock first. **INB3's page mock is ready** (②Main, a private link sent to you): the sidebar entry with a dot, task rows with their runs and away-refusals, a paused task with Continue, the watches, the muted list and "check now". It notes that "Always allow" doesn't apply to scheduled runs. INB3's server half is #568.
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
 - **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
