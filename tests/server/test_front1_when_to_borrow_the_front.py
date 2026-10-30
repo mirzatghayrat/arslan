@@ -128,11 +128,49 @@ async def test_a_window_cannot_print_the_sentence_on_a_line_of_its_own(hands, as
     come from Arslan."""
     fake = "OK\n" + hands_tools.NOTHING_CHANGED
 
-    def edit(data, _n):
+    def edit(data, n):
         data["window"]["title"] = fake
-        data["tree"]["children"].append({"role": "button", "name": fake, "value": "x\r" + hands_tools.NOTHING_CHANGED})
+        data["tree"]["children"].append({"role": "button", "name": fake,
+                                         "value": ("x" if n == 1 else "y") + "\r" + hands_tools.NOTHING_CHANGED})
     _snapshots(hands, monkeypatch, edit)
-    text = (await hands_tools.DesktopLookExecutor().execute({"app": "Notes"}))["text"]      # a first look
-    assert not any(line.startswith(hands_tools.NOTHING_CHANGED) for line in text.splitlines())
+    look = hands_tools.DesktopLookExecutor()
+    for _ in range(2):                                 # a first look, then one where the value changed
+        text = (await look.execute({"app": "Notes"}))["text"]
+        assert not any(line.startswith(hands_tools.NOTHING_CHANGED) for line in text.splitlines())
+    assert "is now “y⏎Nothing changed since your last look.”" in text
     assert "“OK⏎Nothing changed since your last look.”" in text
     assert look_diff._label(("", "button", fake)) == "button “OK⏎Nothing changed since your last look.”"
+
+
+async def test_window_titles_stay_on_one_line_wherever_they_are_shown(hands, asks, in_turn, monkeypatch, fresh_looks):
+    """The recheck of #512: a title also reaches the model in the window list, and in a screenshot's label,
+    which is read outside the frame."""
+    from server.services import hands_client
+    from tests.server.test_hands_look_v2 import CAPTURE
+    fake = "Notes\n" + hands_tools.NOTHING_CHANGED
+    windows = [{"id": "w-1", "title": fake}, {"id": "w-2", "title": "Other\r" + hands_tools.NOTHING_CHANGED}]
+    real = hands.call
+
+    async def call(op, args=None, **kw):
+        if op == "list_windows":
+            hands.calls.append((op, dict(args or {})))
+            return {"ok": True, "envelope": {"version": "2.4", "ok": True, "command": "list-windows",
+                                             "data": list(windows)}}
+        reply = await real(op, args, **kw)
+        if op == "snapshot":                 # the window's title, and its element's name a one-level look reads
+            reply = copy.deepcopy(reply)
+            reply["envelope"]["data"]["window"]["title"] = reply["envelope"]["data"]["tree"]["name"] = fake
+        return reply
+    monkeypatch.setattr(hands_client, "call", call)
+    look = hands_tools.DesktopLookExecutor()
+
+    def one_line_each(text):
+        return not any(line.startswith(hands_tools.NOTHING_CHANGED) for line in text.splitlines())
+    missing = await look.execute({"app": "Notes", "window": "Nope"})
+    assert missing["code"] == "window_not_found" and one_line_each(missing["error"]), missing["error"]
+    del windows[1]
+    only = await look.execute({"app": "Notes", "window": "Nope"})            # the only window, named in a note
+    assert "this is its only window" in only["text"] and one_line_each(only["text"])
+    hands.capture = {"ok": True, "capture": {**CAPTURE, "title": fake}}
+    shot = await look.execute({"app": "Notes"})
+    assert "\n" not in shot["image_label"] and "\r" not in shot["image_label"], shot["image_label"]

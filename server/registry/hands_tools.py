@@ -799,14 +799,14 @@ class DesktopLookExecutor:
             asked = args["window"][:80]
             window, titles, only = await _window_id(_target(app), args["window"], job_id)
             if window is None:
-                listed = ", ".join(f"“{t[:60]}”" for t in titles[:8])
+                listed = ", ".join(f"“{hands_contract.one_line(t)[:60]}”" for t in titles[:8])
                 return _not_run({"ok": False, "external": False, "code": "window_not_found",
                                  "error": f"{app['name']} has no window titled like “{asked}” on this screen. "
                                           + (f"Its windows here: {listed}. Look with one of these titles, or "
                                              "without `window` to see its front window." if listed else
                                              "Look without `window` to see its front window.")})
             if only:
-                shown = f", “{titles[0][:60]}”" if titles and titles[0] else ""
+                shown = f", “{hands_contract.one_line(titles[0])[:60]}”" if titles and titles[0] else ""
                 window_note = (f"No window of {app['name']} is titled like “{asked}”; this is its only "
                                f"window{shown}.\n")
             call["window_id"] = window
@@ -871,7 +871,7 @@ class DesktopLookExecutor:
                        screenshot_bytes=len(capture.get("data") or "") * 3 // 4)
                 return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200],
                         "images": [{"mime_type": capture["mime"], "data": capture["data"]}],
-                        "image_label": f"{app['name']} · {window or capture.get('title') or 'window'}"[:120]}
+                        "image_label": f"{app['name']} · {hands_contract.one_line(window or capture.get('title') or 'window')}"[:120]}
         text = _take_visit_note() + window_note + (not_seen or "") + text
         _trace("look", app, "ok", started)
         # Window contents are other people's text: framed as untrusted by the tool loop.

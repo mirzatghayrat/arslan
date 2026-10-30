@@ -35,7 +35,7 @@ def elements(tree: dict) -> dict[Element, Seen]:
         if role:
             value = "" if "secure" in (node.get("states") or []) else str(node.get("value") or "")
             inside = node.get("children_count")
-            closed = isinstance(inside, int) and not isinstance(inside, bool) and not node.get("children")
+            closed = isinstance(inside, int) and not node.get("children")
             found[key] = (value, inside if closed else None)
         below = f"{path}/{role}:{name}"
         for child in node.get("children") or []:
