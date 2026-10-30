@@ -219,7 +219,8 @@ def shown_name(name, limit: int = 80) -> str:
     """An app's name as a card and the model show it: one line, without control, format (a bidi override, a
     zero-width space) or unassigned characters, at most `limit` characters (⓪Plan's review of #554: a name
     with a line break could fake a "· App — tier" line). Its script stays, unlike capability_flow's
-    `outside_label`: 微信 is a name. UNI1a's `untrusted.clean_name` (#526) can take its place once merged."""
+    `outside_label`, so an app named in Chinese or Arabic still reads as itself. UNI1a's `untrusted.clean_name`
+    (#526) can take its place once merged."""
     import unicodedata
     kept = "".join(" " if ch.isspace() else ch for ch in str(name or "")
                    if ch.isspace() or not unicodedata.category(ch).startswith("C"))
