@@ -749,6 +749,10 @@
     "more": "Mehr"
   },
   "sidebar": {
+    "pinFailed": "Anheften fehlgeschlagen. Bitte noch einmal versuchen.",
+    "pinned": "Angeheftet",
+    "pin": "Anheften",
+    "unpin": "Loslösen",
     "today": "Heute",
     "yesterday": "Gestern",
     "previous7": "Letzte 7 Tage",
