@@ -95,9 +95,10 @@ def test_macos_own_user_folder_is_writable_even_when_tmpdir_points_elsewhere(tmp
 
 def test_default_writable_and_protected_cover_the_plan(tmp_path):
     home = Path.home()
-    writable = command_sandbox.default_writable(tmp_path)
-    assert tmp_path.resolve() in writable and Path("/dev") in writable
-    assert command_sandbox._real(home / "Library" / "Caches") in writable
+    writable = {r.path for r in command_sandbox.writable_roots(tmp_path)}
+    # SBX-3 §1: /dev is narrowed to the listed devices (tests/server/sbx/test_sbx3_commands.py).
+    assert str(tmp_path.resolve()) in writable and "/dev/null" in writable and "/dev" not in writable
+    assert str(command_sandbox._real(home / "Library" / "Caches")) in writable
     protected = command_sandbox.default_protected()
     for p in (home / ".ssh", home / "Library" / "Keychains", home / ".arslan-updater.key"):
         assert command_sandbox._real(p) in protected
