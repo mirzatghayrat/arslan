@@ -77,3 +77,42 @@ def test_the_macos_run_makes_every_xfail_strict():
     text = CI.read_text(encoding="utf-8")
     run = re.search(r"run: (\.venv/bin/pytest tests/ -m macos .*)", text).group(1)
     assert "-o xfail_strict=true" in run
+
+
+def _xfail_misuses() -> list[str]:
+    """Every xfail in tests/ pins `raises=` and stays strict, and nothing calls pytest.xfail().
+
+    The step counts an xfail as ran whatever made it fail: a fixture that raises in
+    setup or a NameError in the body is also `<skipped type="pytest.xfail">`. Pinning
+    `raises=` turns those into `<failure>`. An explicit `strict=False` beats
+    `-o xfail_strict=true`, and `pytest.xfail()` is an xfail with no `raises=` at all.
+    """
+    import ast
+
+    found = []
+    for path in sorted(CI.parents[2].joinpath("tests").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            where = f"{path.relative_to(CI.parents[2])}:{node.lineno}"
+            if name != "xfail":
+                continue
+            is_mark = isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute) \
+                and func.value.attr == "mark"
+            if not is_mark:
+                found.append(f"{where}: pytest.xfail() call")
+                continue
+            kw = {k.arg: k.value for k in node.keywords}
+            if "raises" not in kw:
+                found.append(f"{where}: xfail without raises=")
+            strict = kw.get("strict")
+            if isinstance(strict, ast.Constant) and strict.value is False:
+                found.append(f"{where}: xfail(strict=False)")
+    return found
+
+
+def test_every_xfail_pins_what_it_expects():
+    assert _xfail_misuses() == []
