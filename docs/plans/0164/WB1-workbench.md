@@ -58,6 +58,16 @@ The panel holds only things that sit next to the conversation, the way Claude de
 - **WB1-1 tabs and look** (web only, about +250/−200 lines plus tests): merge Task into Files, the content-driven tab list, the divider, the headings. **§11:** `TaskTab.tsx` is deleted in the same PR; its running list moves into the Progress tab.
 - SIDE-2 and SUB's progress tree then add their tabs through WB1's tab list.
 
+## Browser decisions (user, 2026-10-30, in ⑥Helper's chat)
+
+- **In WB1-1:** the address field also takes words. Words go to Bing (`https://www.bing.com/search?q=…`), and an address without a scheme gets `https://` added. Today the field accepts only full `https://` addresses (`web/src/components/BrowserReader.tsx:70`, `type=url pattern="https://.*"`). A Bing search is a plain GET, so it fits the reader's no-forms rule. Test: words become a Bing URL; `example.com` becomes `https://example.com`; `http://` and other schemes are still refused.
+- **Next round, candidates:**
+  - **BRW1:** a real browser instead of the screenshot reader, where the user can click on the page and sign in;
+  - **BRW2:** the user and the agent see the same browser, as Claude desktop's pane does. Hands' pages show in the workbench, and the user can take over.
+
+  Both are on the security surface: each needs its own card, and the user merges. They are recorded in the v0.1.64 README §3.13.
+- **Pending the user's OK:** a single view menu in the panel header instead of a row of tabs (the mock's "Tabs: One menu / A row"). If they pick it, the menu shows the current view with a chevron and lists Files, Progress, Browser, the side chats and "New side chat"; ⌘1…⌘9 pick a view; a blue dot marks a view that appeared while the user was elsewhere.
+
 ## Not here
 
 - SUB's sub-session tree itself (SUB card) and the side chat itself (SIDE card); WB1 only gives them the slot.
