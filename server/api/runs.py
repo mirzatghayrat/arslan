@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import math
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -618,15 +617,13 @@ async def conversation_change_diff(conversation_id: str, run_id: int, folder: st
     dot-path or a secret-shaped name; 200 with `reason` (`too_big`, `not_text`, `copy_changed`) and no
     lines when there is no diff to show. Read only."""
     from server.services import checkpoints, file_reader
-    from server.services.workspace_paths import _contained
     run = await db.get(Run, run_id)
     if run is None or run.conversation_id != conversation_id or run.kind not in ("live", "host", "scheduled"):
         raise HTTPException(404, detail={"code": "not_listed"})
     readable = await file_reader.roots()
-    if not any(_contained(Path(folder), root) for root in readable):
-        raise HTTPException(404, detail={"code": "not_listed"})
     try:
-        return {"reason": None, **await asyncio.to_thread(checkpoints.diff, run_id, _started(run), folder, path)}
+        return {"reason": None, **await asyncio.to_thread(checkpoints.diff, run_id, _started(run), folder, path,
+                                                          readable)}
     except checkpoints.NoDiff as exc:
         if exc.code == "not_listed":
             raise HTTPException(404, detail={"code": "not_listed"}) from None

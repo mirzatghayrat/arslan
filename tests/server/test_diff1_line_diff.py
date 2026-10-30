@@ -3,6 +3,7 @@ one turn as a line diff, the S3 saved copy against the file now, for the reader 
 Changes. Read only; only paths `changes` lists, inside a folder the reader may read, never a dot-path or a
 secret-shaped name, never through a link."""
 import json
+from pathlib import Path
 
 import pytest
 
@@ -173,3 +174,123 @@ async def test_a_link_put_where_the_file_was_is_not_followed(client, ws, tmp_pat
     (ws / "plan.md").symlink_to(secret)
     body = (await _diff(client, ws, run_id, "plan.md")).json()
     assert body["reason"] == "not_text" and "PRIVATE" not in json.dumps(body)
+
+
+# -- ②Main's review of #553: the boundary is the reader's roots, walked from there with no link followed --
+
+@pytest.fixture
+def nested(tmp_path, monkeypatch):
+    """A reader root with the kept folder two levels down (`a/proj`), and an outside folder shaped like it."""
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(config, "data_dir", lambda: data)
+    reader = (tmp_path / "reader")
+    (reader / "a" / "proj" / "sub").mkdir(parents=True)
+    (reader / "a" / "proj" / "notes.txt").write_text("mine\n")
+    (reader / "a" / "proj" / "sub" / "deep.txt").write_text("deep\n")
+    outside = tmp_path / "outside"
+    (outside / "proj").mkdir(parents=True)
+    (outside / "proj" / "notes.txt").write_text("PROBE-LINKED\n")
+    (outside / "credentials").write_text("aws_secret=PROBE-DOTDOT\n")
+    reader = reader.resolve()
+
+    async def roots():
+        return [reader]
+    monkeypatch.setattr(file_reader, "roots", roots)
+    checkpoints._reset_for_tests()
+    yield reader, outside.resolve()
+    checkpoints._reset_for_tests()
+
+
+def _write(path, text):
+    path.write_text(text)
+
+
+async def test_a_link_put_above_the_kept_folder_reads_nothing_outside(client, nested):
+    reader, outside = nested
+    kept = reader / "a" / "proj"
+    run_id = await _turn(client, kept, lambda: _write(kept / "notes.txt", "mine, edited\n"))
+    assert (await _diff(client, kept, run_id, "notes.txt")).status_code == 200      # positive control
+    (reader / "a").rename(reader / "a-moved")
+    (reader / "a").symlink_to(outside, target_is_directory=True)                 # no manifest change
+    probe = await _diff(client, kept, run_id, "notes.txt")
+    assert probe.status_code == 404 and "PROBE-LINKED" not in probe.text
+
+
+async def test_a_dotdot_root_in_a_rewritten_manifest_reads_nothing_outside(client, nested):
+    reader, outside = nested
+    kept = reader / "a" / "proj"
+    run_id = await _turn(client, kept, lambda: _write(kept / "notes.txt", "mine, edited\n"))
+    path = checkpoints.root_dir() / str(run_id) / "manifest.json"
+    data = json.loads(path.read_text())
+    data["roots"][0]["path"] = f"{reader}/../outside"
+    data["roots"][0]["finished"] = {"credentials": {"now": {"sha256": "x"}, "saved": None}}
+    path.write_text(json.dumps(data))
+    probe = await _diff(client, kept, run_id, "credentials", folder=f"{reader}/../outside")
+    assert probe.status_code == 404 and "PROBE-DOTDOT" not in probe.text
+
+
+async def test_a_folder_that_cannot_be_walked_is_a_refusal_not_a_server_error(client, nested):
+    reader, _ = nested
+    kept = reader / "a" / "proj"
+    run_id = await _turn(client, kept, lambda: _write(kept / "sub" / "deep.txt", "deep, edited\n"))
+    assert (await _diff(client, kept, run_id, "sub/deep.txt")).status_code == 200   # positive control
+    (kept / "sub").chmod(0)                                                       # unreadable now
+    try:
+        refused = await _diff(client, kept, run_id, "sub/deep.txt")
+    finally:
+        (kept / "sub").chmod(0o755)
+    assert refused.status_code == 404 and refused.json()["detail"]["code"] == "not_listed"
+
+
+async def test_a_dot_folder_between_the_reader_root_and_the_kept_folder_is_hidden(client, tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(config, "data_dir", lambda: data)
+    reader = tmp_path / "reader"
+    kept = reader / ".config" / "app"
+    kept.mkdir(parents=True)
+    (kept / "settings.txt").write_text("a\n")
+    reader, kept = reader.resolve(), kept.resolve()
+
+    async def roots():
+        return [reader]
+    monkeypatch.setattr(file_reader, "roots", roots)
+    checkpoints._reset_for_tests()
+    try:
+        run_id = await _turn(client, kept, lambda: _write(kept / "settings.txt", "b\n"))
+        hidden = await _diff(client, kept, run_id, "settings.txt")
+    finally:
+        checkpoints._reset_for_tests()
+    assert hidden.status_code == 403 and hidden.json()["detail"]["code"] == "hidden"
+
+
+def test_the_walk_itself_follows_no_link_below_its_base(nested):
+    """The resolve check and the walk each stop the link above; this pins the walk alone (a link made between
+    the check and the open)."""
+    reader, outside = nested
+    assert checkpoints._read_side(reader, ("a", "proj", "notes.txt")) == b"mine\n"   # positive control
+    (reader / "a").rename(reader / "a-moved")
+    (reader / "a").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(checkpoints.NoDiff) as refused:
+        checkpoints._read_side(reader, ("a", "proj", "notes.txt"))
+    assert refused.value.code == "not_listed"
+
+
+async def test_a_link_made_between_the_check_and_the_open_reads_nothing_outside(client, nested, monkeypatch):
+    """The race the walk from the reader root closes: `a` becomes a link after the folder was checked and
+    before the file is opened."""
+    reader, outside = nested
+    kept = reader / "a" / "proj"
+    run_id = await _turn(client, kept, lambda: _write(kept / "notes.txt", "mine, edited\n"))
+    real = checkpoints._read_side
+
+    def swap_then_read(base, parts):
+        if not Path(base).is_relative_to(checkpoints.root_dir()) and not (reader / "a").is_symlink():
+            (reader / "a").rename(reader / "a-moved")
+            (reader / "a").symlink_to(outside, target_is_directory=True)
+        return real(base, parts)
+    monkeypatch.setattr(checkpoints, "_read_side", swap_then_read)
+    probe = await _diff(client, kept, run_id, "notes.txt")
+    assert (reader / "a").is_symlink()                                          # the swap did happen
+    assert probe.status_code == 404 and "PROBE-LINKED" not in probe.text

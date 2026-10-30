@@ -668,23 +668,24 @@ class NoDiff(Exception):
         self.code = code
 
 
-def _read_side(folder: Path, rel: str) -> bytes | None:
-    """The file at folder/rel, None when there is none. No folder of the path and not the file itself is
-    followed through a link (as a restore); a side that is not a regular file is not text."""
-    parts = Path(rel).parts
+def _read_side(base: Path, parts: tuple[str, ...]) -> bytes | None:
+    """The file at base/parts, None when there is none. Every folder below `base` and the file itself are
+    opened without following a link (②Main's review of PR 553: walking from a trusted base, never from a
+    folder a link above it could redirect); a side that is not a regular file is not text. Any other error
+    on the way (a folder now a link, unreadable) is a refusal, not a server error."""
     try:
-        fd = _open_folder(folder, parts[:-1], create=False)
+        fd = _open_folder(base, parts[:-1], create=False)
     except FileNotFoundError:
         return None
+    except OSError:
+        raise NoDiff("not_listed") from None
     try:
         try:
             handle = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
         except FileNotFoundError:
             return None
-        except OSError as exc:
-            if exc.errno == errno.ELOOP:          # a link where the file was
-                raise NoDiff("not_text") from None
-            raise
+        except OSError:                            # a link where the file was, or unreadable
+            raise NoDiff("not_text") from None
         with os.fdopen(handle, "rb") as f:
             st = os.fstat(f.fileno())
             if not stat.S_ISREG(st.st_mode):
@@ -714,15 +715,18 @@ def _text_lines(data: bytes | None) -> list[str]:
     return lines
 
 
-def diff(run_id: int, not_before: float, folder: str, rel: str) -> dict:
+def diff(run_id: int, not_before: float, folder: str, rel: str, readable: list[Path]) -> dict:
     """DIFF1: one path a run changed, as lines: the saved copy (before the run) against the file now, the
     view Overview's Changes opens. Only a path `changes` lists for the run (same manifest, same
     `not_before` rule: it exists only while the turn can still be undone), never a dot-path or a
-    secret-shaped name (file_reader's rule). `lines` is every line with its op (" ", "-", "+") and its old
+    secret-shaped name (file_reader's rule), and only inside one of `readable` (file_reader.roots), the folder
+    taken as recorded (resolved) and the file opened by walking from that root with no link followed.
+    `lines` is every line with its op (" ", "-", "+") and its old
     and new numbers, so the reader can fold what did not change; `since` is True when the file changed
     after the run ended (the diff is still against the file now). Read only; raises NoDiff. A caller runs
     it off the event loop."""
-    from server.services.workspace_paths import is_secret_name
+    from server.services import file_reader
+    from server.services.workspace_paths import _contained as _within
     data = manifest(run_id)
     if data is None or data["created_at"] < not_before:
         raise NoDiff("not_listed")
@@ -730,16 +734,30 @@ def diff(run_id: int, not_before: float, folder: str, rel: str) -> dict:
     state = (entry.get("finished") or {}).get(rel) if entry else None
     if state is None or not _contained(rel) or _in_git(rel):
         raise NoDiff("not_listed")
-    if any(part.startswith(".") for part in Path(rel).parts) or is_secret_name(Path(rel).name):
+    # The folder as recorded (finish stores roots resolved): absolute, and still itself once resolved, so no
+    # link and no `..` above it moved it; then the reader root it lies in, and the way down from there.
+    where = Path(folder)
+    try:
+        if not where.is_absolute() or where.resolve(strict=True) != where:
+            raise NoDiff("not_listed")
+    except (OSError, RuntimeError):
+        raise NoDiff("not_listed") from None
+    root = next((r for r in readable if _within(where, r)), None)
+    if root is None:
+        raise NoDiff("not_listed")
+    down = where.relative_to(root)
+    if down.parts and not _contained(str(down)):
+        raise NoDiff("not_listed")
+    if file_reader._hidden(where / rel, root):          # the reader's own rule, so the two stay one
         raise NoDiff("hidden")
     before = None
     if state.get("saved") is not None:
         if not _CLONE_NAME.fullmatch(str(entry.get("clone"))):   # the manifest can be written outside the sandbox
             raise NoDiff("copy_changed")
-        before = _read_side(_run_dir(run_id) / entry["clone"], rel)
+        before = _read_side(_run_dir(run_id), (entry["clone"], *Path(rel).parts))
         if before is None or hashlib.sha256(before).hexdigest() != state["saved"]:
             raise NoDiff("copy_changed")
-    after = _read_side(Path(folder), rel)
+    after = _read_side(root, (*down.parts, *Path(rel).parts))
     old, new = _text_lines(before), _text_lines(after)
     now = state.get("now")
     since = (hashlib.sha256(after).hexdigest() if after is not None else None) != (now or {}).get("sha256")
