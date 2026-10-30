@@ -150,8 +150,15 @@ def test_the_console_script_is_found_in_a_real_dist_info_layout(tmp_path):
 
 # ── the install ──────────────────────────────────────────────────────────────
 
-async def _fake_pypi(root: Path, identifier: str, version: str) -> dict:
+async def _fake_lock(root: Path, identifier: str, version: str) -> dict:
+    """CAP4a-2: the lock `prepare` resolves before the card."""
     (root / "requirements.lock").write_text(f"{identifier}=={version} --hash=sha256:abc\n")
+    return {"file": "requirements.lock", "sha256": hashlib.sha256((root / "requirements.lock").read_bytes()).hexdigest(),
+            "packages": [{"name": identifier, "version": version}]}
+
+
+async def _fake_pypi(root: Path, identifier: str, lock: dict) -> dict:
+    assert (root / "requirements.lock").is_file()                    # installed from the prepared lock
     return {"command": str(root / "venv" / "bin" / identifier), "args": [], "lock_sha256": "f" * 64}
 
 
@@ -163,6 +170,7 @@ async def test_an_install_is_pinned_switched_off_and_sandboxed(execution_db, dat
     async def mit(repo):
         return "MIT", "LICENSE"
     monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
     monkeypatch.setattr(ci, "install_pypi", _fake_pypi)
     row = await ci.install(CAND, folders=[str(grant)])
     assert row.state == "installed" and row.version == "1.1.2" and row.lock_sha256 == "f" * 64
@@ -189,6 +197,7 @@ async def test_a_license_that_is_not_usable_stops_before_any_download(execution_
 
     async def never(*a, **k):
         downloads.append(a)
+    monkeypatch.setattr(ci, "lock_pypi", never)
     monkeypatch.setattr(ci, "install_pypi", never)
     with pytest.raises(ci.InstallFailure, match="license"):
         await ci.install(CAND, folders=[])
@@ -203,9 +212,10 @@ async def test_a_failed_step_is_recorded_and_leaves_nothing_behind(execution_db,
     async def mit(repo):
         return "MIT", "LICENSE"
 
-    async def broken(root, identifier, version):
-        raise ci.InstallFailure("step_failed", "uv pip compile: no wheel for excel-mcp-server")
+    async def broken(root, identifier, lock):
+        raise ci.InstallFailure("step_failed", "uv pip install: no wheel for excel-mcp-server")
     monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
     monkeypatch.setattr(ci, "install_pypi", broken)
     with pytest.raises(ci.InstallFailure):
         await ci.install(CAND, folders=[])
@@ -213,7 +223,8 @@ async def test_a_failed_step_is_recorded_and_leaves_nothing_behind(execution_db,
         rows = (await db.execute(select(CapabilitySource))).scalars().all()
         servers = (await db.execute(select(MCPServer))).scalars().all()
     assert [(r.state, r.error.split(":")[0]) for r in rows] == [("failed", "step_failed")]
-    assert servers == [] and list((data / "capabilities").iterdir()) == []
+    assert servers == [] and [p.name for p in (data / "capabilities").iterdir()] == [".prepared"]
+    assert list((data / "capabilities" / ".prepared").iterdir()) == []      # the staged lock went too
 
 
 async def test_a_remote_server_is_registered_without_a_sandbox_and_keeps_its_key(execution_db, data, monkeypatch):
@@ -241,6 +252,7 @@ async def test_remove_moves_the_folder_to_the_trash(execution_db, data, monkeypa
     async def mit(repo):
         return "MIT", "LICENSE"
     monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
     monkeypatch.setattr(ci, "install_pypi", _fake_pypi)
     row = await ci.install(CAND, folders=[])
     await ci.remove(row.id)
