@@ -2,7 +2,7 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-31, after midnight.
+**Updated:** 2026-10-31, morning (after the quota reset).
 
 ## Merged for v0.1.64 (newest first)
 
@@ -126,8 +126,9 @@ In any order unless noted. Every verdict below is posted on its PR with the sha.
 **Under review or on hold (don't merge these):**
 
 - **#559** (MEM1: merge memories by meaning) at `35047f0a`: changes requested by ②Main (effort=max). High: the merge check sends existing memories, sensitive and local-only ones included, to the judge model, which can be a cloud model, without personal_context's gates, and the judge's ledger keeps both texts for 90 days. ⑥Helper is fixing it. #560 (its fail-safe tests) is stacked on it and OK'd.
-- **#561** (CAP4a-2: the lock before the card, with Arslan's own runtime) : ⓪Plan's effort=max review is running.
-- **#525**: the follow-up look at `71dbc0ce` is posted. F1 and F2 are right, but it conflicts with main (SB1's new pocket cases are #525's to remove), so no CI has run; one low fail-open in the Bridge's run.get.
+- **#561** (CAP4a-2: the lock before the card, with Arslan's own runtime) at `ba8b4854`: fix then merge (⓪Plan's effort=max review). The uv path holds. Medium: the npm lock step isn't sandboxed, so a transitive git dependency is fetched before the card and locked without integrity. ⑤CAP rejects non-registry or integrity-less lock entries, or moves the resolve into the sandbox. A few lows and two missing tests.
+- **JUDGE1** (not opened yet; ⑥Helper): a **shipped gap** in v0.1.63 and main. Lessons' memory.merge and memory.conflict send up to two stored lessons to the judge without recall()'s cloud gate, so with cloud memory off a stored lesson can reach a cloud router model, and the judge's ledger keeps that text after the lesson is deleted. Lessons carry no sensitivity, so it's low to medium; every other judge point sends only what the chat model already gets. The fix: the gate in `_nearest`, ledger rows carry `ref=lesson:<id>` and go with the lesson, and the prune runs on a timer. ②Main reviews at effort=max. It shares one gate helper with #559's fix.
+- **#525** (Q1 #4, retire the pocket) at `63c70a69`: OK (⓪Plan's reviewer). Main is merged with SB1's pocket cases removed, and run.get and status now fail closed. CI 41062445096 passed. A draft until Q1c ships and you say go.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
 - **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted (the tripwire is text-only; approving a re-run erases the denial); ③Hands takes it after the rebases. 3a is rebased at `c596ed3d`. The wiring onto the default-deny base waits for SBX-M and the listening decision (card :255).
 
@@ -157,7 +158,8 @@ In any order unless noted. Every verdict below is posted on its PR with the sha.
 - **CAP4a-2: ship the runtimes in the app, or fetch them on first need (⑤CAP):** shipping adds about 70 MB, and the lock still needs the network, so offline gains little. Fetching relies on the SHA-256 pinned in the repo; shipping is covered by Arslan's signature and notarization. Both need a release to move the pin. Recommended: keep fetching. Nothing waits on it.
 - **DIFF1-0 mock (⑥Helper):** two picks: a unified or side-by-side diff, and whether files that were made or deleted also open. The web half waits on these.
 - **CAP4a-3, three questions (⑤CAP):** (1) the first domain and GitHub-account allowlist; ⑤CAP measures the Registry first and brings 2–3 candidate lists with numbers. (2) A remote server whose publisher has no verified domain (`io.github.<account>`): manual-only, as the card says (recommended), or one-click with "host not verified". (3) The start-time Registry re-check: once a day per server and on the first start after an update (recommended), or every start.
-- **The judge's ledger (from #559's review):** it stores the texts it judged for 90 days and shows them in Activity. #559 fixes that for memory merges; ⓪Plan is checking whether other judge points store sensitive text the same way.
+- **Judge ledger rows from before JUDGE1:** clean them once at boot (deletes existing rows that hold stored lesson text), or leave them to the 90-day prune? The rows are reachable through `GET /judgments`, not shown on the Activity card. ⓪Plan recommends the one-time clean, since the text outlives the lessons you deleted.
+- **CAP4a-3's allowlist, now with numbers (⑤CAP's read-only walk of the public Registry, #563 comment 6527457019):** 53,070 servers, 51,445 one-click today. Options: **A**, official accounts only: 0 one-click. **B**, A plus about 40 vendors' own domains and GitHub orgs: 42. **D**, packages from any verified domain (lock, scan and sandbox still apply) with remotes only from B: 2,583. **C**, any verified domain: 21,798, mostly remote. ⑤CAP suggests B or D.
 - **UNI1b mock:** ⑤CAP's mock shows the invisible-character markers on the save card. Option B is recommended. Pick one, or ask for changes.
 - **INB2 and skills under D2 (from #519's review):** INB2's allowlist (`untrusted.py:168`) still counts a skill read as "off the list", so after reading a skill, "about you" memories wait for the user instead of taking effect. D2 covered reading, not memory. Recommended: keep it as is, since memory writes are the stricter surface, and record it as a stated limit. The alternative is to treat a skill read as clean, like D2.
 - **An SBX-2 deny that let a connection through once (③Hands, on macOS 26.6.2):** `test_sbx2_kernel.py::test_listener_refusal_and_arslan_port_exclusion[any-declared-default-deny]` connected to a denied port (errno 0) once in a 14-minute run, and passed 4 of 4 alone. It goes into SBX-M as a repeat loop (hundreds of runs, each errno recorded, and a check that the connecting process was the sandboxed one). What follows is your call once that's measured.
