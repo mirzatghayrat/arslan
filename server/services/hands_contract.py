@@ -19,7 +19,7 @@ HINTS = {
     "STALE_REF": "look_again", "SNAPSHOT_NOT_FOUND": "look_again", "TIMEOUT": "look_again",
     "AMBIGUOUS_TARGET": "look_closer", "ELEMENT_NOT_FOUND": "look_again",
     "APP_NOT_FOUND": "open_app", "WINDOW_NOT_FOUND": "open_app",
-    "PERM_DENIED": "allow_hands", "POLICY_DENIED": "use_set_value",
+    "PERM_DENIED": "allow_hands", "POLICY_DENIED": "needs_focus",
     "ACTION_NOT_SUPPORTED": "other_way", "ACTION_FAILED": "other_way", "APP_UNRESPONSIVE": "look_again",
 }
 
@@ -38,7 +38,13 @@ MESSAGES = {
                    "System Settings → Privacy & Security → Accessibility; if “Arslan Hands” is listed, remove "
                    "it with “−”; then in Arslan open Settings → Arslan Hands, click “Ask macOS” and turn "
                    "Arslan Hands on. Then try again.",
-    "use_set_value": "This field cannot take typed text without taking focus, which Arslan never does.",
+    # FRONT1 (B, as the user corrected it, 2026-10-30): the element offers no action agent-desktop can do in
+    # the background. Its fallback would take focus or move the pointer, which only `--headed` allows (its
+    # chain_step_exec.rs at the pin). Arslan never passes that (spec 0153 §1), and a borrow runs the same
+    # command, so asking for the front changes nothing. The envelope says `not_delivered`.
+    "needs_focus": "agent-desktop did not deliver this: it could do it only by taking the app's focus or moving "
+                   "the pointer, which Arslan never lets it do, so front: true does not change that. Use another "
+                   "element or a menu item that offers this action, or tell the user what you needed.",
     "other_way": "That element cannot do this. Look for another way (a menu item, a different button).",
 }
 
