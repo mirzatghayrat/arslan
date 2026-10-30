@@ -90,7 +90,10 @@ async def remove(source_id: str) -> None:
             pack = await db.get(SkillPack, row.skill_key) if row.skill_key else None
         ours = pack is not None and pack.source_id == source_id
         if ours:
-            capability_list.skill_to_trash(pack)
+            try:
+                capability_list.skill_to_trash(pack)
+            except capability_list.NotRemovable as exc:            # its folder is a link (#499 recheck 1)
+                raise DossierError("not_removable") from exc
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, row.skill_key) if ours else None
             if pack is not None:
