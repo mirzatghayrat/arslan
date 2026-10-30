@@ -546,6 +546,8 @@ async def stop() -> None:
     if _loop_task is not None:
         try:
             await within(asyncio.shield(_loop_task), timeout=5.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
+        # Awaiting the loop this function just told to stop: shutdown goes on whatever it does. Swallowing
+        # CancelledError also hides a cancel of stop() itself; re-raising it is a behaviour change (EXC1, own PR).
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001 — the loop we just stopped
             pass
         _loop_task = None

@@ -407,8 +407,8 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         try:
             from server.services import desktop_status
             desktop_status.push("lesson_learned", conversation_id=conversation_id, summary=item["text"][:120])
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 — the menu bar's line is a nicety; the lesson is saved
+            logger.debug("lesson_learned status push failed: %s", type(exc).__name__)
     return learned
 
 

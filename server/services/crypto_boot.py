@@ -217,7 +217,7 @@ def migrate_legacy_ciphertext(connection) -> int:
         try:
             primary.decrypt(raw)
             continue                      # already current
-        except Exception:                 # noqa: BLE001
+        except Exception:                 # noqa: BLE001 — a trial decrypt: failing is the expected path, the legacy try decides
             pass
         try:
             plaintext = legacy.decrypt(raw).decode("utf-8")
