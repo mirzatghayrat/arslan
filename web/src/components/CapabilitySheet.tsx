@@ -56,8 +56,6 @@ export default function CapabilitySheet({ row, name, what, used, error, onClose,
       {server !== undefined && <McpServers only={server} onChanged={onChanged} />}
       {row.origin === "builtin" && row.switch !== null &&
         <p className="text-[12px] text-subtle-foreground" data-testid="cap-sheet-builtin">{t("capabilityList.builtinHint")}</p>}
-      {row.origin === "unknown" &&                      /* SKF1: why there is no delete button (#519 review) */
-        <p className="text-[12px] text-subtle-foreground" data-testid="cap-sheet-unknown">{t("capabilityList.unknownHint")}</p>}
       {row.deletable && <div className="flex justify-end border-t border-border pt-3">
         <Button size="sm" tone="destructive" data-testid="cap-sheet-delete" onClick={() => onDelete(row)}>
           {t("capabilityList.delete")}</Button></div>}

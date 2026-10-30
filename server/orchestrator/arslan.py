@@ -1053,9 +1053,9 @@ async def _skill_index(limit: int = 80) -> str:
                 func.trim(SkillPack.body) != "").order_by(SkillPack.key).limit(limit))).scalars().all()
     except Exception:  # noqa: BLE001 — a missing index must never break a turn
         return ""
-    # v0.1.64 #472 R2 (the CAP card's rule for third-party skills): a skill that is not Arslan's own is listed
-    # by its key alone ([a-z0-9-], at most 60). Its name and description are outside text, and this index rides
-    # in every request unmarked. Which skills are Arslan's own is an allowlist (SKF1, skill_trust).
+    # Every skill is listed with its name and description (the user's D2(1), 2026-10-30, as Claude Code and
+    # Codex do). Only one skill_trust does not read as its own would be listed by its key alone ([a-z0-9-], at
+    # most 60, #472 R2); skill_trust is the one place that decides, and states the limit.
     from server.registry import skill_trust
     return "\n".join(f"- {r.key}" if not skill_trust.reads_as_own(r)
                      else f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}" for r in rows)

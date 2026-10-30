@@ -845,9 +845,9 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
-        # 0.1.57 decision 5: a skill from outside is read like a web page — wrapped as untrusted, and the
-        # turn counts as having read outside content. Only Arslan's own are not: a seed row, or one Arslan
-        # wrote with no outside content in the conversation (v0.1.64 SKF1: an allowlist, skill_trust).
+        # The user's D2(1), 2026-10-30 (v0.1.64 SKF1): every skill is trusted and read unframed, as Claude
+        # Code and Codex do; 0.1.57 decision 5's frame no longer applies to skills. skill_trust is the one
+        # place that decides, and states the limit (the same trust model as approved MCP servers' text).
         from server.registry import skill_trust
         outside = not skill_trust.reads_as_own(row)
         body = row.body.strip()

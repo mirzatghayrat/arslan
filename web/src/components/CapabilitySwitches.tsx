@@ -23,6 +23,7 @@ const DAY = 86_400_000;
 /** What a delete loses, by what the row is (#500 review): said plainly, never "switched off". */
 const DELETE_BODY: Record<string, string> = {
   "skills:authored": "capabilityList.deleteBodyAuthored", "skills:installed": "capabilityList.deleteBodyInstalledSkill",
+  "skills:unknown": "capabilityList.deleteBodyAuthored",     // D2(2): deletable; no link to add it back, its text to the Trash
   "connections:manual": "capabilityList.deleteBodyManual", "connections:installed": "capabilityList.deleteBodyInstalledConnection",
 };
 /** A name from outside (a SKILL.md, a server label) inside one of Arslan's sentences: isolated, so bidi controls

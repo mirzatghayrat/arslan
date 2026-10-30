@@ -114,7 +114,7 @@ async def test_each_row_says_its_section_its_origin_and_whether_it_can_be_delete
         "skill:weekly-report": ("skills", "authored", True),
         "skill:page-notes": ("skills", "authored", True),
         "skill:gh-acme-notes": ("skills", "authored", True),
-        "skill:ghostwriter": ("skills", "unknown", False),
+        "skill:ghostwriter": ("skills", "unknown", True),                # D2(2), 2026-10-30: deletable
         "mcp:1": ("connections", "manual", True),
         "mcp:2": ("connections", "installed", True),
     }
@@ -136,11 +136,12 @@ async def test_the_server_refuses_to_delete_whatever_a_row_says_cannot_be_delete
     assert (tmp_path / "data" / "skill_scripts" / "designed-html-report" / "run.py").is_file()
 
 
-async def test_what_the_page_may_delete_is_what_d7_never_retires(api, execution_db, tmp_path):
+async def test_what_the_page_may_delete_is_every_skill_but_a_seed_row(api, execution_db, tmp_path):
     """#499 review F1: the page's mark agrees with D7 (seeder._USERS_SKILL): what the seeder never retires is
     not built in here, and what it may retire is. A skill promoted from Skill Forge before CAP2a reads as the
     user's because migration 0077 (CAP2b) marked it, and one the old Discover page made because 0080 did; no row is
-    the user's by its key alone (SKF1)."""
+    the user's by its key alone (SKF1). Every row but a seed row is deletable: the user's, and since D2(2)
+    (2026-10-30) one of unknown origin too."""
     from sqlalchemy import select
 
     from server.registry import seeder, skill_trust
@@ -153,7 +154,7 @@ async def test_what_the_page_may_delete_is_what_d7_never_retires(api, execution_
     for key in everyone:
         seed = key not in users and key in skill_trust.SEEDED
         assert (rows[f"skill:{key}"]["origin"] == "builtin") == seed, key           # SKF1: built in = a seed row
-        assert rows[f"skill:{key}"]["deletable"] == (key in users), key
+        assert rows[f"skill:{key}"]["deletable"] == (not seed), key
     assert "designed-html-report" in skill_trust.SEEDED and "ghostwriter" not in skill_trust.SEEDED   # both kinds
 
 

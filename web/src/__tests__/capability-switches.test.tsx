@@ -87,19 +87,16 @@ describe("capability list", () => {
     for (const key of ["skill:s0", "mcp:2", "mcp:3"]) expect(screen.getByTestId(`cap-delete-${key}`)).toBeInTheDocument();
   });
 
-  it("a skill of unknown origin says so and has no delete button (SKF1)", async () => {
+  it("a skill of unknown origin says so and is deleted like any skill (SKF1, D2)", async () => {
     vi.spyOn(capabilitiesApi, "list").mockResolvedValue([...ROWS, row({ key: "skill:stray", section: "skills",
-      origin: "unknown", deletable: false, switch: "skill", name: "Stray" })]);
-    render(<CapabilitySwitches />);
+      origin: "unknown", deletable: true, switch: "skill", name: "Stray" })]);
+    render(<><CapabilitySwitches /><ConfirmHost /></>);
     await screen.findByTestId("cap-terminal");
     fireEvent.click(screen.getByTestId("cap-more-skills"));
     expect(screen.getByTestId("cap-skill:stray")).toHaveTextContent("capabilityList.origin_unknown");
-    expect(screen.queryByTestId("cap-delete-skill:stray")).toBeNull();
-    for (const lang of Object.values(capabilityListMessages)) expect(lang.origin_unknown && lang.unknownHint).toBeTruthy();
-    fireEvent.click(screen.getByTestId("cap-open-skill:stray"));          // the sheet says why there is no delete
-    const sheet = await screen.findByTestId("cap-sheet");
-    expect(within(sheet).getByTestId("cap-sheet-unknown")).toHaveTextContent("capabilityList.unknownHint");
-    expect(within(sheet).queryByTestId("cap-sheet-delete")).toBeNull();
+    for (const lang of Object.values(capabilityListMessages)) expect(lang.origin_unknown).toBeTruthy();
+    fireEvent.click(screen.getByTestId("cap-delete-skill:stray"));        // no link to add it back: the copy line
+    expect(await screen.findByTestId("confirm-sheet")).toHaveTextContent("capabilityList.deleteBodyAuthored");
   });
 
   it("delete asks first, then deletes, says so and reloads; no deletes nothing", async () => {
