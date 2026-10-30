@@ -342,8 +342,8 @@ jobs:
           # tests/server/test_macos_marker_covers_the_platform_set.py — a test there now fails if they differ.
           # 0.1.63 D4 follow-up: +1, osacompile confirms an AppleScript syntax error without running it.
           # 0.1.64 SBX-1b: +9, non-ASCII and control-character paths under real seatbelt.
-          # 0.1.64 SBX-2 (#507): +290, the default-deny base and its macOS corpus.
-          EXPECTED = 359
+          # 0.1.64 SBX-2 (#507): +293, the default-deny base, its macOS corpus and three localhost measurements.
+          EXPECTED = 362
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))
