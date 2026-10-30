@@ -265,8 +265,9 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0077 | CAP2b | Drop `skill_candidates` | ⑤CAP |
 | 0078 | Q1 #3 | Where a converted quick question starts to learn, on `conversation_contexts` (the user's decision of 2026-10-29: the quick turns before it never learn) | ②Main |
 | 0079 | SB1 | Pinning a conversation in the sidebar, a flag on `conversation_contexts`; lands after the pocket deletion and INB4 | ⓪Plan's card |
+| 0080 | CAP gh- follow-up | Marks the old Discover page's `gh-` skill rows as outside (unmarked → `imported`, `authored` → `authored-outside`); drops nothing; runs after 0077 | ⑤CAP |
 
-The next free number is 0080.
+The next free number is 0081.
 
 ## 7. 门槛（R64，草稿）
 
