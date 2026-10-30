@@ -65,9 +65,21 @@ async def list_spawns() -> dict:
 
 
 async def list_capabilities() -> dict:
-    """Built-in tools, connected MCP servers, and skills. Labels/descriptions only."""
+    """Built-in tools, connected MCP servers, and skills. Labels/descriptions only.
+
+    v0.1.64 MCPOUT1: nothing from outside is handed to another agent as Arslan's own. A skill that is not
+    Arslan's own (skill_trust, SKF1: imported, written after outside content, installed from a card) is listed
+    by its key alone, `origin` "outside", the way read_skill's index lists it; a server's label goes through
+    outside_label, as list_my_capabilities does."""
+    from server.db.models import SkillPack
+    from server.registry import skill_trust
+    from server.services.capability_flow import outside_label
     menu = await registry_service.safe_menu()
     servers = await mcp_service.list_servers()
+    keys = [sk["key"] for sk in menu["skills"]]
+    async with db_session.AsyncSessionLocal() as db:
+        packs = {p.key: p for p in (await db.execute(select(SkillPack).where(SkillPack.key.in_(keys)))).scalars()}
+    own = {key for key, pack in packs.items() if skill_trust.reads_as_own(pack)}
     result = {
         "builtin_tools": [
             {"key": t["key"], "description": t["description"], "tier": t["tier"]}
@@ -76,10 +88,13 @@ async def list_capabilities() -> dict:
         # the legacy status follows the shown state (`mcp_service._to_dict`, final review M-1):
         # `connected` only for a server that is ready in this process
         "mcp_servers": [
-            {"label": s.get("label"), "status": s.get("status")} for s in servers
+            {"label": outside_label(s.get("label")) or f"MCP {s.get('id')}", "status": s.get("status")}
+            for s in servers
         ],
         "skills": [
-            {"key": sk["key"], "description": sk["description"]} for sk in menu["skills"]
+            {"key": sk["key"], "description": sk["description"] if sk["key"] in own else None,
+             "origin": "arslan" if sk["key"] in own else "outside"}
+            for sk in menu["skills"]
         ],
     }
     audit.record(tool="list_capabilities", status="ok")
