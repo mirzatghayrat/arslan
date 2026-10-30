@@ -271,6 +271,43 @@ class MemoryRepository:
         await self.db.flush()
         return proposal.id
 
+    async def merge_into(self, entry_id: str, expected_version: int, write: MemoryWrite, actor: MemoryActor) -> dict | None:
+        """MEM1: `write` says the same as this entry (memory_merge.same_meaning). None when the entry moved on
+        since (another version, deleted): the caller stores the write as a new entry. Otherwise the entry stays:
+        - paused (the user said no): nothing changes, as the same words again (#475 F3);
+        - active, and the write would wait (INB2: not present, a conversation off the list, sensitive): the
+          active entry is not touched; the write waits as a proposal against it, or joins the one already
+          pending (②Main's review: refreshing an active entry is a write that takes effect);
+        - otherwise (active and the write may take effect, or a proposal waiting anyway): the date is refreshed,
+          the stricter sensitivity and narrower use are kept, and the write's source is added to the current
+          revision, so a turn off the list stays traceable (#475 H1, as J2 for lessons). The words stay."""
+        if actor.origin == "user":
+            raise MemoryError("invalid_memory_actor")         # the user's own words are never folded away
+        entry = await self.db.get(MemoryEntry, entry_id)
+        if (entry is None or entry.owner_id != actor.owner_id or entry.version != expected_version
+                or entry.status not in ("active", "proposed", "paused")):
+            return None
+        decision = decide_write(write, actor)
+        await self._not_suppressed(write, actor)
+        if entry.status == "paused":
+            return await self.present(entry, deduplicated=True)
+        pending = None
+        if entry.status == "active" and decision.status != "active":
+            pending = await self.db.scalar(select(MemoryProposal).where(
+                MemoryProposal.target_entry_id == entry.id, MemoryProposal.status == "pending").limit(1))
+            proposal_id = pending.id if pending is not None else await self._proposal(
+                entry, actor, write.model_dump(mode="json"), reason=decision.reason or "confirmation_required")
+            return {"proposal_id": proposal_id, "status": "proposed", "target_id": entry.id,
+                    "target_version": entry.version, "merged": True,
+                    "reason": pending.reason if pending is not None else decision.reason}
+        entry.sensitivity = _stricter(_SENSITIVITY, entry.sensitivity, decision.sensitivity)
+        entry.use_policy = _stricter(_USE, entry.use_policy, decision.use_policy)
+        entry.updated_at = datetime.utcnow()
+        await self._source(entry, entry.current_revision_id, actor, decision)
+        await self.db.flush()
+        await self._sync_index(entry.id)
+        return await self.present(entry, merged=True)
+
     async def revise(self, entry_id: str, expected_version: int, write: MemoryWrite,
                      actor: MemoryActor, *, confirm_scope_change: bool = False) -> dict:
         entry = await self.get(entry_id, owner_id=actor.owner_id)

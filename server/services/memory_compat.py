@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite
 from server.db.models import MemoryEntry, MemoryLegacyMap, MemoryRevision
-from server.services import fact_dedup, personal_context
+from server.services import fact_dedup, memory_merge, personal_context
 from server.services.memory_repository import repository
 
 
@@ -55,10 +55,17 @@ async def save_facts(facts):
         if any(fact_dedup.similar(content, other) for other in known):
             continue
         known.append(content)
+        # MEM1: the same meaning in other words updates the older entry (memory_merge); a merge is not a new
+        # memory, so it is not announced ("remembered … [Undo]" would undo the older entry).
+        match = await memory_merge.same_meaning(content, kind="preference", scope=scope, core=None,
+                                                owner_id=actor.owner_id, conversation_id=ctx.conversation_id)
         try:
             async with repository() as repo:
-                value = await repo.create(MemoryWrite(content=content, scope=scope,
-                    sensitivity="sensitive" if fact.get("sensitive") else "normal"), actor)
+                write = MemoryWrite(content=content, scope=scope,
+                                    sensitivity="sensitive" if fact.get("sensitive") else "normal")
+                if match is not None and await repo.merge_into(match.id, match.version, write, actor) is not None:
+                    continue
+                value = await repo.create(write, actor)
                 dto = await fact_dto(repo, await repo.get(value["id"]))
                 # INB2: the proposal it waits as, for the chat line's two buttons (memory_proposed).
                 dto.proposal_id, dto.reason = value.get("proposal_id"), value.get("reason")
