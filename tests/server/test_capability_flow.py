@@ -18,7 +18,7 @@ CAND = {"id": "registry:io.github.haris-musa/excel-mcp-server@1.1.2", "kind": "m
         "license": {"spdx": "MIT", "read_from": "github:LICENSE", "verdict": "usable"}}
 SKILL = {"id": "library:anthropics/skills:skills/csv/SKILL.md", "kind": "skill", "name": "csv-tidy",
          "summary": "Tidy CSV", "source": "library", "source_url": "https://github.com/anthropics/skills/tree/abc/skills/csv",
-         "repo": "anthropics/skills", "version": "abc123def456", "runtime": "skill", "package": None, "remote": None,
+         "repo": "anthropics/skills", "version": "abc123def4560000000000000000000000000000", "runtime": "skill", "package": None, "remote": None,
          "not_here": None, "path": "skills/csv/SKILL.md", "stars": None, "pushed_days": None,
          "needs": {"keys": [], "network": None},
          "license": {"spdx": "MIT", "read_from": "skills/csv/LICENSE.txt", "verdict": "usable"}}
@@ -153,8 +153,9 @@ def _installer(result):
 
 async def _prepared(c):
     """CAP4a-1: what prepare_skill hands the card before it shows: one pinned commit, scanned clean."""
-    return ({"commit": "0" * 40, "files": {"skills/csv/SKILL.md": "f" * 64}, "info": {"body": "x"}, "scripts": {},
-             "references": {}}, {"level": "clean", "findings": []})
+    return ({"commit": "0" * 40, "files": {"skills/csv/SKILL.md": "f" * 64}, "sizes": {"skills/csv/SKILL.md": 1},
+             "skipped": [], "info": {"body": "x"}, "skill_md": "x", "scripts": {}, "references": {}},
+            {"level": "clean", "findings": []})
 
 
 @pytest.mark.parametrize("outcome,marks", [
@@ -367,12 +368,12 @@ async def test_a_skill_installs_at_its_commit_and_a_dangerous_one_is_never_writt
             refs.append((ref, path))
             return {"key": "csv-tidy", "info": {"key": "csv-tidy", "name": "csv-tidy", "description": "d", "body": body},
                     "full_name": "anthropics/skills", "commit": "abc123def456" + "0" * 28, "license": "MIT",
-                    "license_source": "skills/csv/LICENSE.txt", "scripts": {}, "references": {},
-                    "files": {"skills/csv/SKILL.md": "f" * 64}}
+                    "license_source": "skills/csv/LICENSE.txt", "skill_md": body, "scripts": {}, "references": {},
+                    "files": {"skills/csv/SKILL.md": "f" * 64}, "sizes": {}, "skipped": []}
         return prepare_skill
     monkeypatch.setattr(skill_import, "prepare_skill", preparer("# Tidy\nSort the rows."))
     out = await capability_flow.install_skill(SKILL)
-    assert out["state"] == "on" and refs == [("anthropics/skills@abc123def456", "skills/csv/SKILL.md")]
+    assert out["state"] == "on" and refs == [("anthropics/skills@abc123def4560000000000000000000000000000", "skills/csv/SKILL.md")]   # all 40 digits (#539 review 6)
     async with execution_db() as db:
         src = await db.get(CapabilitySource, out["source_id"])
         assert (src.kind, src.commit_sha[:12], src.skill_key, src.state) == ("skill", "abc123def456", "csv-tidy", "installed")

@@ -19,6 +19,8 @@ import asyncio
 import logging
 import re
 import uuid
+
+import httpx
 from datetime import datetime
 
 from server.db import session as db_session
@@ -140,8 +142,12 @@ async def prepare_skill(c: dict) -> tuple[dict, dict]:
     card. Raises ValueError when it cannot be fetched or added."""
     from server.services import skill_import
     sha = c.get("version") if c.get("source") == "library" else None
+    if c.get("source") == "library" and not re.fullmatch(r"[0-9a-f]{40}", str(sha or "")):
+        # #539 review 6: a library card pins the archive's commit, all 40 digits; an abbreviation could lose to a
+        # branch or tag of that name.
+        raise ValueError("the library named no full commit")
     prepared = await skill_import.prepare_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"])
-    return prepared, capability_scan.scan_skill(prepared["info"]["body"], prepared["scripts"], prepared["references"])
+    return prepared, capability_scan.scan_skill(prepared["skill_md"], prepared["scripts"], prepared["references"])
 
 
 async def install_skill(c: dict, owner_id: str = "local", *, prepared: dict | None = None,
@@ -268,10 +274,13 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             prepared, scan = await prepare_skill(cand)
         except ValueError as exc:
             return {"ok": False, "error": f"cannot be added: {_plain(str(exc))[:200]}"}
+        except httpx.HTTPError:                     # #539 review 8: a 404, a 5xx, a timeout
+            return {"ok": False, "error": "cannot be added: GitHub could not be reached or has no such skill"}
         if scan["level"] == "blocked":
             rules = ", ".join(f["rule"] for f in scan["findings"] if f["level"] == "high")
             return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); nothing was added"}
-        card.update(commit=prepared["commit"], files=prepared["files"], scan=scan)
+        card.update(commit=prepared["commit"], files=prepared["files"], sizes=prepared["sizes"],
+                    skipped=prepared["skipped"], scan=scan)
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     decision = await ask(card)

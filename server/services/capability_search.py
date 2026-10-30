@@ -139,24 +139,33 @@ def _repo_of(url: str | None) -> str | None:
 def publisher_of(c: dict) -> dict | None:
     """Who published a candidate, as a fact (CAP4a-1): a Registry name's reverse-DNS namespace, which the Registry
     verified, is a domain the publisher owns (`com.example/notes` -> example.com), and `io.github.<account>/…` a
-    GitHub account; a candidate from GitHub is its repository's account. Neither proves "official"."""
+    GitHub account; a candidate from GitHub is its repository's account. Neither proves "official". An account
+    is one GitHub would accept (letters, digits and single hyphens, at most 39), else there is no fact to say."""
     if c.get("source") == "registry":
         namespace = str(c.get("id") or "").removeprefix("registry:").rpartition("@")[0].partition("/")[0]
-        if namespace.startswith("io.github.") and len(namespace) > len("io.github."):
-            return {"kind": "github", "value": namespace[len("io.github."):]}
+        if namespace.startswith("io.github."):
+            return _github_account(namespace[len("io.github."):])
         labels = namespace.split(".")
         if len(labels) >= 2 and all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) for label in labels):
             return {"kind": "domain", "value": ".".join(reversed(labels))}
         return None
     repo = str(c.get("repo") or "")
-    return {"kind": "github", "value": repo.split("/")[0]} if "/" in repo else None
+    return _github_account(repo.split("/")[0]) if "/" in repo else None
+
+
+def _github_account(login: str) -> dict | None:
+    if re.fullmatch(r"[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}", login):
+        return {"kind": "github", "value": login}
+    return None
 
 
 def _deleted(entry: dict) -> bool:
     """The Registry marks a withdrawn entry `deleted` (its official `_meta`, or `status` in older answers)."""
     srv = entry.get("server", entry)
-    official = ((entry.get("_meta") or {}).get("io.modelcontextprotocol.registry/official") or {})
-    return (official.get("status") or srv.get("status")) == "deleted"
+    meta = entry.get("_meta")
+    official = meta.get("io.modelcontextprotocol.registry/official") if isinstance(meta, dict) else None
+    status = official.get("status") if isinstance(official, dict) else None
+    return (status or (srv.get("status") if isinstance(srv, dict) else None)) == "deleted"
 
 
 def from_registry(entry: dict) -> Candidate:
@@ -341,7 +350,7 @@ def index_archive(library: str, data: bytes) -> list[Candidate]:
         out.append(Candidate(
             id=f"library:{library}:{path}", kind="skill", name=parsed["name"], summary=parsed["description"],
             source="library", source_url=f"https://github.com/{library}/tree/{sha or 'HEAD'}/{folder}", repo=library,
-            version=sha[:12] or None, runtime="skill", path=path,
+            version=sha or None, runtime="skill", path=path,     # all 40 digits: the card pins it (#539 review 6)
             license={"spdx": spdx, "read_from": lic_path, "verdict": license_verdict(spdx, proprietary=bool(proprietary))},
             checked_at=time.time()))
     return out
