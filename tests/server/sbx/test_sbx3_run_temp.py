@@ -41,6 +41,16 @@ async def _env(command: str, cwd: Path, **kw) -> dict:
     return await terminal_exec.run(command, cwd=cwd, **kw)
 
 
+async def _reaped(path: Path, seconds: int = 30) -> None:
+    """Until every process group recorded for `path` is gone. A killed process still counts until the kernel
+    has reaped it, which takes longer under load; `finish` keeps the folder until then, by design."""
+    for _ in range(seconds * 10):
+        if not any(run_temp._alive(group) for group in run_temp._groups(path)):
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"a process group of {path} was never reaped")
+
+
 # ── where it is ──────────────────────────────────────────────────────────────
 
 def test_two_runs_get_their_own_folder_outside_every_protected_root():
@@ -116,6 +126,7 @@ async def test_a_time_limit_or_a_cancel_leaves_nothing_behind(tmp_path):
         with pytest.raises(asyncio.CancelledError):
             await task
     path = run_temp.folder(8)
+    await _reaped(path)                                                # both groups were killed
     run_temp.finish(8)
     assert not path.exists()
 
@@ -129,10 +140,7 @@ async def test_a_process_left_running_keeps_the_folder_until_the_sweep_after_it(
     assert run_temp.sweep() == 0 and path.exists()
     for group in run_temp._groups(path):
         os.killpg(group, signal.SIGKILL)
-    for _ in range(50):
-        if not any(run_temp._alive(g) for g in run_temp._groups(path)):
-            break
-        await asyncio.sleep(0.1)
+    await _reaped(path)
     assert run_temp.sweep() == 1 and not path.exists()
 
 
