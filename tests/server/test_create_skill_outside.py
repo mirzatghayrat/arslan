@@ -1,8 +1,8 @@
 """v0.1.64 CAP2a, the user's decision on #472 F1/F2 (keep the mark): a skill saved from a card that said the
-conversation had read outside content stays outside content. Saved as `authored-outside`, it is read like an
-imported skill, so a later turn that reads it asks before a network command and its notes wait for the user.
-The card's outside line covers the whole conversation, not only the turn that asks (F2). And F8: a reference
-file under a skill that was not imported is never served.
+conversation had read outside content is saved as `authored-outside`. Since the user's D2(1) (2026-10-30, SKF1)
+every skill reads unframed, so the mark is data (where the text came from) and the save card is the check. The
+card's outside line covers the whole conversation, not only the turn that asks (F2). And F8: a reference file
+under a skill that was not imported is never served.
 
 The later turns run through the real tool loop, with S64-0's offline harness (a scripted model)."""
 import json

@@ -499,7 +499,8 @@ async def test_an_imported_skill_reads_unframed_like_an_own_one(execution_db):
         trace, convo = [], []
         tool_loop._record_tool_result("read_skill", {"key": key}, result, lambda e: None, trace,
                                       '{"tool": "read_skill"}', convo)
-        seen[key] = (result["external"], untrusted.end_turn(token), "Do " in convo[-1]["content"])
-    # D2(1), 2026-10-30: every skill is trusted and read unframed, as Claude Code and Codex do.
-    assert seen["imported-one"][:2] == (False, False)
-    assert seen["own-one"][:2] == (False, False)
+        seen[key] = (result["external"], untrusted.end_turn(token), "Do " in convo[-1]["content"],
+                     untrusted.DELIM_OPEN in convo[-1]["content"])
+    # D2(1), 2026-10-30: every skill is trusted and read unframed, as Claude Code and Codex do: not marked
+    # external, the turn not marked, and the model's text the skill's own, with no outside-content frame.
+    assert seen["imported-one"] == seen["own-one"] == (False, False, True, False)

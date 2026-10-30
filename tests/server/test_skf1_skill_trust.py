@@ -79,6 +79,15 @@ async def _seen(api, execution_db) -> dict[str, tuple[bool, str]]:
     return seen
 
 
+def test_no_seed_carries_a_users_mark():
+    """A seed whose catalog category were one of D7's user marks would show as installed and be deletable, and
+    the seeder would never retire it (#519 recheck)."""
+    from server.registry.seed_catalog import SKILLS
+    assert not {category for _key, _name, category, *_ in SKILLS} & set(skill_trust.USER_CATEGORIES)
+    for key, _name, category, *_ in SKILLS:
+        assert skill_trust.is_seed(SkillPack(key=key, category=category, source_id=None)), key
+
+
 def test_every_skill_is_trusted_and_only_a_seed_row_is_built_in():
     for (key, category, source_id), (own, origin) in ROWS.items():
         pack = SkillPack(key=key, category=category, source_id=source_id)
