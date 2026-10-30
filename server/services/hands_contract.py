@@ -38,13 +38,20 @@ MESSAGES = {
                    "System Settings → Privacy & Security → Accessibility; if “Arslan Hands” is listed, remove "
                    "it with “−”; then in Arslan open Settings → Arslan Hands, click “Ask macOS” and turn "
                    "Arslan Hands on. Then try again.",
-    # FRONT1 (B, as the user corrected it, 2026-10-30): the element offers no action agent-desktop can do in
-    # the background. Its fallback would take focus or move the pointer, which only `--headed` allows (its
-    # chain_step_exec.rs at the pin). Arslan never passes that (spec 0153 §1), and a borrow runs the same
-    # command, so asking for the front changes nothing. The envelope says `not_delivered`.
-    "needs_focus": "agent-desktop did not deliver this: it could do it only by taking the app's focus or moving "
-                   "the pointer, which Arslan never lets it do, so front: true does not change that. Use another "
+    # FRONT1 (B, as the user corrected it, 2026-10-30): agent-desktop's actionability gate refused the element
+    # (gates.rs:114-156 at the pin): it offers no action agent-desktop can do in the background, and the focus
+    # or pointer fallback needs `--headed`. Arslan never passes that (spec 0153 §1), and a borrow runs the same
+    # command, so asking for the front changes nothing. The envelope says `not_delivered`, or
+    # `delivery_uncertain` after a scroll into view (ref_action.rs:84-97), so H2 keeps it maybe-executed.
+    "needs_focus": "agent-desktop refused this: it could do it only by taking the app's focus or moving the "
+                   "pointer, which Arslan never lets it do, so front: true does not change that. Use another "
                    "element or a menu item that offers this action, or tell the user what you needed.",
+    # A key press refused the same way is a shortcut agent-desktop blocks for safety (combo.rs:13-16 at the pin;
+    # Arslan never passes its `--force`). Not a focus problem, and not one to do another way: the app menu's
+    # Quit, for one, is not a risky label (F3 of ⓪Plan's review of #512).
+    "keys_refused": "agent-desktop refused this key combination: it blocks some shortcuts for safety, such as "
+                    "⌘Q, and front: true does not change that. Do not look for another way to do it; tell the "
+                    "user what you wanted done.",
     "other_way": "That element cannot do this. Look for another way (a menu item, a different button).",
 }
 
@@ -154,8 +161,9 @@ def parse_envelope(envelope: dict, reply: dict | None = None) -> Result:
         return Result(ok=True, command=command, data=envelope.get("data"), reply=reply or {})
     error = envelope.get("error") or {}
     code = str(error.get("code") or "INTERNAL")
+    hint = "keys_refused" if code == "POLICY_DENIED" and command == "press" else HINTS.get(code)
     return Result(ok=False, command=command, code=code, message=str(error.get("message") or ""),
-                  hint=HINTS.get(code), reply=reply or {})
+                  hint=hint, reply=reply or {})
 
 
 OUTCOMES = ("done", "sent_unconfirmed", "no_effect")
@@ -207,15 +215,23 @@ def placer(capture: dict):
     return place
 
 
+def one_line(text) -> str:
+    """A window's text on one line: every line break `str.splitlines` knows becomes ⏎. A name, value or title
+    then cannot add a line of its own to what the model reads, such as a copy of desktop_look's "Nothing
+    changed since your last look.", which `_FRONT` makes a reason to borrow the front (FRONT1, F2 of ⓪Plan's
+    review of #512)."""
+    return "⏎".join(str(text).splitlines())
+
+
 def _node_line(node: dict, place=None) -> str:
-    role = str(node.get("role") or "?")
+    role = one_line(node.get("role") or "?")
     parts = [role]
     name = node.get("name")
     if name:
-        parts.append(f"“{str(name)[:120]}”")
+        parts.append(f"“{one_line(name)[:120]}”")
     states = [str(s) for s in node.get("states") or []]      # "focused" included: it says where typing goes
     if node.get("value") not in (None, "") and "secure" not in states:
-        value = str(node["value"]).replace("\n", "⏎")
+        value = one_line(node["value"])
         parts.append(f"= {value[:200]}{'…' if len(value) > 200 else ''}")
     if states:
         parts.append("(" + ", ".join(str(s) for s in states[:6]) + ")")

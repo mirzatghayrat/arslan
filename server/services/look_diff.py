@@ -12,14 +12,18 @@ MAX_SHOWN = 12            # changes listed; the rest are counted
 
 Key = tuple[str, str, str]                 # (scope, app, window)
 Element = tuple[str, str, str]             # (path, role, name)
+Seen = tuple[str, int | None]              # (value, how many elements a part the look left closed holds)
 
-_last: "OrderedDict[Key, dict[Element, str]]" = OrderedDict()
+_last: "OrderedDict[Key, dict[Element, Seen]]" = OrderedDict()
 
 
-def elements(tree: dict) -> dict[Element, str]:
-    """Every element of a look's tree that has a role, by (path, role, name) → its value.
+def elements(tree: dict) -> dict[Element, Seen]:
+    """Every element of a look's tree that has a role, by (path, role, name) → its value and, for a part the
+    look left closed, how many elements it holds. A look is a skeleton that stops a few levels down, so a list
+    that grew by a row changes only that count (FRONT1, F1 of ⓪Plan's review of #512): without it, the look
+    would say nothing changed, which `_FRONT` makes a reason to borrow the front and do the action again.
     Same-named siblings get an index so they stay distinct."""
-    found: dict[Element, str] = {}
+    found: dict[Element, Seen] = {}
 
     def walk(node: dict, path: str) -> None:
         role, name = str(node.get("role") or ""), str(node.get("name") or "")
@@ -30,7 +34,9 @@ def elements(tree: dict) -> dict[Element, str]:
             key = (path, role, f"{name}#{n}")
         if role:
             value = "" if "secure" in (node.get("states") or []) else str(node.get("value") or "")
-            found[key] = value
+            inside = node.get("children_count")
+            closed = isinstance(inside, int) and not isinstance(inside, bool) and not node.get("children")
+            found[key] = (value, inside if closed else None)
         below = f"{path}/{role}:{name}"
         for child in node.get("children") or []:
             if isinstance(child, dict):
@@ -42,19 +48,27 @@ def elements(tree: dict) -> dict[Element, str]:
 
 
 def _label(element: Element) -> str:
+    from server.services.hands_contract import one_line
     _, role, name = element
-    name = name.split("#")[0]
-    return f"{role} “{name[:60]}”" if name else role
+    name = one_line(name.split("#")[0])
+    return f"{one_line(role)} “{name[:60]}”" if name else one_line(role)
 
 
-def describe(before: dict[Element, str], after: dict[Element, str]) -> str:
-    """One line: "+ added; − removed; <element> is now “value”", or "" when nothing changed."""
+def describe(before: dict[Element, Seen], after: dict[Element, Seen]) -> str:
+    """One line: "+ added; − removed; <element> is now “value”; <element> now holds N (was M)", or "" when
+    nothing changed."""
+    from server.services.hands_contract import one_line
     changes = [f"+ {_label(e)}" for e in after if e not in before]
     changes += [f"− {_label(e)}" for e in before if e not in after]
-    for element, value in after.items():
-        if element in before and before[element] != value:
-            shown = value.replace("\n", "⏎")
+    for element, (value, inside) in after.items():
+        if element not in before:
+            continue
+        was_value, was_inside = before[element]
+        if was_value != value:
+            shown = one_line(value)
             changes.append(f"{_label(element)} is now “{shown[:80]}{'…' if len(shown) > 80 else ''}”")
+        if inside is not None and was_inside is not None and inside != was_inside:
+            changes.append(f"{_label(element)} now holds {inside} (was {was_inside})")
     if not changes:
         return ""
     more = len(changes) - MAX_SHOWN

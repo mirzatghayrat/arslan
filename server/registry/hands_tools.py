@@ -851,7 +851,7 @@ class DesktopLookExecutor:
                 capture, shot_note = await _screenshot(app, read, conversation_id, job_id)
             changed = None if args.get("ref") else look_diff.since_last(
                 job_id or conversation_id or "", bundle, window, data.get("tree") or {})
-            text = (f"{app['name']} — window “{window}”. Refs [@…] work for actions in this piece of work; "
+            text = (f"{app['name']} — window “{hands_contract.one_line(window)}”. Refs [@…] work for actions in this piece of work; "
                     "an entry with “… inside” opens with desktop_look {app, ref}.\n")
             if capture:
                 text += (f"A screenshot of this window ({capture['width']}×{capture['height']} px) is attached; "
@@ -1323,7 +1323,8 @@ def _menu_path(args: dict) -> list[str]:
 
 class DesktopMenuExecutor(_DesktopAct):
     """Hands v2 §5.5: a menu item chosen in the background by its path (Hands presses it through
-    accessibility; nothing comes to the front). Risky labels (delete, send, quit…) ask every time."""
+    accessibility; nothing comes to the front). Risky labels (delete, send, submit…, `hands_service.risky_label`)
+    ask every time."""
     key = "desktop_menu"
     op = "menu"
 
