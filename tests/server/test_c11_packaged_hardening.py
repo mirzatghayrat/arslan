@@ -70,12 +70,11 @@ def test_the_frozen_entry_assigns_packaged_whatever_was_inherited(monkeypatch):
     finally:
         sys.path.remove("packaging")
     import os
-    for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_API_TOKEN", "ARSLAN_ENV",   # _sanitize_env pops these
-                "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS"):
-        if var in os.environ:
-            monkeypatch.setenv(var, os.environ[var])                       # so undo() puts them back
-        else:
-            monkeypatch.delenv(var, raising=False)
+    # Every variable, not a list of the ones _sanitize_env pops: it pops more than a list here kept up with
+    # (ARSLAN_MCP_SUPERVISOR, which tests/conftest.py sets, ARSLAN_RUN_MAX_*, ...), and a missing one stayed
+    # gone for the next test on the same worker.
+    for var, value in list(os.environ.items()):
+        monkeypatch.setenv(var, value)                                     # so undo() puts each one back
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setenv("ARSLAN_PACKAGED", "0")
     monkeypatch.setenv("ARSLAN_ENV", "prod")                   # inherited from a shell: dropped, not fatal
@@ -88,6 +87,21 @@ def test_the_frozen_entry_assigns_packaged_whatever_was_inherited(monkeypatch):
     assert os.environ.get("ARSLAN_ENV") is None
     assert os.environ.get("ARSLAN_ALLOWED_ORIGINS") is None
     assert os.environ.get("ARSLAN_ALLOWED_HOSTS") is None
+
+
+def test_the_frozen_entry_test_leaves_the_environment_as_it_found_it():
+    """It ran before test_mcp_supervisor's switch test on one xdist worker, which then found no ARSLAN_MCP_SUPERVISOR."""
+    import os
+    before = dict(os.environ)
+    patch = pytest.MonkeyPatch()
+    try:
+        test_the_frozen_entry_assigns_packaged_whatever_was_inherited(patch)
+    finally:
+        patch.undo()
+        changed = sorted(key for key in before.keys() | os.environ.keys() if before.get(key) != os.environ.get(key))
+        os.environ.clear()
+        os.environ.update(before)                                          # a red run leaks nothing either
+    assert changed == []                                                   # names only, never the values
 
 
 # 3 ── no cross-origin by default ─────────────────────────────────────────────────────────────────────
