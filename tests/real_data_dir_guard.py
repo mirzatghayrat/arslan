@@ -56,8 +56,8 @@ REAL_DATA_DIR = default_data_dir().resolve()
 REAL_WORKSPACE_DIR = (REAL_HOME / "Arslan").resolve()
 
 # Where each session's HOME lives. Inside the real home on purpose, NOT under the system
-# temp dir: the command sandbox lets commands write to the per-user temp folders
-# (command_sandbox.temp_roots), and its tests use a folder in HOME as the place a sandboxed
+# temp dir: the command sandbox let commands write to the per-user temp folders (before SBX-3;
+# now only each run's own folder there, run_temp), and its tests use a folder in HOME as the place a sandboxed
 # command must NOT reach. Each session removes its own dir at the end.
 SUITE_HOMES = REAL_HOME / ".arslan-pytest-homes"
 # Finder writes it whenever the user opens the folder; nothing a test does.

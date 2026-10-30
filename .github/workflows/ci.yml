@@ -343,7 +343,8 @@ jobs:
           # 0.1.63 D4 follow-up: +1, osacompile confirms an AppleScript syntax error without running it.
           # 0.1.64 SBX-1b: +9, non-ASCII and control-character paths under real seatbelt.
           # 0.1.64 SBX-3a: +1, the work folder, the narrowed devices and a pty still work.
-          EXPECTED = 70
+          # 0.1.64 SBX-3a §1a: +1, a sandboxed command writes its own run's TMPDIR.
+          EXPECTED = 71
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

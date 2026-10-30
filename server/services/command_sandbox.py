@@ -31,7 +31,6 @@ conversation" — that last one is a stored grant (`outside` / `*`, S4a: `permis
 """
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -47,32 +46,6 @@ _available: bool | None = None
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
 # sandbox-exec prints when it cannot start inside another sandbox.
 _DENIED = re.compile(r"operation not permitted", re.I)
-
-
-_CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
-
-
-def _darwin_user_dir() -> Path | None:
-    """macOS's own per-user folder (/var/folders/../, holding T and C). Xcode tools
-    write their caches there whatever $TMPDIR says; when $TMPDIR points elsewhere
-    (a terminal launch, the bench) `swift` printed cache errors inside the sandbox."""
-    try:
-        temp = os.confstr(_CS_DARWIN_USER_TEMP_DIR)
-    except (ValueError, OSError):
-        return None
-    return _real(temp).parent if temp else None
-
-
-def temp_roots() -> list[Path]:
-    """The per-user temp folder (the parent of $TMPDIR's T, which also holds the
-    user cache C), macOS's own per-user folder if different, plus the shared ones."""
-    tmp = _real(tempfile.gettempdir())
-    user = tmp.parent if tmp.name == "T" else tmp
-    roots = [user]
-    darwin = _darwin_user_dir()
-    if darwin is not None and darwin not in roots:
-        roots.append(darwin)
-    return [*roots, _real("/private/tmp"), _real("/private/var/tmp")]
 
 
 # SBX-3 §1b: why a root is writable. The classifier (CLS) reads only IN_SCOPE: its "yes" covers effects inside
@@ -103,12 +76,15 @@ _DEVICES = (Root("/dev/null", DEVICE, "literal"), Root("/dev/zero", DEVICE, "lit
             Root("/dev/fd", DEVICE, "subpath"), Root(r"^/dev/ttys[0-9]+$", DEVICE, "regex"))
 
 
-def writable_roots(workspace: Path) -> list[Root]:
-    """Where a command in `workspace` may write, tagged (§1b). Temp is the shared per-user and machine-wide
-    folders until SBX-3's private TMPDIR replaces them, so it is outside the scope, like the caches."""
+def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
+    """Where a command in `workspace` may write, tagged (§1b). Temp is the run's own folder (`run_temp`, §1a),
+    in scope like the work folder; no longer the shared per-user /var/folders/… parent (with the cache C),
+    /private/tmp or /private/var/tmp. A tool that needs one of those gets a re-run card until SBX-M names it
+    and only its sub-folder is reopened, as a shared cache. The caches stay writable until SBX-5 (§1c)."""
     home = Path.home()
-    shared = [*temp_roots(), _real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
-    return [Root(str(_real(workspace)), IN_SCOPE), *(Root(str(p), SHARED_CACHE) for p in shared), *_DEVICES]
+    shared = [_real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
+    scope = [_real(workspace), *([_real(temp)] if temp is not None else [])]
+    return [*(Root(str(p), IN_SCOPE) for p in scope), *(Root(str(p), SHARED_CACHE) for p in shared), *_DEVICES]
 
 
 def in_scope(path, roots: list[Root]) -> bool:
@@ -219,23 +195,24 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
     return rules.text()
 
 
-def commands_profile(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
+def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
                      readable: list[Path] = (), copies: list[Path] = ()) -> str:
-    """The profile a command in `workspace` runs under, and the one `available()` starts (SBX-3)."""
-    roots = writable_roots(workspace)
+    """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
+    starts (SBX-3)."""
+    roots = writable_roots(workspace, temp)
     return profile([Path(r.path) for r in roots if r.tag != DEVICE], default_protected(), offline=offline,
                    closed=[*closed, *app_data()], readable=readable, copies=copies,
                    devices=tuple(r.filter() for r in roots if r.tag == DEVICE))
 
 
-def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
+def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-p",
-            commands_profile(workspace, offline=offline, closed=closed, readable=readable, copies=copies)]
+    return [_SANDBOX_EXEC, "-p", commands_profile(workspace, temp=temp, offline=offline, closed=closed,
+                                                  readable=readable, copies=copies)]
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:

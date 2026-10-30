@@ -3,7 +3,7 @@
 - `available()` starts the real commands profile, not `(allow default)`. A profile this macOS cannot start
   then reads as "unavailable" (today's card path) instead of failing every command.
 - The writable roots come tagged (§1b): `in_scope` (the work folder), `shared_cache` (temp and the caches),
-  `device` (the narrowed /dev entries). Temp stays shared until the run's private TMPDIR replaces it.
+  `device` (the narrowed /dev entries). Temp is the run's own folder (test_sbx3_run_temp.py), in scope.
   `in_scope()` judges a path where it resolves.
 - `deny_write_after_roots` (§e) is HR's parameter. It is written after the writable roots and before the
   protected paths, so the last rule wins.
@@ -66,8 +66,8 @@ def test_the_writable_roots_are_tagged(tmp_path):
     assert [r for r in roots if r.tag == "in_scope"] == [command_sandbox.Root(str(tmp_path.resolve()), "in_scope")]
     tags = {r.path: r.tag for r in roots}
     home = Path.home()
-    for shared in (*command_sandbox.temp_roots(), home / "Library/Caches", home / ".cache", home / ".npm"):
-        assert tags[str(command_sandbox._real(shared))] == "shared_cache"
+    assert {path for path, tag in tags.items() if tag == "shared_cache"} == {
+        str(command_sandbox._real(home / name)) for name in ("Library/Caches", ".cache", ".npm")}
     assert {r.path for r in roots if r.tag == "device"} == {
         "/dev/null", "/dev/zero", "/dev/tty", "/dev/ptmx", "/dev/fd", r"^/dev/ttys[0-9]+$"}
     assert "/dev" not in tags                                        # no longer all of /dev
