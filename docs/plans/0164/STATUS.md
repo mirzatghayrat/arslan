@@ -100,6 +100,9 @@ Only PRs with an independent effort=max review OK **at the current head** and gr
 
 ## Waiting on the user
 
+- **#499 (CAP3a-1): may the Capabilities page delete skills you wrote and connections you added by hand?** The card said only what Arslan installed is deletable. The PR also deletes `authored` / `authored-outside` skills and hand-added connections. A copy of the skill's SKILL.md now goes to the Trash first, so a delete can be undone either way.
+- **SB1 sidebar sections:** match the iPhone (今天 / 昨天 / 7 天内 / 更早 with month folds), or add a 30-day section on both apps. Also: a time on each row or headings only, and Pinned above or below Projects. All three are toggles in the SB1-0 mock.
+- **SB1 raw material:** a read-only count of your conversations by section. ⑥Helper's query was blocked, so you run it or allow it.
 - **Merges:** the list above, in that order.
 - **FRONT1:** which trigger Hands' `front` parameter names, from ③Hands' four options (README §3.6).
 - **SBX-2:** paste the SBX-2 task to Codex (plan A). It can start now; the chain HR → CLS → S5a → S5b waits on it.
