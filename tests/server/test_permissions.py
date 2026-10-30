@@ -194,13 +194,15 @@ async def test_decide_many_speaks_in_the_requests_own_card_when_they_share_one()
         await permissions.decide_many([framed("com.apple.Notes", "Notes"), framed("com.apple.mail", "Mail")], CTX,
                                       title="Use Notes, Mail?", why="the model's reason")
         await permissions.decide_many([framed("com.apple.reminders", "Reminders"), app("com.apple.Safari")], CTX,
-                                      title="Use Reminders, Safari?")
+                                      title="Use Reminders, Safari?", why="the model's reason")
         await permissions.decide_many([framed("com.apple.Pages", "Pages"),
-                                       framed("com.apple.Numbers", "Numbers", kind="browser_site")], CTX, title="t")
+                                       framed("com.apple.Numbers", "Numbers", kind="browser_site")], CTX, title="t",
+                                      why="the model's reason")
     shared, missing, mixed = asker.frames
     assert (shared["kind"], shared["target"], shared["why"]) == ("desktop_app", "Notes, Mail", "the model's reason")
     assert shared["title"] == "Use Notes, Mail?" and shared["detail"] == "· Notes\n· Mail"
-    assert (missing["kind"], mixed["kind"]) == ("app", "app") and "why" not in missing
+    # The generic card has no words for its kind, so the web would make a why its heading: it carries none.
+    assert (missing["kind"], mixed["kind"]) == ("app", "app") and "why" not in missing and "why" not in mixed
 
 
 async def test_decide_many_hides_always_when_any_app_cannot_be_remembered():

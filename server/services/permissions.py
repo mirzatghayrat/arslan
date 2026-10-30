@@ -236,8 +236,11 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str
             from server.ws import protocol
             frame = protocol.propose_action(uuid.uuid4().hex, cards.pop(),
                                             ", ".join(r.frame.get("target") or r.target for r in shown), detail)
+        # The why goes only with a card that shows it as the model's line: the generic card has no words for
+        # its kind, and the web would make the why its heading (⓪Plan's review of #554).
         combined = Request(
-            kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title, why=why,
+            kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title,
+            why=why if frame is not None else "",
             detail=detail, frame=frame,
             always_label=(", ".join(r.always_label for r in shown)
                           if all(r.always_label for r in shown) else ""),

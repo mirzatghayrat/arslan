@@ -164,12 +164,13 @@ def _app_request(app: dict, detail: str, *, step: str = "", frame_kind: str = "d
     this task" first, "Always" unless the app reaches every other app."""
     from server.services import hands_service, permissions
     from server.ws import protocol
+    from server.services.hands_contract import shown_name
     bundle = str(app.get("bundle_id") or app.get("name") or "")
     name = str(app.get("name") or bundle)
     return permissions.Request(
-        kind="app", target=bundle, title=f"Use {name}?", detail=detail,
+        kind="app", target=bundle, title=f"Use {shown_name(name)}?", detail=detail,
         always_label=hands_service.always_label(bundle, name),
-        frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or name)[:300], detail),
+        frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or shown_name(name))[:300], detail),
         extra={"app": name, "bundle_id": bundle, **({"step": step[:200]} if step else {})})
 
 
@@ -1524,7 +1525,7 @@ class DesktopAccessExecutor:
     timeout_s = CARD_S + 2 * RUN_S
 
     async def execute(self, args: dict) -> dict:
-        from server.services import hands_service, permissions
+        from server.services import hands_contract, hands_service, permissions
         args = dict(args or {})
         names = [str(n).strip()[:120] for n in args.get("apps") or [] if str(n).strip()][:8] \
             if isinstance(args.get("apps"), list) else []
@@ -1541,7 +1542,7 @@ class DesktopAccessExecutor:
         for name in names:
             app, failure = await _resolve_app(name, job_id)
             if app is None:
-                skipped.append(f"{name} ({failure.code if failure else 'not running'})")
+                skipped.append(f"{hands_contract.shown_name(name)} ({failure.code if failure else 'not running'})")
             elif all(a["bundle_id"] != app.get("bundle_id") for a in found):
                 found.append(app)
         if not found:
@@ -1550,18 +1551,19 @@ class DesktopAccessExecutor:
         # One card for the apps not allowed yet (decide_many: one kind; those a rule or grant already
         # allows are left off it); one answer covers every app shown (0.1.61 §A11).
         await hands_service.migrate_always()
-        requests = [_app_request(a, f"· {a['name']} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}",
-                                 step="access") for a in found]
+        shown = [hands_contract.shown_name(a["name"]) for a in found]      # never a line of its own
+        requests = [_app_request(a, f"· {n} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}",
+                                 step="access") for a, n in zip(found, shown)]
         # The title is Arslan's words; the model's why rides on its own and the card shows it as the model's
         # (⓪Plan's review of #548: it was in the title, which the web showed as the heading the user approves).
         decisions = await permissions.decide_many(
             requests, _context(), why=why[:150],
-            title=f"Use {', '.join(a['name'] for a in found)[:100]}? Deleting, sending and paying still ask "
+            title=f"Use {', '.join(shown)[:100]}? Deleting, sending and paying still ask "
                   "every time.")
         refused = next((d for d in decisions if not d.allowed), None)
         if refused is not None:
             return _no(refused, "these apps")
-        text = "Allowed: " + ", ".join(a["name"] for a in found) + "."
+        text = "Allowed: " + ", ".join(shown) + "."
         if skipped:
             text += " Not included: " + "; ".join(skipped) + "."
         return {"ok": True, "external": False, "outcome": "done", "text": text,

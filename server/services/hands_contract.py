@@ -215,6 +215,17 @@ def placer(capture: dict):
     return place
 
 
+def shown_name(name, limit: int = 80) -> str:
+    """An app's name as a card and the model show it: one line, without control, format (a bidi override, a
+    zero-width space) or unassigned characters, at most `limit` characters (⓪Plan's review of #554: a name
+    with a line break could fake a "· App — tier" line). Its script stays, unlike capability_flow's
+    `outside_label`: 微信 is a name. UNI1a's `untrusted.clean_name` (#526) can take its place once merged."""
+    import unicodedata
+    kept = "".join(" " if ch.isspace() else ch for ch in str(name or "")
+                   if ch.isspace() or not unicodedata.category(ch).startswith("C"))
+    return " ".join(kept.split())[:limit]
+
+
 def one_line(text) -> str:
     """A window's text on one line: every line break `str.splitlines` knows becomes ⏎. A name, value or title
     then cannot add a line of its own to what the model reads, such as a copy of desktop_look's "Nothing

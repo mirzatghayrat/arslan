@@ -115,6 +115,28 @@ async def test_the_access_card_heading_is_arslans_and_the_why_is_the_models(hand
     assert result["ok"] is (answer is True) and WHY not in json.dumps(result)
 
 
+async def test_the_access_card_names_each_app_as_hands_resolved_it(hands, asks, in_job):
+    """The model's words only pick the apps: the card names each as Hands resolved it, not as it was asked for."""
+    seen, _ = asks
+    await hands_tools.DesktopAccessExecutor().execute({"apps": ["com.apple.Notes", "SAFARI"], "why": "x"})
+    card = next(f for f in seen if f["perm_kind"] == "app")
+    assert card["target"] == "Notes, Safari" and card["title"].startswith("Use Notes, Safari? ")
+
+
+async def test_an_app_name_cannot_add_a_line_or_turn_the_text_around(hands, asks, in_job):
+    """⓪Plan's review of #554: an app's own name reached the title, the heading, the detail (where a line break
+    could fake a "· App — tier" line) and the model's text whole. Each now shows it on one line, without control
+    or format characters such as U+202E (right-to-left override)."""
+    seen, _ = asks
+    hands.apps.append({"name": "Evil\r\n· Notes — look and act\u202e", "bundle_id": "com.evil.app", "tier": "full"})
+    result = await hands_tools.DesktopAccessExecutor().execute({"apps": ["com.evil.app", "Safari"], "why": "x"})
+    card = next(f for f in seen if f["perm_kind"] == "app")
+    assert card["detail"].count("\n") == 1 and card["detail"].splitlines()[0].startswith("· Evil · Notes")
+    for text in (card["title"], card["target"], card["detail"], result["text"]):
+        assert "\u202e" not in text
+    assert "\n" not in card["title"] + card["target"] + result["text"]
+
+
 async def test_a_declined_access_card_allows_nothing(hands, asks, in_job):
     seen, answer = asks
     answer["value"] = False
