@@ -107,6 +107,9 @@ Only PRs with an independent effort=max review OK **at the current head** and gr
 
 ## Waiting on the user
 
+- **0077's `authored` skip (#519 review, low):** 0077 leaves alone any promoted candidate's row already labelled `authored`. The old Forge and create_skill accepted any category, so a skill_creator row labelled literally `authored` still reads as Arslan's own. Recommended: drop `authored` from 0077's `_UNMARKED` before v0.1.64 ships; no released build has 0077.
+- **`unknown` skills (#519):** not deletable today (D7), and they can be switched off. Should they be deletable like `authored`? No real row is `unknown` today.
+- **UNI1b mock:** the "N invisible characters" notice. ⑤CAP's mock link went to the user.
 - **The v0.1.64 cut:** [CUT-proposal.md](CUT-proposal.md). Ship without the security chain's tail (SBX-3…S5b move to v0.1.65 if not merged by then)? Four questions are in the file.
 - **SB1 sidebar sections:** match the iPhone (「今天」 / 「昨天」 / 「7 天内」 / 「更早」 with month folds), or add a 30-day section on both apps. Also: a time on each row or headings only, and Pinned above or below Projects. All three are toggles in the SB1-0 mock.
 - **SB1 raw material:** a read-only count of your conversations by section. ⑥Helper's query was blocked, so you run it or allow it.
