@@ -131,7 +131,12 @@ describe("capability list", () => {
     for (const body of ["deleteBodyAuthored", "deleteBodyInstalledSkill", "deleteBodyManual", "deleteBodyInstalledConnection"]) {
       expect(capabilityListMessages.en[body as keyof typeof capabilityListMessages.en]).not.toMatch(/switched off/i);
     }
-    expect(capabilityListMessages.en.deleteBodyAuthored).toMatch(/for good/);
+    // #499 second review 5: a skill's delete keeps a copy of its text in the Trash, so nothing says "for good".
+    expect(capabilityListMessages.en.deleteBodyAuthored).toMatch(/copy of its text goes to the Trash/);
+    expect(capabilityListMessages.en.deleteBodyInstalledSkill).toMatch(/copy of its text/);
+    for (const body of ["deleteBodyAuthored", "deleteBodyInstalledSkill"] as const) {
+      expect(capabilityListMessages.en[body]).not.toMatch(/for good/i);
+    }
   });
 
   it("a delete the server answers 404 or 409 reads the list again and says which", async () => {
