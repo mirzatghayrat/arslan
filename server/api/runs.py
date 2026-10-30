@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import math
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -604,6 +605,34 @@ async def conversation_changes(conversation_id: str, db: AsyncSession = Depends(
                           "undone": found["undone"], "paths": found["paths"]})
         return turns
     return {"turns": await asyncio.to_thread(read)}
+
+
+@router.get("/conversations/{conversation_id}/changes/{run_id}/diff")
+async def conversation_change_diff(conversation_id: str, run_id: int, folder: str = Query(..., max_length=4096),
+                                   path: str = Query(..., max_length=4096),
+                                   db: AsyncSession = Depends(get_session)) -> dict:
+    """DIFF1: one changed path of one turn as a line diff, the saved copy against the file now, for the
+    reader opened from Overview's Changes. The run must be this conversation's (as `changes` lists them)
+    and the path one `changes` lists for it; the folder must be one the reader may read
+    (file_reader.roots). 404 `not_listed` otherwise, or once the checkpoint is gone; 403 `hidden` for a
+    dot-path or a secret-shaped name; 200 with `reason` (`too_big`, `not_text`, `copy_changed`) and no
+    lines when there is no diff to show. Read only."""
+    from server.services import checkpoints, file_reader
+    from server.services.workspace_paths import _contained
+    run = await db.get(Run, run_id)
+    if run is None or run.conversation_id != conversation_id or run.kind not in ("live", "host", "scheduled"):
+        raise HTTPException(404, detail={"code": "not_listed"})
+    readable = await file_reader.roots()
+    if not any(_contained(Path(folder), root) for root in readable):
+        raise HTTPException(404, detail={"code": "not_listed"})
+    try:
+        return {"reason": None, **await asyncio.to_thread(checkpoints.diff, run_id, _started(run), folder, path)}
+    except checkpoints.NoDiff as exc:
+        if exc.code == "not_listed":
+            raise HTTPException(404, detail={"code": "not_listed"}) from None
+        if exc.code == "hidden":
+            raise HTTPException(403, detail={"code": "hidden"}) from None
+        return {"reason": exc.code, "kind": None, "added": 0, "removed": 0, "since": False, "lines": []}
 
 
 async def _with_history(undone: dict) -> dict:
