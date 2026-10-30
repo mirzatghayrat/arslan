@@ -77,7 +77,7 @@ class BackgroundStatusExecutor:
             return {"ok": False, "error_code": "background_unavailable"}
         jobs = background_jobs.jobs_for(conversation_id)
         # S64-0b (②Main's recheck): a job that may carry outside content reports its goal and steps as
-        # outside content. The tool loop frames the result and marks the turn (as for a web page).
+        # outside content. The tool loop frames the result and marks the turn, as for any outside content.
         return {"ok": True, "external": any(job.outside_seen is not False for job in jobs), "jobs": [
             {k: v for k, v in job.frame().items() if k not in {"type", "conversation_id"}} for job in jobs]}
 
