@@ -76,8 +76,10 @@ def shown_state(server_id: int, state: str | None, host_allowed: bool) -> str:
 
 
 def label_of(srv) -> str:
-    """A server's name as the prompt prints it: one line, cut."""
-    return " ".join(str(srv.label or f"MCP {srv.id}").split())[:80]
+    """A server's name as the prompt prints it: as a label (an installed server's is its registry name, its own
+    text), like list_my_capabilities' (#495 review, O2); a label in another script falls back to its number."""
+    from server.services.capability_flow import outside_label
+    return outside_label(srv.label, 80) or f"MCP {srv.id}"
 
 
 def status_clauses(servers) -> list[str]:

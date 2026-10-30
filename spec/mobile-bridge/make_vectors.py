@@ -210,6 +210,9 @@ def qr() -> dict:
     return {"contract": CONTRACT, "container_id": container, "cases": out}
 
 
+QUICK = "phone-0b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2"     # §5.8: `phone-` and a lowercase UUID v4
+
+
 def messages() -> dict:
     """One plaintext envelope per type, with the kind and notify bit it travels under."""
     s, m = PHONE, MAC
@@ -237,6 +240,24 @@ def messages() -> dict:
         envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
             {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}]}),
         envelope(s, m, "chat.send", {"text": "Find flights", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
+        # §5.8 (2026-10-29): a quick question, a new ordinary conversation, the quick list's next page, a quick
+        # question turned into a chat, and the two new error codes.
+        envelope(m, s, "hello", {"app_version": "mac", "protocol_version": 1,
+                                 "capabilities": ["chat", "files_in", "new_conversation", "quick"]}),
+        envelope(s, m, "chat.send", {"new_conversation_id": QUICK, "conversation_kind": "quick", "text": "Ramen near me?",
+                                     "attachments": [], "client_msg_id": "DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD"}),
+        envelope(s, m, "chat.send", {"new_conversation_id": "phone-1b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2",
+                                     "text": "Plan a trip", "attachments": [],
+                                     "client_msg_id": "EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE"}),
+        envelope(s, m, "conversations.list", {"limit": 20, "kind": "quick", "before": TS}),
+        envelope(m, s, "conversations.result", {"conversations": [
+            {"id": QUICK, "title": "Ramen near me?", "updated_at": TS, "kind": "quick"}], "has_more": True}),
+        envelope(s, m, "conversation.update", {"conversation_id": QUICK, "kind": "chat"}),
+        envelope(m, s, "conversation.updated", {"conversation_id": QUICK, "kind": "chat"}),
+        envelope(m, s, "error", {"code": "conversation_exists", "message": "That conversation is already on the Mac.",
+                                 "related_id": ID.lower()}),
+        envelope(m, s, "error", {"code": "bad_request", "message": "The Mac could not read that request.",
+                                 "related_id": ID.lower()}),
         envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "progress", "message_id": "reply-1",
                                       "text": "Searching flights", "final": False}),
         envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "message", "message_id": "reply-1",

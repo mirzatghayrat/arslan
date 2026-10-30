@@ -19,7 +19,7 @@ from server.services import artifact_store, background_jobs, desktop_status, run
 
 #: A file travels to the phone inside one CloudKit record (protocol §4.6).
 PHONE_FILE_MAX = 20 * 1024 * 1024
-# DELETE-BY: v0.1.65 (Q1): the pocket ("Remote") stays only for phones that don't say `quick`; the user picks the version (Q1 card, #4).
+# DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
 REMOTE_ID = "pocket"            # the phone's own conversation; shown everywhere as "Remote"
 REMOTE_TITLE = "Remote"
 STEPS_SHOWN = 40                # the newest steps of a run; `total` says how many there were
@@ -257,7 +257,7 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         jobs = background_jobs.jobs_for(cid)
         running_job = next((j for j in jobs if j.phase != "finished"), None)
         latest_job = max(jobs, key=lambda j: j.started_at) if jobs else None
-        if cid == REMOTE_ID:                 # DELETE-BY: v0.1.65 (Q1), with REMOTE_ID
+        if cid == REMOTE_ID:                 # DELETE-BY: with REMOTE_ID (Q1 card, #4)
             kind = "remote"
         elif jobs or cid in outcomes or cid.startswith("task-"):
             kind = "task"

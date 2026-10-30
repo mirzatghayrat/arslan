@@ -397,8 +397,9 @@ conversation the Mac does not have).
   after a job that ended without one. A run's files are offered once.
 - **`conversation.delete`.** The Mac deletes the conversation as its own window does (`DELETE
   /api/v1/conversations/<id>`; its runs are kept), closes its live link and answers
-  `conversation.deleted`. `pocket` (Remote) is never deleted: `malformed`. A conversation the Mac does
-  not have: `not_found`. An older Mac answers `unknown_type`.
+  `conversation.deleted`. `pocket` (Remote) is never deleted: `malformed`; since §5.8 (2026-10-29) a
+  phone that said `quick` may delete it. A conversation the Mac does not have: `not_found`. An older Mac
+  answers `unknown_type`.
 - **Live conversations.** At start, after each `conversations.list` and on `hello`, the Mac links the
   newest 20 conversations and every one with a running job (never a temporary one), so their answers,
   progress and shared cards (a phone's turn, a background job's, one whose window went away) reach the
@@ -410,12 +411,56 @@ conversation the Mac does not have).
   size cannot fit the 800,000-byte record, §4 `Wire.maxSealedBytes`), dropping the oldest first, and
   then sets `truncated: true`; one message bigger than that keeps its start, cut with `…`.
 
+### 5.8 Quick questions and new conversations (added 2026-10-29; optional fields, new types — additive within v1)
+
+The iPhone's Quick Ask (docs/plans/0164/Q1-quick-ask.md): each question is a conversation of its own,
+with four read-only tools, that never learns, and that the user may turn into an ordinary chat.
+
+**Capabilities.** The Mac's `hello.capabilities` add `new_conversation` (a `chat.send` may start a
+conversation) and `quick`; a Mac that says `quick` always says `new_conversation`. The phone says `quick`
+when it shows quick questions; it then lists them itself, without Remote.
+
+| Type | Direction | Body (`?` optional) |
+| --- | --- | --- |
+| `chat.send` | phone → Mac | as §5.3 and §5.7, plus `new_conversation_id?`, `conversation_kind?` (only `"quick"`) |
+| `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | as §5.3, plus `kind?` (only `"quick"`), `before?` / `has_more?` |
+| `conversation.update` / `conversation.updated` | phone → Mac / Mac → phone | `conversation_id`, `kind` (only `"chat"`) / `conversation_id`, `kind` |
+
+New error codes (may travel in `error`, with `related_id` = the request): `bad_request` and
+`conversation_exists`.
+
+- **A new conversation.** `new_conversation_id` is `phone-` and a lowercase UUID v4, made by the phone.
+  The Mac stores it as an ordinary chat before the words go anywhere, in the one call that also checks it
+  is still empty: one that has messages, or is a quick question, is `conversation_exists`; if the Mac can't
+  store it, it refuses and Arslan never sees the text. `conversation_id`, if also sent, must be the same
+  id. A retry with the same `client_msg_id` gets the first result, so it never trips `conversation_exists`
+  (while the Mac runs; a restart forgets, as for every `chat.send`).
+- **A quick question.** `conversation_kind: "quick"` is valid only with `new_conversation_id`. The Mac
+  stores the conversation as quick the same way. `conversation_kind` without a new id, any other kind, or an
+  id of another shape is `bad_request`. A retry repeats `new_conversation_id` and `conversation_kind`
+  unchanged: one without the kind starts an ordinary chat. The Mac reads what a conversation is from what it
+  stored, never from a message: one the phone made with no kind stored (its store failed) gets only the
+  quick tools and learns nothing, whatever names it later.
+- **The list.** `kind: "quick"` lists only quick questions; without it the list is today's, which leaves
+  them out. Any other `kind` is `bad_request`. `before` is the `updated_at` of the oldest conversation the
+  phone holds, sent back exactly as received: the Mac returns conversations strictly older than it, most
+  recent first, up to `limit`, and `has_more` says whether any remain. Times are whole seconds and a page
+  never splits one: a page the limit would end inside a second ends before it, and a second that alone
+  holds more than `limit` comes whole (the only page longer than `limit`). The phone keeps its id dedupe
+  and stops on `has_more: false`. Items' `kind` (§5.5) may also be `quick`.
+- **Turning a quick question into a chat.** `conversation.update` with `kind: "chat"` gives it every tool
+  from its next turn and answers `conversation.updated`. Only a quick question, or one already turned (a
+  retry); any other id is `not_found`. While a turn runs: `mac_busy`.
+- **Remote.** A phone that said `quick` may delete the pocket (`conversation.delete`, §5.7). An older
+  phone keeps sending to it as before.
+
 ### 5.4 Error codes
 
 `malformed`, `unsupported_version`, `unknown_type`, `not_for_me`, `bad_signature`, `decrypt_failed`,
 `header_mismatch`, `asset_mismatch`, `too_large`, `pairing_invalid`, `pairing_expired`,
 `wrong_container`, `not_paired`, `revoked`, `approval_expired`, `rate_limited`, `mac_busy`,
-`file_unavailable`. A receiver never answers an `error` with an `error`. Codes in
+`file_unavailable`; §5.7 adds `too_many_files` and `not_found`, §5.8 adds `bad_request` and
+`conversation_exists`. A receiver never answers an `error` with an `error`. Codes in
 §4.7 are receiver-side drops and are not sent back (no oracle); the others may travel in `error`.
 
 ## 6. Mac side (summary; plan in the design doc §6)
@@ -440,7 +485,9 @@ the existing `confirm_*` / `cancel_*` frames. Its private keys live in its own K
   `FrameMapper` (BridgeCore). The pocket conversation (no `conversation_id`) is one fixed conversation
   the Bridge creates on first use.
 - The one backend change for messages: a `user_message` frame may carry `source: "phone"`; the message
-  is stored and shown with "from iPhone". It is also sent at once, as a `message` frame with
+  is stored and shown with "from iPhone". Since 2026-10-29 it also carries `sent_at`, the envelope's
+  `ts`: the Mac counts the user as present for that turn only when the phone sent it a few minutes ago
+  (INB2, `server/services/presence.py`). It is also sent at once, as a `message` frame with
   `source: "phone"`, to every Mac window open on that conversation (the Bridge ignores it).
 - Cards of a turn the phone started go to every socket on the conversation: the Bridge's (→
   `approval.request`) and each Mac window's. The first answer from either side decides; the backend

@@ -120,8 +120,11 @@ async def test_only_the_stored_kind_counts_never_what_a_frame_says(execution_db,
 
 # -- learns nothing: the row's no_learning, read by both after-turn paths ---------------------------------------
 
-@pytest.mark.parametrize("kind,looked", [("quick", False), (None, True)], ids=["quick", "ordinary"])
+@pytest.mark.parametrize("kind,looked", [("quick", False), ("chat", True), (None, False)],
+                         ids=["quick", "ordinary", "no-kind-stored"])
 async def test_a_quick_question_extracts_no_facts_after_its_turn(execution_db, monkeypatch, kind, looked):
+    """Q1b (#486 review, G1): an ordinary conversation the phone starts is stored as chat; one with no kind
+    stored (its store failed) learns nothing."""
     from server.services import turn_facts
     cid = "phone-3b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b"
     if kind:
@@ -217,7 +220,8 @@ async def test_a_quick_turn_runs_nothing_outside_the_four_and_asks_nothing(execu
     assert not [e for e in events if e.get("type") in ("command_confirm", "approval_needed", "clarify_options")]
 
 
-@pytest.mark.parametrize("kind,taught", [("quick", False), (None, True)], ids=["quick", "ordinary"])
+@pytest.mark.parametrize("kind,taught", [("quick", False), ("chat", True), (None, False)],
+                         ids=["quick", "ordinary", "no-kind-stored"])
 async def test_a_quick_turn_teaches_no_practice(execution_db, monkeypatch, kind, taught):
     """The other after-turn path: learned practices (lessons.after_turn) read the turn's own memory context,
     which a quick row makes no_learning. The real tool loop runs under the context a chat turn binds
