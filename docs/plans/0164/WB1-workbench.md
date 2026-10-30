@@ -66,7 +66,11 @@ The panel holds only things that sit next to the conversation, the way Claude de
   - **BRW2:** the user and the agent see the same browser, as Claude desktop's pane does. Hands' pages show in the workbench, and the user can take over.
 
   Both are on the security surface: each needs its own card, and the user merges. They are recorded in the v0.1.64 README §3.13.
-- **Pending the user's OK:** a single view menu in the panel header instead of a row of tabs (the mock's "Tabs: One menu / A row"). If they pick it, the menu shows the current view with a chevron and lists Files, Progress, Browser, the side chats and "New side chat"; ⌘1…⌘9 pick a view; a blue dot marks a view that appeared while the user was elsewhere.
+- **Not taken:** a single view menu in place of the row of tabs. The user said 「左上角只放一个 这个不对 这里还是变回原来的」, so the panel keeps its row of tabs.
+- **Pending the user's OK on the mock ("Title bar: One button / Today's"):**
+  - the title bar keeps one button, the panel button, and the globe button goes;
+  - the panel header's "+" becomes "New…", with "New side chat" and "New browser tab";
+  - the blue Background chip still shows while a job runs.
 
 ## Not here
 
