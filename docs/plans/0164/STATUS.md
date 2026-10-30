@@ -84,6 +84,8 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 
 ## Waiting on the user
 
+- **Release secrets into an Environment:** once the user has the originals of the updater's private key and the Apple certificate, move every `APPLE_*` and `TAURI_*` secret into a GitHub Environment that needs the user's approval, and add `environment:` to both workflows. After that, Codex may push by itself (plan B).
+- **SBX-2:** paste the SBX-2 task to Codex (plan A); it can start today.
 - **FRONT1:** which trigger Hands' `front` parameter names, from ③Hands' four options (README §3.6).
 - The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64; the TestFlight upload needs the user's nod.
 - The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
@@ -99,26 +101,46 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 
 **Where the chain is stuck:** SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
 
-**How Codex delivers (user, 2026-10-29; replaces the fork plan from earlier that day).** No new account and no fork: Codex signs in with the user's own GitHub. It may push branches and open PRs. **It never merges**, never pushes to `main`, and never pushes to another session's branch. That is an agreement the user accepted, not a technical lock: the user merges every security PR anyway.
+**How Codex delivers: plan A (user, 2026-10-29, final for now).** Codex writes and commits locally and does not push. The ChatGPT Codex Connector keeps its current access, which does not include `arslan`. The user pushes Codex's branch and opens the PR. The rules stay the same:
+- branches start with `codex/`, and PRs carry the label `codex`;
+- every commit message and PR body says "Author: Codex (model, reasoning level)" and names the reviewer;
+- PRs carry the four evidence items (`docs/sessions.md` §8) and the macOS CI run id;
+- Codex never merges, never pushes tags, and never changes `.github/`;
+- the user merges every Codex PR, since all of them are on the security surface.
 
-**Steps for the user:**
-1. Give the ChatGPT Codex Connector access to `mirzatghayrat/arslan` (GitHub → Settings → Applications → the connector → Repository access). Today it is limited to one unrelated public repository (`docs/plans/0162/README.md`, "「只读」怎么做到").
-2. In Codex, tell it the rules once: open PRs only, never merge, never push to `main` or to someone else's branch. ②Main suggests two more, and you can drop them: never push tags (a `v*` tag starts a release), and never change `.github/` (a workflow edit on a pushed branch runs before review; a Claude session makes workflow changes instead). If Codex has a setting to ask before pushing or merging, consider turning it on (optional).
-3. Each Codex branch starts with `codex/`. Each PR gets the label `codex`. Every commit message and PR body says "Author: Codex (model, reasoning level)" and names the reviewer, and the PR carries the four evidence items (`docs/sessions.md` §8) plus its macOS CI run id.
-4. The user merges every Codex PR (all are on the security surface).
+**Pushing a Codex branch (the user runs this).** Run it in the folder where Codex worked, which is Codex's own checkout of `arslan`, after Codex says its branch is committed. `<branch>` is the branch Codex names, for example `codex/sbx2-default-deny-base`. `<body file>` is the PR body Codex wrote, with the four evidence items.
 
-**A risk to know (⓪Plan and ②Main, 2026-10-29), your call:** the connector's write access includes workflows and Actions. Two workflows read the repository's secrets, and both have `workflow_dispatch`: `release.yml:32` and `secrets-preflight.yml:26`. Those secrets include the updater's signing key (`release.yml:132-133`). With that access, Codex could dispatch either workflow on a `codex/` branch, which runs that branch's edited copy, or push a branch that adds a workflow of its own. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) only protects against fork PRs. `ci.yml` reads no secrets.
-If you choose the fix, move the secrets into a GitHub Environment:
+```bash
+git fetch origin
+git status
+git log --oneline origin/main..<branch>
+git diff --stat origin/main...<branch> -- .github
+git push -u origin <branch>
+gh pr create --repo mirzatghayrat/arslan --base main --head <branch> --label codex --title "<title Codex gave>" --body-file "<body file>"
+```
+
+- Before pushing, check three things:
+  - `git status` is clean;
+  - the log shows only Codex's commits;
+  - **the `.github` diff prints nothing.**
+- If the `.github` diff lists anything, don't push. In plan A your push is the only gate. A pushed branch's workflows run with the repository's secrets (only fork PRs are cut off), so tell ⓪Plan; a Claude session makes any workflow change in its own PR (②Main's review of #497).
+- The first time only, create the label: `gh label create codex --repo mirzatghayrat/arslan --description "Written by Codex"`.
+- Then tell ⓪Plan the PR number. Claude reviews the plumbing, and Astra reviews the rest.
+
+**Later, plan B (Codex pushes by itself):** only after the release secrets are protected (see "Waiting on the user").
+
+**Why plan B waits (⓪Plan and ②Main, 2026-10-29):** giving the connector write access would include workflows and Actions. Two workflows read the repository's secrets, and both have `workflow_dispatch`: `release.yml:32` and `secrets-preflight.yml:26`. Those secrets include the updater's signing key (`release.yml:132-133`). With that access, Codex could dispatch either workflow on a `codex/` branch, which runs that branch's edited copy, or push a branch that adds a workflow of its own. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) only protects against fork PRs. `ci.yml` reads no secrets.
+The fix, for when the user has the originals, is to move the secrets into a GitHub Environment:
 - the Environment holds every `APPLE_*` and `TAURI_*` secret;
 - its lock is a required reviewer, you. A "`v*` tags only" rule is not a lock when the same login can push tags;
 - both `release.yml`'s job and `secrets-preflight.yml`'s job name the Environment, or they lose the secrets.
-That is a repository-settings change, so it is yours to decide.
+That is a repository-settings change. The `environment:` lines for the two workflows are proposed at the same time, not before.
 
 **The tasks (one paste per block).** Each task points to card sections only. Codex designs the tests' content itself from the card; nothing here spells it out.
 
 | Block | Paste this to Codex | Ready? |
 |---|---|---|
-| SBX-2 | "Write SBX-2 for mirzatghayrat/arslan on a `codex/` branch (open a PR labelled `codex`, never merge): read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Put 'Author: Codex' and the reviewer in each commit and the PR, with the four evidence items and the macOS CI run id." | **Yes** |
+| SBX-2 | "Write SBX-2 for mirzatghayrat/arslan on a local `codex/` branch. Commit, don't push; the user pushes and opens the PR. Read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Put 'Author: Codex' and the reviewer in each commit, and write the PR body to a file with the four evidence items; the macOS CI run id is added once CI has run." | **Yes** |
 | SBX-3p … 6p | "Write SBX-Np (N = 3, 4, 5 or 6): read the SBX card's 'Who writes what' and the SBX-N row and sections it names, then write the real-seatbelt tests that what SBX-N should deny is denied, as parameters of SBX-2's harness. No product code." | After SBX-2 and SBX-M; 6p only with SBX-6 |
 | Allowlist after SBX-M | "Read the SBX-M report (`docs/plans/0164/SBX-measurement.md`) and the SBX card §2; propose the allowlist change it calls for, ≤ 50 lines." | After SBX-M |
 | S2a-3 tests | "Read `docs/plans/0162/S2a-command-three-layers.md` (S2a-3) and the S2a-3 row of `docs/plans/0164/README.md` §3; write the test content named there for #375 / #376 / #378 / #396 and #406, against the rebased heads." | After SBX-7 and ③Hands' rebase |
