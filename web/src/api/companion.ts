@@ -150,9 +150,12 @@ export const companionApi = {
   memoryStats: (days = 7) => request<MemoryStats>(`/memory/stats?days=${days}`),
   noticedEarlier: () => request<{ count: number }>(`/memory/noticed-earlier`),
   acceptNoticedEarlier: () => request<{ accepted: number }>(`/memory/noticed-earlier/accept`, { method: "POST" }),
-  resolveProposal: (id: number, accept: boolean, sensitive: boolean, cloud: boolean) => request(
+  /** `expectedVersion`: the version the chat line or Memory's row showed (INB2, #475 review); the server
+   *  refuses an answer to an entry that changed since. */
+  resolveProposal: (id: number, accept: boolean, sensitive: boolean, cloud: boolean, expectedVersion?: number) => request(
     `/memory/proposals/${id}/resolve`, json("POST", { accept, sensitive_acknowledged: sensitive,
-      use_policy: cloud ? "cloud_allowed" : "local_only" })),
+      use_policy: cloud ? "cloud_allowed" : "local_only",
+      ...(expectedVersion != null ? { expected_version: expectedVersion } : {}) })),
   context: (conversationId: string) => request<ConversationContext>(`/conversations/${encodeURIComponent(conversationId)}/context`),
   contextReceipts: (conversationId: string, taskId: string, beforeId?: string) => request<ContextReceiptRecord[]>(
     `/conversations/${encodeURIComponent(conversationId)}/context/receipts?task_id=${encodeURIComponent(taskId)}&limit=20`

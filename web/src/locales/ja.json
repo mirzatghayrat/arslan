@@ -252,11 +252,18 @@
     "thinking": "考えています…",
     "stopRun": "停止",
     "remembered": "覚えました：{{text}}",
-    "wantsToRemember": "Arslan が覚えたいこと：{{text}}",
     "rememberedUndo": "取り消す",
     "rememberedUndone": "取り消しました",
-    "rememberedReview": "「メモリー」で確認",
-    "rememberedChanged": "その後変更されています。「メモリー」で確認してください"
+    "rememberedChanged": "その後変更されています。「メモリー」で確認してください",
+    "memoryAsk": "Arslan が機微な内容を覚えたがっています：{{text}}",
+    "memoryKeptLocal": "覚えました（この Mac だけ）：{{text}}",
+    "memorySkipped": "わかりました。覚えません。",
+    "memoryWaits": "Arslan が覚えたいこと：{{text}}。理由：{{reason}}。「整理待ち」に入れました",
+    "memoryWhy_external_seen": "この会話でウェブページなど外部の内容を読んだ",
+    "memoryWhy_not_present": "あなたがいないときに書かれた",
+    "memoryWhy_sensitive": "機微な内容",
+    "memoryWhy_confirmation_required": "あなたの確認が必要",
+    "memorySeeInMemory": "「メモリ」で見る"
   },
   "clarify_card": {
     "answered": "選択済み"
@@ -1360,8 +1367,6 @@
     "stalled": "止まっています",
     "changed": "変化あり",
     "other": "その他",
-    "memoryWaiting": "確認待ちの記憶",
-    "memoryOpen": "「メモリー」ですべて見る",
     "watching": "見守り中",
     "muted": "通知しない",
     "addWatch": "ページやフォルダーを追加で見守る",
@@ -1378,15 +1383,14 @@
   },
   "pendingMemory": {
     "curationFallback": "記憶を整理する提案",
-    "keep": "残す",
-    "keepLocal": "残す（ローカルモデルのみ）",
+    "keep": "覚える",
+    "keepLocal": "覚える（この Mac だけ）",
     "drop": "いらない",
     "apply": "適用",
     "source": {
       "memory": "あなたについて",
       "curation": "整理"
-    },
-    "sensitive": "機微"
+    }
   },
   "confirm": {
     "delete": "削除",

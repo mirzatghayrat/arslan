@@ -252,11 +252,18 @@
     "thinking": "Denkt nach …",
     "stopRun": "Stoppen",
     "remembered": "Gemerkt: {{text}}",
-    "wantsToRemember": "Arslan möchte sich merken: {{text}}",
     "rememberedUndo": "Rückgängig",
     "rememberedUndone": "Rückgängig gemacht",
-    "rememberedReview": "In Erinnerung prüfen",
-    "rememberedChanged": "Inzwischen geändert – siehe Erinnerung"
+    "rememberedChanged": "Inzwischen geändert – siehe Erinnerung",
+    "memoryAsk": "Arslan möchte sich etwas Sensibles merken: {{text}}",
+    "memoryKeptLocal": "Gemerkt, nur auf diesem Mac: {{text}}",
+    "memorySkipped": "Gut, wird nicht gemerkt.",
+    "memoryWaits": "Arslan möchte sich merken: {{text}}. Es wartet unter „Zu sortieren“, weil {{reason}}.",
+    "memoryWhy_external_seen": "dieses Gespräch Webseiten oder andere externe Inhalte gelesen hat",
+    "memoryWhy_not_present": "du nicht da warst, als es geschrieben wurde",
+    "memoryWhy_sensitive": "es sensibel ist",
+    "memoryWhy_confirmation_required": "es dein OK braucht",
+    "memorySeeInMemory": "Im Gedächtnis ansehen"
   },
   "clarify_card": {
     "answered": "Auswahl gesendet"
@@ -1360,8 +1367,6 @@
     "stalled": "Angehalten",
     "changed": "Geändert",
     "other": "Sonstiges",
-    "memoryWaiting": "Erinnerungen warten auf dein OK",
-    "memoryOpen": "Erinnerung öffnen",
     "watching": "Beobachtet",
     "muted": "Keine Erinnerung",
     "addWatch": "Weitere Seite oder Ordner beobachten",
@@ -1378,15 +1383,14 @@
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",
-    "keep": "Behalten",
-    "keepLocal": "Behalten, nur lokale Modelle",
+    "keep": "Merken",
+    "keepLocal": "Merken, nur auf diesem Mac",
     "drop": "Nein",
     "apply": "Übernehmen",
     "source": {
       "memory": "Über dich",
       "curation": "Aufräumen"
-    },
-    "sensitive": "Sensibel"
+    }
   },
   "confirm": {
     "delete": "Löschen",
