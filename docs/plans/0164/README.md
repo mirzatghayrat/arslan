@@ -200,6 +200,7 @@ Small cards, each its own PR. Tests come first, and none is a new subsystem.
 | Card | What | Lane | Tier | Notes |
 |---|---|---|---|---|
 | **LOAD2** | Two more tests that fail under load, plus a product race underneath one of them. (1) `tests/server/test_window_permissions.py:419` sets `ARSLAN_RUN_MAX_WALL_SECONDS=2` and waits on the card with a real `time.sleep(4)`. Under load, the turn's work outside the card wait takes over 2 s, and the turn ends with `task_budget_exhausted` (2 of 5 runs). (2) `tests/server/test_mcp_session_real.py:85`, with a program that exits at once: the stdio writer hits the closed pipe before the reader sees EOF. The cancelled-cause rule at `server/mcp/session.py:375-377`, written for http, then raises `BrokenResourceError` instead of `McpError(CONNECTION_CLOSED)`, so **the product too can report "broken resource" instead of "not an MCP server"**. Method: reproduce each first with a forced delay; then (1) take the real clock out of the non-waiting part; (2) for stdio only, treat the writer's BrokenResourceError on an exited process as CONNECTION_CLOSED, keeping the http rule. Undo each fix as the mutation. References: Fowler, "Eradicating Non-Determinism in Tests"; Google Testing Blog, "Flaky Tests at Google" | ⑥Helper | should | Part (1) is test-only and auto-merges after another session's OK. Part (2) changes `server/mcp/session.py`: ⑤CAP reviews, and the user merges (product code). Precedent: #521. |
+| **LOAD3** | Two gaps found while fixing LOAD2 part 1 (#534). (1) **An unguarded rule:** when a card's wait ends, `arslan/execution_budget.py` credits the budget with the time waited. Removing that credit passes both #534's test and main's, because nothing in the card flow reads the budget after the card. A test where the turn keeps working after a long card wait, and must still have its budget, makes the mutant fail. (2) **One more load flake** in `tests/server/test_window_permissions.py`: `test_a_turns_forget_that_raises_does_not_stop_the_turn_from_ending` failed once with "condition not reached" under `-n 4` (1 of 3 runs). ③Hands saw a further failure in the same file under load; the author gets its name and output from ③Hands first. Method as LOAD2: reproduce each with a forced delay, then fix, then undo the fix as the mutation. References as LOAD2 | ⑥Helper | should | Test-only: auto-merges after another session's OK. If the credit turns out to be wrong in the product, that part is product code and the user merges it. |
 
 ### 3.12 Capability follow-ups (user, 2026-10-30: the long-term approach; relayed by ④参谋)
 
@@ -304,8 +305,9 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0078 | Q1 #3 | Where a converted quick question starts to learn, on `conversation_contexts` (the user's decision of 2026-10-29: the quick turns before it never learn) | ②Main |
 | 0079 | SB1 | Pinning a conversation in the sidebar, a flag on `conversation_contexts`; lands after the pocket deletion and INB4 | ⓪Plan's card |
 | 0080 | CAP gh- follow-up | Marks the old Discover page's `gh-` skill rows as outside (no source → `authored-outside`, a card's → `imported`); drops nothing; listed after 0077 | ⑤CAP |
+| 0081 | SEC1 | Reserved for ⑤CAP: one nullable encrypted column on `mcp_servers`. It waits on its mock (v0.1.65 candidate) | ⑤CAP |
 
-The next free number is 0081.
+The next free number is 0082. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 

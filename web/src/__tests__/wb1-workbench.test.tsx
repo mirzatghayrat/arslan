@@ -38,20 +38,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("the row", () => {
-  it("is Working folder, Progress, Browser, in that order, and Task is gone", () => {
+  it("is Overview, Working folder, Progress, Browser, in that order, as labelled icons, and Task is gone", () => {
     useWorkbench.getState().show();
     mount();
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
     expect(tabs.map((tab) => tab.getAttribute("data-testid")))
-      .toEqual(["workbench-tab-files", "workbench-tab-progress", "workbench-tab-browser"]);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["workbench.folder", "workbench.progress", "workbench.browser"]);
+      .toEqual(["workbench-tab-overview", "workbench-tab-files", "workbench-tab-progress", "workbench-tab-browser"]);
+    // WB1-2: icons, each named by its aria-label and tooltip
+    expect(tabs.map((tab) => tab.getAttribute("aria-label")))
+      .toEqual(["workbench.overview", "workbench.folder", "workbench.progress", "workbench.browser"]);
+    expect(tabs.map((tab) => tab.getAttribute("title"))).toEqual(tabs.map((tab) => tab.getAttribute("aria-label")));
+    for (const tab of tabs) expect(tab.querySelector("svg")).not.toBeNull();
     expect(screen.queryByTestId("workbench-tab-task")).toBeNull();
   });
 
-  it("opens on Working folder by default, from a fresh store", async () => {
+  it("opens on Overview by default, from a fresh store (WB1-2)", async () => {
     vi.resetModules();
     const { useWorkbench: fresh } = await import("../stores/workbenchStore");
-    expect(fresh.getState().tab).toBe("files");
+    expect(fresh.getState().tab).toBe("overview");
   });
 
   it("keeps every fixed tab whether or not a job runs", async () => {

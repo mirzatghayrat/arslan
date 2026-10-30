@@ -1006,6 +1006,10 @@ export interface McpServer {
   last_error?: string | null;
   transport?: string;
   url?: string | null; // streamable-HTTP endpoint (transport === "http")
+  /** 0.1.61 §B1: the state the supervisor stored, and the state it is shown in (server `_to_dict`).
+   *  `shown` is one of ready, starting, failed, parked, needs_auth, off (WB1-2 reads it). */
+  state?: string | null;
+  shown?: string;
 }
 
 export interface McpTool {

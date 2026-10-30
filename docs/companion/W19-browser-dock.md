@@ -145,7 +145,7 @@ model configuration and loopback-only HTTP. No browser runtime was configured in
 the app and no setup/download action was taken. The existing temporary Chromium
 test driver used a new isolated context for every case.
 
-`scripts/work_dock_app_smoke.cjs` passed another 36 combinations (six languages,
+`scripts/work_dock_app_smoke.cjs` (removed in v0.1.64, WB1-2: it drove the standalone dock that the 0.1.58 workbench replaced, it was stale from then on and nothing ran it; the workbench is checked by vitest and the `SMOKE.md` real-Mac items) passed another 36 combinations (six languages,
 1100/600/360px, light/dark) inside the full application shell. Each case changes
 the real settings/theme, returns to the conversation, opens a browser tab, and
 verifies the real `409 browser.setup_required` response. The visible refusal,
