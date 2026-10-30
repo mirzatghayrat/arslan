@@ -79,40 +79,81 @@ def test_the_macos_run_makes_every_xfail_strict():
     assert "-o xfail_strict=true" in run
 
 
-def _xfail_misuses() -> list[str]:
-    """Every xfail in tests/ pins `raises=` and stays strict, and nothing calls pytest.xfail().
+
+def _misuses_in(source: str, where: str) -> list[str]:
+    """Every xfail pins `raises=` (not None) and stays strict, and nothing calls pytest.xfail().
 
     The step counts an xfail as ran whatever made it fail: a fixture that raises in
     setup or a NameError in the body is also `<skipped type="pytest.xfail">`. Pinning
     `raises=` turns those into `<failure>`. An explicit `strict=False` beats
-    `-o xfail_strict=true`, and `pytest.xfail()` is an xfail with no `raises=` at all.
+    `-o xfail_strict=true`, `raises=None` means any exception, and `pytest.xfail()`
+    is an xfail with no `raises=` at all. A mark used without a call (`@pytest.mark.xfail`,
+    `pytestmark = ...`, `marks=...`) has no `raises=` either.
     """
     import ast
 
+    def on_mark(base) -> bool:
+        return (isinstance(base, ast.Attribute) and base.attr == "mark") or (
+            isinstance(base, ast.Name) and base.id == "mark")
+
+    tree = ast.parse(source)
+    called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     found = []
-    for path in sorted(CI.parents[2].joinpath("tests").rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
+    for node in ast.walk(tree):
+        at = f"{where}:{getattr(node, 'lineno', 0)}"
+        if isinstance(node, ast.Call):
             func = node.func
-            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-            where = f"{path.relative_to(CI.parents[2])}:{node.lineno}"
-            if name != "xfail":
+            if isinstance(func, ast.Attribute) and func.attr == "xfail" and not on_mark(func.value):
+                found.append(f"{at}: pytest.xfail() call")
                 continue
-            is_mark = isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute) \
-                and func.value.attr == "mark"
-            if not is_mark:
-                found.append(f"{where}: pytest.xfail() call")
+            if not ((isinstance(func, ast.Attribute) and func.attr == "xfail")
+                    or (isinstance(func, ast.Name) and func.id == "xfail")):
                 continue
             kw = {k.arg: k.value for k in node.keywords}
-            if "raises" not in kw:
-                found.append(f"{where}: xfail without raises=")
+            raises = kw.get("raises")
+            if raises is None or (isinstance(raises, ast.Constant) and raises.value is None):
+                found.append(f"{at}: xfail without raises=")
             strict = kw.get("strict")
             if isinstance(strict, ast.Constant) and strict.value is False:
-                found.append(f"{where}: xfail(strict=False)")
+                found.append(f"{at}: xfail(strict=False)")
+        elif id(node) not in called and (
+                (isinstance(node, ast.Attribute) and node.attr == "xfail")
+                or (isinstance(node, ast.Name) and node.id == "xfail" and isinstance(node.ctx, ast.Load))):
+            found.append(f"{at}: xfail mark without a call, so without raises=")
     return found
 
 
+GOOD = "import pytest\n@pytest.mark.xfail(raises=AssertionError)\ndef test_m(): assert False\n"
+
+
+@pytest.mark.parametrize("source", [
+    "import pytest\n@pytest.mark.xfail\ndef test_m(): pass\n",
+    "import pytest\npytestmark = pytest.mark.xfail\n",
+    "import pytest\n@pytest.mark.parametrize('n', [pytest.param(1, marks=pytest.mark.xfail)])\ndef test_m(n): pass\n",
+    "import pytest\n@pytest.mark.xfail(strict=True)\ndef test_m(): pass\n",
+    "import pytest\n@pytest.mark.xfail(raises=None)\ndef test_m(): pass\n",
+    "import pytest\n@pytest.mark.xfail(raises=AssertionError, strict=False)\ndef test_m(): pass\n",
+    "import pytest\ndef test_m(): pytest.xfail('not built')\n",
+    "from pytest import mark\n@mark.xfail\ndef test_m(): pass\n",
+], ids=["bare mark", "pytestmark", "param marks", "no raises", "raises None", "strict False",
+        "imperative", "bare imported mark"])
+def test_the_guard_flags_each_misuse(source):
+    assert _misuses_in(source, "probe") != []
+
+
+@pytest.mark.parametrize("source", [
+    GOOD,
+    "from pytest import mark\n@mark.xfail(strict=True, raises=AssertionError)\ndef test_m(): assert False\n",
+    "import pytest\n@pytest.mark.parametrize('n', [pytest.param(1, marks=pytest.mark.xfail(raises=OSError))])\n"
+    "def test_m(n): raise OSError\n",
+], ids=["pinned", "imported mark, pinned", "param marks, pinned"])
+def test_the_guard_passes_a_pinned_strict_xfail(source):
+    assert _misuses_in(source, "probe") == []
+
+
 def test_every_xfail_pins_what_it_expects():
-    assert _xfail_misuses() == []
+    root = CI.parents[2]
+    found = []
+    for path in sorted(root.joinpath("tests").rglob("*.py")):
+        found += _misuses_in(path.read_text(encoding="utf-8"), str(path.relative_to(root)))
+    assert found == []
