@@ -259,6 +259,18 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
     4. listening that a card grants for one run.
 
     Before deciding, read at the source how Anthropic's sandbox-runtime writes its `allowLocalBinding` rule on macOS, and whether it notes the same all-interfaces behaviour;
+
+    **Read at the source** (③Hands, 2026-10-30):
+    - **Anthropic's sandbox-runtime** (`anthropics/sandbox-runtime` at `98a4016d`, `src/sandbox/macos-sandbox-utils.ts` around lines 1258-1284).
+      - `allowLocalBinding` is off by default.
+      - When it is on, the profile gets `(allow network-bind (local ip "*:*"))` and `(allow network-inbound (local ip "*:*"))`, so every interface.
+      - Its comment says Seatbelt's `localhost` doesn't match a dual-stack socket bound to `::ffff:127.0.0.1`, and Seatbelt takes only `localhost` or `*` as the host.
+      - It also notes that `localhost` in a `(local ip …)` filter matches the any-address, which is why its outbound rule is `(remote ip "localhost:*")`. That is the user's finding, in its words.
+      - It treats a listener reachable from outside as not egress.
+    - **Codex** (`openai/codex` at `f752c97f`, `codex-rs/sandboxing/src/seatbelt.rs` around lines 334-339).
+      - `allow_local_binding` is off by default.
+      - When it is on, bind is `(local ip "*:*")`, inbound is `(local ip "localhost:*")` and outbound is `(remote ip "localhost:*")`.
+    - **Neither restricts the bind to loopback.** Codex's inbound `(local ip "localhost:*")` comes closest to "never all interfaces". Whether it refuses a connection that doesn't come over loopback is an SBX-M measurement (§M, loopback). Given the any-address note above, it may not.
   - until that is decided, the bind and inbound bullets below describe the goal, not the preset, and a dev server inside the sandbox gets the usual re-run card.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
@@ -326,6 +338,10 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - Keychain (f): security-server reachability from inside (`Library/Keychains` file denies do not cover a daemon read, `docs/plans/0162/README.md:344` at `11f05434`); the git credential helper inside vs outside.
   - Shells: `zsh -c` as on main today, and `bash -p -c` (S2a-3 a, which lands after SBX).
   - Loopback (§3): a dev server bound and fetched on localhost; a local test database; Arslan's own port refused; a bind to all interfaces refused.
+  - Listening with Codex's rules (§3, read at the source): `(allow network-bind (local ip "*:*"))` plus `(allow network-inbound (local ip "localhost:*"))`. Two checks:
+    - a listener bound to `0.0.0.0`, and a dual-stack one on `::`;
+    - a connection that does not come over loopback is refused, or not. The real check is from another machine on the LAN. The stand-in on one Mac is a connection to its own LAN address, where the accepted socket's local address is not loopback.
+    The report names which one was run. This informs the listening decision, which stays with the user.
   - Unix sockets (§2): a listener the test creates outside the writable roots, standing in for an agent socket, cannot be connected to; reachability of the real ssh-agent, `gpg-agent` and Docker sockets, connect only, nothing sent.
   - Daemons that do network work (§2): reachability of background URL sessions in each network mode.
   - IPC and ptys (§1): a `multiprocessing.Pool`, a node worker-thread pool, a tool that opens a pty.

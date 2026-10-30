@@ -61,18 +61,22 @@ def _sent(minutes_ago: float) -> str:
     return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat().replace("+00:00", "Z")
 
 
+# The send times are made when the test runs, not when it is collected (LOAD4: in a 20-minute loaded run a
+# "just sent" time made at collection was past FRESH_FOR + CLOCK_SKEW, 7 minutes, by the time it ran).
 @pytest.mark.parametrize("frame,expected", [
     ({"type": "user_message", "content": "hi"}, ("user_message", None, True)),
-    ({"type": "user_message", "content": "hi", "source": "phone", "sent_at": _sent(0)},
+    ({"type": "user_message", "content": "hi", "source": "phone", "sent_at": ("minutes ago", 0)},
      ("user_message", "phone", True)),
     ({"type": "user_message", "content": "hi", "source": "phone"}, ("user_message", "phone", False)),
-    ({"type": "user_message", "content": "hi", "source": "phone", "sent_at": _sent(60)},
+    ({"type": "user_message", "content": "hi", "source": "phone", "sent_at": ("minutes ago", 60)},
      ("user_message", "phone", False)),
     ({"type": "resume_task", "task_id": "t-1", "expected_version": 1}, ("resume_task", None, False)),
     ({"type": "resume_task", "task_id": "t-1", "expected_version": 1, "source": "phone"}, ("resume_task", None, False)),
 ], ids=["window-message", "phone-chat-send", "phone-no-send-time", "phone-sent-an-hour-ago", "window-resume",
         "bridge-resume"])
 def test_only_a_typed_message_from_the_window_or_the_phone_counts_as_present(app_client, seen, frame, expected):
+    if isinstance(frame.get("sent_at"), tuple):
+        frame = {**frame, "sent_at": _sent(frame["sent_at"][1])}
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()                                    # history
         ws.send_json(frame)

@@ -749,6 +749,16 @@
     "more": "Plus"
   },
   "sidebar": {
+    "pinFailed": "Impossible d’épingler. Réessayez.",
+    "pinned": "Épinglées",
+    "pin": "Épingler",
+    "unpin": "Désépingler",
+    "today": "Aujourd’hui",
+    "yesterday": "Hier",
+    "previous7": "7 derniers jours",
+    "earlier": "Plus ancien",
+    "hide": "Masquer la barre latérale",
+    "show": "Afficher la barre latérale",
     "new_session": "Nouvelle conversation",
     "spawns_ledger": "Liste des experts",
     "active_chats": "Conversations actives",
