@@ -31,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 
 from server.db import session as db_session
 from server.db.models import SkillPack
+from server.orchestrator import untrusted
 
 MAX_SKILL_BYTES = 15 * 1024  # Hermes hygiene: skills stay <=15 KB
 _MIN_BODY_CHARS = 80
@@ -83,19 +84,17 @@ def _tidy(body: str) -> str:
     R1): the Unicode line and paragraph separators become line breaks (read_skill splits on them too), no
     line ends in white space, at most one blank line in a row, leading indentation is kept as written up to
     `_INDENT_MAX` characters, and a run of white space inside a line stops at `_RUN_MAX`. Any white space
-    counts, not only spaces and tabs. The card shows, and the skill keeps, the tidied text."""
+    counts, not only spaces and tabs, and so does what shows nothing or only blank space (#526 review 1: the
+    blank braille pattern, the Hangul fillers, zero-width characters): a line of only those is blank, and a run
+    of them stops at `_RUN_MAX` too. The card shows, and the skill keeps, the tidied text."""
     lines = []
     for line in body.replace("\u2028", "\n").replace("\u2029", "\n").split("\n"):
-        line = line.rstrip()
+        line = "" if untrusted.is_blank(line) else line.rstrip()
         text = line.lstrip()
-        lines.append(line[:len(line) - len(text)][:_INDENT_MAX]
-                     + re.sub(r"[^\S\n]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, text))
+        indent = line[:len(line) - len(text)][:_INDENT_MAX]
+        text = re.sub(r"[^\S\n]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, text)
+        lines.append(indent + untrusted.cap_blank_runs(text, _RUN_MAX))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
-
-
-def _line(text, limit: int) -> str:
-    from server.orchestrator import untrusted
-    return untrusted.clean_name(text, limit)           # UNI1: one cleaner for names, wherever they come in
 
 
 def _files_stored(key: str) -> bool:
@@ -152,14 +151,13 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     DELETE-BY: v0.1.65, when "for you to look at" lands (CAP card): a skill Arslan writes then waits there for
     the user's review instead of this card's direct save."""
     key = str(args.get("key") or "").strip()
-    name = _line(args.get("name"), _NAME_MAX)
-    description = _line(args.get("description"), _LINE_MAX)
+    name = untrusted.clean_name(args.get("name"), _NAME_MAX)          # UNI1: one cleaner for names
+    description = untrusted.clean_name(args.get("description"), _LINE_MAX)
     # UNI1: ordinary text is kept, format characters included (ZWNJ, ZWJ, VS16, LRM/RLM, a bidi control the card
     # shows escaped); only Tag and control characters go. Until UNI1 every category-C character went.
-    from server.orchestrator import untrusted
     body = _tidy(untrusted.clean_body(args.get("body")))
     tidied = body != str(args.get("body") or "").strip() + "\n"
-    why = _line(args.get("why"), _LINE_MAX)
+    why = untrusted.clean_name(args.get("why"), _LINE_MAX)
     errors = validate(key, name, description, body) + (
         [f"key is at most {_KEY_MAX} characters"] if len(key) > _KEY_MAX else [])
     if errors:
@@ -173,7 +171,6 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     async with db_session.AsyncSessionLocal() as db:
         if await db.get(SkillPack, key) is not None:
             return {"ok": False, "error": f"not saved: a skill with the key '{key}' exists; pick another key"}
-    from server.orchestrator import untrusted
     from server.services import approvals, background_jobs, permissions
     # The ledger keeps the key, the name and the model's reason; never the body.
     request = permissions.Request(kind="capability", target=f"skill:{key}", title=f"Save the skill {name}?"[:200],

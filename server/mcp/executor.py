@@ -272,7 +272,11 @@ class MCPProxyExecutor:
         current = personal_context.current()
         ctx = permissions.Context(current.conversation_id if current else None,
                                   job_id=background_jobs._inside_job.get())
-        title = f"Use {srv.label}\u2019s {self.external_name}?"
+        # UNI1 (#526 review 4): the card (web and phone) shows names through the one name cleaner; the tool's
+        # name comes live from the server, and a label stored before UNI1 is cleaned by migration 0082.
+        from server.orchestrator import untrusted
+        title = (f"Use {untrusted.clean_name(srv.label, 80) or 'MCP'}\u2019s "
+                 f"{untrusted.clean_name(self.external_name, 128) or 'tool'}?")
         # The card shows the user the label as installed; the model reads it as a label (`label_of`, #495
         # O2), so each refusal below names the server that way (S64-0c, the recheck of #498).
         shown = label_of(srv)

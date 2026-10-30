@@ -11,6 +11,7 @@ vi.mock("react-i18next", () => ({
 
 import * as discovery from "../api/discovery";
 import AskSlot from "../components/AskSlot";
+import CapabilitySheet from "../components/CapabilitySheet";
 import SkillImportPanel from "../components/SkillImportPanel";
 import { Escaped, isolate } from "../lib/outsideText";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
@@ -67,8 +68,19 @@ describe("outside text on the web", () => {
     found.forEach(el => shownEscaped(el as HTMLElement));
   });
 
+  it("the details sheet shows a skill's name and what it does, a bidi control as a marker (#526 review)", () => {
+    const row = { key: "skill:weekly", section: "skills", origin: "installed", deletable: false, source_id: null,
+      state: "on", switch: "skill", tools: [], reason: null, fix: null, name: MIXED, detail: MIXED } as never;
+    render(<CapabilitySheet row={row} name={MIXED} what={MIXED} used="" onClose={() => {}} onDelete={() => {}}
+      onChanged={() => {}} />);
+    shownEscaped(screen.getByTestId("cap-sheet-what"));
+    shownEscaped(screen.getByTestId("cap-sheet").querySelector("bdi")!.parentElement as HTMLElement);
+  });
+
   it("every component that shows outside skill or connection text uses lib/outsideText", () => {
-    // A new one fails here until it is listed, with a test above.
+    // A new one fails here until it is listed, with a test above. Names come from the server already cleaned
+    // (untrusted.clean_name at every write, models.py; migration 0082 for those stored before; the tools list),
+    // so this list is for text shown as stored (a skill's text) and names inside Arslan's own sentences.
     for (const file of ["CapabilitySwitches.tsx", "CapabilitySheet.tsx", "SkillImportPanel.tsx",
       "capabilities/SkillSaveCard.tsx", "capabilities/CapabilityProposeCard.tsx"]) {
       expect(readFileSync(`src/components/${file}`, "utf8"), file).toMatch(/from "(\.\.\/)+lib\/outsideText"|from '\.\.\/lib\/outsideText'/);

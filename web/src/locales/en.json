@@ -947,7 +947,7 @@
       "orphaned": "Orphaned files"
     },
     "import": {
-      "subtitle": "Standard SKILL.md files, imported verbatim — license-gated.",
+      "subtitle": "Standard SKILL.md files, imported as written, without hidden characters — license-gated.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subpath (optional)",
       "scan": "Scan",

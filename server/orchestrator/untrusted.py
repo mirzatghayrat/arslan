@@ -106,46 +106,81 @@ def breaks_mcp_name_rule(name) -> bool:
 
 
 # v0.1.64 UNI1 (docs/plans/0164/CAPX-followups.md): one cleaner for names, one rule for skill bodies.
-#: Invisible, though not in a "C" category: the combining grapheme joiner, the Hangul fillers, the blank braille
-#: pattern and the variation selectors (#472 review F4). A name made only of these would show blank.
-_NAME_INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
-#: An emoji subdivision flag: the black flag, tag letters or digits, and the cancel tag (England, Scotland, Wales).
-_TAG_FLAG = re.compile("\U0001f3f4[\U000e0030-\U000e0039\U000e0061-\U000e007a]{1,8}\U000e007f")
+#: Invisible, though not in a "C" category: the combining grapheme joiner, the Hangul fillers, the Khmer inherent
+#: vowels, the Mongolian free variation selectors, the blank braille pattern and the variation selectors (#472
+#: review F4, #526 review 3). A name made only of these would show blank.
+_NAME_INVISIBLE = re.compile("[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2800\u3164\uffa0\ufe00-\ufe0f"
+                             "\U000e0100-\U000e01ef]")
+#: The most combining marks a name keeps on one base character: enough for Vietnamese, Hebrew pointing and Indic
+#: vowel signs. A longer stack draws over the text around it, and a mark with no base shows nothing of its own
+#: (#526 review 3).
+_MARKS_MAX = 4
+#: The emoji subdivision flags Unicode recommends (RGI): England, Scotland and Wales. Any other run of tags is
+#: text hidden in tags (#526 review 2).
+TAG_FLAG = re.compile("\U0001f3f4\U000e0067\U000e0062(?:\U000e0065\U000e006e\U000e0067|\U000e0073\U000e0063\U000e0074"
+                       "|\U000e0077\U000e006c\U000e0073)\U000e007f")
 _TAGS = re.compile("[\U000e0000-\U000e007f]")
+#: What shows nothing, or only blank space: white space, Unicode's default-ignorable code points
+#: (DerivedCoreProperties.txt) and the blank braille pattern. A line of only these is blank, and a long run of
+#: them is padding (#472 review F5, #526 review 1).
+_BLANK = (r"[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f"
+          r"\u2800\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8\U0001bca0-\U0001bca3\U0001d173-\U0001d17a"
+          r"\U000e0000-\U000e0fff]")
 
 
 def clean_name(text, limit: int) -> str:
     """A name or another one-line field, wherever it comes in: a skill's name and description, an MCP server's
     label, a capability source's name. An allowlist: letters, marks, numbers, punctuation and symbols, and one
     space between words. Control, format (bidi, zero-width), private-use, unassigned and the other invisible
-    characters go, so what is stored is what shows; any white space or line break becomes one space. At most
-    `limit` characters. `outside_label` (what the model is shown of an outside name) builds on it."""
+    characters go, so what is stored is what shows; any white space or line break becomes one space. A combining
+    mark stays only on a base character, at most `_MARKS_MAX` of them, so a name always has a character of its
+    own to show. At most `limit` characters. `outside_label` (what the model is shown of an outside name) builds
+    on it."""
     import unicodedata
-    kept = []
-    for ch in str(text or ""):
-        category = unicodedata.category(ch)
-        if category[0] in "LMNPS":
+    kept, marks = [], None              # marks on the last base; None while there is no base to carry one
+    for ch in _NAME_INVISIBLE.sub("", str(text or "")):
+        category = unicodedata.category(ch)[0]
+        if category == "M":
+            if marks is not None and marks < _MARKS_MAX:
+                kept.append(ch)
+                marks += 1
+        elif category in "LNPS":
             kept.append(ch)
-        elif category[0] == "Z" or ch.isspace():
+            marks = 0
+        elif category == "Z" or ch.isspace():
             kept.append(" ")
-    return " ".join(_NAME_INVISIBLE.sub("", "".join(kept)).split())[:limit].strip()
+            marks = None
+    return " ".join("".join(kept).split())[:limit].strip()
 
 
 def clean_body(text) -> str:
     """A skill's text, wherever it comes in (the save card, an import). Ordinary text is kept byte for byte,
-    format characters included: Persian's ZWNJ, emoji ZWJ sequences, VS16 (U+FE0F, as in the red heart emoji), LRM/RLM, and bidi override
-    and isolate controls, which the cards show escaped so they still show exactly what is stored. Removed:
-    Unicode Tag characters (U+E0000–E007F, the hidden-text smuggling vector), but those that make an emoji
-    subdivision flag; and the C0 and C1 control characters but tab and new line, which are not text (a NUL, an
-    escape sequence's ESC, a bell). A carriage return becomes a new line."""
+    format characters included: Persian's ZWNJ, emoji ZWJ sequences, VS16 (U+FE0F, as in the red heart emoji),
+    LRM/RLM, and bidi override and isolate controls, which the cards show escaped so they still show exactly what
+    is stored. Removed: Unicode Tag characters (U+E0000–E007F, the hidden-text smuggling vector), but those that
+    make one of the three RGI subdivision flags; and the C0 and C1 control characters but tab and new line,
+    which are not text (a NUL, an escape sequence's ESC, a bell). A carriage return, alone or before a new line,
+    becomes one new line."""
     import unicodedata
     text = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     parts, last = [], 0
-    for flag in _TAG_FLAG.finditer(text):
+    for flag in TAG_FLAG.finditer(text):
         parts += [_TAGS.sub("", text[last:flag.start()]), flag.group()]
         last = flag.end()
     text = "".join(parts) + _TAGS.sub("", text[last:])
     return "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch) != "Cc")
+
+
+def is_blank(line: str) -> bool:
+    """Whether a line shows nothing: only white space, default-ignorable characters or the blank braille
+    pattern (#526 review 1)."""
+    return re.fullmatch(_BLANK + "*", line) is not None
+
+
+def cap_blank_runs(text: str, limit: int) -> str:
+    """Each run of more than `limit` characters that show nothing or only blank space, cut to its first `limit`
+    (#526 review 1: 4000 blank braille patterns on one line pushed the rest of a skill out of the card)."""
+    return re.sub(_BLANK + "{%d,}" % (limit + 1), lambda run: run.group()[:limit], text)
 
 
 def reaches_network(command: str) -> bool:

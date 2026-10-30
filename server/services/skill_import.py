@@ -73,7 +73,9 @@ def parse_skill_md(raw: str) -> dict | None:
     if not body or not name or not description:
         return None
     key = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60]
-    return {"key": key, "name": name, "description": description, "body": body, "cleaned": body != written}
+    # Line endings are not hidden characters: a CRLF file read as LF lost nothing (#526 review 5).
+    plain = written.replace("\r\n", "\n").replace("\r", "\n").strip()
+    return {"key": key, "name": name, "description": description, "body": body, "cleaned": body != plain}
 
 
 def _license_gate(spdx: str | None) -> str | None:

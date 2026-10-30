@@ -1015,6 +1015,8 @@ export interface McpServer {
 export interface McpTool {
   key: string;
   name: string;
+  /** The name through the server's name rule (UNI1a): what the page shows. */
+  shown?: string;
   description: string;
   tier: string; // safe|orchestrator
   status: string; // registered|wired

@@ -947,7 +947,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,逐字导入——许可证把关。",
+      "subtitle": "标准 SKILL.md,按原文导入(去掉隐藏字符)——许可证把关。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",
