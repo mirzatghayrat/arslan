@@ -10,17 +10,18 @@ Run on macOS CI first. After its results have been reviewed, the SBX-M operator
 runs on the user's Mac from the repository root:
 
 ```sh
+sbx_output="$(mktemp -d "${TMPDIR:-/tmp}/arslan-sbx-evidence.XXXXXX")"
 .venv/bin/pytest tests/server/sbx -m sbx_mac -q -rfEs \
-  --junitxml=sbx-results.xml --sbx-artifacts=sbx-profile-texts
+  --junitxml="$sbx_output/results.xml" --sbx-artifacts="$sbx_output/profiles"
 ```
 
 The existing CI command (`pytest tests/ -m macos`) selects the same SBX-2 tests.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The current set adds 290 cases: 71 assertion gates and
-219 measurement rows. Together with the existing 69, the job must expect 359.
-The workflow's exact-count update belongs to the separate non-Codex CI PR;
-this branch intentionally leaves its mirror check failing until that change lands.
+an availability skip. The current set adds 293 cases: 71 assertion gates and
+222 measurement rows. Together with the existing 69, the job must expect 362.
+PR #508 set the CI count to 359; a separate Claude CI change must raise it to
+362 for the three added localhost measurements. The mirror guard fails until then.
 
 ## Reading results
 
@@ -39,16 +40,18 @@ versions, hashes, outcomes, gaps and card costs only; never raw service output.
 
 `harness.py` selects `legacy-commands`, `default-deny`, or `outside-floor` by
 name. Legacy uses today's real command builder and its writable/protected roots
-with scratch HOME/TMPDIR, rather than a reconstructed policy. Proxy-mode rows on
+with scratch HOME/TMPDIR, including the parent's cached `tempfile` root. The real
+builder still includes its historical shared temp roots and Darwin user directory;
+the legacy comparison is not confined to scratch. Proxy-mode rows on
 the historical profiles mean their historical online behavior; they have no
 proxy. On the candidate, the reserved proxy port has **no listener**: this tests
 compatibility with the restriction, not end-to-end proxy forwarding (SBX-6).
 
-Future p PRs add probe parameters and the surface's profile adapter. Their base
-name remains outside `BUILT_BASES`, so `base_parameter()` applies
-`xfail(strict=True)`. The corresponding a PR adds its name to `BUILT_BASES` and
-must show zero skips and zero xfails on its own macOS job. An unknown adapter
-raises; it never silently uses the candidate or a historical profile.
+Future p PRs add their strict-xfail gate when needed, together with a separate
+Claude CI change that distinguishes strict xfails from skips. The corresponding
+a PR must show zero skips and zero xfails on its own macOS job. No future gate is
+implemented here. An unknown adapter raises; it never silently uses the candidate
+or a historical profile.
 
 ## Safety and coverage
 
@@ -68,7 +71,15 @@ raises; it never silently uses the candidate or a historical profile.
   runs are represented. Remote fetches are small public fixtures, not model calls.
   Failed network/toolchain probes remain visible measurements, never skips.
 - Loopback gates use test-owned listeners, deny a supplied Arslan-port stand-in,
-  and reject all-interface binds. Unix-socket gates use a controlled listener.
+  and reject IPv4/IPv6 wildcard and loopback binds plus implicit listens. Every
+  candidate network mode denies binds/listens. The separate localhost dev-server
+  measurement still binds, serves and fetches under each base; it records `ok`,
+  `refused` (expected under the candidate), or `tool-failed`, without making
+  localhost server availability a pass gate. CI run 41002402918 measured that
+  Seatbelt's localhost bind filter also permits wildcard binds. The card's §3
+  localhost dev-server promise is deferred by the user's decision; restoring it
+  needs a card decision before SBX-3 wires the preset (for example a brokered
+  listener or another approach). Unix-socket gates use a controlled listener.
   For optional real connect-only measurements, the operator may supply
   `SBX_SSH_AGENT_SOCKET`, `SBX_GPG_AGENT_SOCKET`, and `SBX_DOCKER_SOCKET` explicitly.
   No directories are searched and no protocol bytes are sent. Missing inputs

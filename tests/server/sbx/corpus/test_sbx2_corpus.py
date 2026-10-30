@@ -2,12 +2,13 @@
 import subprocess
 import sys
 import plistlib
+import shutil
 from dataclasses import dataclass
 
 import pytest
 
 from server.services.sandbox_profile import NetworkMode
-from tests.server.sbx.harness import MEASUREMENT_BASES, base_parameter
+from tests.server.sbx.harness import MEASUREMENT_BASES
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 
@@ -17,10 +18,11 @@ class Case:
     name: str
     argv: tuple[str, ...]
     online: bool = False
+    required_tools: tuple[str, ...] = ()
 
 
-def shell(name, source, online=False):
-    return Case(name, ("/bin/bash", "-p", "-c", "set -eu\n" + source), online)
+def shell(name, source, online=False, *, requires):
+    return Case(name, ("/bin/bash", "-p", "-c", "set -eu\n" + source), online, requires)
 
 
 def python(name, source, online=False):
@@ -29,25 +31,25 @@ def python(name, source, online=False):
 
 CASES = [
     Case("user-lookup", ("/usr/bin/id", "-un")),
-    shell("preference-read", 'defaults read "$SBX_PREF_DOMAIN" probe'),
+    shell("preference-read", 'defaults read "$SBX_PREF_DOMAIN" probe', requires=('defaults',)),
     Case("git-version", ("git", "--version")),
     shell("git-local", "git init -q repo; cd repo; printf sbx > file; git add file; "
           "git -c user.name=SBX -c user.email=sbx@example.invalid -c commit.gpgsign=false "
-          "commit -qm probe; git branch probe; git log --oneline"),
+          "commit -qm probe; git branch probe; git log --oneline", requires=('git',)),
     shell("git-clone-https", "git -c credential.helper= clone --depth=1 "
-          "https://github.com/octocat/Hello-World.git clone", True),
+          "https://github.com/octocat/Hello-World.git clone", True, requires=('git',)),
     # No stored credential can match this unique .invalid host. Output is discarded.
     shell("git-keychain-helper", "printf 'protocol=https\\nhost=com.arslan.sbx-probe.invalid\\n\\n' | "
-          "git credential-osxkeychain get > /dev/null", True),
+          "git credential-osxkeychain get > /dev/null", True, requires=('git',)),
     # Controlled absent local endpoint, never a real remote or real key.
     shell("ssh-remote", "GIT_SSH_COMMAND='ssh -F /dev/null -o BatchMode=yes -o IdentityAgent=none "
           "-o IdentityFile=none -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes "
-          "-o ConnectTimeout=2 -p 1' git ls-remote ssh://127.0.0.1/probe", True),
+          "-o ConnectTimeout=2 -p 1' git ls-remote ssh://127.0.0.1/probe", True, requires=('git', 'ssh')),
     Case("python-version", (sys.executable, "--version")),
     python("python-compute", "assert sum(range(100)) == 4950"),
     Case("python-venv", (sys.executable, "-I", "-m", "venv", "venv")),
     shell("pip-download", "python -m venv pip-env; pip-env/bin/python -m pip download "
-          "--disable-pip-version-check --no-deps --dest downloads six==1.17.0", True),
+          "--disable-pip-version-check --no-deps --dest downloads six==1.17.0", True, requires=('python',)),
     Case("node-version", ("node", "--version")),
     Case("node-script", ("node", "-e", "if (2+2 !== 4) process.exit(1)")),
     Case("node-watch", ("node", "-e", "const fs=require('fs'); fs.mkdirSync('watch'); "
@@ -58,8 +60,8 @@ CASES = [
     Case("npm-view", ("npm", "view", "is-number@7.0.0", "version", "--ignore-scripts"), True),
     Case("sdk-path", ("xcrun", "--show-sdk-path")),
     Case("swift-version", ("swift", "--version")),
-    shell("swiftc", "printf 'print(42)\\n' > main.swift; swiftc main.swift -o hello; ./hello"),
-    shell("swift-package", "mkdir package; cd package; swift package init --type executable; swift build"),
+    shell("swiftc", "printf 'print(42)\\n' > main.swift; swiftc main.swift -o hello; ./hello", requires=('swiftc',)),
+    shell("swift-package", "mkdir package; cd package; swift package init --type executable; swift build", requires=('mkdir', 'swift')),
     Case("brew-version", ("brew", "--version")),
     Case("brew-prefix", ("brew", "--prefix")),
     Case("brew-list", ("brew", "list", "--versions")),
@@ -68,15 +70,15 @@ CASES = [
     Case("curl-certificate", ("curl", "--fail", "--silent", "--max-time", "10",
                               "--output", "/dev/null", "https://example.com"), True),
     python("python-certificate", "import urllib.request; urllib.request.urlopen('https://example.com', timeout=10).close()", True),
-    shell("git-certificate", "git -c credential.helper= ls-remote https://github.com/octocat/Hello-World.git HEAD", True),
-    shell("swift-certificate", "swift fetch.swift", True),
+    shell("git-certificate", "git -c credential.helper= ls-remote https://github.com/octocat/Hello-World.git HEAD", True, requires=('git',)),
+    shell("swift-certificate", "swift fetch.swift", True, requires=('swift',)),
     Case("zsh", ("/bin/zsh", "-f", "-c", "printf sbx > zsh-output")),
     Case("bash", ("/bin/bash", "-p", "-c", "printf sbx > bash-output")),
     python("multiprocessing", "import multiprocessing as m\nwith m.get_context('fork').Pool(2) as p:\n assert p.map(abs, [-1,-2]) == [1,2]"),
     python("pty", "import os,pty; a,b=pty.openpty(); os.close(a); os.close(b)"),
     python("tempfile", "import os,tempfile; f=tempfile.NamedTemporaryFile(); assert f.name.startswith(os.environ['TMPDIR'])"),
-    shell("mktemp", "p=$(mktemp); rm \"$p\""),
-    shell("mktemp-template", "p=$(mktemp -t arslan-sbx-probe); rm \"$p\""),
+    shell("mktemp", "p=$(mktemp); rm \"$p\"", requires=('mktemp', 'rm')),
+    shell("mktemp-template", "p=$(mktemp -t arslan-sbx-probe); rm \"$p\"", requires=('mktemp', 'rm')),
     python("hardcoded-tmp", "import os,tempfile; fd,p=tempfile.mkstemp(prefix='arslan-sbx-', dir='/tmp'); os.close(fd); os.unlink(p)"),
     python("darwin-user-temp", "import os,tempfile; d=os.confstr('CS_DARWIN_USER_TEMP_DIR'); "
            "fd,p=tempfile.mkstemp(prefix='arslan-sbx-', dir=d); os.close(fd); os.unlink(p)"),
@@ -85,11 +87,11 @@ CASES = [
     shell("pip-cache-two-runs", "python -m venv pip-env; pip-env/bin/python -m pip download "
           "--disable-pip-version-check --no-deps --dest downloads six==1.17.0; "
           "pip-env/bin/python -m pip download --disable-pip-version-check "
-          "--no-deps --dest downloads-again six==1.17.0", True),
+          "--no-deps --dest downloads-again six==1.17.0", True, requires=('python',)),
     shell("npm-cache-two-runs", "npm cache add is-number@7.0.0 --ignore-scripts; "
-          "npm cache add is-number@7.0.0 --ignore-scripts", True),
+          "npm cache add is-number@7.0.0 --ignore-scripts", True, requires=('npm',)),
     shell("uv-cache-two-runs", "uv venv first; uv pip install --python first/bin/python six==1.17.0; "
-          "uv venv second; uv pip install --python second/bin/python six==1.17.0", True),
+          "uv venv second; uv pip install --python second/bin/python six==1.17.0", True, requires=('uv',)),
 ]
 PARAMETERS = [pytest.param(case, mode, id=case.name + "-" + mode.value)
               for case in CASES
@@ -100,7 +102,7 @@ PARAMETERS = [pytest.param(case, mode, id=case.name + "-" + mode.value)
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("sbx", [base_parameter(n) for n in MEASUREMENT_BASES], indirect=True)
+@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
 @pytest.mark.parametrize("case,mode", PARAMETERS)
 def test_compatibility_measurement(sbx, case, mode, record_property):
     sbx.network = mode
@@ -120,6 +122,13 @@ exit(finished && ok ? 0 : 1)
     preferences.mkdir(parents=True)
     (preferences / (domain + ".plist")).write_bytes(plistlib.dumps({"probe": "sbx"}))
     sbx.env["SBX_PREF_DOMAIN"] = domain
+    missing = [tool for tool in (case.argv[0], *case.required_tools)
+               if shutil.which(tool, path=sbx.env["PATH"]) is None]
+    if missing:
+        record_property("probe", case.name)
+        record_property("outcome", "tool-unavailable")
+        record_property("missing_tools", ",".join(missing))
+        return
     try:
         version = case.name.endswith("-version")
         result = sbx.run(case.argv, timeout=45, discard=not version)
@@ -128,11 +137,6 @@ exit(finished && ok ? 0 : 1)
     else:
         code = result.returncode
         outcome = "ok" if code == 0 else "tool-failed"
-        # sandbox-exec reports a missing executable as a failure. It is not a skip
-        # and never evidence that a deny worked; preserve it as a measurement gap.
-        import shutil
-        if shutil.which(case.argv[0], path=sbx.env["PATH"]) is None:
-            outcome = "tool-unavailable"
         if version and code == 0:
             record_property("tool_version", (result.stdout or result.stderr).splitlines()[0])
     record_property("probe", case.name)
@@ -145,7 +149,39 @@ exit(finished && ok ? 0 : 1)
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("sbx", [base_parameter(n) for n in MEASUREMENT_BASES], indirect=True)
+@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
+def test_localhost_dev_server_measurement(sbx, record_property):
+    # SBX-M measures the deferred dev-server promise; refusal is not a pass gate.
+    sbx.network = NetworkMode.ANY_DECLARED
+    result = sbx.python("""
+import errno, socket
+with socket.socket() as server:
+    try:
+        server.bind(('127.0.0.1', 0))
+        server.listen(1)
+    except OSError as exc:
+        if exc.errno not in (errno.EPERM, errno.EACCES):
+            raise
+        print('refused')
+    else:
+        with socket.create_connection(server.getsockname(), timeout=3) as client:
+            peer, _ = server.accept()
+            with peer:
+                client.sendall(b'x')
+                assert peer.recv(1) == b'x'
+                peer.sendall(b'y')
+                assert client.recv(1) == b'y'
+        print('ok')
+""")
+    record_property("probe", "localhost-dev-server-bind-and-fetch")
+    record_property("outcome", result.stdout.strip() if result.returncode == 0 else "tool-failed")
+    record_property("returncode", result.returncode)
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
 def test_hardlink_measurement(sbx, record_property):
     target = sbx.root / "outside-file"
     target.write_text("original")
@@ -168,7 +204,7 @@ else:
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("sbx", [base_parameter(n) for n in MEASUREMENT_BASES], indirect=True)
+@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
 def test_background_child_measurement(sbx, record_property):
     result = sbx.python("""
 import os, subprocess, sys
@@ -183,7 +219,7 @@ assert child.wait(timeout=5) == 0
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("sbx", [base_parameter(n) for n in MEASUREMENT_BASES], indirect=True)
+@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
 @pytest.mark.parametrize("kind", ["ssh-agent", "gpg-agent", "docker"])
 def test_real_socket_reachability(sbx, kind, record_property):
     import os

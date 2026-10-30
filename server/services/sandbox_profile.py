@@ -136,8 +136,10 @@ def default_deny_profile(
     ownership check. Do not give two runs the same prefix.
 
     Network grants are TCP only. Unix sockets are a separate exact allowlist;
-    online modes allow localhost dev servers, excluding all supplied Arslan
-    listener ports. Offline denies network operations, including Unix sockets.
+    online modes allow outbound localhost connections, excluding all supplied
+    Arslan listener ports. All modes deny binds/listens: Seatbelt's localhost
+    bind filter also permits wildcard binds. Restoring dev servers requires a
+    card decision before SBX-3 wiring. Offline also denies Unix sockets.
     """
     network = NetworkMode(network)
     denied_ports = tuple(denied_ports)
@@ -179,7 +181,6 @@ def default_deny_profile(
     if network != NetworkMode.NONE:
         rules.allow_paths("network-outbound", map(real, SYSTEM_UNIX_SOCKETS), literal)
         rules.allow("network-outbound", '(remote tcp "localhost:*")')
-        rules.allow("network-bind network-inbound", '(local tcp "localhost:*")')
         if network == NetworkMode.PROXY:
             rules.allow("network-outbound", remote_tcp("localhost", proxy_port))
         elif network == NetworkMode.ANY_DECLARED:
@@ -188,8 +189,8 @@ def default_deny_profile(
             rules.allow("network-outbound", remote_tcp("*", 22))
         for port in sorted(set(denied_ports)):
             rules.deny("network-outbound", remote_tcp("localhost", port))
-            rules.deny("network-bind network-inbound", f'(local tcp "localhost:{port}")')
     # Explicit denials document boundaries that must survive future additions.
+    rules.deny("network-bind network-inbound")
     rules.deny("appleevent-send")
     rules.deny("user-preference-write")
     if network == NetworkMode.NONE:

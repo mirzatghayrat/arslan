@@ -1,10 +1,12 @@
 """Portable checks for the unused SBX-2 preset and the corpus contract."""
 from pathlib import Path
+from types import SimpleNamespace
+import tempfile
 
 import pytest
 
 from server.services.sandbox_profile import NetworkMode, default_deny_profile
-from tests.server.sbx.harness import Harness, base_parameter
+from tests.server.sbx.harness import Harness
 
 
 def test_default_deny_golden():
@@ -21,6 +23,8 @@ def test_network_is_explicit_and_services_never_wholesale(mode):
     assert "(allow network*)" not in text
     assert "(allow user-preference-write" not in text
     assert "(deny appleevent-send)" in text
+    assert "(deny network-bind network-inbound)" in text
+    assert "(allow network-bind" not in text
     if mode == NetworkMode.NONE:
         assert "(deny network*)" in text
         assert "(allow network" not in text
@@ -62,10 +66,7 @@ def test_ipc_is_omitted_or_confined_to_the_run():
         ipc_prefix="/arslan-0123456789abcdef-")
 
 
-def test_harness_uses_explicit_bases_and_strict_future_gate(tmp_path):
-    assert not base_parameter("default-deny").marks
-    pending = base_parameter("future-surface").marks[0]
-    assert pending.name == "xfail" and pending.kwargs["strict"] is True
+def test_harness_rejects_an_unknown_base(tmp_path):
     with pytest.raises(NotImplementedError):
         Harness(tmp_path, "future-surface").profile()
 
@@ -79,3 +80,37 @@ def test_harness_environment_has_no_ambient_credentials_or_config(tmp_path, monk
     assert h.env["GIT_TERMINAL_PROMPT"] == "0"
     assert h.env["GIT_ASKPASS"] == "/usr/bin/false"
     assert h.env["ARSLAN_SECRET_KEY_FILE"] == ""
+
+
+def test_legacy_profile_replaces_and_restores_cached_temp_root(tmp_path, monkeypatch):
+    stale = str(tmp_path / "cached-host-temp")
+    monkeypatch.setattr(tempfile, "tempdir", stale)
+    h = Harness(tmp_path / "scratch", "legacy-commands")
+    text = h.profile()
+    assert f'(subpath "{h.temp}")' in text
+    assert stale not in text
+    assert tempfile.tempdir == stale
+
+
+def test_sbx_fixture_rejects_a_missing_macos_marker(tmp_path):
+    from tests.server.sbx.conftest import sbx
+
+    request = SimpleNamespace(node=SimpleNamespace(get_closest_marker=lambda name: None))
+    fixture = sbx.__wrapped__(tmp_path, request, lambda *args: None)
+    with pytest.raises(pytest.fail.Exception, match="must carry the macos marker"):
+        next(fixture)
+
+
+def test_missing_tool_inside_shell_is_reported_before_execution(tmp_path, monkeypatch):
+    from tests.server.sbx.corpus import test_sbx2_corpus as corpus
+
+    h = Harness(tmp_path, "default-deny")
+    case = corpus.shell("missing-wrapped-tool", "absent-sbx-tool --version",
+                        requires=("absent-sbx-tool",))
+    monkeypatch.setattr(corpus.shutil, "which",
+                        lambda tool, path: "/bin/bash" if tool == "/bin/bash" else None)
+    monkeypatch.setattr(h, "run", lambda *args, **kwargs: pytest.fail("missing tool was executed"))
+    properties = {}
+    corpus.test_compatibility_measurement(h, case, NetworkMode.NONE, properties.__setitem__)
+    assert properties["outcome"] == "tool-unavailable"
+    assert properties["missing_tools"] == "absent-sbx-tool"

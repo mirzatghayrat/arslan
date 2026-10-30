@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -13,15 +14,8 @@ import pytest
 from server.services import command_sandbox
 from server.services.sandbox_profile import NetworkMode, default_deny_profile
 
-# Future p PRs add adapters/parameters; the corresponding a PR adds only its name here.
-BUILT_BASES = frozenset({"default-deny", "legacy-commands", "outside-floor"})
 MEASUREMENT_BASES = ("legacy-commands", "default-deny", "outside-floor")
 DENY_BASES = ("default-deny",)
-
-
-def base_parameter(name: str):
-    marks = [] if name in BUILT_BASES else [pytest.mark.xfail(strict=True, reason=f"{name} not built")]
-    return pytest.param(name, id=name, marks=marks)
 
 
 class Harness:
@@ -71,6 +65,7 @@ class Harness:
             with pytest.MonkeyPatch.context() as environment:
                 environment.setenv("HOME", str(self.home))
                 environment.setenv("TMPDIR", str(self.temp))
+                environment.setattr(tempfile, "tempdir", str(self.temp))
                 return command_sandbox.profile(
                     command_sandbox.default_writable(self.work),
                     [*command_sandbox.default_protected(), self.protected],

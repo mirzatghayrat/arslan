@@ -3,7 +3,6 @@ import platform
 import hashlib
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -36,8 +35,8 @@ def pytest_terminal_summary(terminalreporter):
 
 @pytest.fixture
 def sbx(tmp_path, request, record_property):
-    if sys.platform != "darwin":
-        pytest.skip("macOS seatbelt")
+    if request.node.get_closest_marker("macos") is None:
+        pytest.fail("tests using sbx must carry the macos marker and their own platform skip")
     base = getattr(request, "param", "default-deny")
     parameters = getattr(getattr(request.node, "callspec", None), "params", {})
     harness = Harness(tmp_path, base, parameters.get("mode", NetworkMode.NONE))

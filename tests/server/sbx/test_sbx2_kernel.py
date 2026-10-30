@@ -12,10 +12,10 @@ from pathlib import Path
 import pytest
 
 from server.services.sandbox_profile import NetworkMode
-from tests.server.sbx.harness import DENY_BASES, Harness, base_parameter
+from tests.server.sbx.harness import DENY_BASES, Harness
 
 pytestmark = [pytest.mark.sbx_mac,
-              pytest.mark.parametrize("sbx", [base_parameter(n) for n in DENY_BASES], indirect=True)]
+              pytest.mark.parametrize("sbx", DENY_BASES, indirect=True)]
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 PROBE = Path(__file__).parent / "corpus" / "service_probe.py"
@@ -251,7 +251,7 @@ assert lib.sandbox_check(os.getpid(), b'appleevent-send', flag) == 1
 @pytest.mark.macos
 @macos
 @pytest.mark.parametrize("mode", [NetworkMode.PROXY, NetworkMode.ANY_DECLARED, NetworkMode.PORT_22])
-def test_loopback_listener_and_arslan_port_exclusion(sbx, mode):
+def test_listener_refusal_and_arslan_port_exclusion(sbx, mode):
     sbx.network = mode
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -274,21 +274,23 @@ with socket.socket() as sock:
         assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
     result = sbx.python("""
 import errno, socket
-with socket.socket() as server:
-    server.bind(('127.0.0.1', 0))
-    server.listen(1)
-    with socket.create_connection(server.getsockname(), timeout=3) as client:
-        peer, _ = server.accept()
-        with peer:
-            client.sendall(b'x')
-            assert peer.recv(1) == b'x'
-with socket.socket() as server:
-    try:
-        server.bind(('0.0.0.0', 0))
-    except OSError as exc:
-        assert exc.errno in (errno.EPERM, errno.EACCES), exc
-    else:
-        raise AssertionError('all-interface bind allowed')
+for family, hosts in ((socket.AF_INET, ('0.0.0.0', '127.0.0.1')),
+                      (socket.AF_INET6, ('::', '::1'))):
+    for host in hosts:
+        with socket.socket(family) as server:
+            try:
+                server.bind((host, 0))
+            except OSError as exc:
+                assert exc.errno in (errno.EPERM, errno.EACCES), exc
+            else:
+                raise AssertionError(f'bind allowed: {host}')
+    with socket.socket(family) as server:
+        try:
+            server.listen(1)  # Implicit bind must not bypass the boundary.
+        except OSError as exc:
+            assert exc.errno in (errno.EPERM, errno.EACCES), exc
+        else:
+            raise AssertionError('listen allowed')
 """)
     assert result.returncode == 0, result.stderr
 
