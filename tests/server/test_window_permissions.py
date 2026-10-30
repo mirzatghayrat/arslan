@@ -8,10 +8,14 @@ that followed it now check that nothing is judged.)"""
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
+import types
 
 import pytest
 from sqlalchemy import select
+
+from arslan import execution_budget
 
 from server.services import approvals, command_sandbox, run_registry, turn_journal
 from tests.server.conftest import build_ws_client
@@ -418,7 +422,25 @@ def test_the_window_shows_only_the_cards_that_need_asking_and_judges_none(app_cl
 
 def test_a_card_answered_after_the_turns_wall_clock_still_finishes_the_turn(app_client, monkeypatch):
     # As in the app with its memory store active: the turn runs as a task, under its wall clock.
-    monkeypatch.setenv("ARSLAN_RUN_MAX_WALL_SECONDS", "2")           # hard stop at 3 s
+    # LOAD2: the user's time is a jump of the clocks while the card holds the turn's clock paused, not a
+    # real sleep, so the turn's own work keeps room to spare (20 s, hard stop 30 s) and load cannot end
+    # it. (A 2 s budget around a 4 s sleep failed 2 of 5 loaded runs with task_budget_exhausted.) Both
+    # clocks jump: the budget's (time.monotonic) and the event loop's, which runs the turn's
+    # asyncio.timeout. A wait that counted against the turn still ends it: 60 s is past the hard stop.
+    monkeypatch.setenv("ARSLAN_RUN_MAX_WALL_SECONDS", "20")
+    clock = {"offset": 0.0}
+    real_monotonic = time.monotonic
+    monkeypatch.setattr(execution_budget, "time", types.SimpleNamespace(monotonic=lambda: real_monotonic() + clock["offset"]))
+    loop = app_client.portal.call(asyncio.get_running_loop)
+    real_loop_time = loop.time
+    monkeypatch.setattr(loop, "time", lambda: real_loop_time() + clock["offset"])
+    holding = threading.Event()
+    real_pause = execution_budget._WallClock.pause
+
+    def pause(self):
+        real_pause(self)
+        holding.set()
+    monkeypatch.setattr(execution_budget._WallClock, "pause", pause)
     _enable_shell(app_client, policy="ask_all")
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
     executor = _stub_run_command_executor(monkeypatch)
@@ -426,7 +448,8 @@ def test_a_card_answered_after_the_turns_wall_clock_still_finishes_the_turn(app_
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "check the repo"})
         card = _collect_until(ws, "propose_run_command")[-1]
-        time.sleep(4)                                                 # the user takes their time
+        assert holding.wait(10), "the card's wait never paused the turn's clock"   # the card frame goes out first
+        clock["offset"] += 60                                         # the user takes a minute
         ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"]})
         frames: list[dict] = []
         while not frames or frames[-1].get("type") not in ("stream_end", "error"):
