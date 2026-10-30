@@ -93,6 +93,16 @@ def counts_as_external(tool_key: str, args: dict | None) -> bool:
     return False
 
 
+# #495 F1 (the user's choice: mark odd names): MCP's rule for a tool name (spec 2025-11-25) is 1 to 128 of
+# A-Z a-z 0-9 _ . -, no spaces. Real servers keep it; a name outside it is the server's own words, so whatever
+# shows one to the model has read outside content.
+_MCP_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+
+
+def breaks_mcp_name_rule(name) -> bool:
+    return not _MCP_NAME.fullmatch(str(name))
+
+
 def reaches_network(command: str) -> bool:
     """A command whose text shows it reaches the network (curl, git clone, pip download, a URL…)."""
     return bool(_NETWORK_COMMAND.search(command or ""))

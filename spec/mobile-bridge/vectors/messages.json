@@ -377,6 +377,180 @@
         "ts": "2026-10-03T00:00:00Z",
         "from": "mac-vector",
         "to": "iphone-vector",
+        "type": "hello",
+        "body": {
+          "app_version": "mac",
+          "protocol_version": 1,
+          "capabilities": [
+            "chat",
+            "files_in",
+            "new_conversation",
+            "quick"
+          ]
+        }
+      },
+      "kind": "control",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "chat.send",
+        "body": {
+          "new_conversation_id": "phone-0b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2",
+          "conversation_kind": "quick",
+          "text": "Ramen near me?",
+          "attachments": [],
+          "client_msg_id": "DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "chat.send",
+        "body": {
+          "new_conversation_id": "phone-1b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2",
+          "text": "Plan a trip",
+          "attachments": [],
+          "client_msg_id": "EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "conversations.list",
+        "body": {
+          "limit": 20,
+          "kind": "quick",
+          "before": "2026-10-03T00:00:00Z"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "conversations.result",
+        "body": {
+          "conversations": [
+            {
+              "id": "phone-0b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2",
+              "title": "Ramen near me?",
+              "updated_at": "2026-10-03T00:00:00Z",
+              "kind": "quick"
+            }
+          ],
+          "has_more": true
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "conversation.update",
+        "body": {
+          "conversation_id": "phone-0b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2",
+          "kind": "chat"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "conversation.updated",
+        "body": {
+          "conversation_id": "phone-0b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2",
+          "kind": "chat"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "error",
+        "body": {
+          "code": "conversation_exists",
+          "message": "That conversation is already on the Mac.",
+          "related_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "error",
+        "body": {
+          "code": "bad_request",
+          "message": "The Mac could not read that request.",
+          "related_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
         "type": "chat.event",
         "body": {
           "conversation_id": "pocket",
