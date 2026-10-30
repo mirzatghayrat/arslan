@@ -609,7 +609,7 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
-        inboxUnread={proactive.unread + (proactive.approvals ?? 0) + (proactive.memory ?? 0)}
+        inboxUnread={proactive.unread + (proactive.approvals ?? 0)}
         inboxHigh={proactive.high + (proactive.approvals ?? 0)}
         activeSection={activeSection}
         onChangeSection={(section) => {

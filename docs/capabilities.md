@@ -33,16 +33,12 @@ All capability reads/writes flow through `server/registry/service.py`:
 1. **Shipped** — curated methodology skills (adapted from Apache-2.0/MIT sources, attributed
    in `THIRD_PARTY_NOTICES.md`). Injected into the spawn's prompt at dispatch.
 2. **Imported** — standard Agent-Skills `SKILL.md` files imported **verbatim** from GitHub
-   (Tool-Hub → Import skills). License-gated server-side: permissive licenses only
+   (Capabilities → Paste a link). License-gated server-side: permissive licenses only
    (MIT/Apache-2.0/BSD/ISC/Unlicense/CC0); unlicensed or copyleft repos are refused.
    Bundled `scripts/*.py` are stored and runnable inside the sandbox.
-3. **Self-authored** — the `create_skill` loop: forge → **observe on real runs** → replay
-   evaluation → **human promote** → live → Curator review (unused/underperforming → retire).
-
-**Cold-start note (by design):** the evaluation gate replays **real scored runs** of the
-target spawn and needs **≥ 8 samples**. On a fresh install there is no real data yet, so
-evaluation reports "insufficient samples" honestly — the human promote gate still works
-(you are the gate). We deliberately do not fabricate synthetic evaluations.
+3. **Written by Arslan** — `create_skill` shows the user a card with the whole SKILL.md, and the
+   skill is saved only on their yes (v0.1.64 CAP2a). One written after the conversation read
+   outside content is marked so, and `read_skill` frames it like an imported one.
 
 ## Task execution model
 

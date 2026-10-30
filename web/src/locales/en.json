@@ -44,7 +44,6 @@
     "description": "Reusable, versioned steps with dependencies, bounded parallel execution and explicit approval. Existing tool permissions still apply.",
     "loading": "Loading recipes…",
     "operation_failed": "The operation failed. Check the connection, selected specialists and step dependencies, then retry.",
-    "refresh": "Refresh",
     "saved": "Choose a saved version",
     "new": "New recipe",
     "name": "Recipe name",
@@ -253,11 +252,18 @@
     "thinking": "Thinking...",
     "stopRun": "Stop",
     "remembered": "Remembered: {{text}}",
-    "wantsToRemember": "Arslan would like to remember: {{text}}",
     "rememberedUndo": "Undo",
     "rememberedUndone": "Undone",
-    "rememberedReview": "Review in Memory",
-    "rememberedChanged": "Changed since — see Memory"
+    "rememberedChanged": "Changed since — see Memory",
+    "memoryAsk": "Arslan would like to remember something sensitive: {{text}}",
+    "memoryKeptLocal": "Remembered, this Mac only: {{text}}",
+    "memorySkipped": "OK, not remembered.",
+    "memoryWaits": "Arslan would like to remember: {{text}}. It waits in “To sort” because {{reason}}.",
+    "memoryWhy_external_seen": "this conversation read web pages or other outside content",
+    "memoryWhy_not_present": "you weren't there when it was written",
+    "memoryWhy_sensitive": "it is sensitive",
+    "memoryWhy_confirmation_required": "it needs your OK",
+    "memorySeeInMemory": "See in Memory"
   },
   "clarify_card": {
     "answered": "Choice sent"
@@ -854,12 +860,6 @@
     "configure": "Configure",
     "open_channel": "Open Channel",
     "calibrate": "Calibrate",
-    "tool_hub_title": "Global Integration Discovery & Repository Engine",
-    "tool_hub_subtitle": "Discover, evaluate, and connect MCP servers and integrations.",
-    "tool_hub_coming_soon": "Coming Soon",
-    "tool_hub_search_placeholder": "Paste a GitHub repo to evaluate it as an MCP server…",
-    "tool_hub_evaluate": "Evaluate Spec",
-    "tool_hub_presets_label": "Recommended MCP servers",
     "back_to_ledger": "Back to active spawns ledger",
     "active_slot": "Active Slot",
     "equip_tools": "Equip Tools Library",
@@ -915,9 +915,6 @@
         "other": "Other"
       }
     },
-    "sections": {
-      "import_skills": "Import skills from a repo"
-    },
     "dossier": {
       "value_label": "Value for Arslan"
     },
@@ -962,7 +959,6 @@
       "placeholder": "Filter what you have…",
       "clear": "Clear filter",
       "count": "{{shown}} of {{total}}",
-      "no_match": "Nothing here matches that. Clear the filter to see everything again.",
       "matched_tools": "contains {{tools}}"
     }
   },
@@ -1371,8 +1367,6 @@
     "stalled": "Stopped",
     "changed": "Changed",
     "other": "Other",
-    "memoryWaiting": "Memory waiting for your OK",
-    "memoryOpen": "Open Memory",
     "watching": "Watching",
     "muted": "Not reminding",
     "addWatch": "Watch another page or folder",
@@ -1389,15 +1383,14 @@
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",
-    "keep": "Keep",
-    "keepLocal": "Keep, local models only",
-    "drop": "Don't",
+    "keep": "Remember",
+    "keepLocal": "Remember, this Mac only",
+    "drop": "No",
     "apply": "Apply",
     "source": {
       "memory": "About you",
       "curation": "Tidy-up"
-    },
-    "sensitive": "Sensitive"
+    }
   },
   "confirm": {
     "delete": "Delete",
@@ -1418,8 +1411,6 @@
     "phoneBody": "This iPhone can no longer reach Arslan until you pair it again.",
     "noteTitle": "Delete this note?",
     "noteBody": "“{{title}}” is deleted with its links. This can't be undone.",
-    "mcpTitle": "Remove “{{name}}”?",
-    "mcpBody": "The connection and its tools are removed. Saved keys for it are deleted too.",
     "runTitle": "Clear this run's details?",
     "runBody": "Its prompts and tool output are erased. The result in the chat stays.",
     "conversationTitle": "Delete this conversation?",

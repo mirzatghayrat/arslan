@@ -44,7 +44,6 @@
     "description": "Étapes réutilisables et versionnées, avec dépendances, parallélisme limité et approbation explicite. Les autorisations des outils restent applicables.",
     "loading": "Chargement des flux…",
     "operation_failed": "L’opération a échoué. Vérifiez la connexion, les spécialistes et les dépendances, puis réessayez.",
-    "refresh": "Actualiser",
     "saved": "Choisir une version enregistrée",
     "new": "Nouveau flux",
     "name": "Nom du flux",
@@ -253,11 +252,18 @@
     "thinking": "Réflexion...",
     "stopRun": "Arrêter",
     "remembered": "Retenu : {{text}}",
-    "wantsToRemember": "Arslan aimerait retenir : {{text}}",
     "rememberedUndo": "Annuler",
     "rememberedUndone": "Annulé",
-    "rememberedReview": "Vérifier dans Mémoire",
-    "rememberedChanged": "Modifié depuis — voir Mémoire"
+    "rememberedChanged": "Modifié depuis — voir Mémoire",
+    "memoryAsk": "Arslan aimerait retenir quelque chose de sensible : {{text}}",
+    "memoryKeptLocal": "Retenu, sur ce Mac seulement : {{text}}",
+    "memorySkipped": "D'accord, ce n'est pas retenu.",
+    "memoryWaits": "Arslan aimerait retenir : {{text}}. C'est dans « À trier » parce que {{reason}}.",
+    "memoryWhy_external_seen": "cette conversation a lu des pages web ou d'autres contenus extérieurs",
+    "memoryWhy_not_present": "tu n'étais pas là quand cela a été écrit",
+    "memoryWhy_sensitive": "c'est sensible",
+    "memoryWhy_confirmation_required": "il faut ton accord",
+    "memorySeeInMemory": "Voir dans Mémoire"
   },
   "clarify_card": {
     "answered": "Choix envoyé"
@@ -854,12 +860,6 @@
     "configure": "Configurer",
     "open_channel": "Ouvrir la conversation",
     "calibrate": "Ajuster",
-    "tool_hub_title": "Découvrir des outils et dépôts",
-    "tool_hub_subtitle": "MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.",
-    "tool_hub_coming_soon": "Bientôt",
-    "tool_hub_search_placeholder": "MCP/tool discovery — coming soon...",
-    "tool_hub_evaluate": "Évaluer la spécification",
-    "tool_hub_presets_label": "Quick Presets (coming soon):",
     "back_to_ledger": "Retour à la liste des experts",
     "active_slot": "Emplacement actif",
     "equip_tools": "Ajouter des outils",
@@ -915,9 +915,6 @@
         "other": "Autres"
       }
     },
-    "sections": {
-      "import_skills": "Importer des compétences d’un dépôt"
-    },
     "dossier": {
       "value_label": "Intérêt pour Arslan"
     },
@@ -962,7 +959,6 @@
       "placeholder": "Filtrer ce que vous avez…",
       "clear": "Effacer le filtre",
       "count": "{{shown}} sur {{total}}",
-      "no_match": "Rien ici ne correspond. Effacez le filtre pour tout revoir.",
       "matched_tools": "contient {{tools}}"
     }
   },
@@ -1371,8 +1367,6 @@
     "stalled": "Arrêté",
     "changed": "Changements",
     "other": "Autres",
-    "memoryWaiting": "Mémoire en attente de ton accord",
-    "memoryOpen": "Ouvrir Mémoire",
     "watching": "Sous surveillance",
     "muted": "Plus de rappel",
     "addWatch": "Surveiller une autre page ou un dossier",
@@ -1389,15 +1383,14 @@
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",
-    "keep": "Garder",
-    "keepLocal": "Garder, modèles locaux seulement",
+    "keep": "Retenir",
+    "keepLocal": "Retenir, sur ce Mac seulement",
     "drop": "Non",
     "apply": "Appliquer",
     "source": {
       "memory": "À ton sujet",
       "curation": "Rangement"
-    },
-    "sensitive": "Sensible"
+    }
   },
   "confirm": {
     "delete": "Supprimer",
@@ -1418,8 +1411,6 @@
     "phoneBody": "Cet iPhone ne pourra plus joindre Arslan avant un nouvel appairage.",
     "noteTitle": "Supprimer cette note ?",
     "noteBody": "« {{title}} » est supprimée avec ses liens. C’est définitif.",
-    "mcpTitle": "Retirer « {{name}} » ?",
-    "mcpBody": "La connexion et ses outils sont retirés, ses clés enregistrées aussi.",
     "runTitle": "Effacer les détails de cette exécution ?",
     "runBody": "Les prompts et sorties d’outils sont effacés. Le résultat dans la discussion reste.",
     "conversationTitle": "Supprimer cette conversation ?",

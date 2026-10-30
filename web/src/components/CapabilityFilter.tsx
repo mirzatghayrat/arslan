@@ -1,9 +1,10 @@
 /**
- * "Find something I already have" — the search box on TOOLS / SKILLS / MCPS.
+ * "Find something I already have": the search box on the Capabilities list (and the
+ * skill catalog and the connection list it hosts).
  *
- * Deliberately narrow. The Discover tab's box searches GitHub for things you do
- * NOT have; this one only narrows the list in front of you, and says how much
- * it hid so an empty result never reads as an empty library.
+ * Deliberately narrow: it only narrows the list in front of you, never searches
+ * the network, and says how much it hid so an empty result never reads as an
+ * empty library.
  */
 import { useTranslation } from "react-i18next";
 import { Search, X } from "lucide-react";

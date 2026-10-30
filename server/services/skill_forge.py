@@ -17,8 +17,9 @@ user's decision on #472 F1): read_skill then reads it like an imported skill, fr
 reads it counts as having read outside content. The seeder reads both as the user's skill (D7): a
 retirement never deletes it.
 
-This replaces the Skill Forge page, its candidates and the curator (sessions.md §11). The
-`skill_candidates` table stays until CAP2b, which gives the skills promoted from it the same mark.
+This replaces the Skill Forge page, its candidates and the curator (sessions.md §11). Migration 0077
+(CAP2b) marked the skills promoted from those candidates (`AUTHORED` for a former expert's,
+`AUTHORED_OUTSIDE` for the rest) and dropped their table.
 """
 from __future__ import annotations
 

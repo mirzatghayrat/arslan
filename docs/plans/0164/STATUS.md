@@ -2,12 +2,24 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-29, evening.
+**Updated:** 2026-10-30, afternoon.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #504 | Follow-up cards NAME1, TITLE1, MCPOUT1 | `b3f31303` |
+| #502 | CAP gh- follow-up: migration 0080 marks old Discover skills as outside | `12ff908f` (main CI 40990735670 success) |
+| #499 | CAP3a-1: capability rows (section, origin, deletable, last used); DELETE refuses built-ins | `89675b4d` |
+| #496 | CAP2b: migration 0077, promoted skills marked by source; drops skill_candidates | `5f4047bd` (main CI 40985240648 success) |
+| #495 | CAP1a follow-up: MCP labels; odd tool names mark the turn | `d153f293` |
+| #486 | Q1b: the Bridge takes Quick Chat and new conversations | `cd56cc8a` |
+| #501 | This page, 10-30 | `3192ba1b` |
+| #494 | PRJ0: migration 0076 drops `project_habits` and `project_levels.habit` | `80de850a` (main CI 40976699220 running when this was written) |
+| #497 | Codex plan A: Codex commits locally, the user pushes | `2eb00abb` (main CI 40838498833 success) |
+| #493 | SBX and S2a-3 split between Claude and Codex; Codex queue; reordered chain | `e1f505ce` |
+| #492 | Q1c scope (Quick Chat), retry-kind rule, FRONT1, STATUS after batch 2 | `947a036c` |
+| #491 | Hands: drop `partly_done` and `refused` | `423b828a` (main CI 40827479020 success, covering #492 and #493) |
 | #473 | CAP1c: migration 0075 drops `capability_finds` | `4e44843f` (main CI 40819237121 success) |
 | #459 | PRJ0: delete learned gate-advancing, rhythm stats and stall reminders | `a528c3ff` (main CI 40817737252 success) |
 | #463 | BR2: a turn offers each file once, its last version | `63d58666` (main CI 40816568246 success) |
@@ -62,12 +74,23 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-Both of the user's batches are merged, and main is green after each one. Nothing is ready yet; these are in review:
+Only PRs with an independent effort=max review OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one. Heads as of 2026-10-30.
 
-- **#475 (INB2):** the effort=max recheck at `40e8a8ab` said merge after fixes. ②Main fixed H3 and H4 at `8834ed0a`. The user picked H1 "trace notes back" and H2 "count the project card" (2026-10-29), and ②Main is building both, tests first. The same reviewer then rechecks. Security surface: the user merges.
-- **#486 (Q1b, Bridge frames):** the effort=max review at `9249401a` asked for small changes. F1: a retry must repeat `conversation_kind`, and the Bridge refuses a kind-changing resend. F2: the id regex must end with `\z`. F3: four test gaps. With ②Main. Bridge surface: the user merges.
-- **#490 (Q1 #3, migration 0078):** ⓪Plan's effort=max reviewer is on it. Security surface (when Arslan learns): the user merges.
-- **#491 (Hands outcome words):** deletion-only, `no_effect` kept (`desktop_open` still says it). ②Main reviews, then auto-merge.
+**Ready now:**
+1. **#486** (Q1b, Bridge frames) at `1a198ad6`. Recheck approved through `b41f613e`. The glance at `7bd6dac4` found it sound, and `1a198ad6` adds only the one missing test. CI green.
+2. **#495** (CAP1a follow-up, MCP labels and odd tool names) at `ec66aa21`. Recheck approved, and the user's "mark odd names" is built. CI green. **Merge it before #498.**
+
+**Approved, waiting on a sync with main** (#494's 0076 made them conflict, only in the migration lists):
+- **#475** (INB2): final review "merge" at `714ddd5b`. ②Main merges main in, then the reviewer confirms the diff is unchanged.
+- **#496** (CAP2b, 0077, split by source): recheck "ready" at `23a3d5e2`. ⑤CAP merges main in, keeping 0075, 0076, 0077 in order.
+
+**Approved, merges last:**
+- **#490** (Q1 #3, 0078): glance OK at `60aac4f2`. After #475 and #486 land, ②Main merges main in. That merge follows the reviewer's `phone_update_conversation` spec, and the PUT-lock commit comes on top. The reviewer glances at the merge, then the user merges.
+- **#498** (S64-0c): ④参谋's effort=max reviewer approved `35cfffe3`, and `af7b58f8` adds the missing test. After #495 lands, ③Hands rebases and drops its copy of the name rule, with fresh CI and a re-OK.
+
+**#500** (CAP3a-2, the one-list page): approved by ④参谋's effort=max reviewer. It was retargeted to main; ⑤CAP merged main in at `4e740474`, and its own diff matches the reviewed one line for line. CI 40992511103 is running. The user merges.
+
+**Suggested order:** #486 → #495 → #475 (after sync) → #496 (after sync) → #490 (after its merge) → #498 (after rebase). Whichever of the migration PRs lands second syncs first.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -84,12 +107,18 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 
 ## Waiting on the user
 
-- **FRONT1:** which trigger Hands' `front` parameter names, from ③Hands' four options (README §3.6).
+- **The v0.1.64 cut:** [CUT-proposal.md](CUT-proposal.md). Ship without the security chain's tail (SBX-3…S5b move to v0.1.65 if not merged by then)? Four questions are in the file.
+- **SB1 sidebar sections:** match the iPhone (「今天」 / 「昨天」 / 「7 天内」 / 「更早」 with month folds), or add a 30-day section on both apps. Also: a time on each row or headings only, and Pinned above or below Projects. All three are toggles in the SB1-0 mock.
+- **SB1 raw material:** a read-only count of your conversations by section. ⑥Helper's query was blocked, so you run it or allow it.
+- **Merges:** the list above, in that order.
+- **SBX-2:** paste the SBX-2 task to Codex (plan A). It can start now; the chain HR → CLS → S5a → S5b waits on it.
+- **Mocks:** ⑥Helper is building SB1-0 (sidebar) and the shared WB1-0 / SIDE-0 (workbench and side chat) as clickable demos.
+- **Release secrets into an Environment:** once the user has the originals of the updater's private key and the Apple certificate, move every `APPLE_*` and `TAURI_*` secret into a GitHub Environment that needs the user's approval, and add `environment:` to both workflows. After that, Codex may push by itself (plan B).
+- **A session card from ②Main:** "Make the chat liveness tests load-tolerant", for the test_chat_liveness_0159 flake under full local load.
 - The pocket is deleted in v0.1.64 only if Q1c ships with Mac 0.1.64; the TestFlight upload needs the user's nod.
 - The STY read page: the user exports the choices (JSON) to ⓪Plan, which tallies them.
 - Real-Mac checks: FS1 (#451) and the Hands smoke for F5b-2 (#456), both on `SMOKE.md`.
 - Making the `language` CI job a required check (④参谋 is walking through it).
-- The one mock for SIDE-0 and WB1, and the sidebar mock SB1-0, when they come.
 
 **Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The pocket's old messages stay as a Mac-only conversation (#487). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
@@ -99,29 +128,61 @@ Both of the user's batches are merged, and main is green after each one. Nothing
 
 **Where the chain is stuck:** SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
 
-**How Codex delivers (user, 2026-10-29; replaces the fork plan from earlier that day).** No new account and no fork: Codex signs in with the user's own GitHub. It may push branches and open PRs. **It never merges**, never pushes to `main`, and never pushes to another session's branch. That is an agreement the user accepted, not a technical lock: the user merges every security PR anyway.
+**How Codex delivers: plan A (user, 2026-10-29, final for now).** Codex writes and commits locally and does not push. The ChatGPT Codex Connector keeps its current access, which does not include `arslan`. The user pushes Codex's branch and opens the PR. The rules stay the same:
+- branches start with `codex/`, and PRs carry the label `codex`;
+- every commit message and PR body says "Author: Codex (model, reasoning level)" and names the reviewer;
+- PRs carry the four evidence items (`docs/sessions.md` §8) and the macOS CI run id;
+- Codex never merges, never pushes tags, and never changes `.github/`;
+- the user merges every Codex PR, since all of them are on the security surface.
 
-**Steps for the user:**
-1. Give the ChatGPT Codex Connector access to `mirzatghayrat/arslan` (GitHub → Settings → Applications → the connector → Repository access). Today it is limited to one unrelated public repository (`docs/plans/0162/README.md`, "「只读」怎么做到").
-2. In Codex, tell it the rules once: open PRs only, never merge, never push to `main` or to someone else's branch. ②Main suggests two more, and you can drop them: never push tags (a `v*` tag starts a release), and never change `.github/` (a workflow edit on a pushed branch runs before review; a Claude session makes workflow changes instead). If Codex has a setting to ask before pushing or merging, consider turning it on (optional).
-3. Each Codex branch starts with `codex/`. Each PR gets the label `codex`. Every commit message and PR body says "Author: Codex (model, reasoning level)" and names the reviewer, and the PR carries the four evidence items (`docs/sessions.md` §8) plus its macOS CI run id.
-4. The user merges every Codex PR (all are on the security surface).
+**Pushing a Codex branch (the user runs this).** Run it in the folder where Codex worked, which is Codex's own checkout of `arslan`, after Codex says its branch is committed. `<branch>` is the branch Codex names, for example `codex/sbx2-default-deny-base`. `<body file>` is the PR body Codex wrote, with the four evidence items.
 
-**A risk to know (⓪Plan and ②Main, 2026-10-29), your call:** the connector's write access includes workflows and Actions. Two workflows read the repository's secrets, and both have `workflow_dispatch`: `release.yml:32` and `secrets-preflight.yml:26`. Those secrets include the updater's signing key (`release.yml:132-133`). With that access, Codex could dispatch either workflow on a `codex/` branch, which runs that branch's edited copy, or push a branch that adds a workflow of its own. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) only protects against fork PRs. `ci.yml` reads no secrets.
-If you choose the fix, move the secrets into a GitHub Environment:
+```bash
+git fetch origin
+git status
+git log --oneline origin/main..<branch>
+git diff --stat origin/main...<branch> -- .github
+git push -u origin <branch>
+gh pr create --repo mirzatghayrat/arslan --base main --head <branch> --label codex --title "<title Codex gave>" --body-file "<body file>"
+```
+
+- Before pushing, check three things:
+  - `git status` is clean;
+  - the log shows only Codex's commits;
+  - **the `.github` diff prints nothing.**
+- If the `.github` diff lists anything, don't push. In plan A your push is the only gate. A pushed branch's workflows run with the repository's secrets (only fork PRs are cut off), so tell ⓪Plan; a Claude session makes any workflow change in its own PR (②Main's review of #497).
+- The first time only, create the label: `gh label create codex --repo mirzatghayrat/arslan --description "Written by Codex"`.
+- Then tell ⓪Plan the PR number. Claude reviews the plumbing, and Astra reviews the rest.
+
+**Later, plan B (Codex pushes by itself):** only after the release secrets are protected (see "Waiting on the user").
+
+**Why plan B waits (⓪Plan and ②Main, 2026-10-29):** giving the connector write access would include workflows and Actions. Two workflows read the repository's secrets, and both have `workflow_dispatch`: `release.yml:32` and `secrets-preflight.yml:26`. Those secrets include the updater's signing key (`release.yml:132-133`). With that access, Codex could dispatch either workflow on a `codex/` branch, which runs that branch's edited copy, or push a branch that adds a workflow of its own. `release.yml`'s guard (`:25-26`, no `pull_request` trigger) only protects against fork PRs. `ci.yml` reads no secrets.
+The fix, for when the user has the originals, is to move the secrets into a GitHub Environment:
 - the Environment holds every `APPLE_*` and `TAURI_*` secret;
 - its lock is a required reviewer, you. A "`v*` tags only" rule is not a lock when the same login can push tags;
 - both `release.yml`'s job and `secrets-preflight.yml`'s job name the Environment, or they lose the secrets.
-That is a repository-settings change, so it is yours to decide.
+That is a repository-settings change. The `environment:` lines for the two workflows are proposed at the same time, not before.
 
 **The tasks (one paste per block).** Each task points to card sections only. Codex designs the tests' content itself from the card; nothing here spells it out.
 
 | Block | Paste this to Codex | Ready? |
 |---|---|---|
-| SBX-2 | "Write SBX-2 for mirzatghayrat/arslan on a `codex/` branch (open a PR labelled `codex`, never merge): read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Put 'Author: Codex' and the reviewer in each commit and the PR, with the four evidence items and the macOS CI run id." | **Yes** |
+| SBX-2 | "Write SBX-2 for mirzatghayrat/arslan on a local `codex/` branch. Commit, don't push; the user pushes and opens the PR. Read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Put 'Author: Codex' and the reviewer in each commit, and write the PR body to a file with the four evidence items; the macOS CI run id is added once CI has run." | **Yes** |
 | SBX-3p … 6p | "Write SBX-Np (N = 3, 4, 5 or 6): read the SBX card's 'Who writes what' and the SBX-N row and sections it names, then write the real-seatbelt tests that what SBX-N should deny is denied, as parameters of SBX-2's harness. No product code." | After SBX-2 and SBX-M; 6p only with SBX-6 |
 | Allowlist after SBX-M | "Read the SBX-M report (`docs/plans/0164/SBX-measurement.md`) and the SBX card §2; propose the allowlist change it calls for, ≤ 50 lines." | After SBX-M |
-| S2a-3 tests | "Read `docs/plans/0162/S2a-command-three-layers.md` (S2a-3) and the S2a-3 row of `docs/plans/0164/README.md` §3; write the test content named there for #375 / #376 / #378 / #396 and #406, against the rebased heads." | After SBX-7 and ③Hands' rebase |
+| S2a-3 tests | "Read `docs/plans/0162/S2a-command-three-layers.md` (S2a-3) and the S2a-3 row of `docs/plans/0164/README.md` §3; write the test content named there for #375 / #376 / #378 / #396 and #406, against the rebased heads." | After SBX-7 and ③Hands' rebase | More decided on 2026-10-29 and 2026-10-30, all by the user:
+- #475 H1 "trace notes back", H2 "count the project card", and old notes fail closed;
+- #486 G1 "server fails closed";
+- #495 "mark odd MCP tool names";
+- #496 "split by source";
+- MCP tool descriptions from an approved server stay unmarked, as a stated limit;
+- the English name is "Quick Chat";
+- Codex works under plan A.
+
+**Decided on 2026-10-30 (user, relayed by ④参谋):**
+- **Deletable scope:** skills Arslan wrote (`authored` and `authored-outside`) and connections the user added by hand may be deleted, as #499 and #500 built them. Built-in and seeded items stay non-deletable (409). The deleted skill's text goes to the Trash.
+- **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
+- **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). ③Hands is building it; it merges after #475.
 
 ## Spend
 

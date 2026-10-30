@@ -118,7 +118,7 @@ async def test_the_badge_no_longer_counts_learned_practices_that_wait(execution_
     async with execution_db() as session:
         session.add(MemoryProposal(kind="memory_v2", table_name="memory_v2", reason="sensitive", status="pending"))
         await session.commit()
-    assert (await proactive_service.summary())["memory"] == 1      # the memory proposal (INB2 removes it)
+    assert "memory" not in await proactive_service.summary()      # INB2 removed the memory count too
 
 
 # -- three failures in a row stop a practice ------------------------------------------------------

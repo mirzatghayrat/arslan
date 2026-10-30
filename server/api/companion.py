@@ -432,6 +432,8 @@ class ProposalDecision(Contract):
     accept: bool
     sensitive_acknowledged: bool = False
     use_policy: Literal["local_only", "cloud_allowed"] = "local_only"
+    # INB2 (#475 review): the chat line's two buttons name the version they showed; Memory's rows don't.
+    expected_version: int | None = None
 
 
 @router.post("/memory/proposals/{proposal_id}/resolve")

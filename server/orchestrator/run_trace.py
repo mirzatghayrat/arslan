@@ -11,6 +11,9 @@ from server.services.run_recorder import RUN_RAW_CAP
 
 _trace: ContextVar[list[dict] | None] = ContextVar("run_trace", default=None)
 _prompt: ContextVar[dict | None] = ContextVar("run_prompt", default=None)
+# v0.1.64 INB2: whether the run's turns took in anything off the "about you" allowlist (untrusted.known_local,
+# #475 F2); None until a turn of the run ends.
+_outside: ContextVar[dict | None] = ContextVar("run_outside", default=None)
 
 
 def _cap(s: str) -> str:
@@ -63,14 +66,30 @@ def prompt() -> dict:
     return dict(d) if d else {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}
 
 
+def record_outside(seen: bool) -> None:
+    """A turn of this run ended (tool_loop.run_native): whether it took in anything off INB2's allowlist.
+    Any turn that did makes the run's record yes."""
+    holder = _outside.get()
+    if holder is not None:
+        holder["seen"] = bool(holder["seen"]) or bool(seen)
+
+
+def outside() -> bool | None:
+    """The run's record for `runs.read_outside`; None when no turn of the run ended (counts as yes)."""
+    holder = _outside.get()
+    return None if holder is None else holder["seen"]
+
+
 @contextmanager
 def collecting():
     buf: list[dict] = []
     prompt_bucket = {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}
     token = _trace.set(buf)
     ptoken = _prompt.set(prompt_bucket)
+    otoken = _outside.set({"seen": None})
     try:
         yield buf
     finally:
         _trace.reset(token)
         _prompt.reset(ptoken)
+        _outside.reset(otoken)

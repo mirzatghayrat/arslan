@@ -372,10 +372,15 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     from server.orchestrator import untrusted as _untrusted
     framed = (raw_payload if result.get("external") is False else wrap_external(raw_payload)
               if _untrusted.from_the_web(tool_key, args) else _untrusted.wrap_tool_output(raw_payload))
-    if result.get("ok") and (_untrusted.counts_as_external(tool_key, args)
-                             or (tool_key in ("read_skill", "background_status")      # S64-0b: per result
-                                 and result.get("external") is True)):
+    # S64-0c: a failure counts once the call reached the outside (an MCP server's error, a network command's
+    # output on a non-zero exit); only a result that says it never left (`executed: False`) does not.
+    reached = result.get("executed") is not False
+    if reached and (_untrusted.counts_as_external(tool_key, args)
+                    or (tool_key in ("read_skill", "background_status", "find_tools")  # S64-0b/0c: per result
+                        and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
+    if not _untrusted.known_local_call(tool_key, result):
+        _untrusted.mark_off_the_list()       # INB2 (#475 F2): any call off the user's allowlist, run or not
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
     # hint sits AFTER the data frame — it is OUR trusted framing (like the
     # "TOOL RESULT for X" header and the "Use this to continue" trailer), never inside
@@ -1333,10 +1338,16 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
             return not_ready
     import difflib
     near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
-    return {"ok": False, "external": False, "code": "tool_unavailable",
-            "error": f"tool '{tool_key}' is not available to you"
-                     + (f"; available tools include: {', '.join(near)}" if near else "")
-                     + "; you may escalate a need instead"}
+    result = {"ok": False, "external": False, "code": "tool_unavailable",
+              "error": f"tool '{tool_key}' is not available to you"
+                       + (f"; available tools include: {', '.join(near)}" if near else "")
+                       + "; you may escalate a need instead"}
+    from server.orchestrator import untrusted
+    if any(untrusted.odd_mcp_key(key) for key in near):
+        # S64-0c: a key it lists carries a server's odd tool name: framed (no external: False), and marked.
+        untrusted.mark_external()
+        del result["external"]
+    return result
 
 
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
@@ -1900,6 +1911,9 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 # so these can be loose; they exist only to nudge the model toward the right shape.
 from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
 
+# INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
+_SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
+
 # Hands v2 §6.3: the one way the model asks for the front.
 _FRONT = ("only after this action, done in the background, did nothing (no_effect) and you looked again: "
           "Arslan borrows the app's front for about a second, waiting for the user to pause typing")
@@ -2092,7 +2106,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                    "set": {"type": "string", "enum": ["about_you", "notes"]},
                                    "id": {"type": "string", "description": "Entry id, for replace or remove."},
                                    "text": {"type": "string", "maxLength": 600,
-                                            "description": "The entry, for add or replace. One short line."}},
+                                            "description": "The entry, for add or replace. One short line."},
+                                   "sensitive": _SENSITIVE_FLAG},
                     "required": ["action", "set"], "additionalProperties": False},
     # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
     "create_skill": {"type": "object",
@@ -2122,6 +2137,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                 "enum": ["append", "supersede", "mark_stale", "delete"]},
                      "content": {"type": "string"},
                      "target_id": {"type": "integer"},
+                     "sensitive": _SENSITIVE_FLAG,
                  },
                  "required": ["kind", "action", "content"]},
     "update_plan": _PLAN_PARAMS,
@@ -2378,6 +2394,9 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
 
     0.1.63 K3: sorted by name, `escalate` last. The table renders before Claude's cached system, so its
     order is part of the cache key; tools loaded later (K7) are appended after it, never sorted in."""
+    from server.orchestrator import untrusted
+    if any(untrusted.odd_mcp_key(t["key"]) for t in wired):
+        untrusted.mark_external()       # S64-0c: a key in the table carries a server's odd tool name
     schemas: list[dict] = []
     resident = sorted((t for t in wired if not t.get("appended")), key=lambda tool: tool["key"])
     for t in resident + [t for t in wired if t.get("appended")]:
@@ -2851,7 +2870,9 @@ async def run_native(**kwargs) -> dict:
         # or failed first) goes back to its sender, to run once as a turn of its own.
         for steer in facts.pop("steers", None) or []:
             steer.hand_back()
+        known_local = _untrusted.known_local()      # read before end_turn drops the holder
         _untrusted.end_turn(seen)
+        run_trace.record_outside(not known_local)   # INB2: the run's own record (runs.read_outside), the allowlist
         _SENT_IS_FINAL.reset(sent_is_final)
         tool_outputs.conversation.reset(copies_of)
 
@@ -3004,6 +3025,9 @@ async def _run_native(
         ctx_now = personal_context.current()
         recalled = await lessons.recall((ctx_now.query if ctx_now else "") or turn_context.users_words(user_content))
         lesson_notes = lessons.status_lines(recalled)
+        if not all(item["users"] for item in recalled):
+            from server.orchestrator import untrusted as _untrusted
+            _untrusted.mark_off_the_list()   # #475 H1: a practice in view that came from a run off the list
         if _facts is not None:
             _facts["recalled_lessons"] = recalled
     research_source_feedback: list = []

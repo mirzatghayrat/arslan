@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { professionalMethodsApi } from "../../api/professionalMethods";
 import { methodMessages } from "../../locales/methods";
-import ProfessionalMethods from "./ProfessionalMethods";
+import { MethodEditor } from "./ProfessionalMethods";
 import TaskWorkers from "./TaskWorkers";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -11,19 +11,17 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const method = { key: "research", revision: 1, name: "Research", instructions: "Check primary sources." };
 
 it("edits a new method version only after save, preserving drafts after an error", async () => {
-  vi.spyOn(professionalMethodsApi, "list").mockResolvedValue([method]);
   const revise = vi.spyOn(professionalMethodsApi, "revise").mockRejectedValueOnce(new Error("offline"))
     .mockResolvedValueOnce({ ...method, revision: 2, name: "My research" });
-  render(<ProfessionalMethods />);
-  fireEvent.click(await screen.findByRole("button", { name: "methods.viewEdit" }));
+  const saved = vi.fn();
+  render(<MethodEditor method={method} onClose={vi.fn()} onSaved={saved} />);
   fireEvent.change(screen.getByLabelText("methods.name"), { target: { value: "My research" } });
   expect(revise).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "methods.saveVersion" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("companion.failure");
   expect(screen.getByLabelText("methods.name")).toHaveValue("My research");
   fireEvent.click(screen.getByRole("button", { name: "methods.saveVersion" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(screen.getByText("My research")).toBeInTheDocument();
+  await waitFor(() => expect(saved).toHaveBeenCalledWith({ ...method, revision: 2, name: "My research" }));
   expect(revise).toHaveBeenLastCalledWith(method, "My research", "Check primary sources.");
 });
 

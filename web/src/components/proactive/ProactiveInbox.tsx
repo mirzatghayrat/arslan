@@ -9,7 +9,6 @@ import { buttonClass, primaryClass } from "../companion/CompanionDialog";
 import { useDismissable } from "../../hooks/useDismissable";
 import EmptyState from "../EmptyState";
 import InboxApprovals from "./InboxApprovals";
-import InboxMemory from "./InboxMemory";
 import InboxRefused from "./InboxRefused";
 import WatchesPanel from "./WatchesPanel";
 import { AnswerGuardScope, Notice, useAnswerGuardState } from "../kit";
@@ -158,7 +157,6 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
   }
 
   const [waiting, setWaiting] = useState(0);
-  const [memoryWaiting, setMemoryWaiting] = useState(0);
   const [refused, setRefused] = useState(0);
   // 0.1.61 §A4: the waiting cards and "Not done while you were away" sit one above the other, so a change in either moves the other under
   // the pointer. One guard holds both: one gesture answers one thing, across the two (kit/guard.ts).
@@ -183,7 +181,7 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
       <span className="font-mono text-[12px] text-subtle-foreground">{list.length}</span></h2>
     <ul className="space-y-3">{list.map(card)}</ul>
   </section>;
-  const nothing = !loading && !failed && items.length === 0 && waiting === 0 && memoryWaiting === 0 && refused === 0;
+  const nothing = !loading && !failed && items.length === 0 && waiting === 0 && refused === 0;
   return <section data-testid="proactive-inbox" className="h-full overflow-y-auto px-5 py-6 sm:px-8">
     <div className="mx-auto flex max-w-6xl gap-7">
     <div className="min-w-0 max-w-[700px] flex-1 space-y-5">
@@ -214,7 +212,6 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
         {group("inbox.stalled", "bg-danger-strong", stalled)}
         {group("inbox.changed", "bg-info-strong", changed)}
         {group("inbox.other", "bg-subtle-foreground", rest)}
-        <InboxMemory onCount={setMemoryWaiting} />
       </> : <ul className="space-y-4">{items.map(card)}</ul>}
     </div>
     <aside data-testid="inbox-side" className="hidden w-[300px] shrink-0 flex-col gap-5 lg:flex">

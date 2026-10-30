@@ -1,9 +1,8 @@
 """Faithful SKILL.md importer (P3).
 
-Unlike Tool-Hub's "Add as Skill" (LLM-distills/rewrites a repo into house style), this imports
-standard Agent-Skills-format skills VERBATIM: parse frontmatter + body → registry, with the
-license gate the project treats as a red line, plus bundled `scripts/*.py` stored for the
-P1 sandbox (run_python {"skill_script": "<key>/<file>"}).
+This imports standard Agent-Skills-format skills VERBATIM (nothing is rewritten into house style):
+parse frontmatter + body → registry, with the license gate the project treats as a red line, plus
+bundled `scripts/*.py` stored for the P1 sandbox (run_python {"skill_script": "<key>/<file>"}).
 
 Safety/discipline:
   • Fixed host api.github.com only (same as github_eval — not an SSRF surface).

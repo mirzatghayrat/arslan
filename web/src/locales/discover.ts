@@ -50,10 +50,6 @@ const en: Messages = {
   source_remove: "Remove",
   source_removeTitle: "Remove {{name}}?",
   source_removeBody: "It is switched off and its folder goes to the Trash.",
-  added_title: "Added by Arslan",
-  added_on: "on",
-  added_failed: "not on",
-  added_dossier: "Dossier",
   source_testOk_one: "First test passed — {{count}} tool.", source_testOk_other: "First test passed — {{count}} tools.",
 };
 
@@ -104,10 +100,6 @@ const zh: Messages = {
   source_remove: "移除",
   source_removeTitle: "移除 {{name}}？",
   source_removeBody: "会关掉它，文件夹移到废纸篓。",
-  added_title: "Arslan 加的",
-  added_on: "已打开",
-  added_failed: "没打开",
-  added_dossier: "档案",
   source_testOk: "第一次测试通过——{{count}} 个工具。",
 };
 
@@ -158,10 +150,6 @@ const ja: Messages = {
   source_remove: "削除",
   source_removeTitle: "{{name}} を削除しますか？",
   source_removeBody: "オフにして、フォルダをゴミ箱に移します。",
-  added_title: "Arslan が追加したもの",
-  added_on: "オン",
-  added_failed: "オフ",
-  added_dossier: "詳細",
   source_testOk: "初回テストに合格 — ツール {{count}} 個。",
 };
 
@@ -212,10 +200,6 @@ const es: Messages = {
   source_remove: "Quitar",
   source_removeTitle: "¿Quitar {{name}}?",
   source_removeBody: "Se desactiva y su carpeta va a la Papelera.",
-  added_title: "Añadido por Arslan",
-  added_on: "activado",
-  added_failed: "no activado",
-  added_dossier: "Ficha",
   source_testOk_one: "Primera prueba superada: {{count}} herramienta.", source_testOk_other: "Primera prueba superada: {{count}} herramientas.",
 };
 
@@ -266,10 +250,6 @@ const de: Messages = {
   source_remove: "Entfernen",
   source_removeTitle: "{{name}} entfernen?",
   source_removeBody: "Es wird ausgeschaltet, sein Ordner kommt in den Papierkorb.",
-  added_title: "Von Arslan hinzugefügt",
-  added_on: "an",
-  added_failed: "nicht an",
-  added_dossier: "Steckbrief",
   source_testOk_one: "Erster Test bestanden — {{count}} Werkzeug.", source_testOk_other: "Erster Test bestanden — {{count}} Werkzeuge.",
 };
 
@@ -320,10 +300,6 @@ const fr: Messages = {
   source_remove: "Retirer",
   source_removeTitle: "Retirer {{name}} ?",
   source_removeBody: "Il est désactivé et son dossier va à la Corbeille.",
-  added_title: "Ajouté par Arslan",
-  added_on: "activé",
-  added_failed: "pas activé",
-  added_dossier: "Fiche",
   source_testOk_one: "Premier test réussi — {{count}} outil.", source_testOk_other: "Premier test réussi — {{count}} outils.",
 };
 

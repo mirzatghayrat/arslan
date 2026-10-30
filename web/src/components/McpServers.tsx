@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import CapabilityFilter from "./CapabilityFilter";
-import { matches } from "../lib/capabilitySearch";
-import { Plug, Plus, Trash2, X, AlertCircle, Zap, RefreshCw } from "lucide-react";
+import { Plus, X, AlertCircle, Zap, RefreshCw } from "lucide-react";
 import type { McpServer, McpTool } from "../api/client.types";
 import {
   addMcpServer,
   connectMcpServer,
-  deleteMcpServer,
   exposeMcpServer,
   listMcpServers,
   listMcpTools,
@@ -18,7 +15,6 @@ import {
   getMcpOauthStatus,
 } from "../api/mcp";
 import { openExternal } from "../lib/shell";
-import { confirmSheet } from "./kit";
 
 interface EnvRow {
   k: string;
@@ -30,10 +26,13 @@ interface EnvRow {
  * then expose (toolset→safe) + wire (tool→safe+wired) to open the SQL choke point.
  * Tools are locked by default. Renders ONLY plain text — never server-supplied HTML.
  */
-export default function McpServers() {
+/** v0.1.64 CAP3a: a connection's card in its details sheet on the Capabilities list (`only`), or the hand-entry
+ *  form under "Add a connection by hand" (`form`). The old whole page (its list, search and trash button) went
+ *  with the tabs: a connection is deleted from the list, through DELETE /capabilities (PR 500 review). */
+export default function McpServers({ only, form = false, onChanged }:
+  { only: number; form?: false; onChanged?: () => void } | { only?: undefined; form: true; onChanged?: () => void }) {
   const { t: tr } = useTranslation();
   const [servers, setServers] = useState<McpServer[]>([]);
-  const [query, setQuery] = useState("");
   const [tools, setTools] = useState<Record<number, McpTool[]>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +91,7 @@ export default function McpServers() {
       setUrl("");
       setEnvRows([{ k: "", v: "" }]);
       await loadServers();
+      onChanged?.();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -202,55 +202,16 @@ export default function McpServers() {
     }
   }
 
-  async function remove(id: number) {
-    const server = servers.find((s) => s.id === id);
-    if (!(await confirmSheet({ title: tr("confirm.mcpTitle", { name: server?.label ?? "" }), body: tr("confirm.mcpBody"),
-      action: tr("confirm.remove") }))) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await deleteMcpServer(id);
-      setTools((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-      await loadServers();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const setEnvRow = (i: number, patch: Partial<EnvRow>) =>
     setEnvRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   const inputCls =
     "w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-lg px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono";
 
-  // Search across what identifies a server to a person: its label, and how it
-  // is reached. `command`/`url` are in the haystack because "the one I pointed
-  // at notion" is how people remember these, not by the label they typed once.
-  const shownServers = servers.filter((srv) =>
-    matches(
-      {
-        key: srv.label,
-        name: srv.label,
-        description: [srv.command, ...(srv.args ?? []), srv.url ?? "", srv.transport ?? ""].join(" "),
-      },
-      query,
-    ),
-  );
+  const shownServers = servers.filter((srv) => srv.id === only);
 
   return (
-    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-      <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-        <Plug className="w-4.5 h-4.5 text-primary" />
-        <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">
-          {tr("connectionsUI.servers")}
-        </h3>
-      </div>
+    <div className="space-y-4">
 
       {error && (
         <div
@@ -262,28 +223,8 @@ export default function McpServers() {
         </div>
       )}
 
-      {/* Server list */}
-      {servers.length === 0 ? (
-        <p className="text-[11px] text-subtle-foreground font-sans">
-          {tr("connectionsUI.none")}
-        </p>
-      ) : (
-        <>
-        <CapabilityFilter
-          testId="mcp-filter"
-          value={query}
-          onChange={setQuery}
-          shown={shownServers.length}
-          total={servers.length}
-        />
-        {shownServers.length === 0 ? (
-          // A distinct message from "none registered": a query that hides
-          // everything must not look like an empty library.
-          <p className="text-[11px] text-subtle-foreground font-sans"
-             data-testid="mcp-filter-empty">
-            {tr("capabilities.filter.no_match")}
-          </p>
-        ) : (
+      {/* The one server */}
+      {!form && (
         <ul className="space-y-4">
           {shownServers.map((s) => {
             const exposed = s.exposed ?? false;   // toolset-derived truth from the list
@@ -355,15 +296,6 @@ export default function McpServers() {
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-surface-raised hover:bg-surface text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
                     >
                       <RefreshCw className="w-3 h-3" /> {tr("connectionsUI.reconnect")}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => remove(s.id)}
-                      aria-label={tr("connectionsUI.deleteServer")}
-                      className="p-1.5 rounded-lg text-subtle-foreground hover:text-danger hover:bg-danger/10 transition-all disabled:opacity-50"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -448,15 +380,10 @@ export default function McpServers() {
             );
           })}
         </ul>
-        )}
-        </>
       )}
 
       {/* Add-server form */}
-      <div className="space-y-3 pt-4 border-t border-border/50">
-        <h4 className="text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-          {tr("connectionsUI.register")}
-        </h4>
+      {form && <div className="space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             className={inputCls}
@@ -550,7 +477,7 @@ export default function McpServers() {
         >
           <Plus className="w-4 h-4" /> {tr("connectionsUI.addServer")}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

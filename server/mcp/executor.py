@@ -76,8 +76,10 @@ def shown_state(server_id: int, state: str | None, host_allowed: bool) -> str:
 
 
 def label_of(srv) -> str:
-    """A server's name as the prompt prints it: one line, cut."""
-    return " ".join(str(srv.label or f"MCP {srv.id}").split())[:80]
+    """A server's name as the prompt prints it: as a label (an installed server's is its registry name, its own
+    text), like list_my_capabilities' (#495 review, O2); a label in another script falls back to its number."""
+    from server.services.capability_flow import outside_label
+    return outside_label(srv.label, 80) or f"MCP {srv.id}"
 
 
 def status_clauses(servers) -> list[str]:
@@ -245,6 +247,17 @@ class MCPProxyExecutor:
         # NO external:False here so that framing applies.
         return {"ok": False, "error": prefix + err_text}
 
+    def _refusal(self, code: str, error: str) -> dict:
+        """A call that never reached the server, in Arslan's own words (`external: False`). The words quote the
+        server's tool name, and a name that breaks the MCP name rule is the server's own text (S64-0c, the
+        review of #498): then the refusal is framed and the turn marked."""
+        from server.orchestrator import untrusted
+        refusal = {"ok": False, "external": False, "executed": False, "code": code, "error": error}
+        if untrusted.breaks_mcp_name_rule(self.external_name):
+            untrusted.mark_external()
+            del refusal["external"]
+        return refusal
+
     async def _approve(self, srv: MCPServer, args: dict) -> dict | None:
         """S1 (R6): decided here, before the call leaves Arslan, by what the server says the tool does:
         read-only runs (one ledger row, the mode let it); destructive asks every time, this time only;
@@ -260,6 +273,9 @@ class MCPProxyExecutor:
         ctx = permissions.Context(current.conversation_id if current else None,
                                   job_id=background_jobs._inside_job.get())
         title = f"Use {srv.label}\u2019s {self.external_name}?"
+        # The card shows the user the label as installed; the model reads it as a label (`label_of`, #495
+        # O2), so each refusal below names the server that way (S64-0c, the recheck of #498).
+        shown = label_of(srv)
         extra = {"mcp_server": srv.label, "mcp_tool": self.external_name}
         if read_only(self.annotations):
             await permissions.record_standing(permissions.Request(
@@ -269,10 +285,10 @@ class MCPProxyExecutor:
             # ⓪Plan's review: a card shows at most DETAIL_MAX characters, so padding could push the real
             # target off it and the yes would cover arguments nobody saw. Refused, never cut (not even
             # under a grant: every call that is not read-only has arguments a card can show in full).
-            return {"ok": False, "external": False, "executed": False, "code": "too_long_to_show",
-                    "error": f"Not sent: the arguments of {srv.label}\u2019s {self.external_name} are "
-                             f"{len(detail)} characters, more than a card can show the user "
-                             f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed."}
+            return self._refusal("too_long_to_show",
+                                 f"Not sent: the arguments of {shown}\u2019s {self.external_name} are "
+                                 f"{len(detail)} characters, more than a card can show the user "
+                                 f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed.")
         frame = protocol.propose_action(uuid.uuid4().hex, "mcp_tool", target, detail)
         if destructive(self.annotations):     # red on the web, never from the island, "delete" on the phone
             req = permissions.Request(kind="destructive", target=self.key, title=title, detail=detail,
@@ -284,10 +300,13 @@ class MCPProxyExecutor:
         if decision.allowed:
             return None
         code = {"user": "declined", "expired": "no_answer", "policy": "no_one_to_ask"}.get(decision.by, "not_allowed")
-        error = (f"The user did not allow {srv.label}\u2019s {self.external_name}."
-                 f"{' They said: ' + decision.note if decision.note else ''} Do not retry; report it."
-                 if decision.by == "user" else decision.model_text or f"{title} was not allowed.")
-        return {"ok": False, "external": False, "executed": False, "code": code, "error": error}
+        if decision.by == "user":
+            error = (f"The user did not allow {shown}\u2019s {self.external_name}."
+                     f"{' They said: ' + decision.note if decision.note else ''} Do not retry; report it.")
+        else:       # permissions' own words quote the card's title
+            error = (decision.model_text or f"{title} was not allowed.").replace(
+                title, f"Use {shown}\u2019s {self.external_name}?")
+        return self._refusal(code, error)
 
     async def execute(self, args: dict) -> dict:
         async with db_session.AsyncSessionLocal() as db:
@@ -300,9 +319,8 @@ class MCPProxyExecutor:
             refused = await self._approve(srv, args)
         except Exception:  # noqa: BLE001 — a failed check is a refusal that never reached the server
             logger.warning("mcp approval failed for %s", self.key, exc_info=True)
-            refused = {"ok": False, "external": False, "executed": False, "code": "not_allowed",
-                       "error": f"Not sent: Arslan could not check whether {srv.label}\u2019s "
-                                f"{self.external_name} may run. Tell the user."}
+            refused = self._refusal("not_allowed", f"Not sent: Arslan could not check whether {label_of(srv)}\u2019s "
+                                                   f"{self.external_name} may run. Tell the user.")
         if refused is not None:
             return refused
         from server.mcp.discovery import runtime_dict
