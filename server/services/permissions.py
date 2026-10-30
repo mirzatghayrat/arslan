@@ -124,6 +124,13 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
+    #: TITLE1: how the texts the model reads name this step, when not as the card does. An MCP card shows
+    #: the server's label as installed; the model reads it as a label (`label_of`). "" → `title`.
+    model_title: str = ""
+
+    @property
+    def title_for_model(self) -> str:
+        return self.model_title or self.title
 
 
 @dataclass(frozen=True)
@@ -422,7 +429,7 @@ async def refuse_unattended(req: Request, ctx: Context) -> str:
     scheduled run) never reaches decide(). It writes the row decide() writes there: policy, deny, no
     "Always" set (Q2), so the Inbox lists it. Returns what the model is told, as decide() would."""
     _check(req)
-    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title_for_model))
     await _record(req, _filled(ctx), await _mode(), decision)
     return decision.model_text
 
@@ -433,7 +440,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     if asker is None:
         # S1 (U14 a, ⓪Plan Q2): refused by policy, and no "Always" set is recorded: the Inbox never offers
         # an "Always" that would read as fixing the scheduled run, which reads no rule.
-        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title_for_model))
         await _record(req, ctx, mode, decision)
         return decision
     base = dict(req.frame) if req.frame else _generic_frame(req)
@@ -459,7 +466,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     away = answer.get("by") is None and bool(answer.get("away"))
     if answer.get("by") is None:
         decision = Decision(False, "expired", model_text=_EXPIRED.format(
-            title=req.title, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
+            title=req.title_for_model, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
     elif answer.get("approved"):
         scope = answer.get("scope") if answer.get("scope") in opts else opts[0]
         if answer.get("by") in approvals.FIRST_CHOICE_ONLY:
@@ -468,7 +475,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
             scope = opts[0]                    # only a Mac window gives this kind more than this time
         decision = Decision(True, "user", scope)
     else:
-        decision = Decision(False, "user", note=note, model_text=_declined_text(req.title, note))
+        decision = Decision(False, "user", note=note, model_text=_declined_text(req.title_for_model, note))
     async with db_session.AsyncSessionLocal() as db:
         rule_id = grant_id = None
         if decision.allowed and decision.scope == "always":
