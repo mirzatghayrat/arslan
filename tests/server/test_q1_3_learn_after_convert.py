@@ -253,6 +253,67 @@ async def test_the_window_cannot_switch_learning_on_for_a_quick_question(client,
     assert (after.kind, after.no_learning) == ("quick", True)
 
 
+@pytest.mark.parametrize("stored_row", [False, True], ids=["no-row", "row-without-kind"])
+async def test_the_window_cannot_switch_learning_on_for_a_phone_conversation_with_no_kind(client, stored_row):
+    """#490 follow-up (one rule, one reader, as on #486): one the phone made with no kind stored is read as a quick
+    question (phone_ids.kind_of), so the window cannot switch its learning on either: every turn would read it as
+    quick and learn nothing, while the switch said on."""
+    await _say(client.db_maker, Q, "weather?")
+    version = 0
+    if stored_row:                                     # the window's PUT makes one without a kind (a project, say)
+        async with client.db_maker() as db:
+            db.add(ConversationContext(id=Q, no_memory=True))
+            await db.commit()
+        version = (await _row(client, Q)).version
+    got = await client.put(f"/api/v1/conversations/{Q}/context", json={
+        "expected_version": version, "no_memory": False, "no_learning": False, "temporary": False,
+        "cloud_memory_allowed": False, "allow_sensitive": False})
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "quick_question_learns_nothing"
+    row = await _row(client, Q)
+    if stored_row:
+        assert (row.kind, row.no_learning, row.version) == (None, False, 1)      # left as it was
+    else:
+        assert row is None
+
+
+async def test_the_window_writes_a_conversations_switches_holding_its_lock(client, monkeypatch):
+    """#490 recheck, follow-up: the context PUT holds the conversation's turn lock from its check until its write is
+    committed, so a turn that arrives meanwhile waits and loads the switches as written."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+    lock = ws_arslan._turn_lock("c-mac")
+    seen = {"commits": []}
+    real_commit = AsyncSession.commit
+
+    async def commit(self):
+        seen["commits"].append(lock.locked())
+        return await real_commit(self)
+    monkeypatch.setattr(AsyncSession, "commit", commit)
+
+    async def turn():
+        async with lock:
+            row = await _row(client, "c-mac")
+            seen["no_learning"] = row.no_learning if row else None
+    real = background_jobs.jobs_for
+
+    def jobs_for(conversation_id):                     # asked while the PUT checks: a turn arrives now
+        if conversation_id == "c-mac" and "turn" not in seen:
+            seen["locked"] = lock.locked()
+            seen["turn"] = asyncio.get_running_loop().create_task(turn())
+        return real(conversation_id)
+    monkeypatch.setattr(background_jobs, "jobs_for", jobs_for)
+    try:
+        got = await client.put("/api/v1/conversations/c-mac/context", json={
+            "expected_version": 0, "no_memory": False, "no_learning": True, "temporary": False,
+            "cloud_memory_allowed": False, "allow_sensitive": False})
+        await seen["turn"]
+    finally:
+        ws_arslan._turn_locks.pop("c-mac", None)
+    assert got.status_code == 200, got.text
+    assert seen["locked"] is True                      # held while it checks
+    assert seen["commits"] and all(seen["commits"])    # and until its write is committed
+    assert seen["no_learning"] is True                 # the waiting turn reads what was written
+
+
 async def test_a_turned_quick_question_teaches_from_its_next_turn(execution_db, monkeypatch):
     """Q1a's own check, one step on: the same turn that taught nothing while the conversation was quick
     teaches once it is turned (lessons.after_turn reads the turn's memory context)."""
