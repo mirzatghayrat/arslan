@@ -179,7 +179,7 @@ That is a repository-settings change. The `environment:` lines for the two workf
 **Decided on 2026-10-30 (user, relayed by ④参谋):**
 - **Deletable scope:** skills Arslan wrote (`authored` and `authored-outside`) and connections the user added by hand may be deleted, as #499 and #500 built them. Built-in and seeded items stay non-deletable (409). The deleted skill's text goes to the Trash.
 - **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
-- **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). ③Hands is building it; it merges after #475.
+- **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). It is #512: OK from the security side at `7dd5eade`, with a small window-title fix to land before the user merges.
 
 **Not adopted (user, 2026-10-30):** the v0.1.64 cut (#515). The user's words: 「现在没有按"截断方案"吧，我不太想一直有任务推到后面只为了快上线新版本 我只是想要合理推进 不要老是原地踏步」. The scope stays as planned. What the user wants is steady, visible progress: every lane busy on its next card, reviews in parallel, no PR left idle on a sync or a review, and Codex's next SBX block queued as soon as the previous one lands. Progress is reported as PRs merged per round and what moved on the critical path.
 
