@@ -63,7 +63,7 @@ The panel holds only things that sit next to the conversation, the way Claude de
 The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 session rail」, 「这个概览可以是默认，不过这样以来 那个一排就太挤了」.
 1. **A new fixed tab, Overview, comes first and is the default.** It replaces Files as the default and as the fallback when a selected side chat closes. The row is Overview, Files, Progress, Browser, then side chats; later additions still come from "+".
 2. **The four fixed tabs are icons**, each with a tooltip and an aria-label, like Claude desktop's pane icons. Progress carries its count as a small badge. Side chats stay as words, since four words plus side chats overflow the row.
-3. **Overview has four parts, all built from data the app already has.** No new endpoint (⓪Plan checked main):
+3. **Overview has four parts, all built from data the app already has, and a fifth (Changes, WB1-3) that needs one read-only endpoint.** No new endpoint (⓪Plan checked main):
    - **Environment:**
      - the conversation's model, with today's picker as "Change";
      - the project folder, with "Show in Finder";
@@ -74,7 +74,20 @@ The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 s
      - The data is `GET /mcp/servers` (`web/src/api/mcp.ts:7`). It already returns `state` and `shown` (`server/services/mcp_service.py`, `_to_dict`), with `needs_auth`, `failed` and `parked` among the states (`server/mcp/supervisor.py:78-79`).
      - The web type `McpServer` (`web/src/api/client.types.ts:990`) still lacks `state` and `shown`, so WB1-2 adds them to the type.
 
-   Background jobs and changed files aren't repeated here, because they are in Progress and Files.
+   Background jobs aren't repeated here, because they are in Progress.
+   - **Changes (WB1-3)**, right after Deliverables, shown only when a turn in this conversation changed something. The user asked 「然后 changes 那？」 and picked "Add it" on the mock.
+     - Per turn, newest first, it lists what the turn did in the user's folders. Each path is tagged "Made", "Edited" or "Deleted".
+     - Each turn row carries today's `process.undoTurn` ("Undo this turn…"), which opens the existing UndoTurnSheet for that run. A turn already undone shows no undo.
+     - **Data: not readable today (⓪Plan checked main).** `GET /runs/{run_id}/checkpoint` (`server/api/runs.py:567`) returns `checkpoints.summary()` (`server/services/checkpoints.py:634`) plus `turn_undo.preview()`. That gives counts only, `changed` and `created`: no path list, no deleted-versus-edited split, and nothing per conversation.
+     - So WB1-3 adds one read-only endpoint that lists, for a conversation's runs, each changed path with its kind. The kind comes from the checkpoint manifest's finished entries: saved copy `None` means the run made the file, and a `None` state at finish means deleted. Sub-runs and quick turns follow the conversation's existing run filter.
+     - This makes WB1-3 server plus web, so it is **its own PR after WB1-2**. ②Main reviews the endpoint. It is ordinary product code, not front end only, so **the user merges it**: the user's auto-merge word for WB1 covered front-end work only.
+     - New strings: chH ("Changes"), made, edited, deleted.
+     - Tests:
+       - the rows equal the manifest's paths and kinds per turn;
+       - a turn with no changes isn't listed;
+       - a turn's undo opens the sheet for its run;
+       - an undone turn shows no undo;
+       - the endpoint returns 404 for an unknown conversation and never lists another conversation's runs.
 4. **New strings, in all six languages:** overview, envH, ctxH, conH, change, bridge, needsSignIn, signIn, cantConnect, retry, othersOk, manage, allFiles.
 5. **Tests:**
    - Overview is the default and comes first;
