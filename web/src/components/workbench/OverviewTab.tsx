@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, Plug, Smartphone } from "lucide-react";
-import type { ConversationFile } from "../../api/files";
+import type { ConversationChangeTurn, ConversationFile } from "../../api/files";
 import { filesApi } from "../../api/files";
+import { api } from "../../api/client";
+import type { RunCheckpoint } from "../../api/client.types";
+import UndoTurnSheet from "../reply/UndoTurnSheet";
+import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
@@ -25,6 +29,7 @@ const PART_COLOR: Record<keyof typeof PART_LABEL, string> = {
   system: "bg-subtle-foreground", tools: "bg-info", context: "bg-success", history: "bg-primary", turn: "bg-muted-foreground",
 };
 const row = "flex min-w-0 items-center gap-2 py-1 text-[12.5px]";
+const KIND_COLOR = { made: "text-success", edited: "text-muted-foreground", deleted: "text-danger" } as const;
 const link = "shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground";
 
 /** Newest first: by creation time when the server sent one, else the server's order reversed. */
@@ -66,6 +71,18 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   useEffect(() => { void loadServers(); }, [loadServers]);
   const { needs, readyCount } = connectorSummary(servers ?? []);
 
+  // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
+  const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
+  const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
+  const loadChanges = useCallback(async () => {
+    // Deferred into the promise so an unavailable client (offline, or a test's partial mock) is a rejection.
+    try { setChanges((await Promise.resolve().then(() => filesApi.changes(conversationId))).turns); } catch { /* keep the last list */ }
+  }, [conversationId]);
+  useEffect(() => { void loadChanges(); }, [loadChanges, files.length]);
+  const askUndo = async (runId: number) => {
+    try { setUndo({ runId, info: await api.runCheckpoint(runId) }); } catch { toast(t("process.undoFailed")); }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto p-3" data-testid="overview-tab">
       <section data-testid="overview-environment">
@@ -105,6 +122,24 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             </li>))}</ul>}
       </section>
 
+      {changes.length > 0 && <section data-testid="overview-changes">
+        <h3 className={HEADING}>{t("workbench.chH")}</h3>
+        <p className="mt-0.5 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>
+        <ul className="mt-1.5 space-y-2">{changes.map((turn) => <li key={turn.run_id} data-testid={`overview-turn-${turn.run_id}`}>
+          <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">{turn.at ? formatUiDateTime(turn.at, i18n.language) : ""}</span>
+            {!turn.undone && <button type="button" className={link} onClick={() => void askUndo(turn.run_id)}
+              data-testid={`overview-undo-${turn.run_id}`}>{t("process.undoTurn")}</button>}
+          </div>
+          <ul className="mt-0.5 space-y-0.5">{turn.paths.map((p) => <li key={`${p.folder}/${p.path}`} className="flex min-w-0 items-center gap-2 text-[12.5px]"
+            title={`${p.folder}/${p.path}`}>
+            <span className={`w-12 shrink-0 text-[11px] ${KIND_COLOR[p.kind]}`}>{t(`workbench.${p.kind}`)}</span>
+            <span className="min-w-0 flex-1 truncate">{p.path}</span>
+          </li>)}</ul>
+        </li>)}</ul>
+        {undo && <UndoTurnSheet runId={undo.runId} info={undo.info} onClose={() => { setUndo(null); void loadChanges(); }} />}
+      </section>}
+
       {pct != null && <section data-testid="overview-context">
         <h3 className={HEADING}>{t("workbench.ctxH")}</h3>
         <div className="mt-1.5 flex items-baseline justify-between text-[12.5px]">
@@ -127,7 +162,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
         </>}
       </section>}
 
-      {servers && servers.length > 0 && <section data-testid="overview-connectors">
+      {(needs.length > 0 || readyCount > 0) && <section data-testid="overview-connectors">
         <h3 className={HEADING}>{t("workbench.conH")}</h3>
         <ul className="mt-1.5 space-y-0.5">
           {needs.map((s) => <li key={s.id} className={row} data-testid={`overview-connector-${s.id}`}>

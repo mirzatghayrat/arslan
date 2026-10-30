@@ -576,6 +576,32 @@ async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -
     return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
 
 
+@router.get("/conversations/{conversation_id}/changes")
+async def conversation_changes(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """WB1-3: what each turn of this conversation changed in the user's folders, newest turn first, path by
+    path (made, edited, deleted), for Overview's Changes. Only turns whose checkpoint is still kept, which is
+    the set an undo can take back (checkpoints.changes); a turn that changed nothing is left out. Read only.
+    The runs are this conversation's own, as the runs list filters them (live, host, scheduled)."""
+    from server.db.models import ArslanMessage
+    from server.services import checkpoints
+    runs = (await db.execute(select(Run).where(Run.conversation_id == conversation_id,
+                                               Run.kind.in_(("live", "host", "scheduled")))
+                             .order_by(Run.id.desc()).limit(200))).scalars().all()
+    if not runs and (await db.execute(select(ArslanMessage.id).where(
+            ArslanMessage.conversation_id == conversation_id).limit(1))).first() is None:
+        raise HTTPException(404, detail={"code": "conversation_not_found"})
+    turns = []
+    for run in runs:
+        paths = checkpoints.changes(run.id, _started(run))
+        if not paths:
+            continue
+        data = checkpoints.manifest(run.id) or {}
+        turns.append({"run_id": run.id,
+                      "at": run.started_at.replace(tzinfo=timezone.utc).isoformat() if run.started_at else None,
+                      "undone": bool(data.get("restored_at")), "paths": paths})
+    return {"turns": turns}
+
+
 async def _with_history(undone: dict) -> dict:
     """The conversation as it is now, in the rows the window's socket sends, so the window shows it at once."""
     from server.ws.arslan import _history

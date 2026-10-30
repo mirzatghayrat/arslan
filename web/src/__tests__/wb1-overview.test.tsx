@@ -11,10 +11,10 @@ vi.mock("react-i18next", () => ({
     i18n: { resolvedLanguage: "en", language: "en" } }),
 }));
 const { files, jobsApi, mcp, client, conv } = vi.hoisted(() => ({
-  files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn() },
+  files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn(), changes: vi.fn() },
   jobsApi: { list: vi.fn(), stop: vi.fn() },
   mcp: { listMcpServers: vi.fn(), reconnectMcpServer: vi.fn() },
-  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn() },
+  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn(), api: { runCheckpoint: vi.fn() } },
   conv: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
 }));
 vi.mock("../api/files", () => ({ filesApi: files }));
@@ -54,6 +54,7 @@ beforeEach(() => {
   mcp.reconnectMcpServer.mockResolvedValue({ ok: true });
   client.fetchProviderModels.mockResolvedValue({ models: [{ id: "deepseek-chat", context_window: 64000, capabilities: ["tools"] }] });
   conv.get.mockResolvedValue({ choice: null });
+  files.changes.mockResolvedValue({ turns: [] });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -144,6 +145,60 @@ describe("Overview", () => {
     mount();
     await screen.findByTestId("overview-deliverables");
     await waitFor(() => expect(mcp.listMcpServers).toHaveBeenCalled());
+    expect(screen.queryByTestId("overview-connectors")).toBeNull();
+  });
+});
+
+describe("Changes (WB1-3)", () => {
+  const turns = [
+    { run_id: 12, at: "2026-10-30T09:31:00", undone: false, paths: [
+      { folder: "~/Arslan", path: "tm-exclusions.txt", kind: "edited" }, { folder: "~/Arslan", path: "drive-check.png", kind: "made" }] },
+    { run_id: 11, at: "2026-10-30T09:12:00", undone: true, paths: [{ folder: "~/Arslan", path: "old.md", kind: "deleted" }] },
+  ];
+
+  it("lists each turn's paths with what happened to them, and offers undo only where it can", async () => {
+    files.changes.mockResolvedValue({ turns });
+    useWorkbench.getState().show("overview");
+    mount();
+    const section = await screen.findByTestId("overview-changes");
+    expect(files.changes).toHaveBeenCalledWith("c1");
+    expect(section).toHaveTextContent("workbench.chNote");
+    const t12 = within(section).getByTestId("overview-turn-12");
+    expect(t12).toHaveTextContent("workbench.edited");
+    expect(t12).toHaveTextContent("tm-exclusions.txt");
+    expect(t12).toHaveTextContent("workbench.made");
+    expect(within(section).getByTestId("overview-turn-11")).toHaveTextContent("workbench.deleted");
+    expect(within(section).queryByTestId("overview-undo-11")).toBeNull();            // already undone
+    expect(within(section).getByTestId("overview-undo-12")).toHaveTextContent("process.undoTurn");
+  });
+
+  it("opens today's undo sheet for that turn", async () => {
+    files.changes.mockResolvedValue({ turns });
+    client.api.runCheckpoint.mockResolvedValue({ exists: true, changed: 1, created: 1, skipped: [], excluded: [], overlap: [],
+      later: [], running: false, restored_at: null, expires_at: "2026-11-06T00:00:00", conversation: false });
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    await waitFor(() => expect(client.api.runCheckpoint).toHaveBeenCalledWith(12));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("is left out when no turn changed anything", async () => {
+    useWorkbench.getState().show("overview");
+    mount();
+    await screen.findByTestId("overview-deliverables");
+    await waitFor(() => expect(files.changes).toHaveBeenCalled());
+    expect(screen.queryByTestId("overview-changes")).toBeNull();
+  });
+});
+
+describe("Connectors with nothing to say", () => {
+  it("is left out when every server is off or starting (#530 review)", async () => {
+    mcp.listMcpServers.mockResolvedValue([server(1, "off"), server(2, "starting")]);
+    useWorkbench.getState().show("overview");
+    mount();
+    await waitFor(() => expect(mcp.listMcpServers).toHaveBeenCalled());
+    await screen.findByTestId("overview-deliverables");
     expect(screen.queryByTestId("overview-connectors")).toBeNull();
   });
 });
