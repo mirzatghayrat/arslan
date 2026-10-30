@@ -129,7 +129,9 @@ WEEKLY = [
     (f"SELECT {_n(FACTS)}, {_n(SUMMARY)} FROM usage_ledger WHERE {_week('ts')}",
      ("memory_facts", "memory")),
     (f"SELECT {_n(DENIED)} {STEPS} AND {TOOL} = 'run_command'", ("rc_sandbox_denied",)),
-    (f"SELECT {_n(SANDBOX_CARD + ' = ' + _lit('retry'))}, {_n(SANDBOX_CARD + ' = ' + _lit('outside'))} "
+    # SBX-7: only cards that opened (SHOWN); one a run with nobody to ask refused was never a card.
+    (f"SELECT {_n(SANDBOX_CARD + ' = ' + _lit('retry') + ' AND decided_by IN ' + SHOWN)}, "
+     f"{_n(SANDBOX_CARD + ' = ' + _lit('outside') + ' AND decided_by IN ' + SHOWN)} "
      f"FROM approval_events WHERE {_week('created_at')}", ("retry_cards", "outside_cards")),
 ]
 # name -> GROUP BY query: (code, count) or, for tools, (code, calls, failed).
@@ -277,13 +279,14 @@ def render(weeks: list[date], data: dict) -> str:
            "reach the ledger only after S4a. (The judgments table's command-card rows went with "
            "the shadow judge in C4; old ones age out under KEEP_DAYS.)")
     split("### Cards shown, by kind (ledger)", plain(data["shown_by_kind"]))
-    weekly("## Sandbox", ["Commands it stopped", "Re-run cards", "Asked up front", "Re-run share"],
-           lambda w: [w["rc_sandbox_denied"], w["retry_cards"], w["outside_cards"],
-                      _pct(w["retry_cards"], w["retry_cards"] + w["outside_cards"])],
+    weekly("## Sandbox", ["Commands it stopped", "Re-run cards", "Asked up front"],
+           lambda w: [w["rc_sandbox_denied"], w["retry_cards"], w["outside_cards"]],
            "SBX-7; counts only, and never sent anywhere. Commands it stopped: run_command steps whose "
-           "result carried a sandbox denial code (EPERM so far, so a floor, not an exact count). Cards: "
-           "the ledger's outside cards by `extra.sandbox`, written from SBX-7 on: a re-run after the "
-           "sandbox stopped a command, or asked up front.")
+           "run noted a sandbox denial (EPERM so far). An estimate, not a floor: it reads the command's own "
+           "output, so a command that prints the words counts and one that hides them does not. Cards: "
+           "outside cards that opened, by the ledger's `extra.sandbox` (from SBX-7 on): a re-run after the "
+           "sandbox stopped a command, or asked up front. The re-run share is a bench number, by the SBX "
+           "card's definition (scripts/kernel_bench/report.py).")
     weekly("## Post-turn model calls", ["memory_facts rows", "memory rows"],
            lambda w: [w["memory_facts"], w["memory"]],
            "usage_ledger rows: one per scope and model, so about one per call (a scope that "

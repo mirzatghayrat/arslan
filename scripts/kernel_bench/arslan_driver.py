@@ -105,6 +105,7 @@ class TurnTracker:
     # SBX-7: cards to run outside the sandbox, apart: asked up front, or a re-run after it stopped a command.
     outside_cards: int = 0
     retry_cards: int = 0
+    run_commands: int = 0          # SBX-7: run_command calls, the re-run share's denominator (report.py)
     declined: int = 0
     actions_declined: int = 0
     last_activity: float = 0.0
@@ -158,6 +159,8 @@ class TurnTracker:
                     self.end_reason = f"job_{frame.get('outcome')}"
             else:
                 self.jobs_open.add(job)
+        elif t == "tool_call" and frame.get("tool") == "run_command":
+            self.run_commands += 1
         elif t == "propose_run_command":
             self.approvals += 1
             if any(re.search(p, frame.get("rule") or "") for p in self.decline_rules):
@@ -289,7 +292,8 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                 if n < len(prompts):
                     snapshot(run_dir, n)
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
-            "outside_cards": tracker.outside_cards, "retry_cards": tracker.retry_cards, "declined": tracker.declined,
+            "outside_cards": tracker.outside_cards, "retry_cards": tracker.retry_cards,
+            "run_commands": tracker.run_commands, "declined": tracker.declined,
             "actions_declined": tracker.actions_declined,
             "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}

@@ -246,9 +246,10 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                           "command. A command may read only the copies saved in this conversation.")
     elif command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
-        # SBX-7: the denial's code (EPERM, the one SBX-3 detects so far). The run step keeps it on its `ref`
-        # (run_trace, run_recorder), out of reach of result_raw's cut, and only the weekly report counts it.
-        result["sandbox_denial"] = "eperm"
+        # SBX-7: the denial's code (EPERM, the one SBX-3 detects so far) goes to the run step's `ref` through
+        # run_trace, never onto this result: the model and every other payload read the result.
+        from server.orchestrator import run_trace
+        run_trace.note_denial("eperm")
         result["note"] = command_sandbox.note(cwd, closed)
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "

@@ -104,25 +104,36 @@ def render_totals(rows: list[dict]) -> str:
 
 
 def sandbox_cards(records: list[dict]) -> dict:
-    """SBX-7: per entrant and model, the runs that counted cards to run outside the sandbox, and the cards: a
-    re-run after the sandbox stopped a command, or asked up front. SBX-8 compares the re-runs per run."""
+    """SBX-7: per entrant and model, the runs that counted cards to run outside the sandbox, their run_command
+    calls and the cards: a re-run after the sandbox stopped a command, or asked up front."""
     out: dict = {}
     for r in records:
         cards = r.get("sandbox_cards") or {}
         if cards.get("retry") is None and cards.get("outside") is None:
             continue
-        seen = out.setdefault((r["entrant"], r.get("model", "?")), {"runs": 0, "retry": 0, "outside": 0})
+        seen = out.setdefault((r["entrant"], r.get("model", "?")),
+                              {"runs": 0, "retry": 0, "outside": 0, "run_commands": 0})
         seen["runs"] += 1
-        seen["retry"] += cards.get("retry") or 0
-        seen["outside"] += cards.get("outside") or 0
+        for key in ("retry", "outside", "run_commands"):
+            seen[key] += cards.get(key) or 0
     return out
 
 
+def rerun_share(c: dict) -> float | None:
+    """The SBX card's number 2 (docs/plans/0164/SBX-sandbox.md, "The two numbers"): re-run cards ÷ run_command
+    calls that ran in the sandbox. The stand-in user declines every card, so a call asked up front never ran, and
+    every other call ran in the sandbox first. None when no call ran there."""
+    ran = c["run_commands"] - c["outside"]
+    return c["retry"] / ran if ran > 0 else None
+
+
 def render_sandbox_cards(records: list[dict]) -> str:
-    lines = ["| entrant | model | runs | re-run cards | re-runs per run | asked up front |",
-             "| --- | --- | --- | --- | --- | --- |"]
+    lines = ["| entrant | model | runs | run_command calls | re-run cards | re-run share | asked up front |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
     for (who, model), c in sorted(sandbox_cards(records).items()):
-        lines.append(f"| {who} | {model} | {c['runs']} | {c['retry']} | {c['retry'] / c['runs']:.2f} | {c['outside']} |")
+        share = rerun_share(c)
+        lines.append(f"| {who} | {model} | {c['runs']} | {c['run_commands']} | {c['retry']} | "
+                     f"{'–' if share is None else f'{share:.0%}'} | {c['outside']} |")
     return "\n".join(lines)
 
 
