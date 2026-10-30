@@ -802,6 +802,8 @@ class ConversationListItem(BaseModel):
     last_at: str | None = None
     #: What it is, for the sidebar's and the phone's glyphs: remote | chat | task | scheduled.
     kind: str = "chat"
+    #: SB1-2: pinned to the top of the sidebar (conversation_contexts.pinned, migration 0079).
+    pinned: bool = False
     #: idle | working | waiting | done | failed.
     state: str = "idle"
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.

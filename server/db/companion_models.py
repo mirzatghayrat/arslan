@@ -28,6 +28,12 @@ class ConversationContext(Base):
     # today, worked out on each read. `parent_id`: SUB's link to the conversation that started it.
     kind = Column(String(20), nullable=True)
     parent_id = Column(String(100), nullable=True)
+    # 0078 (Q1 #3): a quick question turned into a chat learns only from the messages after this one; NULL is
+    # every other conversation (all of its messages).
+    learns_after_message_id = Column(Integer, nullable=True)
+    # 0079 (SB1-2): pinned to the top of the sidebar. Set only by PUT /conversations/{id}/pin, never by the
+    # context PUT, and never bumps `version`.
+    pinned = Column(Boolean, nullable=False, default=False, server_default="0")
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

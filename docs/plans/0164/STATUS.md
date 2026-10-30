@@ -2,12 +2,26 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-30, evening.
+**Updated:** 2026-10-30, after midnight's reviews.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #544 | This page, late night | `da4cc46d` |
+| #541 | Tests: LOAD3, the budget credit after a card is guarded; three load flakes fixed | `9506dc23` |
+| #540 | The user's decisions D1–D3 on capabilities; this page, night | `ee9b7b54` |
+| #507 | SBX-2 (Codex): the default-deny preset and the macOS corpus, staged and not wired. Astra's two reviews are posted; ⓪Plan's plumbing re-OK at `8751d6f7` is posted, and what landed is exactly that commit | `aace2b11` (main CI 41031727159 success) |
+| #528 | LOAD2 and LOAD3 cards; this page, late evening | `f2b2038a` |
+| #512 | FRONT1: when the model may ask Hands for the front (A), and an honest needs-focus refusal (B, corrected) | `b19d4dbb` |
+| #490 | Q1 #3: a quick question turned into a chat learns from then on (migration 0078) | `7b6ebea1` |
+| #534 | Tests: a card's wait is a clock jump, not a real sleep (LOAD2 part 1) | `7e2dcd70` |
+| #533 | STATUS: the CAP4a-2 runtime question for the user | `561535b0` |
+| #532 | Tests: a job's result is read after the job reports it (LOAD2) | `bd380ab5` |
+| #530 | WB1-2: Overview is the workbench's default tab; the fixed tabs become icons | `2044f5b3` |
+| #529 | Migration 0081 reserved for SEC1 | `01c6665f` |
+| #516 | This page, 10-30 evening | `4de8cab6` |
+| #524 | ci.yml: the macOS job expects 362 cases (merged into the Codex branch of #507, not main) | `6810e000` |
 | #523 | SBX: listening denied for now; decide how it returns before SBX-3 (user, 2026-10-30) | `35afe571` |
 | #521 | Tests: the still-working beat test waits until the turn is recorded | `9b89f1d9` (main CI 41021298870 success; the runs on `48da0348`, `2e59cee4`, `ddedabcd`, `5af69382` and `0628d26c` were cancelled by the next merge, and this one covers them) |
 | #522 | Q1: kind-changing resend wording matches the code | `0628d26c` |
@@ -85,11 +99,22 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
 
-1. **#490** (Q1 #3, migration 0078) at `b9acf73b`: it merges #475 and #486 in, and adds the PUT-lock and `kind_of` guard follow-up. CI 41021432398 is a success. **Ready once ⓪Plan's reviewer's final glance says OK** (it's running).
-**Next, not ready yet (don't merge these):**
+The user is out; these wait for their return.
 
-2. **#512** (FRONT1: A plus the corrected B) at `e3a46233`. It conflicts with main, so ③Hands is syncing it, and ⓪Plan's reviewer is rechecking the fixes for F1–F3. Not ready.
-4. **#507** (SBX-2, Codex): not ready. Its macOS job has 3 real failures for Codex to fix, and the plumbing review asked for fixes. Astra's review is the user's to start. **#508** (ci.yml 69 → 359) is OK'd; the user merges it into the Codex branch.
+1. **#537** (LOAD2 part 2: a stdio program that exits early is a closed connection) at `4352ee1b`. ⑤CAP's OK covers this head, and CI is green. Product code, so the user merges it. It also fixes the stdio flake that turns #539's CI red.
+2. **#542** (ci.yml: the macOS step counts a strict xfail as ran; a guard requires every xfail to pin `raises=`), by ⓪Plan, at `8e67f6b6`. ③Hands' effort=max OK covers this head. It touches `.github`, so the user merges it, before SBX-3p's first push.
+
+**Under review or on hold (don't merge these):**
+
+- **#519** (SKF1, reworked for D2) at `b8ef5881`: ⓪Plan's fresh effort=max review is running. **Merge order (④参谋's review of #539, adopted):** under D2 install time is the only guard for skills, so #519 merges only after #539's F1 (the scan level is computed after findings are cut to 20), F3 (the import panel installs with no scan; in #539 or a small CAP5 import-scan PR) and F4 (the frontmatter name and description aren't scanned) are on main. This doesn't change D2; it makes the install-time guard real before the read-time frame comes off.
+- **#539** (CAP4a-1) at `fb4ac918`: "fix then merge" (④参谋, effort=max). F2 is a regression against main: leftover files under `skill_scripts/<key>/` merge in unscanned. CI is red only on the stdio flake #537 fixes.
+- **#526** (UNI1a): ⑤CAP is fixing the review's findings, with migration 0082 for a one-off clean of stored names.
+- **#536** (SEC1, server half) at `1f661a60`: changes requested (posted). Must fix: the new column isn't rewrapped; a bad-port password URL breaks the server list; `fill` doesn't round-trip the URL.
+- **#545** (WB1-3: Overview's Changes, with a read-only `GET /conversations/{id}/changes`) at `69c7ec35`: ②Main reviews the endpoint; the user merges (server code).
+- **#543** (SB1-1, sidebar): OK at `8c591fee` after the UTC fix; auto-merging (front end, the user's SB1 exception).
+- **#525** (Q1 #4, retire the pocket): ②Main fixed F1–F4 in `71dbc0ce`; its full suite is running, then ⓪Plan's reviewer takes a glance. It also waits on the user's go after Q1c ships.
+- **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
+- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted: `ref` is the right home, but the never-uploaded tripwire is text-only and three leak mutants pass it, and approving a re-run erases the denial.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -97,25 +122,26 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 | Lane | Work |
 |---|---|
-| ②Main | #490 (waits on the reviewer's final glance). The pocket-deletion PR (committed; it opens as a draft once its suite is green, and waits on the user's go) |
-| ③Hands | #512 sync and recheck. SBX-3a is draft #520 (part 1; the private TMPDIR next; it doesn't merge before SBX-2 and SBX-M). Then 4a, 5a, 7, NAME1, TITLE1. The ci.yml bump to 362 for #507 |
-| ⑤CAP | SKF1 is #519 (effort=max review on `e6b339ce`), then UNI1a (the backend; UNI1b's notice needs a mock first), then SEC1 and MCPOUT1 |
-| ⑥Helper | WB1-1 merged (#517). STY #452 rebased (a draft until the user's read). Next: WB1-2 (Overview), then WB1-3 |
-| ①iOS | Q1c is done: build 30 is on TestFlight (the user OK'd it on 2026-10-29). An independent review of its Bridge contract commit is running. The real-Mac end-to-end needs a 0.1.64 dev build on the user's Mac |
-| Codex (via ⑦Codex) | SBX-2 #507 fixes |
-| ⓪Plan | Reviews as PRs open (#490, #512, #519, #507 plumbing, iOS bde7b9f); STATUS. The cut proposal #515 was not adopted |
+| ②Main | #525 after F1–F4 (pocket retirement); C7c-2 #450 |
+| ③Hands | NAME1, then TITLE1; rebasing the four SBX drafts; reviewing #542 |
+| ⑤CAP | #526's fixes; #539's F1–F4 (and the import scan); then #536's fixes; CAP4a-2 (option a) after |
+| ⑥Helper | SB1-2 (pin and drag, migration 0079; auto-merges per the SB1 exception after ②Main's OK). WB1 is done (WB1-3 is #545). STY's bench was stopped by the classifier (below) |
+| ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
+| Codex (via ⑦Codex) | SBX-2 merged. SBX-3p waits on SBX-M, then the paste |
+| ④参谋 | #539 reviewed (fix then merge) |
+| ⓪Plan | #519's effort=max review; re-checks as fixes land; this page |
 
 ## Waiting on the user
 
-- **Merges:** the "Ready" list above, in that order.
-- **The STY read, once more:** the exported verdicts are from an earlier page (`3a107ed670ba`), and every row in them is empty: the export happened half a minute after that page was made. So the read hasn't been done yet. Re-read `sty-read-v0164.html` and export again. STY stays in draft until then.
-- **SB1-0 mock picks:** the sections (match the iPhone, or add 30 days), a time on rows or headings only, and Pinned above or below Projects. (WB1's tab name is decided: Working folder.)
+- **UNI1b and SEC1 mocks** (⑤CAP), sent as private links. UNI1b's mock also shows the markers for invisible characters on the save card (#526's review).
+- **Skills from before CAP4's checks (D2's remaining half, ②Main's review of #540):** the old Discover page's `gh-` skills, Skill Forge's promoted ones and `create_skill` output written from outside text never passed an install card, a scan or a pinned sha, and under D2 they read unframed. Re-check them once (a one-time scan, or a prompt to review them in Capabilities), or leave them as they are? They keep their origin mark and can be deleted.
+- **STY's bench (blocked by the classifier in ⑥Helper's session, "Create Unsafe Agents"; not routed to another session):** the 27-task K5-style run before and after STY, on DeepSeek through the proxy, about $4–5 (the proxy is at about $8 of $20). Two checkouts are ready in ⑥Helper's worktrees, before at `e8580458` and after at `4c20bb11`. Run it yourself, or allow ⑥Helper to run it. ⑥Helper has the command. #452 stays a draft until then.
+- **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
+- **Load flakes seen once locally (candidates for a LOAD4 card if they repeat on CI):** `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
-- **SBX-2 (#507):** relay the macOS failures and the plumbing findings to Codex; start the Astra review session; merge #508 into the Codex branch.
+- **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
-- **Making the `language` CI job required:** #504 merged with it red. That's a repository setting, so the user does it.
-- **A session card from ②Main:** "Make the chat liveness tests load-tolerant" (②Main is doing it now).
 
 **Decided on 2026-10-29:** the classifier pass lines are complete (≥ 70% of the approvable scope answered; ≤ 5% failure fallback), and C7c Q1–Q4 are answered (experts become skills automatically in the migration; private knowledge goes to the general base with a label; the v1 views and `/brain/proposals*` go in v0.1.65; `list_spawns` is removed now). Recorded in #474. Also decided on 2026-10-29: INB2 F2 is an allowlist and F4 is an optional stricter-only `sensitive: true`; the Bridge passes the envelope `ts` as `sent_at`; a converted quick ask learns from the conversion on; the pocket goes in v0.1.64 if Q1c ships with it, else v0.1.65 (recorded in #482). The pocket's old messages stay as a Mac-only conversation (#487). The sidebar card SB1 is in v0.1.64, and projects double as groups in v0.1.65 (this PR).
 
@@ -123,7 +149,7 @@ Only PRs with an independent effort=max OK **at the current head** and green CI 
 
 **Why:** a safety classifier stopped ③Hands as it started SBX-2. The user had the cloud audit split SBX and S2a-3, and approved the split. What Claude cannot write goes to Codex (SBX card, "Who writes what"). Reviews: Astra (highest level) in a new Codex session, never the session that wrote it. Claude reviews the non-probe plumbing. The existing review queue is in [`docs/plans/0162/STATUS.md`](../0162/STATUS.md), "Codex 待审".
 
-**Where the chain is stuck:** SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
+**Where the chain is (2026-10-30, night):** SBX-2 is merged (#507, `aace2b11`); next is SBX-M on the user's Mac. Before that it was stuck at SBX-2 (Codex). HR, CLS, S5a and S5b wait on it; see README §4, "Reordered 2026-10-29". ③Hands does other owed work meanwhile. Its local SBX-2 branch stays untouched.
 
 **How Codex delivers: plan A (user, 2026-10-29, final for now).** Codex writes and commits locally and does not push. The ChatGPT Codex Connector keeps its current access, which does not include `arslan`. The user pushes Codex's branch and opens the PR. The rules stay the same:
 - branches start with `codex/`, and PRs carry the label `codex`;
@@ -167,7 +193,9 @@ That is a repository-settings change. The `environment:` lines for the two workf
 | SBX-2 | "Write SBX-2 for mirzatghayrat/arslan on a local `codex/` branch. Commit, don't push; the user pushes and opens the PR. Read `docs/plans/0164/SBX-sandbox.md` in full, then do the SBX-2 row of 'PR split' with the scope in 'Who writes what', §1, §2 and §M. Build on SBX-1's builder (`server/services/sandbox_profile.py`, merged). Make the harness parameterised by base name. Not wired to any entry point. Real-seatbelt tests run on the macOS CI job. Follow `docs/sessions.md` §5, §8, §9 and §12. Write everything in English. Put 'Author: Codex' and the reviewer in each commit, and write the PR body to a file with the four evidence items; the macOS CI run id is added once CI has run." | **Yes** |
 | SBX-3p … 6p | "Write SBX-Np (N = 3, 4, 5 or 6): read the SBX card's 'Who writes what' and the SBX-N row and sections it names, then write the real-seatbelt tests that what SBX-N should deny is denied, as parameters of SBX-2's harness. No product code." | After SBX-2 and SBX-M; 6p only with SBX-6 |
 | Allowlist after SBX-M | "Read the SBX-M report (`docs/plans/0164/SBX-measurement.md`) and the SBX card §2; propose the allowlist change it calls for, ≤ 50 lines." | After SBX-M |
-| S2a-3 tests | "Read `docs/plans/0162/S2a-command-three-layers.md` (S2a-3) and the S2a-3 row of `docs/plans/0164/README.md` §3; write the test content named there for #375 / #376 / #378 / #396 and #406, against the rebased heads." | After SBX-7 and ③Hands' rebase | More decided on 2026-10-29 and 2026-10-30, all by the user:
+| S2a-3 tests | "Read `docs/plans/0162/S2a-command-three-layers.md` (S2a-3) and the S2a-3 row of `docs/plans/0164/README.md` §3; write the test content named there for #375 / #376 / #378 / #396 and #406, against the rebased heads." | After SBX-7 and ③Hands' rebase |
+
+More decided on 2026-10-29 and 2026-10-30, all by the user:
 - #475 H1 "trace notes back", H2 "count the project card", and old notes fail closed;
 - #486 G1 "server fails closed";
 - #495 "mark odd MCP tool names";
@@ -179,7 +207,14 @@ That is a repository-settings change. The `environment:` lines for the two workf
 **Decided on 2026-10-30 (user, relayed by ④参谋):**
 - **Deletable scope:** skills Arslan wrote (`authored` and `authored-outside`) and connections the user added by hand may be deleted, as #499 and #500 built them. Built-in and seeded items stay non-deletable (409). The deleted skill's text goes to the Trash.
 - **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
-- **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). ③Hands is building it; it merges after #475.
+- **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). It is #512: OK from the security side at `7dd5eade`, with a small window-title fix to land before the user merges.
+
+**Decided on 2026-10-30, night (user, relayed by ④参谋).** The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直接按主流做法： Claude Code 和 Codex 对装过的技能一律信任，读的时候不加框。（2）也按主流做法；3.也按主流做法」 and 「SB1 侧栏、STY 盲读 都可以 刚看了demo」. Recorded in full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-30", and [CAPX-followups.md](CAPX-followups.md).
+- **D1, CAP4a-2: option (a).** Arslan's own pinned, checksummed uv and Node runtime makes the lock before the card; one card shows the locked versions.
+- **D2, skills follow mainstream practice:** every skill the user has is trusted and read unframed, as in Claude Code and Codex. Origin marks stay as data for deletion and display. Skills of unknown origin are deletable. #519 is reworked to match; 0077's `authored` skip is moot. Stated limit: the same trust model as MCP descriptions from approved servers; the guard is at install time.
+- **D3:** UNI1b is a notice only, never blocking. SEC1's move is an optional offer that never blocks a connection; #536's storage (`${NAME}` plus the encrypted column) stays.
+- **SB1-0:** the user is fine with either option on all three toggles, so ⑥Helper chose: the iPhone's sections (Today / Yesterday / Previous 7 days / Older, with Older folded by month and a count per month, by the iPhone's own `ConversationGroups.make` rules), time in the headings only, and Pinned above Projects. Recorded in #543.
+- **STY:** the user has no preference between the two sides of the read, so the read no longer blocks #452. The card's bench gate is unchanged.
 
 **Not adopted (user, 2026-10-30):** the v0.1.64 cut (#515). The user's words: 「现在没有按"截断方案"吧，我不太想一直有任务推到后面只为了快上线新版本 我只是想要合理推进 不要老是原地踏步」. The scope stays as planned. What the user wants is steady, visible progress: every lane busy on its next card, reviews in parallel, no PR left idle on a sync or a review, and Codex's next SBX block queued as soon as the previous one lands. Progress is reported as PRs merged per round and what moved on the critical path.
 

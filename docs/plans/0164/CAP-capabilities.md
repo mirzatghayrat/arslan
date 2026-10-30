@@ -433,3 +433,15 @@ From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes
 8. **过渡卡**（存成技能时出卡、带脚本的直接拒）是 ②Main 提、⓪Plan 同意的，你可以改。
 9. **万一要砍范围，先定好顺延的顺序：CAP10 → CAP8 → CAP7。** 三个都是你 10-27、10-28 同意在 v0.1.64 做的，现在先点头这个顺序，到时候就不用再停下来问。
 10. **这张卡给谁做。** ②Main 已经排满，建议开一个新会话专做 CAP（像 v0.1.63 的 ⑤C6、⑥C7）。CAP6b 交给写 SBX 的会话。
+
+## Decided on 2026-10-30 (user, relayed by ④参谋)
+
+The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直接按主流做法： Claude Code 和 Codex 对装过的技能一律信任，读的时候不加框。（2）也按主流做法；3.也按主流做法」. These override the sections above where they differ.
+
+- **D1, CAP4a-2: option (a).** Arslan ships or fetches its own pinned, checksummed uv and Node runtime, as Claude Desktop ships a built-in Node runtime for `.mcpb` extensions. The lock is resolved with it before the card, so CAP4's order "resolve → lock → OSV → card → install from the lock" holds with one card that shows the locked versions. "Nothing third-party is installed before a yes" stays. Arslan's own pinned runtime counts as part of the app, not as third-party code. The runtime's pin and checksum live in the repository and are checked before use.
+- **D2(1), skills follow mainstream practice: every skill the user has is trusted and read unframed,** as Claude Code and Codex do with installed skills.
+  - `read_skill` and the skill index stop framing or marking by category. Reading a skill no longer marks the turn as "read outside content".
+  - The origin marks (CAP2b's split by source, migration 0080's gh- marks) stay as data, for deletion and display only.
+  - This replaces CAP2a's "keep the mark" and CAP2b's "split by source" for reading. CAP4's install-time checks are unchanged: pinned sha, scan, hashes, the card.
+  - **Stated limit:** a skill's text reaches the model as trusted instructions, the same trust model as MCP tool descriptions from an approved server (user, 2026-10-29). The guard is at install time (the card, the scan and the pinned sha), not at read time. Skills that came in before CAP4's install-time checks (the old Discover page's `gh-` skills, Skill Forge's promoted ones, `create_skill` from outside text) never passed them; under D2 they read unframed too. Their origin mark still shows in Capabilities, and they can be deleted (D2(2)). Whether to re-check those rows once is the user's call (STATUS, "Waiting on the user"; ②Main's review of #540).
+- **D2(2): skills of unknown origin are deletable,** like any other skill; the body goes to the Trash. Built-in and seeded skills stay non-deletable (user, 2026-10-30).

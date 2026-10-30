@@ -80,7 +80,7 @@ describe("files a reply wrote", () => {
     render(<ReplyArtifacts files={[art("r/a.md", 1), art("r/b.csv", 2), art("r/c.pdf", 3), art("r/d.png", 4)]} />);
     expect(screen.getAllByTestId("file-card")).toHaveLength(3);
     fireEvent.click(screen.getByTestId("reply-more-files"));
-    expect(useWorkbench.getState()).toMatchObject({ open: true, tab: "files" });       // WB1: Task is gone
+    expect(useWorkbench.getState()).toMatchObject({ open: true, tab: "overview" });    // WB1-2: Deliverables
     fireEvent.click(screen.getByTestId("file-card-open-a.md"));
     expect(useWorkbench.getState().reader).toMatchObject({ kind: "artifact", file: { title: "r/a.md" } });
   });
@@ -172,12 +172,12 @@ describe("paths in a reply", () => {
 });
 
 describe("the workbench", () => {
-  it("one panel: files of THIS conversation on top of Working folder, the reader over the tabs", async () => {
+  it("one panel: files of THIS conversation in Overview, the folder in Working folder, the reader over the tabs", async () => {
     files.conversationFiles.mockResolvedValue({ files: [{ ...art("报告/a.md"), created_at: "2026-10-09T08:00:00" }] });
     files.list.mockResolvedValue({ path: "~/Arslan", root: "~/Arslan", crumbs: [{ name: "Arslan", path: "~/Arslan" }], total: 2, more: false,
       entries: [{ name: "报告", path: "~/Arslan/报告", is_dir: true, bytes: null, modified: "2026-10-09T08:00:00" },
                 { name: "a.md", path: "~/Arslan/报告/a.md", is_dir: false, bytes: 10, modified: "2026-10-09T08:00:00" }] });
-    useWorkbench.getState().show("files");
+    useWorkbench.getState().show("overview");
     render(<Workbench conversationId="c1" taskId={null} temporary={false} />);
     expect(await screen.findByTestId("conv-files")).toHaveTextContent("a.md");
     expect(files.conversationFiles).toHaveBeenCalledWith("c1");

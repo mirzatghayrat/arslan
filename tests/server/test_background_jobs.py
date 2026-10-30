@@ -77,6 +77,14 @@ class JobAdapter:
         return LLMResponse(content="ok", tool_calls=[], usage={})
 
 
+def _spoken(frames, job):
+    """The job's report is written: `job_spoken` comes after the message and the shell's turn_finished
+    (`background_jobs._report`). `phase == "finished"` comes BEFORE the report (judged first, then
+    reported), so a test that reads what the report wrote waits for this too (LOAD2; main CI
+    41022952571: the message was not written yet under load)."""
+    return lambda: any(f.get("type") == "job_spoken" and f.get("job_id") == job.job_id for f in frames)
+
+
 async def _wait(predicate, seconds=5.0):
     deadline = asyncio.get_running_loop().time() + seconds
     while not predicate():
@@ -94,6 +102,7 @@ async def test_a_job_runs_as_its_own_task_and_posts_one_result(execution_db, act
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
     await _wait(lambda: job.phase == "finished")
+    await _wait(_spoken(frames, job))
     assert job.outcome == "done", (job.detail, job.results)
     async with execution_db() as db:
         task = await db.get(CompanionTask, job.job_id)
@@ -177,6 +186,7 @@ async def test_a_stopped_job_says_stopped_and_posts_no_filler(execution_db, acti
     assert not background_jobs.stop("other-conversation", job.job_id)   # scoped to its conversation
     assert background_jobs.stop(CID, job.job_id)
     await _wait(lambda: job.phase == "finished")
+    await _wait(_spoken(frames, job))                   # reported: a filler would be written by now
     assert job.outcome == "stopped"
     async with execution_db() as db:
         assert (await db.scalars(select(ArslanMessage))).all() == []
@@ -713,6 +723,7 @@ async def test_an_answer_saying_it_could_not_do_it_is_not_done(execution_db, act
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="复制没做成：批准卡过期了，没有人回应。"))
     job = await background_jobs.start(CID, "把 a.txt 复制到下载文件夹", [], outside_seen=False)
     await _wait(lambda: job.phase == "finished")
+    await _wait(_spoken(frames, job))
     assert (job.outcome, job.detail) == ("blocked", "goal_not_reached")
     assert seen == [("job.accomplished", {"goal": "把 a.txt 复制到下载文件夹", "answer": "复制没做成：批准卡过期了，没有人回应。"})]
     updates = [f for f in frames if f["type"] == "job_update" and f["job_id"] == job.job_id]

@@ -84,7 +84,7 @@ async def test_a_noticed_fact_reaches_a_cloud_model_and_a_sensitive_one_does_not
     assert (await pc.assemble("how should you answer me", context=off)).text == ""
 
 
-async def test_the_extractor_reads_only_the_users_own_words(monkeypatch):
+async def test_the_extractor_reads_only_the_users_own_words(execution_db, monkeypatch):
     seen = {}
 
     class _Adapter:
