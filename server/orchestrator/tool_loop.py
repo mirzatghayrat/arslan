@@ -1914,9 +1914,13 @@ from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
 # INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
 _SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
 
-# Hands v2 §6.3: the one way the model asks for the front.
-_FRONT = ("only after this action, done in the background, did nothing (no_effect) and you looked again: "
-          "Arslan borrows the app's front for about a second, waiting for the user to pause typing")
+# Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
+# ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
+# outcome.rs), then as a look with no change (hands_tools.NOTHING_CHANGED). A POLICY_DENIED refusal is no
+# reason: a borrow never lets agent-desktop take focus (hands_contract's `needs_focus`, `keys_refused`).
+_FRONT = ("only if this action, done in the background, came back sent_unconfirmed and your next desktop_look "
+          "said “Nothing changed since your last look.”: Arslan borrows the app's front for about a "
+          "second, waiting for the user to pause typing")
 
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     "read_file": {"type": "object", "properties": {
