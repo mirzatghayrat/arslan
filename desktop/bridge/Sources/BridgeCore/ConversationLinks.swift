@@ -499,8 +499,11 @@ public actor ConversationLinks {
                 guard let run = body["run_id"] as? Int else { throw BridgeError.code("malformed") }
                 let result = try await backend.json("/api/v1/phone/runs/\(run)")
                 // A run id is a number, so a phone can name one it was never sent (#525 review, F1): one in the
-                // retired pocket is not there, and its files' ids go nowhere.
-                guard result["conversation_id"] as? String != Self.pocket else { throw BridgeError.code("not_found") }
+                // retired pocket is not there, and its files' ids go nowhere. One that names no conversation can't
+                // be told apart from it, so it is refused too (fails closed).
+                guard let owner = result["conversation_id"] as? String, owner != Self.pocket else {
+                    throw BridgeError.code("not_found")
+                }
                 _ = try await mailbox.send(type: "run.result", body: result, to: received.from)
             case "task.start":
                 let clientID = body["client_task_id"] as? String ?? ""

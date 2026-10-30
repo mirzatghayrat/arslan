@@ -225,7 +225,7 @@ final class ConversationLinksTests: XCTestCase {
 
     func testARunCanBeReviewedFromThePhone() async throws {
         let backend = FakeBackend()
-        let run: [String: Any] = ["run_id": 87, "state": "done", "total": 1,
+        let run: [String: Any] = ["run_id": 87, "conversation_id": "task-ab12", "state": "done", "total": 1,   // the Mac names it
                                   "steps": [["kind": "command", "tool": "run_command", "ok": true, "ms": 4200,
                                              "terminal": ["command": "npm test", "exit": 0, "lines": ["✓ 42 passed"]]]]]
         backend.answers["/api/v1/phone/runs/87"] = .success(run)

@@ -38,3 +38,22 @@ async def test_the_phones_list_leaves_the_pocket_out_before_it_pages(client):
     rest = (await client.get("/api/v1/phone/conversations",
                              params={"limit": 5, "before": first["conversations"][0]["updated_at"]})).json()
     assert ([c["id"] for c in rest["conversations"]], rest["has_more"]) == (["plan"], False)
+
+
+async def test_a_run_and_a_job_name_their_conversation_for_the_phone(client):
+    """#525 recheck: the Bridge refuses a run, and leaves out a job, that does not name its conversation (it cannot
+    tell one in the pocket), so the Mac must always name it."""
+    from server.db.models import Run
+    from server.services import background_jobs
+    from server.services.background_jobs import Job
+    async with client.db_maker() as db:
+        db.add(Run(id=41, conversation_id="trip", user_message="plan", status="done"))
+        await db.commit()
+    run = (await client.get("/api/v1/phone/runs/41")).json()
+    assert run["conversation_id"] == "trip"
+    background_jobs._jobs["j-41"] = Job("j-41", "trip", "Tidy", [], phase="running")
+    try:
+        jobs = (await client.get("/api/v1/phone/status")).json()["jobs"]
+    finally:
+        background_jobs._jobs.pop("j-41", None)
+    assert [(job["job_id"], job["conversation_id"]) for job in jobs] == [("j-41", "trip")]

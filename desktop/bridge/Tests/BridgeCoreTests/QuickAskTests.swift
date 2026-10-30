@@ -290,13 +290,15 @@ final class QuickAskTests: XCTestCase {
                                                               "title": "typed in the pocket on the Mac",
                                                               "files": [["id": "run_88_0123456789abcdef_a.md"]]])
         p.backend.answers["/api/v1/phone/runs/87"] = .success(["run_id": 87, "conversation_id": "task-ab12", "title": "Q3"])
+        p.backend.answers["/api/v1/phone/runs/89"] = .success(["run_id": 89, "title": "no conversation named"])   // fails closed
         let refused = try await p.phone.send(type: "run.get", body: ["run_id": 88], to: "mac-1").id
         try await p.phone.send(type: "run.get", body: ["run_id": 87], to: "mac-1")
+        let unnamed = try await p.phone.send(type: "run.get", body: ["run_id": 89], to: "mac-1").id
         try await run(p)
         let got = try await heard(p)
-        XCTAssertEqual(got.map(\.type), ["error", "run.result"])
-        XCTAssertEqual(errors(got).map(\.code), ["not_found"])
-        XCTAssertEqual(errors(got).map(\.related), [refused])
+        XCTAssertEqual(got.map(\.type), ["error", "run.result", "error"])
+        XCTAssertEqual(errors(got).map(\.code), ["not_found", "not_found"])
+        XCTAssertEqual(errors(got).map(\.related), [refused, unnamed])
         XCTAssertEqual(body(got[1])["run_id"] as? Int, 87)
     }
 
@@ -306,7 +308,9 @@ final class QuickAskTests: XCTestCase {
             ["type": "job_update", "job_id": id, "conversation_id": conversation, "goal": "Tidy", "phase": "running"]
         }
         p.backend.answers["/api/v1/phone/status"] = .success(["presence": "online", "mascot": "working", "waiting_approvals": 0,
-                                                              "jobs": [job("job-p", ConversationLinks.pocket), job("job-t", "task-ab12")]])
+                                                              "jobs": [job("job-p", ConversationLinks.pocket), job("job-t", "task-ab12"),
+                                                                       ["type": "job_update", "job_id": "job-x", "goal": "Tidy",
+                                                                        "phase": "running"]]])          // no conversation: left out
         let reporter = StatusReporter(backend: p.backend, mailbox: p.mac, deviceName: "Test Mac")
         let snapshot = try await reporter.snapshot(now: t0)
         XCTAssertEqual((snapshot["jobs"] as? [[String: Any]])?.map { $0["id"] as? String }, ["job-t"])
