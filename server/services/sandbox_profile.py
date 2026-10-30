@@ -29,7 +29,9 @@ What every profile relies on:
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Iterable
+from enum import Enum
 from pathlib import Path
 
 
@@ -97,3 +99,104 @@ class Profile:
 
 def _rule(verb: str, operations: str, filters: tuple[str, ...]) -> str:
     return "(" + " ".join((verb, operations, *filters)) + ")"
+
+
+class NetworkMode(str, Enum):
+    NONE = "none"
+    PROXY = "proxy"
+    ANY_DECLARED = "any-declared"
+    PORT_22 = "port-22"
+
+
+# No service has measurement evidence yet. SBX-M may add exact names, each with
+# its corpus id, in a reviewed follow-up. In particular, preference reads do not
+# imply permission to contact cfprefsd. Never import a system profile: its grants
+# can change independently of this policy.
+SYSTEM_MACH_SERVICES: tuple[str, ...] = ()
+SYSTEM_UNIX_SOCKETS: tuple[str, ...] = ()
+
+
+def default_deny_profile(
+    writable: Iterable[Path] = (),
+    protected: Iterable[Path] = (),
+    *,
+    readable: Iterable[Path] | None = None,
+    closed: Iterable[Path] = (),
+    network: NetworkMode = NetworkMode.NONE,
+    proxy_port: int | None = None,
+    denied_ports: Iterable[int] = (),
+    ipc_prefix: str | None = None,
+) -> str:
+    """SBX-2's candidate preset; no product entry point uses it yet.
+
+    ``readable=None`` permits broad reads; an explicit list narrows reads for
+    computation callers. Closed and protected paths override every grant.
+    A caller supplies a fresh, unguessable ``/arslan-<16 hex>-`` IPC namespace
+    per run; omitting it permits no POSIX IPC. This is name isolation, not an
+    ownership check. Do not give two runs the same prefix.
+
+    Network grants are TCP only. Unix sockets are a separate exact allowlist;
+    online modes allow localhost dev servers, excluding all supplied Arslan
+    listener ports. Offline denies network operations, including Unix sockets.
+    """
+    network = NetworkMode(network)
+    denied_ports = tuple(denied_ports)
+    for port in (*denied_ports, *((proxy_port,) if proxy_port is not None else ())):
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+            raise ValueError("ports must be integers from 1 to 65535")
+    if network == NetworkMode.PROXY and proxy_port is None:
+        raise ValueError("proxy mode requires a proxy port")
+    if network != NetworkMode.PROXY and proxy_port is not None:
+        raise ValueError("proxy port requires proxy mode")
+    if ipc_prefix is not None and re.fullmatch(r"/arslan-[0-9a-f]{16}-", ipc_prefix) is None:
+        raise ValueError("IPC prefix must be /arslan-<16 lowercase hex digits>-")
+
+    rules = Profile("deny")
+    rules.allow("process-exec process-fork")
+    rules.allow("signal", "(target same-sandbox)")
+    rules.allow("process-info*", "(target self)")
+    rules.allow("sysctl-read")
+    rules.allow("user-preference-read")
+    if readable is None:
+        rules.allow("file-read* file-map-executable")
+    else:
+        rules.allow("file-read-metadata")
+        rules.allow_paths("file-read* file-map-executable", map(real, readable), file_or_folder)
+    rules.allow_paths("file-write*", map(real, writable), file_or_folder)
+
+    devices = [literal(p) for p in ("/dev/null", "/dev/zero", "/dev/tty", "/dev/ptmx",
+                                    "/dev/stdout", "/dev/stderr")]
+    devices += [subpath("/dev/fd"), '(regex #"^/dev/ttys[0-9]+$")']
+    rules.allow("file-read* file-write-data", *devices)
+    rules.allow("pseudo-tty")
+    rules.allow("file-ioctl", literal("/dev/tty"), literal("/dev/ptmx"),
+                '(regex #"^/dev/ttys[0-9]+$")')
+    if ipc_prefix is not None:
+        rules.allow("ipc-posix-shm* ipc-posix-sem*",
+                    f"(ipc-posix-name-prefix {sbpl_string(ipc_prefix)})")
+    if SYSTEM_MACH_SERVICES:
+        rules.allow("mach-lookup", *(f"(global-name {sbpl_string(n)})" for n in SYSTEM_MACH_SERVICES))
+    if network != NetworkMode.NONE:
+        rules.allow_paths("network-outbound", map(real, SYSTEM_UNIX_SOCKETS), literal)
+        rules.allow("network-outbound", '(remote tcp "localhost:*")')
+        rules.allow("network-bind network-inbound", '(local tcp "localhost:*")')
+        if network == NetworkMode.PROXY:
+            rules.allow("network-outbound", remote_tcp("localhost", proxy_port))
+        elif network == NetworkMode.ANY_DECLARED:
+            rules.allow("network-outbound", '(remote tcp "*:*")')
+        elif network == NetworkMode.PORT_22:
+            rules.allow("network-outbound", remote_tcp("*", 22))
+        for port in sorted(set(denied_ports)):
+            rules.deny("network-outbound", remote_tcp("localhost", port))
+            rules.deny("network-bind network-inbound", f'(local tcp "localhost:{port}")')
+    # Explicit denials document boundaries that must survive future additions.
+    rules.deny("appleevent-send")
+    rules.deny("user-preference-write")
+    if network == NetworkMode.NONE:
+        rules.deny("network*")
+    for paths in (closed, protected):
+        filters = [file_or_folder(real(p)) for p in paths]
+        if filters:
+            rules.deny("file-read* file-write* file-map-executable", *filters)
+            rules.deny("network-outbound", *filters)
+    return rules.text()

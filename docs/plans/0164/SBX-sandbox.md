@@ -361,6 +361,8 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 Total ≈ 1,880 product lines added, ≈ 390 removed (≈ 1,430 without SBX-6), in 7 code PRs and 2 report PRs. "SBX merged", for the order chart, means SBX-1 to SBX-7 (SBX-6 only if chosen). ③Hands' S2a-3 rebase starts after SBX-7.
 
+SBX-2 harness retention: `DELETE-BY: v0.1.64 after SBX-M records the historical baseline, before SBX-3 replaces the commands preset`. Remove the test harness's `legacy-commands` adapter and its parameters then; it is a measurement comparison, never a product fallback. The outside-floor comparison remains because that policy remains. The corpus procedure and explicit measurement gaps are in `tests/server/sbx/corpus/README.md`.
+
 ## Acceptance
 
 - **One sandbox:** the base block is identical across commands, `run_python`, artifact checks and MCP (test). No preset contains `(allow default)`, wholesale `(allow mach-lookup)` or `user-preference-write` (test over every preset's text). Only the outside floor and ssh keep `(allow default)`, by design (correction B; Q7).
