@@ -957,7 +957,7 @@
       "orphaned": "孤立ファイル"
     },
     "import": {
-      "subtitle": "標準 SKILL.md を書かれたとおりに取り込み(隠し文字は除去) — ライセンス審査あり。",
+      "subtitle": "標準 SKILL.md を書かれたとおりに取り込み(ライセンス確認と安全スキャンのあと)。見えない文字は数を表示。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "サブパス(任意)",
       "scan": "スキャン",
@@ -965,7 +965,10 @@
       "imported": "インポート済み",
       "no_license": "ライセンスなし",
       "none_found": "SKILL.md ファイルが見つかりません。",
-      "scripts_n": "{{n}} 件のスクリプト"
+      "scripts_n": "{{n}} 件のスクリプト",
+      "hidden": "SKILL.md の見えない文字:{{count}} 個",
+      "hiddenRuns": "テキストに {{runs}} があります。こうした並びは文章を隠せます。",
+      "hiddenMore": "ほか {{count}} 種類"
     },
     "filter": {
       "placeholder": "手元のものを絞り込む…",
