@@ -123,10 +123,13 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
             if rule.pattern.search(line):
                 out.append(Finding(rule.id, rule.level, name, n, line.strip()[:160]))
                 break                       # one finding per rule per file is enough to show
-    if kind == "text":
+    if kind in ("text", "skill_code"):
+        # #607 review K3 (⓪Plan): a skill's scripts too. Trojan Source in code is what the bidi rule is for, and
+        # GitHub warns about it there. A package's own files are not held to it.
         hidden = _invisible(text)
         if hidden:
             out.append(Finding(HIDDEN_RULE, "high", name, 0, f"{hidden} tag or bidi control characters"))
+    if kind == "text":
         if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", words):
             out.append(Finding("long_encoded_blob", "note", name, 0, "a long base64-like block"))
     return out
