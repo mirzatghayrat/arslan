@@ -164,12 +164,16 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
    - #611: held cards;
    - #612: the Scheduled dots from the count.
    All OK, the last three after #605.
+   Then **#614** at `2e08a6db`, after #605. The sidebar's project rows take the most urgent reason, and a new "away" reason is added. The bell glyph is flagged for the user to look at.
+   Then **#615** at `7c8ce4e8`, after #612. Q7's rows: a set-aside reminder lives until its date, and handled rows count their days from acted_at. Both are re-checked OK and marked ready.
 7. **#603** at `2e24003b`: L11-2, "make this a rule for this folder". Effort=max reviewed twice; ⓪Plan checked the hard-link fix.
-8. **#452** at `ac050bf6` (draft): STY. The bench gate passes: passes equal, correct +1, waiting −1, cost +12%. Click Ready, then Merge.
+8. **#452** at `ac050bf6` (draft; click Ready): STY. The bench gate passes: passes equal, correct +1, waiting −1, cost +12%. Click Ready, then Merge.
+
+**Click Ready for review first** (the lanes' ready step was blocked by the classifier): #452, #563, #607, #608. The rest are marked ready.
 
 **Not ready yet:**
 - **#604** (CAP4a-3d): re-checked OK. It waits for two user decisions (below) and the web keep button.
-- **#606** (CAP5b): ⑤CAP is fixing F1 (npm's compile cache in /tmp) and F2–F5.
+- **#606** (CAP5b) at `b12ddca9`: re-checked OK. It's a draft, and the user merges it once it's ready and green. npm's compile cache is off, TMPDIR is per install, and a boot sweep removes leftover caches.
 - **The #584 follow-up PR** (the org-id pin plus the GitHub-down test): it opens after #584 merges.
 
 **For the user's Mac:** push Codex's SBX-3p branch `codex/sbx3p-commands-deny-tests` (3 commits). Then ⓪Plan opens the stacked ci.yml PR (364 → 420) and the effort=max plumbing review.
