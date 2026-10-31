@@ -121,6 +121,18 @@ async def test_the_users_correction_takes_effect_at_once_and_is_announced(execut
     assert [p for p, _ in judge.asked] == ["memory.worth"]
 
 
+async def test_a_failing_menu_bar_push_keeps_the_lesson_and_is_logged(execution_db, judge, monkeypatch, caplog):
+    """EXC1: the status push after a lesson is a nicety; its failure is logged by type, never raised."""
+    def broken(*args, **kwargs):
+        raise RuntimeError("menu bar gone")
+    monkeypatch.setattr(desktop_status, "push", broken)
+    with caplog.at_level("DEBUG", logger="server.services.lessons"):
+        [learned] = await lessons.capture([correction()], conversation_id=CID, emit=None)
+    assert learned["status"] == "active"
+    assert "lesson_learned status push failed: RuntimeError" in caplog.text
+    assert "menu bar gone" not in caplog.text
+
+
 @pytest.mark.parametrize("external,status", [(False, "active"), (True, "proposed")])
 async def test_a_detour_takes_effect_only_when_the_turn_read_nothing_from_outside(execution_db, judge, external, status):
     [learned] = await lessons.capture([detour()], conversation_id=CID, external_seen=external)

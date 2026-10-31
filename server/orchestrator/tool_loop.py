@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from arslan.execution_budget import BudgetExceeded, governed
-from arslan.llm import trajectory, usage_sink
+from arslan.llm import tool_names, trajectory, usage_sink
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
@@ -629,14 +629,16 @@ def _hiding(resolve_tools: ResolveTools, drops: _SchemaDrops) -> ResolveTools:
 
 def _refused_tool(a, sent: list[dict], text: str) -> str | None:
     """The MCP tool a refusal points at, only ever one this request carried: the provider reads
-    its own error against its own payload order, else the longest MCP name the text mentions."""
+    its own error against its own payload order, else the longest MCP name the text mentions.
+    NAME1: the provider wrote the names it was sent (tool_names.wire); both lead back to the key."""
     mcp = {t["function"]["name"] for t in sent if t["function"]["name"].startswith("mcp_")}
-    named = getattr(getattr(a, "_provider", None), "named_tool", None)
+    named = getattr(a, "named_tool", None) or getattr(getattr(a, "_provider", None), "named_tool", None)
     name = named(sent, text) if callable(named) else None
     if name in mcp:
         return name
-    mentioned = [n for n in mcp if n in text]
-    return max(mentioned, key=len) if mentioned else None
+    mentioned = {n: max(len(form) for form in (n, tool_names.wire(n)) if form in text)
+                 for n in mcp if n in text or tool_names.wire(n) in text}
+    return max(sorted(mentioned), key=mentioned.get) if mentioned else None
 
 
 async def _images_to_text(convo: list[dict]) -> int:
@@ -766,8 +768,9 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         tools, schemas = drops.keep_schemas(tools), drops.keep_schemas(schemas)
         what = "every MCP tool" if left_out == "all" else f"the MCP tool {left_out}"
         state.note(f"left out {what} (the provider refused its parameter schema)")
+        shown = "every MCP tool" if left_out == "all" else f"the MCP tool {tool_names.wire(left_out)}"  # NAME1
         status = (f"{status}\n\n" if status else "") + (
-            f"Note: {what} is not available in this turn: the model provider refused its parameter "
+            f"Note: {shown} is not available in this turn: the model provider refused its parameter "
             "schema. Use the other tools, or tell the user that capability cannot be used right now.")
         if status_record is not None:
             status_record["content"] = status       # not accepted by the provider yet: still editable
@@ -1337,13 +1340,14 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
         if not_ready is not None:
             return not_ready
     import difflib
-    near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
+    callable_as = {tool_names.wire(key): key for key in live}      # NAME1: the names the model can call
+    near = difflib.get_close_matches(tool_key, sorted(callable_as), n=5, cutoff=0.3) or sorted(callable_as)[:5]
     result = {"ok": False, "external": False, "code": "tool_unavailable",
               "error": f"tool '{tool_key}' is not available to you"
                        + (f"; available tools include: {', '.join(near)}" if near else "")
                        + "; you may escalate a need instead"}
     from server.orchestrator import untrusted
-    if any(untrusted.odd_mcp_key(key) for key in near):
+    if any(untrusted.odd_mcp_key(key) for key in live if tool_names.wire(key) in near):
         # S64-0c: a key it lists carries a server's odd tool name: framed (no external: False), and marked.
         untrusted.mark_external()
         del result["external"]
@@ -2517,8 +2521,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         synth = await build_synthesis_adapter()
         if synth is not None:
             a = synth
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — synthesis falls back to the tool-loop adapter, as when none is set
+        logger.warning("synthesis adapter unavailable, keeping the tool-loop model: %s", type(exc).__name__)
     synth_system = (
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "

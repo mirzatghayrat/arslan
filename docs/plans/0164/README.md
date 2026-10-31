@@ -306,9 +306,10 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0078 | Q1 #3 | Where a converted quick question starts to learn, on `conversation_contexts` (the user's decision of 2026-10-29: the quick turns before it never learn) | ②Main |
 | 0079 | SB1 | Pinning a conversation in the sidebar, a flag on `conversation_contexts`; lands after the pocket deletion and INB4 | ⓪Plan's card |
 | 0080 | CAP gh- follow-up | Marks the old Discover page's `gh-` skill rows as outside (no source → `authored-outside`, a card's → `imported`); drops nothing; listed after 0077 | ⑤CAP |
-| 0081 | SEC1 | Reserved for ⑤CAP: one nullable encrypted column on `mcp_servers`. It waits on its mock (v0.1.65 candidate) | ⑤CAP |
+| 0081 | SEC1 | One nullable encrypted column on `mcp_servers` (`secrets`) for the values behind `${NAME}` placeholders in a connection's address and arguments; drops nothing; no-op downgrade | ⑤CAP |
+| 0082 | UNI1a | Data only: names stored before UNI1 (a skill's name and description, an MCP server's label, a capability source's name) go through the name rule once. The rule is frozen in the migration; only rows that change are written (#526) | ⑤CAP |
 
-The next free number is 0082. Ask ②Main before taking it.
+The next free number is 0083. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 

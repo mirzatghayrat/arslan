@@ -313,7 +313,9 @@ jobs:
       - name: Pytest (macOS-only set)
         # -m macos selects the marked set. The marker is additive: each of those
         # tests still carries its own skip, which is why they stay green on Linux.
-        run: .venv/bin/pytest tests/ -m macos -q -rfEs --junitxml=macos-results.xml
+        # -o xfail_strict=true: SBX's p tests for a surface not built yet are strict
+        # xfails, and JUnit doesn't record strictness, so every xfail is made strict here.
+        run: .venv/bin/pytest tests/ -m macos -q -rfEs -o xfail_strict=true --junitxml=macos-results.xml
 
       - name: Assert they RAN, and did not skip
         # 🔴 THE LOAD-BEARING STEP. pytest exits 0 when every selected test is
@@ -346,9 +348,13 @@ jobs:
           EXPECTED = 362
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
-          skipped = int(suite.get("skipped", 0))
+          # A strict xfail that failed as expected (SBX's p tests before Na lands) is
+          # <skipped type="pytest.xfail">: it ran, so it counts as ran, not as a skip.
+          # A strict xfail that passed is a <failure>. Na's own gate (0 xfail) is in its evidence.
+          xfailed = sum(1 for s in suite.iter("skipped") if s.get("type") == "pytest.xfail")
+          skipped = int(suite.get("skipped", 0)) - xfailed
           failures = int(suite.get("failures", 0)) + int(suite.get("errors", 0))
-          print(f"collected={total} skipped={skipped} failed={failures}")
+          print(f"collected={total} skipped={skipped} xfailed={xfailed} failed={failures}")
           problems = []
           if skipped:
               problems.append(f"{skipped} of {total} SKIPPED — a skip here is a silent pass")

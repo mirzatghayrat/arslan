@@ -1,6 +1,7 @@
 """Read-only Run replay + evaluation endpoint."""
 from __future__ import annotations
 
+import asyncio
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -574,6 +575,61 @@ async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
     return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
+
+
+@router.get("/conversations/{conversation_id}/changes")
+async def conversation_changes(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """WB1-3: what each turn of this conversation changed in the user's folders, newest turn first, path by
+    path (made, edited, deleted), for Overview's Changes. Only turns whose checkpoint is still kept, which is
+    the set an undo can take back (checkpoints.changes); a turn that changed nothing is left out. Read only.
+    The runs are this conversation's own, as the runs list filters them (live, host, scheduled)."""
+    from server.db.models import ArslanMessage
+    from server.services import checkpoints
+    runs = (await db.execute(select(Run).where(Run.conversation_id == conversation_id,
+                                               Run.kind.in_(("live", "host", "scheduled")))
+                             .order_by(Run.id.desc()).limit(200))).scalars().all()
+    if not runs and (await db.execute(select(ArslanMessage.id).where(
+            ArslanMessage.conversation_id == conversation_id).limit(1))).first() is None:
+        raise HTTPException(404, detail={"code": "conversation_not_found"})
+    wanted = [(run.id, _started(run), run.started_at) for run in runs]
+
+    def read() -> list[dict]:                 # file reads, one manifest per run: off the event loop (②Main)
+        turns = []
+        for run_id, not_before, started in wanted:
+            found = checkpoints.changes(run_id, not_before)
+            if not found or not found["paths"]:
+                continue
+            turns.append({"run_id": run_id,
+                          "at": started.replace(tzinfo=timezone.utc).isoformat() if started else None,
+                          "undone": found["undone"], "paths": found["paths"]})
+        return turns
+    return {"turns": await asyncio.to_thread(read)}
+
+
+@router.get("/conversations/{conversation_id}/changes/{run_id}/diff")
+async def conversation_change_diff(conversation_id: str, run_id: int, folder: str = Query(..., max_length=4096),
+                                   path: str = Query(..., max_length=4096),
+                                   db: AsyncSession = Depends(get_session)) -> dict:
+    """DIFF1: one changed path of one turn as a line diff, the saved copy against the file now, for the
+    reader opened from Overview's Changes. The run must be this conversation's (as `changes` lists them)
+    and the path one `changes` lists for it; the folder must be one the reader may read
+    (file_reader.roots). 404 `not_listed` otherwise, or once the checkpoint is gone; 403 `hidden` for a
+    dot-path or a secret-shaped name; 200 with `reason` (`too_big`, `not_text`, `copy_changed`) and no
+    lines when there is no diff to show. Read only."""
+    from server.services import checkpoints, file_reader
+    run = await db.get(Run, run_id)
+    if run is None or run.conversation_id != conversation_id or run.kind not in ("live", "host", "scheduled"):
+        raise HTTPException(404, detail={"code": "not_listed"})
+    readable = await file_reader.roots()
+    try:
+        return {"reason": None, **await asyncio.to_thread(checkpoints.diff, run_id, _started(run), folder, path,
+                                                          readable)}
+    except checkpoints.NoDiff as exc:
+        if exc.code == "not_listed":
+            raise HTTPException(404, detail={"code": "not_listed"}) from None
+        if exc.code == "hidden":
+            raise HTTPException(403, detail={"code": "hidden"}) from None
+        return {"reason": exc.code, "kind": None, "added": 0, "removed": 0, "since": False, "lines": []}
 
 
 async def _with_history(undone: dict) -> dict:

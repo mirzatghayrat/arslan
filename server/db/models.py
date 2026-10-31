@@ -18,9 +18,21 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from server.db.base import Base
+
+
+def _clean_name(value, limit: int):
+    """v0.1.64 UNI1 (#526 review 4): a name an outside source can set (a skill's name and description, an MCP
+    server's label, a capability source's name) goes through the one name cleaner at every write, a constructor
+    or an attribute set, whichever code writes it, so what is stored is what shows. `limit` is the column's, or
+    for a Text column a bound above what any writer keeps. Bulk `update()` statements skip validators: none
+    writes these columns (tests/server/test_uni1a_names_and_bodies.py). Stored rows from before: 0082."""
+    if value is None:
+        return None
+    from server.orchestrator import untrusted
+    return untrusted.clean_name(value, limit)
 
 
 class RecipeVersion(Base):
@@ -233,6 +245,10 @@ class SkillPack(Base):
     # 0.1.57 §5.2: the capability source it was installed from (pinned commit + checksums).
     source_id = Column(String(36), nullable=True)
 
+    @validates("name", "description")
+    def _clean(self, field, value):
+        return _clean_name(value, 100 if field == "name" else 2000)
+
 
 class SpawnCapability(Base):
     """Per-spawn equipment row (toolset or skill grant)."""
@@ -290,6 +306,8 @@ class MCPServer(Base):
     command = Column(String(255), nullable=False)
     args = Column(JSON, nullable=False, default=list)
     env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
+    # SEC1 (migration 0081): the values behind `${NAME}` placeholders in url/args, encrypted JSON like env.
+    secrets = Column(Text, nullable=True)
     url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
     status = Column(String(20), nullable=False, default="registered")  # legacy, kept in step with `state` until PR 8: registered|connecting|connected|error
     # Server-level host consent (user ruling 2026-08-18): connect is the human
@@ -309,6 +327,10 @@ class MCPServer(Base):
     last_ok_at = Column(DateTime, nullable=True)
     next_retry_at = Column(DateTime, nullable=True)
     fail_count = Column(Integer, nullable=False, default=0, server_default="0")
+
+    @validates("label")
+    def _clean(self, field, value):
+        return _clean_name(value, 80)
 
 
 class CapabilitySource(Base):
@@ -349,6 +371,10 @@ class CapabilitySource(Base):
     skill_key = Column(String(60), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     installed_at = Column(DateTime, nullable=True)
+
+    @validates("name")
+    def _clean(self, field, value):
+        return _clean_name(value, 120)
 
 
 class ProviderConfig(Base):

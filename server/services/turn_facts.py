@@ -205,8 +205,8 @@ async def capture(conversation_id: str, user_message: str, emit, *, recheck=None
             from server.services import recap_service
             summary = " · ".join((getattr(f, "label", None) or f.content or "")[:24] for f in created[:3])
             await recap_service.log_event(conversation_id, "memory", None, summary)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 — the recap line is a nicety; the facts are saved
+            logger.debug("memory recap event failed: %s", type(exc).__name__)
     return len(created)
 
 

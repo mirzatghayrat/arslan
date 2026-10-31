@@ -596,8 +596,9 @@ export interface CapabilityCard {
  *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */
 export interface AuthoredSkillCard {
   kind: "authored"; key: string; name: string; description: string; body: string; why: string;
-  /** This conversation read a page, a file or another tool's result: the text may carry what that said, and
-   *  the saved skill stays outside content (#472 F1, F2). */
+  /** This conversation read a page, a file or another tool's result: the text may carry what that said. The
+   *  saved skill is marked so (#472 F1, F2); since the user's D2 it is read unframed like every skill, so the
+   *  card is the check. */
   outside: boolean;
 }
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
@@ -1015,6 +1016,8 @@ export interface McpServer {
 export interface McpTool {
   key: string;
   name: string;
+  /** The name through the server's name rule (UNI1a): what the page shows. */
+  shown?: string;
   description: string;
   tier: string; // safe|orchestrator
   status: string; // registered|wired

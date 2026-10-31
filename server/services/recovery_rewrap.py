@@ -17,7 +17,7 @@ import tempfile
 from server.crypto_material import keyring
 from server.services.data_profile_lock import hold
 from server.services.recovery_preflight import MAX_CREDENTIALS, MAX_TOKEN_BYTES
-from server.services.secret_inventory import CIPHERTEXT_SITES
+from server.services.secret_inventory import CIPHERTEXT_SITES, has_column
 
 MAX_TOTAL_TOKENS = 16 * 1024 * 1024
 
@@ -66,6 +66,8 @@ def _rewrite(db, source, target):
             continue
         if db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND tbl_name=?", (table,)).fetchone():
             raise ValueError('recovery_rewrap_refused')
+        if not has_column(db.execute, table, column):
+            continue                    # a profile from before this column's migration (0081: secrets)
         ident = 'key' if table == 'settings' else 'id'
         sql = (f'SELECT {ident}, substr({column},1,?), length({column}), typeof({column}) '
                f'FROM {table} WHERE {column} IS NOT NULL AND {column} != \'\'')
