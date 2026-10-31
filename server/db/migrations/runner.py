@@ -105,6 +105,7 @@ from .versions._0080_mark_discover_skills_outside import upgrade_sync as _m0080
 from .versions._0081_connection_secrets import upgrade_sync as _m0081
 from .versions._0082_clean_stored_names import upgrade_sync as _m0082
 from .versions._0083_conversation_seen import upgrade_sync as _m0083
+from .versions._0084_scheduled_task_seen import upgrade_sync as _m0084
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -186,6 +187,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0081", _m0081),
     ("0082", _m0082),
     ("0083", _m0083),
+    ("0084", _m0084),
 ]
 
 

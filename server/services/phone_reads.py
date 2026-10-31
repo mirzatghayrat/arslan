@@ -254,6 +254,8 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
     per_run = artifact_counts()
     # INB4: what the window has shown, and the replies whose run failed (no finished turn).
     seen = await conversation_seen.marks(db, ids)
+    from server.services import progress
+    asking = await progress.waiting_conversations(db)          # INB5: the same rule as the badge's count
     reply_runs = [m.run_id for m in messages.values() if m.role == "arslan" and m.run_id is not None]
     failed = set((await db.execute(select(Run.id).where(Run.id.in_(reply_runs), Run.error_kind.is_not(None)))).scalars())
     out = {}
@@ -287,6 +289,8 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         clean_reply = kind == "chat" and state == "idle" and last is not None and last.role == "arslan" and last.run_id not in failed
         if (clean_reply or state == "done") and last_ids.get(cid, 0) > seen.get(cid, 0):
             state = "done_unseen"
+        if cid in asking:                    # INB5: the badge counts it, so its row says so (#590 review F3a)
+            state = "waiting"
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
         item = {"kind": kind, "state": state, "phone_state": phone_state,
                 "origin": "phone" if (first is not None and first.source == "phone") else "mac",

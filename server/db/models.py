@@ -941,6 +941,9 @@ class ScheduledTask(Base):
     consecutive_failures = Column(Integer, nullable=False, default=0)
     paused_reason = Column(Text, nullable=True)          # set on auto-pause (3 fails)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # INB5 (migration 0084): when you last opened this task on the Scheduled page. Its runs' "could not ask" entries newer
+    # than this wait on you (progress.waiting_on_user). The task's own column, so no conversation id can collide with it.
+    seen_at = Column(DateTime, nullable=True)
 
 
 class ScheduledTaskRun(Base):
