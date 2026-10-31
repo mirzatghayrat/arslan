@@ -68,13 +68,22 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
         return None
     if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
         return None
-    body = raw[m.end():].strip()
-    if not body:
+    # UNI1: the name and description through the one name cleaner; the body keeps ordinary text, and loses
+    # only Tag and control characters (`cleaned` says whether it lost any).
+    from server.orchestrator import untrusted
+    written = raw[m.end():].strip()
+    body = untrusted.clean_body(written).strip()
+    name, description = untrusted.clean_name(meta["name"], 100), untrusted.clean_name(meta["description"], 300)
+    if not body or not name or not description:
         return None
-    key = _slug(str(meta["name"])) or _slug(path.rsplit("/", 2)[-2] if path.count("/") else "") \
+    key = _slug(name) or _slug(path.rsplit("/", 2)[-2] if path.count("/") else "") \
         or "skill-" + hashlib.sha256(path.encode("utf-8")).hexdigest()[:8]
-    return {"key": key, "name": str(meta["name"])[:100],
-            "description": str(meta["description"])[:300], "body": body}
+    # Line endings are not hidden characters: a CRLF file read as LF lost nothing (#526 review 5).
+    plain = written.replace("\r\n", "\n").replace("\r", "\n").strip()
+    # `frontmatter`: the name and description as YAML decoded them, before the cleaner, for the scan only: a hidden
+    # character the cleaner drops is still the sign of a skill that tried to hide one (#526 merged with #539).
+    return {"key": key, "name": name, "description": description, "body": body, "cleaned": body != plain,
+            "frontmatter": f"{meta['name']}\n{meta['description']}"}
 
 
 def _slug(text: str) -> str:
@@ -293,11 +302,14 @@ def scan_prepared(prepared: dict) -> dict:
     """The one scan of a prepared skill, for the install card and the import panel alike: the whole SKILL.md as
     fetched, its name and description as YAML decodes them (what is stored and, under the user's D2, read
     unframed; a folded scalar or a quoted escape decodes to text the raw file does not show: #539 recheck), every
-    script, dotfiles included, and every reference."""
+    script, dotfiles included, and every reference. The text is scanned both ways: as written and YAML-decoded,
+    before UNI1a's cleaner (`frontmatter`; a hidden character the cleaner drops is the sign of a skill trying to
+    hide one), and as stored, after it (the name, description and body; #526 recheck: a command split by a BEL
+    or an ESC passed the raw scan, and the cleaner then removed the control character)."""
     from server.services import capability_scan
     info = prepared["info"]
-    return capability_scan.scan_skill(f"{prepared['skill_md']}\n{info['name']}\n{info['description']}",
-                                      prepared["scripts"], prepared["references"])
+    text = "\n".join((prepared["skill_md"], info["frontmatter"], info["name"], info["description"], info["body"]))
+    return capability_scan.scan_skill(text, prepared["scripts"], prepared["references"])
 
 
 async def prepare_skill(ref: str, path: str) -> dict:
@@ -425,7 +437,9 @@ def _write_folder(folder: Path, prepared: dict) -> None:
 async def _install_row(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_refs: list) -> dict:
     spdx, source = prepared["license"], prepared["license_source"]
     today = datetime.now(timezone.utc).date().isoformat()
-    attribution = (f"> Imported verbatim from https://github.com/{prepared['full_name']} at {sha[:12]} "
+    # "verbatim" only when nothing went (UNI1: Tag and control characters do).
+    attribution = (f"> Imported {'with hidden characters removed' if info.get('cleaned') else 'verbatim'} "
+                   f"from https://github.com/{prepared['full_name']} at {sha[:12]} "
                    f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
     body = attribution + info["body"]
     if stored:

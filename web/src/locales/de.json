@@ -957,7 +957,7 @@
       "orphaned": "Verwaiste Dateien"
     },
     "import": {
-      "subtitle": "Standard-SKILL.md, wortgetreu importiert — lizenzgeprüft.",
+      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, ohne versteckte Zeichen — lizenzgeprüft.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "Unterpfad (optional)",
       "scan": "Scannen",
