@@ -77,6 +77,24 @@ def _invisible(text: str) -> int:
     return sum(1 for ch in text if any(lo <= ord(ch) <= hi for lo, hi in _BLOCKED))
 
 
+_SHOWS_NOTHING: re.Pattern | None = None
+
+
+def _keyword_text(text: str) -> str:
+    """#563 review (cross-PR): what the keyword rules read. Every character that shows nothing is taken out first:
+    UNI1b's table (zero-width space, word joiner, soft hyphen, variation selectors, tags, the blank braille
+    pattern...), ZWNJ and ZWJ, the direction marks and the bidi controls. Until UNI1b-3 a zero-width space that
+    split a keyword (`cu`, U+200B, `rl ... | sh`) was blocked on its own; now it is only counted, so the rules read
+    the word it splits. Only for matching: the text is stored as it is, and what it hides is still counted."""
+    global _SHOWS_NOTHING
+    if _SHOWS_NOTHING is None:
+        from server.orchestrator import untrusted
+        ranges = (*untrusted._HIDDEN, (0x200C, 0x200F), (0x061C, 0x061C), *_BLOCKED[:2])
+        _SHOWS_NOTHING = re.compile("[" + "".join(f"{re.escape(chr(lo))}-{re.escape(chr(hi))}" for lo, hi in ranges)
+                                    + "]")
+    return _SHOWS_NOTHING.sub("", text)
+
+
 @dataclass
 class Finding:
     rule: str
@@ -95,12 +113,13 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     """`kind`: text (a skill's instructions), skill_code (a skill's script), code (a package
     file), manifest (package.json)."""
     out: list[Finding] = []
+    words = _keyword_text(text)
     for rule in RULES:
         applies = (rule.where == "any" or rule.where == kind
                    or (rule.where == "code" and kind in ("code", "skill_code")))
         if not applies:
             continue
-        for n, line in _lines(text):
+        for n, line in _lines(words):
             if rule.pattern.search(line):
                 out.append(Finding(rule.id, rule.level, name, n, line.strip()[:160]))
                 break                       # one finding per rule per file is enough to show
@@ -108,7 +127,7 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
         hidden = _invisible(text)
         if hidden:
             out.append(Finding(HIDDEN_RULE, "high", name, 0, f"{hidden} tag or bidi control characters"))
-        if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", text):
+        if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", words):
             out.append(Finding("long_encoded_blob", "note", name, 0, "a long base64-like block"))
     return out
 
