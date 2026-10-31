@@ -957,7 +957,7 @@
       "orphaned": "Archivos huérfanos"
     },
     "import": {
-      "subtitle": "SKILL.md estándar, importado tal como está escrito (sin caracteres Tag; los demás invisibles se cuentan) — con control de licencia.",
+      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad; los caracteres invisibles se cuentan.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subruta (opcional)",
       "scan": "Escanear",
@@ -966,8 +966,9 @@
       "no_license": "SIN LICENCIA",
       "none_found": "No se encontraron archivos SKILL.md.",
       "scripts_n": "{{n}} scripts",
-      "hidden": "Caracteres invisibles: {{count}}",
-      "hiddenRuns": "Su texto tiene {{runs}}. Una serie así puede ocultar texto; la importación no se bloquea."
+      "hidden": "Caracteres invisibles en SKILL.md: {{count}}",
+      "hiddenRuns": "Su texto tiene {{runs}}. Una serie así puede ocultar texto.",
+      "hiddenMore": "y {{count}} más"
     },
     "filter": {
       "placeholder": "Filtrar lo que ya tienes…",

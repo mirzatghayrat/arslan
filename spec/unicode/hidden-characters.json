@@ -1,5 +1,179 @@
 {
- "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ, ZWNJ, LRM, RLM, ALM, one variation selector right after a visible character, a valid emoji tag sequence, and the bidi controls (UNI1a shows those with their own marker).",
+ "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ, ZWNJ, LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character that is not an ASCII letter (and is not white space, a control, a combining mark or a hidden character), or U+E0100-E01EF after a CJK ideograph (#586 review F1). Every other selector is marked.",
+ "rule": {
+  "hidden": [
+   [
+    173,
+    173
+   ],
+   [
+    847,
+    847
+   ],
+   [
+    4447,
+    4448
+   ],
+   [
+    6068,
+    6069
+   ],
+   [
+    6155,
+    6159
+   ],
+   [
+    8203,
+    8203
+   ],
+   [
+    8288,
+    8293
+   ],
+   [
+    8298,
+    8303
+   ],
+   [
+    10240,
+    10240
+   ],
+   [
+    12644,
+    12644
+   ],
+   [
+    65024,
+    65039
+   ],
+   [
+    65279,
+    65279
+   ],
+   [
+    65440,
+    65440
+   ],
+   [
+    65520,
+    65528
+   ],
+   [
+    113824,
+    113827
+   ],
+   [
+    119155,
+    119162
+   ],
+   [
+    917504,
+    921599
+   ]
+  ],
+  "run_ranges": [
+   [
+    "U+FE00\u2013FE0F",
+    65024,
+    65039
+   ],
+   [
+    "U+E0100\u2013E01EF",
+    917760,
+    917999
+   ],
+   [
+    "U+E0000\u2013E007F",
+    917504,
+    917631
+   ]
+  ],
+  "presentation_selectors": [
+   65038,
+   65039
+  ],
+  "ideographs": [
+   [
+    13312,
+    19903
+   ],
+   [
+    19968,
+    40959
+   ],
+   [
+    63744,
+    64255
+   ],
+   [
+    131072,
+    205743
+   ]
+  ],
+  "not_a_base": [
+   [
+    0,
+    32
+   ],
+   [
+    127,
+    160
+   ],
+   [
+    768,
+    879
+   ],
+   [
+    1564,
+    1564
+   ],
+   [
+    5760,
+    5760
+   ],
+   [
+    6832,
+    6911
+   ],
+   [
+    7616,
+    7679
+   ],
+   [
+    8192,
+    8207
+   ],
+   [
+    8232,
+    8239
+   ],
+   [
+    8287,
+    8303
+   ],
+   [
+    8400,
+    8447
+   ],
+   [
+    12288,
+    12288
+   ],
+   [
+    55296,
+    57343
+   ],
+   [
+    65056,
+    65071
+   ]
+  ],
+  "flags": [
+   "gbeng",
+   "gbsct",
+   "gbwls"
+  ]
+ },
  "cases": [
   {
    "name": "plain text",
@@ -36,6 +210,14 @@
    "text": "\u2764\ufe0f",
    "count": 0,
    "runs": []
+  },
+  {
+   "name": "two selectors after an emoji",
+   "text": "\u2764\ufe0f\ufe0f",
+   "count": 2,
+   "runs": [
+    "2 \u00d7 U+FE0F"
+   ]
   },
   {
    "name": "two variation selectors after a letter",
@@ -155,7 +337,7 @@
    "text": "a\udb40\udc41\udb40\udc42\udb40\udc43",
    "count": 3,
    "runs": [
-    "3 \u00d7 U+E0020\u2013E007F"
+    "3 \u00d7 U+E0000\u2013E007F"
    ]
   },
   {
@@ -185,6 +367,143 @@
     "U+2060",
     "14 \u00d7 U+E0100\u2013E01EF",
     "16 \u00d7 U+2800"
+   ]
+  },
+  {
+   "name": "VS16 after a Latin letter",
+   "text": "a\ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "another basic selector after a letter",
+   "text": "a\ufe01",
+   "count": 1,
+   "runs": [
+    "U+FE01"
+   ]
+  },
+  {
+   "name": "one supplementary selector after a Latin letter",
+   "text": "a\udb40\udd41",
+   "count": 1,
+   "runs": [
+    "U+E0141"
+   ]
+  },
+  {
+   "name": "one selector after each character (a spread payload)",
+   "text": "h\ufe01e\ufe02l\ufe03l\ufe04o\ufe05!\ufe06",
+   "count": 6,
+   "runs": [
+    "U+FE01",
+    "U+FE02",
+    "U+FE03",
+    "U+FE04",
+    "U+FE05",
+    "U+FE06"
+   ]
+  },
+  {
+   "name": "an ideographic variation selector after a CJK ideograph",
+   "text": "\u845b\udb40\udd00",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "the information sign with VS16",
+   "text": "\u2139\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "the keycap one",
+   "text": "1\ufe0f\u20e3",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "VS15 after a star",
+   "text": "\u2b50\ufe0e",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a character newer than Unicode 14 with VS16",
+   "text": "\ud83e\udee8\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a selector after a combining mark",
+   "text": "e\u0301\ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "the Scotland and Wales flags",
+   "text": "\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc77\udb40\udc6c\udb40\udc73\udb40\udc7f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "ASCII letters spelling a flag",
+   "text": "\ud83c\udff4gbeng\udb40\udc7f",
+   "count": 1,
+   "runs": [
+    "U+E007F"
+   ]
+  },
+  {
+   "name": "the combining grapheme joiner",
+   "text": "a\u034fb",
+   "count": 1,
+   "runs": [
+    "U+034F"
+   ]
+  },
+  {
+   "name": "a Khmer inherent vowel",
+   "text": "\u1780\u17b4",
+   "count": 1,
+   "runs": [
+    "U+17B4"
+   ]
+  },
+  {
+   "name": "a deprecated format character",
+   "text": "a\u206ab",
+   "count": 1,
+   "runs": [
+    "U+206A"
+   ]
+  },
+  {
+   "name": "an unassigned specials code point",
+   "text": "a\ufff0b",
+   "count": 1,
+   "runs": [
+    "U+FFF0"
+   ]
+  },
+  {
+   "name": "a shorthand format control",
+   "text": "a\ud82f\udca0b",
+   "count": 1,
+   "runs": [
+    "U+1BCA0"
+   ]
+  },
+  {
+   "name": "a musical format control",
+   "text": "a\ud834\udd73b",
+   "count": 1,
+   "runs": [
+    "U+1D173"
    ]
   }
  ]

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
  * Text from outside (a SKILL.md, a server's label, a registry entry) as the web shows it (v0.1.64 UNI1,
@@ -22,55 +23,76 @@ export const isolate = (text: string) => `\u2068${text.replace(BIDI_CONTROLS, ""
 const hex = (ch: string) => `U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
 const hexOf = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
 
-/** UNI1b: what a skill's text may hold that shows nothing at all, as the server's `untrusted.hidden_runs` has it
- *  (spec/unicode/hidden-characters.json holds the cases both pass): Unicode's default-ignorable code points and the
- *  blank braille pattern, but ZWNJ, ZWJ, LRM, RLM and ALM (ordinary text needs them) and the bidi controls (shown
- *  with their own marker above). */
-const HIDDEN: [number, number][] = [
+/** UNI1b: what a skill's text may hold that shows nothing at all, as the server's `untrusted.hidden_runs` has it:
+ *  Unicode's default-ignorable code points and the blank braille pattern, but ZWNJ, ZWJ, LRM, RLM and ALM (ordinary
+ *  text needs them) and the bidi controls (shown with their own marker above). Every table is explicit code point
+ *  ranges, never the Unicode database, so both sides agree whatever Unicode version each ships (#586 review F5);
+ *  spec/unicode/hidden-characters.json holds the same tables and the cases both pass. */
+export const HIDDEN: [number, number][] = [
   [0x00ad, 0x00ad], [0x034f, 0x034f], [0x115f, 0x1160], [0x17b4, 0x17b5], [0x180b, 0x180f], [0x200b, 0x200b],
   [0x2060, 0x2065], [0x206a, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfe00, 0xfe0f], [0xfeff, 0xfeff],
   [0xffa0, 0xffa0], [0xfff0, 0xfff8], [0x1bca0, 0x1bca3], [0x1d173, 0x1d17a], [0xe0000, 0xe0fff]];
 /** Runs of these show as one marker with their range: variation selectors, their supplement, and tags. */
-const RANGES: [string, number, number][] = [
-  ["U+FE00\u2013FE0F", 0xfe00, 0xfe0f], ["U+E0100\u2013E01EF", 0xe0100, 0xe01ef], ["U+E0020\u2013E007F", 0xe0000, 0xe007f]];
+export const RUN_RANGES: [string, number, number][] = [
+  ["U+FE00\u2013FE0F", 0xfe00, 0xfe0f], ["U+E0100\u2013E01EF", 0xe0100, 0xe01ef], ["U+E0000\u2013E007F", 0xe0000, 0xe007f]];
+/** #586 review F1: one selector goes uncounted only when it does what ordinary text uses one for: VS15 or VS16 after
+ *  a character that can take them (not an ASCII letter, not in NOT_A_BASE), or an ideographic variation selector
+ *  after a CJK ideograph. Every other selector is counted. */
+export const PRESENTATION_SELECTORS = [0xfe0e, 0xfe0f];
+export const IDEOGRAPHS: [number, number][] = [[0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xf900, 0xfaff], [0x20000, 0x323af]];
+/** White space, controls, the format marks left unmarked, the combining marks' blocks and surrogates. */
+export const NOT_A_BASE: [number, number][] = [
+  [0x0000, 0x0020], [0x007f, 0x00a0], [0x0300, 0x036f], [0x061c, 0x061c], [0x1680, 0x1680], [0x1ab0, 0x1aff],
+  [0x1dc0, 0x1dff], [0x2000, 0x200f], [0x2028, 0x202f], [0x205f, 0x206f], [0x20d0, 0x20ff], [0x3000, 0x3000],
+  [0xd800, 0xdfff], [0xfe20, 0xfe2f]];
 /** The tags of the three RGI subdivision flags (England, Scotland, Wales), after U+1F3F4 and before U+E007F. */
-const FLAG_TAGS = ["gbeng", "gbsct", "gbwls"];
-const VISIBLE = /[\p{L}\p{M}\p{N}\p{P}\p{S}]/u;
+export const FLAG_TAGS = ["gbeng", "gbsct", "gbwls"];
 
-const isHidden = (cp: number) => HIDDEN.some(([lo, hi]) => lo <= cp && cp <= hi);
-const rangeOf = (cp: number) => RANGES.find(([, lo, hi]) => lo <= cp && cp <= hi)?.[0] ?? null;
+const within = (cp: number, ranges: [number, number][]) => ranges.some(([lo, hi]) => lo <= cp && cp <= hi);
+const runRange = (cp: number) => RUN_RANGES.find(([, lo, hi]) => lo <= cp && cp <= hi)?.[0] ?? null;
 const isSelector = (cp: number) => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+
+function takesSelector(prev: number | undefined, selector: number): boolean {
+  if (prev === undefined) return false;
+  if (PRESENTATION_SELECTORS.includes(selector)) {
+    const asciiLetter = (prev >= 0x41 && prev <= 0x5a) || (prev >= 0x61 && prev <= 0x7a);
+    return !asciiLetter && !within(prev, NOT_A_BASE) && !within(prev, HIDDEN);
+  }
+  return selector >= 0xe0100 && selector <= 0xe01ef && within(prev, IDEOGRAPHS);
+}
 
 /** One run of characters that show nothing: where it starts (in code points) and what it holds. */
 export type HiddenRun = { start: number; cps: number[] };
 
 /** UNI1b: each run of characters that show nothing, in order. A run is one code point repeated, or characters of
- *  one range. Not counted: one variation selector right after a visible character (the red heart emoji's), and
- *  the tags of an RGI subdivision flag. */
+ *  one range. Not counted: one selector that does what ordinary text uses one for, and an RGI flag's tags. */
 export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
   const cps = [...(text ?? "")].map(ch => ch.codePointAt(0)!);
   const flagged = new Set<number>();
   cps.forEach((cp, i) => {
-    if (cp !== 0x1f3f4) return;
-    const tags = String.fromCharCode(...cps.slice(i + 1, i + 6).map(t => t - 0xe0000));
-    if (FLAG_TAGS.includes(tags) && cps[i + 6] === 0xe007f) for (let j = i + 1; j <= i + 6; j++) flagged.add(j);
+    const tags = cps.slice(i + 1, i + 6);
+    // #586 review F7: tag letters only (U+E0061-E007A); ASCII letters spelling a flag are not one.
+    if (cp === 0x1f3f4 && tags.length === 5 && tags.every(t => t >= 0xe0061 && t <= 0xe007a)
+        && FLAG_TAGS.includes(String.fromCharCode(...tags.map(t => t - 0xe0000))) && cps[i + 6] === 0xe007f) {
+      for (let j = i + 1; j <= i + 6; j++) flagged.add(j);
+    }
   });
   const runs: HiddenRun[] = [];
-  let open = false, prevVisible = false;
+  let open = false;
   cps.forEach((cp, i) => {
-    let hidden = !flagged.has(i) && isHidden(cp);
-    if (hidden && isSelector(cp) && prevVisible && !(i + 1 < cps.length && isSelector(cps[i + 1]))) hidden = false;
+    let hidden = !flagged.has(i) && within(cp, HIDDEN);
+    if (hidden && isSelector(cp) && !(i + 1 < cps.length && isSelector(cps[i + 1]))
+        && takesSelector(i ? cps[i - 1] : undefined, cp)) hidden = false;
     if (hidden) {
       const last = open ? runs[runs.length - 1]?.cps : undefined;
       const lastCp = last?.[last.length - 1];
-      if (last && lastCp !== undefined && (lastCp === cp || (rangeOf(cp) !== null && rangeOf(cp) === rangeOf(lastCp)))) {
+      if (last && lastCp !== undefined && (lastCp === cp || (runRange(cp) !== null && runRange(cp) === runRange(lastCp)))) {
         last.push(cp);
       } else {
         runs.push({ start: i, cps: [cp] });
       }
     }
     open = hidden;
-    prevVisible = !hidden && VISIBLE.test(String.fromCodePoint(cp));
   });
   return runs;
 }
@@ -79,7 +101,7 @@ export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
 export function hiddenLabel(cps: number[]): string {
   const one = hexOf(cps[0]);
   if (cps.length === 1) return one;
-  return `${cps.length} \u00d7 ${new Set(cps).size === 1 ? one : rangeOf(cps[0])}`;
+  return `${cps.length} \u00d7 ${new Set(cps).size === 1 ? one : runRange(cps[0])}`;
 }
 
 /** How many characters of `text` show nothing (the save card's notice). */
@@ -89,6 +111,7 @@ export const hiddenCount = (text: string | null | undefined) =>
 /** `text` as stored, with every reordering control shown as a marker (`U+202E`) instead of applied. Inline it is
  *  isolated (`<bdi>`) from the words around it; `block` (a whole box of its own, like a skill's text) is not. */
 export function Escaped({ text, block = false }: { text: string | null | undefined; block?: boolean }) {
+  const { t } = useTranslation();
   const chars = [...(text ?? "")];
   // UNI1b: each run of characters that show nothing becomes one marker in their place.
   const runAt = new Map(hiddenRuns(text).map(run => [run.start, run]));
@@ -99,7 +122,8 @@ export function Escaped({ text, block = false }: { text: string | null | undefin
     const run = runAt.get(i);
     if (run) {
       const label = hiddenLabel(run.cps);
-      marker(<span key={`h${i}`} data-testid="hidden-marker" title={label}
+      marker(<span key={`h${i}`} data-testid="hidden-marker" title={label} role="img"
+        aria-label={t("discover.hidden_marker", { label })}
         className="mx-px rounded bg-ask-soft px-1 font-mono text-[10px] text-ask">{label}</span>);
       i += run.cps.length - 1;
     } else if (REORDERING.test(chars[i])) {

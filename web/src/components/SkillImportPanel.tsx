@@ -131,7 +131,8 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
                 {/* UNI1b (the user's option B): which runs, as the markers show them; importing is not blocked. */}
                 {(s.hidden?.count ?? 0) > 0 && (
                   <p data-testid="import-hidden-runs" className="text-[10px] text-ask font-sans mt-0.5">
-                    {t('capabilities.import.hiddenRuns', { runs: s.hidden!.runs.join(', ') })}
+                    {t('capabilities.import.hiddenRuns', { runs: [s.hidden!.runs.join(', '), s.hidden!.more
+                      ? t('capabilities.import.hiddenMore', { count: s.hidden!.more }) : ''].filter(Boolean).join(' ') })}
                   </p>
                 )}
                 {(importErr[s.path] || (!s.importable && s.reason)) && (

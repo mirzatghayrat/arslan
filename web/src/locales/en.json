@@ -957,7 +957,7 @@
       "orphaned": "Orphaned files"
     },
     "import": {
-      "subtitle": "Standard SKILL.md files, imported as written (Tag characters removed, other invisible characters counted) — license-gated.",
+      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan; invisible characters are counted.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subpath (optional)",
       "scan": "Scan",
@@ -966,8 +966,9 @@
       "no_license": "NO LICENSE",
       "none_found": "No SKILL.md files found.",
       "scripts_n": "{{n}} scripts",
-      "hidden": "Invisible characters: {{count}}",
-      "hiddenRuns": "Its text has {{runs}}. A run like that can hide text; importing is not blocked."
+      "hidden": "Invisible characters in SKILL.md: {{count}}",
+      "hiddenRuns": "Its text has {{runs}}. A run like that can hide text.",
+      "hiddenMore": "and {{count}} more"
     },
     "filter": {
       "placeholder": "Filter what you have…",
