@@ -236,6 +236,26 @@ async def test_a_skill_with_its_own_permissive_license_imports_from_an_unlicense
     assert "(Apache-2.0, skills/theme-factory/LICENSE.txt)" in row.body
 
 
+async def test_the_listing_counts_what_a_skills_text_hides_and_says_what_the_scan_will_block(maker, monkeypatch):
+    """UNI1b: the import panel shows how many characters of a skill's text show nothing. #586 review F3: a skill the
+    import's scan will block (here a zero-width space) is listed as not importable, with the scan's reason; blank
+    padding alone is counted and still offered."""
+    padded = VALID_MD.replace("handoff", "padded") + "\nSign it" + "\u2800" * 16 + " done.\n"
+    zero_width = VALID_MD.replace("handoff", "zero") + "\nSign it and\u200b done.\n"
+    _mock_github(monkeypatch, tree=["a/SKILL.md", "b/SKILL.md", "c/SKILL.md"],
+                 raws={"a/SKILL.md": VALID_MD, "b/SKILL.md": padded, "c/SKILL.md": zero_width})
+    out = await skill_import.scan_skills("x/y")
+    by_path = {s["path"]: s for s in out["skills"]}
+    assert by_path["a/SKILL.md"]["hidden"] == {"count": 0, "runs": [], "more": 0}
+    assert by_path["b/SKILL.md"]["hidden"] == {"count": 16, "runs": ["16 \u00d7 U+2800"], "more": 0}
+    assert by_path["b/SKILL.md"]["importable"] is True
+    assert by_path["c/SKILL.md"]["hidden"]["count"] == 1
+    assert (by_path["c/SKILL.md"]["importable"], by_path["c/SKILL.md"]["reason"]) == (
+        False, "blocked by the safety check: invisible_characters")
+    with pytest.raises(ValueError, match="invisible_characters"):          # and the import says the same
+        await skill_import.import_skill("x/y", "c/SKILL.md")
+
+
 async def test_a_proprietary_skill_is_refused_on_import_too(maker, monkeypatch):
     _anthropic_like(monkeypatch)
     with pytest.raises(ValueError, match="not a permissive license"):

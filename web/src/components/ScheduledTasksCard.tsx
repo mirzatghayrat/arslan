@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import { ChevronRight, Plus, CalendarClock } from "lucide-react";
@@ -11,6 +11,7 @@ import type {
 import Select from "./Select";
 import EmptyState, { EmptyStateAction } from "./EmptyState";
 import { confirmSheet } from "./kit";
+import { Escaped, isolate } from "../lib/outsideText";
 
 /**
  * S3-M4 Diagnostics 定时任务卡 — list + create/edit form + execution history.
@@ -285,9 +286,13 @@ function TaskForm({
 interface Props {
   /** Open a run in RunReplay (wired to DiagnosisView's run overlay). */
   onOpenRun?: (runId: number) => void;
+  /** INB3: a dot on the task's row when it needs a look (the Scheduled page decides): red when it failed or paused itself. */
+  attention?: (task: ScheduledTaskDto) => "failing" | "look" | null;
+  /** INB3: shown under the task's runs when its row is open: its problem and what it could not do while you were away. */
+  details?: (task: ScheduledTaskDto) => ReactNode;
 }
 
-export default function ScheduledTasksCard({ onOpenRun }: Props) {
+export default function ScheduledTasksCard({ onOpenRun, attention, details }: Props) {
   const { t, i18n } = useTranslation();
   const [tasks, setTasks] = useState<ScheduledTaskDto[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -435,12 +440,15 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                       className="flex items-center gap-1 text-left text-foreground hover:text-primary transition-colors"
                       data-testid={`sched-expand-${task.id}`}
                       onClick={() => toggleExpand(task.id)}
-                      title={task.prompt}
+                      title={isolate(task.prompt)}
                     >
                       <ChevronRight
                         className={`w-3 h-3 shrink-0 text-subtle-foreground transition-transform${expanded === task.id ? " rotate-90" : ""}`}
                       />
-                      <span className="diag-table__spawn">{task.name}</span>
+                      <span className="diag-table__spawn"><Escaped text={task.name} /></span>
+                      {attention?.(task) && <span role="img" aria-label={t(attention(task) === "failing" ? "scheduledPage.failing" : "scheduledPage.attention")}
+                        data-testid={`sched-attention-${task.id}`} data-tone={attention(task)}
+                        className={`h-2 w-2 shrink-0 rounded-full ${attention(task) === "failing" ? "bg-danger" : "bg-warning"}`} />}
                     </button>
                   </td>
                   <td>
@@ -503,7 +511,7 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                           data-testid={`sched-delete-${task.id}`}
                           onClick={() => void (async () => {
                             // 0.1.55: the one confirm sheet (it was an inline yes/no in this row).
-                            if (await confirmSheet({ title: t("confirm.taskTitle", { name: task.name }), body: t("confirm.taskBody"),
+                            if (await confirmSheet({ title: t("confirm.taskTitle", { name: isolate(task.name) }), body: t("confirm.taskBody"),
                               action: t("confirm.delete") })) await doDelete(task.id);
                           })()}
                         >
@@ -561,6 +569,7 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                           </table>
                         )}
                       </div>
+                      {details?.(task)}
                     </td>
                   </tr>
                 )}

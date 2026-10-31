@@ -139,7 +139,6 @@ The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR be
   - INB3–INB7, in one link (②Main);
   - SEC1 (⑤CAP);
   - CAP5a's review row (⑤CAP).
-- SBX-M on your Mac: run `scripts/dev/sbx_m.sh` from the repository root (#575; about 10–20 minutes) and paste the three lines it prints.
 - The decisions under "Waiting on the user" below.
 
 **Under review or on hold (don't merge these):**
@@ -171,22 +170,7 @@ The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR be
 - **(Done: the load flakes below are LOAD4, #551.)** Earlier note: `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
 - **SBX-2's any-declared network mode can't hold a port deny (explained; recorded on #507):** on macOS 26.6.2 the profile compiler drops a `localhost:<port>` deny for about 7.8% of ports when `*:*` is also allowed, and an IPv4-mapped connect passes it at every port. Proxy and port-22 modes hold. **Released v0.1.63 isn't affected:** no shipped profile denies a TCP port, and every path-based network deny was checked by bytecode diff and a runtime connect (#507, with file:line). SBX-2 isn't wired, so nobody is exposed. Codex's fail-closed fix is merged (#570, `dc926523`: any-declared refuses `denied_ports`), and its follow-up is #574 with #576. **Your call:** whether any-declared stays a mode at all, together with the listening decision. Also from it: Seatbelt's `localhost` matches the Mac's LAN IP.
 - **An SBX-2 deny that let a connection through once (③Hands, on macOS 26.6.2; since #570 the any-declared case is a build-time refusal, and the SBX-M loop measures the proxy and port-22 cases):** `test_sbx2_kernel.py::test_listener_refusal_and_arslan_port_exclusion[any-declared-default-deny]` connected to a denied port (errno 0) once in a 14-minute run, and passed 4 of 4 alone. It goes into SBX-M as a repeat loop (hundreds of runs, each errno recorded, and a check that the connecting process was the sandboxed one). What follows is your call once that's measured.
-- **Read as covered by 「全按推荐」, ④参谋 confirming with you:** the INB card's eleven questions below, K10 + L11's D1–D5 (#573), and ③Hands' flag that every local full-suite run on this Mac also runs the `sbx_mac` corpus (recommended: opt-in locally; CI's macOS job unchanged). Also the skills from before CAP4's checks: that question had no recommendation, so 「全按推荐」 doesn't settle it. ④参谋 and ⓪Plan read "mainstream, no over-defence" as no one-time rescan, as Claude Code and Codex don't rescan installed skills; they keep their origin mark and stay deletable. Until you confirm, the lanes don't build on these answers.
-- **The INB card's open questions** (`INB-inbox-progress.md`, "开工前要用户定的"; ②Main holds the INB pieces that depend on them, and INB3's server half and its page mock go ahead). ⓪Plan's recommendations are the card's own:
-  1. Bridge frames: `done_unseen` on `conversations.result` for phones that say they support it, and a four-line brief plus "needs you" on `status.snapshot` under Quick Chat. Both can wait; they don't block the Mac side.
-  2. iPhone notifications: only "needs you" items, so the phone no longer sounds when something finishes (①iOS asked for this to be asked on its own).
-  3. The Mac stops popping "done" notifications too, and web-page and folder-change ones. And during Do Not Disturb, does an approval card still pop?
-  4. Sensitive keywords: add a "family" category, with ⓪Plan listing the words in the PR for you to check. Any other category?
-  5. The run receipt in v0.1.64 covers only runs you weren't present for (background, scheduled, sub-sessions). Runs you were present for come later, with bench numbers (recommended).
-  6. A scheduled task's "what done looks like": written at the start of each run, with no migration (recommended), or stored when the task is created (a new column).
-  7. Once the Inbox's three tabs go: snoozed and handled reminders show on their own rows in the scheduled-tasks page and in the conversation, as "snoozed until …" or "handled", with no separate list (recommended).
-  8. "Not done while you were away" counts as handled when it's older than your last visit (recommended; no ledger change), or by a new "handled" mark on `approval_events`.
-  9. The morning report setting goes, replaced by the progress page's four-line brief.
-  10. The four-line brief uses template sentences in v0.1.64, with no model call (recommended).
-  11. A learned practice is paused after 3 failures in a row, as scheduled tasks are (recommended).
-  (12, who does INB3–INB9, is ⓪Plan's to settle: ②Main keeps them.) INB3, INB4, INB5 and INB7 are new web UI, so each also needs your OK on a mock first. **INB3's page mock is ready** (②Main, a private link sent to you): the sidebar entry with a dot, task rows with their runs and away-refusals, a paused task with Continue, the watches, the muted list and "check now". It notes that "Always allow" doesn't apply to scheduled runs. INB3's server half is #568.
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
-- **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
 
@@ -274,6 +258,25 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - **INB2 and skills:** kept as is. After a skill read, "about you" memories wait for the user. A stated limit.
 - **UNI1b:** option B of ⑤CAP's mock.
 - **The standing rule, repeated:** follow mainstream agent products, and don't over-defend (`docs/sessions.md` §12).
+
+**Decided on 2026-10-31, about 14:45 UTC (user, relayed by ④参谋).** The user's words: 「都按推荐」, after the four items that were "to confirm".
+- **The INB card's questions 1–11:** as the card recommends. For the two that had no card recommendation:
+  - Q3: during Do Not Disturb or Focus, approval cards don't pop. They wait in the conversation and the badge still shows, as Claude's and Codex's desktop notifications follow Focus.
+  - Q4: only a "family" category is added for now.
+- **K10 + L11, D1–D5 (#573):** as recommended.
+  - The classifier doesn't see folder rules.
+  - "Make this a rule" writes the folder's `AGENTS.md`.
+  - Folder rules count as outside content, except a file exactly as the user added it.
+  - There is no global file.
+  - A file's language defaults to the user's message.
+- **The `sbx_mac` corpus:** opt-in for local full-suite runs. CI's macOS job is unchanged (③Hands).
+- **Skills from before CAP4's checks:** left as they are, with no one-time rescan. This is now the user's decision.
+
+**SBX-M ran on 2026-10-31** (the user, at main `ef6283b2`, macOS 26.6.2 25G83).
+- The corpus: 293 cases, 293 passed; 101 rows need a look.
+- The listener loop: 30/30 in each mode.
+- The report is `SBX-measurement.md` (③Hands, in progress).
+- Two boundary-open rows, the hard-link measurement on today's shipped bases, get an effort=max assessment of whether v0.1.63 is affected (⓪Plan). Details stay on the card and PR.
 
 ## Spend
 

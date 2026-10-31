@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { File, Globe, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { OPEN_ARTIFACT, restoreDock, saveDock, validArtifact, type DockTab } from "../lib/workDock";
+import { useWorkbench } from "../stores/workbenchStore";
 import BrowserReader from "./BrowserReader";
 import ArtifactPreview from "./ArtifactPreview";
 
@@ -70,11 +71,19 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     window.addEventListener(OPEN_ARTIFACT, openFile);
     return () => window.removeEventListener(OPEN_ARTIFACT, openFile);
   }, [tabs, temporary, onOpen, embedded]);
-  function addBrowser() {
+  function addBrowser(startUrl?: string) {
     if (tabs.length >= 8) { setLimit(true); return; }
     const id = crypto.randomUUID();
-    setTabs(old => [...old, { id, kind: "browser", conversationId, taskId, temporary }]); setSelected(id); setLimit(false);
+    setTabs(old => [...old, { id, kind: "browser", conversationId, taskId, temporary, ...(startUrl ? { startUrl } : {}) }]);
+    setSelected(id); setLimit(false);
   }
+  // DIFF2: a PR's link from Overview opens in a new browser tab here (the user's pick: the workbench's Browser tab).
+  const pendingUrl = useWorkbench((s) => s.pendingUrl);
+  useEffect(() => {
+    if (!embedded || !pendingUrl) return;
+    const url = useWorkbench.getState().takeUrl();
+    if (url) addBrowser(url);
+  }, [embedded, pendingUrl]);   // eslint-disable-line react-hooks/exhaustive-deps -- addBrowser reads this render's tabs
   function resize(value: number) { setWidth(Math.max(300, Math.min(760, window.innerWidth - 360, value))); }
   function moveTab(event: React.KeyboardEvent, index: number) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -95,13 +104,13 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
             onClick={() => setTabs(old => old.filter(item => item.id !== tab.id))}><X size={13} /></button>
         </div>)}
       </div>
-      <button className="shrink-0 rounded p-2 hover:bg-surface" onClick={addBrowser} aria-label={t("dock.newBrowser")}><Plus size={16} /></button>
+      <button className="shrink-0 rounded p-2 hover:bg-surface" onClick={() => addBrowser()} aria-label={t("dock.newBrowser")}><Plus size={16} /></button>
     </div>
     {limit && <p role="alert" className="p-3 text-xs text-destructive">{t("dock.tabLimit")}</p>}
     {!tabs.length && <div className="space-y-4 p-5 text-sm text-muted-foreground"><p>{t("dock.empty")}</p>
-      <button className="rounded-lg border border-border px-3 py-2 text-foreground" onClick={addBrowser}>{t("dock.newBrowser")}</button></div>}
+      <button className="rounded-lg border border-border px-3 py-2 text-foreground" onClick={() => addBrowser()}>{t("dock.newBrowser")}</button></div>}
     {tabs.map(tab => tab.kind === "browser" && <div key={tab.id} role="tabpanel" hidden={tab.id !== selected} className="min-h-0 flex-1 overflow-hidden">
-      <BrowserReader conversationId={tab.conversationId} taskId={tab.taskId}
+      <BrowserReader conversationId={tab.conversationId} taskId={tab.taskId} startUrl={tab.startUrl}
         onTitle={title => setTabs(old => old.map(item => item.id === tab.id && item.kind === "browser" ? { ...item, title } : item))} />
     </div>)}
   </div>;
@@ -127,7 +136,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
       onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(window.innerWidth - event.clientX); }}
       onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)} />}
     <header className="flex items-center gap-2 border-b border-border p-3"><h2 className="min-w-0 flex-1 text-sm font-semibold">{t("dock.title")}</h2>
-      <button className="rounded p-1.5 hover:bg-surface" onClick={addBrowser} aria-label={t("dock.newBrowser")}><Plus size={17} /></button>
+      <button className="rounded p-1.5 hover:bg-surface" onClick={() => addBrowser()} aria-label={t("dock.newBrowser")}><Plus size={17} /></button>
       <button className="rounded p-1.5 hover:bg-surface" onClick={onClose} aria-label={t("dock.close")}><X size={17} /></button>
     </header>
     <div role="tablist" aria-label={t("dock.tabs")} className="flex shrink-0 overflow-x-auto border-b border-border">
@@ -142,7 +151,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
       </div>)}
     </div>
     {limit && <p role="alert" className="p-3 text-xs text-destructive">{t("dock.tabLimit")}</p>}
-    {!tabs.length && <div className="space-y-4 p-5 text-sm text-muted-foreground"><p>{t("dock.empty")}</p><button className="rounded-lg border border-border px-3 py-2 text-foreground" onClick={addBrowser}>{t("dock.newBrowser")}</button></div>}
+    {!tabs.length && <div className="space-y-4 p-5 text-sm text-muted-foreground"><p>{t("dock.empty")}</p><button className="rounded-lg border border-border px-3 py-2 text-foreground" onClick={() => addBrowser()}>{t("dock.newBrowser")}</button></div>}
     {tabs.map(tab => <div key={tab.id} role="tabpanel" id={`dock-content-${tab.id}`} aria-labelledby={`dock-tab-${tab.id}`}
       hidden={tab.id !== selected} className="min-h-0 flex-1 overflow-hidden">
       {tab.kind === "browser" ? <div className="flex h-full min-h-0 flex-col">
