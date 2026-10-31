@@ -33,13 +33,21 @@ def _r(rule_id, level, where, pattern, flags=re.I):
     return Rule(rule_id, level, where, re.compile(pattern, flags))
 
 
-#: A download from a link followed by running or installing it, a shell or PowerShell fed a download (`$(curl …)`,
-#: `<(curl …)`, `iwr … | iex`), or making a download executable. The sentences it must find and must not are in
-#: tests/server/test_capability_scan_rules.py only (the card: CAP4).
+#: A download from a link followed by running or installing it; a shell, `eval`, `source` or `.` fed a download
+#: (`bash -c "$(curl …)"`, `bash <(curl …)`, `eval "$(curl …)"`); PowerShell fed one (`iwr … | iex`); an interpreter
+#: one-liner that fetches a link and runs what it got (`python -c`, `node -e`, `ruby -e`, `perl -e` with a link and
+#: exec, eval, system, popen or spawn); or making a download executable. A plain capture (`TOKEN=$(curl …)`) is not
+#: one: it makes the download a string (#563 review 1). Known cost of a line-wise keyword rule (#563 review 2-4): a
+#: link and `chmod +x` on one line read as a download made executable, even when the link is a manual page; missed
+#: are a verb before the link ("run the script you download from …"), other nouns ("the code at …"),
+#: `Invoke-WebRequest -OutFile` then running the file, another downloader (aria2c), and a command split over lines.
+#: The sentences it must find and must not are in tests/server/test_capability_scan_rules.py only (the card: CAP4).
 _DOWNLOAD_AND_RUN = (r"\b(download|fetch|grab)\b[^\n]{0,160}https?://\S+[^\n]{0,120}\b(run|execute|launch|install)\b"
                      r"|\b(run|execute|launch)\b[^\n]{0,60}\b(installer|binary|executable)\b[^\n]{0,60}https?://"
-                     r"|[$<]\(\s*(curl|wget)\b"
+                     r"|\b((ba|z)?sh|eval|source)\b[^\n]{0,40}[$<]\(\s*(curl|wget)\b|(^|[\s;&|])\.\s+<\(\s*(curl|wget)\b"
                      r"|\b(iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]{0,200}\|\s*iex\b"
+                     r"|\b(python[0-9.]*|node|ruby|perl)\s+-[ce]\s(?=[^\n]{0,400}https?://)"
+                     r"(?=[^\n]{0,400}\b(exec|eval|system|popen|spawn)\s*\()"
                      r"|\bchmod\s+\+x\b[^\n]{0,200}https?://|https?://[^\n]{0,200}\bchmod\s+\+x\b")
 
 
