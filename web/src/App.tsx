@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
-import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
+import { AnswerGuardScope, ConfirmHost, ToastHost, toast as showToast, useAnswerGuardState } from "./components/kit";
 import ShellPolicySwitchNotice from "./components/ShellPolicySwitchNotice";
 import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
@@ -120,6 +120,9 @@ export default function App() {
   // thread is active when its fetch RESOLVES, not the one that was active when
   // it started.
   const activeThreadIdRef = useRef(activeThreadId);
+  // INB5b: one answer guard for the ask slot and the conversation under it (what wasn't done while you were away sits on top of the
+  // messages), so one gesture answers one thing across the two.
+  const answerGuard = useAnswerGuardState();
   activeThreadIdRef.current = activeThreadId;
 
   // A clicked desktop notification asks for its conversation (0.1.41). Refs keep
@@ -738,6 +741,7 @@ export default function App() {
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* 0.1.55: every pending ask in ONE slot, queued "‹ 1 / 3 ›" (they used to
                 render into the same absolute spot and overlap). Same frames, same answers. */}
+            <AnswerGuardScope value={answerGuard}>
             {activeSection === 'arslan' && <AskSlot send={wsSend} />}
 
             {activeSection === 'arslan' && (
@@ -774,6 +778,7 @@ export default function App() {
               />
               </div>
             )}
+            </AnswerGuardScope>
 
             {activeSection === 'capabilities' && (
               // The primary config is the one that answers; falling back to the
