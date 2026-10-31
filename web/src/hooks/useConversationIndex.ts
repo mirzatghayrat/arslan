@@ -43,8 +43,8 @@ export function useConversationIndex(intervalMs = 8000, section: string | null =
     if (!openId || !visible) { marked.current = null; return; }
     if (!known) return;
     const prior = marked.current;
+    marked.current = { id: openId, state: openState };       // what it reads now, marked or not, so the next reply or card marks again
     if (prior?.id === openId && (prior.state === openState || !ATTENTION.has(openState ?? ""))) return;
-    marked.current = { id: openId, state: openState };
     api.markConversationSeen(openId).then(() => setMeta((all) => all[openId]?.state !== "done_unseen" ? all
       : { ...all, [openId]: { ...all[openId], state: all[openId].kind === "task" ? "done" : "idle" } }),
     () => { marked.current = null; /* tried again after the next poll */ });

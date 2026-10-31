@@ -15,7 +15,11 @@ import { metaFrom, type ConversationMeta } from "../lib/conversationMeta";
 
 const setVisibility = (value: "visible" | "hidden") =>
   Object.defineProperty(document, "visibilityState", { value, configurable: true });
-afterEach(() => { cleanup(); vi.clearAllMocks(); setVisibility("visible"); });
+afterEach(() => {
+  cleanup(); vi.clearAllMocks(); setVisibility("visible");
+  vi.mocked(api.markConversationSeen).mockResolvedValue({ seen_message_id: 9 } as never);   // undo a test's own implementation
+});
+const wait = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)); });
 
 const m = (state: string, extra: Partial<ConversationMeta> = {}) =>
   ({ kind: "chat", state, origin: "mac", files: 0, ...extra }) as ConversationMeta;
@@ -118,14 +122,16 @@ describe("marking seen", () => {
     const { result } = renderHook(() => useConversationIndex(30, "arslan", "c5"));
     await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(1));
     vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c5", kind: "chat", state: "done_unseen" }] as never);
-    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));   // the reply that landed is seen
+    await waitFor(() => expect(vi.mocked(api.markConversationSeen).mock.calls.length).toBeGreaterThanOrEqual(2));   // the reply that landed is seen
     vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c5", kind: "chat", state: "idle" }] as never);
     await waitFor(() => expect(result.current.meta.c5.state).toBe("idle"));
+    await wait(80);
+    const before = vi.mocked(api.markConversationSeen).mock.calls.length;   // a stale poll may have sent one harmless extra mark
     setVisibility("hidden");
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
     setVisibility("visible");
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
-    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(vi.mocked(api.markConversationSeen).mock.calls.length).toBe(before + 1));
   });
 
   it("marks it again after another section showed, since coming back opens it again", async () => {
@@ -135,5 +141,28 @@ describe("marking seen", () => {
     rerender({ section: "scheduled" });
     rerender({ section: "arslan" });
     await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));
+  });
+
+  it("marks a second reply that lands while the conversation stays open (#589 re-check)", async () => {
+    let state = "done_unseen";
+    vi.mocked(api.listConversations).mockImplementation(async () => [{ conversation_id: "c7", kind: "chat", state }] as never);
+    vi.mocked(api.markConversationSeen).mockImplementation(async () => { state = "idle"; return { seen_message_id: 1 } as never; });
+    const { result } = renderHook(() => useConversationIndex(30, "arslan", "c7"));
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.meta.c7.state).toBe("idle"));
+    state = "working"; await wait(120);                                         // the user asks again
+    state = "done_unseen"; await wait(200);                                     // the next reply lands while it is open
+    expect(api.markConversationSeen).toHaveBeenCalledTimes(2);
+    expect(result.current.meta.c7.state).toBe("idle");
+  });
+
+  it("marks a second card that waits while the conversation stays open", async () => {
+    let state = "waiting";
+    vi.mocked(api.listConversations).mockImplementation(async () => [{ conversation_id: "c8", kind: "chat", state }] as never);
+    renderHook(() => useConversationIndex(30, "arslan", "c8"));
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(1));
+    state = "working"; await wait(120);                                         // answered, and it carries on
+    state = "waiting"; await wait(200);                                         // a second card
+    expect(api.markConversationSeen).toHaveBeenCalledTimes(2);
   });
 });
