@@ -64,19 +64,30 @@ async def _latest_not_asked(db: AsyncSession, decided_by: str, hours: int) -> di
     return dict(rows.all())
 
 
-async def waiting_conversations(db: AsyncSession) -> set[str]:
-    """The conversations waiting on you, before projects and tasks group them."""
+async def waiting_reasons(db: AsyncSession) -> dict[str, str]:
+    """The conversations waiting on you, before projects and tasks group them, and what each waits on (INB5b-3, #590's re-check):
+    "card" when a card is open or one went unanswered while you were away, "reminder" when a job that stopped left one. A card wins:
+    it is a decision, the reminder an offer."""
     pending = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
     away = await _latest_not_asked(db, "away", AWAY_HOURS)
     seen = dict((await db.execute(select(ConversationSeen.conversation_id, ConversationSeen.seen_at)
                                   .where(ConversationSeen.conversation_id.in_(list(away))))).all()) if away else {}
-    candidates = {cid for cid, latest in away.items() if cid not in seen or latest > seen[cid]}
-    candidates |= set((await db.execute(select(ProactiveItem.conversation_id).where(
+    unanswered = {cid for cid, latest in away.items() if cid not in seen or latest > seen[cid]}
+    reminders = set((await db.execute(select(ProactiveItem.conversation_id).where(
         ProactiveItem.kind == "job_followup", ProactiveItem.status.in_(OPEN),
         ProactiveItem.conversation_id.is_not(None)))).scalars())
+    candidates = unanswered | reminders
     existing = set((await db.execute(select(ArslanMessage.conversation_id).distinct()
                                      .where(ArslanMessage.conversation_id.in_(list(candidates))))).scalars()) if candidates else set()
-    return pending | existing
+    reasons = dict.fromkeys(pending, "card")
+    for cid in existing:
+        reasons.setdefault(cid, "card" if cid in unanswered else "reminder")
+    return reasons
+
+
+async def waiting_conversations(db: AsyncSession) -> set[str]:
+    """The conversations waiting on you, before projects and tasks group them."""
+    return set(await waiting_reasons(db))
 
 
 async def waiting_on_user(db: AsyncSession) -> Waiting:

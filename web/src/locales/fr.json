@@ -782,6 +782,7 @@
     "fromPhone": "Lancé depuis l’iPhone",
     "glyph": {
       "waiting": "Attend ton accord",
+      "waiting_reminder": "Un travail arrêté t’a laissé un rappel",
       "remote": "Remote · ton iPhone",
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",

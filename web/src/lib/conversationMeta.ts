@@ -19,6 +19,9 @@ export interface ConversationMeta {
   lastAt?: string | null;
   /** SB1-2: pinned to the top of the sidebar (the server's record). */
   pinned?: boolean;
+  /** INB5b-3: what a waiting row waits on: a card (a decision) or a stopped job's reminder (an offer). Unset when it does not wait, or
+   *  on an older server, which reads as a card. */
+  waitingOn?: "card" | "reminder";
 }
 
 // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
@@ -49,6 +52,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
       projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null,
       lastAt: typeof row.last_at === "string" && row.last_at ? utcIso(row.last_at) : null,
       pinned: row.pinned === true,
+      ...(row.state === "waiting" && (row.waiting_on === "card" || row.waiting_on === "reminder") ? { waitingOn: row.waiting_on } : {}),
     };
   }
   return out;

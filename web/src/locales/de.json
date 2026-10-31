@@ -782,6 +782,7 @@
     "fromPhone": "Vom iPhone gestartet",
     "glyph": {
       "waiting": "Wartet auf deine Freigabe",
+      "waiting_reminder": "Ein angehaltener Auftrag hat dir eine Erinnerung hinterlassen",
       "remote": "Remote · dein iPhone",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
