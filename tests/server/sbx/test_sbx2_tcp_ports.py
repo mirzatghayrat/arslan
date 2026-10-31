@@ -17,27 +17,33 @@ MODES = (NetworkMode.PROXY, NetworkMode.PORT_22)
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_tcp_port_denies_have_no_overlapping_remote_allow(mode):
+def test_tcp_port_denies_follow_the_complete_allow_list(mode):
     options = {"network": mode}
     if mode == NetworkMode.PROXY:
         options["proxy_port"] = PROXY_PORT
-    for ports in (PORTS, (22,)):
+    for ports in (PORTS, (22,), ()):
         if mode == NetworkMode.PORT_22 and 22 in ports:
             with pytest.raises(ValueError, match="port-22 cannot exclude port 22"):
                 default_deny_profile(**options, denied_ports=ports)
             continue
         text = default_deny_profile(**options, denied_ports=ports)
-        allows = re.findall(r'^\(allow network-outbound \(remote tcp "([^:"]+):([^"]+)"\)\)$',
-                            text, re.M)
-        denies = re.findall(r'^\(deny network-outbound \(remote tcp "localhost:(\d+)"\)\)$',
-                            text, re.M)
-        required = ("localhost", str(PROXY_PORT)) if mode == NetworkMode.PROXY else ("*", "22")
-        assert ("localhost", "*") in allows and required in allows, "load-bearing TCP allow missing"
-        assert set(map(int, denies)) == set(ports), "requested TCP port deny missing"
-        for denied in denies:
-            assert not any(host != "localhost" and port in ("*", denied) for host, port in allows), (
-                f"non-localhost TCP allow overlaps denied port {denied}: {allows}"
-            )
+        lines = [line.strip() for line in text.splitlines()]
+        # Select every network grant, regardless of filters or operation spelling.
+        # A future Unix-socket grant must explicitly update this reviewed list too.
+        allows = [(i, line) for i, line in enumerate(lines)
+                  if re.match(r"\(allow\s+[^()]*\bnetwork", line)]
+        destination = f"localhost:{PROXY_PORT}" if mode == NetworkMode.PROXY else "*:22"
+        assert [line for _, line in allows] == [
+            '(allow network-outbound (remote tcp "localhost:*"))',
+            f'(allow network-outbound (remote tcp "{destination}"))',
+        ], "complete network allow list changed"
+        denies = [(i, line) for i, line in enumerate(lines)
+                  if re.match(r"\(deny\s+network-outbound\s+\(remote\s+tcp\b", line)]
+        assert [line for _, line in denies] == [
+            f'(deny network-outbound (remote tcp "localhost:{port}"))'
+            for port in sorted(set(ports))
+        ], "requested TCP port deny missing or changed"
+        assert all(i > allows[-1][0] for i, _ in denies), "TCP denies must follow all network allows"
 
 
 @pytest.mark.parametrize("ports", [(22,), (443, 22)])
@@ -82,7 +88,8 @@ def test_tcp_port_denies_survive_compilation(mode):
     text = default_deny_profile(**options)
     baseline = _compile_profile(text)
     assert baseline == _compile_profile(text), "compiler output is not deterministic"
-    ports = (*PORTS, 22) if mode == NetworkMode.PROXY else PORTS
+    # About 1,000 ports per mode, retaining every known regression port.
+    ports = sorted(set(PORTS) | set(range(1, 65536, 65)) | ({22} if mode == NetworkMode.PROXY else set()))
     for port in ports:
         denied = _compile_profile(default_deny_profile(**options, denied_ports=[port]))
         assert denied != baseline, f"{mode.value} compiler dropped deny for port {port}"

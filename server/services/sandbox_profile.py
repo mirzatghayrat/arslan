@@ -12,10 +12,10 @@ which no product caller reaches and SBX-4 deletes.
 
 What every profile relies on:
 
-- Rule order matters for the tested path rules, but TCP port-deny survival depends on the exact
-  set of TCP allows, not only on `*:*`. Proxy and port-22 are measured to hold on macOS 26.6.2
-  only with their allow pairs as built below. See #570, comment 6538778801; source order alone
-  is not an enforcement guarantee. Compile checks complement real-kernel checks.
+- Rule order matters for path and TCP rules alike (deny after allow), but for TCP port denies
+  it is not enough: survival also depends on the exact set of TCP allows, not only on `*:*`.
+  Proxy and port-22 are measured to hold on macOS 26.6.2 only with their allow pairs as built
+  below. See #574, comment 6543830944. Compile checks complement real-kernel checks.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
 - A path is written as an SBPL string (`sbpl_string`): its own UTF-8, with `\\` and `"` escaped, so a
   folder name cannot add rules, and control characters as `\\xHH`. sandbox-exec decodes those but

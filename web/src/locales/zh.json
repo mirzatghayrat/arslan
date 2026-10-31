@@ -959,7 +959,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,按原文导入(去掉隐藏字符)——许可证把关。",
+      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描;看不见的字符会数出来。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",
@@ -967,7 +967,10 @@
       "imported": "已导入",
       "no_license": "无许可证",
       "none_found": "没有找到 SKILL.md 文件。",
-      "scripts_n": "{{n}} 个脚本"
+      "scripts_n": "{{n}} 个脚本",
+      "hidden": "SKILL.md 里看不见的字符:{{count}} 个",
+      "hiddenRuns": "它的文字里有 {{runs}}。成串的这种字符可以藏住文字。",
+      "hiddenMore": "以及另外 {{count}} 种"
     },
     "filter": {
       "placeholder": "在已有的里面找…",

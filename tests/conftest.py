@@ -22,7 +22,8 @@ from tests import real_data_dir_guard
 _SUITE_HOME = real_data_dir_guard.pin_suite_home()
 real_data_dir_guard.forbid_real_secret_folder()   # no open under the real ~/.arslan (incident 2026-10-24)
 
-import shutil  # noqa: E402 — after the HOME pin, on purpose
+import re  # noqa: E402 — after the HOME pin, on purpose
+import shutil  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pytest  # noqa: E402
@@ -385,14 +386,37 @@ _REAL_NETWORK_RUNNERS = (
 )
 
 
+_SBX_MAC_NAMED = re.compile(r"\b(sbx_mac|macos)\b")
+_SBX_MAC_LEFT_OUT = pytest.StashKey[int]()
+
+
+def pytest_addoption(parser):
+    parser.addoption("--sbx-mac", action="store_true", default=False,
+                     help="also run the SBX-M corpus (tests marked sbx_mac); -m sbx_mac or -m macos select it too")
+
+
+def _sbx_mac_opted_in(config) -> bool:
+    """The sbx_mac corpus runs real-seatbelt probes against the user's own session (launchd, preferences, the
+    keychain's reachability), so a local run leaves it out unless it asks (the user, 2026-10-31): `-m` naming
+    `sbx_mac` or `macos` (CI's macOS step and the SBX-M runbook; the expression then decides), or `--sbx-mac`."""
+    return bool(config.getoption("sbx_mac") or _SBX_MAC_NAMED.search(config.getoption("markexpr") or ""))
+
+
 @pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(items):
-    """Mark the live runners `real_network`. First, so the marker is there before `-m` selects."""
+def pytest_collection_modifyitems(config, items):
+    """Mark the live runners `real_network`. First, so the marker is there before `-m` selects. Then leave out
+    the sbx_mac corpus unless the run asked for it (`_sbx_mac_opted_in`)."""
     root = Path(__file__).resolve().parents[1]
     runners = {(root / relative).resolve() for relative in _REAL_NETWORK_RUNNERS}
     for item in items:
         if item.path.resolve() in runners:
             item.add_marker(pytest.mark.real_network)
+    if not _sbx_mac_opted_in(config):
+        left_out = [item for item in items if item.get_closest_marker("sbx_mac")]
+        if left_out:
+            config.hook.pytest_deselected(items=left_out)
+            items[:] = [item for item in items if not item.get_closest_marker("sbx_mac")]
+        config.stash[_SBX_MAC_LEFT_OUT] = len(left_out)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -428,6 +452,10 @@ def pytest_terminal_summary(terminalreporter):
     HOME was this session's own dir throughout, so no test reached that folder through it;
     what appears there is the running app's (an agent task, its databases' -wal/-shm) or
     another process's. Failing on it (#380) failed every local run while the app was open."""
+    left_out = terminalreporter.config.stash.get(_SBX_MAC_LEFT_OUT, 0)     # this process's collection (not xdist's)
+    if left_out:
+        terminalreporter.write_line(f"{left_out} sbx_mac cases left out (the SBX-M corpus): "
+                                    "opt in with -m sbx_mac or --sbx-mac")
     changed = real_data_dir_guard.created(_REAL_WORKSPACE_AT_START,
                                           real_data_dir_guard.workspace_snapshot())
     if not changed:

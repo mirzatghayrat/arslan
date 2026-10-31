@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, FolderOpen, Plug, Smartphone } from "lucide-react";
-import type { ConversationChangeTurn, ConversationFile } from "../../api/files";
+import type { ConversationChangeTurn, ConversationFile, RepoChanges as Repo } from "../../api/files";
 import { filesApi } from "../../api/files";
 import { ApiError, api } from "../../api/client";
 import type { RunCheckpoint } from "../../api/client.types";
@@ -10,14 +10,16 @@ import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { baseName, kindOf } from "../../lib/fileKinds";
+import { baseName } from "../../lib/fileKinds";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { useArslanStore } from "../../stores/arslanStore";
 import { isolate } from "../CapabilitySwitches";
 import ConversationModelChip, { PART_LABEL, ringRows } from "../models/ConversationModelChip";
 import { useConversationModel } from "../models/useConversationModel";
+import { opensDiff } from "./DiffReader";
 import FileIcon from "./FileIcon";
+import RepoChanges, { gitError } from "./RepoChanges";
 import { HEADING } from "./FilesTab";
 
 /** What the workbench needs from App to show and change this conversation's model (the chip's own props). */
@@ -42,9 +44,6 @@ function splitPath(path: string): [string, string] {
   const i = path.lastIndexOf("/");
   return i < 0 ? [path, ""] : [path.slice(i + 1), path.slice(0, i + 1)];
 }
-/** DIFF1: kinds with no line diff (the server would answer `not_text`), so their rows don't open one. */
-const NO_DIFF = new Set(["image", "video", "audio", "pdf", "xlsx", "doc"]);
-export const opensDiff = (path: string) => !NO_DIFF.has(kindOf(baseName(path)));
 const link = "shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground";
 
 /** Newest first: by creation time when the server sent one, else the server's order reversed. */
@@ -88,6 +87,11 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
 
   // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
   const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
+  // DIFF2: the folder as a git repo, kept with the conversation it was asked for, so another conversation's answer
+  // is never drawn, not even for the first render after a switch (#588 review).
+  const [repoFor, setRepoFor] = useState<{ id: string; repo: Repo | null } | null>(null);
+  const repo = repoFor?.id === conversationId ? repoFor.repo : null;
+  const repoAsking = useRef<string | null>(null);
   const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
   const [opened, setOpened] = useState<number[]>([]);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -114,6 +118,37 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadChanges(); }, CHANGES_MS);
     return () => clearInterval(timer);
   }, [loadChanges]);
+  // DIFF2: the repo on its own timer, never per chat item, and one request at a time per conversation: a large repo's
+  // first answer can take longer than the poll (#588 review, F4).
+  const loadRepo = useCallback(async () => {
+    const asked = conversationId;
+    if (repoAsking.current === asked) return;
+    repoAsking.current = asked;
+    try {
+      const found = await Promise.resolve().then(() => filesApi.repoChanges(asked));
+      if (current.current === asked) setRepoFor({ id: asked, repo: found.repo });
+    } catch { /* keep the last answer */ } finally {
+      if (repoAsking.current === asked) repoAsking.current = null;
+    }
+  }, [conversationId]);
+  useEffect(() => {
+    void loadRepo();
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadRepo(); }, CHANGES_MS);
+    return () => clearInterval(timer);
+  }, [loadRepo]);
+  // DIFF2 (#588 review, F7): in a repo folder the repo's list is the one place a change shows; a turn's paths there are
+  // left out of the per-turn list (its undo stays in the reply), and paths in other folders keep DIFF1's rows.
+  const repoShown = !!repo && !gitError(repo);
+  // `home` comes home-relative ("~/Code/journal"), the turn's folder absolute: the same folder only when what comes before
+  // is itself a home folder, so "/Users/u/Other/Code/journal" isn't taken for it (⓪Plan's re-check of #588).
+  const inRepo = (folder: string) => {
+    if (!repoShown || !home) return false;
+    if (!home.startsWith("~/")) return folder === home;
+    const rest = home.slice(1);
+    return folder.endsWith(rest) && /^\/(Users|home)\/[^/]+$/.test(folder.slice(0, folder.length - rest.length));
+  };
+  const shownTurns = changes.map((turn) => ({ ...turn, paths: turn.paths.filter((p) => !inRepo(p.folder)) }))
+    .filter((turn) => turn.paths.length > 0);
   const askUndo = async (runId: number, button: HTMLButtonElement) => {
     opener.current = button;
     try { setUndo({ runId, info: await api.runCheckpoint(runId) }); } catch { toast(t("process.undoFailed")); }
@@ -158,10 +193,11 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             </li>))}</ul>}
       </section>
 
-      {changes.length > 0 && <section data-testid="overview-changes">
+      {(shownTurns.length > 0 || repo) && <section data-testid="overview-changes">
         <h3 ref={heading} tabIndex={-1} className={`${HEADING} outline-none`}>{t("workbench.chH")}</h3>
-        <p className="mt-0.5 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>
-        <ul className="mt-1.5 space-y-2">{changes.map((turn) => {
+        {repo && <RepoChanges repo={repo} conversationId={conversationId} folder={home ?? ""} />}
+        {shownTurns.length > 0 && <p className="mt-2 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>}
+        <ul className="mt-1.5 space-y-2">{shownTurns.map((turn) => {
           const all = opened.includes(turn.run_id);
           const shown = all ? turn.paths : turn.paths.slice(0, PATHS_SHOWN);
           return <li key={turn.run_id} data-testid={`overview-turn-${turn.run_id}`} data-undone={turn.undone || undefined}
