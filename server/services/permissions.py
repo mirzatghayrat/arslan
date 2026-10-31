@@ -124,6 +124,13 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
+    #: TITLE1: how the texts the model reads name this step, when not as the card does. An MCP card shows
+    #: the server's label as installed; the model reads it as a label (`label_of`). "" → `title`.
+    model_title: str = ""
+
+    @property
+    def title_for_model(self) -> str:
+        return self.model_title or self.title
 
 
 @dataclass(frozen=True)
@@ -204,13 +211,15 @@ async def decide(req: Request, ctx: Context) -> Decision:
     return _done(await _ask(req, ctx, mode))
 
 
-async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[Decision]:
+async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str = "") -> list[Decision]:
     """One card for several requests of one kind (Hands' DesktopAccess). Those already allowed
     are left off the card; one answer covers every one shown; decisions in input order.
 
-    The card is the generic `propose_action`, built from the requests' joined details so that it
-    names every one of them (their own frames are not used), and it offers the choices of their
-    one kind. A list of mixed kinds is a caller bug, since a money step on an app's card would be
+    The card is a `propose_action` built from the requests' joined details, so that it names every one
+    of them, and it offers the choices of their one kind. When their own cards share a kind (an app's),
+    it is that kind of card, naming each request as its own card did, so a window says it in its own
+    words; otherwise it is the generic card. `why` is the model's reason, which the card shows as the
+    model's words (`title` is Arslan's and never carries it). A list of mixed kinds is a caller bug, since a money step on an app's card would be
     offered "this conversation": it raises ValueError, whatever the store holds — as does any
     request of a kind outside `KINDS`, before any of them is looked up."""
     _forget_last()
@@ -227,9 +236,19 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     shown = [r for r, d in zip(reqs, out) if d is None]
     decided = None
     if shown:
+        detail = "\n".join(r.detail or r.target for r in shown)
+        cards = {(r.frame or {}).get("kind") for r in shown}
+        frame = None
+        if len(cards) == 1 and None not in cards:
+            from server.ws import protocol
+            frame = protocol.propose_action(uuid.uuid4().hex, cards.pop(),
+                                            ", ".join(r.frame.get("target") or r.target for r in shown), detail)
+        # The why goes only with a card that shows it as the model's line: the generic card has no words for
+        # its kind, and the web would make the why its heading (⓪Plan's review of #554).
         combined = Request(
             kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title,
-            detail="\n".join(r.detail or r.target for r in shown),
+            why=why if frame is not None else "",
+            detail=detail, frame=frame,
             always_label=(", ".join(r.always_label for r in shown)
                           if all(r.always_label for r in shown) else ""),
             conversation_ok=all(r.conversation_ok for r in shown),
@@ -422,7 +441,7 @@ async def refuse_unattended(req: Request, ctx: Context) -> str:
     scheduled run) never reaches decide(). It writes the row decide() writes there: policy, deny, no
     "Always" set (Q2), so the Inbox lists it. Returns what the model is told, as decide() would."""
     _check(req)
-    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+    decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title_for_model))
     await _record(req, _filled(ctx), await _mode(), decision)
     return decision.model_text
 
@@ -433,7 +452,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     if asker is None:
         # S1 (U14 a, ⓪Plan Q2): refused by policy, and no "Always" set is recorded: the Inbox never offers
         # an "Always" that would read as fixing the scheduled run, which reads no rule.
-        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title))
+        decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title_for_model))
         await _record(req, ctx, mode, decision)
         return decision
     base = dict(req.frame) if req.frame else _generic_frame(req)
@@ -459,7 +478,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     away = answer.get("by") is None and bool(answer.get("away"))
     if answer.get("by") is None:
         decision = Decision(False, "expired", model_text=_EXPIRED.format(
-            title=req.title, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
+            title=req.title_for_model, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
     elif answer.get("approved"):
         scope = answer.get("scope") if answer.get("scope") in opts else opts[0]
         if answer.get("by") in approvals.FIRST_CHOICE_ONLY:
@@ -468,7 +487,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
             scope = opts[0]                    # only a Mac window gives this kind more than this time
         decision = Decision(True, "user", scope)
     else:
-        decision = Decision(False, "user", note=note, model_text=_declined_text(req.title, note))
+        decision = Decision(False, "user", note=note, model_text=_declined_text(req.title_for_model, note))
     async with db_session.AsyncSessionLocal() as db:
         rule_id = grant_id = None
         if decision.allowed and decision.scope == "always":

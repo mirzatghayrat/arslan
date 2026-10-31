@@ -278,6 +278,12 @@ async def _nearest(text: str, limit: int = 2, *, stopped: bool = False) -> list:
 
     from arslan.companion import memory_relevance
     from server.db.models import Lesson
+    from server.services import personal_context
+    # JUDGE1: the rows read here go to the judge (memory.merge / memory.conflict), so only where memory may be shown
+    # to a model at all, recall's own rule: none for a cloud model with cloud memory off, none in a temporary or
+    # "no memory" conversation, none without a task context. Capture then keeps each candidate as its own lesson.
+    if not personal_context.may_show_memory(personal_context.current()):
+        return []
     terms = memory_relevance.terms(text)
     if not terms:
         return []
@@ -342,10 +348,11 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         # is the user's choice, so it never looks at stopped rows.
         for row in await _nearest(text, stopped=cand.source != "user_correction"):
             pair = {"candidate": text, "existing": render(row)}
-            if await _yes("memory.merge", pair, conversation_id):
+            # JUDGE1: each row names its lesson, so deleting the lesson deletes what the ledger kept of it.
+            if await _yes("memory.merge", pair, conversation_id, ref=f"lesson:{row.id}"):
                 merged = row
                 break
-            if row.status != "stale" and await _yes("memory.conflict", pair, conversation_id):
+            if row.status != "stale" and await _yes("memory.conflict", pair, conversation_id, ref=f"lesson:{row.id}"):
                 conflicting = row
                 break
         now = datetime.utcnow()
@@ -407,8 +414,8 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         try:
             from server.services import desktop_status
             desktop_status.push("lesson_learned", conversation_id=conversation_id, summary=item["text"][:120])
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 — the menu bar's line is a nicety; the lesson is saved
+            logger.debug("lesson_learned status push failed: %s", type(exc).__name__)
     return learned
 
 
@@ -423,8 +430,7 @@ async def recall(query: str) -> list[dict]:
     from arslan.companion import memory_relevance
     from server.db.models import Lesson
     from server.services import personal_context
-    ctx = personal_context.current()
-    if ctx is None or ctx.no_memory or ctx.temporary or (not ctx.model_is_local and not ctx.cloud_memory_effective):
+    if not personal_context.may_show_memory(personal_context.current()):
         return []
     terms = memory_relevance.terms(query or "")
     if not terms:

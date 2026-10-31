@@ -558,7 +558,7 @@ def _quiet(emit: EventSink, reply_id: int | None) -> EventSink:
             event = {**event, "reply_message_id": reply_id}
         try:
             emit(event)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the window may be gone after stream_end; nothing is retried
             pass
     return send
 

@@ -12,8 +12,10 @@ commands profile since SBX-3.)
 
 What every profile relies on:
 
-- Seatbelt applies the LAST matching rule (measured 2026-10-03), so the order of the rules is the
-  policy: a deny written after an allow wins over it, and the other way round.
+- Rule order matters for the tested path rules, but TCP port-deny survival depends on the exact
+  set of TCP allows, not only on `*:*`. Proxy and port-22 are measured to hold on macOS 26.6.2
+  only with their allow pairs as built below. See #570, comment 6538778801; source order alone
+  is not an enforcement guarantee. Compile checks complement real-kernel checks.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
 - A path is written as an SBPL string (`sbpl_string`): its own UTF-8, with `\\` and `"` escaped, so a
   folder name cannot add rules, and control characters as `\\xHH`. sandbox-exec decodes those but
@@ -84,7 +86,7 @@ def remote_tcp(host: str, port: int) -> str:
 
 
 class Profile:
-    """The rules of one profile, in the order they are added (the last matching rule wins)."""
+    """Emit rules in the supplied order; source order is not an enforcement guarantee."""
 
     def __init__(self, default: str):
         self._lines = ["(version 1)", f"({default} default)"]
@@ -144,9 +146,12 @@ def default_deny_profile(
     ownership check. Do not give two runs the same prefix.
 
     Network grants are TCP only. Unix sockets are a separate exact allowlist;
-    online modes allow outbound localhost connections, excluding all supplied
-    Arslan listener ports. All modes deny binds/listens: Seatbelt's localhost
-    bind filter also permits wildcard binds. Restoring dev servers requires a
+    online modes allow outbound localhost connections. Proxy and port-22 exclude
+    supplied Arslan listener ports; any-declared rejects nonempty denied_ports
+    because Seatbelt cannot reliably enforce them alongside its wildcard grant.
+    Port-22 also rejects excluding port 22: its non-localhost allow covers that port.
+    All modes deny binds/listens: Seatbelt's localhost bind filter also permits
+    wildcard binds. Restoring dev servers requires a
     card decision before SBX-3 wiring. Offline also denies Unix sockets.
     """
     network = NetworkMode(network)
@@ -154,6 +159,10 @@ def default_deny_profile(
     for port in (*denied_ports, *((proxy_port,) if proxy_port is not None else ())):
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError("ports must be integers from 1 to 65535")
+    if network == NetworkMode.ANY_DECLARED and denied_ports:
+        raise ValueError("any-declared cannot enforce denied_ports; use proxy, port-22, or none")
+    if network == NetworkMode.PORT_22 and 22 in denied_ports:
+        raise ValueError("port-22 cannot exclude port 22; use proxy or none")
     if network == NetworkMode.PROXY and proxy_port is None:
         raise ValueError("proxy mode requires a proxy port")
     if network != NetworkMode.PROXY and proxy_port is not None:
@@ -190,10 +199,14 @@ def default_deny_profile(
         rules.allow_paths("network-outbound", map(real, SYSTEM_UNIX_SOCKETS), literal)
         rules.allow("network-outbound", '(remote tcp "localhost:*")')
         if network == NetworkMode.PROXY:
+            # Load-bearing with localhost:*: removing this can drop TCP denies.
+            # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("localhost", proxy_port))
         elif network == NetworkMode.ANY_DECLARED:
             rules.allow("network-outbound", '(remote tcp "*:*")')
         elif network == NetworkMode.PORT_22:
+            # Load-bearing with localhost:*: removing this can drop TCP denies.
+            # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("*", 22))
         for port in sorted(set(denied_ports)):
             rules.deny("network-outbound", remote_tcp("localhost", port))

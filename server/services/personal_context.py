@@ -285,6 +285,24 @@ async def _indexed_matches(db, rows, query_terms: frozenset[str]) -> set[str]:
     return result
 
 
+def may_show_memory(ctx: TaskMemoryContext | None) -> bool:
+    """Whether any memory may be put in front of a model in this context: assemble's gates (a trusted context,
+    not temporary, memory on, and a local model or cloud memory allowed). Lessons' recall, the judge's questions
+    about stored lessons (JUDGE1) and MEM1's merge judge ask it too; `model_is_local` already covers every configured
+    slot, the judge's router slot included (llm_factory.memory_models_are_local, which fails closed)."""
+    return (ctx is not None and (ctx.lease is None or ctx.lease.active) and not ctx.temporary and not ctx.no_memory
+            and (ctx.model_is_local or ctx.cloud_memory_effective))
+
+
+def shown_to_model(ctx: TaskMemoryContext) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(sensitivities, use policies) a model may be shown in this context. Sensitive needs allow_sensitive AND, for
+    a cloud model, the conversation's own cloud switch (the 0.1.52 default, cloud_memory_default, covers normal
+    entries only); local_only never goes to a cloud model."""
+    sensitive_ok = ctx.allow_sensitive and (ctx.model_is_local or ctx.cloud_memory_allowed)
+    return (("normal", "sensitive") if sensitive_ok else ("normal",),
+            ("local_only", "cloud_allowed") if ctx.model_is_local else ("cloud_allowed",))
+
+
 async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
                    limit_tokens: int = 1200) -> PersonalContext | None:
     ctx = context or current()
@@ -320,10 +338,7 @@ async def _eligible_statement(db, ctx, now):
     for kind, identity in (("domain", ctx.domain_id), ("expert", ctx.expert_id)):
         if identity:
             scopes.append(and_(MemoryEntry.scope_kind == kind, MemoryEntry.scope_id == identity))
-    # Sensitive needs allow_sensitive AND, for a cloud model, the conversation's own
-    # cloud switch — the 0.1.52 default (cloud_memory_default) covers normal entries only.
-    sensitive_ok = ctx.allow_sensitive and (ctx.model_is_local or ctx.cloud_memory_allowed)
-    allowed_sensitivity = ("normal", "sensitive") if sensitive_ok else ("normal",)
+    allowed_sensitivity, allowed_use = shown_to_model(ctx)
     statement = select(MemoryEntry, MemoryRevision).join(
         MemoryRevision, and_(MemoryRevision.id == MemoryEntry.current_revision_id,
                              MemoryRevision.entry_id == MemoryEntry.id,
@@ -333,7 +348,7 @@ async def _eligible_statement(db, ctx, now):
         MemoryEntry.status == "active", MemoryEntry.confirmed_at.is_not(None),
         MemoryEntry.confirmation_kind.is_not(None), MemoryEntry.superseded_by.is_(None),
         MemoryEntry.sensitivity.in_(allowed_sensitivity),
-        MemoryEntry.use_policy.in_(("local_only", "cloud_allowed") if ctx.model_is_local else ("cloud_allowed",)),
+        MemoryEntry.use_policy.in_(allowed_use),
         or_(MemoryEntry.valid_from.is_(None), MemoryEntry.valid_from <= now),
         or_(MemoryEntry.expires_at.is_(None), MemoryEntry.expires_at > now),
         or_(MemoryEntry.review_at.is_(None), MemoryEntry.review_at > now),
