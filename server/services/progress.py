@@ -4,9 +4,18 @@ The INB card's one function: the badge reads it now, and INB7's brief ("要你�
 never a count of their own. A unit is a conversation, a project or a scheduled task, never a row:
 - a conversation waits when it has a card to approve, something it could not ask while you were away that is newer than your last
   look at it (Q8, approved with the INB5 board on 2026-10-31: opening it is "handled"; the entry stays listed until it expires),
-  or an open "the job stopped" reminder; a conversation in a project counts as its project;
+  or an open "the job stopped" reminder. Only conversations that still exist count (a deleted one keeps its ledger rows and
+  reminders; #590 review F2), except a pending card, which is live by definition;
+- a conversation in an active project counts as its project. One in an archived project counts by itself: that project has no
+  row in the sidebar, where its conversations are listed under 最近 (#590 review F3c). INB5b makes the sidebar show every project
+  that has something waiting, so a counted project always has a row even below its top few;
 - a scheduled task waits when its last run failed or it paused itself, it has an open problem reminder, or one of its runs could not
-  ask something newer than your last look at it (its `scheduled-<id>` seen mark, the INB4 table).
+  ask something newer than your last look at the task (`scheduled_tasks.seen_at`, migration 0084, set when you open the task).
+  The task's own conversation (`scheduled-<id>`) counts as the task: one thing, counted once (#590 review F4).
+
+The window's conversation list reads `waiting_conversations` too (phone_reads.describe marks those rows "waiting"), so every
+conversation the badge counts has a marked row (#590 review F3a). INB5b moves the Scheduled page's dot onto `waiting.scheduled`,
+so the dot and the badge follow one rule (#590 review F3b).
 """
 from __future__ import annotations
 
@@ -16,8 +25,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.db.companion_models import ConversationContext
-from server.db.models import ApprovalEvent, ConversationSeen, ProactiveItem, ScheduledTask, ScheduledTaskRun
+from server.db.companion_models import ConversationContext, Project
+from server.db.models import ApprovalEvent, ArslanMessage, ConversationSeen, ProactiveItem, ScheduledTask, ScheduledTaskRun
 from server.services import approvals
 
 #: How long a card nobody could answer stays listed: the window "not done while you were away" has always used.
@@ -55,21 +64,32 @@ async def _latest_not_asked(db: AsyncSession, decided_by: str, hours: int) -> di
     return dict(rows.all())
 
 
-async def waiting_on_user(db: AsyncSession) -> Waiting:
-    seen = dict((await db.execute(select(ConversationSeen.conversation_id, ConversationSeen.seen_at))).all())
-
-    def newer(key: str, latest: datetime) -> bool:
-        return key not in seen or latest > seen[key]
-
-    asking: set[str] = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
-    asking |= {cid for cid, latest in (await _latest_not_asked(db, "away", AWAY_HOURS)).items() if newer(cid, latest)}
-    asking |= set((await db.execute(select(ProactiveItem.conversation_id).where(
+async def waiting_conversations(db: AsyncSession) -> set[str]:
+    """The conversations waiting on you, before projects and tasks group them."""
+    pending = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
+    away = await _latest_not_asked(db, "away", AWAY_HOURS)
+    seen = dict((await db.execute(select(ConversationSeen.conversation_id, ConversationSeen.seen_at)
+                                  .where(ConversationSeen.conversation_id.in_(list(away))))).all()) if away else {}
+    candidates = {cid for cid, latest in away.items() if cid not in seen or latest > seen[cid]}
+    candidates |= set((await db.execute(select(ProactiveItem.conversation_id).where(
         ProactiveItem.kind == "job_followup", ProactiveItem.status.in_(OPEN),
         ProactiveItem.conversation_id.is_not(None)))).scalars())
+    existing = set((await db.execute(select(ArslanMessage.conversation_id).distinct()
+                                     .where(ArslanMessage.conversation_id.in_(list(candidates))))).scalars()) if candidates else set()
+    return pending | existing
 
+
+async def waiting_on_user(db: AsyncSession) -> Waiting:
     out = Waiting()
-    project_of = dict((await db.execute(select(ConversationContext.id, ConversationContext.project_id).where(
-        ConversationContext.id.in_(asking), ConversationContext.project_id.is_not(None)))).all())
+    asking = await waiting_conversations(db)
+    tasks = list((await db.execute(select(ScheduledTask))).scalars())
+    own = {f"scheduled-{task.id}": task.id for task in tasks}
+    out.scheduled |= {own[cid] for cid in asking if cid in own}
+    asking = {cid for cid in asking if cid not in own}
+
+    project_of = dict((await db.execute(select(ConversationContext.id, ConversationContext.project_id)
+                                        .join(Project, Project.id == ConversationContext.project_id)
+                                        .where(ConversationContext.id.in_(asking), Project.status != "archived"))).all())
     for cid in asking:
         if cid in project_of:
             out.projects.add(project_of[cid])
@@ -82,9 +102,9 @@ async def waiting_on_user(db: AsyncSession) -> Waiting:
     problems = {key.removeprefix("sched:") for key in (await db.execute(select(ProactiveItem.source_key).where(
         ProactiveItem.kind == "scheduled_problem", ProactiveItem.status.in_(OPEN)))).scalars()}
     unasked = await _latest_not_asked(db, "policy", SCHEDULED_HOURS)
-    for task in (await db.execute(select(ScheduledTask))).scalars():
-        conversation = task.conversation_id or f"scheduled-{task.id}"
+    for task in tasks:
+        latest = unasked.get(task.conversation_id or f"scheduled-{task.id}")
         if (task.paused_reason is not None or last_outcome.get(task.id) == "error" or str(task.id) in problems
-                or (conversation in unasked and newer(f"scheduled-{task.id}", unasked[conversation]))):
+                or (latest is not None and (task.seen_at is None or latest > task.seen_at))):
             out.scheduled.add(task.id)
     return out
