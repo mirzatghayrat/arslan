@@ -48,8 +48,12 @@ interface Allowed { row: Refusal; at: number; rules: number[] }
  * 500 ms after the list changes (a row that shifts under the pointer is not clicked), and can be undone
  * for ten seconds. Nothing here says declined or refused: an away entry is an expiry, nobody said no.
  * Fails quietly: an older server has no such list, and the rest of the Inbox must still work.
+ * INB3: `conversationId` lists one conversation's entries (the server filters before it groups, #568) over `hours` (1 to 168);
+ * `unattended` keeps only a scheduled run's own, since a task may write into an ordinary conversation.
  */
-export default function InboxRefused({ onCount }: { onCount?: (n: number) => void }) {
+export default function InboxRefused({ onCount, conversationId, hours = 24, unattended = false, title }: {
+  onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean; title?: string;
+}) {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<Refusal[]>([]);
   // Keyed by the entry's id (its latest ledger row), so a newer refusal of the same thing is a new entry.
@@ -74,13 +78,14 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
 
   const load = useCallback(async () => {
     try {
-      const body = await request<Refusal[]>("/approvals/refused?hours=24");
+      const query = new URLSearchParams({ hours: String(hours), ...(conversationId ? { conversation_id: conversationId } : {}) });
+      const body = await request<Refusal[]>(`/approvals/refused?${query}`);
       if (!alive.current) return;
-      const list = Array.isArray(body) ? body : [];
+      const list = (Array.isArray(body) ? body : []).filter((row) => !unattended || row.unattended);
       setRows(list);
       onCount?.(list.length);
     } catch { /* the rest of the Inbox still works */ }
-  }, [onCount]);
+  }, [onCount, conversationId, hours, unattended]);
   useEffect(() => {
     void load();
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, POLL_MS);
@@ -150,9 +155,9 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
   }, [guard, shownKey]);
   if (!shown.length) return null;
   return (
-    <section data-testid="inbox-refused" aria-label={t("inbox.refusedTitle")} className="flex flex-col gap-2">
+    <section data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className="flex flex-col gap-2">
       <h2 className="flex items-center gap-2 text-[13px] font-semibold">
-        <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-subtle-foreground" />{t("inbox.refusedTitle")}
+        <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-subtle-foreground" />{title ?? t("inbox.refusedTitle")}
         <span className="font-mono text-[12px] text-subtle-foreground">{rows.length}</span>
       </h2>
       {/* At most 100 entries (the server's cap): they scroll here rather than push the rest of the Inbox away. */}

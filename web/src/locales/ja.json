@@ -98,7 +98,8 @@
     "arslan": "メインアシスタント",
     "capabilities": "ケイパビリティ",
     "brain": "記憶",
-    "activity": "アクティビティ"
+    "activity": "アクティビティ",
+    "scheduled": "定期タスク"
   },
   "brain": {
     "strip_details": "記録範囲と制限",
@@ -584,7 +585,7 @@
     "desktopNotificationsDesc": "ウィンドウが閉じているか背面にあるとき、タスクの完了、確認が必要な操作、スケジュールタスクの失敗を macOS が通知します。通知にメッセージ本文は表示されません。",
     "labelIsland": "ノッチに Arslan を表示",
     "islandDesc": "画面上部の小さな Arslan が、作業中の内容、あなたの対応が必要なとき、タスクが終わったときを知らせます。ポインタを乗せると詳細が見られます。スクリーンショット、画面収録、画面共有には映りません。",
-    "automationElsewhere": "定期タスク、トークン使用量、過去の実行はすべて「アクティビティ」にあります。",
+    "automationElsewhere": "定期タスクは専用のページに移りました。トークン使用量と過去の実行は「アクティビティ」にあります。",
     "automationOpenActivity": "アクティビティを開く",
     "searchPlaceholder": "設定を検索…",
     "searchNoHits": "一致するセクションはありません",
@@ -714,7 +715,7 @@
     "grpWhatsNew": "このバージョンの変更点",
     "watchesInInbox": "見守るページやフォルダー、通知しない項目は受信箱で管理します。",
     "openInbox": "受信箱を開く",
-    "openActivity": "スケジュールタスク、使用量、すべての実行は「アクティビティ」にあります。",
+    "openActivity": "使用量とすべての実行は「アクティビティ」にあります。定期タスクは専用のページです。",
     "openActivityBtn": "アクティビティを開く",
     "whatsNewEmpty": "このバージョンの説明はありません。"
   },
@@ -789,7 +790,8 @@
       "done": "完了",
       "unfinished": "未達成",
       "failed": "問題で停止",
-      "scheduled": "スケジュール"
+      "scheduled": "スケジュール",
+      "done_unseen": "完了、まだ見ていません"
     },
     "projects": "プロジェクト",
     "allProjects": "すべてのプロジェクト",
@@ -1436,5 +1438,13 @@
     "memoryBody": "Arslan はこれを忘れ、古い会話から学び直すこともありません。",
     "unsavedTitle": "保存せずに移動しますか？",
     "unsavedBody": "このノートの変更は失われます。"
+  },
+  "scheduledPage": {
+    "intro": "決まった時間に動くタスクと、Arslan が見張っているページやフォルダ。点が付いた行は確認が必要です。",
+    "watches": "見張っているページとフォルダ",
+    "awayTitle": "不在中にできなかったこと（このタスクのみ）",
+    "attention": "確認が必要",
+    "changed": "変更あり",
+    "failing": "失敗したか自動で一時停止しました"
   }
 }

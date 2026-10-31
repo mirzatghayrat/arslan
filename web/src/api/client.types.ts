@@ -381,6 +381,7 @@ export interface AppSettings {
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
+  folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")

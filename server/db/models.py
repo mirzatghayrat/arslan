@@ -718,6 +718,18 @@ class ConversationEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ConversationSeen(Base):
+    """INB4 (v0.1.64): the newest message of a conversation the user has seen in the window; a clean reply or a job done
+    that is newer reads "done, not seen". A table of its own, because not every conversation has a conversation_contexts
+    row. The Scheduled page's "last opened" is to use it too, keyed `scheduled-<id>` (INB5)."""
+
+    __tablename__ = "conversation_seen"
+
+    conversation_id = Column(String(100), primary_key=True)
+    seen_message_id = Column(Integer, nullable=False, default=0)
+    seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Learning(Base):
     """心得 (know-how) distilled from concrete signals (a distill event, a user
     correction, or a repeated run pattern). Always carries a traceable source_ref.

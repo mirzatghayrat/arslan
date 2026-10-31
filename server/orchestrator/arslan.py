@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from server.config import settings as _settings
 from server.orchestrator import llm_errors
-from server.services import ocr_fallback, phone_ids
+from server.services import folder_rules, ocr_fallback, phone_ids
 from server.db import session as db_session
 from server.orchestrator import (
     env_snapshot,
@@ -219,9 +219,13 @@ def reply_language(text: str | None, ui_locale: str | None = None) -> str:
 
 def language_line(text: str | None, ui_locale: str | None = None) -> str:
     lang = reply_language(text, ui_locale)
+    # L11-1 (the user's memory-plan item 15, D5): a file and a message to someone else have their own rule.
     return (f"\n\nReply language for this turn: {lang}. Write everything meant for the user in it — "
             "the reply, a background job's goal and its checks, titles and notes — whatever language the "
-            "instructions, examples, memory, tool results or earlier messages are in.")
+            "instructions, examples, memory, tool results or earlier messages are in. "
+            "A file you write follows the folder rules' language when they name one; otherwise it follows the "
+            "user's message, as the reply does. A message to someone else follows that person's language when you "
+            "know it (their earlier messages, or the user's words); otherwise ask.")
 
 
 async def _turn_language_line(text: str | None) -> str:
@@ -306,15 +310,16 @@ def _build_answer_system(*, route: str = ""):
 
 
 def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
-                  environment: str = "", language: str = "") -> str:
+                  environment: str = "", language: str = "", rules: str = "") -> str:
     """This turn's reference block (server/orchestrator/turn_context.py: built once per turn, never
     saved), in the order the system prompt carried it before K3: a resumed
     task's notes → facts → summary → knowledge → the MCP status line → (K5) the environment snapshot →
-    the reply language → the time (floored to the UTC hour, still enough for timezone conversion)."""
+    (K10-1) the folder's rules → the reply language → the time (floored to the UTC hour, still enough for timezone
+    conversion)."""
     body = (f"\n\n{addendum}" if addendum else "") + (f"\n\n{facts}" if facts else "")
     if summary:
         body += f"\n\nConversation summary so far:\n{summary}"
-    body += kb_block + mcp_line + environment + language + _now_line()
+    body += kb_block + mcp_line + environment + (f"\n\n{rules}" if rules else "") + language + _now_line()
     return turn_context.wrap(body)
 
 
@@ -802,16 +807,19 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
         logger.warning("background kb retrieve failed (non-fatal): %s", exc)
     asked = next((m.get("content") for m in reversed(ctx["history"]) if m.get("role") == "user"), None)
     system = _build_answer_system(route=BACKGROUND_SYSTEM)
+    rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(asked if isinstance(asked, str) else goal),
                             mcp_line=await _mcp_status_line(),
-                            environment=await env_snapshot.for_turn(conversation_id))
+                            environment=await env_snapshot.for_turn(conversation_id), rules=rules)
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
     pieces: list[str] = []
     # K3: nobody is waiting on a background job, so its cache entries keep the default five minutes,
     # even when a chat turn started it. INB2 (#475 F2, H1, H2): its run's record counts the knowledge, the
     # project card and a note from off the list put in.
-    with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
+    # K10-1 (D3): a folder's rules are outside content, so a job that read them starts as having read some.
+    with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced), \
+            untrusted.carried(rule_files > 0):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_background_tools, resolve_callable=_background_callable,
@@ -853,9 +861,10 @@ async def _handle_answer_body(
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
     system = _build_answer_system()
+    rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(addendum=extra_system.strip(), facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line(),
-                            environment=await env_snapshot.for_turn(conversation_id))
+                            environment=await env_snapshot.for_turn(conversation_id), rules=rules)
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
 
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
@@ -868,9 +877,10 @@ async def _handle_answer_body(
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
         # S64-0b: what the user attached (a file's text, a picture, what OCR reads off it) is outside content.
+        # K10-1 (D3): so is a folder's rules file.
         # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
         # so are the project card and a note in view that came from a run off the list.
-        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)), \
+        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images) or rule_files > 0), \
                 untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
