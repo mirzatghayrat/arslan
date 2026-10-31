@@ -80,8 +80,10 @@ or a historical profile.
 - Git, Python, node, Swift, brew, HTTPS/DNS, IPC, ptys, temp paths and two cache
   runs are represented. Remote fetches are small public fixtures, not model calls.
   Failed network/toolchain probes remain visible measurements, never skips.
-- Loopback gates use test-owned listeners, deny a supplied Arslan-port stand-in,
-  and reject IPv4/IPv6 wildcard and loopback binds plus implicit listens. Every
+- Loopback gates use test-owned listeners. Proxy and port-22 refuse a supplied
+  Arslan-port stand-in over IPv4 and IPv4-mapped IPv6; any-declared rejects the
+  requested port exclusion before generating a profile. All three cases still
+  reject IPv4/IPv6 wildcard and loopback binds plus implicit listens. Every
   candidate network mode denies binds/listens. The separate localhost dev-server
   measurement still binds, serves and fetches under each base; it records `ok`,
   `refused` (expected under the candidate), or `tool-failed`, without making
