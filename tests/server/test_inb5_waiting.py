@@ -13,7 +13,9 @@ from datetime import datetime, timedelta
 import pytest
 
 from server.db.companion_models import ConversationContext, Project
-from server.db.models import ApprovalEvent, ArslanMessage, ProactiveItem, ScheduledTask, ScheduledTaskRun
+from sqlalchemy import select
+
+from server.db.models import ApprovalEvent, ArslanMessage, ConversationSeen, ProactiveItem, ScheduledTask, ScheduledTaskRun
 from server.services import approvals
 
 
@@ -112,6 +114,17 @@ async def test_an_away_entry_23_hours_old_still_counts_in_any_time_zone(client, 
     assert datetime.now() - datetime.utcnow() > timedelta(hours=7)                      # the fixture took: local is UTC+8
     await _add(client, *_chat("chat-a"), _refused("chat-a", hours_ago=23))
     assert (await _waiting(client))["conversations"] == ["chat-a"]
+
+
+async def test_an_entry_from_the_moment_you_looked_counts_as_seen(client):
+    await _add(client, *_chat("chat-a"))
+    await client.post("/api/v1/conversations/chat-a/seen")
+    async with client.db_maker() as db:
+        at = await db.scalar(select(ConversationSeen.seen_at).where(ConversationSeen.conversation_id == "chat-a"))
+    entry = _refused("chat-a")
+    entry.created_at = at
+    await _add(client, entry)
+    assert (await _waiting(client))["count"] == 0
 
 
 async def test_a_deleted_conversation_stops_counting(client, monkeypatch):
