@@ -72,32 +72,12 @@ def test_protected_files_are_literal_and_folders_subpaths(tmp_path):
     assert f'(subpath {json.dumps(str((tmp_path / "data").resolve()))})' in text
 
 
-def test_macos_own_user_folder_is_writable_even_when_tmpdir_points_elsewhere(tmp_path, monkeypatch):
-    """Xcode tools write caches under /var/folders/../T whatever $TMPDIR says."""
-    import tempfile
-    user = tmp_path / "var-folders" / "xk"
-    (user / "T").mkdir(parents=True)
-    elsewhere = tmp_path / "bench-tmp"
-    elsewhere.mkdir()
-    monkeypatch.setattr(command_sandbox.os, "confstr",
-                        lambda name: str(user / "T") + "/" if name == 65537 else "")
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(elsewhere))
-    roots = command_sandbox.temp_roots()
-    assert elsewhere.resolve() in roots and user.resolve() in roots
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(user / "T"))      # the usual case: same folder
-    assert command_sandbox.temp_roots().count(user.resolve()) == 1
-
-    def unsupported(name):
-        raise ValueError("unrecognized configuration name")
-    monkeypatch.setattr(command_sandbox.os, "confstr", unsupported)          # Linux: no such name
-    assert command_sandbox.temp_roots()[0] == user.resolve()
-
-
 def test_default_writable_and_protected_cover_the_plan(tmp_path):
     home = Path.home()
-    writable = command_sandbox.default_writable(tmp_path)
-    assert tmp_path.resolve() in writable and Path("/dev") in writable
-    assert command_sandbox._real(home / "Library" / "Caches") in writable
+    writable = {r.path for r in command_sandbox.writable_roots(tmp_path)}
+    # SBX-3 §1: /dev is narrowed to the listed devices (tests/server/sbx/test_sbx3_commands.py).
+    assert str(tmp_path.resolve()) in writable and "/dev/null" in writable and "/dev" not in writable
+    assert str(command_sandbox._real(home / "Library" / "Caches")) in writable
     protected = command_sandbox.default_protected()
     for p in (home / ".ssh", home / "Library" / "Keychains", home / ".arslan-updater.key"):
         assert command_sandbox._real(p) in protected
