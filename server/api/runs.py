@@ -1,6 +1,7 @@
 """Read-only Run replay + evaluation endpoint."""
 from __future__ import annotations
 
+import asyncio
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -574,6 +575,35 @@ async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
     return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
+
+
+@router.get("/conversations/{conversation_id}/changes")
+async def conversation_changes(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """WB1-3: what each turn of this conversation changed in the user's folders, newest turn first, path by
+    path (made, edited, deleted), for Overview's Changes. Only turns whose checkpoint is still kept, which is
+    the set an undo can take back (checkpoints.changes); a turn that changed nothing is left out. Read only.
+    The runs are this conversation's own, as the runs list filters them (live, host, scheduled)."""
+    from server.db.models import ArslanMessage
+    from server.services import checkpoints
+    runs = (await db.execute(select(Run).where(Run.conversation_id == conversation_id,
+                                               Run.kind.in_(("live", "host", "scheduled")))
+                             .order_by(Run.id.desc()).limit(200))).scalars().all()
+    if not runs and (await db.execute(select(ArslanMessage.id).where(
+            ArslanMessage.conversation_id == conversation_id).limit(1))).first() is None:
+        raise HTTPException(404, detail={"code": "conversation_not_found"})
+    wanted = [(run.id, _started(run), run.started_at) for run in runs]
+
+    def read() -> list[dict]:                 # file reads, one manifest per run: off the event loop (②Main)
+        turns = []
+        for run_id, not_before, started in wanted:
+            found = checkpoints.changes(run_id, not_before)
+            if not found or not found["paths"]:
+                continue
+            turns.append({"run_id": run_id,
+                          "at": started.replace(tzinfo=timezone.utc).isoformat() if started else None,
+                          "undone": found["undone"], "paths": found["paths"]})
+        return turns
+    return {"turns": await asyncio.to_thread(read)}
 
 
 async def _with_history(undone: dict) -> dict:

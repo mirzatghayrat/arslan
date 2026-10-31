@@ -89,6 +89,35 @@ async def test_a_program_that_prints_usage_is_seen_as_not_mcp(mgr):
     assert mgr.non_json_lines(1) >= 1
 
 
+async def test_a_program_that_exits_before_its_pipe_is_read_is_still_not_mcp(mgr, monkeypatch):
+    """LOAD2: the same program, with the SDK's stdout reader held back and initialize sent after the
+    program has exited, so the stdin writer hits the closed pipe first (ExceptionGroup of
+    BrokenResourceError from the stdio task group). It is still a closed connection, as the reader's
+    EOF would have said: "not an MCP server", never "broken resource"."""
+    import mcp
+    import mcp.client.stdio as stdio_mod
+
+    real_stream = stdio_mod.TextReceiveStream
+
+    class _LateReader(real_stream):
+        def __aiter__(self):
+            async def chunks():
+                await asyncio.sleep(1.5)
+                async for chunk in real_stream.__aiter__(self):
+                    yield chunk
+            return chunks()
+    real_initialize = mcp.ClientSession.initialize
+
+    async def late_initialize(self, *a, **k):
+        await asyncio.sleep(0.5)
+        return await real_initialize(self, *a, **k)
+    monkeypatch.setattr(stdio_mod, "TextReceiveStream", _LateReader)
+    monkeypatch.setattr(mcp.ClientSession, "initialize", late_initialize)
+    with pytest.raises(McpError) as caught:
+        await mgr.get_session(_server("usage_exit"), budget_s=10)
+    assert caught.value.error.code == types.CONNECTION_CLOSED
+
+
 async def test_one_stray_stdout_line_is_not_fatal(mgr):
     listed = await mgr.list_tools(_server("garbage_then_ok"))
     assert [t.name for t in listed.tools] == ["a"] and mgr.non_json_lines(1) == 1

@@ -36,7 +36,7 @@ const ROWS: CapabilityRow[] = [
         reason: "mcp_error", fix: "open_tab:mcps", name: "Broken", switch: "mcp", detail: "401" }),
   ...Array.from({ length: 8 }, (_, i) => row({ key: `skill:s${i}`, ...SKILL, name: `Skill ${i}`, detail: `does ${i}` })),
   row({ key: "skill:mine", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Mine" }),
-  row({ key: "skill:gh-acme", section: "skills", origin: "installed", deletable: true, switch: "skill", name: "Acme" }),
+  row({ key: "skill:gh-acme", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Acme" }),  // Discover's, after 0080
   row({ key: "method:research", section: "skills", revision: 2, name: "Research, my way" }),
   row({ key: "method:product-design", section: "skills", revision: 1 }),
 ];
@@ -87,6 +87,18 @@ describe("capability list", () => {
     for (const key of ["skill:s0", "mcp:2", "mcp:3"]) expect(screen.getByTestId(`cap-delete-${key}`)).toBeInTheDocument();
   });
 
+  it("a skill of unknown origin says so and is deleted like any skill (SKF1, D2)", async () => {
+    vi.spyOn(capabilitiesApi, "list").mockResolvedValue([...ROWS, row({ key: "skill:stray", section: "skills",
+      origin: "unknown", deletable: true, switch: "skill", name: "Stray" })]);
+    render(<><CapabilitySwitches /><ConfirmHost /></>);
+    await screen.findByTestId("cap-terminal");
+    fireEvent.click(screen.getByTestId("cap-more-skills"));
+    expect(screen.getByTestId("cap-skill:stray")).toHaveTextContent("capabilityList.origin_unknown");
+    for (const lang of Object.values(capabilityListMessages)) expect(lang.origin_unknown).toBeTruthy();
+    fireEvent.click(screen.getByTestId("cap-delete-skill:stray"));        // no link to add it back: the copy line
+    expect(await screen.findByTestId("confirm-sheet")).toHaveTextContent("capabilityList.deleteBodyAuthored");
+  });
+
   it("delete asks first, then deletes, says so and reloads; no deletes nothing", async () => {
     const list = vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
     const del = vi.spyOn(capabilitiesApi, "deleteRow").mockResolvedValue({ ok: true });
@@ -121,7 +133,7 @@ describe("capability list", () => {
     await screen.findByTestId("cap-terminal");
     fireEvent.click(screen.getByTestId("cap-more-skills"));
     for (const [key, body] of [["skill:mine", "deleteBodyAuthored"], ["skill:s0", "deleteBodyInstalledSkill"],
-      ["skill:gh-acme", "deleteBodyAuthored"],               // Discover's: no link to add it again from
+      ["skill:gh-acme", "deleteBodyAuthored"],               // Discover's, by its origin: no link to add it again from
       ["skill:gh-carded", "deleteBodyInstalledSkill"],       // a card's, which Discover overwrote: files and a link
       ["mcp:2", "deleteBodyManual"], ["mcp:3", "deleteBodyInstalledConnection"]]) {
       fireEvent.click(screen.getByTestId(`cap-delete-${key}`));
