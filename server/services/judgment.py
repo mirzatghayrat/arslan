@@ -256,3 +256,19 @@ async def prune() -> int:
             removed += (await db.execute(delete(Judgment).where(Judgment.id <= keep_from))).rowcount or 0
         await db.commit()
     return int(removed)
+
+
+async def drop_unredacted() -> int:
+    """JUDGE1 follow-up (the user, 2026-10-31: a one-time clean): rows recorded for a `redact` point before JUDGE1 hold
+    the lesson's words. Dropped at boot; after the first boot nothing matches, since `judge` records digests only."""
+    from sqlalchemy import delete, select
+    from server.db.models import Judgment
+    points = [p.name for p in REGISTRY.values() if p.redact]
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(Judgment.id, Judgment.state).where(Judgment.point.in_(points)))).all()
+        plain = [row_id for row_id, state in rows
+                 if any(not (isinstance(v, str) and v.startswith("sha256:")) for v in (state or {}).values())]
+        for start in range(0, len(plain), 500):
+            await db.execute(delete(Judgment).where(Judgment.id.in_(plain[start:start + 500])))
+        await db.commit()
+    return len(plain)

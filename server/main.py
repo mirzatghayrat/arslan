@@ -368,6 +368,7 @@ async def lifespan(app: FastAPI):
     # 0.1.52 S2: keep the judgment ledger bounded (90 days, 20k rows). Best-effort.
     try:
         from server.services import judgment
+        await judgment.drop_unredacted()    # JUDGE1: memory text recorded before digests
         await judgment.prune()
     except Exception as exc:  # noqa: BLE001
         logger.warning("judgment ledger prune failed (non-fatal): %s", exc)
