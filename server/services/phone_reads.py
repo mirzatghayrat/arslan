@@ -283,11 +283,13 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         last = messages.get(last_ids.get(cid))
         # INB4: a chat's last reply that came without an error, or a job done, newer than what the window showed: done,
         # not seen. Once seen, a chat reads idle again (it looks as it does today) and a job done.
+        phone_state = state                  # what phones are sent until INB4's phone half (api/phone.py)
         clean_reply = kind == "chat" and state == "idle" and last is not None and last.role == "arslan" and last.run_id not in failed
         if (clean_reply or state == "done") and last_ids.get(cid, 0) > seen.get(cid, 0):
             state = "done_unseen"
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
-        item = {"kind": kind, "state": state, "origin": "phone" if (first is not None and first.source == "phone") else "mac",
+        item = {"kind": kind, "state": state, "phone_state": phone_state,
+                "origin": "phone" if (first is not None and first.source == "phone") else "mac",
                 "preview": one_line(last.display_content or last.content) if last is not None else "", "files": files}
         if running_job is not None:
             # The job's own checks, as its job.event counts them ("answer-delivered" is every job's).

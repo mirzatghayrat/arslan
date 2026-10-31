@@ -104,9 +104,10 @@ async def stop() -> None:
     if _loop_task is not None:
         try:
             await within(asyncio.shield(_loop_task), timeout=5.0)
-        # Awaiting the loop this function just told to stop: shutdown goes on whatever it does. Swallowing
-        # CancelledError also hides a cancel of stop() itself; re-raising it is a behaviour change (EXC1, own PR).
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001 — the loop we just stopped
+        # Awaiting the loop this function just told to stop. A cancel of shutdown itself is absorbed too, so the
+        # remaining stops in main._shutdown_services still run, as proactive_service.stop does: re-raising would
+        # skip them (they catch Exception only), which is worse on a cancelled shutdown (EXC1, ⓪Plan).
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001 — shutdown runs every stop
             pass
         _loop_task = None
     # A left-behind SET event would make a later start() see a stale stop signal.

@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import logging
+import re
 from typing import Any
 
 from arslan.llm.cached_system import build_cached_system
@@ -57,8 +58,26 @@ _SYSTEM = (
     "method or steps (\"for reminders don't use AppleScript, use EventKit\"); avoid=true when the "
     "advice is what not to do. Not a one-off instruction for this task. "
     "Write each fact and practice in the same language as the user's own messages "
-    "(事实条目必须使用用户消息所用的语言书写); never translate it."
+    "(事实条目必须使用用户消息所用的语言书写); never translate it. "
+    "Call the user \"the user\" (or the same words in the user's language) and never he, she, his or her: "
+    "never guess the user's gender. One-off task state is not a fact about the user: file paths and folders, "
+    "ports and local addresses, and what the user is currently doing (\"is deploying X\") stay out."
 )
+
+# MEM1 (memory plan item A2/A3): never kept, whatever the reply says. A guessed gender (the user is "the user") and
+# one-off task state: a path, a local address or port, what the user is doing right now. Cheap and deliberately
+# narrow: a durable fact that happens to match is lost, never a guess stored.
+_GENDERED = re.compile(r"\b(?:he|she|him|his|her|hers|himself|herself)\b", re.IGNORECASE)
+# A pronoun in a fact that also names another person is about that person (②Main's review of #559, L3).
+_SOMEONE_ELSE = re.compile(
+    r"\b(?:sister|brother|mother|father|mom|mum|dad|wife|husband|spouse|partner|girlfriend|boyfriend|son|daughter"
+    r"|child|kid|parent|grand(?:mother|father|ma|pa)|aunt|uncle|cousin|niece|nephew|friend|colleague|coworker"
+    r"|boss|manager|teacher|doctor|neighbou?r|roommate)s?\b", re.IGNORECASE)
+_TASK_STATE = re.compile(
+    r"(?<![\w/])(?:~/|/(?:[\w.-]+/)+)|\b[A-Za-z]:\\"                          # a path
+    r"|\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?|\bports?\s*\d{2,5}\b|端口\s*\d+"  # a local address; lang-check: allow (Chinese input to match)
+    r"|\b(?:currently|right now|at the moment)\b|正在(?:部署|安装|调试|配置|运行|迁移|修复)",  # lang-check: allow (Chinese input to match)
+    re.IGNORECASE)
 
 
 async def _get_adapter():
@@ -75,7 +94,8 @@ def parse(content: str | None) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         text = " ".join(str(item.get("content") or "").split())[:MAX_FACT_CHARS]
-        if text:
+        guessed = _GENDERED.search(text) and not _SOMEONE_ELSE.search(text)
+        if text and not guessed and not _TASK_STATE.search(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]
 

@@ -2,7 +2,8 @@
 
 Formalizes the previously hand-wired boot chain. Each migration exposes an
 idempotent ``upgrade_sync(conn)``; we record applied ids in ``schema_version`` so
-an install re-applies only the pending tail. VERBATIM order from the old main.py
+an install applies only the ids it has not recorded: a set, not a tail, so a number
+that merges after higher ones still runs (0073). VERBATIM order from the old main.py
 chain (do not reorder).
 
 Canonical chain (from the old ``main.py`` boot block, verbatim, in order):
@@ -93,6 +94,7 @@ from .versions._0069_message_ids_never_reused import upgrade_sync as _m0069
 from .versions._0070_ask_every_command import upgrade_sync as _m0070
 from .versions._0071_conversation_kind import upgrade_sync as _m0071
 from .versions._0072_runs_read_outside import upgrade_sync as _m0072
+from .versions._0073_drop_router_decisions import upgrade_sync as _m0073
 from .versions._0074_drop_discovery_candidates import upgrade_sync as _m0074
 from .versions._0075_drop_capability_finds import upgrade_sync as _m0075
 from .versions._0076_drop_project_habits import upgrade_sync as _m0076
@@ -173,6 +175,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0070", _m0070),
     ("0071", _m0071),
     ("0072", _m0072),
+    ("0073", _m0073),
     ("0074", _m0074),
     ("0075", _m0075),
     ("0076", _m0076),
