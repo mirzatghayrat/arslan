@@ -132,6 +132,8 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:
     else:
         scan = None
     test = await test_mcp(row.id)
+    # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
+    test = {**((await _source(row.id)).test or {}), **test}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}

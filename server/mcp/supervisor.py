@@ -99,6 +99,7 @@ SAFE_REASON_PREFIXES = (
     "speaks an MCP version", "the server refused to start (MCP error ",
     "could not reach the MCP URL", GAVE_UP_LINE,
     "the MCP URL answered HTTP ", "the connection ended the start without a reason",
+    "its tools changed since it was installed",                                 # CAP5a (discovery.ToolsChanged)
 )
 
 
@@ -199,6 +200,9 @@ def classify(exc: BaseException, *, server: dict, non_json: int, budget_s: float
     def mcp_code(*codes):
         return next((e for e in chain if isinstance(e, McpError) and e.error.code in codes), None)
 
+    # 0 CAP5a: a server Arslan installed listed tools other than the pinned ones; stopped until the user reviews it
+    if find(discovery.ToolsChanged) is not None:
+        return "parked", discovery.TOOLS_CHANGED_LINE
     # 1 sign-in
     if find(oauth_flow.NeedsInteractiveAuth) is not None:
         return "needs_auth", SIGN_IN_LINE

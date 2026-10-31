@@ -79,6 +79,29 @@ async def set_folders(source_id: str, folders: list[str]) -> dict:
     return view(await source(source_id))
 
 
+async def accept_tools(source_id: str, digest: str) -> dict:
+    """CAP5a: the user read a server's tool change (its `test.tools_changed`) and accepts it: those tools become
+    the pin, and the server starts again in the background, so its next listing is compared to them. `digest`
+    names the change the user read: a change recorded since, or none, is refused, and nothing is pinned."""
+    from server.services import mcp_service
+    row = await source(source_id)
+    if row.kind != "mcp" or row.state != "installed" or not row.mcp_server_id:
+        raise DossierError("no_tool_change")
+    async with db_session.AsyncSessionLocal() as db:
+        stored = await db.get(CapabilitySource, source_id)
+        test = dict(stored.test or {})
+        change = test.get("tools_changed") or {}
+        if not change:
+            raise DossierError("no_tool_change")
+        if not isinstance(digest, str) or digest != change.get("digest"):
+            raise DossierError("tool_change_moved")
+        test.pop("tools_changed")
+        stored.test = {**test, "tools_pin": change["pin"]}
+        await db.commit()
+    await mcp_service.restart_after_edit(row.mcp_server_id)
+    return view(await source(source_id))
+
+
 async def remove(source_id: str) -> None:
     row = await source(source_id)
     if row.kind == "skill":
