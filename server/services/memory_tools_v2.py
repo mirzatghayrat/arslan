@@ -84,6 +84,13 @@ def _flagged(args, sensitivity: str = "normal") -> str:
     return "sensitive" if args.get("sensitive") and sensitivity in ("normal", "unknown") else sensitivity
 
 
+async def _same_meaning(content: str, kind: str, scope, core, args, ctx):
+    """MEM1: the entry this new one would repeat in other words (memory_merge), or None."""
+    from server.services import memory_merge
+    return await memory_merge.same_meaning(content, ctx=ctx, kind=kind, scope=scope, core=core,
+                                           sensitive=_flagged(args) != "normal")
+
+
 def _tell_the_window(ctx, result: dict) -> None:
     """INB2: the chat line after a turn. A new entry that took effect reads "remembered … [Undo]"
     (fact_saved); one that waits names its proposal, version, text and reason (memory_proposed), so a
@@ -153,11 +160,14 @@ async def remember(args, caller):
     kind = "experience" if args.get("kind") == "learning" else "preference"
     if action == "append" and caller.actor == "host" and kind == "preference":
         actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
+    content = str(args.get("content") or "")
+    match = await _same_meaning(content, kind, scope, None, args, ctx) if action == "append" else None
     try:
         async with repository() as repo:
             if action == "append":
-                result = await repo.create(MemoryWrite(content=str(args.get("content") or ""),
-                                                       kind=kind, scope=scope, sensitivity=_flagged(args)), actor)
+                write = MemoryWrite(content=content, kind=kind, scope=scope, sensitivity=_flagged(args))
+                result = (await repo.merge_into(match.id, match.version, write, actor) if match else None) \
+                    or await repo.create(write, actor)
             else:
                 target = args.get("target_id")
                 if not isinstance(target, int) or isinstance(target, bool):
@@ -183,7 +193,9 @@ async def remember(args, caller):
                 ), replace(actor, explicit_save_ref=None, allow_global_save=False))
         out = {"ok": True, **result, "saved": result.get("status") == "active",
                "requires_confirmation": result.get("status") == "proposed"}
-        if action == "append" and kind == "preference" and caller.actor == "host":
+        # MEM1: a refresh is not a new memory; a proposal a merge made or joined is announced (②Main's L2).
+        if action == "append" and kind == "preference" and caller.actor == "host" and (
+                not result.get("merged") or result.get("proposal_id")):
             _tell_the_window(ctx, out)
         return out
     except MemoryError as exc:
@@ -234,12 +246,20 @@ async def note(args, caller):
         actor = replace(actor, auto_activate_own_notes=not untrusted.external_seen())
     elif action == "add":
         actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
+    match = await _same_meaning(text, kind, MemoryScope(kind="global"), member, args, ctx) if action == "add" else None
     try:
         async with repository() as repo:
             current = await _note_set(repo, ctx.owner_id, member)
             used = sum(len(row["text"]) for row in current if row["status"] == "active")
             listing = {"set": member, "limit_chars": cap, "used_chars": used, "entries": current}
-            if action == "add":
+            merged = await repo.merge_into(match.id, match.version, MemoryWrite(
+                content=text, kind=kind, scope=MemoryScope(kind="global"), core=member,
+                sensitivity=_flagged(args)), actor) if match else None
+            if merged is not None:
+                result = merged                               # MEM1: nothing added to the set
+                if member == "about_you" and merged.get("proposal_id"):
+                    _tell_the_window(ctx, {"ok": True, **merged})
+            elif action == "add":
                 if used + len(text) > cap:
                     return {"ok": False, "code": "core_set_full", **listing,
                             "next_action": "replace or remove an entry by id, then add"}

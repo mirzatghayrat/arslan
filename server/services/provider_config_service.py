@@ -17,7 +17,7 @@ from server.services.settings_service import _looks_masked, mask_secret
 def _safe(enc: str) -> str:
     try:
         return crypto.decrypt(enc)
-    except Exception:  # noqa: BLE001 - undecryptable key treated as unset for display
+    except Exception:  # noqa: BLE001 — undecryptable key treated as unset for display
         return ""
 
 

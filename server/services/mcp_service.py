@@ -12,6 +12,7 @@ from server import crypto
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
+from server.orchestrator import untrusted
 from server.services.secret_state import secret_state
 from server.services.settings_service import mask_secret
 
@@ -109,6 +110,9 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
         raise ValueError("http transport requires a url")
     if transport == "stdio" and not (command or "").strip():
         raise ValueError("stdio transport requires a command")
+    label = untrusted.clean_name(label, 80)                 # UNI1: one cleaner for names, wherever they come in
+    if not label:
+        raise ValueError("a label is required")
     async with db_session.AsyncSessionLocal() as db:
         # Dedup guard: return existing row if (label, url) or (label, command, args) already present
         existing = None
@@ -212,7 +216,8 @@ async def connect(server_id: int) -> list[dict]:
                              + fix_for("starting", has_headers=False), state="starting")
     if result.state != "ready":
         raise MCPStartFailed(result.last_error or result.state, state=result.state)
-    return result.tools
+    # UNI1 (#526 review 4): the page shows each tool by its name through the name rule, as list_tools does.
+    return [{**tool, "shown": untrusted.clean_name(tool.get("name"), 128) or tool.get("key")} for tool in result.tools]
 
 
 async def list_tools(server_id: int) -> list[dict]:
@@ -220,7 +225,11 @@ async def list_tools(server_id: int) -> list[dict]:
         rows = (await db.execute(
             select(Tool).where(Tool.toolset_key == f"mcp_{server_id}").order_by(Tool.key)
         )).scalars().all()
-        return [{"key": t.key, "name": t.external_name or t.key, "description": t.description,
+        # UNI1 (#526 review 4): a tool's name is the server's own words. `shown` is what the connections page
+        # shows, through the name rule; `name` stays as the server sent it, because list_my_capabilities judges it
+        # against MCP's name rule (S64-0c) and the key stays the identity.
+        return [{"key": t.key, "name": t.external_name or t.key,
+                 "shown": untrusted.clean_name(t.external_name, 128) or t.key, "description": t.description,
                  "tier": t.tier, "status": t.status, "host_enabled": t.host_enabled,
                  "suggested_tier": discovery.suggest_tier(t.external_name or "")}
                 for t in rows]

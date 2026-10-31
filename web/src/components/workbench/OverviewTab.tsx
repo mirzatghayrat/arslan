@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, Plug, Smartphone } from "lucide-react";
-import type { ConversationFile } from "../../api/files";
+import { ChevronRight, FolderOpen, Plug, Smartphone } from "lucide-react";
+import type { ConversationChangeTurn, ConversationFile } from "../../api/files";
 import { filesApi } from "../../api/files";
+import { ApiError, api } from "../../api/client";
+import type { RunCheckpoint } from "../../api/client.types";
+import UndoTurnSheet from "../reply/UndoTurnSheet";
+import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { baseName } from "../../lib/fileKinds";
+import { baseName, kindOf } from "../../lib/fileKinds";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useWorkbench } from "../../stores/workbenchStore";
+import { useArslanStore } from "../../stores/arslanStore";
+import { isolate } from "../CapabilitySwitches";
 import ConversationModelChip, { PART_LABEL, ringRows } from "../models/ConversationModelChip";
 import { useConversationModel } from "../models/useConversationModel";
 import FileIcon from "./FileIcon";
@@ -25,6 +31,20 @@ const PART_COLOR: Record<keyof typeof PART_LABEL, string> = {
   system: "bg-subtle-foreground", tools: "bg-info", context: "bg-success", history: "bg-primary", turn: "bg-muted-foreground",
 };
 const row = "flex min-w-0 items-center gap-2 py-1 text-[12.5px]";
+const KIND_COLOR = { made: "text-success", edited: "text-muted-foreground", deleted: "text-danger" } as const;
+/** A turn's paths shown before "N more" (④参谋's review of #545: a run can list thousands). */
+export const PATHS_SHOWN = 6;
+/** Changes reloads this often while shown, as the panel's file poll: a turn's checkpoint is written after the turn
+ * ends (host_run's finally), so the reload at its end can come before it (④参谋's recheck of PR 545). */
+export const CHANGES_MS = 10_000;
+/** "a/b/c.txt" as its name and the folder before it: a long path keeps its name in view. */
+function splitPath(path: string): [string, string] {
+  const i = path.lastIndexOf("/");
+  return i < 0 ? [path, ""] : [path.slice(i + 1), path.slice(0, i + 1)];
+}
+/** DIFF1: kinds with no line diff (the server would answer `not_text`), so their rows don't open one. */
+const NO_DIFF = new Set(["image", "video", "audio", "pdf", "xlsx", "doc"]);
+export const opensDiff = (path: string) => !NO_DIFF.has(kindOf(baseName(path)));
 const link = "shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground";
 
 /** Newest first: by creation time when the server sent one, else the server's order reversed. */
@@ -66,6 +86,39 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   useEffect(() => { void loadServers(); }, [loadServers]);
   const { needs, readyCount } = connectorSummary(servers ?? []);
 
+  // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
+  const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
+  const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
+  const [opened, setOpened] = useState<number[]>([]);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const opener = useRef<HTMLButtonElement | null>(null);
+  const turns = useArslanStore((s) => s.items.length);          // a turn that changed files but delivered none
+  // Another conversation's turns never show here, nor its undo (④参谋's review of #545): the list is emptied
+  // when the conversation changes, an answer for one no longer shown is dropped, and "no such conversation"
+  // (404, a new one) is an empty list; any other failure keeps this conversation's last list.
+  const current = useRef(conversationId);
+  current.current = conversationId;
+  useEffect(() => { setChanges([]); setUndo(null); setOpened([]); }, [conversationId]);
+  const loadChanges = useCallback(async () => {
+    const asked = conversationId;
+    try {
+      // Deferred into the promise so an unavailable client (offline, or a test's partial mock) is a rejection.
+      const found = await Promise.resolve().then(() => filesApi.changes(asked));
+      if (current.current === asked) setChanges(found.turns);
+    } catch (err) {
+      if (current.current === asked && err instanceof ApiError && err.status === 404) setChanges([]);
+    }
+  }, [conversationId]);
+  useEffect(() => { void loadChanges(); }, [loadChanges, files.length, turns]);
+  useEffect(() => {
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadChanges(); }, CHANGES_MS);
+    return () => clearInterval(timer);
+  }, [loadChanges]);
+  const askUndo = async (runId: number, button: HTMLButtonElement) => {
+    opener.current = button;
+    try { setUndo({ runId, info: await api.runCheckpoint(runId) }); } catch { toast(t("process.undoFailed")); }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto p-3" data-testid="overview-tab">
       <section data-testid="overview-environment">
@@ -105,6 +158,53 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             </li>))}</ul>}
       </section>
 
+      {changes.length > 0 && <section data-testid="overview-changes">
+        <h3 ref={heading} tabIndex={-1} className={`${HEADING} outline-none`}>{t("workbench.chH")}</h3>
+        <p className="mt-0.5 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>
+        <ul className="mt-1.5 space-y-2">{changes.map((turn) => {
+          const all = opened.includes(turn.run_id);
+          const shown = all ? turn.paths : turn.paths.slice(0, PATHS_SHOWN);
+          return <li key={turn.run_id} data-testid={`overview-turn-${turn.run_id}`} data-undone={turn.undone || undefined}
+            className={turn.undone ? "opacity-60" : ""}>
+            <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate">{turn.at ? formatUiDateTime(turn.at, i18n.language) : ""}</span>
+              {turn.undone ? <span className="shrink-0 rounded bg-fill px-1.5 text-[10.5px]" data-testid={`overview-undone-${turn.run_id}`}>
+                {t("workbench.undone")}</span>
+                : <button type="button" className={link} onClick={(e) => void askUndo(turn.run_id, e.currentTarget)}
+                  data-testid={`overview-undo-${turn.run_id}`}>{t("process.undoTurn")}</button>}
+            </div>
+            <ul className="mt-0.5 space-y-0.5">{shown.map((p) => {
+              const [name, dir] = splitPath(p.path);
+              const parts = <>
+                <span className={`min-w-12 shrink-0 text-[11px] ${KIND_COLOR[p.kind]}`}>{t(`workbench.${p.kind}`)}</span>
+                <span className="min-w-0 max-w-[70%] truncate" data-testid="overview-change-name">{isolate(name)}</span>
+                {dir && <span className="min-w-0 flex-1 truncate text-[11px] text-subtle-foreground" dir="rtl">{isolate(dir)}</span>}
+              </>;
+              const line = "flex w-full min-w-0 items-center gap-2 text-[12.5px]";
+              // DIFF1: a text path of a turn that can still be undone opens its line diff (made and deleted too).
+              return <li key={`${p.folder}/${p.path}`} title={isolate(`${p.folder}/${p.path}`)}>
+                {!turn.undone && opensDiff(p.path)
+                  ? <button type="button" data-testid="overview-change-open"
+                    className={`${line} -mx-1 rounded-md px-1 text-left hover:bg-foreground/[0.04]`}
+                    onClick={() => openReader({ kind: "diff", conversationId, runId: turn.run_id, folder: p.folder, path: p.path })}>
+                    {parts}<ChevronRight size={13} className="ml-auto shrink-0 text-subtle-foreground" aria-hidden /></button>
+                  : <div className={line}>{parts}</div>}
+              </li>;
+            })}</ul>
+            {turn.paths.length > PATHS_SHOWN && !all && <button type="button" className={`${link} mt-0.5`}
+              data-testid={`overview-more-${turn.run_id}`} onClick={() => setOpened([...opened, turn.run_id])}>
+              {t("workbench.morePaths", { count: turn.paths.length - PATHS_SHOWN })}</button>}
+          </li>;
+        })}</ul>
+        {undo && <UndoTurnSheet runId={undo.runId} info={undo.info} onClose={() => {
+          setUndo(null);
+          // Back to the Undo button that opened the sheet (Cancel); once the list shows the turn undone, that
+          // button is gone, so the section's heading, not the page.
+          void loadChanges().then(() => requestAnimationFrame(() =>
+            (opener.current?.isConnected ? opener.current : heading.current)?.focus()));
+        }} />}
+      </section>}
+
       {pct != null && <section data-testid="overview-context">
         <h3 className={HEADING}>{t("workbench.ctxH")}</h3>
         <div className="mt-1.5 flex items-baseline justify-between text-[12.5px]">
@@ -127,7 +227,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
         </>}
       </section>}
 
-      {servers && servers.length > 0 && <section data-testid="overview-connectors">
+      {(needs.length > 0 || readyCount > 0) && <section data-testid="overview-connectors">
         <h3 className={HEADING}>{t("workbench.conH")}</h3>
         <ul className="mt-1.5 space-y-0.5">
           {needs.map((s) => <li key={s.id} className={row} data-testid={`overview-connector-${s.id}`}>

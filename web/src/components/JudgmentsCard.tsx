@@ -20,6 +20,7 @@ export interface JudgmentRow {
 const POINT_KEY: Record<string, string> = {
   "memory.worth": "activityPage.pointWorth",
   "memory.merge": "activityPage.pointMerge",
+  "memory.same": "activityPage.pointSame",
   "memory.applied": "activityPage.pointApplied",
   "memory.conflict": "activityPage.pointConflict",
   "job.accomplished": "activityPage.pointAccomplished",

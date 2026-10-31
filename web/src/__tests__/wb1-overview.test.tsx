@@ -11,10 +11,10 @@ vi.mock("react-i18next", () => ({
     i18n: { resolvedLanguage: "en", language: "en" } }),
 }));
 const { files, jobsApi, mcp, client, conv } = vi.hoisted(() => ({
-  files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn() },
+  files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn(), changes: vi.fn() },
   jobsApi: { list: vi.fn(), stop: vi.fn() },
   mcp: { listMcpServers: vi.fn(), reconnectMcpServer: vi.fn() },
-  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn() },
+  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn(), api: { runCheckpoint: vi.fn(), undoTurn: vi.fn() } },
   conv: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
 }));
 vi.mock("../api/files", () => ({ filesApi: files }));
@@ -30,7 +30,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useWorkbench } from "../stores/workbenchStore";
 import { _resetChipCatalogs, ringRows } from "../components/models/ConversationModelChip";
 import Workbench from "../components/workbench/Workbench";
-import { connectorSummary, newestFirst } from "../components/workbench/OverviewTab";
+import { CHANGES_MS, connectorSummary, newestFirst, PATHS_SHOWN } from "../components/workbench/OverviewTab";
+import { ApiError } from "../api/client";
 
 const cfg = { id: 1, provider: "deepseek", model: "deepseek-chat", is_primary: true, label: "DeepSeek" } as ProviderConfig;
 const PARTS = { system: 1000, tools: 3000, context: 500, history: 4000, turn: 1500 };
@@ -54,6 +55,7 @@ beforeEach(() => {
   mcp.reconnectMcpServer.mockResolvedValue({ ok: true });
   client.fetchProviderModels.mockResolvedValue({ models: [{ id: "deepseek-chat", context_window: 64000, capabilities: ["tools"] }] });
   conv.get.mockResolvedValue({ choice: null });
+  files.changes.mockResolvedValue({ turns: [] });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -144,6 +146,214 @@ describe("Overview", () => {
     mount();
     await screen.findByTestId("overview-deliverables");
     await waitFor(() => expect(mcp.listMcpServers).toHaveBeenCalled());
+    expect(screen.queryByTestId("overview-connectors")).toBeNull();
+  });
+});
+
+describe("Changes (WB1-3)", () => {
+  const turns = [
+    { run_id: 12, at: "2026-10-30T09:31:00", undone: false, paths: [
+      { folder: "~/Arslan", path: "tm-exclusions.txt", kind: "edited" }, { folder: "~/Arslan", path: "drive-check.png", kind: "made" }] },
+    { run_id: 11, at: "2026-10-30T09:12:00", undone: true, paths: [{ folder: "~/Arslan", path: "old.md", kind: "deleted" }] },
+  ];
+
+  it("lists each turn's paths with what happened to them, and offers undo only where it can", async () => {
+    files.changes.mockResolvedValue({ turns });
+    useWorkbench.getState().show("overview");
+    mount();
+    const section = await screen.findByTestId("overview-changes");
+    expect(files.changes).toHaveBeenCalledWith("c1");
+    expect(section).toHaveTextContent("workbench.chNote");
+    const t12 = within(section).getByTestId("overview-turn-12");
+    expect(t12).toHaveTextContent("workbench.edited");
+    expect(t12).toHaveTextContent("tm-exclusions.txt");
+    expect(t12).toHaveTextContent("workbench.made");
+    expect(within(section).getByTestId("overview-turn-11")).toHaveTextContent("workbench.deleted");
+    expect(within(section).queryByTestId("overview-undo-11")).toBeNull();            // already undone
+    expect(within(section).getByTestId("overview-undo-12")).toHaveTextContent("process.undoTurn");
+  });
+
+  it("opens today's undo sheet for that turn", async () => {
+    files.changes.mockResolvedValue({ turns });
+    client.api.runCheckpoint.mockResolvedValue({ exists: true, changed: 1, created: 1, skipped: [], excluded: [], overlap: [],
+      later: [], running: false, restored_at: null, expires_at: "2026-11-06T00:00:00", conversation: false });
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    await waitFor(() => expect(client.api.runCheckpoint).toHaveBeenCalledWith(12));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("is left out when no turn changed anything", async () => {
+    useWorkbench.getState().show("overview");
+    mount();
+    await screen.findByTestId("overview-deliverables");
+    await waitFor(() => expect(files.changes).toHaveBeenCalled());
+    expect(screen.queryByTestId("overview-changes")).toBeNull();
+  });
+});
+
+describe("Changes after review (④参谋, PR 545)", () => {
+  const turn = (run_id: number, paths: string[], undone = false) => ({ run_id, at: "2026-10-30T09:31:00Z", undone,
+    paths: paths.map((path) => ({ folder: "~/Arslan", path, kind: "edited" as const })) });
+  const info = { exists: true, changed: 1, created: 0, skipped: [], excluded: [], overlap: [], later: [], running: false,
+    restored_at: null, expires_at: "2026-11-06T00:00:00", conversation: false };
+
+  it("never shows another conversation's turns: a new one with no runs (404) shows none", async () => {
+    files.changes.mockResolvedValueOnce({ turns: [turn(12, ["a.txt"])] });
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();     // positive control
+    files.changes.mockRejectedValueOnce(new ApiError("not found", 404, { code: "conversation_not_found" }));
+    view.rerender(<Workbench conversationId="c2" taskId={null} temporary={false}
+      models={{ configs: [cfg], llmProviders: [], onSetDefault: vi.fn() }} />);
+    await waitFor(() => expect(files.changes).toHaveBeenLastCalledWith("c2"));
+    await waitFor(() => expect(screen.queryByTestId("overview-changes")).toBeNull());
+  });
+
+  it("empties the list when its own conversation is gone (404), but keeps it through any other failure", async () => {
+    files.changes.mockResolvedValueOnce({ turns: [turn(12, ["a.txt"])] });
+    useWorkbench.getState().show("overview");
+    mount();
+    expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();
+    files.changes.mockRejectedValueOnce(new Error("offline"));
+    act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r1", role: "arslan", text: "x" }] } as never); });
+    await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("overview-turn-12")).toBeInTheDocument();          // offline: the last list stays
+    files.changes.mockRejectedValueOnce(new ApiError("not found", 404, { code: "conversation_not_found" }));
+    act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r1", role: "arslan", text: "x" },
+      { kind: "message", id: "r2", role: "arslan", text: "y" }] } as never); });             // one more turn
+    await waitFor(() => expect(screen.queryByTestId("overview-changes")).toBeNull());
+  });
+
+  it("drops a late answer for the conversation no longer shown", async () => {
+    let answerA: (value: { turns: unknown[] }) => void = () => {};
+    files.changes.mockImplementationOnce(() => new Promise((resolve) => { answerA = resolve; }));
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    await waitFor(() => expect(files.changes).toHaveBeenCalledWith("c1"));
+    files.changes.mockResolvedValue({ turns: [] });
+    view.rerender(<Workbench conversationId="c2" taskId={null} temporary={false}
+      models={{ configs: [cfg], llmProviders: [], onSetDefault: vi.fn() }} />);
+    await waitFor(() => expect(files.changes).toHaveBeenLastCalledWith("c2"));
+    await act(async () => { answerA({ turns: [turn(12, ["a.txt"])] }); });
+    expect(screen.queryByTestId("overview-changes")).toBeNull();
+  });
+
+  it("reloads when a turn ends, even one that delivered no file", async () => {
+    useWorkbench.getState().show("overview");
+    mount();
+    await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(1));
+    act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r", role: "arslan", text: "done" }] } as never); });
+    await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(2));
+  });
+
+  it("marks an undone turn and folds a long one after a few rows", async () => {
+    const many = Array.from({ length: PATHS_SHOWN + 2 }, (_, i) => `dir/sub/file-${i}.txt`);
+    files.changes.mockResolvedValue({ turns: [turn(12, many), turn(11, ["old.md"], true)] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const t11 = await screen.findByTestId("overview-turn-11");
+    expect(within(t11).getByTestId("overview-undone-11")).toHaveTextContent("workbench.undone");
+    const t12 = screen.getByTestId("overview-turn-12");
+    expect(within(t12).getAllByTestId("overview-change-name")).toHaveLength(PATHS_SHOWN);
+    expect(within(t12).getByTestId("overview-more-12")).toHaveTextContent('workbench.morePaths:{"count":2}');
+    fireEvent.click(within(t12).getByTestId("overview-more-12"));
+    expect(within(t12).getAllByTestId("overview-change-name")).toHaveLength(PATHS_SHOWN + 2);
+    expect(within(t12).getAllByTestId("overview-change-name")[0].textContent).toBe("\u2068file-0.txt\u2069");   // the name, isolated
+  });
+
+  it("isolates a name, so a right-to-left override can't fake its extension", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["invoice\u202Etxt.exe"])] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const name = await screen.findByTestId("overview-change-name");
+    expect(name.textContent).toBe("\u2068invoicetxt.exe\u2069");
+  });
+
+  it("undoes that turn's run, then reloads and keeps focus in the section", async () => {
+    // The server lists the turn as undone once the undo is done, so its Undo button goes.
+    files.changes.mockImplementation(async () => ({ turns: [turn(12, ["a.txt"], client.api.undoTurn.mock.calls.length > 0)] }));
+    client.api.runCheckpoint.mockResolvedValue(info);
+    client.api.undoTurn.mockResolvedValue({ files: { runs: [] } });
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    fireEvent.click(await screen.findByTestId("undo-files"));
+    await waitFor(() => expect(client.api.undoTurn).toHaveBeenCalledWith(12, "files", undefined));
+    await waitFor(() => expect(files.changes.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("workbench.chH"));
+  });
+
+  it("puts focus back on the Undo button when the sheet is cancelled", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });
+    client.api.runCheckpoint.mockResolvedValue(info);
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    fireEvent.click(await screen.findByTestId("undo-cancel"));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("overview-undo-12")));
+    expect(client.api.undoTurn).not.toHaveBeenCalled();
+  });
+
+  it("empties the list when the conversation changes, even if the new one's answer fails", async () => {
+    files.changes.mockResolvedValueOnce({ turns: [turn(12, ["a.txt"])] });
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();     // positive control
+    files.changes.mockRejectedValue(new Error("offline"));                        // not a 404: no empty list from it
+    view.rerender(<Workbench conversationId="c2" taskId={null} temporary={false}
+      models={{ configs: [cfg], llmProviders: [], onSetDefault: vi.fn() }} />);
+    await waitFor(() => expect(files.changes).toHaveBeenLastCalledWith("c2"));
+    expect(screen.queryByTestId("overview-changes")).toBeNull();
+  });
+
+  it("shows a turn whose checkpoint was written after the turn ended, at the next poll", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      files.changes.mockResolvedValue({ turns: [] });                             // the turn ended, finish not yet run
+      useWorkbench.getState().show("overview");
+      mount();
+      act(() => { useArslanStore.setState({ items: [{ kind: "message", id: "r", role: "arslan", text: "done" }] } as never); });
+      await waitFor(() => expect(files.changes).toHaveBeenCalledTimes(2));
+      expect(screen.queryByTestId("overview-changes")).toBeNull();
+      files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });          // finish has written it now
+      await act(async () => { vi.advanceTimersByTime(CHANGES_MS); });
+      expect(await screen.findByTestId("overview-turn-12")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so when the undo can't be read", async () => {
+    files.changes.mockResolvedValue({ turns: [turn(12, ["a.txt"])] });
+    client.api.runCheckpoint.mockRejectedValue(new Error("offline"));
+    useWorkbench.getState().show("overview");
+    mount();
+    fireEvent.click(await screen.findByTestId("overview-undo-12"));
+    await waitFor(() => expect(screen.queryByTestId("undo-turn")).toBeNull());
+    expect(client.api.runCheckpoint).toHaveBeenCalledWith(12);
+  });
+});
+
+describe("Connectors with nothing to say", () => {
+  it("is shown with only ready servers, and with only failing ones", async () => {
+    mcp.listMcpServers.mockResolvedValueOnce([server(1, "ready")]);
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-connectors-ok")).toBeInTheDocument();
+    view.unmount();
+    mcp.listMcpServers.mockResolvedValueOnce([server(2, "failed")]);
+    mount();
+    expect(await screen.findByTestId("overview-connector-2")).toBeInTheDocument();
+  });
+
+  it("is left out when every server is off or starting (#530 review)", async () => {
+    mcp.listMcpServers.mockResolvedValue([server(1, "off"), server(2, "starting")]);
+    useWorkbench.getState().show("overview");
+    mount();
+    await waitFor(() => expect(mcp.listMcpServers).toHaveBeenCalled());
+    await screen.findByTestId("overview-deliverables");
     expect(screen.queryByTestId("overview-connectors")).toBeNull();
   });
 });
