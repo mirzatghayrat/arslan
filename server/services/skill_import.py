@@ -233,6 +233,7 @@ def _references_for(skill_md_path: str, all_paths: list[str]) -> list[str]:
 async def scan_skills(ref: str, subpath: str = "") -> dict:
     """Find standard SKILL.md skills in a repo and report per-skill importability.
     0.1.55: the license gate is per skill — its own license file, else the repo's."""
+    from server.orchestrator import untrusted
     ref, _, pin = (ref or "").partition("@")
     parsed = github_eval.parse_repo_ref(ref)
     if parsed is None:
@@ -262,7 +263,9 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
             entry.update(importable=False, reason="not a valid SKILL.md (frontmatter name+description required)")
         else:
             entry.update(key=info["key"], name=info["name"], description=info["description"],
-                         body_bytes=len(info["body"].encode("utf-8")))
+                         body_bytes=len(info["body"].encode("utf-8")),
+                         # UNI1b: how many characters of its text show nothing (shown, never blocking).
+                         hidden=untrusted.hidden_summary(info["body"]))
             spdx, source = await _skill_license(owner, repo, p, paths, meta["license"], sha)
             block = _skill_license_block(spdx, source)
             entry.update(license=spdx, license_source=source)

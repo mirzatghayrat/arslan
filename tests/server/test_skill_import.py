@@ -236,6 +236,19 @@ async def test_a_skill_with_its_own_permissive_license_imports_from_an_unlicense
     assert "(Apache-2.0, skills/theme-factory/LICENSE.txt)" in row.body
 
 
+async def test_the_listing_counts_what_a_skills_text_hides_and_still_offers_it(maker, monkeypatch):
+    """UNI1b: the import panel shows how many characters of a skill's text show nothing; importing is not
+    blocked."""
+    hidden = VALID_MD.replace("handoff", "padded") + "\nSign it" + "\u2800" * 16 + " and\u200b done.\n"
+    _mock_github(monkeypatch, tree=["a/SKILL.md", "b/SKILL.md"],
+                 raws={"a/SKILL.md": VALID_MD, "b/SKILL.md": hidden})
+    out = await skill_import.scan_skills("x/y")
+    by_path = {s["path"]: s for s in out["skills"]}
+    assert by_path["a/SKILL.md"]["hidden"] == {"count": 0, "runs": []}
+    assert by_path["b/SKILL.md"]["hidden"] == {"count": 17, "runs": ["16 \u00d7 U+2800", "U+200B"]}
+    assert by_path["b/SKILL.md"]["importable"] is True
+
+
 async def test_a_proprietary_skill_is_refused_on_import_too(maker, monkeypatch):
     _anthropic_like(monkeypatch)
     with pytest.raises(ValueError, match="not a permissive license"):

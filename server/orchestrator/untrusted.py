@@ -183,6 +183,73 @@ def cap_blank_runs(text: str, limit: int) -> str:
     return re.sub(_BLANK + "{%d,}" % (limit + 1), lambda run: run.group()[:limit], text)
 
 
+#: UNI1b: what a skill's text may hold that shows nothing at all: Unicode's default-ignorable code points
+#: (DerivedCoreProperties.txt) and the blank braille pattern. Left out: what ordinary text needs (ZWNJ U+200C,
+#: ZWJ U+200D, LRM U+200E, RLM U+200F, ALM U+061C) and the bidi controls (U+202A\u2013202E, U+2066\u20132069),
+#: which the cards already show with their own marker (UNI1a). spec/unicode/hidden-characters.json holds the
+#: cases the server and the web both pass.
+_HIDDEN = ((0x00AD, 0x00AD), (0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F),
+           (0x200B, 0x200B), (0x2060, 0x2065), (0x206A, 0x206F), (0x2800, 0x2800), (0x3164, 0x3164),
+           (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3),
+           (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF))
+#: Runs of these show as one marker with their range: variation selectors, their supplement, and tags.
+_RANGES = (("U+FE00\u2013FE0F", 0xFE00, 0xFE0F), ("U+E0100\u2013E01EF", 0xE0100, 0xE01EF),
+           ("U+E0020\u2013E007F", 0xE0000, 0xE007F))
+
+
+def _hidden(cp: int) -> bool:
+    return any(lo <= cp <= hi for lo, hi in _HIDDEN)
+
+
+def _range_of(cp: int) -> str | None:
+    return next((label for label, lo, hi in _RANGES if lo <= cp <= hi), None)
+
+
+def _is_vs(cp: int) -> bool:
+    return 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF
+
+
+def hidden_runs(text) -> list[tuple[int, list[int]]]:
+    """UNI1b: each run of characters in `text` that show nothing, as (start, code points), in order. A run is one
+    code point repeated, or characters of one range (variation selectors, their supplement, tags). Not counted:
+    one variation selector right after a visible character (as in the red heart emoji), and the tags of an RGI
+    subdivision flag."""
+    import unicodedata
+    text = str(text or "")
+    flagged = {i for flag in TAG_FLAG.finditer(text) for i in range(flag.start() + 1, flag.end())}
+    runs: list[tuple[int, list[int]]] = []
+    open_run, prev_visible = False, False
+    for i, ch in enumerate(text):
+        cp = ord(ch)
+        hidden = i not in flagged and _hidden(cp)
+        if hidden and _is_vs(cp) and prev_visible and not (i + 1 < len(text) and _is_vs(ord(text[i + 1]))):
+            hidden = False                          # one selector choosing how the character before it looks
+        if hidden:
+            last = runs[-1][1] if runs and open_run else None
+            if last and (last[-1] == cp or (_range_of(cp) is not None and _range_of(cp) == _range_of(last[-1]))):
+                last.append(cp)
+            else:
+                runs.append((i, [cp]))
+        open_run = hidden
+        prev_visible = not hidden and unicodedata.category(ch)[0] in "LMNPS"
+    return runs
+
+
+def hidden_label(cps: list[int]) -> str:
+    """A run as its marker shows it: `U+200B`, `16 \u00d7 U+2800`, `14 \u00d7 U+E0100\u2013E01EF`."""
+    one = f"U+{cps[0]:04X}"
+    if len(cps) == 1:
+        return one
+    return f"{len(cps)} \u00d7 {one if len(set(cps)) == 1 else _range_of(cps[0])}"
+
+
+def hidden_summary(text, runs_max: int = 8) -> dict:
+    """UNI1b, for a list that shows a count (the import panel): how many characters show nothing, and the first
+    runs' labels."""
+    runs = hidden_runs(text)
+    return {"count": sum(len(cps) for _, cps in runs), "runs": [hidden_label(cps) for _, cps in runs[:runs_max]]}
+
+
 def reaches_network(command: str) -> bool:
     """A command whose text shows it reaches the network (curl, git clone, pip download, a URL…)."""
     return bool(_NETWORK_COMMAND.search(command or ""))

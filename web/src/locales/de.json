@@ -957,7 +957,7 @@
       "orphaned": "Verwaiste Dateien"
     },
     "import": {
-      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, ohne versteckte Zeichen — lizenzgeprüft.",
+      "subtitle": "Standard-SKILL.md, wie geschrieben importiert (Tag-Zeichen entfernt, andere unsichtbare Zeichen gezählt) — lizenzgeprüft.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "Unterpfad (optional)",
       "scan": "Scannen",
@@ -965,7 +965,9 @@
       "imported": "Importiert",
       "no_license": "KEINE LIZENZ",
       "none_found": "Keine SKILL.md-Dateien gefunden.",
-      "scripts_n": "{{n}} Skripte"
+      "scripts_n": "{{n}} Skripte",
+      "hidden": "Unsichtbare Zeichen: {{count}}",
+      "hiddenRuns": "Sein Text enthält {{runs}}. Eine solche Folge kann Text verbergen; der Import wird nicht blockiert."
     },
     "filter": {
       "placeholder": "Vorhandenes filtern…",

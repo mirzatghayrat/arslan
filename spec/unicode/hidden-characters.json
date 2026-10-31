@@ -1,0 +1,191 @@
+{
+ "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ, ZWNJ, LRM, RLM, ALM, one variation selector right after a visible character, a valid emoji tag sequence, and the bidi controls (UNI1a shows those with their own marker).",
+ "cases": [
+  {
+   "name": "plain text",
+   "text": "Read the notes and keep the decisions.",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a zero-width space",
+   "text": "a\u200bb",
+   "count": 1,
+   "runs": [
+    "U+200B"
+   ]
+  },
+  {
+   "name": "a run of supplementary variation selectors after a letter",
+   "text": "x\udb40\udd00\udb40\udd01\udb40\udd02\udb40\udd03\udb40\udd04\udb40\udd05\udb40\udd06\udb40\udd07\udb40\udd08\udb40\udd09\udb40\udd0a\udb40\udd0b\udb40\udd0c\udb40\udd0d",
+   "count": 14,
+   "runs": [
+    "14 \u00d7 U+E0100\u2013E01EF"
+   ]
+  },
+  {
+   "name": "one supplementary selector repeated",
+   "text": "x\udb40\udd00\udb40\udd00",
+   "count": 2,
+   "runs": [
+    "2 \u00d7 U+E0100"
+   ]
+  },
+  {
+   "name": "one variation selector after an emoji",
+   "text": "\u2764\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "two variation selectors after a letter",
+   "text": "a\ufe0f\ufe0e",
+   "count": 2,
+   "runs": [
+    "2 \u00d7 U+FE00\u2013FE0F"
+   ]
+  },
+  {
+   "name": "a variation selector with nothing before it",
+   "text": "\ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "a variation selector after a hidden character",
+   "text": "a\u200b\ufe0f",
+   "count": 2,
+   "runs": [
+    "U+200B",
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "a variation selector after a space",
+   "text": "a \ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "a ZWJ inside an emoji sequence",
+   "text": "\ud83d\udc68\u200d\ud83d\udc69",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a ZWNJ between Arabic-script letters",
+   "text": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "LRM, RLM and ALM",
+   "text": "a\u200eb\u200fc\u061cd",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a run of blank braille",
+   "text": "\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800",
+   "count": 16,
+   "runs": [
+    "16 \u00d7 U+2800"
+   ]
+  },
+  {
+   "name": "a soft hyphen",
+   "text": "co\u00adoperate",
+   "count": 1,
+   "runs": [
+    "U+00AD"
+   ]
+  },
+  {
+   "name": "Hangul fillers",
+   "text": "\u3164\u115f\uffa0",
+   "count": 3,
+   "runs": [
+    "U+3164",
+    "U+115F",
+    "U+FFA0"
+   ]
+  },
+  {
+   "name": "a word joiner",
+   "text": "a\u2060b",
+   "count": 1,
+   "runs": [
+    "U+2060"
+   ]
+  },
+  {
+   "name": "a byte-order mark inside the text",
+   "text": "a\ufeffb",
+   "count": 1,
+   "runs": [
+    "U+FEFF"
+   ]
+  },
+  {
+   "name": "a bidi override (shown by its own marker, UNI1a)",
+   "text": "a\u202eb\u2066c\u2069",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "the England flag's tag sequence",
+   "text": "\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a stray tag character",
+   "text": "a\udb40\udc41",
+   "count": 1,
+   "runs": [
+    "U+E0041"
+   ]
+  },
+  {
+   "name": "a run of tag characters",
+   "text": "a\udb40\udc41\udb40\udc42\udb40\udc43",
+   "count": 3,
+   "runs": [
+    "3 \u00d7 U+E0020\u2013E007F"
+   ]
+  },
+  {
+   "name": "two kinds side by side",
+   "text": "a\u200b\u200b\u2060b",
+   "count": 3,
+   "runs": [
+    "2 \u00d7 U+200B",
+    "U+2060"
+   ]
+  },
+  {
+   "name": "an invisible operator and a Mongolian selector",
+   "text": "x\u2062y\u180bz",
+   "count": 2,
+   "runs": [
+    "U+2062",
+    "U+180B"
+   ]
+  },
+  {
+   "name": "the mock's skill text",
+   "text": "## Trigger\nThe user asks for this week's report.\u200b\n\n## Method\n1. Read this week's\u2060 meeting notes.\n2. Keep each meeting's decisions.\udb40\udd00\udb40\udd01\udb40\udd02\udb40\udd03\udb40\udd04\udb40\udd05\udb40\udd06\udb40\udd07\udb40\udd08\udb40\udd09\udb40\udd0a\udb40\udd0b\udb40\udd0c\udb40\udd0d\n3. Send it to the team. \u2764\ufe0f Persian stays as written: \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645\n4. Sign it\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800\u2800 as the team.",
+   "count": 32,
+   "runs": [
+    "U+200B",
+    "U+2060",
+    "14 \u00d7 U+E0100\u2013E01EF",
+    "16 \u00d7 U+2800"
+   ]
+  }
+ ]
+}
