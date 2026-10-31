@@ -12,6 +12,7 @@ vi.mock("react-i18next", () => ({
 
 import * as client from "../api/client";
 import NotDoneList from "../components/proactive/NotDoneList";
+import { isolate } from "../lib/outsideText";
 import { ANSWER_GUARD_MS, CARD_MS } from "../components/kit";
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); });
@@ -34,10 +35,10 @@ describe("what Always allow will store is shown in full (M1)", () => {
     serve([{ ...base, kind: "site", target: "x.com", detail: "", always: [{ kind: "site", target: "x.com", label: LONG }] }]);
     await shown();
     const rule = screen.getByTestId("inbox-refused-rule");
-    expect(rule.textContent).toBe(`inbox.alwaysStores:${JSON.stringify({ what: LONG })}`);
+    expect(rule.textContent).toBe(`inbox.alwaysStores:${JSON.stringify({ what: isolate(LONG) })}`);     // isolated in the sentence (#602 review)
     expect(rule.className).toContain("[overflow-wrap:anywhere]");
     expect(rule.className).not.toMatch(/\btruncate\b|\bwhitespace-nowrap\b|\bline-clamp/);
-    expect(rule).toHaveAttribute("title", LONG);
+    expect(rule).toHaveAttribute("title", isolate(LONG));
   });
 
   it("every rule is a line of its own, each in the words its card used, in order", async () => {
@@ -46,8 +47,8 @@ describe("what Always allow will store is shown in full (M1)", () => {
                { kind: "app", target: "com.bear", label: "" }] }]);
     await shown();
     const rules = within(screen.getByTestId("inbox-refused-stores")).getAllByTestId("inbox-refused-rule");
-    expect(rules.map((r) => r.textContent)).toEqual([
-      'inbox.alwaysStores:{"what":"Notes"}', 'inbox.alwaysStores:{"what":"Mail"}', 'inbox.alwaysStores:{"what":"com.bear"}']);
+    expect(rules.map((r) => r.textContent)).toEqual(["Notes", "Mail", "com.bear"]
+      .map((name) => `inbox.alwaysStores:${JSON.stringify({ what: isolate(name) })}`));
   });
 
   it("a many-app entry names each app on a line of its own, never merged into one string", async () => {

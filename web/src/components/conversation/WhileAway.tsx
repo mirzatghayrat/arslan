@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { proactiveApi, type ProactiveItem } from "../../api/proactive";
 import NotDoneList from "../proactive/NotDoneList";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import { Notice } from "../kit";
+import { useQueueGuard } from "../kit/guard";
 
 // INB5b (v0.1.64): what waited in the Inbox comes back to its conversation (the INB5 board, approved 2026-10-31). Approval cards
 // were already there; these two pieces join them.
@@ -45,6 +46,16 @@ export function StoppedJobCards({ conversationId, onOpenConversation, onOpenMode
     return () => clearInterval(timer);
   }, [load]);
   const { busyId, notice, doIt, snooze, dismiss } = useReminderActions({ reload: load, onOpenConversation });
+  // #602 review: these cards sit at the end of the conversation, under the slot's floating card. When one comes up, changes state or
+  // a notice appears above them, what is around them moves: that holds the shared guard (the slot's card included), as the away
+  // list does when it changes.
+  const guard = useQueueGuard();
+  const shownKey = `${notice ? "notice" : ""}|${items.map((item) => `${item.id}:${item.status}`).join(",")}`;
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    if (mounted.current || shownKey !== "|") guard.hold();
+    mounted.current = true;
+  }, [guard, shownKey]);
   if (items.length === 0 && !notice) return null;
   return <section aria-label={t("whileAway.stopped")} className="mx-auto flex w-full max-w-3xl flex-col gap-3">
     {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}

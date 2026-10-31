@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
-import { AnswerGuardScope, ConfirmHost, ToastHost, toast as showToast, useAnswerGuardState } from "./components/kit";
+import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
 import ShellPolicySwitchNotice from "./components/ShellPolicySwitchNotice";
-import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -53,7 +52,7 @@ import { threadDisplayTitle } from './lib/threadTitles';
 import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
-import { AwayEntries, StoppedJobCards } from './components/conversation/WhileAway';
+import ConversationStage from './components/conversation/ConversationStage';
 import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useWaiting } from './hooks/useWaiting';
 import { useScheduledAttention } from './hooks/useScheduledAttention';
@@ -119,9 +118,6 @@ export default function App() {
   // thread is active when its fetch RESOLVES, not the one that was active when
   // it started.
   const activeThreadIdRef = useRef(activeThreadId);
-  // INB5b: one answer guard for the ask slot and the conversation under it (what wasn't done while you were away sits on top of the
-  // messages), so one gesture answers one thing across the two.
-  const answerGuard = useAnswerGuardState();
   activeThreadIdRef.current = activeThreadId;
 
   // A clicked desktop notification asks for its conversation (0.1.41). Refs keep
@@ -739,10 +735,13 @@ export default function App() {
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* 0.1.55: every pending ask in ONE slot, queued "‹ 1 / 3 ›" (they used to
                 render into the same absolute spot and overlap). Same frames, same answers. */}
-            <AnswerGuardScope value={answerGuard}>
-            {activeSection === 'arslan' && <AskSlot send={wsSend} />}
-
+            {/* INB5b: the slot and the conversation in one answer guard, with what waited on top and the stopped jobs after the
+                messages (ConversationStage; a temporary conversation has neither). */}
             {activeSection === 'arslan' && (
+              <ConversationStage send={wsSend} conversationId={activeThreadId} temporary={activeThread?.temporary === true}
+                onOpenConversation={openCardConversation}
+                onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }}>
+              {({ header, footer }) => (
               <div className="flex h-full min-h-0 flex-col">
               <OrchestratorChat
                 key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
@@ -766,17 +765,15 @@ export default function App() {
                   setPanelView('default');
                 }}
                 conversationId={activeThreadId}
-                // INB5b: what waited in the Inbox comes back to the conversation (a temporary one has neither).
-                header={activeThread?.temporary ? undefined : <AwayEntries conversationId={activeThreadId} />}
-                footer={activeThread?.temporary ? undefined : <StoppedJobCards conversationId={activeThreadId}
-                  onOpenConversation={openCardConversation}
-                  onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
+                header={header}
+                footer={footer}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
               />
               </div>
+              )}
+              </ConversationStage>
             )}
-            </AnswerGuardScope>
 
             {activeSection === 'capabilities' && (
               // The primary config is the one that answers; falling back to the
