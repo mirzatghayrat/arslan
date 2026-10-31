@@ -147,6 +147,6 @@
 /* INB7-a chart series: identity, not meaning, so they do not change with the palette either. The first three slots of a
    categorical palette checked for colour-blind and normal-vision separation between EVERY pair, in both modes, so a series
    can keep its colour whatever its place on a bar; light aqua is under 3:1 on the surface, so a chart using these always
-   has a table with names and values. A fourth series and beyond fold into "Other" (--subtle-foreground), never a new hue. */
+   has a table with names and values. A fourth series and beyond fold into "Other" (--muted-foreground), never a new hue. */
 :root { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; }
 .dark { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; }

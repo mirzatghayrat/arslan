@@ -78,6 +78,7 @@ describe("the page is called Progress", () => {
         expect(text, `${language} ${key}`).toContain(NAMES[language]);
         for (const old of OLD_NAMES[language]) expect(text, `${language} ${key}`).not.toContain(old);
       }
+      expect(i18n.getResource(language, "translation", "activityPage.back"), language).toBeUndefined();    // #610 review F6: no reader
     }
   });
 });
@@ -206,11 +207,60 @@ describe("the cost tile opens the cost by model", () => {
     expect(segs.map((s) => s.getAttribute("title"))).toEqual(
       ["m-a · $0.40 · 40%", "m-b · $0.30 · 30%", "m-c · $0.20 · 20%", "Other models · $0.10 · 10%"]);
     expect(new Set(segs.slice(0, 3).map((s) => s.style.background)).size).toBe(3);
-    expect(segs[3].style.background).toBe("var(--subtle-foreground)");
+    expect(segs[3].style.background).toBe("var(--muted-foreground)");             // #610 review F5: 3:1 on the light surface
     fireEvent.click(screen.getByTestId("usage-cost"));
     const rows = screen.getAllByTestId("usage-row");
-    expect(within(rows[3]).getByTestId("usage-swatch").style.background).toBe("var(--subtle-foreground)");
-    expect(within(rows[4]).getByTestId("usage-swatch").style.background).toBe("var(--subtle-foreground)");
+    expect(within(rows[3]).getByTestId("usage-swatch").style.background).toBe("var(--muted-foreground)");
+    expect(within(rows[4]).getByTestId("usage-swatch").style.background).toBe("var(--muted-foreground)");
+  });
+
+  it("counts priced calls with no model as Other, keyed in grey (#610 review F1)", async () => {
+    getUsageSummary.mockResolvedValue(summary([row("m-a", 0.6), row(null, 0.4, 10_000, "answer", "unknown")]));
+    render(<UsageCard />);
+    await waitFor(() => expect(screen.getAllByTestId("usage-cost-seg")).toHaveLength(2));
+    expect(screen.getAllByTestId("usage-cost-seg").map((s) => s.getAttribute("title"))).toEqual(
+      ["m-a · $0.60 · 60%", "Other models · $0.40 · 40%"]);
+    fireEvent.click(screen.getByTestId("usage-cost"));
+    expect(within(screen.getAllByTestId("usage-row")[1]).getByTestId("usage-swatch").style.background).toBe("var(--muted-foreground)");
+  });
+
+  it("keeps every model's colour through three ranges whose models clash over a slot (#610 review F1)", async () => {
+    const ranges: Record<string, Row[]> = {
+      "7d": [row("m-a", 0.5), row("m-b", 0.3), row("m-c", 0.2)],
+      "30d": [row("m-a", 0.5), row("m-d", 0.3), row("m-e", 0.2)],                // m-d takes the slot m-b had
+      "24h": [row("m-b", 0.5), row("m-d", 0.3), row("m-c", 0.2)],                // m-b and m-d both remember it
+    };
+    getUsageSummary.mockImplementation(async (range: string) => summary(ranges[range]));
+    render(<UsageCard />);
+    const colours = () => Object.fromEntries(screen.getAllByTestId("usage-cost-seg")
+      .map((s) => [s.getAttribute("title")!.split(" · ")[0], s.style.background]));
+    await waitFor(() => expect(Object.keys(colours())).toEqual(["m-a", "m-b", "m-c"]));
+    const week = colours();
+    fireEvent.click(screen.getByTestId("usage-range-30d"));
+    await waitFor(() => expect(Object.keys(colours())).toEqual(["m-a", "m-d", "m-e"]));
+    fireEvent.click(screen.getByTestId("usage-range-24h"));
+    await waitFor(() => expect(Object.keys(colours())).toEqual(["m-b", "m-d", "m-c"]));
+    const day = colours();
+    expect(day["m-b"]).toBe(week["m-b"]);
+    expect(day["m-c"]).toBe(week["m-c"]);
+    expect(new Set(Object.values(day)).size).toBe(3);
+  });
+
+  it("tells a model that costs nothing from one with no price: a hollow key, not none (#610 review F2)", async () => {
+    getUsageSummary.mockResolvedValue(summary([row("m-a", 0.6), row("free-model", 0, 10_000, "answer", "openrouter"),
+      row("local", null, 10_000, "spawn", "ollama")]));
+    render(<UsageCard />);
+    await waitFor(() => expect(screen.getAllByTestId("usage-cost-seg")).toHaveLength(1));    // $0 draws nothing in the bar
+    fireEvent.click(screen.getByTestId("usage-cost"));
+    const [, free, local] = screen.getAllByTestId("usage-row");
+    expect(within(free).getByTestId("usage-swatch")).toHaveAttribute("data-free");
+    expect(within(local).queryByTestId("usage-swatch")).toBeNull();
+  });
+
+  it("names the cost tile for a screen reader: the cost, then that it opens by model (#610 review F4)", async () => {
+    render(<UsageCard />);
+    expect(await screen.findByRole("button", { name: "Cost $0.92, by model", expanded: false })).toBeTruthy();
+    expect(screen.getByTestId("usage-cost").querySelector("div")).toBeNull();          // phrasing content only inside a button
   });
 
   it("keeps a model's colour when the range changes, even when it is no longer the largest", async () => {

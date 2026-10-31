@@ -16,7 +16,8 @@ const tint = (pct: number) => `color-mix(in srgb, var(--primary) ${Math.round(pc
 /** INB7-a: the chart palette (tokens.css --series-1..3). Three slots that stay apart for colour-blind readers in any order, so a
  *  model can keep its slot whatever its rank; a fourth model and beyond fold into Other, in grey. */
 const SLOTS = 3;
-const OTHER = "var(--subtle-foreground)";
+// #610 review F5: --muted-foreground, 3:1 or more on the light surface in every palette (--subtle-foreground was 2.5–2.7).
+const OTHER = "var(--muted-foreground)";
 const slotColour = (slot: number) => `var(--series-${slot + 1})`;
 
 /** Each of the largest models keeps the slot it had, so a range change does not repaint a model the reader has learned; a model
@@ -38,12 +39,14 @@ export function assignSlots(models: string[], remembered: Record<string, number>
 }
 
 /** The priced cost by model, largest first: the three largest in their slots, the rest (and priced calls with no model) as Other.
- *  A call with no price is left out, because unknown is not free. */
+ *  A call with no price is left out, because unknown is not free; a call that cost nothing is priced but has nothing to draw. */
 function costByModel(rows: UsageSummaryRow[], remembered: Record<string, number>) {
   const byModel = new Map<string, number>();
+  const costsNothing = new Set<string>();
   let unnamed = 0;
   for (const r of rows) {
-    if (!r.usd) continue;
+    if (r.usd == null) continue;
+    if (r.usd === 0) { if (r.model) costsNothing.add(r.model); continue; }
     if (r.model) byModel.set(r.model, (byModel.get(r.model) ?? 0) + r.usd); else unnamed += r.usd;
   }
   const ranked = [...byModel].sort((a, b) => b[1] - a[1]);
@@ -54,7 +57,9 @@ function costByModel(rows: UsageSummaryRow[], remembered: Record<string, number>
   if (other > 0) segments.push({ key: "other", usd: other, colour: OTHER });
   const colourOf = (model: string | null) => model === null ? (unnamed > 0 ? OTHER : undefined)
     : slots[model] !== undefined ? slotColour(slots[model]) : byModel.has(model) ? OTHER : undefined;
-  return { segments, slots, colourOf, total: segments.reduce((n, s) => n + s.usd, 0) };
+  // #610 review F2: a model that only cost nothing is priced, so its key is hollow (nothing in the bar), not missing as for no price.
+  const free = (model: string | null) => model !== null && costsNothing.has(model) && !byModel.has(model);
+  return { segments, slots, colourOf, free, total: segments.reduce((n, s) => n + s.usd, 0) };
 }
 
 /**
@@ -138,29 +143,31 @@ export default function UsageCard({ waiting }: { waiting?: WaitingView }) {
           sub={rows.length ? t("activityPage.modelsN", { n: new Set(rows.map((r) => r.model)).size }) : undefined} />
         {/* INB7-a: the cost tile opens the cost by model in place; its bar is the same split, largest first. */}
         <button type="button" data-testid="usage-cost" aria-expanded={byModelOpen} aria-controls="usage-by-model"
+          aria-label={t("activityPage.costTileLabel", { cost: usd != null ? fmtUsd(usd) : "—" })}
+          aria-describedby={rows.length > 0 && priced.length < rows.length ? "usage-cost-note" : undefined}
           onClick={() => setByModelOpen(!byModelOpen)}
           className={`rounded-lg border bg-surface/60 px-3 py-2.5 text-left outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-primary/50 ${
             byModelOpen ? "border-foreground/40" : "border-border"}`}>
-          <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span>{t("activityPage.kpiCost")}</span>
             <span className="ml-auto flex items-center gap-0.5 normal-case tracking-normal">
               {t("activityPage.byModel")}
               <ChevronDown size={12} aria-hidden className={byModelOpen ? "rotate-180" : undefined} />
             </span>
-          </div>
-          <div className="mt-1 font-mono text-lg font-semibold tabular-nums text-foreground">{usd != null ? fmtUsd(usd) : "—"}</div>
+          </span>
+          <span className="mt-1 block font-mono text-lg font-semibold tabular-nums text-foreground">{usd != null ? fmtUsd(usd) : "—"}</span>
           {cost.segments.length > 0 && (
-            <div className="mt-1.5 flex h-1.5 gap-[2px]" data-testid="usage-cost-bar">
+            <span className="mt-1.5 flex h-1.5 gap-[2px]" data-testid="usage-cost-bar">
               {cost.segments.map((s, i) => {
                 const label = s.model ?? t("activityPage.otherModels");
                 return <span key={s.key} data-testid="usage-cost-seg" title={`${label} · ${fmtUsd(s.usd)} · ${Math.round((s.usd / cost.total) * 100)}%`}
                   className={`block h-full min-w-[3px] ${i === 0 ? "rounded-l-full" : ""} ${i === cost.segments.length - 1 ? "rounded-r-full" : ""}`}
                   style={{ flexGrow: (s.usd / cost.total) * 100, flexBasis: 0, background: s.colour }} />;
               })}
-            </div>
+            </span>
           )}
           {rows.length > 0 && priced.length < rows.length && (
-            <div className="mt-0.5 truncate text-[11px] text-subtle-foreground">{t("activityPage.partlyPriced")}</div>
+            <span id="usage-cost-note" className="mt-0.5 block truncate text-[11px] text-subtle-foreground">{t("activityPage.partlyPriced")}</span>
           )}
         </button>
       </div>
@@ -183,6 +190,8 @@ export default function UsageCard({ waiting }: { waiting?: WaitingView }) {
                     <span className="min-w-0 truncate">
                       {/* The key to the bar: a model with no price is not in it, so it gets an empty space, not a colour. */}
                       {colour ? <span data-testid="usage-swatch" aria-hidden className="mr-2 inline-block h-2 w-2 rounded-[2px] align-middle" style={{ background: colour }} />
+                        : cost.free(r.model) ? <span data-testid="usage-swatch" data-free aria-hidden
+                            className="mr-2 inline-block h-2 w-2 rounded-[2px] border border-muted-foreground align-middle" />
                         : <span aria-hidden className="mr-2 inline-block h-2 w-2 align-middle" />}
                       <span className="font-mono text-foreground">{r.model ?? "—"}</span>
                       <span className="ml-2 text-subtle-foreground">{r.provider ?? "—"} · {r.scope}</span>
