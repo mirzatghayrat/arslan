@@ -76,8 +76,8 @@ export default function ScheduledPage({ attention, waitingTasks, onOpenConversat
       <section aria-labelledby="scheduled-watches" className="space-y-3">
         <h2 id="scheduled-watches" className="text-[13px] font-semibold text-muted-foreground">{t("scheduledPage.watches")}</h2>
         <WatchesPanel quiet marked={(watch) => (attention.changes[watch.id]?.length ?? 0) > 0}
-          below={(watch) => attention.changes[watch.id]?.length
-            ? <div className="mt-3 space-y-2">{attention.changes[watch.id].map(reminder)}</div> : null} />
+          below={(watch) => attention.changeRows[watch.id]?.length
+            ? <div className="mt-3 space-y-2">{attention.changeRows[watch.id].map(reminder)}</div> : null} />
       </section>
     </div>
     {openRun != null && <RunDrawer runId={openRun} onClose={() => setOpenRun(null)} />}
