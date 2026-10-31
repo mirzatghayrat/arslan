@@ -71,7 +71,8 @@ class Root:
 
 # SBX-3 §1: the devices a command may write, instead of all of /dev. The null and zero devices, the terminal,
 # the descriptors (/dev/stdout and /dev/stderr point into /dev/fd), and ptys for tools that open one: the
-# master /dev/ptmx and the /dev/ttysNNN it hands out. SBX-M confirms the list on a Mac (dtracehelper if needed).
+# master /dev/ptmx and the /dev/ttysNNN it hands out. SBX-M (#592) ran the corpus on SBX-2's base, which has this
+# list, and none of the rows that fail there alone is put down to a device, so /dev/dtracehelper stays out.
 _DEVICES = (Root("/dev/null", DEVICE, "literal"), Root("/dev/zero", DEVICE, "literal"),
             Root("/dev/tty", DEVICE, "literal"), Root("/dev/ptmx", DEVICE, "literal"),
             Root("/dev/fd", DEVICE, "subpath"), Root(r"^/dev/ttys[0-9]+$", DEVICE, "regex"))
@@ -80,8 +81,10 @@ _DEVICES = (Root("/dev/null", DEVICE, "literal"), Root("/dev/zero", DEVICE, "lit
 def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
     """Where a command in `workspace` may write, tagged (§1b). Temp is the run's own folder (`run_temp`, §1a),
     in scope like the work folder; no longer the shared per-user /var/folders/… parent (with the cache C),
-    /private/tmp or /private/var/tmp. A tool that needs one of those gets a re-run card until SBX-M names it
-    and only its sub-folder is reopened, as a shared cache. The caches stay writable until SBX-5 (§1c)."""
+    /private/tmp or /private/var/tmp. A tool that needs one of those gets a re-run card. SBX-M (#592) names none
+    to reopen: a hardcoded /tmp is a cost that stands (§1a), and the Darwin temp and cache rows fail on every
+    base, so they wait for a probe fix (Codex). A tool named later gets only its sub-folder reopened, as a shared
+    cache. The caches stay writable until SBX-5 (§1c)."""
     home = Path.home()
     shared = [_real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
     scope = [_real(workspace), *([_real(temp)] if temp is not None else [])]
@@ -91,8 +94,9 @@ def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
 # Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the
 # historical baseline (tests/server/sbx/harness.py), and `profile()` with no devices and nothing in
 # `deny_write_after_roots` writes main's text byte for byte. No product path calls them
-# (test_sbx3_commands.py pins that). DELETE-BY: v0.1.64, together with that adapter, after SBX-M records the
-# baseline and before this PR leaves draft (docs/plans/0164/SBX-sandbox.md, "SBX-2 harness retention").
+# (test_sbx3_commands.py pins that). DELETE-BY: v0.1.64, together with that adapter, before this PR leaves draft.
+# SBX-M has recorded the baseline (#592), so the adapter may go now; the harness is Codex's
+# (docs/plans/0164/SBX-sandbox.md, "SBX-2 harness retention").
 _CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
 
 
@@ -182,7 +186,8 @@ def default_protected() -> list[Path]:
 # SBX-3 §1 (the user's Q3, 2026-10-28): other apps' private data. Commands inherit Arslan's TCC grants, so
 # with Full Disk Access open reads would reach these. They are closed to reads and writes the way
 # Desktop/Documents/Downloads are while that setting is off (`closed`), except that these are always closed.
-# Safari's data is a protected path already (`_SECRETS`). SBX-M confirms the folders on a Mac.
+# Safari's data is a protected path already (`_SECRETS`). SBX-M didn't measure these folders (#592: the corpus
+# leaves the final closed paths to SBX-3); that they are refused is SBX-3p's to test (Codex).
 _APP_DATA = ("Library/Mail", "Library/Containers/com.apple.mail", "Library/Messages",
              "Library/Containers/com.apple.MobileSMS", "Pictures/Photos Library.photoslibrary", "Library/Photos",
              "Library/Containers/com.apple.Photos")
