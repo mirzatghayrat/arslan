@@ -299,6 +299,14 @@ def _read_bounded(path: Path, limit: int) -> bytes | None:
     return data
 
 
+def _only_this_file(fd: int) -> None:
+    """A write goes only to a regular file with one name. A hard link would carry the line into, or Remove's rewrite
+    onto, a file outside the folder (#603 re-check, N1). write_file avoids it with os.replace; an in-place write refuses."""
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise RuleRefused("link")
+
+
 def _append(path: Path, line: str) -> tuple[bool, bytes]:
     """Append `- line` with O_APPEND (no lost edit, the file's mode kept, a read-only file refused), adding a
     separator newline first when the file doesn't end with one. Refused when the result would be past what a turn
@@ -316,8 +324,7 @@ def _append(path: Path, line: str) -> tuple[bool, bytes]:
     except OSError:
         raise RuleRefused("link") from None
     with os.fdopen(fd, "wb") as f:
-        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-            raise RuleRefused("link")
+        _only_this_file(f.fileno())
         f.write(chunk)
     return sep, before
 
@@ -345,6 +352,7 @@ def _take_out(path: Path, line: str, sep: bool) -> None:
     except OSError:
         raise RuleRefused("link") from None
     with os.fdopen(fd, "wb") as f:
+        _only_this_file(f.fileno())
         f.write(out)
         f.truncate(len(out))
 

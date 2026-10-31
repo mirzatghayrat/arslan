@@ -471,3 +471,31 @@ async def test_r9_remove_never_makes_a_foreign_file_the_users(execution_db, home
         await db.commit()
     agents(home).write_text("- first rule\n")                    # the repo's lines removed by hand
     assert (await folder_rules.for_turn(CID))[1] == 1
+
+
+async def test_n1_add_refuses_a_rules_file_hard_linked_to_one_outside(client, execution_db, judge, home, tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("keep\n")
+    os.link(outside, agents(home))
+    lid = await _offered_id(execution_db)
+    r = await _rule(client, lid, "add")
+    assert (r.status_code, r.json()["detail"]) == (409, "rules_file_refused") and outside.read_text() == "keep\n"
+
+
+async def test_n1_remove_refuses_a_rules_file_hard_linked_to_one_outside(client, execution_db, judge, home, tmp_path):
+    lid = await _offered_id(execution_db)
+    await _rule(client, lid, "add")
+    outside = tmp_path / "outside.md"
+    outside.write_text(f"keep\n- {LINE}\n")
+    agents(home).unlink()
+    os.link(outside, agents(home))                               # swapped for a second name of an outside file
+    r = await _rule(client, lid, "remove")
+    assert (r.status_code, r.json()["detail"]) == (409, "rules_file_refused")
+    assert outside.read_text() == f"keep\n- {LINE}\n"
+
+
+async def test_f1d_foreign_text_before_the_cards_lines_keeps_the_file_outside(client, execution_db, judge, home):
+    lid = await _offered_id(execution_db)
+    await _rule(client, lid, "add")
+    agents(home).write_text(REPO_TEXT + f"- {LINE}\n")            # someone put their text in front
+    assert (await folder_rules.for_turn(CID))[1] == 1
