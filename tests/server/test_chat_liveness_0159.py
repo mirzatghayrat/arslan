@@ -120,7 +120,9 @@ def test_a_message_sent_right_after_the_answer_is_not_queued(app_client, slow, m
     from server.services import turn_facts
     slow.seconds = 0
     looking_done = threading.Event()
-    fallback = threading.Timer(4, looking_done.set)    # before K2b the second message waits for this
+    # Before K2b the second message waits for this. Only a safety net, so a red run cannot hang: 30 s, not 4
+    # (LOAD4: under load the two turns took longer than 4 s, the net fired first, and the last assert failed).
+    fallback = threading.Timer(30, looking_done.set)
 
     async def _still_looking(conv, msg):
         while not looking_done.is_set():
@@ -134,7 +136,7 @@ def test_a_message_sent_right_after_the_answer_is_not_queued(app_client, slow, m
             w.receive_json()
             w.send_json({"type": "user_message", "content": "first: hi"})
             _until(w, lambda f: f.get("type") == "stream_end")
-            deadline = time.monotonic() + 3
+            deadline = time.monotonic() + 10
             while ws_arslan._turn_lock("main").locked() and time.monotonic() < deadline:
                 time.sleep(0.01)
             # The turn's lock is free while its facts are still being looked for.
