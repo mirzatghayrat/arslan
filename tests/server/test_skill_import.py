@@ -256,20 +256,32 @@ async def test_the_listing_counts_what_a_skills_text_hides_and_says_what_the_sca
         await skill_import.import_skill("x/y", "c/SKILL.md")
 
 
-@pytest.mark.parametrize("where", ["a YAML escape in the description", "a reference file"])
-async def test_the_listing_scans_what_the_import_scans(maker, monkeypatch, where):
+async def test_the_listing_scans_the_skill_md_as_written_and_as_stored(maker, monkeypatch):
     """#586 re-check R3: the listing ran the scan on the raw SKILL.md only, so a zero-width space the raw file does
-    not show (a YAML escape) or one in a reference file was offered, then blocked at import."""
-    if where == "a reference file":
-        md, raws = VALID_MD, {"r/SKILL.md": VALID_MD, "r/references/notes.md": "See\u200bthis.\n"}
-        tree = ["r/SKILL.md", "r/references/notes.md"]
-    else:
-        md = VALID_MD.replace("description: ", 'description: "Escaped\\u200bhere" #', 1)
-        raws, tree = {"r/SKILL.md": md}, ["r/SKILL.md"]
-    _mock_github(monkeypatch, tree=tree, raws=raws)
+    not show (a YAML escape in the description) was offered, then blocked at import."""
+    md = VALID_MD.replace("description: ", 'description: "Escaped\\u200bhere" #', 1)
+    _mock_github(monkeypatch, tree=["r/SKILL.md"], raws={"r/SKILL.md": md})
     out = await skill_import.scan_skills("x/y")
     [entry] = out["skills"]
     assert (entry["importable"], entry["reason"]) == (False, "blocked by the safety check: invisible_characters")
+    with pytest.raises(ValueError, match="invisible_characters"):
+        await skill_import.import_skill("x/y", "r/SKILL.md")
+
+
+async def test_a_reference_file_is_not_fetched_for_the_listing_and_blocks_at_import(maker, monkeypatch):
+    """#597 re-check N1: scripts and references are not fetched for a listing (each is an API call, and GitHub
+    allows 60 an hour without a token); the import fetches and scans them, and blocks there."""
+    reads = []
+    _mock_github(monkeypatch, tree=["r/SKILL.md", "r/references/notes.md"],
+                 raws={"r/SKILL.md": VALID_MD, "r/references/notes.md": "See\u200bthis.\n"})
+    real = skill_import._fetch_raw
+
+    async def counted(owner, repo, path, sha=None):
+        reads.append(path)
+        return await real(owner, repo, path, sha)
+    monkeypatch.setattr(skill_import, "_fetch_raw", counted)
+    out = await skill_import.scan_skills("x/y")
+    assert out["skills"][0]["importable"] is True and "r/references/notes.md" not in reads
     with pytest.raises(ValueError, match="invisible_characters"):
         await skill_import.import_skill("x/y", "r/SKILL.md")
 

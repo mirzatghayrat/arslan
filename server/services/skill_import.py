@@ -269,11 +269,12 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
             spdx, source = await _skill_license(owner, repo, p, paths, meta["license"], sha)
             block = _skill_license_block(spdx, source)
             entry.update(license=spdx, license_source=source)
-            # UNI1b (#586 review F3, re-check R3): the import's own scan, over the same files (the SKILL.md as
-            # written and as stored, its scripts and references), said here, so the panel never offers what the
-            # import will block.
-            scripts, references = await _bundles(owner, repo, sha, p, paths, [])
-            scanned = scan_prepared({"skill_md": raw, "info": info, "scripts": scripts, "references": references})
+            # UNI1b (#586 review F3, re-check R3): the import's own scan of the SKILL.md, as written and as stored
+            # (a YAML escape included), said here, so the panel does not offer what that will block. Scripts and
+            # references are not fetched for a listing (#597 re-check N1: each is an API call, and an
+            # unauthenticated listing of a large library would pass GitHub's hourly limit); the import scans them
+            # and blocks there.
+            scanned = scan_prepared({"skill_md": raw, "info": info, "scripts": {}, "references": {}})
             if block:
                 entry.update(importable=False, reason=block)
             elif scanned["level"] == "blocked":
@@ -350,8 +351,7 @@ async def _bundled(owner: str, repo: str, sha: str, found: list[str], cap: int, 
 async def _bundles(owner: str, repo: str, sha: str, path: str, paths: list[str], skipped: list,
                    keep=lambda file_path, content: content):
     """A skill's bundled scripts (flat names, .py only, capped) and references (flat basenames, .md/.txt only, the
-    same per-file and per-skill caps; PC-3 mounts these read-only), as the import keeps them. The import panel's
-    listing fetches the same files, so it scans what the import will scan (#586 re-check R3)."""
+    same per-file and per-skill caps; PC-3 mounts these read-only), as the import keeps them."""
     scripts = await _bundled(owner, repo, sha, _scripts_for(path, paths), _MAX_SCRIPTS, _MAX_SCRIPT_BYTES,
                              r"[A-Za-z0-9._-]+\.py", skipped, keep)
     references = await _bundled(owner, repo, sha, _references_for(path, paths), _MAX_REFERENCES,
