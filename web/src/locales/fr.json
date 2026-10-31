@@ -1432,7 +1432,7 @@
     "intro": "Les tâches qui s'exécutent selon un horaire, et les pages et dossiers qu'Arslan surveille pour vous. Un point signale une ligne à regarder.",
     "watches": "Pages et dossiers surveillés",
     "awayTitle": "Pas fait pendant votre absence (cette tâche uniquement)",
-    "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui attend dans sa propre conversation disparaît quand tu ouvres cette conversation.",
+    "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui n’a pas été fait dans sa propre conversation pendant votre absence disparaît quand vous ouvrez cette conversation ; une carte s’y efface seulement une fois que vous y avez répondu.",
     "attention": "À regarder",
     "changed": "Modifié",
     "failing": "Échouée ou mise en pause d'elle-même"
