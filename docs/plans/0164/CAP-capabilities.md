@@ -455,6 +455,6 @@ The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI
 - **CAP4a-3, Q3:** the start-time Registry re-check runs once a day per server, and on the first start after an update.
 - **CAP4a-2, the runtimes:** fetched on first need against the SHA-256 pinned in the repository, not shipped in the app.
 - **UNI1b:** option B of ⑤CAP's mock. A notice only, never blocking (D3).
-- **Skills from before CAP4's checks (D2's remaining half):** left as they are, with no one-time rescan, as Claude Code and Codex don't rescan installed skills. They keep their origin mark in Capabilities and stay deletable.
+- **Skills from before CAP4's checks (D2's remaining half): to confirm.** That question had no recommendation, so 「全按推荐」 doesn't settle it. ④参谋 and ⓪Plan read "mainstream, no over-defence" as no one-time rescan, as Claude Code and Codex don't rescan installed skills. Until the user confirms, nothing is built either way. The skills keep their origin mark in Capabilities and stay deletable.
 - **INB2 and skills:** INB2's allowlist (`server/orchestrator/untrusted.py:241-276` on main `2876f11a`) still counts a skill read as off the list. So after a skill read, "about you" memories wait for the user. Kept, and recorded as a stated limit: D2 covers reading, not memory writes.
 - **The standing rule:** follow mainstream agent products, and don't over-defend (`docs/sessions.md` §12).
