@@ -118,7 +118,8 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
         older = _iso(before) if before else None
     except (ValueError, OverflowError):        # OverflowError: a valid time with no UTC, like year 1 at +05:00
         raise HTTPException(400, "bad_request") from None
-    rows = [r for r in await conversation_list(db, quick=kind == "quick") if older is None or _iso(r.last_at) < older]
+    rows = [r for r in await conversation_list(db, quick=kind == "quick")
+            if r.conversation_id != phone_ids.POCKET and (older is None or _iso(r.last_at) < older)]
     page = rows[:limit]
     if len(rows) > limit and _iso(rows[limit].last_at) == _iso(page[-1].last_at):
         edge = _iso(page[-1].last_at)

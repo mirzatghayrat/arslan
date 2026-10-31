@@ -783,7 +783,6 @@
     "fromPhone": "Iniciado desde el iPhone",
     "glyph": {
       "waiting": "Espera tu aprobación",
-      "remote": "Remote · tu iPhone",
       "working": "En curso",
       "progress": "En curso: {{done}} de {{total}}",
       "done": "Hecho",

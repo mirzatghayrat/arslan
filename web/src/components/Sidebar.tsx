@@ -8,7 +8,7 @@ import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { REMOTE_ID, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import type { ConversationMeta } from "../lib/conversationMeta";
 import { groupByDay, newestFirst } from "../lib/sidebarOrder";
 import { useRecency } from "../stores/recencyStore";
 import { useSidebar } from "../stores/sidebarStore";
@@ -98,16 +98,12 @@ export default function Sidebar(props: SidebarProps) {
     .slice(0, SIDEBAR_PROJECTS);
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
-  // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-  // DELETE-BY: with remoteFirst below: Remote stays above the date sections.
-  const isRemote = (thread: ArslanThread) => thread.id === REMOTE_ID || meta[thread.id]?.kind === "remote";
   // SB1-2: pinned, by this window's latest choice, else the server's; a conversation in a project stays in its
   // project, so only one outside any can be pinned (the row menu offers the pin there only).
-  const isPinned = (thread: ArslanThread) => !projectOf(thread) && !isRemote(thread)
-    && (pins[thread.id] ?? meta[thread.id]?.pinned ?? false);
+  const isPinned = (thread: ArslanThread) => !projectOf(thread) && (pins[thread.id] ?? meta[thread.id]?.pinned ?? false);
   const pinnedThreads = live.filter(isPinned);                 // newest first, as `live` is
-  const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "") && !isPinned(thread)), meta);
-  const sections = groupByDay(activeThreads.filter(thread => !isRemote(thread)), at, new Date(), i18n?.resolvedLanguage || i18n?.language);
+  const activeThreads = live.filter(thread => !grouped.has(projectOf(thread) ?? "") && !isPinned(thread));
+  const sections = groupByDay(activeThreads, at, new Date(), i18n?.resolvedLanguage || i18n?.language);
   // The month holding the open conversation opens with it, once per conversation (⓪Plan's review of
   // PR 543): the open row is never hidden in a fold; the user can still fold it again.
   const activeMonth = sections.months.find(month => month.rows.some(thread => thread.id === activeThreadId))?.id ?? null;
@@ -139,7 +135,7 @@ export default function Sidebar(props: SidebarProps) {
   function renderThread(thread: ArslanThread, archived: boolean) {
     const active = activeSection === "arslan" && activeThreadId === thread.id;
     // SB1-2: a conversation row drags onto a project (the same move as "Move to project…").
-    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary && !isRemote(thread);
+    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary;
     return <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
       draggable={draggable || undefined}
       onDragStart={draggable ? event => { event.dataTransfer.setData(DRAG_TYPE, thread.id); event.dataTransfer.effectAllowed = "move"; } : undefined}
@@ -148,13 +144,13 @@ export default function Sidebar(props: SidebarProps) {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
       }} className={rowClass(active)}>
       {active && marker}<ConversationGlyph meta={meta[thread.id]} />
-      <span className={`min-w-0 flex-1 truncate ${meta[thread.id]?.kind === "remote" ? "font-semibold" : ""}`}>{threadDisplayTitle(thread, t, meta[thread.id]?.kind)}</span>
-      {meta[thread.id]?.origin === "phone" && meta[thread.id]?.kind !== "remote" &&
+      <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread, t)}</span>
+      {meta[thread.id]?.origin === "phone" &&
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
         onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
         projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject}
-        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) && !isRemote(thread) ? onPinThread : undefined} />}
+        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) ? onPinThread : undefined} />}
     </div>;
   }
   function toggleMonth(id: string) {
@@ -248,7 +244,6 @@ export default function Sidebar(props: SidebarProps) {
             {projects.length > shownProjects.length && onOpenProject && <button type="button" onClick={() => onChangeSection("projects")}
               className="px-3 py-1 text-[11px] text-subtle-foreground hover:text-foreground">{t("sidebar.allProjects")} ›</button>}
           </div>}
-          {activeThreads.filter(isRemote).map(thread => renderThread(thread, false))}
           {/* SB1: the iPhone's sections (lib/sidebarOrder); time in the headings only, none on rows. */}
           {sections.today.length > 0 && <>{heading("today")}{sections.today.map(thread => renderThread(thread, false))}</>}
           {sections.yesterday.length > 0 && <>{heading("yesterday")}{sections.yesterday.map(thread => renderThread(thread, false))}</>}

@@ -30,9 +30,13 @@ struct Refusal: Error {
 }
 
 public actor ConversationLinks {
-    public static let pocket = "pocket"                // "no conversation_id" = the pocket conversation
-    // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user,
-    // 2026-10-29): the pocket and every branch below that names it.
+    /// The pocket, the one conversation every phone shared before §5.8 ("Remote"), is retired (Q1 card, #4; the user,
+    /// 2026-10-29): its old messages stay on the Mac as an ordinary conversation, read and continued there only.
+    /// A phone frame that names it is refused `not_found` before anything reaches the Mac, and so is a chat.send or
+    /// chat.history that names no conversation (which meant the pocket). It is never linked, so nothing about it
+    /// reaches a phone; the Mac leaves it out of the phone's list (server/services/phone_ids.py), and its jobs and
+    /// runs never reach a phone either (StatusReporter, run.get).
+    public static let pocket = "pocket"
     /// §5.8: a conversation the phone starts names itself `phone-` and a lowercase UUID v4.
     static let phoneConversationID = try! NSRegularExpression(
         pattern: #"^phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z"#)    // `$` takes a final line break
@@ -89,7 +93,8 @@ public actor ConversationLinks {
     }
 
     @discardableResult
-    func link(_ conversationID: String, now: Date = Date(), touch: Bool = true) -> (channel: ControlChannel, mapper: FrameMapper) {
+    func link(_ conversationID: String, now: Date = Date(), touch: Bool = true) throws -> (channel: ControlChannel, mapper: FrameMapper) {
+        guard conversationID != Self.pocket else { throw BridgeError.code("not_found") }      // retired: never live
         if touch || touched[conversationID] == nil { touched[conversationID] = now }
         if let existing = links[conversationID] { return existing }
         let mapper = FrameMapper(conversationID: conversationID)
@@ -230,12 +235,11 @@ public actor ConversationLinks {
         guard !mailbox.peers.isEmpty,
               let ids = (try? await backend.json("/api/v1/phone/live?limit=\(Self.liveCount)"))?["conversation_ids"] as? [String]
         else { return }
-        for id in ids { link(id, now: now, touch: false) }
+        for id in ids { _ = try? link(id, now: now, touch: false) }          // the pocket, if listed, stays unlinked
         guard links.count > Self.maxLinks else { return }
         let live = Set(ids)
-        // DELETE-BY: the pocket's exemption, with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
         let idle = links.keys.filter { id in
-            !live.contains(id) && id != Self.pocket && links[id]?.mapper.cards.isEmpty == true
+            !live.contains(id) && links[id]?.mapper.cards.isEmpty == true
                 && !held.contains { $0.conversationID == id } && now.timeIntervalSince(touched[id] ?? .distantPast) >= Self.idleLink
         }.sorted { (touched[$0] ?? .distantPast, $0) < (touched[$1] ?? .distantPast, $1) }
         for id in idle.prefix(links.count - Self.maxLinks) { unlink(id) }
@@ -299,7 +303,7 @@ public actor ConversationLinks {
 
     func run(_ item: Held) async {
         do {
-            let link = link(item.conversationID)
+            let link = try link(item.conversationID)
             var frames = try link.mapper.backendFrames(for: "chat.send", body: item.body)
             if !item.fileIDs.isEmpty, let first = frames.first { frames[0] = attach(item.fileIDs, to: first) }
             // INB2: whether the user is there for this turn reads when the phone sent it (server/services/presence.py).
@@ -382,13 +386,13 @@ public actor ConversationLinks {
     /// first, quick or chat, in the one call that also checks it is still empty; if the Mac can't store it, its words
     /// go nowhere. The Mac reads what a conversation is from what it stored, never from a message: one the phone
     /// made with no kind stored gets only the quick tools (#486 review, G1). `conversation_kind` means nothing
-    /// without a new id. No id at all is the pocket.
+    /// without a new id. No id at all meant the pocket, which is retired (Q1 #4): `not_found`.
     func destination(of body: [String: Any]) async throws -> String {
         let named = body["conversation_id"] as? String
         guard let new = body["new_conversation_id"] as? String else {
             guard body["conversation_kind"] == nil else { throw BridgeError.code("bad_request") }
-            // DELETE-BY: no id as the pocket, with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
-            return named ?? Self.pocket
+            guard let named else { throw BridgeError.code("not_found") }
+            return named
         }
         let whole = NSRange(new.startIndex..., in: new)
         guard Self.phoneConversationID.firstMatch(in: new, range: whole) != nil, named == nil || named == new else {
@@ -426,6 +430,8 @@ public actor ConversationLinks {
         let related = (received.envelope["id"] as? String)?.lowercased() ?? ""
         if received.type != "error" { BridgeLog.notice("phone: \(received.type)") }
         do {
+            // Q1 #4: the retired pocket is not on the Mac for a phone, whatever the frame (`pocket` above).
+            if received.type != "error", body["conversation_id"] as? String == Self.pocket { throw BridgeError.code("not_found") }
             switch received.type {
             case "chat.send":
                 let clientID = body["client_msg_id"] as? String ?? ""
@@ -437,7 +443,7 @@ public actor ConversationLinks {
                 let ids = attachments.map { $0["id"] as? String ?? "" }
                 guard !ids.contains(where: \.isEmpty) else { throw BridgeError.code("malformed") }
                 let conversation = try await destination(of: body)
-                link(conversation, now: now)
+                try link(conversation, now: now)
                 // §5.7: it runs once every file it names is here (at once when it names none).
                 held.append(Held(from: received.from, envelopeID: related, clientID: clientID, conversationID: conversation,
                                  body: body, fileIDs: ids, at: now, sentAt: received.envelope["ts"] as? String))
@@ -447,11 +453,6 @@ public actor ConversationLinks {
                 await release(now: now)
             case "conversation.delete":
                 guard let id = body["conversation_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }
-                // §5.8: a phone that said `quick` shows its own list without Remote, so it may delete it.
-                // DELETE-BY: with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
-                guard id != Self.pocket || mailbox.has("quick", received.from) else {
-                    throw Refusal(code: "malformed", message: "Remote cannot be deleted.")
-                }
                 let result = try await backend.delete("/api/v1/conversations/\(id.pathSegment)")
                 // The backend answers 200 for an id it has nothing for: nothing deleted = not there.
                 if let counts = result["deleted"] as? [String: Any], !counts.isEmpty, counts.values.allSatisfy({ ($0 as? Int) == 0 }) {
@@ -489,15 +490,20 @@ public actor ConversationLinks {
                 _ = try await mailbox.send(type: "conversations.result", body: result, to: received.from)
                 await linkLive(now: now)                 // §5.7: what the list shows stays live
             case "chat.history":
-                // DELETE-BY: no id as the pocket, with `pocket` (v0.1.64 if Q1c ships with it, else v0.1.65).
-                let id = body["conversation_id"] as? String ?? Self.pocket
+                guard let id = body["conversation_id"] as? String else { throw BridgeError.code("not_found") }  // was the pocket
                 let limit = min(max(body["limit"] as? Int ?? 50, 1), 200)
                 let result = try await backend.json("/api/v1/phone/conversations/\(id.pathSegment)/history?limit=\(limit)")
-                link(id, now: now)          // the phone is looking at it: its progress, cards and results come live
+                try link(id, now: now)      // the phone is looking at it: its progress, cards and results come live
                 try await sendHistory(result, to: received.from)
             case "run.get":
                 guard let run = body["run_id"] as? Int else { throw BridgeError.code("malformed") }
                 let result = try await backend.json("/api/v1/phone/runs/\(run)")
+                // A run id is a number, so a phone can name one it was never sent (#525 review, F1): one in the
+                // retired pocket is not there, and its files' ids go nowhere. One that names no conversation can't
+                // be told apart from it, so it is refused too (fails closed).
+                guard let owner = result["conversation_id"] as? String, owner != Self.pocket else {
+                    throw BridgeError.code("not_found")
+                }
                 _ = try await mailbox.send(type: "run.result", body: result, to: received.from)
             case "task.start":
                 let clientID = body["client_task_id"] as? String ?? ""
@@ -510,13 +516,13 @@ public actor ConversationLinks {
                 guard let conversation = started["conversation_id"] as? String, let job = started["job_id"] as? String else {
                     throw BridgeError.code("mac_busy")
                 }
-                link(conversation, now: now)    // its progress and result reach the phone
+                try link(conversation, now: now)    // its progress and result reach the phone
                 let reply: [String: Any] = ["conversation_id": conversation, "job_id": job, "client_task_id": clientID]
                 if !clientID.isEmpty { startedTasks[clientID] = reply }
                 _ = try await mailbox.send(type: "task.started", body: reply, to: received.from)
             case "task.stop":
                 guard let job = body["job_id"] as? String, !job.isEmpty else { throw BridgeError.code("malformed") }
-                if let conversation = body["conversation_id"] as? String { link(conversation, now: now) }   // to hear it stop
+                if let conversation = body["conversation_id"] as? String { try link(conversation, now: now) }   // to hear it stop
                 _ = try await backend.post("/api/v1/phone/tasks/\(job.pathSegment)/stop", body: [:])
             case "file.get":
                 guard let id = body["file_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }

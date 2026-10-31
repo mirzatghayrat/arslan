@@ -673,7 +673,7 @@ export default function App() {
                       three words of chrome saying what a green dot already says. */}
                   <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
                   <span className="text-xs font-sans text-foreground font-medium truncate">
-                    {threadDisplayTitle(activeThread, t, conversationIndex.meta[activeThreadId]?.kind)}
+                    {threadDisplayTitle(activeThread, t)}
                   </span>
                   {/* 0.1.42: one header row — title · project (opens project and
                       memory settings) · a status chip only for work that needs a look. */}

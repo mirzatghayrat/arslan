@@ -1,11 +1,11 @@
-/** Phone v2, Mac side: each conversation in the sidebar shows what it is and how it stands, the phone's
- *  own conversation is "Remote" (pinned first), tasks started from the iPhone carry a phone mark, and
- *  the list stays fresh so a task handed over from the phone appears without a restart. */
+/** Phone v2, Mac side: each conversation in the sidebar shows what it is and how it stands, tasks started
+ *  from the iPhone carry a phone mark, and the list stays fresh so a task handed over from the phone appears
+ *  without a restart. The old pocket ("Remote") is retired (Q1 card, #4): an ordinary conversation, not pinned. */
 import { render, screen, within, act, renderHook } from "@testing-library/react";
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import Sidebar from "../components/Sidebar";
 import ConversationGlyph from "../components/ConversationGlyph";
-import { metaFrom, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { metaFrom, type ConversationMeta } from "../lib/conversationMeta";
 import { threadDisplayTitle } from "../lib/threadTitles";
 
 const listConversations = vi.fn();
@@ -19,11 +19,9 @@ const meta = (m: Partial<ConversationMeta>): ConversationMeta => ({ kind: "chat"
 
 describe("conversation glyphs", () => {
   it.each([
-    [meta({ kind: "remote" }), "sidebar.glyph.remote"],
     [meta({ kind: "task", state: "working", job: { id: "j", step: "s", done: 1, total: 3 } }), "sidebar.glyph.progress:1/3"],
     [meta({ kind: "task", state: "working" }), "sidebar.glyph.working"],
     [meta({ kind: "chat", state: "waiting" }), "sidebar.glyph.waiting"],
-    [meta({ kind: "remote", state: "waiting" }), "sidebar.glyph.waiting"],
     [meta({ kind: "task", state: "done" }), "sidebar.glyph.done"],
     [meta({ kind: "task", state: "unfinished" }), "sidebar.glyph.unfinished"],
     [meta({ kind: "task", state: "failed" }), "sidebar.glyph.failed"],
@@ -48,30 +46,24 @@ describe("conversation glyphs", () => {
 });
 
 describe("the server's conversation list, as sidebar data", () => {
-  it("keeps only known kinds and states, and names the phone's conversation", () => {
+  it("keeps only known kinds and states; the old pocket is an ordinary chat", () => {
     const got = metaFrom([
-      { conversation_id: "pocket", title: "Remote", message_count: 3 },
+      { conversation_id: "pocket", title: "在干嘛", message_count: 3 },
+      { conversation_id: "old-server", title: "o", message_count: 1, kind: "remote" },
       { conversation_id: "task-1", title: "t", message_count: 1, kind: "task", state: "working", origin: "phone",
         job: { id: "j", step: "run_command npm test", done: 0, total: 2 } },
       { conversation_id: "odd", title: "o", message_count: 1, kind: "weird", state: "exploded", origin: "?" },
       { conversation_id: "task-2", title: "t2", message_count: 2, kind: "task", state: "unfinished" },
     ]);
-    expect(got.pocket.kind).toBe("remote");
+    expect([got.pocket.kind, got["old-server"].kind]).toEqual(["chat", "chat"]);
     expect(got["task-1"]).toMatchObject({ kind: "task", state: "working", origin: "phone" });
     expect(got.odd).toMatchObject({ kind: "chat", state: "idle", origin: "mac" });
     expect(got["task-2"].state).toBe("unfinished");
   });
 
-  it("puts Remote first and leaves the rest in order", () => {
-    const threads = [{ id: "a" }, { id: "pocket" }, { id: "b" }];
-    expect(remoteFirst(threads, {}).map(t => t.id)).toEqual(["pocket", "a", "b"]);
-  });
-
-  it("titles the phone's conversation Remote, not after its first message", () => {
+  it("titles the old pocket after its first message, like any conversation", () => {
     const t = (k: string) => k;
-    expect(threadDisplayTitle({ id: "pocket", title: "在干嘛" }, t)).toBe("sidebar.remote");
-    expect(threadDisplayTitle({ id: "x", title: "在干嘛" }, t, "remote")).toBe("sidebar.remote");
-    expect(threadDisplayTitle({ id: "x", title: "在干嘛" }, t, "chat")).toBe("在干嘛");
+    expect(threadDisplayTitle({ id: "pocket", title: "在干嘛" }, t)).toBe("在干嘛");
   });
 });
 
@@ -81,21 +73,22 @@ describe("the sidebar with conversation data", () => {
     activeThreadId: "chat-1", onSelectThread: () => {}, onAddThread: () => {}, activeSection: "arslan" as const,
     onChangeSection: () => {}, onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(),
     onDeleteThread: vi.fn(), backendStatus: "online" as const,
-    meta: { pocket: meta({ kind: "remote", origin: "phone" }),
+    meta: { pocket: meta({ origin: "phone" }),
             "task-1": meta({ kind: "task", state: "working", origin: "phone", job: { id: "j", step: "", done: 1, total: 2 } }),
             "chat-1": meta({}) },
   } as any;
 
-  it("pins Remote first, under its own name, and marks what the phone started", () => {
+  it("keeps the list's order, pins nothing, and marks what the phone started", () => {
     render(<Sidebar {...props} />);
     const list = screen.getByRole("region", { name: "workspace.recentConversations" });
     const rows = within(list).getAllByRole("button").filter(b => b.id.startsWith("active-thread-btn-"));
-    expect(rows.map(r => r.id)).toEqual(["active-thread-btn-pocket", "active-thread-btn-chat-1", "active-thread-btn-task-1"]);
-    expect(within(rows[0]).getByText("sidebar.remote")).toBeTruthy();
-    expect(within(rows[0]).queryByLabelText("sidebar.fromPhone")).toBeNull();      // Remote IS the phone
+    expect(rows.map(r => r.id)).toEqual(["active-thread-btn-chat-1", "active-thread-btn-task-1", "active-thread-btn-pocket"]);
+    expect(within(rows[2]).getByText("在干嘛")).toBeTruthy();                     // the old pocket, not "Remote"
+    expect(within(rows[2]).queryByText("sidebar.remote")).toBeNull();
     expect(within(rows[2]).getByLabelText("sidebar.fromPhone")).toBeTruthy();
-    expect(within(rows[2]).getByRole("img", { name: "sidebar.glyph.progress:1/2" })).toBeTruthy();
-    expect(within(rows[1]).queryByLabelText("sidebar.fromPhone")).toBeNull();
+    expect(within(rows[1]).getByLabelText("sidebar.fromPhone")).toBeTruthy();
+    expect(within(rows[1]).getByRole("img", { name: "sidebar.glyph.progress:1/2" })).toBeTruthy();
+    expect(within(rows[0]).queryByLabelText("sidebar.fromPhone")).toBeNull();
   });
 });
 

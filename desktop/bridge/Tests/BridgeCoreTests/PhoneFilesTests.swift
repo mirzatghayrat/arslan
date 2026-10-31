@@ -115,16 +115,16 @@ final class PhoneFilesTests: XCTestCase {
         let links = ConversationLinks(channels: channels, mailbox: mac, backend: backend)
         try await phones["iphone-new"]!.send(type: "hello", body: ["capabilities": Self.newPhone], to: "mac-1")
         try await phones["iphone-old"]!.send(type: "hello", body: ["capabilities": ["chat"]], to: "mac-1")
-        try await phones["iphone-new"]!.send(type: "chat.send", body: ["text": "hi", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phones["iphone-new"]!.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "hi", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received, now: t0) }
         for phone in phones.values { _ = try await phone.receive() }
         XCTAssertEqual(mac.capabilities["iphone-new"], Set(Self.newPhone))
-        let pocket = try XCTUnwrap(channels.opened["pocket"])
-        await pocket.onFrame(["type": "history", "messages": [["message_id": 1, "role": "user", "content": "x"]]])
-        await pocket.onFrame(["type": "stream_start"])
-        await pocket.onFrame(["type": "stream_chunk", "content": "Hel"])
-        await pocket.onFrame(["type": "message", "role": "user", "message_id": 5, "content": "typed on the Mac"])
-        await pocket.onFrame(["type": "stream_end", "message_id": 6])
+        let chat = try XCTUnwrap(channels.opened["c-1"])
+        await chat.onFrame(["type": "history", "messages": [["message_id": 1, "role": "user", "content": "x"]]])
+        await chat.onFrame(["type": "stream_start"])
+        await chat.onFrame(["type": "stream_chunk", "content": "Hel"])
+        await chat.onFrame(["type": "message", "role": "user", "message_id": 5, "content": "typed on the Mac"])
+        await chat.onFrame(["type": "stream_end", "message_id": 6])
         let new = try await phones["iphone-new"]!.receive().filter { $0.type == "chat.event" }.map(body)
         let old = try await phones["iphone-old"]!.receive().filter { $0.type == "chat.event" }.map(body)
         XCTAssertEqual(new.map { $0["kind"] as? String }, ["partial", "message", "message"])
@@ -244,7 +244,7 @@ final class PhoneFilesTests: XCTestCase {
         let data = Data("notes".utf8)
         let ref = reference("f-late", "notes.txt", data, "text/plain")
         p.backend.answers["UPLOAD /api/v1/extract notes.txt"] = .success(["text": "notes"])
-        let send = try await p.phone.send(type: "chat.send", body: ["text": "read this", "attachments": [ref], "client_msg_id": "m2"], to: "mac-1")
+        let send = try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "read this", "attachments": [ref], "client_msg_id": "m2"], to: "mac-1")
         try await run(p)
         await p.links.flush(now: t0 + 119)
         let early = try await p.phone.receive()
@@ -254,34 +254,34 @@ final class PhoneFilesTests: XCTestCase {
         let error = try XCTUnwrap(late.first { $0.type == "error" })
         XCTAssertEqual(body(error)["code"] as? String, "file_unavailable")
         XCTAssertEqual(body(error)["related_id"] as? String, send.id, "it answers that chat.send")
-        XCTAssertTrue(p.channels.opened["pocket"]?.sent.isEmpty ?? true)
+        XCTAssertTrue(p.channels.opened["c-1"]?.sent.isEmpty ?? true)
         // Not counted as done: the phone sends the file and the message again, and it runs.
         try await p.phone.send(type: "file.offer", body: ref, to: "mac-1", asset: data)
-        try await p.phone.send(type: "chat.send", body: ["text": "read this", "attachments": [ref], "client_msg_id": "m2"], to: "mac-1")
+        try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "read this", "attachments": [ref], "client_msg_id": "m2"], to: "mac-1")
         try await run(p, now: t0 + 200)
-        XCTAssertEqual(p.channels.opened["pocket"]?.sent.count, 1)
+        XCTAssertEqual(p.channels.opened["c-1"]?.sent.count, 1)
     }
 
     func testALaterMessageWaitsBehindOneHeldForItsFilesInTheSameConversationOnly() async throws {
         let p = try await pair()
         let data = Data([0x89, 0x50, 0x4e, 0x47])
         let ref = reference("f-png", "shot.png", data, "image/png")
-        try await p.phone.send(type: "chat.send", body: ["text": "look", "attachments": [ref], "client_msg_id": "a"], to: "mac-1")
-        try await p.phone.send(type: "chat.send", body: ["text": "and then?", "attachments": [], "client_msg_id": "b"], to: "mac-1")
+        try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "look", "attachments": [ref], "client_msg_id": "a"], to: "mac-1")
+        try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "and then?", "attachments": [], "client_msg_id": "b"], to: "mac-1")
         try await p.phone.send(type: "chat.send", body: ["conversation_id": "other", "text": "meanwhile", "attachments": [], "client_msg_id": "c"], to: "mac-1")
         try await run(p)
-        XCTAssertTrue(p.channels.opened["pocket"]?.sent.isEmpty ?? true, "in order: the second waits for the first")
+        XCTAssertTrue(p.channels.opened["c-1"]?.sent.isEmpty ?? true, "in order: the second waits for the first")
         XCTAssertEqual(p.channels.opened["other"]?.sent.compactMap { $0["content"] as? String }, ["meanwhile"])
         try await p.phone.send(type: "file.offer", body: ref, to: "mac-1", asset: data)
         try await run(p, now: t0 + 3)
-        XCTAssertEqual(p.channels.opened["pocket"]?.sent.compactMap { ($0["content"] as? String)?.components(separatedBy: "\n").first },
+        XCTAssertEqual(p.channels.opened["c-1"]?.sent.compactMap { ($0["content"] as? String)?.components(separatedBy: "\n").first },
                        ["look", "and then?"])
     }
 
     func testTooManyFilesAFileWithoutBytesAndUnreadableTextAreHandled() async throws {
         let p = try await pair()
         let refs = (0..<11).map { reference("f\($0)", "f\($0).txt", Data("x".utf8), "text/plain") }
-        let tooMany = try await p.phone.send(type: "chat.send", body: ["text": "all", "attachments": refs, "client_msg_id": "x"], to: "mac-1")
+        let tooMany = try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "all", "attachments": refs, "client_msg_id": "x"], to: "mac-1")
         let bare = try await p.phone.send(type: "file.offer", body: refs[0], to: "mac-1")            // no asset
         try await run(p)
         let errors = try await p.phone.receive().filter { $0.type == "error" }.map(body)
@@ -293,9 +293,9 @@ final class PhoneFilesTests: XCTestCase {
         p.backend.answers["UPLOAD /api/v1/extract data.bin"] = .failure(.code("mac_busy"))
         try await p.phone.send(type: "file.offer", body: ref, to: "mac-1", asset: blob)
         try await p.phone.send(type: "file.offer", body: ref, to: "mac-1", asset: blob)              // offered twice
-        try await p.phone.send(type: "chat.send", body: ["text": "", "attachments": [ref], "client_msg_id": "y"], to: "mac-1")
+        try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "", "attachments": [ref], "client_msg_id": "y"], to: "mac-1")
         try await run(p)
-        let frame = try XCTUnwrap(p.channels.opened["pocket"]?.sent.first)
+        let frame = try XCTUnwrap(p.channels.opened["c-1"]?.sent.first)
         XCTAssertEqual(frame["content"] as? String,
                        "Attached from iPhone: data.bin → /ws/Inbox/iPhone/2026-10-13/data.bin (its text could not be read; open the file itself)")
         XCTAssertNil(frame["attached_context"])
@@ -310,9 +310,9 @@ final class PhoneFilesTests: XCTestCase {
         try await p.phone.send(type: "file.offer", body: ref, to: "mac-1", asset: photo)
         try await run(p)
         await p.links.flush(now: t0 + 601)
-        try await p.phone.send(type: "chat.send", body: ["text": "this", "attachments": [ref], "client_msg_id": "late"], to: "mac-1")
+        try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "this", "attachments": [ref], "client_msg_id": "late"], to: "mac-1")
         try await run(p, now: t0 + 602)
-        let frame = try XCTUnwrap(p.channels.opened["pocket"]?.sent.first)
+        let frame = try XCTUnwrap(p.channels.opened["c-1"]?.sent.first)
         XCTAssertNil(frame["images"], "its bytes were dropped after ten minutes")
         XCTAssertTrue((frame["content"] as? String ?? "").contains("old.jpg → /ws/Inbox/iPhone/2026-10-13/old.jpg (not shown"))
     }
@@ -322,9 +322,9 @@ final class PhoneFilesTests: XCTestCase {
         let big = Data(repeating: 7, count: ConversationLinks.visionImageMax + 1)
         let ref = reference("f-big", "big.png", big, "image/png")
         try await p.phone.send(type: "file.offer", body: ref, to: "mac-1", asset: big)
-        try await p.phone.send(type: "chat.send", body: ["text": "big", "attachments": [ref], "client_msg_id": "b"], to: "mac-1")
+        try await p.phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "big", "attachments": [ref], "client_msg_id": "b"], to: "mac-1")
         try await run(p)
-        let frame = try XCTUnwrap(p.channels.opened["pocket"]?.sent.first)
+        let frame = try XCTUnwrap(p.channels.opened["c-1"]?.sent.first)
         XCTAssertNil(frame["images"])
         XCTAssertTrue((frame["content"] as? String ?? "").contains("(not shown to the model as a picture; open the file itself)"))
     }
@@ -370,7 +370,7 @@ final class PhoneFilesTests: XCTestCase {
         XCTAssertEqual(body(got[0])["conversation_id"] as? String, "c-9")
         XCTAssertFalse(Wire.shouldNotify(type: got[0].type, body: body(got[0])))
         let errors = got.dropFirst().map { (body($0)["code"] as? String, body($0)["related_id"] as? String) }
-        XCTAssertEqual(errors.map(\.0), ["malformed", "not_found", "not_found", "malformed"], "Remote is never deleted")
+        XCTAssertEqual(errors.map(\.0), ["not_found", "not_found", "not_found", "malformed"], "the retired pocket is not there (Q1 #4)")
         XCTAssertEqual(errors.map(\.1), [ids[1], ids[2], ids[3], missing.id])
         XCTAssertEqual(p.backend.deleted, ["/api/v1/conversations/c-9", "/api/v1/conversations/gone", "/api/v1/conversations/c-404"])
         XCTAssertEqual(p.channels.closed, ["c-9"], "its socket closed")

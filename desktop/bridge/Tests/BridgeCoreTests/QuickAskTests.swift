@@ -3,7 +3,8 @@ import XCTest
 @testable import BridgeCore
 
 /// Q1b (docs/plans/0164/Q1-quick-ask.md, "Frame names, fixed"): quick questions and new conversations from the
-/// phone, paging the list, turning a quick question into a chat, deleting the pocket, and the phone's send time.
+/// phone, paging the list, turning a quick question into a chat, the retired pocket (Q1 card, #4), and the phone's
+/// send time.
 final class QuickAskTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 1_790_985_600)
     static let quickPhone = PhoneFilesTests.newPhone + ["quick"]
@@ -116,7 +117,7 @@ final class QuickAskTests: XCTestCase {
         for c in cases { ids.append(try await send(p, c)) }
         try await run(p)
         XCTAssertTrue(p.backend.posted.isEmpty && p.backend.asked.isEmpty, "nothing stored or looked up")
-        XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "nothing sent, not even to the pocket")
+        XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "nothing sent")
         let refused = errors(try await heard(p))
         XCTAssertEqual(refused.map(\.code), Array(repeating: "bad_request", count: cases.count))
         XCTAssertEqual(refused.map(\.related), ids)
@@ -181,7 +182,7 @@ final class QuickAskTests: XCTestCase {
             p.backend.answers["POST /api/v1/phone/conversations/\(Self.id)/chat"] = .failure(.code(code))
             let sent = try await send(p, ["new_conversation_id": Self.id, "text": "plan a trip", "attachments": [], "client_msg_id": "n1"])
             try await run(p)
-            XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "\(code): nothing went to Arslan, not even the pocket")
+            XCTAssertTrue(p.channels.opened.values.allSatisfy { $0.sent.isEmpty }, "\(code): nothing went to Arslan")
             let got = errors(try await heard(p))
             XCTAssertEqual(got.map(\.code), [code])
             XCTAssertEqual(got.map(\.related), [sent])
@@ -190,10 +191,10 @@ final class QuickAskTests: XCTestCase {
 
     func testThePhonesSendTimeGoesWithItsWords() async throws {
         let p = try await pair()
-        _ = try await send(p, ["text": "hi", "attachments": [], "client_msg_id": "s1"])
+        _ = try await send(p, ["conversation_id": "c-1", "text": "hi", "attachments": [], "client_msg_id": "s1"])
         let got = try await run(p)
         let ts = try XCTUnwrap(got.first { $0.type == "chat.send" }?.envelope["ts"] as? String)
-        XCTAssertEqual(p.channels.opened[ConversationLinks.pocket]?.sent.first?["sent_at"] as? String, ts,
+        XCTAssertEqual(p.channels.opened["c-1"]?.sent.first?["sent_at"] as? String, ts,
                        "INB2's presence check reads it (server/services/presence.py)")
     }
 
@@ -243,30 +244,76 @@ final class QuickAskTests: XCTestCase {
         XCTAssertEqual(errors(got).map(\.related), refused)
     }
 
-    // ------------------------------------------------------------------ the pocket
+    // ------------------------------------------------------------------ the retired pocket (Q1 card, #4)
 
-    /// Two phones on one Mac: only the one that said `quick` lists its own conversations without Remote.
-    func testOnlyThePhoneThatSaidQuickMayDeleteThePocket() async throws {
+    /// Builds up to 27 still send Share-sheet drafts with no id, and every older frame named the pocket. Each is
+    /// answered `not_found`, an error the phone already shows, and nothing reaches the Mac: no call, no link.
+    func testEveryFrameThatNamesThePocketIsNotFoundAndNothingReachesTheMac() async throws {
         let p = try await pair(capabilities: PhoneFilesTests.newPhone)
-        let second = Mailbox(deviceID: "iphone-2", signing: .init(), exchange: .init(), store: p.mac.store)
-        p.mac.add(peer: Peer(deviceID: "iphone-2", signing: second.signing.publicKey, exchange: second.exchange.publicKey))
-        second.add(peer: Peer(deviceID: "mac-1", signing: p.mac.signing.publicKey, exchange: p.mac.exchange.publicKey))
-        try await second.send(type: "hello", body: ["app_version": "1", "protocol_version": 1, "capabilities": Self.quickPhone], to: "mac-1")
+        let pocket = ConversationLinks.pocket
+        let frames: [(String, [String: Any])] = [
+            ("chat.send", ["conversation_id": pocket, "text": "a", "attachments": [], "client_msg_id": "p1"]),
+            ("chat.send", ["text": "a Share-sheet draft", "attachments": [], "client_msg_id": "p2"]),      // no id
+            ("chat.history", ["conversation_id": pocket, "limit": 50]),
+            ("chat.history", ["limit": 50]),                                                               // no id
+            ("conversation.delete", ["conversation_id": pocket]),
+            ("conversation.update", ["conversation_id": pocket, "kind": "chat"]),
+            ("task.stop", ["job_id": "job-1", "conversation_id": pocket]),
+        ]
+        var ids: [String] = []
+        for (type, body) in frames { ids.append(try await p.phone.send(type: type, body: body, to: "mac-1").id) }
         try await run(p)
-        _ = try await second.receive()
-        p.backend.answers["DELETE /api/v1/conversations/pocket"] = .success(["ok": true, "deleted": ["arslan_messages": 3]])
+        let refused = errors(try await heard(p))
+        XCTAssertEqual(refused.map(\.code), Array(repeating: "not_found", count: frames.count))
+        XCTAssertEqual(refused.map(\.related), ids)
+        XCTAssertTrue(p.backend.asked.isEmpty && p.backend.posted.isEmpty && p.backend.deleted.isEmpty, "no call to the Mac")
+        XCTAssertTrue(p.channels.opened.isEmpty, "never linked")
+    }
 
-        try await p.phone.send(type: "conversation.delete", body: ["conversation_id": "pocket"], to: "mac-1")
+    /// The Mac lists the conversations it keeps live by recency, the pocket included when the window used it last.
+    /// It stays unlinked, so a turn in it on the Mac puts nothing on the wire for any phone.
+    func testThePocketIsNeverLinkedEvenWhenTheMacListsItLive() async throws {
+        let p = try await pair(capabilities: nil)
+        p.backend.answers["/api/v1/phone/live?limit=\(ConversationLinks.liveCount)"] = .success(["conversation_ids": [ConversationLinks.pocket, "trip"]])
+        try await p.phone.send(type: "hello", body: ["app_version": "1", "protocol_version": 1, "capabilities": Self.quickPhone], to: "mac-1")
         try await run(p)
-        XCTAssertEqual(p.backend.deleted, [], "the phone that never said quick still shows Remote")
-        let first = try await heard(p)
-        XCTAssertEqual(first.map(\.type), ["error"])
+        XCTAssertEqual(Set(p.channels.opened.keys), ["trip"])
+        let said = try await heard(p)
+        XCTAssertEqual(said.map(\.type), ["hello"])
+    }
 
-        try await second.send(type: "conversation.delete", body: ["conversation_id": "pocket"], to: "mac-1")
+    /// A run id is a number, so a phone can name a run it was never sent, a turn typed in the pocket on the Mac
+    /// included (#525 review, F1). One whose result names the pocket is not there, and its files' ids go nowhere.
+    func testARunInThePocketIsNotFound() async throws {
+        let p = try await pair()
+        p.backend.answers["/api/v1/phone/runs/88"] = .success(["run_id": 88, "conversation_id": ConversationLinks.pocket,
+                                                              "title": "typed in the pocket on the Mac",
+                                                              "files": [["id": "run_88_0123456789abcdef_a.md"]]])
+        p.backend.answers["/api/v1/phone/runs/87"] = .success(["run_id": 87, "conversation_id": "task-ab12", "title": "Q3"])
+        p.backend.answers["/api/v1/phone/runs/89"] = .success(["run_id": 89, "title": "no conversation named"])   // fails closed
+        let refused = try await p.phone.send(type: "run.get", body: ["run_id": 88], to: "mac-1").id
+        try await p.phone.send(type: "run.get", body: ["run_id": 87], to: "mac-1")
+        let unnamed = try await p.phone.send(type: "run.get", body: ["run_id": 89], to: "mac-1").id
         try await run(p)
-        XCTAssertEqual(p.backend.deleted, ["/api/v1/conversations/pocket"])
-        let answered = try await second.receive().filter { $0.type != "ack" }
-        XCTAssertEqual(answered.map(\.type), ["conversation.deleted"])
+        let got = try await heard(p)
+        XCTAssertEqual(got.map(\.type), ["error", "run.result", "error"])
+        XCTAssertEqual(errors(got).map(\.code), ["not_found", "not_found"])
+        XCTAssertEqual(errors(got).map(\.related), [refused, unnamed])
+        XCTAssertEqual(body(got[1])["run_id"] as? Int, 87)
+    }
+
+    func testAJobInThePocketIsLeftOutOfThePhonesStatus() async throws {
+        let p = try await pair()
+        let job: (String, String) -> [String: Any] = { id, conversation in
+            ["type": "job_update", "job_id": id, "conversation_id": conversation, "goal": "Tidy", "phase": "running"]
+        }
+        p.backend.answers["/api/v1/phone/status"] = .success(["presence": "online", "mascot": "working", "waiting_approvals": 0,
+                                                              "jobs": [job("job-p", ConversationLinks.pocket), job("job-t", "task-ab12"),
+                                                                       ["type": "job_update", "job_id": "job-x", "goal": "Tidy",
+                                                                        "phase": "running"]]])          // no conversation: left out
+        let reporter = StatusReporter(backend: p.backend, mailbox: p.mac, deviceName: "Test Mac")
+        let snapshot = try await reporter.snapshot(now: t0)
+        XCTAssertEqual((snapshot["jobs"] as? [[String: Any]])?.map { $0["id"] as? String }, ["job-t"])
     }
 
     // ------------------------------------------------------------------ the backend's answers

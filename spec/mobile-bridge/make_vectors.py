@@ -73,6 +73,8 @@ def positives() -> list[dict]:
                    "exchange_public_key": r.b64(r.public_exchange(raw(MAC, "exchangeKey")))}
     approval = {"approval_id": "appr-1", "action": "Delete 3 files", "target": "~/Arslan/old", "risk": "delete",
                 "task_id": "task-1", "task_title": "Tidy downloads", "expires_at": "2026-10-03T00:05:00Z"}
+    # Sealing fixtures: the `pocket` in the bodies below is sample text, kept so the vectors stay byte-identical.
+    # The conversation itself is retired (protocol §5.9), and the Mac never sends a frame naming it.
     return [
         crypto_vector("phone-message", PHONE, MAC, envelope(PHONE, MAC, "chat.send", {
             "text": "Vector request", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
@@ -239,7 +241,8 @@ def messages() -> dict:
         envelope(s, m, "chat.history", {"conversation_id": "c1", "limit": 50}),
         envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
             {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}]}),
-        envelope(s, m, "chat.send", {"text": "Find flights", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
+        envelope(s, m, "chat.send", {"conversation_id": "c1", "text": "Find flights", "attachments": [],
+                                     "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
         # §5.8 (2026-10-29): a quick question, a new ordinary conversation, the quick list's next page, a quick
         # question turned into a chat, and the two new error codes.
         envelope(m, s, "hello", {"app_version": "mac", "protocol_version": 1,
@@ -258,21 +261,27 @@ def messages() -> dict:
                                  "related_id": ID.lower()}),
         envelope(m, s, "error", {"code": "bad_request", "message": "The Mac could not read that request.",
                                  "related_id": ID.lower()}),
-        envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "progress", "message_id": "reply-1",
+        # Two codes every phone handles that had no vector (2026-10-30): not_found, which also answers every frame
+        # naming the retired pocket (Q1 card, #4), and mac_busy.
+        envelope(m, s, "error", {"code": "not_found", "message": "That conversation is no longer on the Mac.",
+                                 "related_id": ID.lower()}),
+        envelope(m, s, "error", {"code": "mac_busy", "message": "The Mac could not do that right now.",
+                                 "related_id": ID.lower()}),
+        envelope(m, s, "chat.event", {"conversation_id": "c1", "kind": "progress", "message_id": "reply-1",
                                       "text": "Searching flights", "final": False}),
-        envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "message", "message_id": "reply-1",
+        envelope(m, s, "chat.event", {"conversation_id": "c1", "kind": "message", "message_id": "reply-1",
                                       "text": "Three options…", "final": True}),
         envelope(m, s, "chat.event", {"conversation_id": "task-ab12", "kind": "message", "message_id": "412",
                                       "text": "The report is ready.", "final": True, "job_id": "job-1", "run_id": 87}),
-        envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "error", "message_id": "reply-1",
+        envelope(m, s, "chat.event", {"conversation_id": "c1", "kind": "error", "message_id": "reply-1",
                                       "text": "The model is unreachable", "final": True}),
-        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "pocket", "state": "running", "title": "Tidy",
+        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "c1", "state": "running", "title": "Tidy",
                                      "current_step": "Sorting", "completed": 1, "total": 3, "plan": [], "files": [],
                                      "run_id": 87, "origin": "phone",
                                      "criteria": [{"text": "One row per invoice", "status": "passed"},
                                                   {"text": "Totals by month", "status": "pending"},
                                                   {"text": "Saved as a CSV", "status": "failed"}]}),
-        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "pocket", "state": "partial", "title": "Tidy",
+        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "c1", "state": "partial", "title": "Tidy",
                                      "current_step": "", "completed": 2, "total": 3, "plan": [], "summary": "2 of 3", "files": []}),
         envelope(m, s, "approval.request", {"approval_id": "appr-1", "action": "Delete 3 files", "target": "~/Arslan/old",
                                             "risk": "delete", "task_id": "task-1", "task_title": "Tidy",

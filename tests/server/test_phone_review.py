@@ -148,7 +148,7 @@ async def test_each_conversation_says_its_kind_state_and_origin(client, artifact
     async with client.db_maker() as db:
         db.add(Run(id=9, conversation_id="trip", user_message="x"))
         for i, (cid, role, source, text, run_id, outcome) in enumerate([
-            ("pocket", "user", "phone", "在干嘛", None, None),
+            ("c-phone", "user", "phone", "在干嘛", None, None),
             ("task-ab", "user", "phone", "整理发票", None, None),
             ("task-ab", "arslan", None, "整理好了", None, "done"),
             ("scheduled-3", "arslan", None, "今日新闻", None, None),
@@ -169,7 +169,7 @@ async def test_each_conversation_says_its_kind_state_and_origin(client, artifact
                                      phase="running", step="run_command npm test", results={"answer-delivered": "passed", "c1": "passed"})
     with desktop_status.awaiting_approval("ask"):
         rows = {c["id"]: c for c in (await client.get("/api/v1/phone/conversations?limit=50")).json()["conversations"]}
-    assert (rows["pocket"]["kind"], rows["pocket"]["title"], rows["pocket"]["origin"]) == ("remote", "Remote", "phone")
+    assert (rows["c-phone"]["kind"], rows["c-phone"]["title"], rows["c-phone"]["origin"]) == ("chat", "在干嘛", "phone")
     assert (rows["task-ab"]["kind"], rows["task-ab"]["state"], rows["task-ab"]["origin"]) == ("task", "done", "phone")
     assert rows["scheduled-3"]["kind"] == "scheduled"
     assert (rows["trip"]["kind"], rows["trip"]["files"], rows["trip"]["preview"]) == ("chat", 1, "行程排好了，见附件")
