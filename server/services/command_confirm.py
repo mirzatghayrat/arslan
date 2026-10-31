@@ -87,9 +87,11 @@ class Confirmations:
             # more than this time (the Inbox, the phone and the island: this time); the island never answers
             # it at all. Always a card: the tool loop reads the stored grant itself, and writes its row when
             # the command runs (`permissions._ALWAYS_ASKS`).
+            # SBX-7: the ledger row says which card it was (`_record_in` writes `extra`): asked up front
+            # ("outside") or a re-run after the sandbox stopped the command ("retry").
             request = permissions.Request(
                 kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
-                why=why, frame=protocol.propose_run_command(
+                why=why, extra={"sandbox": sandbox}, frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
                     sandbox=sandbox, why=why, network=network))
         elif remote_host:

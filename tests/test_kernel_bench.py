@@ -285,7 +285,10 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
     assert ans({"sandbox": "outside"}) == "cancel_run_command"
     assert ans({"rule": "send-mail"}) == "cancel_run_command"
     assert ans({"rule": "apple-events"}) == "cancel_run_command"
-    assert (t.sandbox_cards, t.declined, t.approvals) == (2, 4, 6)
+    assert (t.outside_cards, t.retry_cards, t.declined, t.approvals) == (1, 1, 4, 6)      # SBX-7: counted apart
+    for tool in ("run_command", "web_search", "run_command"):                          # the share's denominator
+        assert t.on_frame({"type": "tool_call", "tool": tool}, 1.0) is None
+    assert t.run_commands == 2
     # Every other kind inside the sandbox is approved, new ones included (K2a's T5 got a heredoc-script card);
     # every outward kind is declined.
     assert ans({"rule": "unreadable"}) == "confirm_run_command"          # S2a-2: inside the sandbox it holds them
