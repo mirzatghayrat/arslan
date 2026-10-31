@@ -128,7 +128,7 @@ def test_boot_inventory_also_includes_oauth_and_ssh(database):
                 return db.execute(sql, parameters)
         found = list(crypto_boot._stored_ciphertext(Connection()))
     assert len(found) == 8
-    assert {row[1] for row in found if row[0] == "settings"} == set(SETTINGS)
+    assert {row[2] for row in found if row[0] == "settings"} == set(SETTINGS)          # (table, column, key, value)
 
 
 def test_new_inventory_preserves_legacy_migration_and_skips_empty_oauth(database):
@@ -145,7 +145,7 @@ def test_new_inventory_preserves_legacy_migration_and_skips_empty_oauth(database
         connection = Connection()
         assert crypto_boot.migrate_legacy_ciphertext(connection) == 8
         assert crypto_boot.migrate_legacy_ciphertext(connection) == 0
-        for _, _, token in crypto_boot._stored_ciphertext(connection):
+        for _, _, _, token in crypto_boot._stored_ciphertext(connection):
             assert crypto.primary_fernet().decrypt(token.encode()).decode() == PLAINTEXT
     assert recovery_preflight.check(database, SECRET)["status"] == "compatible"
 

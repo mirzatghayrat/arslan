@@ -13,8 +13,8 @@ is refused before any card: that waits for v0.1.65's "for you to look at".
 
 `register` writes the row, for the card and for a converted former expert. Its category is
 `AUTHORED`, or `AUTHORED_OUTSIDE` when the card said the conversation had read outside content (the
-user's decision on #472 F1): read_skill then reads it like an imported skill, framed, and the turn that
-reads it counts as having read outside content. The seeder reads both as the user's skill (D7): a
+user's decision on #472 F1). Since the user's D2(1) (2026-10-30, SKF1) every skill reads unframed, so the mark
+is data: where the text came from, for the Capabilities list. The seeder reads both as the user's skill (D7): a
 retirement never deletes it.
 
 This replaces the Skill Forge page, its candidates and the curator (sessions.md §11). Migration 0077
@@ -42,8 +42,8 @@ _LINE_MAX = 300         # the description and the reason, as the card shows them
 #: The category of a skill Arslan wrote and the user kept (the card's yes, or converting a former
 #: expert): the seeder's D7 mark of a user's skill (`seeder._USERS_SKILL`). No seed ever had it.
 AUTHORED = "authored"
-#: The same, saved from a card that said the conversation had read outside content (#472 F1): read like an
-#: imported skill. Both are `WRITTEN`, the seeder's mark.
+#: The same, saved from a card that said the conversation had read outside content (#472 F1). Both are
+#: `WRITTEN`, the seeder's mark; neither changes how a skill is read (D2(1), skill_trust).
 AUTHORED_OUTSIDE = "authored-outside"
 WRITTEN = (AUTHORED, AUTHORED_OUTSIDE)
 #: What an earlier turn's `<turn_tools>` block says when it read outside content, or when the block was cut
@@ -141,8 +141,8 @@ async def _conversation_read_outside(conversation_id: str | None) -> bool:
 
 async def register(*, key: str, name: str, description: str, body: str, outside: bool) -> bool:
     """Write the skill, on and equippable at once (the registry reads SkillPack directly). `outside` (no
-    default: every caller says where the text came from) marks it to be read like an imported skill (#472
-    F1, recheck). False when the key is taken: nothing is overwritten."""
+    default: every caller says where the text came from) marks it `authored-outside` (#472 F1, recheck), data
+    since D2(1). False when the key is taken: nothing is overwritten."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             if await db.get(SkillPack, key) is not None:

@@ -2,6 +2,8 @@
 verbatim import with attribution, bundled-script storage + sandbox execution + traversal guard."""
 import sys
 
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -33,8 +35,9 @@ async def maker(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    # scripts land under the test data dir, never the repo's
+    # scripts land under the test data dir, never the repo's, and a leftover's Trash under the test's home
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     return m
 
 
@@ -113,7 +116,7 @@ async def test_import_verbatim_with_attribution(maker, monkeypatch):
     assert skill_is_assignable(row.tier, row.status, row.body)
 
 
-async def test_an_import_is_pinned_to_one_commit_and_records_each_files_checksum(maker, monkeypatch):
+async def test_an_import_is_pinned_to_one_commit_and_records_each_files_checksum(maker, monkeypatch, tmp_path):
     """0.1.57 §5.2: without a commit it pins to the default branch's head; with one, it
     fetches every file at exactly that commit. The checksums say what was installed."""
     import hashlib
@@ -131,8 +134,15 @@ async def test_an_import_is_pinned_to_one_commit_and_records_each_files_checksum
         await db.delete(await db.get(SkillPack, "handoff"))
         await db.commit()
     shas.clear()
+    full = "abcdef1234567" + "0" * 27                   # #539 review 6: an abbreviation is resolved to 40 digits
+
+    async def _full_sha(owner, repo, sha):
+        assert sha == "ABCDEF1234567"
+        return full
+    monkeypatch.setattr(skill_import, "full_sha", _full_sha)
     pinned = await skill_import.import_skill("mattpocock/skills@ABCDEF1234567", "skills/handoff/SKILL.md")
-    assert pinned["commit"] == "abcdef1234567" and set(shas) == {"abcdef1234567"}
+    assert pinned["commit"] == full and set(shas) == {full}
+    assert (tmp_path / "home" / ".Trash" / "Arslan leftover skill files handoff" / "run.py").is_file()   # the first's
     with pytest.raises(ValueError, match="not a commit id"):
         await skill_import.import_skill("mattpocock/skills@main;rm", "skills/handoff/SKILL.md")
 
