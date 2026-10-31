@@ -208,6 +208,17 @@ async def test_a_scheduled_task_stops_waiting_for_its_entries_once_you_open_it(c
     assert (await _waiting(client))["scheduled"] == [4]  # a newer one waits again
 
 
+async def test_an_entry_from_the_moment_you_opened_the_task_counts_as_seen(client):
+    await _add(client, _task(4))
+    await client.post("/api/v1/scheduled-tasks/4/seen")
+    async with client.db_maker() as db:
+        at = (await db.get(ScheduledTask, 4)).seen_at
+    entry = _refused("scheduled-4", decided_by="policy")
+    entry.created_at = at
+    await _add(client, entry)
+    assert (await _waiting(client))["scheduled"] == []
+
+
 async def test_a_task_that_writes_into_a_chat_keeps_its_own_mark(client):
     await _add(client, _task(6, conversation_id="chat-x"), *_chat("chat-x"))
     await _add(client, _refused("chat-x", decided_by="policy"))
