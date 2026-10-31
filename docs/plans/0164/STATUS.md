@@ -155,7 +155,7 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 3. **#584** at `85086df6`: CAP4a-3c, allowlist D at card time. The effort=max re-check approves it.
 4. **#563** at `e4762e2b` (draft): the scan blocks "download and run". ④参谋 re-checked it as OK. One narrow part was stopped by a classifier: the 40-character window and the interpreter pattern. The choice is Codex Astra for that part (the paste is on ④参谋's list), or accept the gap.
 5. **#597** at `7406dba7`, then **#607** at `1e09b8f3`, then **#608** at `8cefe374`: UNI1b's follow-up, then the user's 3A (scan blocks only Tag/bidi; keyword rules read a copy with hidden characters stripped), then joiners and direction marks counted. All are re-checked OK; #608's parity sweep shows 0 differences.
-6. **#590** at `8c63fd8f`, then **#601** at `adb6c4fd` and **#602** at `012e9929`, then **#605** at `3d46e6c4`, then **#610** at `f1b49118`, **#611** at `57a400bb` and **#612** at `08f452c4`:
+6. **#590** at `8c63fd8f`, then **#601** at `adb6c4fd` and **#602** at `012e9929`, then **#605** at `3d46e6c4`, then **#610** at `f1b49118`, **#611** at `57a400bb` and **#612** at `1880ab26`:
    - #590: the waiting count;
    - #601: an interrupted job reads unfinished;
    - #602: the conversation pieces and the shared answer guard;
