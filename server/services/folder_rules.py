@@ -19,6 +19,8 @@ never sees them (D1).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import stat
@@ -135,6 +137,12 @@ def note_touch(conversation_id: str | None, path: Path) -> None:
 
 def block(folder: Path, home: Path, *, conversation_id: str | None = None) -> tuple[str, int]:
     """The rules block for `folder` (and the subfolders this conversation touched), and how many files are in it."""
+    text, count, _ = _block(folder, home, conversation_id=conversation_id, trusted={})
+    return text, count
+
+
+def _found(folder: Path, home: Path, conversation_id: str | None) -> tuple[list[tuple[str, str, Path]], list[str]]:
+    """(shown path, text, path) for each rules file that applies, outermost first, and the notes on refused ones."""
     folders = _walk(folder, home)
     below: list[Path] = []
     for touched in sorted(_touched.get(conversation_id or "", ())):
@@ -147,35 +155,45 @@ def block(folder: Path, home: Path, *, conversation_id: str | None = None) -> tu
             step = step / part
             if step not in below:
                 below.append(step)
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, Path]] = []
     notes: list[str] = []
     for where in [*folders, *below]:
         name, text, why = _read(where)
         if why:
             notes.append(f"{_shown(where / name, home)} {why}")
         elif text is not None and text.strip():
-            found.append((_shown(where / name, home), text))
+            found.append((_shown(where / name, home), text, where / name))
+    return found, notes
+
+
+def _block(folder: Path, home: Path, *, conversation_id: str | None, trusted: dict[str, str]) -> tuple[str, int, int]:
+    """The block, how many files are in it, and how many of those are outside content: all but a file exactly as
+    the user left it through L11-2's card (D3: `trusted` maps its path to the sha256 the card recorded)."""
+    found, notes = _found(folder, home, conversation_id)
     if not found and not notes:
-        return "", 0
-    total, kept = 0, []
-    for shown, text in reversed(found):                    # nearest first: it matters most
+        return "", 0, 0
+    total, kept, outside = 0, [], 0
+    for shown, text, path in reversed(found):              # nearest first: it matters most
+        users = trusted.get(str(path)) == hashlib.sha256(text.encode()).hexdigest()
         size = len(text.encode())
         if total + size > MAX_BYTES:
             if not kept:
                 cut = text.encode()[:MAX_BYTES].decode("utf-8", errors="ignore")
                 kept.append((shown, cut + "\n[cut: the rest of this file is over the 16 KB limit]"))
                 total = MAX_BYTES
+                outside += 0 if users else 1
             else:
                 notes.append(f"{shown} left out (the 16 KB limit)")
             continue
         kept.append((shown, text))
         total += size
+        outside += 0 if users else 1
     # Paths come from the folder names on disk, so they are cleaned like the text (#595 review: folders named "<" and
     # "folder_rules>" would otherwise spell the closing tag).
     body = "\n\n".join(f"## {_clean(shown)}\n{_clean(text).strip()}" for shown, text in reversed(kept))
     if notes:
         body += "\n\n" + "\n".join(f"(Note: {_clean(n)}.)" for n in notes)
-    return f"{OPEN}\n{body.strip()}\n{CLOSE}", len(kept)
+    return f"{OPEN}\n{body.strip()}\n{CLOSE}", len(kept), outside
 
 
 async def conversation_folder(db, conversation_id: str | None) -> Path | None:
@@ -194,8 +212,9 @@ async def conversation_folder(db, conversation_id: str | None) -> Path | None:
 
 
 async def for_turn(conversation_id: str | None) -> tuple[str, int]:
-    """This turn's rules block and how many files it holds; ("", 0) when switched off or there are none. It is
-    context: a failure leaves it out and the turn goes on."""
+    """This turn's rules block and how many of its files are outside content (D3: all but a file exactly as the user
+    left it through L11-2's card); ("", 0) when switched off or there are none. It is context: a failure leaves it
+    out and the turn goes on."""
     from server.db import session as db_session
     from server.services import settings_service
     try:
@@ -203,10 +222,118 @@ async def for_turn(conversation_id: str | None) -> tuple[str, int]:
             if not await settings_service.folder_rules_enabled(db):
                 return "", 0
             folder = await conversation_folder(db, conversation_id)
+            trusted = await _trusted(db)
         if folder is None:
             return "", 0
         import asyncio
-        return await asyncio.to_thread(block, folder, _home(), conversation_id=conversation_id)
+        text, _count, outside = await asyncio.to_thread(_block, folder, _home(), conversation_id=conversation_id,
+                                                        trusted=trusted)
+        return text, outside
     except Exception:  # noqa: BLE001 — the rules are context: without them the turn goes on
         logger.warning("folder rules not read", exc_info=True)
         return "", 0
+
+
+# -- L11-2: the user's own rules, added through the card -----------------------------------------------------------
+
+#: path -> sha256 of the rules file as the user's card left it (D3: exactly that file is not outside content).
+TRUSTED_KEY = "folder_rules_user_files"
+
+
+class RuleRefused(Exception):
+    """The folder's rules file can't be written: a link, not a plain file, or unreadable."""
+
+
+async def _trusted(db) -> dict[str, str]:
+    from server.services import settings_service
+    try:
+        value = json.loads(await settings_service._get_raw(db, TRUSTED_KEY) or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+async def _trust(db, path: Path, data: bytes | None) -> None:
+    from server.services import settings_service
+    trusted = await _trusted(db)
+    if data is None:
+        trusted.pop(str(path), None)
+    else:
+        trusted[str(path)] = hashlib.sha256(data).hexdigest()
+    await settings_service._set_raw(db, TRUSTED_KEY, json.dumps(trusted))
+
+
+def target(folder: Path) -> Path:
+    """Where the card's line goes: the folder's AGENTS.md, else its CLAUDE.md when that is the file it has (writing
+    a new AGENTS.md would hide it, K10-1 reads AGENTS.md first), else a new AGENTS.md."""
+    present = set(os.listdir(folder)) if folder.is_dir() else set()
+    return folder / ("CLAUDE.md" if "AGENTS.md" not in present and "CLAUDE.md" in present else "AGENTS.md")
+
+
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise RuleRefused(path.name) from None
+    with os.fdopen(fd, "rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            raise RuleRefused(path.name)
+        return f.read()
+
+
+def _write_bytes(path: Path, data: bytes) -> None:
+    """Replace the file's content in place: a temp file in the same folder, then os.replace (a link at the path was
+    refused before)."""
+    tmp = path.with_name(f".{path.name}.arslan-tmp")
+    try:
+        os.unlink(tmp)                                   # a stale one (or anything planted there) goes first
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+
+
+async def add_rule(db, folder: Path, line: str) -> Path:
+    """Append `- line` to the folder's rules file (the user's click; never the model's tools: HR keeps those). The
+    file as left is recorded as the user's (D3). Raises RuleRefused."""
+    path = target(folder)
+    before = _read_bytes(path) or b""
+    data = before + (b"" if not before or before.endswith(b"\n") else b"\n") + f"- {line}\n".encode()
+    _write_bytes(path, data)
+    await _trust(db, path, data)
+    return path
+
+
+async def remove_rule(db, path: Path, line: str) -> None:
+    """Take the card's line back out (its own undo), once, leaving the rest of the file as it is."""
+    before = _read_bytes(path)
+    if before is None:
+        return
+    lines = before.decode("utf-8", errors="replace").splitlines(keepends=True)
+    want = f"- {line}"
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].rstrip("\r\n") == want:
+            del lines[i]
+            break
+    data = "".join(lines).encode()
+    _write_bytes(path, data)
+    await _trust(db, path, data if data.strip() else None)
+
+
+async def listing(conversation_id: str | None) -> dict:
+    """What Overview shows: whether the switch is on, and each rules file this conversation follows, with its text."""
+    import asyncio
+    from server.db import session as db_session
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        enabled = await settings_service.folder_rules_enabled(db)
+        folder = await conversation_folder(db, conversation_id)
+    if not enabled or folder is None:
+        return {"enabled": enabled, "files": []}
+    found, notes = await asyncio.to_thread(_found, folder, _home(), conversation_id)
+    return {"enabled": True, "files": [{"file": shown, "text": text[:MAX_BYTES]} for shown, text, _ in found],
+            "notes": notes}
