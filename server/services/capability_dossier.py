@@ -148,6 +148,12 @@ async def update(source_id: str) -> dict:
     problem = capability_flow.installable(cand)
     if problem:
         raise DossierError(problem)
+    # CAP4a-3c (#584 review 2): a newer version published by a listed GitHub organization is checked by its id, as a
+    # new card is: whoever took over a renamed organization's login could publish one.
+    from server.services import capability_allowlist
+    changed_hands = await capability_allowlist.confirm_account(cand, await capability_allowlist.current())
+    if changed_hands in (capability_allowlist.ACCOUNT_CHANGED_HANDS, capability_allowlist.ACCOUNT_NOT_CHECKED):
+        raise DossierError(changed_hands)       # the list itself stays out of updates: only a listed org's id counts
     keys = {}
     if row.mcp_server_id:
         async with db_session.AsyncSessionLocal() as db:

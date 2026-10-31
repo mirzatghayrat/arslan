@@ -10,7 +10,11 @@
   lock, the scan and the sandbox.
 
 Skills are not held to this list: they keep the pinned commit, the scan, the hashes and the card (CAP4a-1).
-Installed servers are not either: their updates come from the source the user already approved.
+Installed servers' updates are not held to the list either (the user approved that source), but an update published
+by a listed organization is checked by its id like a new card (#584 review 2): a login can change hands.
+
+A vendor's subdomains count as the vendor (`com.microsoft.azure` is Microsoft): the Registry verified that the
+publisher controls the subdomain. A subdomain someone else took over (a dangling CNAME) would pass too: a stated limit.
 
 The list is the user's: stored in settings under `SETTING_KEY`, shown and edited through `/capability-allowlist`.
 `DEFAULT` is its first version: list B's vendor domains and organizations, measured against the public Registry on
@@ -60,6 +64,7 @@ DEFAULT: dict = {
 }
 
 #: Why a Registry entry has no one-click card (`Candidate.by_hand`).
+REMOTE_NOT_HTTPS = "remote_not_https"
 PUBLISHER_UNKNOWN = "publisher_unknown"
 PUBLISHER_NOT_LISTED = "publisher_not_listed"
 REMOTE_FROM_AN_ACCOUNT = "remote_from_an_account"
@@ -107,23 +112,34 @@ def validate(data) -> dict:
             "accounts": dict(sorted(accounts.items()))}
 
 
+#: Nothing is one-click: the list Arslan uses when the user's saved list cannot be read (#584 review 1). DEFAULT
+#: could be wider than what the user saved, so a failed read never falls back to it.
+CLOSED: dict = {"packages_from_any_domain": False, "domains": [], "hosts": {}, "accounts": {}}
+
+
 async def current() -> dict:
-    """The user's list, or DEFAULT when none is saved. A stored list that no longer reads is DEFAULT too (logged):
-    the default is the user's own choice, never wider."""
+    """The user's list; DEFAULT when none is saved. A saved list that cannot be read (the read failed, or the row no
+    longer validates) is CLOSED, never DEFAULT, which may be wider than it (logged)."""
+    from sqlalchemy.exc import OperationalError
     from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
             raw = await settings_service._get_raw(db, SETTING_KEY)
-    except Exception as exc:  # noqa: BLE001 — no settings table (a bare test database): the default list
-        logger.info("capability allowlist not read (%s): the default list applies", type(exc).__name__)
-        return validate(DEFAULT)
+    except OperationalError as exc:
+        if "no such table" in str(exc):          # a database with no settings table at all: nothing was saved
+            return validate(DEFAULT)
+        logger.warning("capability allowlist not read (%s): nothing is one-click until it reads", type(exc).__name__)
+        return dict(CLOSED)
+    except Exception as exc:  # noqa: BLE001 — any other failed read: closed, never wider
+        logger.warning("capability allowlist not read (%s): nothing is one-click until it reads", type(exc).__name__)
+        return dict(CLOSED)
     if raw is None:
         return validate(DEFAULT)
     try:
         return validate(json.loads(raw))
     except (ValueError, TypeError) as exc:
-        logger.warning("capability allowlist unreadable (%s): the default list applies", exc)
-        return validate(DEFAULT)
+        logger.warning("capability allowlist unreadable (%s): nothing is one-click until it is saved again", exc)
+        return dict(CLOSED)
 
 
 async def save(data) -> dict:
@@ -169,9 +185,15 @@ def verdict(c: dict, allow: dict) -> str | None:
         vendor = _vendor(who["value"], allow)
         if vendor is None:
             return PUBLISHER_NOT_LISTED
-        host = (urlsplit(str((c.get("remote") or {}).get("url") or "")).hostname or "").lower().rstrip(".")
+        try:
+            parts = urlsplit(str((c.get("remote") or {}).get("url") or ""))
+            host = (parts.hostname or "").lower().rstrip(".")
+        except ValueError:                      # #584 review 7: a URL urlsplit refuses is no host of the vendor's
+            return REMOTE_HOST_NOT_THE_PUBLISHERS
         if not host or not any(_under(host, d) for d in [vendor, *allow["hosts"].get(vendor, [])]):
             return REMOTE_HOST_NOT_THE_PUBLISHERS
+        if parts.scheme.lower() != "https":     # #584 review 4: the key the card asks for travels in a header
+            return REMOTE_NOT_HTTPS
         return None
     if who["kind"] == "domain":
         return None if allow["packages_from_any_domain"] or _vendor(who["value"], allow) else PUBLISHER_NOT_LISTED
@@ -189,7 +211,10 @@ async def _account_id(login: str) -> int | None:
         r = await client.get(f"{GITHUB}/users/{login}")
     if r.status_code not in (200, 404):
         r.raise_for_status()                    # a rate limit or an outage is not an answer: nothing is cached
-    found = r.json().get("id") if r.status_code == 200 else None
+    body = r.json() if r.status_code == 200 else {}
+    if not isinstance(body, dict):              # #584 review 7: an answer that is no account is no answer
+        raise ValueError("GitHub's answer is not an object")
+    found = body.get("id")
     _IDS[login] = (time.time(), found if type(found) is int else None)
     return _IDS[login][1]
 
@@ -210,7 +235,7 @@ async def confirm_account(c: dict, allow: dict) -> str | None:
         return PUBLISHER_NOT_LISTED
     try:
         found = await _account_id(login)
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:      # #584 review 7: no answer
         logger.info("capability allowlist: GitHub did not answer for %s (%s)", login, type(exc).__name__)
         return ACCOUNT_NOT_CHECKED
     return None if found == pinned else ACCOUNT_CHANGED_HANDS

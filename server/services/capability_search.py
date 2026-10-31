@@ -462,6 +462,8 @@ async def mark_by_hand(cands: list[Candidate]) -> None:
     from server.services import capability_allowlist
     allow = await capability_allowlist.current()
     for c in cands:
+        if c.not_here == "add_by_hand":         # #584 review 5: a cached result is marked again by the list as it is now
+            c.not_here, c.by_hand = None, None
         if c.not_here is None:
             reason = capability_allowlist.verdict(c.view(), allow)
             if reason:

@@ -40,6 +40,15 @@ def _cand(name, runtime="uv", url=None, source="registry", kind="mcp"):
     (_cand("com.stripe/mcp", "remote", "https://evilstripe.com/mcp"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
     (_cand("com.stripe/mcp", "remote", "https://mcp.cloudflare.com/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
     (_cand("com.stripe/mcp", "remote", "not a url"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.stripe/mcp", "remote", "https://mcp.stripe.com@evil.example/mcp"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.stripe/mcp", "remote", "https://mcp.stripe.com:443@evil.example/mcp"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.stripe/mcp", "remote", "https://evil.example#@mcp.stripe.com/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.stripe/mcp", "remote", "https://evil.example\uff0f.stripe.com/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.stripe/mcp", "remote", "https://[mcp.stripe.com/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.stripe/mcp", "remote", "http://mcp.stripe.com/mcp"), al.REMOTE_NOT_HTTPS),
+    (_cand("com.stripe/mcp", "remote", "ftp://mcp.stripe.com/mcp"), al.REMOTE_NOT_HTTPS),
+    (_cand("com.stripe/mcp", "remote", "//mcp.stripe.com/mcp"), al.REMOTE_NOT_HTTPS),
+    (_cand("com.stripe/mcp", "remote", "https://MCP.Stripe.COM./mcp"), None),             # case and a trailing dot
     (_cand("com.example/notes", "remote", "https://mcp.example.com/"), al.PUBLISHER_NOT_LISTED),  # remote: vendors only
     (_cand("io.github.github/mcp", "remote", "https://api.github.com/mcp"), al.REMOTE_FROM_AN_ACCOUNT),   # Q2
     (_cand("Bad Namespace/notes"), al.PUBLISHER_UNKNOWN),
@@ -53,6 +62,7 @@ def test_the_default_list_decides_one_click(cand, expected):
 def test_with_packages_from_any_domain_off_only_vendors_are_one_click():
     narrow = {**ALLOW, "packages_from_any_domain": False}
     assert al.verdict(_cand("com.example/notes"), narrow) == al.PUBLISHER_NOT_LISTED
+    assert al.verdict(_cand("com.evilstripe/notes"), narrow) == al.PUBLISHER_NOT_LISTED     # a lookalike
     assert al.verdict(_cand("com.stripe/notes"), narrow) is None
     assert al.verdict(_cand("com.microsoft.azure/notes"), narrow) is None
 
@@ -123,12 +133,53 @@ async def test_the_general_settings_write_cannot_change_the_list(execution_db):
     assert await al.current() == ALLOW
 
 
-async def test_an_unreadable_stored_list_is_the_default(execution_db):
+async def test_an_unreadable_stored_list_is_closed_never_the_default(execution_db):
+    """#584 review 1: the default can be wider than what the user saved."""
     from server.services import settings_service
     async with execution_db() as db:
         await settings_service._set_raw(db, al.SETTING_KEY, "{not json")
         await db.commit()
-    assert await al.current() == ALLOW
+    assert await al.current() == al.CLOSED
+    async with execution_db() as db:
+        await settings_service._set_raw(db, al.SETTING_KEY, json.dumps({**ALLOW, "domains": ["Not Valid"]}))
+        await db.commit()
+    assert await al.current() == al.CLOSED
+    assert al.verdict(_cand("com.example/notes"), al.CLOSED) == al.PUBLISHER_NOT_LISTED
+    assert al.verdict(_cand("io.github.getsentry/sentry"), al.CLOSED) == al.PUBLISHER_NOT_LISTED
+
+
+async def test_any_other_failed_read_is_closed(execution_db, monkeypatch):
+    from server.services import settings_service
+
+    async def fails(db, key):
+        raise RuntimeError("the session could not be opened")
+    monkeypatch.setattr(settings_service, "_get_raw", fails)
+    assert await al.current() == al.CLOSED
+
+
+@pytest.mark.parametrize("message, closed", [("database is locked", True), ("disk I/O error", True),
+                                             ("no such table: settings", False)])
+async def test_a_failed_read_is_closed_and_only_a_missing_table_is_the_default(execution_db, monkeypatch, message,
+                                                                                closed):
+    from sqlalchemy.exc import OperationalError
+    from server.services import settings_service
+
+    async def fails(db, key):
+        raise OperationalError("SELECT", {}, Exception(message))
+    monkeypatch.setattr(settings_service, "_get_raw", fails)
+    assert await al.current() == (al.CLOSED if closed else ALLOW)
+
+
+async def test_a_failed_read_gives_no_card_for_what_the_users_list_left_out(card_world, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+    from server.services import settings_service
+    await al.save({**ALLOW, "packages_from_any_domain": False, "domains": ["stripe.com"], "hosts": {}})
+
+    async def fails(db, key):
+        raise OperationalError("SELECT", {}, Exception("database is locked"))
+    monkeypatch.setattr(settings_service, "_get_raw", fails)
+    out, cards = await _propose(monkeypatch, _cand("com.example/notes"))
+    assert out["by_hand"] == al.PUBLISHER_NOT_LISTED and cards == [] and card_world == []
 
 
 # ── search shows, the card refuses ───────────────────────────────────────────
@@ -142,6 +193,17 @@ async def test_search_marks_what_is_added_by_hand_and_the_model_sees_why(executi
     seen = capability_search.for_model({"words": [], "notes": [], "candidates": [c.view() for c in cands]})
     assert [(c["not_here"], c["by_hand"]) for c in seen["candidates"]] == [(None, None),
                                                                           ("add_by_hand", al.PUBLISHER_NOT_LISTED)]
+
+
+async def test_a_cached_result_is_marked_again_by_the_list_as_it_is_now(execution_db):
+    """#584 review 5: search results are cached for hours; a widened list reaches them."""
+    cand = capability_search.from_registry({"server": {"name": "io.github.someone/notes", "version": "1.0.0",
+                                                       "packages": [{"registryType": "pypi", "identifier": "x"}]}})
+    await capability_search.mark_by_hand([cand])
+    assert cand.not_here == "add_by_hand"
+    await al.save({**ALLOW, "accounts": {**ALLOW["accounts"], "someone": 12345}})
+    await capability_search.mark_by_hand([cand])
+    assert (cand.not_here, cand.by_hand) == (None, None)
 
 
 async def test_search_keeps_another_reason_it_cannot_run(execution_db):
@@ -245,6 +307,86 @@ async def test_a_listed_login_that_is_not_the_listed_organization_is_added_by_ha
     if reason == al.ACCOUNT_NOT_CHECKED:                      # not cached: the next card asks again
         await _propose(monkeypatch, _cand("io.github.getsentry/sentry"))
         assert calls == ["getsentry", "getsentry"]
+
+
+async def test_a_github_answer_that_is_not_an_object_is_no_answer(card_world, monkeypatch):
+    """#584 review 7: not checked, and not cached (the next card asks again)."""
+    calls = []
+
+    class ListAnswer:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            calls.append(url)
+            return httpx.Response(200, json=[1396951], request=httpx.Request("GET", url))
+    al._IDS.clear()
+    monkeypatch.setattr(al.httpx, "AsyncClient", ListAnswer)
+    sentry = _cand("io.github.getsentry/sentry")
+    assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_NOT_CHECKED
+    assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_NOT_CHECKED and len(calls) == 2
+
+
+async def test_github_is_asked_again_after_a_day(card_world, monkeypatch):
+    """#584 review 8: the id cache expires; a login that changed hands since is caught the next day."""
+    answers = {"getsentry": 1396951}
+    calls = _github(monkeypatch, answers)
+    now = [1_000_000.0]
+    monkeypatch.setattr(al.time, "time", lambda: now[0])
+    sentry = _cand("io.github.getsentry/sentry")
+    assert await al.confirm_account(sentry, ALLOW) is None and calls == ["getsentry"]
+    answers["getsentry"] = 99
+    now[0] += al.ACCOUNT_CACHE_S - 1
+    assert await al.confirm_account(sentry, ALLOW) is None and len(calls) == 1
+    now[0] += 2
+    assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_CHANGED_HANDS and len(calls) == 2
+
+
+async def test_an_update_from_a_listed_organization_is_checked_by_its_id(card_world, monkeypatch):
+    """#584 review 2: whoever took over a renamed organization's login could publish a newer version."""
+    from server.db.models import CapabilitySource
+    from server.services import capability_dossier
+    async with __import__("server.db.session", fromlist=["x"]).AsyncSessionLocal() as db:
+        db.add(CapabilitySource(id="src1", kind="mcp", name="sentry", candidate_id="c", runtime="uv", needs={},
+                                grants={}, state="installed", created_at=__import__("datetime").datetime.utcnow()))
+        await db.commit()
+    newer = {**_cand("io.github.getsentry/sentry"), "id": "registry:io.github.getsentry/sentry@2.0.0"}
+
+    async def check_update(source_id):
+        return {"newer": True, "candidate": dict(newer)}
+    monkeypatch.setattr(capability_dossier, "check_update", check_update)
+
+    async def usable(cand):
+        return {"spdx": "MIT", "read_from": "LICENSE", "verdict": "usable"}
+    monkeypatch.setattr(capability_dossier, "check_candidate_license", usable)
+    installed = []
+
+    async def install_mcp(cand, **kw):
+        installed.append(cand["id"])
+        return {"state": "on"}
+    monkeypatch.setattr(capability_flow, "install_mcp", install_mcp)
+    monkeypatch.setattr(capability_dossier.capability_install, "remove", lambda source_id: _done())
+    _github(monkeypatch, {"getsentry": 99999999})
+    with pytest.raises(capability_dossier.DossierError) as refused:
+        await capability_dossier.update("src1")
+    assert refused.value.code == al.ACCOUNT_CHANGED_HANDS and installed == []
+    _github(monkeypatch, {"getsentry": 1396951})
+    await capability_dossier.update("src1")
+    assert installed == ["registry:io.github.getsentry/sentry@2.0.0"]
+    newer.update(id="registry:io.github.someone/notes@2.0.0")                 # not listed: the list stays out
+    calls = _github(monkeypatch, {})
+    await capability_dossier.update("src1")
+    assert installed[-1] == "registry:io.github.someone/notes@2.0.0" and calls == []
+
+
+async def _done():
+    return None
 
 
 async def test_nobody_to_ask_asks_github_nothing(card_world, monkeypatch):
