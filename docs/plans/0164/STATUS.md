@@ -171,7 +171,7 @@ The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is 
 
 | Lane | Work |
 |---|---|
-| ②Main | #590's retarget; INB5b (the badge on 活动, inbox removed; the items in #590's "Not covered"); then the saw_error follow-up from #581 |
+| ②Main | #590's retarget; INB5b (the badge on 「活动」, inbox removed; the items in #590's "Not covered"); then the saw_error follow-up from #581 |
 | ③Hands | The SBX drafts (3a #520, 4a, 5a, 7) merged with main and adjusted to the SBX-M report; they stay drafts |
 | ⑤CAP | #597's retarget; CAP4a-3d (the start-time Registry re-check) as a draft; #584 and #563 held for the user |
 | ⑥Helper | The STY bench's after run (before: 12/27, many ending task_waiting_user); results go on #452; the L11-0 mock is ready |
@@ -183,7 +183,7 @@ The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is 
 
 - **The #584 and #563 pushes** (above).
 - **INB7 C+** (②Main's board, version 9). Is the layout OK? And which version gets the map and the timeline replay?
-  - **(A) Recommended:** v0.1.64 ships the ledger strip, the list, 要你做 and the four tabs; the map and the replay go to v0.1.65.
+  - **(A) Recommended:** v0.1.64 ships the ledger strip, the list, 「要你做」 and the four tabs; the map and the replay go to v0.1.65.
   - **(B)** Everything in v0.1.64.
 - **The import scan** (#586 review F3): which hidden characters block an import?
   - **(A) Recommended, mainstream (GitHub warns):** only Tag characters and bidi overrides block; every other hidden character is counted and marked.
