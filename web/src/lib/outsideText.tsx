@@ -26,7 +26,7 @@ const hexOf = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0"
 
 /** UNI1b: what a skill's text may hold that shows nothing at all, as the server's `untrusted.hidden_runs` has it:
  *  Unicode's default-ignorable code points and the blank braille pattern, but ZWNJ, ZWJ, LRM, RLM and ALM (ordinary
- *  text needs them) and the bidi controls (shown with their own marker above). Every table is explicit code point
+ *  text needs them; a joiner between two ASCII letters is marked all the same, JOINERS below) and the bidi controls (shown with their own marker above). Every table is explicit code point
  *  ranges, never the Unicode database, so both sides agree whatever Unicode version each ships (#586 review F5);
  *  spec/unicode/hidden-characters.json holds the same tables and the cases both pass. */
 export const HIDDEN: [number, number][] = [
@@ -44,10 +44,30 @@ export const IDEOGRAPHS: [number, number][] = [[0x3400, 0x4dbf], [0x4e00, 0x9fff
 export const IVS_UNCOUNTED_MAX = 8;
 /** The tags of the three RGI subdivision flags (England, Scotland, Wales), after U+1F3F4 and before U+E007F. */
 export const FLAG_TAGS = ["gbeng", "gbsct", "gbwls"];
+/** UNI1b-4: ZWNJ and ZWJ stay unmarked where ordinary text needs them (Persian, the Indic scripts, emoji sequences),
+ *  but between two ASCII letters they join nothing, so there each one is marked, a run of them too (the server's
+ *  `_joiners_between_letters`). */
+export const JOINERS = [0x200c, 0x200d];
 
 const within = (cp: number, ranges: [number, number][]) => ranges.some(([lo, hi]) => lo <= cp && cp <= hi);
 const runRange = (cp: number) => RUN_RANGES.find(([, lo, hi]) => lo <= cp && cp <= hi)?.[0] ?? null;
 const isSelector = (cp: number) => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+const asciiLetter = (cp: number) => (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a);
+
+/** The positions of each run of ZWNJ and ZWJ that sits between two ASCII letters (one pass). */
+function joinersBetweenLetters(cps: number[]): Set<number> {
+  const marked = new Set<number>();
+  for (let i = 0; i < cps.length;) {
+    if (!JOINERS.includes(cps[i])) { i += 1; continue; }
+    let end = i;
+    while (end < cps.length && JOINERS.includes(cps[end])) end += 1;
+    if (i > 0 && end < cps.length && asciiLetter(cps[i - 1]) && asciiLetter(cps[end])) {
+      for (let j = i; j < end; j += 1) marked.add(j);
+    }
+    i = end;
+  }
+  return marked;
+}
 
 function takesSelector(prev: number | undefined, selector: number): boolean {
   if (prev === undefined) return false;
@@ -59,7 +79,8 @@ function takesSelector(prev: number | undefined, selector: number): boolean {
 export type HiddenRun = { start: number; cps: number[] };
 
 /** UNI1b: each run of characters that show nothing, in order. A run is one code point repeated, or characters of
- *  one range. Not counted: one selector that does what ordinary text uses one for, and an RGI flag's tags. */
+ *  one range. Not counted: one selector that does what ordinary text uses one for, and an RGI flag's tags.
+ *  Counted besides the table: a joiner between two ASCII letters (UNI1b-4). */
 export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
   const cps = [...(text ?? "")].map(ch => ch.codePointAt(0)!);
   const flagged = new Set<number>();
@@ -71,10 +92,11 @@ export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
       for (let j = i + 1; j <= i + 6; j++) flagged.add(j);
     }
   });
+  const stray = joinersBetweenLetters(cps);
   const runs: HiddenRun[] = [];
   let open = false, ivsUncounted = 0;
   cps.forEach((cp, i) => {
-    let hidden = !flagged.has(i) && within(cp, HIDDEN);
+    let hidden = !flagged.has(i) && (within(cp, HIDDEN) || stray.has(i));
     if (hidden && isSelector(cp) && !(i + 1 < cps.length && isSelector(cps[i + 1]))
         && takesSelector(i ? cps[i - 1] : undefined, cp)) {
       const ivs = cp >= 0xe0100 && cp <= 0xe01ef;
