@@ -83,13 +83,16 @@ _SHOWS_NOTHING: re.Pattern | None = None
 def _keyword_text(text: str) -> str:
     """#563 review (cross-PR): what the keyword rules read. Every character that shows nothing is taken out first:
     UNI1b's table (zero-width space, word joiner, soft hyphen, variation selectors, tags, the blank braille
-    pattern...), ZWNJ and ZWJ, the direction marks and the bidi controls. Until UNI1b-3 a zero-width space that
+    pattern...), ZWNJ and ZWJ, the direction marks, the bidi controls, the interlinear annotation characters, the
+    Egyptian hieroglyph format controls, and the control characters and line and paragraph separators but tab and
+    new line (#607 re-check K1b; lines split at new lines only). Until UNI1b-3 a zero-width space that
     split a keyword (`cu`, U+200B, `rl ... | sh`) was blocked on its own; now it is only counted, so the rules read
     the word it splits. Only for matching: the text is stored as it is, and what it hides is still counted."""
     global _SHOWS_NOTHING
     if _SHOWS_NOTHING is None:
         from server.orchestrator import untrusted
-        ranges = (*untrusted._HIDDEN, (0x200C, 0x200F), (0x061C, 0x061C), *_BLOCKED[:2])
+        ranges = (*untrusted._HIDDEN, (0x200C, 0x200F), (0x061C, 0x061C), *_BLOCKED[:2], (0xFFF9, 0xFFFB),
+                  (0x13430, 0x1343F), (0x2028, 0x2029), (0x00, 0x08), (0x0B, 0x1F), (0x7F, 0x9F))
         _SHOWS_NOTHING = re.compile("[" + "".join(f"{re.escape(chr(lo))}-{re.escape(chr(hi))}" for lo, hi in ranges)
                                     + "]")
     return _SHOWS_NOTHING.sub("", text)
@@ -105,7 +108,9 @@ class Finding:
 
 
 def _lines(text: str):
-    for n, line in enumerate(text.splitlines(), 1):
+    """At new lines only (#607 re-check K1b): splitlines() also splits at a vertical tab, a form feed, NEL and the
+    line and paragraph separators, so one of them inside a keyword split it across two lines."""
+    for n, line in enumerate(text.split("\n"), 1):
         yield n, line
 
 
