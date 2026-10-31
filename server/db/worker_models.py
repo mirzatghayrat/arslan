@@ -6,6 +6,8 @@ from sqlalchemy import JSON, CheckConstraint, Column, DateTime, ForeignKey, Inte
 from server.db.base import Base
 
 
+# DELETE-BY: v0.1.65, when professional methods have folded into skills under SUB
+# (CAP3b, docs/plans/0164/CAP-capabilities.md). Both models below.
 class ProfessionalMethod(Base):
     __tablename__ = "professional_methods"
     key = Column(String(40), primary_key=True)

@@ -29,7 +29,7 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 
-DELETABLE = ("installed", "authored", "manual")
+DELETABLE = ("installed", "authored", "manual", "unknown")    # unknown: the user's D2(2), 2026-10-30
 # A key the server may delete by: what every skill writer makes (skill_forge, skill_import, the seeder). The key
 # names the scripts folder, and `{key:path}` lets "/" through (#499 review F3).
 _SKILL_KEY = re.compile(r"[a-z0-9-]+")
@@ -260,15 +260,18 @@ async def _installed_servers() -> dict[int, str]:
 
 def _skill_origin(pack) -> str:
     """By the marks D7 reads as the user's (seeder._USERS_SKILL): written by Arslan (skill_forge.WRITTEN; a skill
-    promoted from Skill Forge before CAP2a got one of those marks in migration 0077), installed from a card
-    (`source_id`), pasted as a link ("imported") or made in Discover before v0.1.64 ("gh-" keys, which no seed
-    key is; tested); anything else the seeder planted. Written first: create_skill takes "gh-" keys too."""
+    promoted from Skill Forge before CAP2a got one of those marks in migration 0077, and one the old Discover page
+    made, in 0080), installed from a card (`source_id`) or pasted as a link ("imported"). Built in only for a
+    seed row (skill_trust.is_seed); a row with no mark that is not a seed is "unknown", deletable like any skill
+    the user has (the user's D2(2), 2026-10-30), its text to the Trash. Written first: create_skill takes any
+    plain key."""
+    from server.registry import skill_trust
     from server.services import skill_forge
     if pack.category in skill_forge.WRITTEN:
         return "authored"
-    if pack.source_id or pack.category == "imported" or pack.key.startswith("gh-"):
+    if skill_trust.has_users_mark(pack):                          # imported, or a capability source
         return "installed"
-    return "builtin"
+    return "builtin" if skill_trust.is_seed(pack) else "unknown"
 
 
 async def _skill_rows() -> list[dict]:

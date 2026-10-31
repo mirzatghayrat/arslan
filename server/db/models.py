@@ -306,6 +306,8 @@ class MCPServer(Base):
     command = Column(String(255), nullable=False)
     args = Column(JSON, nullable=False, default=list)
     env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
+    # SEC1 (migration 0081): the values behind `${NAME}` placeholders in url/args, encrypted JSON like env.
+    secrets = Column(Text, nullable=True)
     url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
     status = Column(String(20), nullable=False, default="registered")  # legacy, kept in step with `state` until PR 8: registered|connecting|connected|error
     # Server-level host consent (user ruling 2026-08-18): connect is the human

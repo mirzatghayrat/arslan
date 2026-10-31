@@ -42,7 +42,8 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
     setBusyPath(path);
     setImportErr((prev) => ({ ...prev, [path]: '' }));
     try {
-      await importSkill(ref.trim(), path);
+      // CAP4a-1: the commit the listing read, so what was listed is what is imported (not HEAD by then).
+      await importSkill(result?.commit ? `${result.repo.full_name}@${result.commit}` : ref.trim(), path);
       setImported((prev) => ({ ...prev, [path]: true }));
       onImported?.();
     } catch (e) {

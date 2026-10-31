@@ -51,13 +51,13 @@ async def _seed(execution_db, tmp_path) -> None:
     async with execution_db() as db:
         db.add_all([
             _pack("designed-html-report", "creative"),                   # planted by the seeder
-            _pack("ghostwriter", "dev"),                                 # planted too: "gh" but not "gh-"
+            _pack("ghostwriter", "dev"),                                 # no mark, not a seed key: unknown (SKF1)
             _pack("csv-tidy", "imported"),                               # pasted a link (skill_import)
             _pack("xlsx", "productivity", source_id="sk1"),              # installed from a card
             _pack("deck", "productivity", source_id="sk2"),              # installed from a card too
             _pack("weekly-report", "authored"),                          # the save card
             _pack("page-notes", "authored-outside"),                     # the save card, after a page
-            _pack("gh-acme-notes", "general"),                           # Discover, before CAP1a
+            _pack("gh-acme-notes", "authored-outside"),                  # Discover, as migration 0080 left it
             CapabilitySource(id="sk1", kind="skill", name="xlsx", candidate_id="c", needs={}, grants={},
                              state="installed", skill_key="xlsx", created_at=datetime(2026, 10, 1)),
             CapabilitySource(id="sk2", kind="skill", name="deck", candidate_id="c", needs={}, grants={},
@@ -113,8 +113,8 @@ async def test_each_row_says_its_section_its_origin_and_whether_it_can_be_delete
         "skill:xlsx": ("skills", "installed", True),
         "skill:weekly-report": ("skills", "authored", True),
         "skill:page-notes": ("skills", "authored", True),
-        "skill:gh-acme-notes": ("skills", "installed", True),
-        "skill:ghostwriter": ("skills", "builtin", False),
+        "skill:gh-acme-notes": ("skills", "authored", True),
+        "skill:ghostwriter": ("skills", "unknown", True),                # D2(2), 2026-10-30: deletable
         "mcp:1": ("connections", "manual", True),
         "mcp:2": ("connections", "installed", True),
     }
@@ -136,14 +136,15 @@ async def test_the_server_refuses_to_delete_whatever_a_row_says_cannot_be_delete
     assert (tmp_path / "data" / "skill_scripts" / "designed-html-report" / "run.py").is_file()
 
 
-async def test_what_the_page_may_delete_is_what_d7_never_retires(api, execution_db, tmp_path):
+async def test_what_the_page_may_delete_is_every_skill_but_a_seed_row(api, execution_db, tmp_path):
     """#499 review F1: the page's mark agrees with D7 (seeder._USERS_SKILL): what the seeder never retires is
     not built in here, and what it may retire is. A skill promoted from Skill Forge before CAP2a reads as the
-    user's because migration 0077 (CAP2b, merged into this branch) marked it. "gh-" rows are the user's by their
-    key: no seed or retired key is one (test_no_seed_skill_has_a_gh_key)."""
+    user's because migration 0077 (CAP2b) marked it, and one the old Discover page made because 0080 did; no row is
+    the user's by its key alone (SKF1). Every row but a seed row is deletable: the user's, and since D2(2)
+    (2026-10-30) one of unknown origin too."""
     from sqlalchemy import select
 
-    from server.registry import seeder
+    from server.registry import seeder, skill_trust
     await _seed(execution_db, tmp_path)
     async with execution_db() as db:
         everyone = set((await db.execute(select(SkillPack.key))).scalars())
@@ -151,12 +152,15 @@ async def test_what_the_page_may_delete_is_what_d7_never_retires(api, execution_
     rows = await _rows(api)
     assert users and everyone - users                                               # both kinds present
     for key in everyone:
-        assert (rows[f"skill:{key}"]["origin"] != "builtin") == (key in users or key.startswith("gh-")), key
-        assert rows[f"skill:{key}"]["deletable"] == (key in users or key.startswith("gh-")), key
+        seed = key not in users and key in skill_trust.SEEDED
+        assert (rows[f"skill:{key}"]["origin"] == "builtin") == seed, key           # SKF1: built in = a seed row
+        assert rows[f"skill:{key}"]["deletable"] == (not seed), key
+    assert "designed-html-report" in skill_trust.SEEDED and "ghostwriter" not in skill_trust.SEEDED   # both kinds
 
 
 def test_no_seed_skill_has_a_gh_key():
-    """A "gh-" key reads as installed and can be deleted, so no skill the seeder plants or retires may have one."""
+    """Migration 0080 marks every "gh-" row as outside, which is right only if no skill the seeder plants or
+    retires has such a key."""
     from server.registry import seed_catalog, seeder
     keys = [key for key, *_ in seed_catalog.SKILLS] + list(seeder.RETIRED_SKILL_KEYS)
     assert keys and not [key for key in keys if key.startswith("gh-")]
@@ -266,7 +270,8 @@ async def test_a_deleted_skills_text_goes_to_the_trash_with_its_files(api, execu
     assert (await api.delete(f"/api/v1/capabilities/skill:{key}")).status_code == 200
     folder = tmp_path / "home" / ".Trash" / f"Arslan capability {key}"
     assert skill_import.parse_skill_md((folder / "SKILL.md").read_text(encoding="utf-8")) == {
-        "key": key, "name": key.replace("-", " ").title(), "description": "d", "body": "## Trigger\nx", "cleaned": False}
+        "key": key, "name": key.replace("-", " ").title(), "description": "d", "body": "## Trigger\nx", "cleaned": False,
+        "frontmatter": key.replace("-", " ").title() + "\nd"}
     assert {p.name for p in folder.iterdir()} == ({"SKILL.md"} if key == "weekly-report" else {"SKILL.md", "run.py"})
 
 

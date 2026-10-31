@@ -79,6 +79,8 @@ describe("the capability card", () => {
     frame({ ...CARD, call_id: "cap-2", kind: "skill", runtime: "skill", runtime_download: null, keys: [], folders: [] });
     expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_titleSkill:{"name":"\u2068excel-mcp-server\u2069"}');   // isolated (UNI1a)
     expect(screen.getByTestId("capability-card-runs")).toHaveTextContent("discover.card_runSkill");
+    expect(screen.getByTestId("capability-card")).toHaveTextContent("discover.card_checksSkill");    // the scan, no test run
+    expect(screen.getByTestId("capability-card")).not.toHaveTextContent("discover.card_checksText");
   });
 
   it("closes when the server says it was decided or expired", () => {

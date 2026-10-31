@@ -209,15 +209,23 @@ async def test_ordinary_text_keeps_its_format_characters_on_the_card():
 # ── #526 review 5: the import's note and the scan ────────────────────────────────────────────
 
 @pytest.mark.parametrize("body,note", [("1. State the goal.\r\n2. Then the rest.\r\n", "verbatim"),
-                                        ("1. State the goal." + TAGS + "\n", "with hidden characters removed")])
+                                        ("1. State the\x00 goal\x1b.\n", "with hidden characters removed")])
 async def test_the_import_says_verbatim_only_when_nothing_was_removed(maker, monkeypatch, body, note):  # noqa: F811
-    """A CRLF file read as LF lost nothing; a body that lost tags says so."""
+    """A CRLF file read as LF lost nothing; a body that lost control characters says so. (A body with Tag
+    characters never gets this far since CAP4a-1: the scan blocks it, as the next test shows.)"""
     md = "---\r\nname: handoff\r\ndescription: Hand work over\r\n---\r\n" + body
     _mock_github(monkeypatch, license="MIT", tree=["SKILL.md"], raws={"SKILL.md": md})
     await skill_import.import_skill("acme/skills", "SKILL.md")
     async with maker() as db:
         row = await db.get(SkillPack, "handoff")
     assert f"> Imported {note} from https://github.com/acme/skills" in row.body
+
+
+async def test_an_import_with_a_tag_payload_is_blocked_by_the_scan(maker, monkeypatch):  # noqa: F811
+    md = "---\nname: handoff\ndescription: Hand work over\n---\n1. State the goal." + TAGS + "\n"
+    _mock_github(monkeypatch, license="MIT", tree=["SKILL.md"], raws={"SKILL.md": md})
+    with pytest.raises(ValueError, match="invisible_characters"):
+        await skill_import.import_skill("acme/skills", "SKILL.md")
 
 
 @pytest.mark.parametrize("text", [PERSIAN, FAMILY, HEART + "\u200d\U0001F525", "\U0001F44D\U0001F3FD\u200d\u2642",

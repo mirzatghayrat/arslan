@@ -1,6 +1,7 @@
 """CRUD + connect/expose/wire + health probe for MCP servers. env stored encrypted, masked on read."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -72,8 +73,21 @@ def _to_dict(srv: MCPServer, *, mask: bool = True, stored_status: bool = False) 
     # dialects.
     shown = _shown(srv)
     status, health = _legacy_words(srv, shown)
+    # SEC1: where a secret still sits in the address or arguments (never its value), and both as every place may
+    # show them. DELETE-BY: SEC1b, when the card shows `url_shown`/`args_shown` and the raw two leave the payload.
+    from server.services import connection_secrets as cs
+    url_shown, args_shown = cs.shown(srv.url, srv.args or [])
+    try:
+        moved = json.loads(crypto.decrypt(srv.secrets)) if srv.secrets else {}
+    except Exception:  # noqa: BLE001 — unreadable: every placeholder counts as missing
+        moved = {}
     return {"id": srv.id, "label": srv.label, "command": srv.command, "args": srv.args or [],
-            "url": srv.url, "env": _mask_env(env) if mask else env,
+            "url": srv.url, "url_shown": url_shown, "args_shown": args_shown,
+            "secret_parts": [{**part, "name": cs.suggest_name(srv.label, part)}
+                             for part in cs.find(srv.url, srv.args or [])],
+            # A placeholder with no stored value, by name: the start sends it as text (#536 review).
+            "secrets_missing": cs.missing(srv.url, srv.args or [], moved),
+            "env": _mask_env(env) if mask else env,
             "status": srv.status if stored_status else status,
             "env_status": secret_state(srv.env), "last_error": masked_error(srv),
             "transport": srv.transport,
@@ -128,6 +142,34 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
 
     supervisor.schedule(out["id"])        # 0.1.61 §B1: adding starts it (in the background)
     return out
+
+
+#: One move at a time per connection: two at once read the same stored values, and the second write lost the
+#: first's (#536 review 4). One process serves the API, so a lock per server is enough.
+_MOVES: dict[int, asyncio.Lock] = {}
+
+
+async def move_secret(server_id: int, part: dict, name: str) -> dict:
+    """SEC1: one secret-looking part of a connection's address or arguments into its encrypted store, a `${name}`
+    placeholder in its place (connection_secrets.move). Raises connection_secrets.NothingToMove when there is
+    nothing there to move; then nothing changes. The connection restarts with it."""
+    async with _MOVES.setdefault(server_id, asyncio.Lock()):
+        result = await _move_secret(server_id, part, name)
+    await restart_after_edit(server_id)
+    return result
+
+
+async def _move_secret(server_id: int, part: dict, name: str) -> dict:
+    from server.services import connection_secrets as cs
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+        if srv is None:
+            raise ValueError("server not found")
+        values = json.loads(crypto.decrypt(srv.secrets)) if srv.secrets else {}
+        url, args, values = cs.move(srv.url, srv.args or [], part, name, values)
+        srv.url, srv.args, srv.secrets = url, args, crypto.encrypt(json.dumps(values))
+        await db.commit()
+        return _to_dict(srv)
 
 
 async def list_servers(*, stored_status: bool = False) -> list[dict]:

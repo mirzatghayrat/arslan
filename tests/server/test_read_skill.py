@@ -78,4 +78,4 @@ async def test_non_utf8_reference_does_not_crash(seeded, tmp_path, monkeypatch):
         {"key": "writing-plans", "section": "references/bad.md"})
     assert out["ok"] is True
     assert "ok text" in out["body"]        # readable prefix survives (errors='replace')
-    assert out["external"] is True         # an imported skill's reference is outside content
+    assert out["external"] is False        # D2(1), 2026-10-30: every skill reads unframed, its references too

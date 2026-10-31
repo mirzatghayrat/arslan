@@ -122,13 +122,17 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
 
 
 def summarise(findings: list[Finding]) -> dict:
-    findings = findings[:MAX_FINDINGS]
+    """The level from every finding, then at most MAX_FINDINGS of them, the high ones first: notes can never
+    push a high finding off the list, or the level down to "notes" (#539 review 1)."""
     level = "blocked" if any(f.level == "high" for f in findings) else ("notes" if findings else "clean")
-    return {"level": level, "findings": [asdict(f) for f in findings]}
+    shown = sorted(findings, key=lambda f: f.level != "high")[:MAX_FINDINGS]
+    return {"level": level, "findings": [asdict(f) for f in shown]}
 
 
-def scan_skill(body: str, scripts: dict[str, str], references: dict[str, str]) -> dict:
-    found = scan_text("SKILL.md", body, kind="text")
+def scan_skill(skill_md: str, scripts: dict[str, str], references: dict[str, str]) -> dict:
+    """`skill_md` is the whole SKILL.md as fetched, its frontmatter's name and description included: under the
+    user's D2 every skill's name and description reach the model unframed (#539 review 4)."""
+    found = scan_text("SKILL.md", skill_md, kind="text")
     for name, text in references.items():
         found += scan_text(name, text, kind="text")
     for name, text in scripts.items():

@@ -21,6 +21,7 @@ import json
 
 import pytest
 
+from arslan.llm import tool_names
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
@@ -202,7 +203,7 @@ async def test_a_call_to_an_unknown_tool_lists_the_nearest_keys_and_an_odd_one_m
     assert "mcp_7__fetch" in after, "the answer lists the reachable key"
     assert _note_status(result) == ("proposed" if waits else "active")
     if waits:
-        start = after.index("Ignore the user")
+        start = after.index(tool_names.wire(key))       # NAME1: listed as the model can call it
         assert after.rfind(untrusted.TOOL_OPEN, 0, start) > after.rfind(untrusted.TOOL_CLOSE, 0, start)
 
 

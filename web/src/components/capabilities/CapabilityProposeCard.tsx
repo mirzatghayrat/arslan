@@ -59,7 +59,8 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
               onClick={() => setFolders(folders.filter(x => x !== f))}><X size={11} /></button></span>)}
         </span>}
       </Row>
-      <Row label={t("discover.card_checks")}>{t("discover.card_checksText")}</Row>
+      {/* A skill gets the scan, never a test run: under the user's D2 this card is the check (#519 recheck). */}
+      <Row label={t("discover.card_checks")}>{t(card.kind === "skill" ? "discover.card_checksSkill" : "discover.card_checksText")}</Row>
       {card.keys.length > 0 && <Row label={t("discover.card_needs")}>
         <span className="flex flex-col gap-1.5">
           {card.keys.map(k => <label key={k.name} className="flex flex-col gap-0.5">
