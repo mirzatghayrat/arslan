@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from server.db import session as db_session
 from server.db.models import Base, ConversationEvent, Run, RunStep, ScheduledTask, ScheduledTaskRun
 from server.orchestrator import arslan, run_trace
-from server.services import run_recorder, scheduler
+from server.services import run_recorder, scheduler, task_service
 from server.services.run_recorder import RUN_RAW_CAP
 
 
@@ -85,6 +85,56 @@ async def test_a_scheduled_fire_records_the_run_it_made(memdb, monkeypatch, endi
     assert row.run_id == made[0]                       # a failed fire opens too: that is the run to look at
     if outcome == "ok":
         assert [event.ref["run_id"] for event in events] == made
+
+
+class _PresentTurn:
+    """Stands in for a present turn's TaskRuntime. "Fire now" from that turn runs inside it:
+    task_context.execute_entry hands the fire's body the current runtime, whose run_ids hold the turn's own run."""
+    def __init__(self, run_id):
+        self.run_ids = {run_id}
+        self.saw_error, self.pause_reason, self.cancelled, self.closed = False, None, False, False
+
+    def capture(self, event):
+        if event.get("type") == "error":
+            self.saw_error = True
+
+    async def link_run(self, run_id):
+        self.run_ids.add(run_id)
+
+    def record_run_output(self, run_id):
+        pass
+
+
+@pytest.mark.parametrize("records", [False, True])
+async def test_fire_now_inside_a_present_turn_records_only_its_own_run(memdb, monkeypatch, records):
+    async with memdb() as db:
+        outer = Run(conversation_id="c-chat", spawn_id=None, spawn_name="Arslan", user_message="fire it",
+                    status="recording", task_tokens=0, kind="host")
+        task = ScheduledTask(name="weekly", prompt="summarise the week", schedule_kind="interval",
+                             interval_s=3600, enabled=True, consecutive_failures=0)
+        db.add_all([outer, task])
+        await db.commit()
+        outer_id, task_id = outer.id, task.id
+    if records:
+        monkeypatch.setattr(arslan, "_handle_answer_body", _turn_body("fine"))
+    else:
+        async def fails_before_recording(conversation_id, user_message, emit, **kwargs):
+            raise RuntimeError("no model configured")
+        monkeypatch.setattr(arslan, "_handle_answer", fails_before_recording)
+
+    token = task_service._current.set(_PresentTurn(outer_id))
+    try:
+        async with memdb() as db:
+            fired = await db.get(ScheduledTask, task_id)
+        await scheduler._fire(fired)
+    finally:
+        task_service._current.reset(token)
+
+    async with memdb() as db:
+        row = (await db.execute(select(ScheduledTaskRun).where(ScheduledTaskRun.task_id == task_id))).scalar_one()
+        made = [run_id for run_id in (await db.execute(select(Run.id))).scalars().all() if run_id != outer_id]
+    assert row.run_id == (made[0] if records else None)               # never the present turn's run
+    assert row.run_id != outer_id
 
 
 async def test_read_and_search_steps_keep_every_path_they_read(memdb):

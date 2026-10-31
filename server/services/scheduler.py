@@ -469,12 +469,17 @@ async def _fire_body(task: ScheduledTask) -> None:
         await db.commit()
 
     from server.services.task_service import current as current_task
+    # INB6: "fire now" from a present turn runs inside that turn's task (task_context.execute_entry hands the body
+    # the current runtime), whose run_ids already hold the turn's own run: only ids added from here are the fire's.
+    outer = current_task()
+    before = set(outer.run_ids) if outer else set()
 
     def made_run() -> int | None:
-        # INB6: the run the turn recorded (host_run links it to this fire's task), so the Scheduled page opens
-        # each run, a failed one included. The newest, if the turn recorded more than one.
+        # INB6: the run the fire's turn recorded (host_run links it to the task), so the Scheduled page opens each
+        # run, a failed one included. The newest, if the turn recorded more than one; None if it recorded none.
         runtime = current_task()
-        return max(runtime.run_ids) if runtime and runtime.run_ids else None
+        made = runtime.run_ids - before if runtime else set()
+        return max(made) if made else None
     try:
         await run_arslan_turn(cid, prompt)
     except Exception as exc:  # noqa: BLE001 — a failed fire is an error outcome, not a crash
