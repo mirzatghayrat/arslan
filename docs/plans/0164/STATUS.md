@@ -2,12 +2,18 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-31 (UTC), while the user is out until tonight.
+**Updated:** 2026-10-31 (UTC), after the user's five merges at 11:51–11:59.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #555 | EXC1a: every silent broad `except: pass` says why on its line, and a test keeps it so | `53c68977` (main CI 41199089324 queued when this was written; the four runs before it were cancelled by the next merge) |
+| #567 | JUDGE1: stored lessons reach the judge only where memory may be shown; the judge keeps digests | `318d0b02` |
+| #553 | DIFF1 server: one changed path of a turn as a line diff | `dbbb9a81` |
+| #526 | UNI1a: one cleaner for names; skill bodies keep ordinary text; bidi controls shown escaped (migration 0082) | `e3cef4a1` |
+| #570 | SBX-2 fix (Codex): the any-declared mode refuses port exclusions. Astra (high) and Claude (effort=max) reviewed | `dc926523` |
+| #572 | SMOKE.md: SB1's real-Mac steps | `f97b0f1b` |
 | #566 | This page: INB questions, INB3 mock, the next queue | `06b2c785` |
 | #545 | WB1-3: Overview's Changes, what each turn did in your folders, with its undo | `6180d52c` |
 | #554 | Hands: the access card's heading is Arslan's words; the model's why is its own line | `98879c65` |
@@ -111,25 +117,31 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | #433 | v0.1.64 Inbox: the user's eight points (merged 2026-10-27, before the plan) | `502012f5` |
 | #439, #437, #435 | Codex queue, read-only Codex connection, #438 in the queue | `8df2d44e`, `ef356fb5`, `601baee0` |
 
-## Ready for the user to merge (tonight, in this order)
+## Ready for the user to merge (in this order)
 
-The user is out until tonight and does what needs them in one sitting (「继续推进项目，需要我的等我回去一次性处理」, relayed by ④参谋). Every verdict is posted on its PR with the sha. ④参谋 checked the re-OKs and the five checks at 04:45 UTC. Where a step says a lane pushes after a merge, that lane has the rebase ready locally and pushes when the merge lands. The re-OK is quick then, since only the base changes.
+The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR below waits on its lane's push and a re-OK at the new head. Every verdict is posted on its PR with the sha.
 
-1. **#570** (SBX-2 fix, Codex: the any-declared mode refuses port exclusions) at `933073cb`. Astra (high) and Claude (effort=max, comment 6538778801) are both OK. CI 41161270759 success. Its three non-blocking follow-ups go to a Codex PR after it.
-2. **#553** (DIFF1 server half) at `2c3085a5`: ②Main's re-OK at this head.
-3. **#526** (UNI1a, migration 0082) at `955ef188`. After it:
-   - ③Hands pushes **#548** (TITLE1), rebased with `test_title1_model_title.py:85` updated. Re-OK, then merge.
-   - ⑤CAP pushes **#561** (CAP4a-2), rebased. It already conflicts with main in `capability_flow.py`, and with #526 there too, so it is rebased once, after #526. Re-OK, then merge. **#569** (CAP4a-3b, draft) comes later.
-4. **#555** (EXC1a) at `68b217a8`. After it, ⑥Helper retargets and pushes **#557** (EXC1b). Re-OK, then merge.
-5. **#567** (JUDGE1) at `6ed9ed43`. After it, ②Main retargets and pushes **#559** (MEM1). Re-OK, then merge. Then **#560** the same way.
-6. **#565** (app names everywhere) at `10b9f472`: OK (⓪Plan's effort=max reviewer). It is still a draft, and no CI has run on this head. ③Hands marks it ready for review. That alone doesn't start CI, because `ci.yml`'s `pull_request` trigger uses the default types, which leave out `ready_for_review`. So then close and reopen it, or let ③Hands push an empty commit, and merge once it's green.
+1. **#548** (TITLE1): ③Hands pushes it rebased on main, which now has #526, with `test_title1_model_title.py:85` updated. Then a re-OK.
+2. **#557** (EXC1b): ⑥Helper retargets it to main and pushes. Then a re-OK.
+3. **#559** (MEM1): ②Main retargets it to main and pushes; the replay over the merged batch is identical to the reviewed diff. ⓪Plan re-OKs. Then **#560** the same way.
+4. **#561** (CAP4a-2): ⑤CAP pushes it rebased on main, which now has #526. It conflicted with both in `capability_flow.py`. ⓪Plan re-OKs at effort=max. **#569** (CAP4a-3b, draft) comes after it.
+5. **#565** (app names everywhere) at `10b9f472`: OK, and ready for review. No CI has run on this head: close and reopen it, or OK ③Hands' empty commit. Merge once it's green.
+6. **#573** (the K10 + L11 card, docs): re-OK at `86b3c6c5`; it auto-merges.
 
-`git merge-tree` on the heads: #553 with #526, #555 with #526, and #555 with #567 merge cleanly. #526 with #561 conflicts (as does #561 with today's main), hence #561 after #526. #548 merges cleanly with #526 but its test needs the update.
-
-**Also for the user tonight (not merges):**
+**Also for the user (not merges):**
 - #563 (CAP4a-3a): OK ⑤CAP's push.
-- Mocks to approve: INB3, with INB4, INB5 and INB7 coming (②Main); DIFF1-0, with DIFF2 coming (⑥Helper); UNI1b and SEC1 (⑤CAP).
+- Mocks to approve:
+  - INB3–INB7, in one link (②Main);
+  - DIFF1-0 and DIFF2-0, one link (⑥Helper): two DIFF1 picks, three DIFF2 picks;
+  - UNI1b and SEC1 (⑤CAP).
+- K10 + L11's decisions D1–D5 (#573, "For the user to decide"). The recommended answers:
+  - the classifier doesn't see folder rules;
+  - "make this a rule" writes the folder's `AGENTS.md`;
+  - folder rules count as outside content, except a file exactly as the user added it;
+  - no global file;
+  - a file's language defaults to the user's message.
 - SBX-M on your Mac: ③Hands is making it a single runbook.
+- #570's follow-up for Codex: the paste is comment 6542970496 on #570.
 - The decisions under "Waiting on the user" below.
 
 **Under review or on hold (don't merge these):**
@@ -144,14 +156,14 @@ The user is out until tonight and does what needs them in one sitting (「继续
 
 | Lane | Work |
 |---|---|
-| ②Main | #559 and #560 ready to push after #567; C7c-2 #450 (a draft on #448's merged branch) to retarget to main; #298b rebased; INB4, INB5 and INB7 mocks; then the K10 + L11 card |
-| ③Hands | #548 ready to push after #526; SBX-M as a one-sitting runbook for the user's Mac (the critical path); the four SBX drafts wait on SBX-M |
-| ⑤CAP | #561 ready to push after #526, then #569; the next CAP card that needs no user decision (CAP8b on MEM1, or CAP5/CAP6 parts without SBX) |
-| ⑥Helper | #557 ready to push after #555; DIFF2's mock; SB1 pieces that need no decision; STY waits on its bench |
+| ②Main | #559 and #560 pushes; C7c-2 #450 rebased onto main at `012c7c00` (full suite, then ready; an independent effort=max review, the user merges); #298 cut down to three "fails closed" corrections; INB4, INB5 and INB7 mocks |
+| ③Hands | #548's push; SBX-M as a one-sitting runbook; the four SBX drafts wait on SBX-M |
+| ⑤CAP | #561's push, then #569; the next CAP card that needs no user decision |
+| ⑥Helper | #557's push; #573's card merged next; DIFF1/DIFF2 wait on the mock picks; STY waits on its bench |
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
-| Codex (via ⑦Codex) | #570 open; its three follow-ups next; SBX-3p waits on SBX-M |
+| Codex (via ⑦Codex) | #570 merged; its follow-up paste is ready; SBX-3p waits on SBX-M |
 | ④参谋 | Merges docs, cards, tests, bench and deletion-only PRs in the #467 tier |
-| ⓪Plan | Re-OKs as heads move; #570's Claude review (done); this page |
+| ⓪Plan | Re-OKs as heads move; this page |
 
 ## Waiting on the user
 
