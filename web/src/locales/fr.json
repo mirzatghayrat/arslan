@@ -577,7 +577,7 @@
     "automationLede": "Ceux-ci s'exécutent en arrière-plan et appellent votre fournisseur de modèles, ce qui coûte de l'argent. Ils sont tous désactivés par défaut et aucun ne change quoi que ce soit sans vous.",
     "navDesktop": "Bureau",
     "navProactive": "Proactivité",
-    "desktopLede": "Fermer la fenêtre ne quitte plus Arslan : il reste dans la barre des menus, les tâches et tâches planifiées continuent, et les actions qui vous attendent restent dans la fenêtre (jusqu’à 30 minutes ; sans réponse, elles ne sont pas faites, sans que ce soit un refus). Une tâche planifiée n’attend jamais de réponse : elle ne fait que ce qui ne demande aucune confirmation, et tout le reste est refusé (la plupart de ces refus sont listés dans la Boîte de réception). Un « Toujours » donné avant n’y compte pas. Quittez avec ⌘Q ou « Quitter Arslan » dans la barre des menus.",
+    "desktopLede": "Fermer la fenêtre ne quitte plus Arslan : il reste dans la barre des menus, les tâches et tâches planifiées continuent, et les actions qui vous attendent restent dans la fenêtre (jusqu’à 30 minutes ; sans réponse, elles ne sont pas faites, sans que ce soit un refus). Une tâche planifiée n’attend jamais de réponse : elle ne fait que ce qui ne demande aucune confirmation, et tout le reste est refusé (la plupart de ces refus sont listés sous la tâche, dans la page Planifiées). Un « Toujours » donné avant n’y compte pas. Quittez avec ⌘Q ou « Quitter Arslan » dans la barre des menus.",
     "labelKeepAwake": "Garder le Mac éveillé pendant le travail",
     "keepAwakeDesc": "Tant qu’une tâche ou tâche planifiée tourne, le Mac ne se met pas en veille de lui-même. L’écran peut s’éteindre ; fermer le capot ou une batterie faible le mettent quand même en veille.",
     "labelDesktopNotifications": "Notifications",
@@ -1308,7 +1308,7 @@
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
     "prompt": "Ce qu’elle fera à chaque fois :",
-    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée dans la Boîte de réception. Elles peuvent chercher des informations et écrire des fichiers uniquement dans le dossier de travail d’Arslan ; elles ne lancent pas de commandes.",
+    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée sous la tâche, dans la page Planifiées. Elles peuvent chercher des informations et écrire des fichiers uniquement dans le dossier de travail d’Arslan ; elles ne lancent pas de commandes.",
     "anyTask": "créer n’importe quelle tâche planifiée"
   },
   "enroll": {

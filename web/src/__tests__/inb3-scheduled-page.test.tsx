@@ -150,7 +150,7 @@ describe("the sidebar's Scheduled entry", () => {
 });
 
 describe("NotDoneList for one conversation", () => {
-  it("keeps the 24-hour list for the Inbox and asks for one conversation when given one", async () => {
+  it("keeps the 24-hour list by default and asks for one conversation when given one", async () => {
     vi.mocked(request).mockResolvedValue([] as never);
     render(<NotDoneList />);
     await waitFor(() => expect(request).toHaveBeenCalledWith("/approvals/refused?hours=24"));

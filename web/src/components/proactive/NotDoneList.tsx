@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, request } from "../../api/client";
+import { announceProactiveChange } from "../../api/proactive";
 import { formatUiDateTime } from "../../lib/localeFormatting";
 import { Escaped, isolate } from "../../lib/outsideText";
 import { ANSWER_GUARD_MS, useQueueGuard } from "../kit/guard";
@@ -130,6 +131,7 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
       const rules = Array.isArray(made?.rules) ? made.rules.map((rule) => rule.id) : typeof made?.id === "number" ? [made.id] : [];
       setAllowed((m) => new Map(m).set(r.id, { row: r, at: Math.max(0, rows.findIndex((x) => x.id === r.id)), rules }));
       guard.hold();                                                     // Undo comes up where "Always allow" was: not for the second click
+      announceProactiveChange();                                        // #605 review F4: the count on Progress follows at once
       if (rules.length) {
         setUndoable((s) => new Set(s).add(r.id));
         timers.current.set(r.id, setTimeout(() => closeUndo(r.id), UNDO_MS));
@@ -160,6 +162,7 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
     closeUndo(r.id);
     setAllowed((m) => { const n = new Map(m); n.delete(r.id); return n; });
     guard.hold();                                                       // "Always allow" comes back where Undo was: not for the second click
+    announceProactiveChange();
     void load();                                                        // the server lists it again
   }
 

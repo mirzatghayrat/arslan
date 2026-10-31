@@ -50,8 +50,7 @@ import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { threadDisplayTitle } from './lib/threadTitles';
 import { useConversationIndex } from './hooks/useConversationIndex';
-import { subscribeOpenConversation } from './lib/shell';
-import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
+import { useNotificationRoutes } from './hooks/useNotificationRoutes';
 import ConversationStage from './components/conversation/ConversationStage';
 import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useWaiting } from './hooks/useWaiting';
@@ -120,25 +119,10 @@ export default function App() {
   const activeThreadIdRef = useRef(activeThreadId);
   activeThreadIdRef.current = activeThreadId;
 
-  // A clicked desktop notification asks for its conversation (0.1.41). Refs keep
-  // the one subscription pointed at the current thread list and handler.
-  const openFromNotification = useRef<(id: string) => void>(() => {});
-  openFromNotification.current = (id: string) => {
-    const target = notificationTarget(id, threads);
-    if (target?.kind === 'progress') { setActiveSection('activity'); setPanelView('default'); }
-    else if (target) selectConversation(target.id);
-  };
-  useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
-  // 0.1.52 S3: a link to an earlier conversation in a reply (conversation_search) — same
-  // rule as a notification: only a conversation the user has and has not archived.
-  useEffect(() => {
-    const onLink = (event: Event) => {
-      const id = (event as CustomEvent<string>).detail;
-      if (typeof id === 'string' && id) openFromNotification.current(id);
-    };
-    window.addEventListener(OPEN_CONVERSATION_EVENT, onLink);
-    return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onLink);
-  }, []);
+  // A clicked desktop notification (0.1.41), or a link to an earlier conversation in a reply (0.1.52 S3), opens a conversation the
+  // user has and has not archived; a proactive notice opens the page that shows what was noticed (useNotificationRoutes).
+  useNotificationRoutes({ threads, selectConversation,
+    openSection: (section) => { setActiveSection(section); setPanelView('default'); } });
   useEffect(() => {
     const onOpen = (event: Event) => {
       const asked = readOpenSection((event as CustomEvent<unknown>).detail);

@@ -130,6 +130,9 @@ export default function Sidebar(props: SidebarProps) {
     });
   }
   const archivedThreads = threads.filter(thread => thread.archived);
+  // INB5b-2's review (F5): a card in an archived conversation has no other way in (a notice and the Island refuse an archived one),
+  // so the fold says something in it waits on you.
+  const archivedWaiting = archivedThreads.filter(thread => meta[thread.id]?.state === "waiting").length;
   // 0.1.44 one Arslan: the sidebar lists conversations only; former experts are
   // turned into skills from Capabilities.
   const navClass = (active: boolean) => `w-full flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-left text-xs transition-colors ${active
@@ -277,6 +280,8 @@ export default function Sidebar(props: SidebarProps) {
             <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground">
               <Archive size={13} /><span className="flex-1">{t("sidebar.archived_section")} ({archivedThreads.length})</span>
+              {archivedWaiting > 0 && <span role="img" aria-label={t("waiting.count", { count: archivedWaiting })}
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}
               {archivedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {archivedOpen && archivedThreads.map(thread => renderThread(thread, true))}

@@ -87,6 +87,17 @@ describe("marking seen", () => {
     await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledWith("c1"));
   });
 
+  it("tells the badge on Progress once it has marked, since opening a conversation counts as handling it (#605 review F4)", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c8", kind: "chat", state: "waiting" }] as never);
+    const heard = vi.fn();
+    window.addEventListener("arslan:proactive-changed", heard);
+    try {
+      renderHook(() => useConversationIndex(60_000, "arslan", "c8"));
+      await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledWith("c8"));
+      await waitFor(() => expect(heard).toHaveBeenCalledTimes(1));
+    } finally { window.removeEventListener("arslan:proactive-changed", heard); }
+  });
+
   it("tries again on the next poll when marking failed (#589 F3)", async () => {
     vi.mocked(api.listConversations).mockResolvedValue(rows as never);
     vi.mocked(api.markConversationSeen).mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ seen_message_id: 9 } as never);

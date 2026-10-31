@@ -577,7 +577,7 @@
     "automationLede": "Estos se ejecutan en segundo plano y llaman a tu proveedor de modelos, lo que cuesta dinero. Todos están desactivados por defecto y ninguno cambia nada sin ti.",
     "navDesktop": "Escritorio",
     "navProactive": "Proactividad",
-    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (hasta 30 minutos; si nadie responde, no se hacen, y eso no cuenta como un no). Una tarea programada nunca espera una respuesta: solo hace lo que no necesita tu confirmación, y todo lo demás se rechaza (la mayoría aparece en la Bandeja). Un «Siempre» anterior no cuenta ahí. Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
+    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (hasta 30 minutos; si nadie responde, no se hacen, y eso no cuenta como un no). Una tarea programada nunca espera una respuesta: solo hace lo que no necesita tu confirmación, y todo lo demás se rechaza (la mayoría aparece bajo la tarea en la página Programadas). Un «Siempre» anterior no cuenta ahí. Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
     "labelKeepAwake": "Mantener el Mac despierto mientras trabaja",
     "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",
     "labelDesktopNotifications": "Notificaciones",
@@ -1308,7 +1308,7 @@
     "every_minute": "cada minuto",
     "every_n_minutes": "cada {{count}} minutos",
     "prompt": "Lo que hará cada vez:",
-    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: un paso que necesitaría tu confirmación se rechaza y aparece en la Bandeja. Pueden buscar información y escribir archivos solo en la carpeta de trabajo propia de Arslan; no ejecutan comandos.",
+    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: un paso que necesitaría tu confirmación se rechaza y aparece bajo la tarea en la página Programadas. Pueden buscar información y escribir archivos solo en la carpeta de trabajo propia de Arslan; no ejecutan comandos.",
     "anyTask": "crear cualquier tarea programada"
   },
   "enroll": {

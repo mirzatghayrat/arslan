@@ -155,6 +155,7 @@ async def ingest(found: list[detectors.Found], *, now_utc: datetime, now_local: 
 
 
 # ── the morning brief ───────────────────────────────────────────────────────
+# Retired (the user's Q9, #605 review F2): the scan no longer calls these. DELETE-BY: INB7-e (v0.1.64), with the brief kind.
 
 async def build_brief(now_utc: datetime, now_local: datetime, locale: str) -> detectors.Found | None:
     """Today at a glance, from data already in hand. No model. Nothing to say means
@@ -222,19 +223,9 @@ async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | No
         except Exception as exc:  # noqa: BLE001 — isolated on purpose
             logger.warning("proactive detector %s failed: %s %s", name, type(exc).__name__, exc)
     result = await ingest(found, now_utc=now_utc, now_local=now_local, config=config)
-    # The brief is built AFTER this pass's findings are stored, so "what is open today"
-    # includes what was just noticed instead of trailing it by one pass.
-    if policy.brief_due(now_local, config, await _last_brief_day()):
-        try:
-            brief = await build_brief(now_utc, now_local, locale)
-            if brief is not None:
-                extra = await ingest([brief], now_utc=now_utc, now_local=now_local, config=config)
-                result["created"] += extra["created"]
-                result["notified"] += extra["notified"]
-                for reason, count in extra["rejected"].items():
-                    result["rejected"][reason] = result["rejected"].get(reason, 0) + count
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("proactive brief failed: %s", type(exc).__name__)
+    # The morning brief is retired (the user's Q9, #605 review F2): since the Inbox went (INB5) nothing shows a brief, so the scan
+    # makes none, and no notice leads nowhere, whatever brief_enabled says. DELETE-BY: INB7-e (v0.1.64), which removes build_brief,
+    # policy.brief_due, the brief kind and the config's brief fields.
     if config.diagnosis_daily_usd > 0 and result["created"]:
         from server.services import proactive_diagnosis
         for item_id in result["created"][:2]:

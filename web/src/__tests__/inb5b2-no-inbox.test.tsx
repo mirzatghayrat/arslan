@@ -3,9 +3,9 @@
  *  notice opens Progress; and no "@inbox" route is left anywhere. */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("../components/companion/BackgroundJobs", () => ({ default: () => null }));
@@ -13,8 +13,9 @@ vi.mock("../api/proactive", () => ({ PROACTIVE_CHANGED: "arslan:proactive-change
 
 import { proactiveApi } from "../api/proactive";
 import Sidebar from "../components/Sidebar";
+import { useNotificationRoutes } from "../hooks/useNotificationRoutes";
 import { useWaiting } from "../hooks/useWaiting";
-import { notificationTarget, PROGRESS_TARGET } from "../lib/openConversation";
+import { notificationTarget, OPEN_CONVERSATION_EVENT, PROGRESS_TARGET } from "../lib/openConversation";
 import { SECTIONS } from "../lib/sections";
 import de from "../locales/de.json";
 import en from "../locales/en.json";
@@ -48,23 +49,78 @@ describe("the sidebar", () => {
     expect(screen.getByTestId("progress-badge")).toHaveTextContent("99+");
   });
 
+  it("reads 99 as 99 and 100 as 99+, in amber (#605 review F6)", () => {
+    const { rerender } = render(<Sidebar {...props({ waiting: 99 })} />);
+    expect(screen.getByTestId("progress-badge")).toHaveTextContent(/^99$/);
+    expect(screen.getByTestId("progress-badge").className).toContain("bg-warning");
+    rerender(<Sidebar {...props({ waiting: 100 })} />);
+    expect(screen.getByTestId("progress-badge")).toHaveTextContent("99+");
+  });
+
+  it("marks the Archived fold while an archived conversation waits on you (#605 review F5)", () => {
+    const threads = [{ id: "a", title: "A" }, { id: "b", title: "B", archived: true }, { id: "c", title: "C", archived: true }];
+    const chat = (state: string) => ({ kind: "chat", state, origin: "mac", files: 0 });
+    const { rerender } = render(<Sidebar {...props({ threads, meta: { b: chat("waiting"), c: chat("idle") } as never })} />);
+    const fold = () => document.getElementById("btn-toggle-archived-threads")!;
+    expect(within(fold()).getByRole("img", { name: "waiting.count" })).toBeTruthy();
+    rerender(<Sidebar {...props({ threads, meta: { b: chat("idle"), c: chat("done_unseen") } as never })} />);
+    expect(within(fold()).queryByRole("img")).toBeNull();
+  });
+
   it("lists no inbox page", () => {
     expect(SECTIONS as readonly string[]).not.toContain("inbox");
   });
 });
 
 describe("the count", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+  const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  const changed = () => act(() => { window.dispatchEvent(new Event("arslan:proactive-changed")); });
+  const answers = (value: unknown) => vi.mocked(proactiveApi.summary).mockImplementation(async () => {
+    if (value instanceof Error) throw value;
+    return value as never;
+  });
+
   it("is the server's waiting count, refreshed when anything changes, and kept when a poll fails", async () => {
-    vi.mocked(proactiveApi.summary).mockResolvedValueOnce(summary(2) as never).mockResolvedValueOnce(summary(5) as never)
-      .mockRejectedValueOnce(new Error("restarting"));
+    answers(summary(2));
     const { result } = renderHook(() => useWaiting());
-    await waitFor(() => expect(result.current.count).toBe(2));
-    act(() => { window.dispatchEvent(new Event("arslan:proactive-changed")); });
-    await waitFor(() => expect(result.current.count).toBe(5));
-    act(() => { window.dispatchEvent(new Event("arslan:proactive-changed")); });
-    await waitFor(() => expect(proactiveApi.summary).toHaveBeenCalledTimes(3));
-    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });       // the failed poll has been handled
+    await flush();
+    expect(result.current.count).toBe(2);
+    answers(summary(5));
+    changed();
+    await flush();
+    expect(result.current.count).toBe(5);
+    answers(new Error("restarting"));
+    changed();
+    await flush();
     expect(result.current.count).toBe(5);                                         // a restarting service does not zero it
+  });
+
+  it("clears when the server says nothing waits, after a failed poll too (#605 review F6)", async () => {
+    answers(summary(2));
+    const { result } = renderHook(() => useWaiting());
+    await flush();
+    answers(new Error("restarting"));
+    changed();
+    await flush();
+    expect(result.current.count).toBe(2);
+    answers(summary(0));
+    changed();
+    await flush();
+    expect(result.current.count).toBe(0);
+  });
+
+  it("reads again a moment after a change, so a count read before the server applied it does not stand (#605 review F4)", async () => {
+    answers(summary(1));
+    const { result } = renderHook(() => useWaiting());
+    await flush();
+    changed();                                                                    // a card answered: the first read may still count it
+    await flush();
+    expect(result.current.count).toBe(1);
+    answers(summary(0));                                                          // the server has applied it now
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.count).toBe(0);
   });
 });
 
@@ -85,6 +141,21 @@ describe("a clicked notice", () => {
     expect(PROGRESS_TARGET).toBe("@progress");
     expect(notificationTarget("@progress", [])).toEqual({ kind: "progress" });
     expect(notificationTarget("@inbox", [])).toBeNull();
+  });
+
+  it("opens the Scheduled page for now, where what was noticed is listed, and a conversation by its id (#605 review F1)", () => {
+    const openSection = vi.fn();
+    const selectConversation = vi.fn();
+    renderHook(() => useNotificationRoutes({ threads: [{ id: "thread-1" }, { id: "thread-2", archived: true }], selectConversation, openSection }));
+    const click = (id: string) => act(() => { window.dispatchEvent(new CustomEvent(OPEN_CONVERSATION_EVENT, { detail: id })); });
+    click(PROGRESS_TARGET);
+    expect(openSection).toHaveBeenCalledWith("scheduled");
+    click("thread-1");
+    expect(selectConversation).toHaveBeenCalledWith("thread-1");
+    click("thread-2");                                                            // archived: never opened from outside
+    click("@inbox");                                                              // the old route leads nowhere
+    expect(selectConversation).toHaveBeenCalledTimes(1);
+    expect(openSection).toHaveBeenCalledTimes(1);
   });
 
   it("is sent as @progress by the desktop shell, and no @inbox is left there or in the web app", () => {

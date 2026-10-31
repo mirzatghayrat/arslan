@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
+import { announceProactiveChange } from "../api/proactive";
 import { useTranslation } from "react-i18next";
 import { useArslanStore } from "../stores/arslanStore";
 import ActionApprovalCard from "./ActionApprovalCard";
@@ -51,7 +52,10 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
   // above it when there is one: App puts the slot and the conversation in one, so a card leaving the slot holds what wasn't done while
   // you were away under the pointer, and a change in that list holds the slot (one gesture answers one thing, as in the Inbox).
   const guard = useQueueGuard();
-  return <AnswerGuardScope value={guard}><AskCards send={send} /></AnswerGuardScope>;
+  // #605 review F4: an answer can clear what waits on you, so the badge on Progress is told at once. A window's own card ends with no
+  // `card_resolved`, so the answer itself is the signal; the badge reads again a moment later, after the server has applied it.
+  const answer = useCallback((frame: Record<string, unknown>) => { send(frame); announceProactiveChange(); }, [send]);
+  return <AnswerGuardScope value={guard}><AskCards send={answer} /></AnswerGuardScope>;
 }
 
 function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) {

@@ -162,7 +162,7 @@ describe("Not done while you were away", () => {
     expect(screen.queryByTestId("inbox-refused-allowed")).toBeNull();
   });
 
-  it("an older server (no list) shows nothing and tells the Inbox nothing", async () => {
+  it("an older server (no list) shows nothing and counts nothing", async () => {
     vi.spyOn(client, "request").mockRejectedValue(new client.ApiError("Not Found", 404));
     const count = vi.fn();
     const { container } = render(<NotDoneList onCount={count} />);
