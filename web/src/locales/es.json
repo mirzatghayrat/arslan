@@ -789,7 +789,8 @@
       "done": "Hecho",
       "unfinished": "No se logró",
       "failed": "Detenido por un problema",
-      "scheduled": "Programado"
+      "scheduled": "Programado",
+      "done_unseen": "Hecho, aún sin ver"
     },
     "projects": "Proyectos",
     "allProjects": "Todos los proyectos",

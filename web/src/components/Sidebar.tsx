@@ -165,6 +165,8 @@ export default function Sidebar(props: SidebarProps) {
   function renderProject(project: SidebarProject) {
     const open = openProjects.includes(project.id);
     const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
+    // INB4: the row carries its most urgent conversation: waiting, then working, then done, not seen.
+    const urgent = (["waiting", "working", "done_unseen"] as const).find(state => chats.some(thread => meta[thread.id]?.state === state));
     const takes = (event: React.DragEvent) => Boolean(onMoveToProject) && event.dataTransfer.types.includes(DRAG_TYPE);
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
       <div data-testid={`sidebar-project-drop-${project.id}`} data-drop={dropTarget === project.id || undefined}
@@ -184,6 +186,9 @@ export default function Sidebar(props: SidebarProps) {
           {open ? <ChevronDown size={12} className="shrink-0 text-subtle-foreground" /> : <ChevronRight size={12} className="shrink-0 text-subtle-foreground" />}
           <Folder size={13} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
+          {urgent && <span data-testid={`project-state-${project.id}`} role="img" aria-label={t(`sidebar.glyph.${urgent}`)} className="flex shrink-0">
+            {urgent === "done_unseen" ? <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-info-strong" />
+              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0 }} size={13} />}</span>}
         </button>
         {onStartInProject && <button type="button" onClick={() => onStartInProject(project.id)}
           aria-label={t("sidebar.newInProject", { name: project.name })} title={t("sidebar.newInProject", { name: project.name })}

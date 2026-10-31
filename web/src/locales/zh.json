@@ -789,7 +789,8 @@
       "done": "已完成",
       "unfinished": "没做成",
       "failed": "出了问题停下了",
-      "scheduled": "定时任务"
+      "scheduled": "定时任务",
+      "done_unseen": "做完了，你还没看"
     },
     "projects": "项目",
     "allProjects": "全部项目",

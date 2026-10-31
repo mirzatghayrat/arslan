@@ -789,7 +789,8 @@
       "done": "完了",
       "unfinished": "未達成",
       "failed": "問題で停止",
-      "scheduled": "スケジュール"
+      "scheduled": "スケジュール",
+      "done_unseen": "完了、まだ見ていません"
     },
     "projects": "プロジェクト",
     "allProjects": "すべてのプロジェクト",

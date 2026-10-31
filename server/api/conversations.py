@@ -251,3 +251,13 @@ async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depe
         await db.delete(row)
         await db.commit()
     return {"choice": None}
+
+
+@router.post("/conversations/{conversation_id}/seen")
+async def mark_conversation_seen(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """INB4: the window shows this conversation, so its newest message is seen: a reply or a job done there stops reading
+    "done, not seen" (phone_reads.describe)."""
+    from server.services import conversation_seen
+    if len(conversation_id) > 100 or not conversation_id.strip():
+        raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+    return {"seen_message_id": await conversation_seen.mark(db, conversation_id)}
