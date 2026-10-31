@@ -201,3 +201,55 @@ def test_a_missing_or_unreadable_file_is_skipped(home):
         os.chmod(folder / "AGENTS.md", 0o644)
     assert count == 0
     assert folder_rules.block(home / "nothing-here", home) == ("", 0)
+
+
+# -- the effort=max review of #595 --------------------------------------------------------------------------------
+
+def test_a_folder_path_cannot_spell_the_closing_tag(home):
+    """F1: folders named "<" and "folder_rules>" make the path "~/x/</folder_rules>/AGENTS.md"."""
+    nested = home / "x" / "<" / "folder_rules>"
+    write(nested / "AGENTS.md", "inner")
+    text, count = folder_rules.block(nested, home)
+    assert count == 1 and "inner" in text
+    assert text.count("</folder_rules") == 1 and text.rstrip().endswith(folder_rules.CLOSE)
+
+
+def test_a_refused_files_note_cannot_spell_it_either(home, tmp_path):
+    nested = home / "x" / "<" / "folder_rules>"
+    nested.mkdir(parents=True)
+    (nested / "AGENTS.md").symlink_to(tmp_path)
+    text, _ = folder_rules.block(nested, home)
+    assert text.count("</folder_rules") == 1
+
+
+def test_home_itself_reads_nothing(home):
+    """F3: ~/AGENTS.md would be the global file D4 declined."""
+    write(home / "AGENTS.md", "a global rule")
+    write(home / "CLAUDE.md", "another global rule")
+    assert folder_rules.block(home, home) == ("", 0)
+
+
+def test_the_touched_folders_per_conversation_are_capped(home):
+    for i in range(folder_rules._KEEP_FOLDERS + 10):
+        folder_rules.note_touch("c1", home / "a" / f"d{i}" / "f.md")
+    assert len(folder_rules._touched["c1"]) == folder_rules._KEEP_FOLDERS
+    folder_rules.note_touch("c1", home / "a" / "d0" / "g.md")                     # one already kept still counts
+    assert home / "a" / "d0" in folder_rules._touched["c1"]
+
+
+def test_only_the_exact_case_is_read(home):
+    """F5: APFS finds "AGENTS.md" for a file named "agents.md"; the folder's own names decide."""
+    write(home / "a" / "agents.md", "lowercase, not read")
+    write(home / "a" / "claude.MD", "not read either")
+    assert folder_rules.block(home / "a", home) == ("", 0)
+
+
+async def test_the_switch_can_be_turned_off_through_the_settings_api(client):
+    """F2: the key round-trips through PUT/GET /settings, and the accessor follows it."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    r = await client.put("/api/v1/settings", json={"folder_rules_enabled": "false"})
+    assert r.status_code == 200 and r.json()["folder_rules_enabled"] == "false"
+    assert (await client.get("/api/v1/settings")).json()["folder_rules_enabled"] == "false"
+    async with db_session.AsyncSessionLocal() as db:
+        assert await settings_service.folder_rules_enabled(db) is False

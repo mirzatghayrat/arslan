@@ -55,6 +55,8 @@ _PLAIN_KEYS = (
                # DELETE-BY: v0.1.64, when M3 #10 passes and v0.1.63 has no steering issue (card K9).
                "steering_off",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
+               # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
+               "folder_rules_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
