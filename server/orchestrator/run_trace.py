@@ -13,7 +13,7 @@ _trace: ContextVar[list[dict] | None] = ContextVar("run_trace", default=None)
 # SBX-7: a sandbox denial of the command being run, waiting for that call's entry. A dict, so a note made in a
 # task the call awaits (asyncio.wait_for copies the context) still reaches it.
 _denial: ContextVar[dict | None] = ContextVar("run_denial", default=None)
-DENIAL_CODES = frozenset({"eperm"})        # what SBX-3 detects so far; more after SBX-M
+DENIAL_CODES = frozenset({"eperm"})        # what SBX-3 detects so far. SBX-M (#592) didn't measure tagged deny reports
 _prompt: ContextVar[dict | None] = ContextVar("run_prompt", default=None)
 # v0.1.64 INB2: whether the run's turns took in anything off the "about you" allowlist (untrusted.known_local,
 # #475 F2); None until a turn of the run ends.
