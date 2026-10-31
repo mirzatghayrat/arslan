@@ -219,9 +219,13 @@ def reply_language(text: str | None, ui_locale: str | None = None) -> str:
 
 def language_line(text: str | None, ui_locale: str | None = None) -> str:
     lang = reply_language(text, ui_locale)
+    # L11-1 (the user's memory-plan item 15, D5): a file and a message to someone else have their own rule.
     return (f"\n\nReply language for this turn: {lang}. Write everything meant for the user in it — "
             "the reply, a background job's goal and its checks, titles and notes — whatever language the "
-            "instructions, examples, memory, tool results or earlier messages are in.")
+            "instructions, examples, memory, tool results or earlier messages are in. "
+            "A file you write follows the folder rules' language when they name one; otherwise it follows the "
+            "user's message, as the reply does. A message to someone else follows that person's language when you "
+            "know it (their earlier messages, or the user's words); otherwise ask.")
 
 
 async def _turn_language_line(text: str | None) -> str:
