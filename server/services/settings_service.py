@@ -313,6 +313,14 @@ async def default_read_enabled(session: AsyncSession) -> bool:
     return raw is None or str(raw).strip().lower() != "false"
 
 
+async def folder_rules_enabled(session: AsyncSession) -> bool:
+    """K10-1: whether a folder's rules (AGENTS.md, else CLAUDE.md) go into each turn. Default ON; only an explicit
+    'false' turns it off, for example for a cloned repo whose rules the user doesn't want. A long-lived user switch,
+    not an old path (§9)."""
+    raw = await _get_raw(session, "folder_rules_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
 async def ssh_enabled(session: AsyncSession) -> bool:
     """Whether Arslan may reach another machine over SSH. Default OFF, and it stays
     OFF on its own: this is the switch for the highest-risk surface in the product,
