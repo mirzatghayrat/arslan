@@ -146,13 +146,22 @@ TOOLS_CHANGED_LINE = "its tools changed since it was installed — review the ch
 REVIEW_TOOLS_MAX, REVIEW_TEXT_MAX = 60, 2000
 
 
-class ToolsChanged(Exception):
+class Parked(Exception):
+    """A start Arslan stops on purpose: the supervisor parks the server with `line`, Arslan's own words (each
+    line starts with one of its safe reasons), until the user looks at it in Capabilities."""
+
+    def __init__(self, server_id: int, line: str):
+        super().__init__(line)
+        self.server_id, self.line = server_id, line
+
+
+class ToolsChanged(Parked):
     """CAP5a: a server Arslan installed listed tools that differ from the ones pinned at its first test.
-    Nothing of the new listing was written; the supervisor parks the server (TOOLS_CHANGED_LINE)."""
+    Nothing of the new listing was written."""
 
     def __init__(self, server_id: int, changes: dict):
-        super().__init__(TOOLS_CHANGED_LINE)
-        self.server_id, self.changes = server_id, changes
+        super().__init__(server_id, TOOLS_CHANGED_LINE)
+        self.changes = changes
 
 
 def _fingerprint(tool) -> str:
@@ -362,6 +371,10 @@ async def connect_and_discover(server_id: int, *, start_budget_s: float | None =
         server = await _runtime(server_id)
         if start_budget_s is not None:
             server["start_budget_s"] = start_budget_s
+        # CAP4a-3d: an installed Registry server's entry, asked again once a day (and after an update of Arslan)
+        # before it starts; a withdrawn or changed entry parks it.
+        from server.services import capability_recheck
+        await capability_recheck.before_start(server_id)
         tools, complete = await _list_all(server)
         return await _write(server_id, tools, complete=complete)
 
