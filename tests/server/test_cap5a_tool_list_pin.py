@@ -20,7 +20,8 @@ async def db(execution_db):
         s.add(MCPServer(id=2, label="typed by hand", command="y", args=[], status="registered"))
         await s.flush()
         s.add(CapabilitySource(id="src1", kind="mcp", name="notes", candidate_id="c", runtime="uv", needs={},
-                               grants={}, state="installed", mcp_server_id=1, created_at=datetime.utcnow()))
+                               grants={}, state="installed", mcp_server_id=1, created_at=datetime.utcnow(),
+                               installed_at=datetime.utcnow()))
         await s.commit()
     return execution_db
 
@@ -460,3 +461,85 @@ async def test_a_yes_given_while_the_server_was_parked_sends_nothing(db, monkeyp
     else:
         expected = "parked" if during_the_card == "parked" else "starting"
         assert (out["ok"], out["code"], out["state"], sent) == (False, "mcp_not_ready", expected, [])
+
+
+async def test_a_yes_while_a_relist_holds_the_lock_waits_for_it_and_sends_nothing(db, monkeypatch):
+    """Re-check G1: between a re-list's answer and its drop the server still reads `ready` on the same session; the
+    re-read after the card waits for the listing lock, which the re-list holds until it has dropped the session."""
+    import asyncio
+    from server.mcp import executor
+    async with db() as s:
+        (await s.get(MCPServer, 1)).state = "ready"
+        await s.commit()
+    sent = []
+
+    async def call_tool(server, name, args):
+        sent.append(name)
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text="note")], isError=False)
+    monkeypatch.setattr(session.manager, "call_tool", call_tool)
+    holding = asyncio.Event()
+
+    async def relist_under_way():
+        async with discovery._write_locks.hold(1):
+            holding.set()
+            await asyncio.sleep(0.1)                      # the re-list's database work
+            async with db() as s:
+                (await s.get(MCPServer, 1)).state = "parked"
+                await s.commit()
+            await session.manager.drop(1)
+
+    async def approve(self, srv, args):                   # the user answers while the re-list holds the lock
+        self.relist = asyncio.create_task(relist_under_way())
+        await holding.wait()
+        return None
+    monkeypatch.setattr(executor.MCPProxyExecutor, "_approve", approve)
+    ex = executor.MCPProxyExecutor(server_id=1, external_name="read")
+    out = await ex.execute({})
+    await ex.relist
+    assert (out["ok"], out["code"], out["state"], sent) == (False, "mcp_not_ready", "parked", [])
+
+
+async def test_a_hand_added_server_on_a_reused_number_is_not_held_by_a_stale_source(execution_db, monkeypatch):
+    """Re-check G2: a source whose server was deleted keeps its number; a server added by hand later on that number
+    is not that source's, so it is not pinned or held."""
+    from datetime import timedelta
+    long_ago = datetime.utcnow() - timedelta(days=30)
+    async with execution_db() as s:
+        s.add(CapabilitySource(id="old", kind="mcp", name="blocked long ago", candidate_id="c", runtime="uv",
+                               needs={}, grants={}, state="failed", mcp_server_id=1, created_at=long_ago,
+                               installed_at=long_ago))
+        s.add(MCPServer(id=1, label="added by hand", command="x", args=[], status="registered",
+                        created_at=datetime.utcnow()))
+        await s.commit()
+    _serve(monkeypatch, [_tool("read")], [_tool("read", "a remote server added a line")])
+    await discovery.connect_and_discover(1)
+    await discovery.connect_and_discover(1)
+    assert await _test(execution_db, "old") == {} and await discovery.held(1) is None
+    assert await _descriptions(execution_db) == {"read": "a remote server added a line"}
+
+
+async def test_a_failed_source_with_a_pending_change_is_held(db, monkeypatch):
+    """The re-check's surviving mutant: the hold reads a failed install's source too."""
+    _serve(monkeypatch, [_tool("read")], [_tool("read", "changed")])
+    await discovery.connect_and_discover(1)
+    with pytest.raises(discovery.ToolsChanged):
+        await discovery.connect_and_discover(1)
+    async with db() as s:
+        (await s.get(CapabilitySource, "src1")).state = "failed"
+        await s.commit()
+    assert await discovery.held(1) is not None
+    with pytest.raises(discovery.ToolsChanged):
+        await discovery.connect_and_discover(1)          # no listing: the serve queue has nothing left
+
+
+async def test_list_my_capabilities_tells_the_model_a_held_server_waits_for_review(db, monkeypatch):
+    """Re-check G3: the line the model reads, not only fix_for called directly."""
+    from server.registry.executors import ListMyCapabilitiesExecutor
+    async with db() as s:
+        server = await s.get(MCPServer, 1)
+        server.state, server.last_error = "parked", discovery.TOOLS_CHANGED_LINE
+        await s.commit()
+    out = await ListMyCapabilitiesExecutor().execute({})
+    entry = next(e for e in out["mcp"] if e["state"] == "parked")
+    assert "reviews it in Capabilities" in entry["fix"] and "Reconnect does not start it" in entry["fix"]
+    assert discovery.TOOLS_CHANGED_LINE not in entry["fix"]          # the reason is said once, in `reason`

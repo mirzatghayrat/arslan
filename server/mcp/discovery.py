@@ -216,10 +216,14 @@ def _changes(pinned: dict, listed: dict, *, complete: bool) -> dict | None:
 
 async def _source_of(db, server_id: int):
     """The capability source of a server Arslan installed: installed, or kept after a failed test, never removed
-    (#577 review F3: a failed test kept the server row, and a switch could turn it on unpinned)."""
-    return (await db.execute(select(CapabilitySource).where(
-        CapabilitySource.mcp_server_id == server_id, CapabilitySource.kind == "mcp",
-        CapabilitySource.state != "removed").order_by(CapabilitySource.created_at.desc()))).scalars().first()
+    (#577 review F3: a failed test kept the server row, and a switch could turn it on unpinned). The server must
+    have existed when the source was installed, as capability_list._installed_servers asks (re-check G2): a
+    number can be reused by a server added by hand later, which is not this source's."""
+    return (await db.execute(select(CapabilitySource).join(MCPServer, MCPServer.id == CapabilitySource.mcp_server_id)
+                             .where(CapabilitySource.mcp_server_id == server_id, CapabilitySource.kind == "mcp",
+                                    CapabilitySource.state != "removed",
+                                    MCPServer.created_at <= CapabilitySource.installed_at)
+                             .order_by(CapabilitySource.created_at.desc()))).scalars().first()
 
 
 async def held(server_id: int) -> dict | None:

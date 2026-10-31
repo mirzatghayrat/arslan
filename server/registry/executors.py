@@ -471,8 +471,11 @@ class ListMyCapabilitiesExecutor:
                 if reason:
                     entry["reason"] = reason
                 # the reason is said once (`reason`), never again inside the fix (review M-3)
+                # CAP5a (re-check G3): a server held for the user's review is told so, without saying its reason again.
+                from server.mcp.discovery import HELD_REASONS
                 entry["fix"] = fix_for(state, has_headers=rechecks_key(s.get("last_error"), s.get("env")),
-                                       next_retry_at=s.get("next_retry_at"))
+                                       next_retry_at=s.get("next_retry_at"),
+                                       held=state == "parked" and (stored or "").startswith(HELD_REASONS))
                 if s.get("next_retry_at"):
                     entry["next_retry_at"] = s["next_retry_at"]
             mcp.append(entry)
