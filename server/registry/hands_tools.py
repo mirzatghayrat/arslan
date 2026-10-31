@@ -160,16 +160,18 @@ async def _decide(kind: str, target: str, title: str, detail: str, frame_kind: s
 
 def _app_request(app: dict, detail: str, *, step: str = "", frame_kind: str = "desktop_app",
                  frame_target: str = ""):
-    """Looking at and acting in one app is one `app` request (0.1.61 §A11): kept by bundle id, "for
-    this task" first, "Always" unless the app reaches every other app."""
+    """Looking at and acting in one app is one `app` request (0.1.61 §A11): kept by bundle id, else by the name
+    Hands gave (`_target`: two names that read the same never share a grant or a rule, ⓪Plan's review of #565),
+    "for this task" first, "Always" unless the app reaches every other app."""
     from server.services import hands_service, permissions
     from server.ws import protocol
     from server.services.hands_contract import shown_name
-    bundle = str(app.get("bundle_id") or app.get("name") or "")
+    bundle = _target(app)
     name = shown_name(app.get("name"), fallback=bundle)          # the card, "Always" and the ledger show it so
     return permissions.Request(
         kind="app", target=bundle, title=f"Use {name}?", detail=detail,
-        always_label=hands_service.always_label(bundle, name),
+        # Cleaned too: with neither a bundle id nor a visible name, `always_label` falls back to Hands' raw name.
+        always_label=shown_name(hands_service.always_label(bundle, name)),
         frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or name)[:300], detail),
         extra={"app": name, "bundle_id": bundle, **({"step": step[:200]} if step else {})})
 
@@ -666,7 +668,8 @@ def _shown(app: dict) -> dict:
 
 def _target(app: dict) -> str:
     """How Hands is told which app (§15 A19): its bundle id — another running app may share its
-    name (WeChat's helper is also "WeChat") — else its name."""
+    name (WeChat's helper is also "WeChat") — else the name Hands gave (`hands_name`; `name` is cleaned for
+    people). Grants, rules and a scheduled run's one app are kept by it too."""
     return str(app.get("bundle_id") or app.get("hands_name") or app.get("name") or "")
 
 
@@ -798,7 +801,7 @@ class DesktopLookExecutor:
         app, failure = await _resolve_app(name, job_id)
         if app is None:
             return _failed(failure, app=name)
-        bundle = str(app.get("bundle_id") or app.get("name"))
+        bundle = _target(app)                       # what "changed since your last look" is kept by
         # One card for looking and acting (0.1.61 §A11), remembered by the permission store.
         decision = await _decide_app(
             app, f"Arslan wants to use {app['name']} for this: read what is in its window (text, buttons, "
@@ -1118,7 +1121,9 @@ class _DesktopAct:
         label = target.get("name") if isinstance(target, dict) else None
         role = str(target.get("role") or "").lower() if isinstance(target, dict) else ""
         if self.op in ("click", "select") and role not in _CONTENT_ROLES and hands_service.risky_label(label):
-            return f"“{hands_contract.shown_name(label, 120)}”"
+            # Whole, as before #565: `money_label(why)` judges it, and "Pay" past a cut was app_risky (⓪Plan's
+            # review of #565). The card's title and frame are cut at 300 (`_request`), the ledger's detail at 500.
+            return f"“{hands_contract.shown_name(label, None)}”"
         return None
 
     async def execute(self, args: dict) -> dict:
@@ -1160,7 +1165,7 @@ class _DesktopAct:
                 return _failed(hands_contract.Result(ok=False, code=f"app_{tier}", refused=True))
             if target.get("password") and self.op in ("type", "set_value"):
                 return _failed(hands_contract.Result(ok=False, code="password_field", refused=True))
-        bundle = str(app.get("bundle_id") or app.get("name"))
+        bundle = _target(app)               # a scheduled run's one app, and the risky card's target
         label = hands_contract.shown_name(target.get("name") or args.get("element") or "", 120)
         if self.op == "menu":
             label = " › ".join(_menu_path(args))
@@ -1177,7 +1182,7 @@ class _DesktopAct:
         why = self._risky(args, target, app)
         if why:
             # Money moves ask in every mode; deleting, sending, submitting ask every time (0.1.61 §A11).
-            name = str(app.get("name") or bundle)
+            name = hands_contract.shown_name(app.get("name"), fallback=bundle)
             ask = _ASKS.get(self.op, self.op)
             decision = await _decide(
                 "money" if hands_service.money_label(why) else "app_risky", bundle,
