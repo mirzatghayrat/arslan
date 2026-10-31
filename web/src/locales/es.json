@@ -957,7 +957,7 @@
       "orphaned": "Archivos huérfanos"
     },
     "import": {
-      "subtitle": "SKILL.md estándar, importado literalmente — con control de licencia.",
+      "subtitle": "SKILL.md estándar, importado tal como está escrito, sin caracteres ocultos — con control de licencia.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subruta (opcional)",
       "scan": "Escanear",

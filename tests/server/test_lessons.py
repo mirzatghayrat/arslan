@@ -11,6 +11,14 @@ from server.services import personal_context as pc
 CID = "c-lessons"
 
 
+@pytest.fixture(autouse=True)
+def _a_local_turn():
+    """JUDGE1: capture asks the judge about stored lessons only where memory may be shown to a model; these tests
+    run as a local model's turn, as the app binds one (a test that binds another context inside still can)."""
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c-lessons", model_is_local=True)):
+        yield
+
+
 def ctx(**kw):
     return pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id=CID, model_is_local=True, **kw)
 
@@ -224,7 +232,11 @@ async def test_recall_keeps_to_five_and_800_characters(execution_db):
 async def test_recall_follows_memory_permissions(execution_db, context):
     await seed(execution_db, ("Adding reminders", "use Swift"))
     if context is None:
-        assert await lessons.recall("reminders") == []
+        token = pc._current.set(None)                      # no task context (this file binds a local turn)
+        try:
+            assert await lessons.recall("reminders") == []
+        finally:
+            pc._current.reset(token)
     else:
         with pc.bind(context):
             assert await lessons.recall("reminders") == []

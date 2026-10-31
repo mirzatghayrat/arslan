@@ -29,3 +29,24 @@
 ## F5b-2 (#456): Hands still works without the Cua files
 
 - Build a development Hands with its own bundle id (not `.dev`, which old builds hold), grant Accessibility and Screen Recording when asked, and run `hands_smoke.py`. Expected: the same pass list as #249's smoke. The user is at the Mac for the permission prompts.
+
+## SB1 (#543, #550): the sidebar's order, collapse, pin and drag
+
+The card's external evidence (`docs/plans/0164/SB1-sidebar.md`, Four lines §4) and the "Not covered" lines of #543 and #550: no test renders `App`, and jsdom's drag events are synthetic.
+
+1. **Order:** open a conversation that sits low in the list (under "Previous 7 days" or "Older") and send a message.
+   - **Expected:** it moves to the top of "Today" as soon as you send, not after the reply.
+2. **A reply moves it too:** while that reply streams, switch to another conversation.
+   - **Expected:** when the reply ends, the first conversation is still at the top. A new conversation also appears at the top.
+3. **Collapse:** press ⌃⌘S, then press it again; then use the button at the top of the sidebar.
+   - **Expected:** the sidebar hides and comes back each time. While hidden, the show button sits beside the traffic lights without covering them, and the title bar's content doesn't run under either (#543 placed it at 78 px from the left, 9 px from the top, unchecked on a Mac).
+4. **Collapse is remembered:** collapse it, quit Arslan, reopen.
+   - **Expected:** it opens collapsed.
+5. **Pin:** pin an older conversation from its row menu ("Pin"), quit Arslan, reopen.
+   - **Expected:** it is under "Pinned" at the very top, above the projects. "Unpin" puts it back in its place by time.
+6. **Pin while a reply streams:** pin a conversation while its reply is still coming.
+   - **Expected:** the pin holds; no error notice.
+7. **Drag into a project:** drag a conversation onto a project in the sidebar.
+   - **Expected:** it moves into that project, as "Move to project…" does.
+8. **Drag one that is running:** drag a conversation onto a project while its reply is still coming.
+   - **Expected:** it stays where it was, and the notice says it couldn't move because it may be working ("Couldn't move it — it may be working right now.").
