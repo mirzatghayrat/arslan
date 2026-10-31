@@ -3,9 +3,13 @@ import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react";
 import { ApiError } from "../../api/client";
 import { filesApi, type ChangeDiff, type ChangeDiffLine } from "../../api/files";
-import { baseName, dirName } from "../../lib/fileKinds";
+import { baseName, dirName, kindOf } from "../../lib/fileKinds";
 import { isolate } from "../CapabilitySwitches";
 import FileIcon from "./FileIcon";
+
+/** DIFF1: kinds with no line diff (the server would answer `not_text`), so their rows don't open one. */
+const NO_DIFF = new Set(["image", "video", "audio", "pdf", "xlsx", "doc"]);
+export const opensDiff = (path: string) => !NO_DIFF.has(kindOf(baseName(path)));
 
 /** Unchanged lines kept on each side of a change; longer unchanged runs fold (as Claude's and GitHub's diffs). */
 export const CONTEXT = 3;
@@ -53,10 +57,11 @@ const num = "w-px select-none whitespace-nowrap px-1.5 text-right align-top text
 /**
  * DIFF1 (v0.1.64; the user, 2026-10-31: side by side, made and deleted files open too): one path a turn changed,
  * the saved copy (before the turn) on the left and the file now on the right, opened from Overview's Changes.
- * Read only; what can't be shown says why in a sentence.
+ * DIFF2: without `runId`, one path of the folder's git repo, its branch's base on the left. Read only; what can't
+ * be shown says why in a sentence.
  */
 export default function DiffReader({ conversationId, runId, folder, path, onBack }: {
-  conversationId: string; runId: number; folder: string; path: string; onBack: () => void;
+  conversationId: string; runId?: number; folder: string; path: string; onBack: () => void;
 }) {
   const { t } = useTranslation();
   const [data, setData] = useState<ChangeDiff | null>(null);
@@ -64,7 +69,8 @@ export default function DiffReader({ conversationId, runId, folder, path, onBack
   const [unfolded, setUnfolded] = useState<number[]>([]);
   useEffect(() => {
     let alive = true;
-    filesApi.changeDiff(conversationId, runId, folder, path).then((d) => { if (alive) setData(d); }).catch((err) => {
+    const load = runId == null ? filesApi.repoDiff(conversationId, path) : filesApi.changeDiff(conversationId, runId, folder, path);
+    load.then((d) => { if (alive) setData(d); }).catch((err) => {
       if (!alive) return;
       const status = err instanceof ApiError ? err.status : 0;
       setNote(status === 404 ? "gone" : status === 403 ? "hidden" : "failed");

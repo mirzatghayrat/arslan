@@ -6,8 +6,10 @@ import { addressOrSearch } from "../lib/browserAddress";
 
 const button = "rounded-md border border-border p-2 hover:bg-surface disabled:opacity-40";
 
-export default function BrowserReader({ conversationId, taskId, onTitle }: {
+export default function BrowserReader({ conversationId, taskId, onTitle, startUrl }: {
   conversationId: string; taskId: string | null; onTitle: (title: string) => void;
+  /** DIFF2: an https address to open once at start (a PR's link from Overview). */
+  startUrl?: string;
 }) {
   const { t } = useTranslation();
   const [url, setUrl] = useState("");
@@ -22,6 +24,14 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
     alive.current = true;
     return () => { alive.current = false; generation.current++; if (session.current) void browserApi.closeReader(session.current).catch(() => {}); };
   }, []);
+
+  // DIFF2: the start address opens once, as if typed (https only, as the address bar allows).
+  useEffect(() => {
+    const target = startUrl ? addressOrSearch(startUrl) : null;
+    if (!target || !target.startsWith("https://")) return;
+    setUrl(target);
+    void act({ action: "navigate", url: target });
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps -- once, at the tab's start
 
   async function stop() {
     if (stopping) return;

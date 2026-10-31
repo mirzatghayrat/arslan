@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, FolderOpen, Plug, Smartphone } from "lucide-react";
-import type { ConversationChangeTurn, ConversationFile } from "../../api/files";
+import type { ConversationChangeTurn, ConversationFile, RepoChanges as Repo } from "../../api/files";
 import { filesApi } from "../../api/files";
 import { ApiError, api } from "../../api/client";
 import type { RunCheckpoint } from "../../api/client.types";
@@ -10,14 +10,16 @@ import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { baseName, kindOf } from "../../lib/fileKinds";
+import { baseName } from "../../lib/fileKinds";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { useArslanStore } from "../../stores/arslanStore";
 import { isolate } from "../CapabilitySwitches";
 import ConversationModelChip, { PART_LABEL, ringRows } from "../models/ConversationModelChip";
 import { useConversationModel } from "../models/useConversationModel";
+import { opensDiff } from "./DiffReader";
 import FileIcon from "./FileIcon";
+import RepoChanges from "./RepoChanges";
 import { HEADING } from "./FilesTab";
 
 /** What the workbench needs from App to show and change this conversation's model (the chip's own props). */
@@ -42,9 +44,6 @@ function splitPath(path: string): [string, string] {
   const i = path.lastIndexOf("/");
   return i < 0 ? [path, ""] : [path.slice(i + 1), path.slice(0, i + 1)];
 }
-/** DIFF1: kinds with no line diff (the server would answer `not_text`), so their rows don't open one. */
-const NO_DIFF = new Set(["image", "video", "audio", "pdf", "xlsx", "doc"]);
-export const opensDiff = (path: string) => !NO_DIFF.has(kindOf(baseName(path)));
 const link = "shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground";
 
 /** Newest first: by creation time when the server sent one, else the server's order reversed. */
@@ -88,6 +87,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
 
   // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
   const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
+  const [repo, setRepo] = useState<Repo | null>(null);              // DIFF2: the folder as a git repo
   const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
   const [opened, setOpened] = useState<number[]>([]);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -98,7 +98,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   // (404, a new one) is an empty list; any other failure keeps this conversation's last list.
   const current = useRef(conversationId);
   current.current = conversationId;
-  useEffect(() => { setChanges([]); setUndo(null); setOpened([]); }, [conversationId]);
+  useEffect(() => { setChanges([]); setRepo(null); setUndo(null); setOpened([]); }, [conversationId]);
   const loadChanges = useCallback(async () => {
     const asked = conversationId;
     try {
@@ -108,6 +108,10 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
     } catch (err) {
       if (current.current === asked && err instanceof ApiError && err.status === 404) setChanges([]);
     }
+    try {
+      const found = await Promise.resolve().then(() => filesApi.repoChanges(asked));
+      if (current.current === asked) setRepo(found.repo);
+    } catch { /* keep the last answer */ }
   }, [conversationId]);
   useEffect(() => { void loadChanges(); }, [loadChanges, files.length, turns]);
   useEffect(() => {
@@ -158,9 +162,10 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             </li>))}</ul>}
       </section>
 
-      {changes.length > 0 && <section data-testid="overview-changes">
+      {(changes.length > 0 || repo) && <section data-testid="overview-changes">
         <h3 ref={heading} tabIndex={-1} className={`${HEADING} outline-none`}>{t("workbench.chH")}</h3>
-        <p className="mt-0.5 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>
+        {repo && <RepoChanges repo={repo} conversationId={conversationId} folder={home ?? ""} onOpenSettings={onOpenSettings} />}
+        {changes.length > 0 && <p className="mt-2 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>}
         <ul className="mt-1.5 space-y-2">{changes.map((turn) => {
           const all = opened.includes(turn.run_id);
           const shown = all ? turn.paths : turn.paths.slice(0, PATHS_SHOWN);
