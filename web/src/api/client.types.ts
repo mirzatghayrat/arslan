@@ -592,6 +592,8 @@ export interface CapabilityCard {
   runtime_download: { name: string; size_mb: number } | null; remote_host: string | null; network: boolean;
   folders: string[]; keys: { name: string; secret: boolean; required: boolean; description: string }[];
   why: string; retry: string;
+  /** UNI1b (#586 review F2): a skill's characters that show nothing, in its text and references. */
+  hidden?: { count: number; runs: string[]; more: number };
 }
 /** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
  *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */

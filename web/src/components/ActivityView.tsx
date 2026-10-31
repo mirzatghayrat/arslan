@@ -7,7 +7,6 @@ import { formatUiDateTime } from "../lib/localeFormatting";
 import { fmtMs } from "../lib/usageFormat";
 import { useActivityStore } from "../stores/activityStore";
 import UsageCard from "./UsageCard";
-import ScheduledTasksCard from "./ScheduledTasksCard";
 import HandsTraceCard from "./HandsTraceCard";
 import JudgmentsCard from "./JudgmentsCard";
 import ScrollBox from "./activity/ScrollBox";
@@ -95,7 +94,6 @@ export default function ActivityView() {
     <div ref={pageRef} className="flex-1 h-full overflow-auto p-6 space-y-8" data-testid="activity-view"
       onScroll={(e) => saveScroll("page", e.currentTarget.scrollTop)}>
       <UsageCard />
-      <ScheduledTasksCard onOpenRun={(runId) => setOpenRun(runId)} />
       <HandsTraceCard />
       <section>
         <div className="flex items-baseline gap-2">

@@ -4,7 +4,8 @@
 import type { ServerConversation } from "./sessionPersistence";
 
 export type ConversationKind = "remote" | "chat" | "task" | "scheduled";
-export type ConversationState = "idle" | "working" | "waiting" | "done" | "unfinished" | "failed";
+/** INB4: `done_unseen` is a reply or a job done the window has not shown yet. */
+export type ConversationState = "idle" | "working" | "waiting" | "done" | "done_unseen" | "unfinished" | "failed";
 export interface ConversationJob { id: string; step: string; done: number; total: number }
 export interface ConversationMeta {
   kind: ConversationKind;
@@ -23,7 +24,7 @@ export interface ConversationMeta {
 // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
 export const REMOTE_ID = "pocket";
 const KINDS: ConversationKind[] = ["remote", "chat", "task", "scheduled"];
-const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "unfinished", "failed"];
+const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "done_unseen", "unfinished", "failed"];
 
 /** The server writes times as naive UTC ("2026-10-30T07:00:00", no offset: server/api/conversations.py),
  *  and a string with no offset is read as LOCAL time by Date.parse. Mark such a time UTC; one that already

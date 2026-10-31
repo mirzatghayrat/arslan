@@ -2,12 +2,39 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-31 (UTC), after the user's decisions at about 12:40.
+**Updated:** 2026-11-01 (UTC), night, after the user's bedtime batch.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #591 | The user's 14:45 decisions; SBX-M ran; CAP5a's hand-added limit | `874cc159` |
+| #594 | L11-1: a file's and a message's language have their own rule | `fe611fbc` |
+| #595 | K10-1: a folder's rules (AGENTS.md, else CLAUDE.md) go into each turn | `71cc82f4` |
+| #589 | INB4: "done, not seen" in the sidebar, the project row's most urgent state, the seen mark (migration 0083) | `2f43d0d8` |
+| #585 | INB3: the Scheduled page, with a sidebar entry that carries a dot | `3206dfa0` |
+| #588 | DIFF2-2 web: a repo folder's branch, PRs and files in Overview's Changes | `20c143cc` |
+| #587 | DIFF2-1 server: Changes for a working folder that is a git repo | `61bc615f` |
+| #586 | UNI1b: hidden characters in a skill's text are always marked; the save card and the import panel count them | `a2e38bfe` |
+| #577 | CAP5a: an installed connection is pinned to its first test's tools; a change stops it until the user accepts | `aa1d4f32` |
+| #582 | JUDGE1 clean: at boot, drop ledger rows that hold memory text from before digests | `9af258f6` |
+| #560 | Tests: MEM1's fail-safe through the real judge | `d4b287c4` |
+| #598 | SBX-2 (Codex): check network allow shapes and TCP deny order. Astra (high) and Claude (effort=max) reviewed | `baabe4ea` |
+| #596 | Migration 0084 to INB5a; next free is 0085 | `ad610bc7` |
+| #592 | SBX-M report: the SBX-2 corpus on the user's Mac | `71f79c3d` |
+| #593 | Tests: the sbx_mac corpus is opt-in for a local run; CI's macOS step unchanged | `ce12f08a` |
+| #579 | Migration 0083 to INB4; next free was 0084 | `f5470042` (main CI 41211934156 success, covering #574 … #579) |
+| #580 | DIFF1 web: a turn's change opens side by side from Overview's Changes | `7c8bf7c4` |
+| #450 | C7c-2: migration 0073 drops router_decisions | `313707bb` |
+| #581 | INB6: a scheduled fire keeps its run, a read keeps its paths, diagnosis counts host runs | `ee961611` |
+| #557 | EXC1b: every silent broad except that returns or continues says why | `a0874c7f` |
+| #548 | TITLE1: the model's approval texts name the step by a model title | `507c99ed` |
+| #559 | MEM1: memory write hygiene | `ca8583e8` |
+| #561 | CAP4a-2: an MCP server's lock is resolved before the card, and a yes installs exactly that lock | `3c8a40fe` |
+| #574 | SBX-2 (Codex): preserve TCP allow pairs and reject port-22 exclusions | `9c57ea5f` |
+| #583 | DIFF2 card | `ef6283b2` |
+| #578 | The user's 10-31 decisions: DIFF1/DIFF2 picks, allowlist D, UNI1b B, JUDGE1 clean | `c26af15c` (main CI 41203188734 success, the first full run since #570) |
+| #575 | SBX-M runbook | `300e391e` |
 | #573 | K10 + L11 card: folder rules (`AGENTS.md`) and where the output's language comes from | `0a61369f` |
 | #571 | This page: tonight's merge order; lanes restarted | `2876f11a` (main CI 41200897587 covers everything from `dc926523` on; the runs on `dc926523`…`0a61369f` were cancelled by the next merge) |
 | #555 | EXC1a: every silent broad `except: pass` says why on its line, and a test keeps it so | `53c68977` (main CI 41199089324 queued when this was written; the four runs before it were cancelled by the next merge) |
@@ -121,32 +148,22 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge (in this order)
 
-The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR below waits on its lane's push and a re-OK at the new head. Every verdict is posted on its PR with the sha.
+The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is posted on its PR at that head.
 
-1. **#548** (TITLE1): ③Hands pushes it rebased on main, which now has #526, with `test_title1_model_title.py:85` updated. Then a re-OK.
-2. **#557** (EXC1b): already retargeted to main; ⑥Helper pushes it. Then a re-OK.
-3. **#559** (MEM1): already retargeted to main; ②Main pushes it; the replay over the merged batch is identical to the reviewed diff. ⓪Plan re-OKs. Then **#560** the same way.
-4. **#561** (CAP4a-2): ⑤CAP pushes it rebased on main, which now has #526. It conflicted with both in `capability_flow.py`. ⓪Plan re-OKs at effort=max. **#569** (CAP4a-3b, draft) comes after it.
-5. **#565** (app names everywhere) at `10b9f472`: OK, and ready for review. No CI has run on this head: close and reopen it, or OK ③Hands' empty commit. Merge once it's green.
-6. **#576 then #574** (Codex's #570 follow-up: TCP allow pairs guarded, port-22 refuses 22). #576 moves ci.yml's macOS count 362 → 364 and merges into #574's branch first. Then #574, after Astra and a Claude effort=max review (running).
-7. **#577** (CAP5a: an MCP server's changed tool list parks it until you accept): an independent effort=max review is running. ②Main read the two `supervisor.py` lines (comment 6543412095): no other failure class changes. Its open point: a parked server is still relaunched by the 5-minute probe.
-8. **#450** (C7c-2: migration 0073 drops `router_decisions`) at `25e26a6e`: ③Hands' independent effort=max review.
-9. **#575** (the SBX-M runbook): OK at `ff165db2`; it auto-merges.
+1. **#565** (app names shown cleaned everywhere) at `f43eb675`. It's an empty commit on the reviewed `10b9f472`, pushed with the user's OK so CI could run. CI 41221815387 passed all five jobs.
+2. **#569** (CAP4a-3b: the license is read at the version being installed) at `39662487`. The effort=max review's fixes are in, and ⓪Plan's re-check is OK. A remote MCP server now has no license gate (stated).
+3. **#590** (INB5a: the waiting-on-you count, migration 0084): re-OK'd at `71adc88c`. ②Main retargets it to main now that #589 is in; it needs a quick re-OK on the new head.
+4. **#597** (UNI1b follow-up: the 8-IVS budget, the emoji bases, the listing's scan): re-checked OK at `1ec0e90f`, already based on main. ⑤CAP marks it ready (it's still a draft).
 
-**Also for the user (not merges):**
-- #563 (CAP4a-3a): OK ⑤CAP's push.
-- Mocks still open:
-  - INB3–INB7, in one link (②Main);
-  - SEC1 (⑤CAP);
-  - CAP5a's review row (⑤CAP).
-- SBX-M on your Mac: run `scripts/dev/sbx_m.sh` from the repository root (#575; about 10–20 minutes) and paste the three lines it prints.
-- The decisions under "Waiting on the user" below.
+**Pushes the user allowed (2026-11-01, about 17:45 UTC, relayed by ④参谋); ⑤CAP pushes them in its own session:**
+- **#584** (CAP4a-3c, allowlist D at card time): it would retarget to main and push `85086df6`, which holds the effort=max review's fixes. Then a re-check.
+- **#563** (CAP4a-3a).
 
 **Under review or on hold (don't merge these):**
 
 - **#525** (Q1 #4, retire the pocket) at `63c70a69`: OK (⓪Plan's reviewer). Main is merged with SB1's pocket cases removed, and run.get and status now fail closed. CI 41062445096 passed. A draft until Q1c ships and you say go.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
-- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted (the tripwire is text-only; approving a re-run erases the denial); ③Hands takes it after the rebases. 3a is rebased at `c596ed3d`. The wiring onto the default-deny base waits for SBX-M and the listening decision (card :255).
+- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts. SBX-M is done (#592), so they're merged with main and adjusted to the report. They wait for SBX-3p's tests from Codex and the listening decision (card :255).
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -154,39 +171,22 @@ The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR be
 
 | Lane | Work |
 |---|---|
-| ②Main | #559 and #560 pushes; C7c-2 #450 rebased onto main at `012c7c00` (full suite, then ready; an independent effort=max review, the user merges); #298 cut down to three "fails closed" corrections; INB4, INB5 and INB7 mocks |
-| ③Hands | #548's push; SBX-M as a one-sitting runbook; the four SBX drafts wait on SBX-M |
-| ⑤CAP | #561's push, then #569; the next CAP card that needs no user decision |
-| ⑥Helper | #557's push; #573's card merged next; DIFF1/DIFF2 wait on the mock picks; STY waits on its bench |
-| ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
-| Codex (via ⑦Codex) | #570 merged; its follow-up is with Codex (local branch `codex/sbx2-port-deny-followups`; the user pushes); SBX-3p waits on SBX-M |
-| ④参谋 | Merges docs, cards, tests, bench and deletion-only PRs in the #467 tier |
-| ⓪Plan | Re-OKs as heads move; this page |
+| ②Main | #590's retarget; INB5b (the badge on 「活动」, inbox removed; the items in #590's "Not covered"); then the saw_error follow-up from #581 |
+| ③Hands | The SBX drafts (3a #520, 4a, 5a, 7) merged with main and adjusted to the SBX-M report; they stay drafts |
+| ⑤CAP | #597's retarget; CAP4a-3d (the start-time Registry re-check) as a draft; #584 and #563 held for the user |
+| ⑥Helper | The STY bench's after run (before: 12/27, many ending task_waiting_user); results go on #452; the L11-0 mock is ready |
+| Codex (via ⑦Codex) | SBX-3p pasted by the user: the hard-link probe fix, #598's three items, then 3p. Committed locally overnight; ⑦Codex checks it in the morning |
+| ④参谋 | Runs effort=max reviews overnight, and pushes blockers to the user's phone |
+| ⓪Plan | Re-checks as heads move; this page |
 
 ## Waiting on the user
 
 - **SEC1 mock** (⑤CAP), sent as a private link.
-- **STY's bench (blocked by the classifier in ⑥Helper's session, "Create Unsafe Agents"; not routed to another session):** the 27-task K5-style run before and after STY, on DeepSeek through the proxy, about $4–5 (the proxy is at about $8 of $20). Two checkouts are ready in ⑥Helper's worktrees, before at `e8580458` and after at `4c20bb11`. Run it yourself, or allow ⑥Helper to run it. ⑥Helper has the command. #452 stays a draft until then.
 - **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
 - **(Done: the load flakes below are LOAD4, #551.)** Earlier note: `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
 - **SBX-2's any-declared network mode can't hold a port deny (explained; recorded on #507):** on macOS 26.6.2 the profile compiler drops a `localhost:<port>` deny for about 7.8% of ports when `*:*` is also allowed, and an IPv4-mapped connect passes it at every port. Proxy and port-22 modes hold. **Released v0.1.63 isn't affected:** no shipped profile denies a TCP port, and every path-based network deny was checked by bytecode diff and a runtime connect (#507, with file:line). SBX-2 isn't wired, so nobody is exposed. Codex's fail-closed fix is merged (#570, `dc926523`: any-declared refuses `denied_ports`), and its follow-up is #574 with #576. **Your call:** whether any-declared stays a mode at all, together with the listening decision. Also from it: Seatbelt's `localhost` matches the Mac's LAN IP.
 - **An SBX-2 deny that let a connection through once (③Hands, on macOS 26.6.2; since #570 the any-declared case is a build-time refusal, and the SBX-M loop measures the proxy and port-22 cases):** `test_sbx2_kernel.py::test_listener_refusal_and_arslan_port_exclusion[any-declared-default-deny]` connected to a denied port (errno 0) once in a 14-minute run, and passed 4 of 4 alone. It goes into SBX-M as a repeat loop (hundreds of runs, each errno recorded, and a check that the connecting process was the sandboxed one). What follows is your call once that's measured.
-- **Read as covered by 「全按推荐」, ④参谋 confirming with you:** the INB card's eleven questions below, K10 + L11's D1–D5 (#573), and ③Hands' flag that every local full-suite run on this Mac also runs the `sbx_mac` corpus (recommended: opt-in locally; CI's macOS job unchanged). Also the skills from before CAP4's checks: that question had no recommendation, so 「全按推荐」 doesn't settle it. ④参谋 and ⓪Plan read "mainstream, no over-defence" as no one-time rescan, as Claude Code and Codex don't rescan installed skills; they keep their origin mark and stay deletable. Until you confirm, the lanes don't build on these answers.
-- **The INB card's open questions** (`INB-inbox-progress.md`, "开工前要用户定的"; ②Main holds the INB pieces that depend on them, and INB3's server half and its page mock go ahead). ⓪Plan's recommendations are the card's own:
-  1. Bridge frames: `done_unseen` on `conversations.result` for phones that say they support it, and a four-line brief plus "needs you" on `status.snapshot` under Quick Chat. Both can wait; they don't block the Mac side.
-  2. iPhone notifications: only "needs you" items, so the phone no longer sounds when something finishes (①iOS asked for this to be asked on its own).
-  3. The Mac stops popping "done" notifications too, and web-page and folder-change ones. And during Do Not Disturb, does an approval card still pop?
-  4. Sensitive keywords: add a "family" category, with ⓪Plan listing the words in the PR for you to check. Any other category?
-  5. The run receipt in v0.1.64 covers only runs you weren't present for (background, scheduled, sub-sessions). Runs you were present for come later, with bench numbers (recommended).
-  6. A scheduled task's "what done looks like": written at the start of each run, with no migration (recommended), or stored when the task is created (a new column).
-  7. Once the Inbox's three tabs go: snoozed and handled reminders show on their own rows in the scheduled-tasks page and in the conversation, as "snoozed until …" or "handled", with no separate list (recommended).
-  8. "Not done while you were away" counts as handled when it's older than your last visit (recommended; no ledger change), or by a new "handled" mark on `approval_events`.
-  9. The morning report setting goes, replaced by the progress page's four-line brief.
-  10. The four-line brief uses template sentences in v0.1.64, with no model call (recommended).
-  11. A learned practice is paused after 3 failures in a row, as scheduled tasks are (recommended).
-  (12, who does INB3–INB9, is ⓪Plan's to settle: ②Main keeps them.) INB3, INB4, INB5 and INB7 are new web UI, so each also needs your OK on a mock first. **INB3's page mock is ready** (②Main, a private link sent to you): the sidebar entry with a dot, task rows with their runs and away-refusals, a paused task with Continue, the watches, the muted list and "check now". It notes that "Always allow" doesn't apply to scheduled runs. INB3's server half is #568.
 - **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
-- **SBX-M on your Mac:** SBX-2 is on main (`aace2b11`). SBX-M measures it on your Mac, then ⑦Codex's SBX-3p paste is ready.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
 
@@ -274,6 +274,38 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - **INB2 and skills:** kept as is. After a skill read, "about you" memories wait for the user. A stated limit.
 - **UNI1b:** option B of ⑤CAP's mock.
 - **The standing rule, repeated:** follow mainstream agent products, and don't over-defend (`docs/sessions.md` §12).
+
+**Decided on 2026-10-31, about 14:45 UTC (user, relayed by ④参谋).** The user's words: 「都按推荐」, after the four items that were "to confirm".
+- **The INB card's questions 1–11:** as the card recommends. For the two that had no card recommendation:
+  - Q3: during Do Not Disturb or Focus, approval cards don't pop. They wait in the conversation and the badge still shows, as Claude's and Codex's desktop notifications follow Focus.
+  - Q4: only a "family" category is added for now.
+- **K10 + L11, D1–D5 (#573):** as recommended.
+  - The classifier doesn't see folder rules.
+  - "Make this a rule" writes the folder's `AGENTS.md`.
+  - Folder rules count as outside content, except a file exactly as the user added it.
+  - There is no global file.
+  - A file's language defaults to the user's message.
+- **The `sbx_mac` corpus:** opt-in for local full-suite runs. CI's macOS job is unchanged (③Hands).
+- **Skills from before CAP4's checks:** left as they are, with no one-time rescan. This is now the user's decision.
+
+**SBX-M ran on 2026-10-31** (the user, at main `ef6283b2`, macOS 26.6.2 25G83).
+- The corpus: 293 cases, 293 passed; 101 rows need a look.
+- The listener loop: 30/30 in each mode.
+- The report is `SBX-measurement.md` (#592, `71f79c3d`).
+- The two boundary-open rows (the hard-link measurement on today's shipped bases) are a probe artifact, not a shipped gap; no point release (the effort=max assessment, #592 comment 6545067946). The probe fix is in Codex's SBX-3p paste.
+
+**Decided on 2026-11-01, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
+1. **The #584 and #563 pushes:** allowed. ⑤CAP pushes them in its own session; no other session pushes for it.
+2. **INB7:** **B**: all of it goes into v0.1.64, the map and the timeline replay included (②Main). The plan is the newest board, F ("fused", version 11 of ②Main's canvas). That board came after C+, when the user asked to fuse it with today's Activity.
+   - Usage's tiles are on top, with 「要你做」 as the first tile. One time axis carries a runs lane and replay. 「最近的工作」 is the only list. The map follows. An inspector holds 「要你做」, 「回放」, 「改动」 and 「诊断」.
+   - PRs: a, the rename, the tiles and the per-model cost; b, the axis; c, the list and the inspector; d, the map; e, removing the morning brief; f, the read-only progress tool.
+   - **Decided after (user, relayed by ④参谋: 「并进去」):** the Hands, judgment, scheduled-task and per-model cards fold into the page. The duration heatmap shows only for 7 and 30 days.
+3. **The import scan:** **A**. The rule that blocks an import blocks only Tag characters and bidi overrides. Every other hidden character is counted and marked, not blocked, as GitHub's warning does. This is a new small PR on the security surface (⑤CAP).
+4. **L11-0:** both picks as recommended. The rules show as an Overview row, and the card has two buttons, Add and Not now. L11-2 can be built now (⑥Helper).
+5. **The SB1 count:** allowed. The classifier still stopped the relayed OK, so the user allowed it in ⑥Helper's session directly, and it ran read-only, counts only.
+   - 50 conversations, 5 of them in a project.
+   - By section: Today 0, Yesterday 2, Previous 7 days 20, Older 28 (one month group).
+   - So Older needs no "show more" today. Pinned can't be read yet, since the installed database predates 0079.
 
 ## Spend
 

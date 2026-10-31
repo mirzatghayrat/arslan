@@ -3,8 +3,11 @@ import type { StoredArtifact } from "../api/client.types";
 
 /** WB1 (v0.1.64): a fixed row, Overview (WB1-2, the default), Working folder (id "files"), Progress and Browser. */
 export type WorkbenchTab = "overview" | "files" | "progress" | "browser";
-/** What the reader shows: a file Arslan delivered (its snapshot), or a file on disk by path. */
+/** What the reader shows: a file Arslan delivered (its snapshot), a file on disk by path, (DIFF1) one path a
+ * turn changed, as a side-by-side line diff opened from Overview's Changes, or (L11-0) a folder-rules file's text. */
 export type ReaderSource = { kind: "artifact"; file: StoredArtifact } | { kind: "path"; path: string }
+  | { kind: "diff"; conversationId: string; runId: number; folder: string; path: string }
+  | { kind: "repo-diff"; conversationId: string; folder: string; path: string }
   /** L11-0: a folder-rules file Overview already holds the text of (it may sit above the readable folders). */
   | { kind: "text"; name: string; text: string };
 
@@ -37,6 +40,10 @@ interface WorkbenchState {
   close: () => void;
   openReader: (source: ReaderSource) => void;
   closeReader: () => void;
+  /** DIFF2: an address for the Browser tab to open in a new browser tab (a PR's link), taken once by WorkDock. */
+  pendingUrl: string | null;
+  openUrl: (url: string) => void;
+  takeUrl: () => string | null;
   browse: (folder: string | null) => void;
   setWidth: (w: number) => void;
 }
@@ -52,6 +59,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   close: () => set({ open: false }),
   openReader: (reader) => set({ open: true, reader }),
   closeReader: () => set({ reader: null }),
+  pendingUrl: null,
+  openUrl: (url) => set({ open: true, tab: "browser", reader: null, pendingUrl: url }),
+  takeUrl: () => { const url = get().pendingUrl; if (url) set({ pendingUrl: null }); return url; },
   browse: (folder) => set({ open: true, tab: "files", folder, reader: null }),
   setWidth: (w) => {
     const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w)));

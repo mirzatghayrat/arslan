@@ -806,8 +806,10 @@ class ConversationListItem(BaseModel):
     kind: str = "chat"
     #: SB1-2: pinned to the top of the sidebar (conversation_contexts.pinned, migration 0079).
     pinned: bool = False
-    #: idle | working | waiting | done | failed.
+    #: idle | working | waiting | done | done_unseen (INB4) | unfinished | failed.
     state: str = "idle"
+    #: INB4: the state without "done, not seen", for phones until INB4's phone half; never in the window's response.
+    phone_state: str | None = Field(default=None, exclude=True)
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
     origin: str = "mac"
     #: The last message, one line.

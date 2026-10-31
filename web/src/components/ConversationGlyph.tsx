@@ -38,6 +38,10 @@ export default function ConversationGlyph({ meta, size = 15 }: { meta?: Conversa
       <path d="M5.6 8h4.8" fill="none" strokeWidth="2.2" strokeLinecap="round" className="stroke-unfinished" />
     </svg>;
   }
+  // INB4: done, not seen: the check with a small dot, until the window shows it.
+  if (meta.state === "done_unseen") return <span role="img" aria-label={label("done_unseen")} className="relative inline-flex shrink-0">
+    <Check size={size} strokeWidth={2.4} className="text-success" aria-hidden />
+    <span aria-hidden className="absolute -right-1 -top-1 h-[7px] w-[7px] rounded-full bg-info-strong ring-2 ring-sidebar" /></span>;
   if (meta.state === "done") return <Check size={size} strokeWidth={2.4} className="shrink-0 text-success" role="img" aria-label={label("done")} />;
   if (meta.state === "failed") return <X size={size - 1} strokeWidth={2.4} className="shrink-0 text-danger" role="img" aria-label={label("failed")} />;
   if (meta.kind === "scheduled") return <Clock size={size} className="shrink-0" role="img" aria-label={label("scheduled")} />;
