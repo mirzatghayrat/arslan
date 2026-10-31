@@ -162,6 +162,10 @@ export const companionApi = {
     + (beforeId ? `&before_id=${encodeURIComponent(beforeId)}` : "")),
   contextMemory: (conversationId: string, receiptId: string, entryId: string) => request<ContextMemoryReview>(
     `/conversations/${encodeURIComponent(conversationId)}/context/receipts/${encodeURIComponent(receiptId)}/memories/${encodeURIComponent(entryId)}`),
+  /** SB1-2: pin or unpin a conversation in the sidebar (its own route: allowed while it runs, never bumps `version`). */
+  pin: (conversationId: string, pinned: boolean) =>
+    request<{ conversation_id: string; pinned: boolean }>(`/conversations/${encodeURIComponent(conversationId)}/pin`,
+      json("PUT", { pinned })),
   saveContext: (context: ConversationContext, changes: Partial<ConversationContext>) => {
     // memory_by_default is read-only (a global setting); the server refuses unknown fields.
     const { conversation_id, version, memory_by_default: _readOnly, ...settings } = { ...context, ...changes };

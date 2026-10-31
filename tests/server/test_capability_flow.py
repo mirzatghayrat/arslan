@@ -488,16 +488,16 @@ async def test_in_a_background_job_the_card_is_never_shown(monkeypatch):
     assert asks == [None]
 
 
-async def test_an_imported_skill_is_read_like_outside_content_and_an_own_one_is_not(execution_db):
-    """Decision 5 (0.1.57): an imported skill's text is wrapped as untrusted and the turn
-    counts as having read outside content; Arslan's own skills read as before."""
+async def test_an_imported_skill_reads_unframed_like_an_own_one(execution_db):
+    """Decision 5 (0.1.57) wrapped an imported skill's text as untrusted and marked the turn; since the
+    user's D2(1) (2026-10-30) every skill reads unframed, an imported one too, and the turn is not marked."""
     from server.db.models import SkillPack
     from server.orchestrator import tool_loop, untrusted
     from server.registry.executors import EXECUTORS
     async with execution_db() as db:
         db.add(SkillPack(key="imported-one", name="i", category="imported", description="d", tier="safe",
                          status="registered", body="# From GitHub\\nDo X."))
-        db.add(SkillPack(key="own-one", name="o", category="method", description="d", tier="safe",
+        db.add(SkillPack(key="own-one", name="o", category="authored", description="d", tier="safe",
                          status="registered", body="# Mine\\nDo Y."))
         await db.commit()
     seen = {}
@@ -507,6 +507,9 @@ async def test_an_imported_skill_is_read_like_outside_content_and_an_own_one_is_
         trace, convo = [], []
         tool_loop._record_tool_result("read_skill", {"key": key}, result, lambda e: None, trace,
                                       '{"tool": "read_skill"}', convo)
-        seen[key] = (result["external"], untrusted.end_turn(token), "Do " in convo[-1]["content"])
-    assert seen["imported-one"][:2] == (True, True)
-    assert seen["own-one"][:2] == (False, False)
+        content = convo[-1]["content"]
+        seen[key] = (result["external"], untrusted.end_turn(token), "Do " in content,
+                     untrusted.DELIM_OPEN in content or untrusted.TOOL_OPEN in content)      # neither frame
+    # D2(1), 2026-10-30: every skill is trusted and read unframed, as Claude Code and Codex do: not marked
+    # external, the turn not marked, and the model's text the skill's own, with no outside-content frame.
+    assert seen["imported-one"] == seen["own-one"] == (False, False, True, False)

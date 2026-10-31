@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import { useDismissable } from "../hooks/useDismissable";
 import AnchoredPortal from "./AnchoredPortal";
-import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder } from "lucide-react";
+import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder, Pin, PinOff } from "lucide-react";
 import { confirmSheet } from "./kit";
 
 interface ThreadRowMenuProps {
@@ -26,6 +26,9 @@ interface ThreadRowMenuProps {
   projects?: { id: string; name: string }[];
   projectId?: string | null;
   onMove?: (id: string, projectId: string | null) => void;
+  /** SB1-2: pin it to the top of the sidebar, or unpin it (offered only where the sidebar passes it). */
+  pinned?: boolean;
+  onPin?: (id: string, pinned: boolean) => void;
 }
 
 export default function ThreadRowMenu({
@@ -37,6 +40,8 @@ export default function ThreadRowMenu({
   projects,
   projectId = null,
   onMove,
+  pinned = false,
+  onPin,
 }: ThreadRowMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -102,6 +107,13 @@ export default function ThreadRowMenu({
             </div>
           ) : (
               <>
+                {onPin && (
+                  <button type="button" role="menuitem" className={itemClass} data-testid="thread-pin"
+                    onClick={() => { onPin(threadId, !pinned); close(); }}>
+                    {pinned ? <PinOff className="w-3.5 h-3.5 text-subtle-foreground shrink-0" /> : <Pin className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />}
+                    <span>{t(pinned ? "sidebar.unpin" : "sidebar.pin")}</span>
+                  </button>
+                )}
                 {onMove && ((projects?.length ?? 0) > 0 || projectId) && (
                   <button type="button" role="menuitem" className={itemClass} data-testid="thread-move"
                     onClick={() => setPicking(true)}>

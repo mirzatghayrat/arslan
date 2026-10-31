@@ -749,6 +749,10 @@
     "more": "Más"
   },
   "sidebar": {
+    "pinFailed": "No se pudo fijar. Inténtalo de nuevo.",
+    "pinned": "Fijadas",
+    "pin": "Fijar",
+    "unpin": "Dejar de fijar",
     "today": "Hoy",
     "yesterday": "Ayer",
     "previous7": "Últimos 7 días",

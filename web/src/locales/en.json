@@ -749,6 +749,10 @@
     "more": "More"
   },
   "sidebar": {
+    "pinFailed": "Couldn't pin it. Try again.",
+    "pinned": "Pinned",
+    "pin": "Pin",
+    "unpin": "Unpin",
     "today": "Today",
     "yesterday": "Yesterday",
     "previous7": "Previous 7 Days",

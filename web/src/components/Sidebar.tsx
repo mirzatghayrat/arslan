@@ -50,12 +50,16 @@ interface SidebarProps {
   onStartInProject?: (projectId: string) => void;
   onOpenProject?: (projectId: string) => void;
   onMoveToProject?: (threadId: string, projectId: string | null) => void;
+  /** SB1-2: pin or unpin a conversation (App stores it on the server). */
+  onPinThread?: (threadId: string, pinned: boolean) => void;
 }
+/** SB1-2: what a dragged conversation row carries, so a project header takes only a conversation. */
+const DRAG_TYPE = "application/x-arslan-conversation";
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
     onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, meta = {},
-    projects = [], onStartInProject, onOpenProject, onMoveToProject } = props;
+    projects = [], onStartInProject, onOpenProject, onMoveToProject, onPinThread } = props;
   const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [openMonths, setOpenMonths] = useState<string[]>([]);
@@ -63,6 +67,8 @@ export default function Sidebar(props: SidebarProps) {
   const collapsed = useSidebar((s) => s.collapsed);
   const setCollapsed = useSidebar((s) => s.setCollapsed);
   const touched = useRecency((s) => s.touched);
+  const pins = useSidebar((s) => s.pins);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!isToggleSidebarKey(event)) return;
@@ -93,9 +99,14 @@ export default function Sidebar(props: SidebarProps) {
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
   // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-  const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "")), meta);
-  // DELETE-BY: with remoteFirst above: Remote stays above the date sections.
+  // DELETE-BY: with remoteFirst below: Remote stays above the date sections.
   const isRemote = (thread: ArslanThread) => thread.id === REMOTE_ID || meta[thread.id]?.kind === "remote";
+  // SB1-2: pinned, by this window's latest choice, else the server's; a conversation in a project stays in its
+  // project, so only one outside any can be pinned (the row menu offers the pin there only).
+  const isPinned = (thread: ArslanThread) => !projectOf(thread) && !isRemote(thread)
+    && (pins[thread.id] ?? meta[thread.id]?.pinned ?? false);
+  const pinnedThreads = live.filter(isPinned);                 // newest first, as `live` is
+  const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "") && !isPinned(thread)), meta);
   const sections = groupByDay(activeThreads.filter(thread => !isRemote(thread)), at, new Date(), i18n?.resolvedLanguage || i18n?.language);
   // The month holding the open conversation opens with it, once per conversation (⓪Plan's review of
   // PR 543): the open row is never hidden in a fold; the user can still fold it again.
@@ -127,7 +138,11 @@ export default function Sidebar(props: SidebarProps) {
   function openThread(id: string) { onSelectThread(id); onChangeSection("arslan"); }
   function renderThread(thread: ArslanThread, archived: boolean) {
     const active = activeSection === "arslan" && activeThreadId === thread.id;
+    // SB1-2: a conversation row drags onto a project (the same move as "Move to project…").
+    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary && !isRemote(thread);
     return <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
+      draggable={draggable || undefined}
+      onDragStart={draggable ? event => { event.dataTransfer.setData(DRAG_TYPE, thread.id); event.dataTransfer.effectAllowed = "move"; } : undefined}
       onClick={() => openThread(thread.id)} onKeyDown={event => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
@@ -138,7 +153,8 @@ export default function Sidebar(props: SidebarProps) {
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
         onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
-        projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject} />}
+        projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject}
+        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) && !isRemote(thread) ? onPinThread : undefined} />}
     </div>;
   }
   function toggleMonth(id: string) {
@@ -149,8 +165,20 @@ export default function Sidebar(props: SidebarProps) {
   function renderProject(project: SidebarProject) {
     const open = openProjects.includes(project.id);
     const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
+    const takes = (event: React.DragEvent) => Boolean(onMoveToProject) && event.dataTransfer.types.includes(DRAG_TYPE);
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
-      <div className="group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-foreground hover:bg-foreground/[0.02]">
+      <div data-testid={`sidebar-project-drop-${project.id}`} data-drop={dropTarget === project.id || undefined}
+        onDragOver={event => { if (!takes(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(project.id); }}
+        onDragLeave={() => setDropTarget(prev => (prev === project.id ? null : prev))}
+        onDrop={event => {
+          setDropTarget(null);
+          const id = event.dataTransfer.getData(DRAG_TYPE);
+          if (!takes(event) || !id) return;
+          event.preventDefault();
+          // Refused while the conversation runs, as the menu's move is: App shows today's "move failed" notice.
+          if (projectOf(threads.find(thread => thread.id === id) ?? { id: "", title: "" }) !== project.id) onMoveToProject?.(id, project.id);
+        }}
+        className={`group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-foreground hover:bg-foreground/[0.02] ${dropTarget === project.id ? "bg-primary/10 ring-1 ring-primary/40" : ""}`}>
         <button type="button" aria-expanded={open} onClick={() => toggleProject(project.id)}
           data-testid={`sidebar-project-toggle-${project.id}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
           {open ? <ChevronDown size={12} className="shrink-0 text-subtle-foreground" /> : <ChevronRight size={12} className="shrink-0 text-subtle-foreground" />}
@@ -210,6 +238,10 @@ export default function Sidebar(props: SidebarProps) {
             back to a conversation (the open one is highlighted), and "New conversation" at the top
             is the one way to start one. */}
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {pinnedThreads.length > 0 && <div data-testid="sidebar-pinned" className="mb-2 space-y-0.5">
+            {heading("pinned")}
+            {pinnedThreads.map(thread => renderThread(thread, false))}
+          </div>}
           {shownProjects.length > 0 && <div data-testid="sidebar-projects" className="mb-2 space-y-0.5">
             <div className="mb-1 px-3 text-xs text-muted-foreground">{t("sidebar.projects")}</div>
             {shownProjects.map(renderProject)}

@@ -470,6 +470,17 @@ export default function App() {
     }
   };
 
+  /** SB1-2: pin or unpin. Shown at once; stored on the server's conversation record; a failure takes it back. */
+  const handlePinThread = async (threadId: string, pinned: boolean) => {
+    useSidebar.getState().setPin(threadId, pinned);
+    try {
+      await companionApi.pin(threadId, pinned);
+    } catch {
+      useSidebar.getState().setPin(threadId, null);
+      showToast(t('sidebar.pinFailed'));
+    }
+  };
+
   // ── Conversation row overflow actions (Archive / Delete) ──────────
 
   // Archive is purely client-side (persisted via sessionPersistence). If the
@@ -628,6 +639,7 @@ export default function App() {
         }}
         onOpenProject={(projectId) => { setOpenProjectId(projectId); setActiveSection('projects'); }}
         onMoveToProject={(threadId, projectId) => void handleMoveToProject(threadId, projectId)}
+        onPinThread={(threadId, pinned) => void handlePinThread(threadId, pinned)}
       />}
 
       {/* Main Workspace Frame container with glass window feel */}
