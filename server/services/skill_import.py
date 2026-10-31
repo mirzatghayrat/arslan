@@ -302,13 +302,14 @@ def scan_prepared(prepared: dict) -> dict:
     """The one scan of a prepared skill, for the install card and the import panel alike: the whole SKILL.md as
     fetched, its name and description as YAML decodes them (what is stored and, under the user's D2, read
     unframed; a folded scalar or a quoted escape decodes to text the raw file does not show: #539 recheck), every
-    script, dotfiles included, and every reference. The name and description are scanned as YAML decoded them,
-    before UNI1a's cleaner (`frontmatter`): the stored ones are clean, but a hidden character the cleaner drops is
-    the sign of a skill that tried to hide one."""
+    script, dotfiles included, and every reference. The text is scanned both ways: as written and YAML-decoded,
+    before UNI1a's cleaner (`frontmatter`; a hidden character the cleaner drops is the sign of a skill trying to
+    hide one), and as stored, after it (the name, description and body; #526 recheck: a command split by a BEL
+    or an ESC passed the raw scan, and the cleaner then removed the control character)."""
     from server.services import capability_scan
     info = prepared["info"]
-    return capability_scan.scan_skill(f"{prepared['skill_md']}\n{info['frontmatter']}",
-                                      prepared["scripts"], prepared["references"])
+    text = "\n".join((prepared["skill_md"], info["frontmatter"], info["name"], info["description"], info["body"]))
+    return capability_scan.scan_skill(text, prepared["scripts"], prepared["references"])
 
 
 async def prepare_skill(ref: str, path: str) -> dict:
