@@ -105,7 +105,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | C5a（过程文档移到存档分支、删隐私段落） | 应该 | 对用户没影响。 |
 | C5b 的同类清理 + `__version__` | 必须 | 用户 10-27 同意的删除期限。 |
 | C7c（专家表、旧专家转技能页、记忆 v1 旧表、`router_decisions`、专家 REST 接口） | 必须 | 一次迁移；代码里已写 `DELETE-BY: v0.1.64`。**Also (user, 2026-10-28):** decide in the same PR whether the 30 quarantined `scope_kind=expert` memory entries are deleted or moved, and say which in the PR. |
-| K6（文件工具补齐）、K10（读 AGENTS.md） | 应该 | K10 和 L11「文件夹规矩」一起做；AGENTS.md 是不是给分类器看，跟 #432 一起定。**L11 also gets (user, 2026-10-28, memory plan item 15):** output language follows where the output goes (chat: the language of the user's message; a file: that folder's rules; a message: the recipient), and after the user corrects the same thing twice, Arslan asks "make this a rule for this folder?". |
+| K6（文件工具补齐）、K10（读 AGENTS.md） | 应该 | K10 和 L11「文件夹规矩」一起做；AGENTS.md 是不是给分类器看，跟 #432 一起定。**L11 also gets (user, 2026-10-28, memory plan item 15):** output language follows where the output goes (chat: the language of the user's message; a file: that folder's rules; a message: the recipient), and after the user corrects the same thing twice, Arslan asks "make this a rule for this folder?". Card: [K10-L11-folder-rules.md](K10-L11-folder-rules.md) (⑥Helper). |
 | S4b、S5、S6，S4a 的两个跟进 | 看 #432 | 都建在权限模型上。#432 若选五档模式，S5 扩写。 |
 | #298b（SECURITY / ARCHITECTURE 按三层模型重写） | 必须 | 跟着安全模型的结果写。 |
 
