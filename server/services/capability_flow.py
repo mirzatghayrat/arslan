@@ -25,6 +25,7 @@ from datetime import datetime
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
+from server.orchestrator import untrusted
 from server.services import capability_install, capability_runtime, capability_scan, capability_search
 from arslan.aio import within
 
@@ -191,17 +192,17 @@ def _ledger_request(cand: dict, why: str):
     from, the version the card shows (the pinned package's), and the model's reason. Built from the
     search result only; the card's answer (a key, folders) adds nothing."""
     from server.services import permissions
-    name = _plain(str(cand.get("name") or ""))
+    name = untrusted.clean_name(cand.get("name"), 200)             # UNI1: the one name cleaner (#526 review)
     version = (cand.get("package") or {}).get("version") or cand.get("version")
     return permissions.Request(kind="capability", target=f"capability:{name}"[:200],
                                title=f"Add {name}?", detail=why[:500],
                                extra={"source_url": _ledger_url(cand.get("source_url")),
-                                      "version": _plain(str(version))[:100] if version else None})
+                                      "version": untrusted.clean_name(version, 100) if version else None})
 
 
 def _plain(text: str, keep: str = "") -> str:
-    """Without control, format (bidi, zero-width) or unassigned characters (but those in `keep`): a ledger row
-    reads as it is."""
+    """Without control, format (bidi, zero-width) or unassigned characters (but those in `keep`): a ledger row's
+    address or detail reads as it is. Names go through `untrusted.clean_name` instead."""
     import unicodedata
     return "".join(ch for ch in text if ch in keep or not unicodedata.category(ch).startswith("C"))
 
@@ -214,7 +215,7 @@ def outside_label(text, limit: int = 100) -> str:
     hands it to the model: its own field, never inside Arslan's sentence; letters, digits and ``._/ -`` only,
     one line, at most `limit` characters (③Hands' review of #449). list_my_capabilities and the MCP status line use it too."""
     # A new line or a tab separates words, as in the status line before #495 (O2), instead of gluing them.
-    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""), keep="\t\n\v\f\r")).split())[:limit].strip()
+    return " ".join(_LABEL_CHARS.sub(" ", untrusted.clean_name(text, 100_000)).split())[:limit].strip()   # UNI1
 
 
 def _ledger_url(url) -> str | None:
@@ -238,7 +239,6 @@ def _outside_text() -> None:
     """This result carries outside text (a label, a program's output): the turn has read outside content now,
     as `find_capability` marks it. A candidate seen in an earlier turn can be proposed in a later one without
     searching again, so that turn is not marked yet (the independent review of #461, F1)."""
-    from server.orchestrator import untrusted
     untrusted.mark_external()
 
 

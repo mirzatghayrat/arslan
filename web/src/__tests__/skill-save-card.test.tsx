@@ -32,7 +32,7 @@ describe("the save-a-skill card", () => {
     render(<AskSlot send={() => {}} />);
     frame(SAVE);
     const card = screen.getByTestId("skill-save-card");
-    expect(card).toHaveTextContent('discover.save_title:{"name":"Weekly report"}');
+    expect(card).toHaveTextContent('discover.save_title:{"name":"\u2068Weekly report\u2069"}');   // isolated (UNI1a)
     expect(card).toHaveTextContent("save what we just did as a skill");
     expect(screen.getByTestId("skill-save-rows")).toHaveTextContent("A one-page report of the week");
     expect(screen.getByTestId("skill-save-rows")).toHaveTextContent("weekly-report");
@@ -78,7 +78,7 @@ describe("the save-a-skill card", () => {
     render(<AskSlot send={() => {}} />);
     frame(INSTALL);
     frame(SAVE);
-    expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_title:{"name":"excel-mcp-server"}');
+    expect(screen.getByTestId("capability-card")).toHaveTextContent('discover.card_title:{"name":"\u2068excel-mcp-server\u2069"}');   // isolated (UNI1a)
     fireEvent.click(screen.getByRole("button", { name: "kit.next" }));
     expect(screen.getByTestId("skill-save-card")).toBeInTheDocument();
     expect(screen.queryByTestId("capability-card")).toBeNull();
