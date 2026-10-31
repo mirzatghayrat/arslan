@@ -1432,6 +1432,7 @@
     "intro": "Aufgaben, die nach Zeitplan laufen, und die Seiten und Ordner, die Arslan für dich beobachtet. Ein Punkt markiert eine Zeile, die du dir ansehen solltest.",
     "watches": "Beobachtete Seiten und Ordner",
     "awayTitle": "Nicht erledigt, während du weg warst (nur diese Aufgabe)",
+    "seenNote": "Wenn du eine Aufgabe öffnest, gilt, was ihre Läufe nicht tun konnten, als gesehen. Was in ihrer eigenen Unterhaltung wartet, verschwindet, wenn du diese Unterhaltung öffnest.",
     "attention": "Bitte ansehen",
     "changed": "Geändert",
     "failing": "Fehlgeschlagen oder selbst pausiert"

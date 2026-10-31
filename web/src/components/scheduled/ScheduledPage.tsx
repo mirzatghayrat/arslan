@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { api } from "../../api/client";
 import type { ScheduledTaskDto } from "../../api/client.types";
-import { proactiveApi, type ProactiveItem } from "../../api/proactive";
+import { announceProactiveChange, proactiveApi, type ProactiveItem } from "../../api/proactive";
 import { AWAY_HOURS, scheduledConversation, type ScheduledAttention } from "../../hooks/useScheduledAttention";
 import { proactiveErrorText } from "../../lib/proactive";
 import RunDrawer from "../activity/RunDrawer";
@@ -15,12 +16,14 @@ import ScheduledTasksCard from "../ScheduledTasksCard";
 
 /**
  * INB3: the scheduled tasks and the pages and folders Arslan watches, in one place (the INB card, item 3). A row carries a dot when
- * it needs a look: a task whose run failed or that paused itself, has a problem reminder, or could not do something while nobody
- * was there; a watch whose page or folder changed. A task's problem and its away entries show under its runs, a change under its
- * watch with the guess and next step. "Check now" lives here.
+ * it needs a look: a task the server counts as waiting on you (INB5b-3), red when its run failed or it paused itself; a watch whose
+ * page or folder changed. A task's problem and its away entries show under its runs, a change under its watch with the guess and
+ * next step. Opening a task's row marks it seen, which clears what its runs could not ask you so far. "Check now" lives here.
  */
-export default function ScheduledPage({ attention, onOpenConversation, onOpenModelSettings }: {
+export default function ScheduledPage({ attention, waitingTasks, onOpenConversation, onOpenModelSettings }: {
   attention: ScheduledAttention;
+  /** The tasks waiting on you, as the server counts them (progress.waiting_on_user's `scheduled`). */
+  waitingTasks: number[];
   /** `created` is true when the app must first make a conversation with this id for the job to report into. */
   onOpenConversation: (conversationId: string, created: boolean) => void;
   /** Where "add a model first" sends the user. */
@@ -34,10 +37,12 @@ export default function ScheduledPage({ attention, onOpenConversation, onOpenMod
     onDo={() => void doIt(item)} onSnooze={(days) => void snooze(item, days)} onDismiss={(mute) => void dismiss(item, mute)}
     onOpenConversation={() => item.conversation_id && onOpenConversation(item.conversation_id, false)} />;
   const needsLook = (task: ScheduledTaskDto) => {
-    const a = attention.tasks[task.id];
-    if (!a) return null;
-    if (a.failing) return "failing";                                   // red, as the board drew a task that paused itself
-    return a.problems.length > 0 || a.away > 0 ? "look" : null;
+    if (attention.tasks[task.id]?.failing) return "failing";           // red, as the board drew a task that paused itself
+    return waitingTasks.includes(task.id) ? "look" : null;
+  };
+  // Opening a task's row is seeing it: the server stops counting what its runs could not ask you so far, and the badge reads again.
+  const markSeen = (taskId: number) => {
+    api.markScheduledTaskSeen(taskId).then(announceProactiveChange, () => { /* the next open tries again */ });
   };
 
   async function checkNow() {
@@ -63,9 +68,10 @@ export default function ScheduledPage({ attention, onOpenConversation, onOpenMod
       {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}
         action={notice.needsModel && onOpenModelSettings ? <button className="text-[13px] underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button> : undefined}>
         {notice.text}</Notice>}
-      <ScheduledTasksCard onOpenRun={setOpenRun} attention={needsLook} details={(task) => <div className="mt-3 space-y-3">
+      <ScheduledTasksCard onOpenRun={setOpenRun} attention={needsLook} onOpen={markSeen} details={(task) => <div className="mt-3 space-y-3">
         {(attention.tasks[task.id]?.problems ?? []).map(reminder)}
         <NotDoneList conversationId={scheduledConversation(task)} hours={AWAY_HOURS} unattended title={t("scheduledPage.awayTitle")} />
+        <p className="text-[11px] text-muted-foreground">{t("scheduledPage.seenNote")}</p>
       </div>} />
       <section aria-labelledby="scheduled-watches" className="space-y-3">
         <h2 id="scheduled-watches" className="text-[13px] font-semibold text-muted-foreground">{t("scheduledPage.watches")}</h2>

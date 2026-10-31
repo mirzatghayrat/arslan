@@ -1432,6 +1432,7 @@
     "intro": "Tasks that run on a schedule, and the pages and folders Arslan watches for you. A dot marks a row that needs a look.",
     "watches": "Watched pages and folders",
     "awayTitle": "Not done while you were away (this task only)",
+    "seenNote": "Opening a task marks what its runs could not do as seen. What waits in its own conversation clears when you open that conversation.",
     "attention": "Needs a look",
     "changed": "Changed",
     "failing": "Failed or paused itself"
