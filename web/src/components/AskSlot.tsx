@@ -8,7 +8,8 @@ import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
 import SkillSaveCard from "./capabilities/SkillSaveCard";
 import WorkspaceWriteCard from "./WorkspaceWriteCard";
-import { AnswerGuardScope, AskQueue, CARD_MS, Notice, scopeToSend, useAnswerGuardState, type AskQueuePosition, type QueuedAsk } from "./kit";
+import { AnswerGuardScope, AskQueue, CARD_MS, Notice, scopeToSend, type AskQueuePosition, type QueuedAsk } from "./kit";
+import { useQueueGuard } from "./kit/guard";
 
 /** A window's own card gets no word from the server when it runs out; it leaves this slot
  *  this long after its expiry, so the server has closed it first. */
@@ -46,8 +47,10 @@ function focusComposer() {
  */
 export default function AskSlot({ send }: { send: (frame: Record<string, unknown>) => void }) {
   // What holds an answer for a moment after a card leaves (kit/guard.ts) is kept here, above the queue: the queue is not on screen
-  // while no card waits, and the card that comes up in that gap — the next command of the turn — must be held too.
-  const guard = useAnswerGuardState();
+  // while no card waits, and the card that comes up in that gap — the next command of the turn — must be held too. INB5b: the scope
+  // above it when there is one: App puts the slot and the conversation in one, so a card leaving the slot holds what wasn't done while
+  // you were away under the pointer, and a change in that list holds the slot (one gesture answers one thing, as in the Inbox).
+  const guard = useQueueGuard();
   return <AnswerGuardScope value={guard}><AskCards send={send} /></AnswerGuardScope>;
 }
 

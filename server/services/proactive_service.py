@@ -283,12 +283,18 @@ async def _get(db, item_id: int) -> ProactiveItem:
     return item
 
 
-async def list_items(scope: str = "open", limit: int = 100) -> list[dict]:
+async def list_items(scope: str = "open", limit: int = 100, conversation_id: str | None = None,
+                     kind: str | None = None) -> list[dict]:
+    """INB5b: `conversation_id` and `kind` narrow the list, so a conversation reads only its own stopped-job reminders."""
     statuses = {"open": OPEN, "done": FINISHED, "snoozed": ("snoozed",)}.get(scope)
     async with db_session.AsyncSessionLocal() as db:
         query = select(ProactiveItem)
         if statuses:
             query = query.where(ProactiveItem.status.in_(statuses))
+        if conversation_id is not None:
+            query = query.where(ProactiveItem.conversation_id == conversation_id)
+        if kind is not None:
+            query = query.where(ProactiveItem.kind == kind)
         rows = (await db.execute(query.order_by(ProactiveItem.id.desc()).limit(max(1, min(limit, 200))))).scalars().all()
     return [present(r) for r in policy.order(rows)]
 

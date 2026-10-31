@@ -89,6 +89,10 @@ interface OrchestratorChatProps {
   onSelectModel?: (id: number) => void;
   /** The active conversation id. */
   conversationId?: string;
+  /** INB5b: shown above the messages (what wasn't done while you were away) and after them (a stopped job's card), so both scroll
+   *  with the conversation. Each renders nothing when there is nothing to show. */
+  header?: React.ReactNode;
+  footer?: React.ReactNode;
   /** True when the orchestrator-shell capability is enabled (drives the policy pill). */
   shellEnabled?: boolean;
   /** Current shell confirmation posture, shown + flippable in the composer pill. */
@@ -112,6 +116,8 @@ export default function OrchestratorChat({
   conversationId,
   shellEnabled = false,
   shellPolicy = 'ask_all',
+  header,
+  footer,
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -383,6 +389,7 @@ export default function OrchestratorChat({
         <div className="flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 relative w-full">
           {/* Scrollable Chat Area */}
           <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+        {header}
         {chatHistory.length === 0 ? (
           <div className="min-h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto py-10 px-4 space-y-8 select-none">
             {/* Shared product typography; wraps safely with long display names. */}
@@ -919,6 +926,7 @@ export default function OrchestratorChat({
             return null;
           })
         )}
+        {footer}
         {/* LLM error banner: shown when the backend emits an error frame (e.g. LLM timeout, auth failure) */}
         {llmError && (() => {
           // 0.1.44: a task-status code (a check to make, a budget used up…) is not a

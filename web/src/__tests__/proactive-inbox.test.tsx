@@ -50,7 +50,7 @@ describe("what could not be asked while nobody was there", () => {
       const section = await screen.findByTestId("inbox-refused");
       expect(within(section).getByRole("heading", { name: /Not done while you were away/ })).toBeTruthy();
       expect(within(section).getByText("mail -s hi me@x.com")).toBeTruthy();
-      expect(within(section).getByText("This will always allow: Send an email")).toBeTruthy();
+      expect(within(section).getByText(`This will always allow: ${isolate("Send an email")}`)).toBeTruthy();
       expect(within(section).getByRole("button", { name: "Always allow" })).toBeTruthy();
       expect(screen.queryByTestId("proactive-empty")).toBeNull();
     } finally {
