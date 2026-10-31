@@ -19,7 +19,6 @@ never sees them (D1).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -166,15 +165,16 @@ def _found(folder: Path, home: Path, conversation_id: str | None) -> tuple[list[
     return found, notes
 
 
-def _block(folder: Path, home: Path, *, conversation_id: str | None, trusted: dict[str, str]) -> tuple[str, int, int]:
+def _block(folder: Path, home: Path, *, conversation_id: str | None, trusted: dict[str, dict]) -> tuple[str, int, int]:
     """The block, how many files are in it, and how many of those are outside content: all but a file exactly as
-    the user left it through L11-2's card (D3: `trusted` maps its path to the sha256 the card recorded)."""
+    the user left it through L11-2's card (D3: `trusted` is what the card wrote into each file, `_users`). A note on
+    a refused file carries an on-disk name, so it counts as outside too."""
     found, notes = _found(folder, home, conversation_id)
     if not found and not notes:
         return "", 0, 0
     total, kept, outside = 0, [], 0
     for shown, text, path in reversed(found):              # nearest first: it matters most
-        users = trusted.get(str(path)) == hashlib.sha256(text.encode()).hexdigest()
+        users = _users(trusted.get(str(path)), text.encode())
         size = len(text.encode())
         if total + size > MAX_BYTES:
             if not kept:
@@ -193,6 +193,7 @@ def _block(folder: Path, home: Path, *, conversation_id: str | None, trusted: di
     body = "\n\n".join(f"## {_clean(shown)}\n{_clean(text).strip()}" for shown, text in reversed(kept))
     if notes:
         body += "\n\n" + "\n".join(f"(Note: {_clean(n)}.)" for n in notes)
+        outside += 1
     return f"{OPEN}\n{body.strip()}\n{CLOSE}", len(kept), outside
 
 
@@ -222,7 +223,7 @@ async def for_turn(conversation_id: str | None) -> tuple[str, int]:
             if not await settings_service.folder_rules_enabled(db):
                 return "", 0
             folder = await conversation_folder(db, conversation_id)
-            trusted = await _trusted(db)
+            trusted = await _user_files(db)
         if folder is None:
             return "", 0
         import asyncio
@@ -236,31 +237,42 @@ async def for_turn(conversation_id: str | None) -> tuple[str, int]:
 
 # -- L11-2: the user's own rules, added through the card -----------------------------------------------------------
 
-#: path -> sha256 of the rules file as the user's card left it (D3: exactly that file is not outside content).
-TRUSTED_KEY = "folder_rules_user_files"
+#: path -> {"own": bool, "lines": [{"lesson_id", "line", "sep"}]}: what the card wrote into each rules file. D3 (the
+#: user's decision): a file is the user's, and not outside content, only when Add found it empty or absent and it now
+#: holds exactly the lines Add wrote, nothing else (#603 review, F1). Anything else, including a file that had other
+#: content when the first line was added, or any edit not made by Add or Remove, is outside content.
+USER_FILES_KEY = "folder_rules_user_files"
 
 
 class RuleRefused(Exception):
-    """The folder's rules file can't be written: a link, not a plain file, or unreadable."""
+    """The rules file can't take the line: `code` is link (a link or not a plain file), unwritable, or full."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
-async def _trusted(db) -> dict[str, str]:
+async def _user_files(db) -> dict[str, dict]:
     from server.services import settings_service
     try:
-        value = json.loads(await settings_service._get_raw(db, TRUSTED_KEY) or "{}")
+        value = json.loads(await settings_service._get_raw(db, USER_FILES_KEY) or "{}")
     except ValueError:
         return {}
-    return value if isinstance(value, dict) else {}
+    return {k: v for k, v in value.items() if isinstance(v, dict)} if isinstance(value, dict) else {}
 
 
-async def _trust(db, path: Path, data: bytes | None) -> None:
+async def _save_user_files(db, files: dict[str, dict]) -> None:
     from server.services import settings_service
-    trusted = await _trusted(db)
-    if data is None:
-        trusted.pop(str(path), None)
-    else:
-        trusted[str(path)] = hashlib.sha256(data).hexdigest()
-    await settings_service._set_raw(db, TRUSTED_KEY, json.dumps(trusted))
+    await settings_service._set_raw(db, USER_FILES_KEY, json.dumps(files))
+
+
+def _expected(entry: dict) -> bytes:
+    return b"".join(f"- {line['line']}\n".encode() for line in entry.get("lines", []))
+
+
+def _users(entry: dict | None, data: bytes) -> bool:
+    """D3: the file is exactly the lines the card wrote into a file it found empty."""
+    return bool(entry and entry.get("own") and entry.get("lines") and data == _expected(entry))
 
 
 def target(folder: Path) -> Path:
@@ -270,70 +282,130 @@ def target(folder: Path) -> Path:
     return folder / ("CLAUDE.md" if "AGENTS.md" not in present and "CLAUDE.md" in present else "AGENTS.md")
 
 
-def _read_bytes(path: Path) -> bytes | None:
+def _read_bounded(path: Path, limit: int) -> bytes | None:
+    """The file's bytes, None when absent; RuleRefused("link") for a link or a non-regular file, "full" past `limit`."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         return None
     except OSError:
-        raise RuleRefused(path.name) from None
+        raise RuleRefused("link") from None
     with os.fdopen(fd, "rb") as f:
         if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-            raise RuleRefused(path.name)
-        return f.read()
+            raise RuleRefused("link")
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        raise RuleRefused("full")
+    return data
 
 
-def _write_bytes(path: Path, data: bytes) -> None:
-    """Replace the file's content in place: a temp file in the same folder, then os.replace (a link at the path was
-    refused before)."""
-    tmp = path.with_name(f".{path.name}.arslan-tmp")
+def _append(path: Path, line: str) -> tuple[bool, bytes]:
+    """Append `- line` with O_APPEND (no lost edit, the file's mode kept, a read-only file refused), adding a
+    separator newline first when the file doesn't end with one. Refused when the result would be past what a turn
+    reads (MAX_BYTES), since the line would never reach Arslan (#603 review, F5). Returns (separator added, the
+    file's bytes before)."""
+    before = _read_bounded(path, MAX_BYTES) or b""
+    sep = bool(before) and not before.endswith(b"\n")
+    chunk = (b"\n" if sep else b"") + f"- {line}\n".encode()
+    if len(before) + len(chunk) > MAX_BYTES:
+        raise RuleRefused("full")
     try:
-        os.unlink(tmp)                                   # a stale one (or anything planted there) goes first
-    except FileNotFoundError:
-        pass
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+    except PermissionError:
+        raise RuleRefused("unwritable") from None
+    except OSError:
+        raise RuleRefused("link") from None
     with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            raise RuleRefused("link")
+        f.write(chunk)
+    return sep, before
 
 
-async def add_rule(db, folder: Path, line: str) -> Path:
-    """Append `- line` to the folder's rules file (the user's click; never the model's tools: HR keeps those). The
-    file as left is recorded as the user's (D3). Raises RuleRefused."""
-    path = target(folder)
-    before = _read_bytes(path) or b""
-    data = before + (b"" if not before or before.endswith(b"\n") else b"\n") + f"- {line}\n".encode()
-    _write_bytes(path, data)
-    await _trust(db, path, data)
-    return path
-
-
-async def remove_rule(db, path: Path, line: str) -> None:
-    """Take the card's line back out (its own undo), once, leaving the rest of the file as it is."""
-    before = _read_bytes(path)
-    if before is None:
+def _take_out(path: Path, line: str, sep: bool) -> None:
+    """Delete exactly the bytes Add wrote (its separator too), the last time they occur at a line start, in place:
+    the rest of the file stays byte for byte, invalid UTF-8 included, and so does its mode (#603 review, F4)."""
+    data = _read_bounded(path, 1 << 20)
+    if data is None:
         return
-    lines = before.decode("utf-8", errors="replace").splitlines(keepends=True)
-    want = f"- {line}"
-    for i in range(len(lines) - 1, -1, -1):
-        if lines[i].rstrip("\r\n") == want:
-            del lines[i]
+    chunk = f"- {line}\n".encode()
+    at = len(data)
+    while True:
+        at = data.rfind(chunk, 0, at)
+        if at < 0:
+            return
+        if at == 0 or data[at - 1:at] == b"\n":
             break
-    data = "".join(lines).encode()
-    _write_bytes(path, data)
-    await _trust(db, path, data if data.strip() else None)
+    start = at - 1 if sep and at > 0 and at == len(data) - len(chunk) else at
+    out = data[:start] + data[at + len(chunk):]
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except PermissionError:
+        raise RuleRefused("unwritable") from None
+    except OSError:
+        raise RuleRefused("link") from None
+    with os.fdopen(fd, "wb") as f:
+        f.write(out)
+        f.truncate(len(out))
+
+
+async def add_rule(db, path: Path, line: str, lesson_id: int) -> None:
+    """Append `- line` to `path` (the user's click; never the model's tools: HR keeps those) and record it. The file
+    counts as the user's (D3) only when it was empty or absent, or exactly the user's, before. Raises RuleRefused."""
+    import asyncio
+    sep, before = await asyncio.to_thread(_append, path, line)
+    files = await _user_files(db)
+    entry = files.get(str(path)) or {"own": True, "lines": []}
+    entry["own"] = (not before) or _users(entry, before)
+    entry["lines"] = [*entry.get("lines", []), {"lesson_id": lesson_id, "line": line, "sep": sep}]
+    files[str(path)] = entry
+    await _save_user_files(db, files)
+
+
+async def remove_rule(db, path: Path, lesson_id: int) -> None:
+    """Take the line this lesson's card added back out of `path`. It never makes a file the user's: D3 is decided
+    by what the file holds at each turn."""
+    import asyncio
+    files = await _user_files(db)
+    entry = files.get(str(path)) or {"own": False, "lines": []}
+    mine = [ln for ln in entry.get("lines", []) if ln.get("lesson_id") == lesson_id]
+    if not mine:
+        return
+    await asyncio.to_thread(_take_out, path, mine[-1]["line"], bool(mine[-1].get("sep")))
+    entry["lines"] = [ln for ln in entry["lines"] if ln is not mine[-1]]
+    files[str(path)] = entry
+    await _save_user_files(db, files)
+
+
+async def chosen_folder(db, conversation_id: str | None) -> Path | None:
+    """The folder a rule may be offered for: the conversation's project folder, or a workspace the user chose. Not
+    Arslan's default ~/Arslan in a plain chat (#603 review, F7)."""
+    from server.db.companion_models import ConversationContext
+    from server.services import settings_service
+    if conversation_id:
+        ctx = await db.get(ConversationContext, conversation_id)
+        if ctx is not None and ctx.project_id:
+            return await conversation_folder(db, conversation_id)
+    raw = await settings_service._get_raw(db, "workspace_dir")
+    return await conversation_folder(db, conversation_id) if raw and str(raw).strip() else None
 
 
 async def listing(conversation_id: str | None) -> dict:
-    """What Overview shows: whether the switch is on, and each rules file this conversation follows, with its text."""
+    """What Overview shows: whether the switch is on, and each rules file this conversation follows, with its text and
+    the lines the card added to it (each with its lesson, so Overview can take it back out after a reload, #603
+    review F3)."""
     import asyncio
     from server.db import session as db_session
     from server.services import settings_service
     async with db_session.AsyncSessionLocal() as db:
         enabled = await settings_service.folder_rules_enabled(db)
         folder = await conversation_folder(db, conversation_id)
+        user_files = await _user_files(db)
     if not enabled or folder is None:
         return {"enabled": enabled, "files": []}
     found, notes = await asyncio.to_thread(_found, folder, _home(), conversation_id)
-    return {"enabled": True, "files": [{"file": shown, "text": text[:MAX_BYTES]} for shown, text, _ in found],
-            "notes": notes}
+    return {"enabled": True, "notes": notes, "files": [
+        {"file": shown, "text": text[:MAX_BYTES],
+         "added": [{"lesson_id": ln["lesson_id"], "line": ln["line"]}
+                   for ln in (user_files.get(str(path)) or {}).get("lines", [])]}
+        for shown, text, path in found]}

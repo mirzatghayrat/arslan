@@ -26,6 +26,7 @@ vi.mock("../api/conversationModel", () => ({ conversationModelApi: conv }));
 vi.mock("../components/BrowserReader", () => ({ default: () => <div /> }));
 
 import { lessonsApi } from "../api/lessons";
+import { ApiError } from "../api/client";
 import { toUiMessages } from "../api/adapters";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -35,6 +36,8 @@ import Workbench from "../components/workbench/Workbench";
 import AdvancedSection from "../components/settings/AdvancedSection";
 
 const FILE = "~/Projects/photo/AGENTS.md";
+const RLO = String.fromCharCode(0x202e), FSI = String.fromCharCode(0x2068), PDI = String.fromCharCode(0x2069);
+const REORDER = /[\u202A-\u202E\u2066\u2067]/;
 
 beforeEach(() => {
   useArslanStore.setState(initialArslanState(), true);
@@ -85,6 +88,25 @@ describe("the card in the conversation", () => {
   });
 });
 
+describe("the card's text is isolated, and says why Add was refused (#603 review)", () => {
+  it("W7, W8: the lesson's words and the file name are isolated; no reordering control is left", () => {
+    render(<RuleOfferCard lessonId={7} file={`~/Pro${RLO}jects/AGENTS.md`} text={`use ${RLO}24-hour`} conversationId="c1" />);
+    const card = screen.getByTestId("rule-offer");
+    expect(card.textContent).not.toMatch(REORDER);
+    expect(card.textContent).toContain(`${FSI}use 24-hour${PDI}`);
+    expect(card.textContent).toContain(`${FSI}~/Projects/AGENTS.md${PDI}`);
+  });
+
+  it.each([["rules_file_full", "rule-offer-full", "workbench.ruleFull"], ["lesson_changed", "rule-offer-changed", "workbench.ruleChanged"]])(
+    "a %s refusal says so", async (code, testid, key) => {
+      vi.spyOn(lessonsApi, "rule").mockRejectedValue(new ApiError(code, 409, code));
+      render(<RuleOfferCard lessonId={7} file={FILE} text="x" conversationId="c1" />);
+      fireEvent.click(screen.getByTestId("rule-offer-add"));
+      expect(await screen.findByTestId(testid)).toHaveTextContent(key);
+      if (code === "lesson_changed") expect(screen.queryByTestId("rule-offer-add")).toBeNull();   // offered again later
+    });
+});
+
 describe("Overview's row", () => {
   const mount = () => render(<Workbench conversationId="c1" taskId={null} temporary={false} />);
 
@@ -99,6 +121,38 @@ describe("Overview's row", () => {
     expect(row).toHaveTextContent("workbench.rulesNote");
     fireEvent.click(within(row).getByRole("button", { name: new RegExp(FILE.replace(/[.~/]/g, "\\$&")) }));
     expect(useWorkbench.getState().reader).toEqual({ kind: "text", name: FILE, text: "inner" });
+  });
+
+  it("F3: a line the card added is listed with Remove, which takes it back out and reloads the row", async () => {
+    let removed = false;
+    const list = vi.spyOn(lessonsApi, "folderRules").mockImplementation(async () => (removed
+      ? { enabled: true, files: [{ file: FILE, text: "", added: [] }] }
+      : { enabled: true, files: [{ file: FILE, text: "- 24-hour\n", added: [{ lesson_id: 7, line: `use ${RLO}24-hour` }] }] }));
+    const rule = vi.spyOn(lessonsApi, "rule").mockImplementation(async () => { removed = true; return { state: "removed", file: FILE }; });
+    useWorkbench.getState().show("overview");
+    mount();
+    const row = await screen.findByTestId("overview-rules");
+    fireEvent.click(within(row).getByTestId("overview-rules-toggle"));
+    const added = await within(row).findByTestId("overview-rules-added");
+    expect(added.textContent).not.toMatch(REORDER);                              // W9: isolated too
+    expect(added.textContent).toContain(`${FSI}use 24-hour${PDI}`);
+    fireEvent.click(within(added).getByRole("button", { name: "workbench.ruleRemove" }));
+    await waitFor(() => expect(rule).toHaveBeenCalledWith(7, "c1", "remove"));
+    const before = list.mock.calls.length;
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
+    await waitFor(() => expect(screen.queryByTestId("overview-rules-added")).toBeNull());
+  });
+
+  it("W9: Overview's file names are isolated", async () => {
+    vi.spyOn(lessonsApi, "folderRules").mockResolvedValue({ enabled: true, files: [
+      { file: `~/Pro${RLO}jects/AGENTS.md`, text: "x" }] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const row = await screen.findByTestId("overview-rules");
+    fireEvent.click(within(row).getByTestId("overview-rules-toggle"));
+    const file = within(row).getByTestId("overview-rules-file");
+    expect(file.textContent).not.toMatch(REORDER);
+    expect(file.textContent).toContain(`${FSI}~/Projects/AGENTS.md${PDI}`);
   });
 
   it("switched off says so; with no rules files there is no row", async () => {

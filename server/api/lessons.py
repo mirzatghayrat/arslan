@@ -80,45 +80,59 @@ class LessonRule(BaseModel):
 
 @router.post("/lessons/{lesson_id}/rule")
 async def lesson_rule(lesson_id: int, body: LessonRule):
-    """L11-2: the "make this a rule for this folder?" card. `add` appends the lesson's words to the conversation's
-    folder's rules file (only a lesson the card offered, once); `skip` records "not now"; `remove` takes the line the
-    card added back out. The user's click, never the model's tools (HR keeps model writes to these files)."""
+    """L11-2: the "make this a rule for this folder?" card. The user's click, never the model's tools (HR keeps model
+    writes to these files).
+    - `add` writes exactly the line the card showed into exactly the file it named (the offer's record, #603 F2). 409
+      `conversation_changed` from another conversation; `folder_changed` when the conversation's folder no longer
+      leads to that file; `lesson_changed` when the lesson changed since the card was offered (a later correction or
+      a detour folded in): the offer then goes, so a later correction can bring a new card. Once.
+    - `skip` records "not now"; `remove` takes the card's line back out.
+    - 409 `rules_file_refused` / `rules_file_full` when the file is a link, not writable, or would pass what a turn
+      reads."""
+    from datetime import datetime
+    from pathlib import Path
     from server.services import folder_rules
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(Lesson, lesson_id)
         if row is None:
             raise HTTPException(404, "lesson_not_found")
         evidence = dict(row.evidence or {})
-        state = evidence.get(lessons.RULE_OFFER)
+        state, record = evidence.get(lessons.RULE_OFFER), evidence.get(lessons.RULE_RECORD) or {}
         needed = {"add": "offered", "skip": "offered", "remove": "added"}[body.action]
-        if state != needed:
+        if state != needed or not record:
             raise HTTPException(409, "rule_not_offered" if body.action != "remove" else "rule_not_added")
-        out: dict = {}
+        path = Path(record["path"])
+        update: dict = {}
         if body.action == "skip":
-            evidence[lessons.RULE_OFFER] = "skipped"
+            update = {lessons.RULE_OFFER: "skipped"}
         elif body.action == "add":
-            folder = await folder_rules.conversation_folder(db, body.conversation_id)
-            if folder is None or folder == folder_rules._home():
-                raise HTTPException(409, "no_folder")
-            line = lessons.render(row)
+            if body.conversation_id != record.get("conversation_id"):
+                raise HTTPException(409, "conversation_changed")
+            if row.updated_at.isoformat() != record.get("updated_at"):
+                evidence.pop(lessons.RULE_OFFER, None)
+                evidence.pop(lessons.RULE_RECORD, None)
+                row.evidence = evidence
+                await db.commit()
+                raise HTTPException(409, "lesson_changed")
+            folder = await folder_rules.chosen_folder(db, body.conversation_id)
+            if folder is None or folder == folder_rules._home() or folder_rules.target(folder) != path:
+                raise HTTPException(409, "folder_changed")
             try:
-                path = await folder_rules.add_rule(db, folder, line)
-            except (folder_rules.RuleRefused, OSError):
-                raise HTTPException(409, "rules_file_refused") from None
-            evidence.update({lessons.RULE_OFFER: "added", "rule_file": str(path), "rule_line": line})
-            out["file"] = folder_rules._shown(path, folder_rules._home())
+                await folder_rules.add_rule(db, path, record["line"], lesson_id)
+            except folder_rules.RuleRefused as exc:
+                raise HTTPException(409, "rules_file_full" if exc.code == "full" else "rules_file_refused") from None
+            update = {lessons.RULE_OFFER: "added", "rule_added_at": datetime.utcnow().isoformat()}
         else:
-            from pathlib import Path
-            path = Path(evidence.get("rule_file") or "")
             try:
-                await folder_rules.remove_rule(db, path, evidence.get("rule_line") or "")
-            except (folder_rules.RuleRefused, OSError):
+                await folder_rules.remove_rule(db, path, lesson_id)
+            except folder_rules.RuleRefused:
                 raise HTTPException(409, "rules_file_refused") from None
-            evidence[lessons.RULE_OFFER] = "removed"
-            out["file"] = folder_rules._shown(path, folder_rules._home())
-        row.evidence = evidence
+            update = {lessons.RULE_OFFER: "removed"}
+        # The file work may have taken a moment: what a capture wrote meanwhile stays (#603 F7).
+        await db.refresh(row)
+        row.evidence = {**dict(row.evidence or {}), **update}
         await db.commit()
-    return {"state": evidence[lessons.RULE_OFFER], **out}
+    return {"state": update[lessons.RULE_OFFER], "file": folder_rules._shown(path, folder_rules._home())}
 
 
 @router.get("/conversations/{conversation_id}/folder-rules")

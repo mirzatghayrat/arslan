@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../api/client";
 import { lessonsApi } from "../api/lessons";
 import { useWorkbench } from "../stores/workbenchStore";
 import { isolate } from "./CapabilitySwitches";
 
-type State = "offered" | "added" | "skipped" | "removed" | "failed";
+type State = "offered" | "added" | "skipped" | "removed" | "failed" | "full" | "changed";
 
 /**
  * L11-2 (the user's L11-0 picks, 2026-10-31): after the same correction twice, "Make this a rule for this folder?".
@@ -23,7 +24,11 @@ export default function RuleOfferCard({ lessonId, file, text, conversationId }: 
     try {
       const r = await lessonsApi.rule(lessonId, conversationId, action);
       setState(r.state as State);
-    } catch { setState("failed"); }
+    } catch (err) {
+      const code = err instanceof ApiError ? (err.detail as { detail?: string } | string | undefined) : undefined;
+      const text = typeof code === "string" ? code : code?.detail ?? (err instanceof Error ? err.message : "");
+      setState(text.includes("rules_file_full") ? "full" : text.includes("lesson_changed") ? "changed" : "failed");
+    }
     finally { setBusy(false); }
   }
   const line = "py-0.5 text-[12px] text-muted-foreground";
@@ -47,10 +52,12 @@ export default function RuleOfferCard({ lessonId, file, text, conversationId }: 
       <p className="mt-0.5 text-[12px] text-muted-foreground">{t("workbench.ruleWhy")}</p>
       <p className="mt-2 rounded-lg bg-fill px-2.5 py-1.5 text-[12.5px]">{isolate(text)}</p>
       <p className="mt-1.5 break-all font-mono text-[11.5px] text-subtle-foreground">{isolate(file)}</p>
-      {state === "failed" && <p className="mt-1.5 text-[12px] text-danger" data-testid="rule-offer-failed">{t("workbench.ruleFailed")}</p>}
+      {(state === "failed" || state === "full" || state === "changed") && <p className="mt-1.5 text-[12px] text-danger"
+        data-testid={`rule-offer-${state}`}>{t(state === "full" ? "workbench.ruleFull" : state === "changed" ? "workbench.ruleChanged"
+          : "workbench.ruleFailed")}</p>}
       <div className="mt-2.5 flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={() => void act("add")} data-testid="rule-offer-add"
-          className="rounded-lg bg-foreground px-3 py-1.5 text-[12.5px] text-background disabled:opacity-50">{t("workbench.ruleAdd")}</button>
+        {state !== "changed" && <button type="button" disabled={busy} onClick={() => void act("add")} data-testid="rule-offer-add"
+          className="rounded-lg bg-foreground px-3 py-1.5 text-[12.5px] text-background disabled:opacity-50">{t("workbench.ruleAdd")}</button>}
         <button type="button" disabled={busy} onClick={() => void act("skip")} data-testid="rule-offer-skip"
           className="rounded-lg border border-border-strong px-3 py-1.5 text-[12.5px] disabled:opacity-50">{t("workbench.ruleNotNow")}</button>
       </div>

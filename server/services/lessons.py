@@ -99,21 +99,32 @@ class Candidate:
 
 
 # L11-2 (the user's D2 and the L11-0 picks, 2026-10-31): the same correction folded in a second time offers "make this
-# a rule for this folder?" once; evidence[RULE_OFFER] is offered / added / skipped / removed.
+# a rule for this folder?" once; evidence[RULE_OFFER] is offered / added / skipped / removed. RULE_RECORD holds what
+# the card showed (the line, the file, the conversation, the lesson's updated_at), and Add writes only that (#603 F2).
 RULE_OFFER = "rule_offer"
+RULE_RECORD = "rule_offer_record"
+RULE_LINE_MAX = 600
 
 
-async def _rule_offer_file(db, conversation_id: str | None) -> str | None:
-    """The rules file the card would write to, shown from home; None when there is no folder to offer it for (none,
-    home itself, or folder rules switched off)."""
+async def _rule_offer_target(db, conversation_id: str | None):
+    """The rules file the card would write to; None when there is no folder to offer it for: none chosen (Arslan's
+    default ~/Arslan in a plain chat doesn't count), home itself, folder rules switched off, or learned practices
+    switched off (a rule would make it take effect anyway)."""
     from server.services import folder_rules, settings_service
-    if not conversation_id or not await settings_service.folder_rules_enabled(db):
+    if not conversation_id or not await settings_service.folder_rules_enabled(db) \
+            or not await settings_service.learned_practices_take_effect(db):
         return None
-    folder = await folder_rules.conversation_folder(db, conversation_id)
-    home = folder_rules._home()
-    if folder is None or folder == home:
+    folder = await folder_rules.chosen_folder(db, conversation_id)
+    if folder is None or folder == folder_rules._home():
         return None
-    return folder_rules._shown(folder_rules.target(folder), home)
+    return folder_rules.target(folder)
+
+
+def rule_line(row) -> str:
+    """The lesson as one rules-file line: what is stored is what the card shows (no control, bidi or invisible
+    character, one line, #603 F6)."""
+    from server.orchestrator import untrusted
+    return untrusted.clean_name(render(row), RULE_LINE_MAX)
 
 
 def render(lesson) -> str:
@@ -403,20 +414,24 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                         evidence.pop(CONFLICTS_WITH, None)
                         if rival is not None:
                             rival.status, rival.updated_at = "archived", now     # the user's newer words win
-                    offer = None
-                    if was_correction and cand.source == "user_correction" and evidence["seen"] >= 2 \
-                            and RULE_OFFER not in evidence:
-                        offer = await _rule_offer_file(db, conversation_id)
-                        if offer is not None:
-                            evidence[RULE_OFFER] = "offered"
-                    row.evidence = evidence
                     if takes_effect and row.status == "proposed":
                         row.status = "active"
                     row.updated_at = now
+                    offer = None
+                    if was_correction and cand.source == "user_correction" and evidence["seen"] >= 2 \
+                            and RULE_OFFER not in evidence:
+                        path = await _rule_offer_target(db, conversation_id)
+                        if path is not None:
+                            from server.services import folder_rules
+                            offer = {"line": rule_line(row), "path": str(path), "conversation_id": conversation_id,
+                                     "updated_at": now.isoformat()}
+                            evidence[RULE_OFFER], evidence[RULE_RECORD] = "offered", offer
+                            shown = folder_rules._shown(path, folder_rules._home())
+                    row.evidence = evidence
                     await db.commit()
                     if offer is not None and emit is not None:
                         try:
-                            emit({"type": "rule_offer", "lesson_id": row.id, "text": render(row), "file": offer})
+                            emit({"type": "rule_offer", "lesson_id": row.id, "text": offer["line"], "file": shown})
                         except Exception:  # noqa: BLE001 — the socket may be gone by now; the lesson stands
                             logger.debug("rule offer not sent")
                     continue
