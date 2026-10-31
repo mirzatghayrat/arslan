@@ -8,7 +8,6 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k) }),
 }));
 
-import AskForFrame from "../components/AskForFrame";
 import AskSlot from "../components/AskSlot";
 import RunCommandCard from "../components/RunCommandCard";
 import { AskQueue } from "../components/kit";
@@ -417,7 +416,8 @@ describe("the model's why is the question (§A4)", () => {
 // ── The permission kind reaches the command card ────────────────────────────────────────────────────────
 
 describe("a command's permission kind reaches its card", () => {
-  it.each([["destructive", true], ["money", true], ["app_risky", true], ["command", false], ["outside", false]])(
+  // A frame with no kind at all (an older server) draws Run plain: the case the Inbox's own table carried until INB5b-2.
+  it.each([["destructive", true], ["money", true], ["app_risky", true], ["command", false], ["outside", false], [undefined, false]])(
     "in the chat, a %s command draws Run red: %s", (perm_kind, red) => {
     render(<AskSlot send={vi.fn()} />);
     frame({ ...RULE, perm_kind });
@@ -441,14 +441,6 @@ describe("a command's permission kind reaches its card", () => {
     expect(send.mock.calls).toStrictEqual([[{ type: "confirm_run_command", call_id: "c1", scope: "once" }]]);
   });
 
-  const inbox = (fields: Record<string, unknown>) => ({ call_id: "c1", conversation_id: "conv", opened_at: 1, expires_at: Date.now() / 1000 + 600,
-    frame: { type: "propose_run_command", call_id: "c1", pretty: "rm -rf build", reason: "deletes files", ...fields } });
-
-  it.each([["destructive", true], ["money", true], ["app_risky", true], ["command", false], [undefined, false]])(
-    "from the Inbox, a %s command draws Run red: %s", (perm_kind, red) => {
-    render(<AskForFrame ask={inbox({ perm_kind })} onAnswer={vi.fn()} />);
-    expect(screen.getByTestId("runcmd-run").className.includes("danger")).toBe(red);
-  });
 });
 
 // ── An answer in the chat is never in flight ────────────────────────────────────────────────────────────

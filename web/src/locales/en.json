@@ -92,7 +92,6 @@
     "tagline": "Build your own AI spawns"
   },
   "nav": {
-    "inbox": "Inbox",
     "projects": "Projects",
     "settings": "Settings",
     "arslan": "Main assistant",
@@ -1379,13 +1378,6 @@
     "hiddenEnrollFailed": "Could not remember {{name}}. {{why}}"
   },
   "inbox": {
-    "approveNow": "Approve now",
-    "answerFailed": "That card was already answered or expired.",
-    "stalled": "Stopped",
-    "changed": "Changed",
-    "other": "Other",
-    "watching": "Watching",
-    "muted": "Not reminding",
     "addWatch": "Watch another page or folder",
     "refusedTitle": "Not done while you were away",
     "alwaysAllow": "Always allow",
@@ -1394,9 +1386,7 @@
     "scheduledNeverAsks": "A scheduled run never takes a step that needs your OK. Do it in a chat.",
     "allowedNow": "Allowed from now on",
     "refusedTimes": "{{count}} times since {{since}}",
-    "undo": "Undo",
-    "openInArslan": "Open the conversation",
-    "heldCapability": "This adds a new ability to Arslan. It can be allowed only in its conversation, where the whole card is shown."
+    "undo": "Undo"
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",
@@ -1450,5 +1440,8 @@
   "whileAway": {
     "title": "Not done while you were away, in this conversation",
     "stopped": "A job that stopped here"
+  },
+  "waiting": {
+    "count": "Waiting on you: {{count}}"
   }
 }

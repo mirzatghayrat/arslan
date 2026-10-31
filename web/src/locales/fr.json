@@ -92,7 +92,6 @@
     "tagline": "Créez vos propres spawns d'IA"
   },
   "nav": {
-    "inbox": "Boîte de réception",
     "projects": "Projets",
     "settings": "Paramètres",
     "arslan": "Assistant principal",
@@ -1379,13 +1378,6 @@
     "hiddenEnrollFailed": "Impossible de mémoriser {{name}}. {{why}}"
   },
   "inbox": {
-    "approveNow": "À approuver maintenant",
-    "answerFailed": "Cette carte a déjà eu une réponse ou a expiré.",
-    "stalled": "Arrêté",
-    "changed": "Changements",
-    "other": "Autres",
-    "watching": "Sous surveillance",
-    "muted": "Plus de rappel",
     "addWatch": "Surveiller une autre page ou un dossier",
     "refusedTitle": "Pas fait pendant votre absence",
     "alwaysAllow": "Toujours autoriser",
@@ -1394,9 +1386,7 @@
     "scheduledNeverAsks": "Une tâche planifiée ne fait rien qui demande votre confirmation. Faites-le dans une conversation.",
     "allowedNow": "Autorisé désormais",
     "refusedTimes": "{{count}} fois depuis {{since}}",
-    "undo": "Annuler",
-    "openInArslan": "Ouvrir la conversation",
-    "heldCapability": "Cela ajoute une nouvelle capacité à Arslan. Cela ne peut être autorisé que dans sa conversation, où la carte s’affiche en entier."
+    "undo": "Annuler"
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",
@@ -1450,5 +1440,8 @@
   "whileAway": {
     "title": "Pas fait pendant votre absence (cette conversation)",
     "stopped": "Une tâche arrêtée ici"
+  },
+  "waiting": {
+    "count": "En attente de toi : {{count}}"
   }
 }

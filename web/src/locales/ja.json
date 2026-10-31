@@ -92,7 +92,6 @@
     "tagline": "あなただけの AI スポーンを作ろう"
   },
   "nav": {
-    "inbox": "受信箱",
     "projects": "プロジェクト",
     "settings": "設定",
     "arslan": "メインアシスタント",
@@ -1379,13 +1378,6 @@
     "hiddenEnrollFailed": "{{name}} を記憶できませんでした。{{why}}"
   },
   "inbox": {
-    "approveNow": "今すぐ承認が必要",
-    "answerFailed": "このカードはすでに処理されたか期限切れです。",
-    "stalled": "止まっています",
-    "changed": "変化あり",
-    "other": "その他",
-    "watching": "見守り中",
-    "muted": "通知しない",
     "addWatch": "ページやフォルダーを追加で見守る",
     "refusedTitle": "不在中にできなかったこと",
     "alwaysAllow": "常に許可",
@@ -1394,9 +1386,7 @@
     "scheduledNeverAsks": "スケジュールタスクは確認が必要なことを行いません。チャットで行ってください。",
     "allowedNow": "今後は許可されます",
     "refusedTimes": "{{since}} から {{count}} 回",
-    "undo": "元に戻す",
-    "openInArslan": "会話を開く",
-    "heldCapability": "Arslan に新しい機能を追加します。カード全体が表示される元の会話でだけ許可できます。"
+    "undo": "元に戻す"
   },
   "pendingMemory": {
     "curationFallback": "記憶を整理する提案",
@@ -1450,5 +1440,8 @@
   "whileAway": {
     "title": "不在中にできなかったこと（この会話）",
     "stopped": "ここで止まったタスク"
+  },
+  "waiting": {
+    "count": "あなた待ち：{{count}}"
   }
 }

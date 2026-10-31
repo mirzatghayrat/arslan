@@ -53,10 +53,9 @@ import { threadDisplayTitle } from './lib/threadTitles';
 import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
-import ProactiveInbox from './components/proactive/ProactiveInbox';
 import { AwayEntries, StoppedJobCards } from './components/conversation/WhileAway';
 import ScheduledPage from './components/scheduled/ScheduledPage';
-import { useProactiveSummary } from './hooks/useProactiveSummary';
+import { useWaiting } from './hooks/useWaiting';
 import { useScheduledAttention } from './hooks/useScheduledAttention';
 import { request } from './api/client';
 
@@ -78,8 +77,8 @@ export default function App() {
   const loadRegistry = useRegistryStore((s) => s.loadRegistry);
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
-  // 0.1.47: the Inbox badge (unread proactive items), polled while the window is visible.
-  const proactive = useProactiveSummary();
+  // INB5: what is waiting on you, counted once by the server, for the badge on Progress (the Inbox and its badge are gone).
+  const waiting = useWaiting();
   const scheduledAttention = useScheduledAttention();
   const [legacyExperts, setLegacyExperts] = useState(0);
   useEffect(() => {
@@ -130,7 +129,7 @@ export default function App() {
   const openFromNotification = useRef<(id: string) => void>(() => {});
   openFromNotification.current = (id: string) => {
     const target = notificationTarget(id, threads);
-    if (target?.kind === 'inbox') { setActiveSection('inbox'); setPanelView('default'); }
+    if (target?.kind === 'progress') { setActiveSection('activity'); setPanelView('default'); }
     else if (target) selectConversation(target.id);
   };
   useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
@@ -598,9 +597,9 @@ export default function App() {
     if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
     setActiveThreadId(id); setActiveSection('arslan'); setPanelView('default');
   }
-  // A proactive item was accepted: the job reports into `conversationId`. A conversation the app does
-  // not have yet (or no longer has) is created first, so its job card has somewhere to appear.
-  function openInboxConversation(conversationId: string, created: boolean) {
+  // A reminder's 「接着做」 was clicked (in a conversation or on the Scheduled page): the job reports into `conversationId`. A
+  // conversation the app does not have yet (or no longer has) is created first, so its job card has somewhere to appear.
+  function openCardConversation(conversationId: string, created: boolean) {
     if (created || !threads.some(thread => thread.id === conversationId)) { handleAddArslanThread(conversationId); return; }
     setThreads(old => old.map(thread => thread.id === conversationId ? { ...thread, archived: false } : thread));
     selectConversation(conversationId);
@@ -626,8 +625,7 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
-        inboxUnread={proactive.unread + (proactive.approvals ?? 0)}
-        inboxHigh={proactive.high + (proactive.approvals ?? 0)}
+        waiting={waiting.count}
         scheduledDot={scheduledAttention.any}
         activeSection={activeSection}
         onChangeSection={(section) => {
@@ -771,7 +769,7 @@ export default function App() {
                 // INB5b: what waited in the Inbox comes back to the conversation (a temporary one has neither).
                 header={activeThread?.temporary ? undefined : <AwayEntries conversationId={activeThreadId} />}
                 footer={activeThread?.temporary ? undefined : <StoppedJobCards conversationId={activeThreadId}
-                  onOpenConversation={openInboxConversation}
+                  onOpenConversation={openCardConversation}
                   onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
@@ -794,10 +792,7 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject}
               openProjectId={openProjectId} onOpenedProject={() => setOpenProjectId(null)} />}
-            {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
-              onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
-              onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
-            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openInboxConversation}
+            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openCardConversation}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'activity' && <ActivityView />}

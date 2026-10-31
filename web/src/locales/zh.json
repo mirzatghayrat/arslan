@@ -92,7 +92,6 @@
     "tagline": "打造你专属的 AI 专家"
   },
   "nav": {
-    "inbox": "收件箱",
     "projects": "项目",
     "settings": "设置",
     "arslan": "主助手",
@@ -1379,13 +1378,6 @@
     "hiddenEnrollFailed": "未能记住 {{name}}。{{why}}"
   },
   "inbox": {
-    "approveNow": "现在就要你批准",
-    "answerFailed": "这张卡已经被处理或过期了。",
-    "stalled": "停住了",
-    "changed": "有变化",
-    "other": "其他",
-    "watching": "正在盯着",
-    "muted": "不再提醒",
     "addWatch": "再盯一个网页或文件夹",
     "refusedTitle": "你不在时没做的事",
     "alwaysAllow": "始终允许",
@@ -1394,9 +1386,7 @@
     "scheduledNeverAsks": "定时任务不做需要你确认的事，请在对话里做。",
     "allowedNow": "以后都允许",
     "refusedTimes": "自 {{since}} 起共 {{count}} 次",
-    "undo": "撤销",
-    "openInArslan": "打开对话",
-    "heldCapability": "这一步会给 Arslan 添加新能力，只能在它所在的对话里看完整张卡片后批准。"
+    "undo": "撤销"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",
@@ -1450,5 +1440,8 @@
   "whileAway": {
     "title": "你不在时没做的（这个对话）",
     "stopped": "停在这里的任务"
+  },
+  "waiting": {
+    "count": "等你处理：{{count}}"
   }
 }

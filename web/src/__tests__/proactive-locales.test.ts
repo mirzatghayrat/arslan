@@ -91,9 +91,9 @@ describe("proactive catalog coverage", () => {
   it("is registered for all six languages in i18n", async () => {
     for (const language of SUPPORTED_LANGUAGES) {
       const t = i18n.getFixedT(language);
-      expect(t("proactive.page.title")).toBe(proactiveMessages[language].page.title);
+      expect(t("proactive.page.checkNow")).toBe(proactiveMessages[language].page.checkNow);
       expect(t("settings.navProactive"), language).not.toBe("settings.navProactive");
-      expect(t("nav.inbox"), language).not.toBe("nav.inbox");
+      expect(t("nav.scheduled"), language).not.toBe("nav.scheduled");      // INB5: the Inbox is gone; the Scheduled page checks now
     }
   });
 });

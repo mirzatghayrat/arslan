@@ -18,7 +18,11 @@ export interface ProactiveSummary {
   /** 0.1.55 §12: cards waiting for approval (any conversation or job). Memory is not counted since
    *  v0.1.64 (INB1/INB2): what did not take effect is listed in Memory, it does not wait for an OK. */
   approvals?: number;
+  /** INB5: what is waiting on you, counted once (progress.waiting_on_user); the badge on Progress reads `count`. */
+  waiting?: Waiting;
 }
+/** INB5: units, never rows: a conversation, a project, or a scheduled task. */
+export interface Waiting { count: number; conversations: string[]; projects: string[]; scheduled: number[] }
 export interface ProactiveConfig {
   enabled: boolean; notify: boolean; notify_daily_cap: number; quiet_start: string; quiet_end: string;
   job_followups: boolean; scheduled_problems: boolean; watches: boolean; brief_enabled: boolean; brief_time: string;
@@ -31,8 +35,8 @@ export interface ProactiveWatch {
 export type ProactiveScope = "open" | "snoozed" | "done" | "all";
 export type MuteChoice = "source" | "kind";
 
-/** Anything that changes what the inbox or its badge shows announces it here, so the sidebar
- * does not wait for its next poll. */
+/** Anything that changes what is waiting on you (a reminder acted on, a card answered) announces it here, so the badge on
+ * Progress does not wait for its next poll. */
 export const PROACTIVE_CHANGED = "arslan:proactive-changed";
 export const announceProactiveChange = () => { try { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); } catch { /* no window */ } };
 
