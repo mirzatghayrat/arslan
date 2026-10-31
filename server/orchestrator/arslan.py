@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from server.config import settings as _settings
 from server.orchestrator import llm_errors
-from server.services import ocr_fallback, phone_ids
+from server.services import folder_rules, ocr_fallback, phone_ids
 from server.db import session as db_session
 from server.orchestrator import (
     env_snapshot,
@@ -234,9 +234,13 @@ def reply_language(text: str | None, ui_locale: str | None = None) -> str:
 
 def language_line(text: str | None, ui_locale: str | None = None) -> str:
     lang = reply_language(text, ui_locale)
+    # L11-1 (the user's memory-plan item 15, D5): a file and a message to someone else have their own rule.
     return (f"\n\nReply language for this turn: {lang}. Write everything meant for the user in it — "
             "the reply, a background job's goal and its checks, titles and notes — whatever language the "
-            "instructions, examples, memory, tool results or earlier messages are in.")
+            "instructions, examples, memory, tool results or earlier messages are in. "
+            "A file you write follows the folder rules' language when they name one; otherwise it follows the "
+            "user's message, as the reply does. A message to someone else follows that person's language when you "
+            "know it (their earlier messages, or the user's words); otherwise ask.")
 
 
 async def _turn_language_line(text: str | None) -> str:
@@ -321,15 +325,16 @@ def _build_answer_system(*, route: str = ""):
 
 
 def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
-                  environment: str = "", language: str = "") -> str:
+                  environment: str = "", language: str = "", rules: str = "") -> str:
     """This turn's reference block (server/orchestrator/turn_context.py: built once per turn, never
     saved), in the order the system prompt carried it before K3: a resumed
     task's notes → facts → summary → knowledge → the MCP status line → (K5) the environment snapshot →
-    the reply language → the time (floored to the UTC hour, still enough for timezone conversion)."""
+    (K10-1) the folder's rules → the reply language → the time (floored to the UTC hour, still enough for timezone
+    conversion)."""
     body = (f"\n\n{addendum}" if addendum else "") + (f"\n\n{facts}" if facts else "")
     if summary:
         body += f"\n\nConversation summary so far:\n{summary}"
-    body += kb_block + mcp_line + environment + language + _now_line()
+    body += kb_block + mcp_line + environment + (f"\n\n{rules}" if rules else "") + language + _now_line()
     return turn_context.wrap(body)
 
 
@@ -573,7 +578,7 @@ def _quiet(emit: EventSink, reply_id: int | None) -> EventSink:
             event = {**event, "reply_message_id": reply_id}
         try:
             emit(event)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the window may be gone after stream_end; nothing is retried
             pass
     return send
 
@@ -770,33 +775,47 @@ async def _stored_kind(conversation_id: str) -> str | None:
         return await db.scalar(select(ConversationContext.kind).where(ConversationContext.id == conversation_id))
 
 
-async def _with_project_card(facts: str) -> str:
+async def _with_project_card(facts: str) -> tuple[str, str]:
     """0.1.56 §8: in a project's conversation the model sees the project — name, finish
-    line, current level and its open checkpoints — beside the memory block."""
+    line, current level and its open checkpoints — beside the memory block. Also returns the card itself
+    (empty when none went in): INB2 counts it as project material (#475 H2)."""
     from server.services import personal_context, project_plan
     ctx = personal_context.current()
     if ctx is None or not ctx.project_id:
-        return facts
+        return facts, ""
     try:
         async with db_session.AsyncSessionLocal() as db:
             card = await project_plan.card_text(db, ctx.project_id)
     except Exception:  # noqa: BLE001 — the card is context, never a reason to fail a turn
         logger.warning("project card unavailable", exc_info=True)
-        return facts
-    return f"{facts}\n\n{card}".strip() if card else facts
+        return facts, ""
+    return (f"{facts}\n\n{card}".strip(), card) if card else (facts, "")
+
+
+async def _notes_from_off_the_list(personal) -> bool:
+    """#475 H1: a note in the turn's memory block that came from a run off the list (memory_tools_v2). A
+    lookup that fails counts as yes: the turn goes on, and only an "about you" entry it writes waits."""
+    from server.services import memory_tools_v2
+    try:
+        return await memory_tools_v2.from_off_the_list(personal.receipt.used)
+    except Exception:  # noqa: BLE001 — never a reason to fail a turn
+        logger.warning("tracing the notes in view failed", exc_info=True)
+        return True
 
 
 async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations) -> str:
     """One background job's execution: the answer machinery without the chat stream."""
     ctx = await memory.assemble_working_context(conversation_id, budget=await memory.turn_budget(conversation_id))
     from server.services import personal_context
+    traced = False
     if personal_context.current() is not None:
         personal = await personal_context.assemble(goal)
         facts = personal.text
         await personal_context.record(personal)
+        traced = await _notes_from_off_the_list(personal)
     else:
         facts = await memory.facts_text(include_sensitive=True)
-    facts = await _with_project_card(facts)
+    facts, card = await _with_project_card(facts)
     kb_block = ""
     try:
         from server.services import knowledge as _knowledge
@@ -806,15 +825,19 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
         logger.warning("background kb retrieve failed (non-fatal): %s", exc)
     asked = next((m.get("content") for m in reversed(ctx["history"]) if m.get("role") == "user"), None)
     system = _build_answer_system(route=BACKGROUND_SYSTEM)
+    rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(asked if isinstance(asked, str) else goal),
                             mcp_line=await _mcp_status_line(),
-                            environment=await env_snapshot.for_turn(conversation_id))
+                            environment=await env_snapshot.for_turn(conversation_id), rules=rules)
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
     pieces: list[str] = []
     # K3: nobody is waiting on a background job, so its cache entries keep the default five minutes,
-    # even when a chat turn started it.
-    with request_policy.prompt_cache(long=False):
+    # even when a chat turn started it. INB2 (#475 F2, H1, H2): its run's record counts the knowledge, the
+    # project card and a note from off the list put in.
+    # K10-1 (D3): a folder's rules are outside content, so a job that read them starts as having read some.
+    with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced), \
+            untrusted.carried(rule_files > 0):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_background_tools, resolve_callable=_background_callable,
@@ -837,13 +860,15 @@ async def _handle_answer_body(
     ctx = await memory.assemble_working_context(
         conversation_id, budget=await memory.turn_budget(conversation_id, has_images=bool(images)))
     from server.services import personal_context
+    traced = False
     if personal_context.current() is not None:
         personal = await personal_context.assemble(user_message)
         facts = personal.text
         await personal_context.record(personal)
+        traced = await _notes_from_off_the_list(personal)
     else:
         facts = await memory.facts_text(include_sensitive=True)
-    facts = await _with_project_card(facts)
+    facts, card = await _with_project_card(facts)
     # K3: the knowledge found for this request, like everything else per turn, goes in the turn's
     # reference block, never the system prompt.
     kb_block = ""
@@ -854,9 +879,10 @@ async def _handle_answer_body(
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
     system = _build_answer_system()
+    rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(addendum=extra_system.strip(), facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line(),
-                            environment=await env_snapshot.for_turn(conversation_id))
+                            environment=await env_snapshot.for_turn(conversation_id), rules=rules)
     run_trace.record_prompt(system_prompt=f"{system}\n\n{context}", injected_kb=kb_block or None)
 
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
@@ -869,7 +895,11 @@ async def _handle_answer_body(
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
         # S64-0b: what the user attached (a file's text, a picture, what OCR reads off it) is outside content.
-        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images)):
+        # K10-1 (D3): so is a folder's rules file.
+        # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
+        # so are the project card and a note in view that came from a run off the list.
+        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images) or rule_files > 0), \
+                untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
     try:
@@ -1071,11 +1101,11 @@ async def _skill_index(limit: int = 80) -> str:
                 func.trim(SkillPack.body) != "").order_by(SkillPack.key).limit(limit))).scalars().all()
     except Exception:  # noqa: BLE001 — a missing index must never break a turn
         return ""
-    # v0.1.64 #472 R2 (the CAP card's rule for third-party skills): a skill whose text came from outside
-    # (imported, or saved after outside content) is listed by its key alone ([a-z0-9-], at most 60). Its
-    # name and description are outside text, and this index rides in every request unmarked.
-    from server.services.skill_forge import AUTHORED_OUTSIDE
-    return "\n".join(f"- {r.key}" if r.category in ("imported", AUTHORED_OUTSIDE)
+    # Every skill is listed with its name and description (the user's D2(1), 2026-10-30, as Claude Code and
+    # Codex do). Only one skill_trust does not read as its own would be listed by its key alone ([a-z0-9-], at
+    # most 60, #472 R2); skill_trust is the one place that decides, and states the limit.
+    from server.registry import skill_trust
+    return "\n".join(f"- {r.key}" if not skill_trust.reads_as_own(r)
                      else f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}" for r in rows)
 
 
@@ -1150,17 +1180,17 @@ async def _every_tool() -> list[dict]:
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
         "recall": "Search the user's second brain (facts, learnings, notes) for relevant "
                   "context before answering.",
-        "remember": "Write to the user's second brain: append a fact/learning/note worth "
-                    "remembering later.",
+        "remember": "Write to the user's second brain: a fact/learning/note worth remembering.",
         "conversation_search": "Find what was said in earlier conversations with the user — their own "
                                "words and your replies — as original snippets with date and a link. "
                                "args: {query, since?, until? (YYYY-MM-DD), limit?}. Use it when the user "
                                "refers to something from before (\"what did I say about…\", \"last week we…\").",
         "memory_note": "Edit the two memory sets that are always in view, by entry id. set \"about_you\": "
                        "lasting facts and preferences about the user; set \"notes\": what you learned about this "
-                       "Mac and setup (paths, tools, quirks). args: {action: add|replace|remove, set, id?, text?}. "
-                       "Keep entries short. Changes apply from the next turn; a full set returns its entries so "
-                       "you can replace or remove one.",
+                       "Mac and setup (paths, tools, quirks). args: {action: add|replace|remove, set, id?, text?, "
+                       "sensitive?}. Keep entries short. Add sensitive: true for anything private (health, beliefs, "
+                       "relationships, money); the user is asked first. Changes apply from the next turn; a full set "
+                       "returns its entries so you can replace or remove one.",
     }
     tools = [{"key": k, "description": desc[k]}
              for k in ("web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search",

@@ -36,9 +36,11 @@ Why: a safety classifier stopped ③Hands' response as it started SBX-2, right a
   - p's PRs give their macOS-job counts too. The Linux job has no seatbelt, and a skip there reads as green.
   - **Correction (⓪Plan's plumbing review of #507, 2026-10-30; ③Hands checked pytest 9.1.1):** JUnit records an xfail that fails as expected as `<skipped type="pytest.xfail">`. ci.yml's macOS step fails on any skip, and its ran-count uses `total - skipped` (`ci.yml:352-355`). So a p PR with strict-xfail tests can't go green as written above. Nothing uses the gate before the first p PR, and the gate needs a ci.yml change, which Codex doesn't make. So SBX-2 doesn't build it yet. The first p PR comes with a Claude ci.yml change that:
     - counts `type="pytest.xfail"` entries apart from skips, and as ran;
-    - doesn't count a strict xfail that passes (a plain `<skipped>` with no type; pytest already exits 1 for it);
+    - doesn't count a strict xfail that passes. pytest 9.1.1 writes it as a `<failure>` ("[XPASS(strict)]") and exits 1, so the step fails on it (⓪Plan's probe, 2026-10-30; the earlier "a plain `<skipped>`" here was wrong);
     - runs the macOS pytest with `-o xfail_strict=true`, because JUnit doesn't record strictness. No test uses xfail on main today.
+    - **Done** in the ci.yml PR that follows SBX-2, tested by `tests/server/test_ci_macos_xfail_gate.py`, which runs the step's own script from ci.yml.
 
+    - every p test's xfail pins `raises=` (normally `AssertionError`), and none uses `strict=False` or `pytest.xfail()`. An xfail counts as ran whatever made it fail, so without `raises=` a fixture error or a NameError would also read as "failed as expected" (③Hands' review of #542). `test_ci_macos_xfail_gate.py` guards this over `tests/`.
     Na's gate stays as above: 0 skipped and 0 xfail.
 - **In parallel:** while Codex writes SBX-2, Claude may draft 3a, 4a, 5a and 7 on SBX-1's builder. They are rebased after SBX-2 merges, and **none of them merges before SBX-M**.
 - **A Claude review stopped part-way** goes to Astra as it is, not reworded.
@@ -249,7 +251,30 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the proxy has no site list (NET adds it later, `lead-roadmap.md:87-91`). Its value in v0.1.64 is that the kernel lets out nothing else (no raw sockets, no DNS channel) and the proxy can log host names locally;
   - S2a-1's offline rule becomes `(deny network*)` including the proxy port, as today.
 - Mode "as today" (Q1 option N-b): network open in the sandbox, S2a-1 cut unchanged; proxy-only moves to NET (v0.1.65).
-- **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not.
+- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (the user's finding, not yet measured in this repo; SBX-M measures it), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
+  - SBX-2's candidate preset denies all listening (`network-bind` and inbound);
+  - "local dev servers work" is postponed;
+  - **before SBX-3 wires the base into commands, this card must decide how listening comes back** without opening all interfaces. Options to weigh then (③Hands, 2026-10-30; none of them is seatbelt-only):
+    1. a loopback relay outside the sandbox: the server listens on a Unix socket under its own TMPDIR or work folder, which seatbelt can confine by path, and Arslan listens on `127.0.0.1:<port>` and relays to it. It only works for servers that can listen on a Unix socket, such as Node's `listen(path)`, uvicorn/gunicorn `--uds`, nginx or PostgreSQL. Most framework dev servers can't by default;
+    2. a Network Extension content filter keyed on the process. This is the only kernel-side per-process way to refuse inbound traffic that isn't loopback. It needs a system extension, its entitlement and the user's approval. It's heavy, but it's also where NET could sit later;
+    3. a check after the bind that stops a listener on an address that isn't loopback. That's a detector, not a boundary;
+    4. listening that a card grants for one run.
+
+    Before deciding, read at the source how Anthropic's sandbox-runtime writes its `allowLocalBinding` rule on macOS, and whether it notes the same all-interfaces behaviour;
+
+    **Read at the source** (③Hands, 2026-10-30):
+    - **Anthropic's sandbox-runtime** (`anthropics/sandbox-runtime` at `98a4016d`, `src/sandbox/macos-sandbox-utils.ts` around lines 1258-1284).
+      - `allowLocalBinding` is off by default.
+      - When it is on, the profile gets `(allow network-bind (local ip "*:*"))` and `(allow network-inbound (local ip "*:*"))`, so every interface.
+      - Its comment says Seatbelt's `localhost` doesn't match a dual-stack socket bound to `::ffff:127.0.0.1`, and Seatbelt takes only `localhost` or `*` as the host.
+      - It also notes that `localhost` in a `(local ip …)` filter matches the any-address, which is why its outbound rule is `(remote ip "localhost:*")`. That is the user's finding, in its words.
+      - It treats a listener reachable from outside as not egress.
+    - **Codex** (`openai/codex` at `f752c97f`, `codex-rs/sandboxing/src/seatbelt.rs` around lines 334-339).
+      - `allow_local_binding` is off by default.
+      - When it is on, bind is `(local ip "*:*")`, inbound is `(local ip "localhost:*")` and outbound is `(remote ip "localhost:*")`.
+    - **Neither restricts the bind to loopback.** Codex's inbound `(local ip "localhost:*")` comes closest to "never all interfaces". Whether it refuses a connection that doesn't come over loopback is an SBX-M measurement (§M, loopback). Given the any-address note above, it may not.
+  - until that is decided, the bind and inbound bullets below describe the goal, not the preset, and a dev server inside the sandbox gets the usual re-run card.
+- **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
   - allow outbound to `localhost:*`;
   - **deny every port Arslan itself listens on, not only the API port** (③Hands, recheck of `0a2be0c8`): in particular the browser's CONNECT tunnel (`server/services/browser_proxy.py`), which reaches public hosts on 443; otherwise `localhost:*` is a second way out in N-a mode. The list is built from the ports Arslan actually binds at start, not hand-written; corpus item: a sandboxed command connecting to the tunnel's port is refused in both modes;
@@ -315,6 +340,10 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - Keychain (f): security-server reachability from inside (`Library/Keychains` file denies do not cover a daemon read, `docs/plans/0162/README.md:344` at `11f05434`); the git credential helper inside vs outside.
   - Shells: `zsh -c` as on main today, and `bash -p -c` (S2a-3 a, which lands after SBX).
   - Loopback (§3): a dev server bound and fetched on localhost; a local test database; Arslan's own port refused; a bind to all interfaces refused.
+  - Listening with Codex's rules (§3, read at the source): `(allow network-bind (local ip "*:*"))` plus `(allow network-inbound (local ip "localhost:*"))`. Two checks:
+    - a listener bound to `0.0.0.0`, and a dual-stack one on `::`;
+    - a connection that does not come over loopback is refused, or not. The real check is from another machine on the LAN. The stand-in on one Mac is a connection to its own LAN address, where the accepted socket's local address is not loopback.
+    The report names which one was run. This informs the listening decision, which stays with the user.
   - Unix sockets (§2): a listener the test creates outside the writable roots, standing in for an agent socket, cannot be connected to; reachability of the real ssh-agent, `gpg-agent` and Docker sockets, connect only, nothing sent.
   - Daemons that do network work (§2): reachability of background URL sessions in each network mode.
   - IPC and ptys (§1): a `multiprocessing.Pool`, a node worker-thread pool, a tool that opens a pty.
@@ -367,12 +396,14 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 Total ≈ 1,880 product lines added, ≈ 390 removed (≈ 1,430 without SBX-6), in 7 code PRs and 2 report PRs. "SBX merged", for the order chart, means SBX-1 to SBX-7 (SBX-6 only if chosen). ③Hands' S2a-3 rebase starts after SBX-7.
 
+SBX-2 harness retention: `DELETE-BY: v0.1.64 after SBX-M records the historical baseline, before SBX-3 replaces the commands preset`. Remove the test harness's `legacy-commands` adapter and its parameters then; it is a measurement comparison, never a product fallback. The outside-floor comparison remains because that policy remains. The corpus procedure and explicit measurement gaps are in `tests/server/sbx/corpus/README.md`.
+
 ## Acceptance
 
 - **One sandbox:** the base block is identical across commands, `run_python`, artifact checks and MCP (test). No preset contains `(allow default)`, wholesale `(allow mach-lookup)` or `user-preference-write` (test over every preset's text). Only the outside floor and ssh keep `(allow default)`, by design (correction B; Q7).
 - **Services:** every denied service in §2 is refused from inside the commands preset in a real-seatbelt test on macOS CI, and in SBX-M on the user's Mac. Every allowed one is justified by a named corpus item.
 - **Network:** proxy mode: a non-proxy connection and a DNS lookup fail inside; the proxy port works; S2a-1 offline closes the proxy too. "As today" mode: unchanged S2a-1 tests pass. Both modes: daemons that do network work for the caller are unreachable.
-- **Loopback:** a localhost dev server can be bound and fetched; Arslan's own port is refused; a bind to all interfaces is refused (real-seatbelt tests).
+- **Loopback:** Arslan's own port is refused; a bind to all interfaces is refused (real-seatbelt tests). A localhost dev server that can be bound and fetched waits for the listening decision above, which is made before SBX-3.
 - **Unix sockets:** a stand-in agent socket outside the writable roots cannot be connected to. SBX-M reports the real ssh-agent, `gpg-agent` and Docker sockets as unreachable, and ssh git remotes as a re-run card.
 - **IPC, ptys, `/dev`:** the corpus's `multiprocessing`, worker and pty items pass; only the listed `/dev` entries are writable.
 - **Closed app data:** Mail, Messages, Safari and Photos data are refused to reads and writes in the commands preset, whatever Arslan's TCC grants.

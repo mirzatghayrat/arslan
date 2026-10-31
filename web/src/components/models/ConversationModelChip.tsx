@@ -1,26 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Cpu } from "lucide-react";
-import { fetchProviderModels, updateProviderConfig } from "../../api/client";
+import { updateProviderConfig } from "../../api/client";
 import { conversationModelApi } from "../../api/conversationModel";
-import type { ContextParts, ModelInfo, ProviderConfig, ProviderOption } from "../../api/client.types";
+import type { ContextParts, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { useDismissable } from "../../hooks/useDismissable";
-import { useArslanStore } from "../../stores/arslanStore";
 import { providerStatus, type ProviderStatus } from "../../lib/providerStatus";
 import ModelPicker, { type ModelChoice } from "./ModelPicker";
+import { useConversationModel } from "./useConversationModel";
+
+export { _resetChipCatalogs } from "./useConversationModel";
 
 const DOT: Record<ProviderStatus, string> = {
   ok: "bg-success", failed: "bg-danger", untested: "bg-subtle-foreground/50", testing: "bg-subtle-foreground/50 animate-pulse",
 };
-
-/** One catalog fetch per provider per window, shared by every chip (for the ring's context size). */
-const catalogs = new Map<number, Promise<ModelInfo[]>>();
-function catalog(id: number): Promise<ModelInfo[]> {
-  let p = catalogs.get(id);
-  if (!p) { p = Promise.resolve().then(() => fetchProviderModels(id)).then((r) => r.models).catch(() => []); catalogs.set(id, p); }
-  return p;
-}
-export function _resetChipCatalogs() { catalogs.clear(); }
 
 /** The chip names the provider short — "OpenRouter", not "OpenRouter (Claude, Gemini and more)" —
  *  so the model stays readable (0.1.59). The picker keeps the full label. */
@@ -30,7 +23,7 @@ export function shortProvider(label: string): string {
 
 /** 0.1.63 K4b: the ring's breakdown, in this order, with user-facing labels. */
 const RING_PARTS = ["system", "tools", "context", "history", "turn"] as const;
-const PART_LABEL: Record<(typeof RING_PARTS)[number], string> = {
+export const PART_LABEL: Record<(typeof RING_PARTS)[number], string> = {
   system: "models.partSystem", tools: "models.partTools", context: "models.partContext",
   history: "models.partHistory", turn: "models.partTurn",
 };
@@ -66,50 +59,23 @@ function Ring({ pct }: { pct: number }) {
  * message; "设为默认" makes it the default for new conversations. Beside it, how full the
  * context is (the last call's input against the model's context window).
  */
-export default function ConversationModelChip({ conversationId, configs, llmProviders, onSetDefault, onManage }: {
+export default function ConversationModelChip({ conversationId, configs, llmProviders, onSetDefault, onManage, below, noRing }: {
   conversationId: string; configs: ProviderConfig[]; llmProviders: ProviderOption[];
   /** Make this config primary (App refreshes the list). */
   onSetDefault: (configId: number) => Promise<void> | void;
   onManage?: () => void;
+  /** WB1-2: the picker opens downward (the chip sits at the top of the workbench's Overview). */
+  below?: boolean;
+  /** WB1-2: no ring beside the chip (Overview shows the context as its own section). */
+  noRing?: boolean;
 }) {
   const { t, i18n } = useTranslation();
-  const [choice, setChoice] = useState<ModelChoice | null>(null);
   const [open, setOpen] = useState(false);
   const [ringOpen, setRingOpen] = useState(false);
   const ringFloat = useDismissable<HTMLButtonElement, HTMLDivElement>(ringOpen, () => setRingOpen(false));
-  const [window_, setWindow] = useState<number | null>(null);
   const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(open, () => setOpen(false));
-  const lastInput = useArslanStore((s) => {
-    for (let i = s.items.length - 1; i >= 0; i--) { const u = s.items[i].usage; if (u?.last_input) return u.last_input; }
-    return null;
-  });
-  // K4b: the same reply's parts (the stored object, so the selector stays stable).
-  const parts = useArslanStore((s) => {
-    for (let i = s.items.length - 1; i >= 0; i--) { const u = s.items[i].usage; if (u?.last_input) return u.context_parts ?? null; }
-    return null;
-  });
-
-  useEffect(() => {
-    let alive = true;
-    setChoice(null);
-    // Deferred into the promise so an unavailable client (offline, or a test's partial mock) is a rejection.
-    Promise.resolve().then(() => conversationModelApi.get(conversationId))
-      .then((r) => { if (alive && r.choice) setChoice({ configId: r.choice.config_id, model: r.choice.model }); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [conversationId]);
-
-  const primary = configs.find((c) => c.is_primary) ?? configs[0] ?? null;
-  const current: ModelChoice | null = choice && configs.some((c) => c.id === choice.configId) ? choice
-    : primary ? { configId: primary.id, model: primary.model } : null;
+  const { choice, setChoice, primary, current, lastInput, parts, pct: ringPct } = useConversationModel(conversationId, configs);
   const label = (c: ProviderConfig) => llmProviders.find((p) => p.key === c.provider)?.label ?? c.label ?? c.provider;
-
-  useEffect(() => {
-    if (!current) return;
-    let alive = true;
-    void catalog(current.configId).then((ms) => { if (alive) setWindow(ms.find((m) => m.id === current.model)?.context_window ?? null); });
-    return () => { alive = false; };
-  }, [current?.configId, current?.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!current) {
     return <button type="button" onClick={onManage} data-testid="model-chip-empty"
@@ -117,7 +83,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
       <Cpu className="h-3 w-3" />{t("settings.modelSwitcherNone")}</button>;
   }
   const cfg = configs.find((c) => c.id === current.configId)!;
-  const pct = lastInput && window_ ? Math.round((lastInput / window_) * 100) : null;
+  const pct = noRing ? null : ringPct;
   const rows = ringRows(parts, lastInput);
   const fmt = (n: number) => n.toLocaleString(i18n.resolvedLanguage || undefined);
   const health = providerStatus(cfg);
@@ -173,7 +139,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
           <div className="mt-2 text-[10.5px] text-subtle-foreground">{t("models.contextEstimated")}</div>
         </div>}
       </span>}
-      {open && <div ref={floatingRef} role="dialog" className="absolute bottom-full left-0 z-50 mb-2 rounded-xl border border-border bg-background p-2 shadow-lg">
+      {open && <div ref={floatingRef} role="dialog" className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-0 z-50 rounded-xl border border-border bg-background p-2 shadow-lg`}>
         <ModelPicker configs={configs} current={current} need="tools" onPick={(c) => void pick(c)} label={label} />
         <div className="mt-1 flex items-center gap-2 border-t border-border px-2 pt-2 text-[11.5px] text-muted-foreground">
           <span className="flex-1">{t("models.thisConvOnly")}</span>

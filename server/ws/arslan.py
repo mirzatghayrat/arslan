@@ -18,6 +18,7 @@ from server.db.models import ArslanMessage
 from server.orchestrator import arslan
 from server.services import approvals, background_jobs, desktop_status, permissions, steering
 from server.services import (
+    presence,
     run_registry,
     turn_journal,
 )
@@ -625,24 +626,28 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             images = data.get("images") or []
             attached = (data.get("attached_context") or "").strip()
 
-            async with _turn(data):
-                await run_with_confirm_frames(
-                    arslan.handle_user_message(conversation_id, content, emit,
-                                               attached_context=attached or None,
-                                               images=images or None,
-                                               source=message_source(data),
-                                               confirm_command=confirm_command,
-                                               confirm_workspace_write=confirm_workspace_write,
-                                               confirm_schedule=confirm_schedule),
-                    title=content or None,
-                )
+            # INB2: the one place a turn counts as the user's own (server/services/presence.py, the allowlist):
+            # a message typed in the window, or on the iPhone (the Bridge's chat.send, source "phone") that
+            # arrives soon after it was sent.
+            with presence.user_turn() if presence.typed_just_now(data) else contextlib.nullcontext():
+                async with _turn(data):
+                    await run_with_confirm_frames(
+                        arslan.handle_user_message(conversation_id, content, emit,
+                                                   attached_context=attached or None,
+                                                   images=images or None,
+                                                   source=message_source(data),
+                                                   confirm_command=confirm_command,
+                                                   confirm_workspace_write=confirm_workspace_write,
+                                                   confirm_schedule=confirm_schedule),
+                        title=content or None,
+                    )
     except WebSocketDisconnect:
         return
     except Exception as exc:  # noqa: BLE001
         try:
             await ws.send_json(protocol.error("INTERNAL_ERROR", str(exc), recoverable=True))
             await ws.close(code=1011)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the socket is likely broken already; `finally` below still cleans up
             pass
         return
     finally:

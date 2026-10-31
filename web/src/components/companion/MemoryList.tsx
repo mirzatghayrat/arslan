@@ -87,6 +87,13 @@ export function withCore(entry: MemoryEntry, core: MemoryWrite["core"]): MemoryW
     expires_at: entry.expires_at, core };
 }
 
+/** INB2 (v0.1.64): "To sort" groups what was not remembered directly by why it waits. A memory entry's proposal
+ *  names its reason; every other one (confirmation_required, and all from before v0.1.64) is "other". */
+const TO_SORT = ["sensitive", "external_seen", "not_present", "curation", "other"] as const;
+const WAITS_BECAUSE = new Set<string>(["sensitive", "external_seen", "not_present"]);
+const sortGroup = (item: PendingMemoryItem) => item.source === "curation" ? "curation"
+  : item.reason && WAITS_BECAUSE.has(item.reason) ? item.reason : "other";
+
 /** Most recently used first; never-used ones after, newest edit first. */
 export function byRecentUse(a: MemoryEntry, b: MemoryEntry): number {
   const used = (b.last_used_at ?? "").localeCompare(a.last_used_at ?? "");
@@ -322,7 +329,6 @@ export default function MemoryList({ addRequest = 0, onAddHandled, onOpenMateria
   const visible = live.filter(matches);
   const other = entries.filter(entry => !LIVE.has(entry.status) && entry.status !== "proposed" && matches(entry));
   const shown = showAll || needle ? visible : visible.slice(0, FIRST_ROWS);
-  const waitingShown = showPending ? pending : pending.slice(0, 3);
 
   const entryRow = (entry: MemoryEntry) => {
     const set = coreSetFor(entry);
@@ -399,33 +405,41 @@ export default function MemoryList({ addRequest = 0, onAddHandled, onOpenMateria
         {error && <Notice tone="error" role="alert">{t(error)}</Notice>}
         {loading && !entries.length && <p role="status" className="text-sm text-muted-foreground">{t("companion.loading")}</p>}
 
-        {(pending.length > 0 || noticed > 0) && <section data-testid="memory-waiting" className="overflow-hidden rounded-xl bg-ask-soft">
-          <h2 className="flex items-baseline gap-2 px-4 pb-1 pt-2.5 text-[12px] font-semibold text-ask">
-            {t("memoryPage.waiting")} <span className="font-mono">{pending.length + (noticed > 0 ? 1 : 0)}</span>
-            <span className="truncate font-normal text-muted-foreground">· {t("memoryPage.waitingHint")}</span>
-            {pending.length > 3 && <button className="ml-auto shrink-0 font-normal text-muted-foreground hover:text-foreground" aria-expanded={showPending}
-              onClick={() => setShowPending(value => !value)}>{showPending ? t("memoryPage.showFewer") : `${t("memoryPage.waitingMore", { count: pending.length - 3 })} ›`}</button>}
+        {/* INB2 (v0.1.64): "To sort", folded. What was not remembered directly, by why it waits; nothing here is
+            pushed or counted in the badge, and nothing is answered on its own: every row stays as it was until
+            the user answers it, and "Use all" for what was noticed earlier stays.
+            DELETE-BY: v0.1.65 when memory files land (the "To sort" rows are merged into them) */}
+        {(pending.length > 0 || noticed > 0) && <section data-testid="memory-to-sort" className="overflow-hidden rounded-xl bg-ask-soft">
+          <h2 className="text-[12px]">
+            <button type="button" aria-expanded={showPending} onClick={() => setShowPending(value => !value)}
+              className="flex w-full items-baseline gap-2 px-4 pb-1 pt-2.5 text-left font-semibold text-ask">
+              {t("memoryPage.toSort")} <span data-testid="to-sort-count" className="font-mono">{pending.length}</span>
+              <span className="truncate font-normal text-muted-foreground">· {t("memoryPage.toSortHint")}</span>
+              <span className="ml-auto shrink-0 font-normal text-muted-foreground">{showPending ? t("memoryPage.toSortClose") : t("memoryPage.toSortOpen")}</span>
+            </button>
           </h2>
-          {noticed > 0 && <div data-testid="noticed-earlier" className="border-t border-ask/10 first:border-t-0">
-            <ProposalRow text={t("companion.noticedEarlier", { count: noticed })} actions={<>
+          {showPending && noticed > 0 && <div data-testid="noticed-earlier" className="border-t border-ask/10">
+            <ProposalRow text={t("companion.noticedEarlier", { count: noticed })} actions={
               <Button size="sm" tone="primary" disabled={busy} onClick={async () => {
                 setBusy(true);
                 try { await companionApi.acceptNoticedEarlier(); setNoticed(0); await reload(); }
                 catch { setError("brain.read_failed"); }
                 finally { setBusy(false); }
-              }}>{t("companion.useAll")}</Button>
-              <Button size="sm" disabled={busy} onClick={() => setShowPending(true)}>{t("companion.reviewEach")}</Button>
-            </>} />
+              }}>{t("companion.useAll")}</Button>} />
           </div>}
-          {waitingShown.map(item => <div key={item.key} className="border-t border-ask/10">
-            <ProposalRow testId={`pending-memory-${item.key}`} text={item.text}
-              meta={<><Tag>{t(`pendingMemory.source.${item.source}`)}</Tag>{item.sensitive ? <Tag tone="danger">{t("memoryPage.sensitive")}</Tag> : null}
-                {item.proposal && <button className="hover:text-foreground" onClick={() => setDialog({ kind: "proposal", proposal: item.proposal! })}>{t("memoryPage.review")} ›</button>}</>}
-              actions={<>
-                <Button size="sm" tone="primary" disabled={busy} onClick={() => void answer(item.accept)}>{pendingLabel(item)}</Button>
-                <Button size="sm" disabled={busy} onClick={() => void answer(item.reject)}>{t("pendingMemory.drop")}</Button>
-              </>} />
-          </div>)}
+          {showPending && TO_SORT.map(group => {
+            const rows = pending.filter(item => sortGroup(item) === group);
+            return rows.length > 0 && <div key={group} data-testid={`to-sort-group-${group}`} className="border-t border-ask/10">
+              <h3 className="px-4 pb-0.5 pt-2 text-[11px] font-semibold text-ask">{t(`memoryPage.toSortGroup_${group}`)} <span className="font-mono">{rows.length}</span></h3>
+              {rows.map(item => <ProposalRow key={item.key} testId={`pending-memory-${item.key}`} text={item.text}
+                meta={<><Tag>{t(`pendingMemory.source.${item.source}`)}</Tag>{item.sensitive ? <Tag tone="danger">{t("memoryPage.sensitive")}</Tag> : null}
+                  {item.proposal && <button className="hover:text-foreground" onClick={() => setDialog({ kind: "proposal", proposal: item.proposal! })}>{t("memoryPage.review")} ›</button>}</>}
+                actions={<>
+                  <Button size="sm" tone="primary" disabled={busy} onClick={() => void answer(item.accept)}>{pendingLabel(item)}</Button>
+                  <Button size="sm" disabled={busy} onClick={() => void answer(item.reject)}>{t("pendingMemory.drop")}</Button>
+                </>} />)}
+            </div>;
+          })}
         </section>}
 
         <section data-testid="in-view" className="flex flex-col gap-1.5">

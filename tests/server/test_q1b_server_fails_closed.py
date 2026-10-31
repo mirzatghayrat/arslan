@@ -9,8 +9,10 @@ conversation). So the server decides by the conversation:
   also checks it is still empty, the way it stores a quick one (POST /phone/conversations/{id}/chat).
 """
 import pytest
+import sqlalchemy as sa
 
 from server.db.companion_models import ConversationContext
+from server.db.models import ArslanMessage
 from server.orchestrator import arslan
 from server.services import phone_ids, task_context
 from tests.server.test_q1a_quick_ask import QUICK, _capture, _row, _say, _store
@@ -119,11 +121,15 @@ async def test_a_phone_conversation_with_no_kind_is_listed_with_the_quick_questi
 
 
 async def test_a_phone_conversation_with_no_kind_can_be_turned_into_a_chat(client):
+    """Read as a quick question, it is turned like one: it learns from after its last message (Q1 #3, #490)."""
     await _say(client, NEW, "weather?", "2026-10-29T08:00:00")
+    await _say(client, NEW, "and tomorrow?", "2026-10-29T08:01:00")
+    async with client.db_maker() as db:
+        last = await db.scalar(sa.select(sa.func.max(ArslanMessage.id)).where(ArslanMessage.conversation_id == NEW))
     got = await client.post(f"/api/v1/phone/conversations/{NEW}/update", json={"kind": "chat"})
     assert got.status_code == 200 and got.json() == {"conversation_id": NEW, "kind": "chat"}
     row = await _row(client, NEW)
-    assert (row.kind, row.no_learning) == ("chat", True)            # as a quick question's (card, #3)
+    assert (row.kind, row.no_learning, row.learns_after_message_id) == ("chat", False, last)
     never = await client.post(f"/api/v1/phone/conversations/{OTHER}/update", json={"kind": "chat"})
     assert never.status_code == 404 and never.json()["detail"] == "not_found"     # never started: no messages
     assert await _row(client, OTHER) is None

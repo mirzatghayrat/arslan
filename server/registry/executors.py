@@ -471,8 +471,11 @@ class ListMyCapabilitiesExecutor:
                 if reason:
                     entry["reason"] = reason
                 # the reason is said once (`reason`), never again inside the fix (review M-3)
+                # CAP5a (re-check G3): a server held for the user's review is told so, without saying its reason again.
+                from server.mcp.discovery import HELD_REASONS
                 entry["fix"] = fix_for(state, has_headers=rechecks_key(s.get("last_error"), s.get("env")),
-                                       next_retry_at=s.get("next_retry_at"))
+                                       next_retry_at=s.get("next_retry_at"),
+                                       held=state == "parked" and (stored or "").startswith(HELD_REASONS))
                 if s.get("next_retry_at"):
                     entry["next_retry_at"] = s["next_retry_at"]
             mcp.append(entry)
@@ -845,11 +848,11 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
-        # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
-        # untrusted, and the turn counts as having read outside content. So is one Arslan wrote in a
-        # conversation that had read outside content (v0.1.64 #472 F1). Arslan's own others are not.
-        from server.services.skill_forge import AUTHORED_OUTSIDE
-        outside = row.category in ("imported", AUTHORED_OUTSIDE)
+        # The user's D2(1), 2026-10-30 (v0.1.64 SKF1): every skill is trusted and read unframed, as Claude
+        # Code and Codex do; 0.1.57 decision 5's frame no longer applies to skills. skill_trust is the one
+        # place that decides, and states the limit (the same trust model as approved MCP servers' text).
+        from server.registry import skill_trust
+        outside = not skill_trust.reads_as_own(row)
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):

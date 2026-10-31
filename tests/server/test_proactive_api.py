@@ -76,7 +76,15 @@ async def test_inbox_lists_items_as_keys_and_evidence_never_bare_prose(client):
     assert item["title_key"] == "title.web_change" and item["evidence"][0] == {
         "key": "web.changed", "params": {"n": 2}, "quote": "Price: 9"}
     assert (await client.get("/api/v1/proactive/summary")).json() == {"open": 1, "unread": 1, "high": 0,
-                                                                          "approvals": 0, "memory": 0}
+                                                                          "approvals": 0}
+
+
+async def test_items_carry_their_source_key_for_the_scheduled_page(client):
+    """INB3: the Scheduled page puts a change under its watch (`watch:<id>`) and a problem under its task
+    (`sched:<id>`), so each item says which source it came from."""
+    await make_item(3)
+    [item] = (await client.get("/api/v1/proactive/items")).json()["items"]
+    assert item["source_key"] == "watch:3"
 
 
 async def test_scope_is_validated(client):

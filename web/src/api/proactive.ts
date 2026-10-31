@@ -10,11 +10,14 @@ export interface ProactiveItem {
   evidence: ProactiveEvidence[]; goal: string; priority: "high" | "normal" | "low"; status: ProactiveStatus;
   diagnosis: { cause: string; next_step: string; model: string; usd: number } | null;
   conversation_id: string | null; job_id: string | null; created_at: string; snooze_until: string | null;
+  /** INB3: where it came from: `watch:<id>` for a page or folder, `sched:<id>` for a scheduled task. */
+  source_key?: string | null;
 }
 export interface ProactiveSummary {
   open: number; unread: number; high: number;
-  /** 0.1.55 §12: cards waiting for approval (any conversation or job) and memory waiting for an OK. */
-  approvals?: number; memory?: number;
+  /** 0.1.55 §12: cards waiting for approval (any conversation or job). Memory is not counted since
+   *  v0.1.64 (INB1/INB2): what did not take effect is listed in Memory, it does not wait for an OK. */
+  approvals?: number;
 }
 export interface ProactiveConfig {
   enabled: boolean; notify: boolean; notify_daily_cap: number; quiet_start: string; quiet_end: string;

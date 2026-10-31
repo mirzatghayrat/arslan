@@ -11,6 +11,7 @@ import json
 import secrets
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import datetime
 
 from sqlalchemy import delete, func, or_, select, text, update
@@ -22,7 +23,7 @@ from arslan.companion.design import reference_data
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite, decide_write, naive_utc
 from server.db import session as db_session
 from server.db.models import (
-    ArslanSummary, MemoryDeletion, MemoryEntry, MemoryLegacyMap, MemoryProposal,
+    ArslanSummary, Judgment, MemoryDeletion, MemoryEntry, MemoryLegacyMap, MemoryProposal,
     MemoryRevision, MemorySource, MemoryStoreState, MemorySuppression, Project, Run,
 )
 
@@ -47,6 +48,16 @@ async def is_active(db=None) -> bool:
         async with db_session.AsyncSessionLocal() as own:
             return await is_active(own)
     return await db.scalar(select(MemoryStoreState.phase).where(MemoryStoreState.id == 1)) == "active"
+
+
+_SENSITIVITY = ("normal", "unknown", "sensitive", "secret")
+_USE = ("cloud_allowed", "local_only", "never")
+
+
+def _stricter(order: tuple[str, ...], kept: str | None, new: str) -> str:
+    """The stricter of an entry's value and a new one; a value outside `order` counts as the strictest."""
+    rank = {value: i for i, value in enumerate(order)}
+    return kept if rank.get(kept, len(order)) > rank.get(new, len(order)) else new
 
 
 @asynccontextmanager
@@ -137,16 +148,21 @@ class MemoryRepository:
             raise MemoryError("memory_not_found")
         return entry
 
-    async def _source(self, entry, revision_id, actor: MemoryActor):
+    async def _source(self, entry, revision_id, actor: MemoryActor, decision=None, merged: dict | None = None):
         ref = {key: value for key, value in {
             "task_id": actor.task_id, "project_id": actor.project_id,
             "expert_id": actor.expert_id, "message_id": actor.source_message_id,
             "run_id": actor.source_run_id, "explicit_save_ref": actor.explicit_save_ref,
             "conversation_id": actor.conversation_id,
         }.items() if value is not None}
+        if merged is not None:
+            ref["merged"] = merged or True                    # MEM1: seen again, and what that changed (history)
+        # #475 recheck, J1: the user's own words only when this write is the save the user asked for, word for word
+        # (decide_write's explicit_user_request); any other write in that turn stays Arslan's. The decision is
+        # passed in because `entry` is stale inside revise.
         source_kind = "manual" if actor.origin == "user" else (
-            "user_message" if actor.origin == "host" and actor.explicit_save_ref
-            and entry.status == "active" and actor.explicit_save_digest else actor.origin)
+            "user_message" if decision is not None and decision.confirmation_kind == "explicit_user_request"
+            else actor.origin)
         self.db.add(MemorySource(
             id=_id(), entry_id=entry.id, revision_id=revision_id, source_kind=source_kind,
             source_ref=ref, author="user" if source_kind in {"manual", "user_message"} else actor.origin,
@@ -195,6 +211,13 @@ class MemoryRepository:
                     raise MemoryError("style_reference_conflict")
             previous = await self.db.get(MemoryRevision, duplicate.current_revision_id)
             core_changed = "core" in write.model_fields_set and (previous.structured_value or {}).get("core") != write.core
+            # #475 review, F3: the same words again are never a way round the user's answer or a wait. A paused
+            # entry (the user said no) comes back only with the user's own confirmation, and "about you" taking
+            # effect directly (INB2) is for a new entry only: a waiting one keeps waiting for its own proposal.
+            user_confirmed = decision.confirmation_kind in ("user_form", "explicit_user_request")
+            if (duplicate.status == "paused" and not user_confirmed) or (
+                    decision.confirmation_kind == "arslan_about_you" and duplicate.status != "active"):
+                return await self.present(duplicate, deduplicated=True)
             if (decision.status == "active" and duplicate.status != "active") or core_changed:
                 return await self.revise(duplicate.id, duplicate.version, write, actor)
             return await self.present(duplicate, deduplicated=True)
@@ -227,25 +250,81 @@ class MemoryRepository:
             structured_value=_structured(write), previous_version=None, change_reason="created",
         ))
         await self.db.flush()
-        await self._source(entry, revision_id, actor)
+        await self._source(entry, revision_id, actor, decision)
+        proposal_id, reason = None, None
         if status == "proposed":
-            await self._proposal(entry, actor, candidate=None)
+            # INB2: why it waits (decision.reason; a topic clash with a confirmed rule is still "confirmation_required").
+            reason = decision.reason if decision.status == "proposed" and decision.reason else "confirmation_required"
+            proposal_id = await self._proposal(entry, actor, candidate=None, reason=reason)
         await self.db.flush()
         await self.compatibility_id(entry)
         await self._sync_index(entry.id)
-        return await self.present(entry)
+        return await self.present(entry, **({"proposal_id": proposal_id, "reason": reason} if proposal_id else {}))
 
-    async def _proposal(self, entry, actor, candidate):
+    async def _proposal(self, entry, actor, candidate, reason: str = "confirmation_required"):
         proposal = MemoryProposal(
             kind="memory_v2", table_name="memory_entries", old_id=None, new_id=None,
             target_entry_id=entry.id, target_version=entry.version, candidate=candidate,
-            reason="confirmation_required", status="pending",
+            reason=reason, status="pending",
             provenance={"source_kind": actor.origin, "task_id": actor.task_id},
             conversation_id=actor.task_id,
         )
         self.db.add(proposal)
         await self.db.flush()
         return proposal.id
+
+    async def merge_into(self, entry_id: str, expected_version: int, write: MemoryWrite, actor: MemoryActor) -> dict | None:
+        """MEM1: `write` says the same as this entry (memory_merge.same_meaning). None when the entry moved on
+        since (another version, deleted): the caller stores the write as a new entry. Otherwise the entry stays:
+        - paused (the user said no): nothing changes, as the same words again (#475 F3);
+        - active, and the write would wait (INB2: not present, a conversation off the list, sensitive): the
+          active entry is not touched; the write waits as a proposal against it, or joins the one already
+          pending (②Main's review: refreshing an active entry is a write that takes effect);
+        - otherwise (active and the write may take effect, or a proposal waiting anyway): the date is refreshed,
+          the stricter sensitivity and narrower use are kept, and the write's source is added to the current
+          revision, so a turn off the list stays traceable (#475 H1, as J2 for lessons). The words stay: the judge's
+          `memory.same` asks whether the write adds nothing (②Main's review of #559, M1).
+        The added source is marked `merged` with what changed, so the entry's history shows it (M2), with no new
+        version: a pending proposal's target version still holds (G3). The user's explicit request to remember
+        something is never merged (None): its words are theirs (M1)."""
+        if actor.origin == "user":
+            raise MemoryError("invalid_memory_actor")         # the user's own words are never folded away
+        entry = await self.db.get(MemoryEntry, entry_id)
+        if (entry is None or entry.owner_id != actor.owner_id or entry.version != expected_version
+                or entry.status not in ("active", "proposed", "paused")):
+            return None
+        decision = decide_write(write, actor)
+        if decision.confirmation_kind == "explicit_user_request":
+            return None
+        await self._not_suppressed(write, actor)
+        if entry.status == "paused":
+            return await self.present(entry, deduplicated=True)
+        pending = None
+        if entry.status == "active" and decision.status != "active":
+            pending = await self.db.scalar(select(MemoryProposal).where(
+                MemoryProposal.target_entry_id == entry.id, MemoryProposal.status == "pending").limit(1))
+            proposal_id = pending.id if pending is not None else await self._proposal(
+                entry, actor, write.model_dump(mode="json"), reason=decision.reason or "confirmation_required")
+            # The chat line names this proposal (INB2's memory_proposed, ②Main's L2), in the write's own words.
+            return {"proposal_id": proposal_id, "status": "proposed", "target_id": entry.id, "id": entry.id,
+                    "version": entry.version, "target_version": entry.version, "merged": True,
+                    "content": write.content.strip(), "sensitivity": decision.sensitivity,
+                    "reason": pending.reason if pending is not None else decision.reason}
+        before = (entry.sensitivity, entry.use_policy)
+        entry.sensitivity = _stricter(_SENSITIVITY, entry.sensitivity, decision.sensitivity)
+        entry.use_policy = _stricter(_USE, entry.use_policy, decision.use_policy)
+        entry.updated_at = datetime.utcnow()
+        changed = {key: value for key, old, value in (("sensitivity", before[0], entry.sensitivity),
+                                                      ("use_policy", before[1], entry.use_policy)) if old != value}
+        await self._source(entry, entry.current_revision_id, actor, decision, merged=changed)
+        await self.db.flush()
+        await self._sync_index(entry.id)
+        if entry.status != "proposed":
+            return await self.present(entry, merged=True)
+        pending = await self.db.scalar(select(MemoryProposal).where(
+            MemoryProposal.target_entry_id == entry.id, MemoryProposal.status == "pending").limit(1))
+        return await self.present(entry, merged=True, **({"proposal_id": pending.id, "reason": pending.reason}
+                                                         if pending is not None else {}))
 
     async def revise(self, entry_id: str, expected_version: int, write: MemoryWrite,
                      actor: MemoryActor, *, confirm_scope_change: bool = False) -> dict:
@@ -267,6 +346,15 @@ class MemoryRepository:
                                                     "core": previous.structured_value["core"]})
             except ValueError:
                 pass  # a kind or scope change leaves the always-in-view set
+        if actor.origin != "user":
+            # #475 review, F3: "about you" taking effect directly is for a new entry (INB2), never an edit.
+            actor = replace(actor, user_present=False, conversation_clean=False)
+            # #475 recheck, G1: the write carries the entry's stricter sensitivity (as the edit paths spell it:
+            # secret → unknown), so a proposal made here asks about what the entry already is, and the user's yes
+            # keeps it so. Use needs no fold: Arslan's writes never ask for cloud use, and the update below keeps
+            # the narrower use when an automatic path takes the entry into effect.
+            write = MemoryWrite.model_validate({**write.model_dump(), "sensitivity": _stricter(
+                _SENSITIVITY, {"secret": "unknown"}.get(entry.sensitivity, entry.sensitivity), write.sensitivity)})
         decision = decide_write(write, actor)
         await self._scope_exists(write.scope, actor)
         digest = await self._not_suppressed(write, actor)
@@ -287,7 +375,11 @@ class MemoryRepository:
             current_revision_id=revision_id, version=version, kind=write.kind,
             normalized_hash=digest, dedup_key=self._dedup_key(write, actor.owner_id, digest),
             scope_kind=write.scope.kind, scope_id=write.scope.id,
-            sensitivity=decision.sensitivity, use_policy=decision.use_policy,
+            # #475 review, F3: only the user widens an entry's use (the automatic paths set it from the setting,
+            # whatever the write says); its sensitivity already came in with the write (G1).
+            sensitivity=decision.sensitivity,
+            use_policy=decision.use_policy if actor.origin == "user" else _stricter(
+                _USE, entry.use_policy, decision.use_policy),
             status="active", superseded_by=None, confirmation_kind=decision.confirmation_kind, confirmed_at=now,
             valid_from=naive_utc(write.valid_from), review_at=naive_utc(write.review_at),
             expires_at=naive_utc(write.expires_at), updated_at=now,
@@ -299,14 +391,14 @@ class MemoryRepository:
             structured_value=_structured(write), previous_version=expected_version, change_reason="user_confirmed",
         ))
         await self.db.flush()
-        await self._source(entry, revision_id, actor)
+        await self._source(entry, revision_id, actor, decision)
         await self.db.refresh(entry)
         await self._sync_index(entry.id)
         return await self.present(entry)
 
     async def resolve_proposal(self, proposal_id: int, *, accept: bool, actor: MemoryActor,
                                sensitive_acknowledged: bool = False,
-                               use_policy: str = "local_only") -> dict:
+                               use_policy: str = "local_only", expected_version: int | None = None) -> dict:
         if actor.origin != "user":
             raise MemoryError("user_confirmation_required")
         proposal = await self.db.get(MemoryProposal, proposal_id)
@@ -315,7 +407,11 @@ class MemoryRepository:
         if proposal.status != "pending":
             raise MemoryError("proposal_already_resolved")
         entry = await self.get(proposal.target_entry_id, owner_id=actor.owner_id)
-        if accept and entry.version != proposal.target_version:
+        # The chat line names the version it showed (INB2, #475 review): its "No" for an entry that changed
+        # since is refused too, so the line never says "not remembered" about one that took effect.
+        if expected_version is not None and entry.version != expected_version:
+            raise MemoryError("memory_version_conflict")
+        if accept and entry.version != proposal.target_version:       # in addition, never instead (#475 recheck, G3)
             raise MemoryError("memory_version_conflict")
         if entry.status == "deleted":
             raise MemoryError("memory_deleted")
@@ -429,10 +525,25 @@ class MemoryRepository:
         revisions = (await self.db.execute(select(MemoryRevision).where(
             MemoryRevision.entry_id == entry_id,
         ).order_by(MemoryRevision.version.desc()))).scalars().all()
-        return [{"id": row.id, "version": row.version, "content": row.content,
-                 "style_reference": (row.structured_value or {}).get("style_reference"),
-                 "change_reason": row.change_reason, "created_at": _iso(row.created_at)}
-                for row in revisions if entry.status != "deleted"]
+        if entry.status == "deleted":
+            return []
+        out = [{"id": row.id, "version": row.version, "content": row.content,
+                "style_reference": (row.structured_value or {}).get("style_reference"),
+                "change_reason": row.change_reason, "created_at": _iso(row.created_at)} for row in revisions]
+        # MEM1 (②Main's review of #559, M2): each time Arslan noticed the same again, from which conversation, and
+        # the stricter sensitivity or narrower use that brought. A row of its own, newest first with the versions.
+        by_id = {row.id: row for row in revisions}
+        seen = (await self.db.execute(select(MemorySource).where(MemorySource.entry_id == entry_id))).scalars().all()
+        for source in seen:
+            merged = (source.source_ref or {}).get("merged")
+            if merged and source.revision_id in by_id:
+                revision = by_id[source.revision_id]
+                out.append({"id": source.id, "version": revision.version, "content": revision.content,
+                            "style_reference": None, "change_reason": "merged",
+                            "created_at": _iso(source.observed_at),
+                            "merged": {"conversation_id": (source.source_ref or {}).get("conversation_id"),
+                                       **(merged if isinstance(merged, dict) else {})}})
+        return sorted(out, key=lambda row: row["created_at"] or "", reverse=True)
 
     async def delete_entry(self, entry_id: str, expected_version: int, actor: MemoryActor) -> dict:
         if actor.origin != "user":
@@ -478,6 +589,8 @@ class MemoryRepository:
             MemoryRevision.entry_id == entry_id, MemoryRevision.id != revision_id))
         await self.db.execute(update(MemoryProposal).where(MemoryProposal.target_entry_id == entry_id)
                               .values(candidate=None, status="dismissed", reason="target_deleted"))
+        # MEM1 (JUDGE1's rule): the judge's rows about this entry go too (they keep digests, never its text).
+        await self.db.execute(delete(Judgment).where(Judgment.ref == f"memory:{entry_id}"))
         # Legacy derived snapshots predate receipt-level provenance. Invalidate them
         # rather than letting an old summary/prompt silently restore deleted memory.
         await self.db.execute(delete(ArslanSummary))
@@ -543,6 +656,7 @@ class MemoryRepository:
                 MemoryRevision.entry_id == entry.id, MemoryRevision.id != revision_id))
             await self.db.execute(update(MemoryProposal).where(MemoryProposal.target_entry_id == entry.id)
                                   .values(candidate=None, status="dismissed", reason="turn_undone"))
+            await self.db.execute(delete(Judgment).where(Judgment.ref == f"memory:{entry.id}"))
             await self._sync_index(entry.id)
         for _entry, sources in trimmed:
             await self.db.execute(delete(MemorySource).where(MemorySource.id.in_([s.id for s in sources])))

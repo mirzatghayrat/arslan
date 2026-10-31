@@ -247,17 +247,51 @@ async def receipt_memory(conversation_id: str, receipt_id: str, entry_id: str, r
     return {**result, "status": "available", "content": revision.content}
 
 
-@router.put("/conversations/{conversation_id}/context")
-async def update_conversation_context(conversation_id: str, body: ConversationSettings, repo=Depends(_repository, scope="function")):
-    from server.services import run_registry, turn_journal
+async def _conversation_lock(conversation_id: str):
+    """#490 recheck, follow-up: the context PUT holds the conversation's turn lock from its check until its write is
+    committed, so a turn that arrives meanwhile waits and loads the switches as written. A turn holds it from before
+    it loads them (turn_journal.active, the old check here, is never set). Declared before `repo`: FastAPI ends
+    dependencies in reverse order, so the commit comes first."""
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
-    if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
+    from server.ws import arslan as ws_arslan
+    lock = ws_arslan._turn_lock(conversation_id)
+    if lock.locked():
         raise HTTPException(409, detail={"code": "conversation_running"})
-    from server.db.models import CompanionTask
-    if await repo.db.scalar(select(CompanionTask.id).where(
-            CompanionTask.conversation_id == conversation_id, CompanionTask.owner_id == USER.owner_id,
-            CompanionTask.phase.in_(("running", "verifying"))).limit(1)):
+    async with lock:
+        yield
+
+
+class ConversationPin(Contract):
+    pinned: Annotated[bool, Field(strict=True)]
+
+
+@router.put("/conversations/{conversation_id}/pin")
+async def pin_conversation(conversation_id: str, body: ConversationPin, repo=Depends(_repository, scope="function")):
+    """SB1-2: pin or unpin a conversation in the sidebar. Its own route, not a field of the context PUT (⑥Helper's
+    review of #484): that one is refused while the conversation runs, replaces every field (a caller that left the
+    pin out would clear it) and bumps `version` (a pin would race a settings edit). This one upserts the row (many
+    conversations have none), is allowed while the conversation runs, and touches nothing but `pinned`."""
+    if len(conversation_id) > 100 or not conversation_id.strip():
+        raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+    row = await repo.db.get(ConversationContext, conversation_id)
+    if row and row.owner_id != USER.owner_id:
+        raise HTTPException(404, detail={"code": "conversation_not_found"})
+    from sqlalchemy.dialects.sqlite import insert
+    statement = insert(ConversationContext).values(id=conversation_id, owner_id=USER.owner_id, version=1,
+                                                   pinned=body.pinned)
+    await repo.db.execute(statement.on_conflict_do_update(index_elements=[ConversationContext.id],
+                                                          set_={"pinned": body.pinned}))
+    return {"conversation_id": conversation_id, "pinned": body.pinned}
+
+
+@router.put("/conversations/{conversation_id}/context")
+async def update_conversation_context(conversation_id: str, body: ConversationSettings,
+                                      _lock=Depends(_conversation_lock, scope="function"),
+                                      repo=Depends(_repository, scope="function")):
+    from server.services import conversation_busy, phone_ids
+    # A job or task may run on after a turn (#490 recheck).
+    if await conversation_busy.busy(repo.db, conversation_id, holding_lock=True):
         raise HTTPException(409, detail={"code": "conversation_running"})
     if body.project_id:
         project = await repo.db.get(Project, body.project_id)
@@ -266,6 +300,10 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
     row = await repo.db.get(ConversationContext, conversation_id)
     if row and row.owner_id != USER.owner_id:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
+    if phone_ids.kind_of(conversation_id, row.kind if row else None) == "quick" and not body.no_learning:
+        # #490 review, 5: a quick question learns nothing until the user turns it into a chat (phone.py, Q1 #3).
+        # Read as every turn reads it (#486 review, G1): one the phone made with no kind stored counts as one.
+        raise HTTPException(409, detail={"code": "quick_question_learns_nothing"})
     if body.temporary:
         from server.db.models import ArslanMessage
         if await repo.db.scalar(select(ArslanMessage.id).where(
@@ -432,6 +470,8 @@ class ProposalDecision(Contract):
     accept: bool
     sensitive_acknowledged: bool = False
     use_policy: Literal["local_only", "cloud_allowed"] = "local_only"
+    # INB2 (#475 review): the chat line's two buttons name the version they showed; Memory's rows don't.
+    expected_version: int | None = None
 
 
 @router.post("/memory/proposals/{proposal_id}/resolve")

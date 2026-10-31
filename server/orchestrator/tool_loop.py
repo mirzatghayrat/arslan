@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from arslan.execution_budget import BudgetExceeded, governed
-from arslan.llm import trajectory, usage_sink
+from arslan.llm import tool_names, trajectory, usage_sink
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
@@ -379,6 +379,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
                     or (tool_key in ("read_skill", "background_status", "find_tools")  # S64-0b/0c: per result
                         and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
+    if not _untrusted.known_local_call(tool_key, result):
+        _untrusted.mark_off_the_list()       # INB2 (#475 F2): any call off the user's allowlist, run or not
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
     # hint sits AFTER the data frame — it is OUR trusted framing (like the
     # "TOOL RESULT for X" header and the "Use this to continue" trailer), never inside
@@ -627,14 +629,16 @@ def _hiding(resolve_tools: ResolveTools, drops: _SchemaDrops) -> ResolveTools:
 
 def _refused_tool(a, sent: list[dict], text: str) -> str | None:
     """The MCP tool a refusal points at, only ever one this request carried: the provider reads
-    its own error against its own payload order, else the longest MCP name the text mentions."""
+    its own error against its own payload order, else the longest MCP name the text mentions.
+    NAME1: the provider wrote the names it was sent (tool_names.wire); both lead back to the key."""
     mcp = {t["function"]["name"] for t in sent if t["function"]["name"].startswith("mcp_")}
-    named = getattr(getattr(a, "_provider", None), "named_tool", None)
+    named = getattr(a, "named_tool", None) or getattr(getattr(a, "_provider", None), "named_tool", None)
     name = named(sent, text) if callable(named) else None
     if name in mcp:
         return name
-    mentioned = [n for n in mcp if n in text]
-    return max(mentioned, key=len) if mentioned else None
+    mentioned = {n: max(len(form) for form in (n, tool_names.wire(n)) if form in text)
+                 for n in mcp if n in text or tool_names.wire(n) in text}
+    return max(sorted(mentioned), key=mentioned.get) if mentioned else None
 
 
 async def _images_to_text(convo: list[dict]) -> int:
@@ -764,8 +768,9 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         tools, schemas = drops.keep_schemas(tools), drops.keep_schemas(schemas)
         what = "every MCP tool" if left_out == "all" else f"the MCP tool {left_out}"
         state.note(f"left out {what} (the provider refused its parameter schema)")
+        shown = "every MCP tool" if left_out == "all" else f"the MCP tool {tool_names.wire(left_out)}"  # NAME1
         status = (f"{status}\n\n" if status else "") + (
-            f"Note: {what} is not available in this turn: the model provider refused its parameter "
+            f"Note: {shown} is not available in this turn: the model provider refused its parameter "
             "schema. Use the other tools, or tell the user that capability cannot be used right now.")
         if status_record is not None:
             status_record["content"] = status       # not accepted by the provider yet: still editable
@@ -1105,7 +1110,7 @@ async def _asks_for_everything() -> bool:
     try:
         async with db_session.AsyncSessionLocal() as db:
             return await settings_service.shell_confirm_policy(db) == "ask_all"
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
         return True
 
 
@@ -1177,7 +1182,7 @@ async def _writing_in_own_folder() -> bool:
     try:
         async with db_session.AsyncSessionLocal() as db:
             return await settings_service.workspace_is_default(db)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: unknown means the folder is the user's, so writing asks
         return False
 
 
@@ -1335,13 +1340,14 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
         if not_ready is not None:
             return not_ready
     import difflib
-    near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
+    callable_as = {tool_names.wire(key): key for key in live}      # NAME1: the names the model can call
+    near = difflib.get_close_matches(tool_key, sorted(callable_as), n=5, cutoff=0.3) or sorted(callable_as)[:5]
     result = {"ok": False, "external": False, "code": "tool_unavailable",
               "error": f"tool '{tool_key}' is not available to you"
                        + (f"; available tools include: {', '.join(near)}" if near else "")
                        + "; you may escalate a need instead"}
     from server.orchestrator import untrusted
-    if any(untrusted.odd_mcp_key(key) for key in near):
+    if any(untrusted.odd_mcp_key(key) for key in live if tool_names.wire(key) in near):
         # S64-0c: a key it lists carries a server's odd tool name: framed (no external: False), and marked.
         untrusted.mark_external()
         del result["external"]
@@ -1909,9 +1915,16 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 # so these can be loose; they exist only to nudge the model toward the right shape.
 from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
 
-# Hands v2 §6.3: the one way the model asks for the front.
-_FRONT = ("only after this action, done in the background, did nothing (no_effect) and you looked again: "
-          "Arslan borrows the app's front for about a second, waiting for the user to pause typing")
+# INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
+_SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
+
+# Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
+# ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
+# outcome.rs), then as a look with no change (hands_tools.NOTHING_CHANGED). A POLICY_DENIED refusal is no
+# reason: a borrow never lets agent-desktop take focus (hands_contract's `needs_focus`, `keys_refused`).
+_FRONT = ("only if this action, done in the background, came back sent_unconfirmed and your next desktop_look "
+          "said “Nothing changed since your last look.”: Arslan borrows the app's front for about a "
+          "second, waiting for the user to pause typing")
 
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     "read_file": {"type": "object", "properties": {
@@ -2101,7 +2114,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                    "set": {"type": "string", "enum": ["about_you", "notes"]},
                                    "id": {"type": "string", "description": "Entry id, for replace or remove."},
                                    "text": {"type": "string", "maxLength": 600,
-                                            "description": "The entry, for add or replace. One short line."}},
+                                            "description": "The entry, for add or replace. One short line."},
+                                   "sensitive": _SENSITIVE_FLAG},
                     "required": ["action", "set"], "additionalProperties": False},
     # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
     "create_skill": {"type": "object",
@@ -2131,6 +2145,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                 "enum": ["append", "supersede", "mark_stale", "delete"]},
                      "content": {"type": "string"},
                      "target_id": {"type": "integer"},
+                     "sensitive": _SENSITIVE_FLAG,
                  },
                  "required": ["kind", "action", "content"]},
     "update_plan": _PLAN_PARAMS,
@@ -2506,8 +2521,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         synth = await build_synthesis_adapter()
         if synth is not None:
             a = synth
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — synthesis falls back to the tool-loop adapter, as when none is set
+        logger.warning("synthesis adapter unavailable, keeping the tool-loop model: %s", type(exc).__name__)
     synth_system = (
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
@@ -2863,7 +2878,9 @@ async def run_native(**kwargs) -> dict:
         # or failed first) goes back to its sender, to run once as a turn of its own.
         for steer in facts.pop("steers", None) or []:
             steer.hand_back()
+        known_local = _untrusted.known_local()      # read before end_turn drops the holder
         _untrusted.end_turn(seen)
+        run_trace.record_outside(not known_local)   # INB2: the run's own record (runs.read_outside), the allowlist
         _SENT_IS_FINAL.reset(sent_is_final)
         tool_outputs.conversation.reset(copies_of)
 
@@ -3016,6 +3033,9 @@ async def _run_native(
         ctx_now = personal_context.current()
         recalled = await lessons.recall((ctx_now.query if ctx_now else "") or turn_context.users_words(user_content))
         lesson_notes = lessons.status_lines(recalled)
+        if not all(item["users"] for item in recalled):
+            from server.orchestrator import untrusted as _untrusted
+            _untrusted.mark_off_the_list()   # #475 H1: a practice in view that came from a run off the list
         if _facts is not None:
             _facts["recalled_lessons"] = recalled
     research_source_feedback: list = []

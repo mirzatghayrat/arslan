@@ -29,10 +29,10 @@ CAND = {"id": "registry:io.github.haris-musa/excel-mcp-server@1.1.2", "kind": "m
 
 
 @pytest.fixture(autouse=True)
-def _fresh(execution_db, monkeypatch):
+def _fresh(execution_db, monkeypatch, fake_capability_prepare):
     permission_store._reset_for_tests()
 
-    async def installed(c, *, folders, keys):
+    async def installed(c, *, folders, keys, prepared=None):
         return {"state": "failed", "stage": "install", "code": "x", "detail": ""}
     monkeypatch.setattr(capability_flow, "install_mcp", installed)
     capability_search.remember("c1", {"candidates": [copy.deepcopy(CAND)]})
@@ -171,7 +171,7 @@ async def test_review_f3a_no_folder_the_user_picked_goes_in():
 async def test_review_f3b_a_successful_install_is_still_one_row(monkeypatch):
     installs = []
 
-    async def installed(c, *, folders, keys):
+    async def installed(c, *, folders, keys, prepared=None):
         installs.append(c["name"])
         return {"state": "on", "source_id": "s1", "tools": ["read_range"], "scan": {"level": "clean"}}
     monkeypatch.setattr(capability_flow, "install_mcp", installed)
@@ -185,7 +185,7 @@ async def test_review_f3b_a_successful_install_is_still_one_row(monkeypatch):
 async def test_review_f3c_a_ledger_that_cannot_be_written_changes_nothing(monkeypatch, approved, outcome, installs):
     done = []
 
-    async def installed(c, *, folders, keys):
+    async def installed(c, *, folders, keys, prepared=None):
         done.append(c["name"])
         return {"state": "on", "source_id": "s1", "tools": ["read_range"], "scan": {"level": "clean"}}
 

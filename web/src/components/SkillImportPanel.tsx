@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileDown, RefreshCcw, Check, X, Shield, FileCode2 } from 'lucide-react';
 import { scanSkills, importSkill, type SkillScanResult } from '../api/discovery';
+import { Escaped } from '../lib/outsideText';
 
 /**
  * SkillImportPanel (P3) — faithful SKILL.md importer. Scan a repo for standard
@@ -41,7 +42,8 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
     setBusyPath(path);
     setImportErr((prev) => ({ ...prev, [path]: '' }));
     try {
-      await importSkill(ref.trim(), path);
+      // CAP4a-1: the commit the listing read, so what was listed is what is imported (not HEAD by then).
+      await importSkill(result?.commit ? `${result.repo.full_name}@${result.commit}` : ref.trim(), path);
       setImported((prev) => ({ ...prev, [path]: true }));
       onImported?.();
     } catch (e) {
@@ -108,7 +110,7 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
               className="bg-background border border-border/60 rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[11.5px] font-bold text-foreground">{s.name ?? s.path}</span>
+                  <span className="text-[11.5px] font-bold text-foreground"><Escaped text={s.name ?? s.path} /></span>
                   {typeof s.body_bytes === 'number' && (
                     <span className="text-[9px] font-mono text-subtle-foreground">{Math.round(s.body_bytes / 100) / 10}KB</span>
                   )}
@@ -117,9 +119,21 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
                       {t('capabilities.import.scripts_n', { n: s.scripts.length })}
                     </span>
                   )}
+                  {(s.hidden?.count ?? 0) > 0 && (
+                    <span data-testid="import-hidden" className="text-[9px] font-semibold bg-ask-soft text-ask px-1.5 py-0.5 rounded-full">
+                      {t('capabilities.import.hidden', { count: s.hidden!.count })}
+                    </span>
+                  )}
                 </div>
                 {s.description && (
-                  <p className="text-[10.5px] text-subtle-foreground font-sans mt-0.5 line-clamp-1">{s.description}</p>
+                  <p className="text-[10.5px] text-subtle-foreground font-sans mt-0.5 line-clamp-1"><Escaped text={s.description} /></p>
+                )}
+                {/* UNI1b (the user's option B): which runs, as the markers show them; importing is not blocked. */}
+                {(s.hidden?.count ?? 0) > 0 && (
+                  <p data-testid="import-hidden-runs" className="text-[10px] text-ask font-sans mt-0.5">
+                    {t('capabilities.import.hiddenRuns', { runs: [s.hidden!.runs.join(', '), s.hidden!.more
+                      ? t('capabilities.import.hiddenMore', { count: s.hidden!.more }) : ''].filter(Boolean).join(' ') })}
+                  </p>
                 )}
                 {(importErr[s.path] || (!s.importable && s.reason)) && (
                   <p className="text-[10px] text-danger font-sans mt-0.5">{importErr[s.path] || s.reason}</p>

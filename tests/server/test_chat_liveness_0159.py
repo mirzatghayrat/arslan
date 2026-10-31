@@ -120,7 +120,9 @@ def test_a_message_sent_right_after_the_answer_is_not_queued(app_client, slow, m
     from server.services import turn_facts
     slow.seconds = 0
     looking_done = threading.Event()
-    fallback = threading.Timer(4, looking_done.set)    # before K2b the second message waits for this
+    # Before K2b the second message waits for this. Only a safety net, so a red run cannot hang: 30 s, not 4
+    # (LOAD4: under load the two turns took longer than 4 s, the net fired first, and the last assert failed).
+    fallback = threading.Timer(30, looking_done.set)
 
     async def _still_looking(conv, msg):
         while not looking_done.is_set():
@@ -134,7 +136,7 @@ def test_a_message_sent_right_after_the_answer_is_not_queued(app_client, slow, m
             w.receive_json()
             w.send_json({"type": "user_message", "content": "first: hi"})
             _until(w, lambda f: f.get("type") == "stream_end")
-            deadline = time.monotonic() + 3
+            deadline = time.monotonic() + 10
             while ws_arslan._turn_lock("main").locked() and time.monotonic() < deadline:
                 time.sleep(0.01)
             # The turn's lock is free while its facts are still being looked for.
@@ -149,6 +151,16 @@ def test_a_message_sent_right_after_the_answer_is_not_queued(app_client, slow, m
         fallback.cancel()
 
 
+def _recorded(conversation_id: str, seconds: float = 10.0) -> None:
+    """Until the turn's run is registered and its journal holds something. The beats start with the turn, before
+    it loads its context and registers its run, so under load the first beats come with nothing recorded yet
+    (the app runs on the test client's portal thread; this one only reads the registry)."""
+    deadline = time.monotonic() + seconds
+    while not ((journals := run_registry.journal_snapshots(conversation_id)) and journals[0][1]):
+        assert time.monotonic() < deadline, "the turn is recorded (so a beat could have been journaled)"
+        time.sleep(0.01)
+
+
 def test_still_working_beats_reach_the_window_and_are_never_replayed(app_client, slow, monkeypatch):
     monkeypatch.setattr(ws_arslan, "_WORKING_BEAT_S", 0.2)
     slow.seconds = 2.5
@@ -156,18 +168,14 @@ def test_still_working_beats_reach_the_window_and_are_never_replayed(app_client,
         w.receive_json()
         w.send_json({"type": "user_message", "content": "first: a long one"})
         _until(w, lambda f: f.get("type") == "working")
+        _recorded("main")
         with app_client.websocket_connect("/ws/arslan/main") as late:     # a window that re-attaches mid-turn
             late.receive_json()
-            replay = []
-            deadline = time.monotonic() + 3
-            while time.monotonic() < deadline:
-                f = late.receive_json()
-                replay.append(f)
-                if f.get("type") in ("working", "stream_end"):
-                    break
-            # It hears the live beat, but a beat is never part of the turn's replayed journal.
+            replay = _until(late, lambda f: f.get("type") in ("working", "stream_end"))
+            # It hears a live beat, sent after the turn was recorded, but a beat is never part of the turn's
+            # replayed journal.
             journals = run_registry.journal_snapshots("main")
-            assert journals and journals[0][1], "the turn is recorded (so a beat could have been journaled)"
+            assert journals and journals[0][1], "the turn is still running"
             assert all(ev.get("type") != "working" for _run, events in journals for ev in events)
-        _until(w, lambda f: f.get("type") == "stream_end")
+        _until(w, lambda f: f.get("type") == "stream_end", max_frames=400)    # five beats a second while it waited
     assert any(f.get("type") == "working" and f.get("elapsed_s", -1) >= 0 for f in replay)

@@ -33,6 +33,8 @@
     "setup_notice": "Descarga una versión fija de un navegador de código abierto en la carpeta de datos de Arslan. Puede tardar unos minutos y ocupar varios cientos de MB. No requiere cuenta ni API de pago.",
     "setup": "Descargar navegador",
     "url": "Dirección HTTPS pública",
+    "searchOrAddress": "Busca con Bing o escribe una dirección",
+    "httpsOnly": "Aquí solo se abren direcciones https://.",
     "open": "Vista previa",
     "stop": "Detener",
     "blocked": "Conexiones bloqueadas o limitadas: {{n}}",
@@ -96,7 +98,8 @@
     "arslan": "Asistente principal",
     "capabilities": "Capacidades",
     "brain": "Memoria",
-    "activity": "Actividad"
+    "activity": "Actividad",
+    "scheduled": "Programadas"
   },
   "brain": {
     "strip_details": "Cobertura y límites",
@@ -252,11 +255,18 @@
     "thinking": "Pensando...",
     "stopRun": "Detener",
     "remembered": "Recordado: {{text}}",
-    "wantsToRemember": "Arslan quiere recordar: {{text}}",
     "rememberedUndo": "Deshacer",
     "rememberedUndone": "Deshecho",
-    "rememberedReview": "Revisar en Memoria",
-    "rememberedChanged": "Cambió desde entonces: míralo en Memoria"
+    "rememberedChanged": "Cambió desde entonces: míralo en Memoria",
+    "memoryAsk": "Arslan quiere recordar algo sensible: {{text}}",
+    "memoryKeptLocal": "Recordado, solo en este Mac: {{text}}",
+    "memorySkipped": "Vale, no se recuerda.",
+    "memoryWaits": "Arslan quiere recordar: {{text}}. Queda en «Por ordenar» porque {{reason}}.",
+    "memoryWhy_external_seen": "esta conversación leyó páginas web u otro contenido externo",
+    "memoryWhy_not_present": "no estabas cuando se escribió",
+    "memoryWhy_sensitive": "es sensible",
+    "memoryWhy_confirmation_required": "necesita tu visto bueno",
+    "memorySeeInMemory": "Ver en Memoria"
   },
   "clarify_card": {
     "answered": "Elección enviada"
@@ -575,7 +585,7 @@
     "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
     "labelIsland": "Mostrar Arslan en el notch",
     "islandDesc": "Un pequeño Arslan en la parte superior de la pantalla muestra en qué está trabajando, cuándo te necesita y cuándo termina una tarea. Pasa el puntero por encima para ver más. Nunca aparece en capturas, grabaciones ni al compartir pantalla.",
-    "automationElsewhere": "Las tareas programadas, el uso de tokens y cada ejecución pasada están en Actividad.",
+    "automationElsewhere": "Las tareas programadas tienen su propia página; el uso de tokens y cada ejecución pasada están en Actividad.",
     "automationOpenActivity": "Abrir Actividad",
     "searchPlaceholder": "Buscar ajustes…",
     "searchNoHits": "Ninguna sección coincide",
@@ -705,7 +715,7 @@
     "grpWhatsNew": "Novedades de esta versión",
     "watchesInInbox": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la Bandeja.",
     "openInbox": "Abrir la Bandeja",
-    "openActivity": "Las tareas programadas, el uso y cada ejecución están en Actividad.",
+    "openActivity": "El uso y cada ejecución están en Actividad; las tareas programadas tienen su propia página.",
     "openActivityBtn": "Abrir Actividad",
     "whatsNewEmpty": "No hay notas para esta versión."
   },
@@ -740,6 +750,16 @@
     "more": "Más"
   },
   "sidebar": {
+    "pinFailed": "No se pudo fijar. Inténtalo de nuevo.",
+    "pinned": "Fijadas",
+    "pin": "Fijar",
+    "unpin": "Dejar de fijar",
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "previous7": "Últimos 7 días",
+    "earlier": "Anteriores",
+    "hide": "Ocultar barra lateral",
+    "show": "Mostrar barra lateral",
     "new_session": "Nueva conversación",
     "spawns_ledger": "Lista de expertos",
     "active_chats": "Conversaciones activas",
@@ -770,7 +790,8 @@
       "done": "Hecho",
       "unfinished": "No se logró",
       "failed": "Detenido por un problema",
-      "scheduled": "Programado"
+      "scheduled": "Programado",
+      "done_unseen": "Hecho, aún sin ver"
     },
     "projects": "Proyectos",
     "allProjects": "Todos los proyectos",
@@ -938,7 +959,7 @@
       "orphaned": "Archivos huérfanos"
     },
     "import": {
-      "subtitle": "SKILL.md estándar, importado literalmente — con control de licencia.",
+      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad; los caracteres invisibles se cuentan.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subruta (opcional)",
       "scan": "Escanear",
@@ -946,7 +967,10 @@
       "imported": "Importado",
       "no_license": "SIN LICENCIA",
       "none_found": "No se encontraron archivos SKILL.md.",
-      "scripts_n": "{{n}} scripts"
+      "scripts_n": "{{n}} scripts",
+      "hidden": "Caracteres invisibles en SKILL.md: {{count}}",
+      "hiddenRuns": "Su texto tiene {{runs}}. Una serie así puede ocultar texto.",
+      "hiddenMore": "y {{count}} más"
     },
     "filter": {
       "placeholder": "Filtrar lo que ya tienes…",
@@ -1360,8 +1384,6 @@
     "stalled": "Detenido",
     "changed": "Cambios",
     "other": "Otros",
-    "memoryWaiting": "Memoria esperando tu OK",
-    "memoryOpen": "Abrir Memoria",
     "watching": "Vigilando",
     "muted": "Sin recordatorios",
     "addWatch": "Vigilar otra página o carpeta",
@@ -1378,15 +1400,14 @@
   },
   "pendingMemory": {
     "curationFallback": "Una sugerencia para ordenar tu memoria",
-    "keep": "Guardar",
-    "keepLocal": "Guardar, solo modelos locales",
+    "keep": "Recordar",
+    "keepLocal": "Recordar, solo en este Mac",
     "drop": "No",
     "apply": "Aplicar",
     "source": {
       "memory": "Sobre ti",
       "curation": "Orden"
-    },
-    "sensitive": "Sensible"
+    }
   },
   "confirm": {
     "delete": "Eliminar",
@@ -1417,5 +1438,13 @@
     "memoryBody": "Arslan lo olvida y no lo volverá a aprender de conversaciones antiguas.",
     "unsavedTitle": "¿Salir sin guardar?",
     "unsavedBody": "Se perderán los cambios de esta nota."
+  },
+  "scheduledPage": {
+    "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
+    "watches": "Páginas y carpetas vigiladas",
+    "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
+    "attention": "Necesita tu atención",
+    "changed": "Ha cambiado",
+    "failing": "Falló o se pausó sola"
   }
 }

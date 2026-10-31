@@ -150,15 +150,22 @@ export const companionApi = {
   memoryStats: (days = 7) => request<MemoryStats>(`/memory/stats?days=${days}`),
   noticedEarlier: () => request<{ count: number }>(`/memory/noticed-earlier`),
   acceptNoticedEarlier: () => request<{ accepted: number }>(`/memory/noticed-earlier/accept`, { method: "POST" }),
-  resolveProposal: (id: number, accept: boolean, sensitive: boolean, cloud: boolean) => request(
+  /** `expectedVersion`: the version the chat line or Memory's row showed (INB2, #475 review); the server
+   *  refuses an answer to an entry that changed since. */
+  resolveProposal: (id: number, accept: boolean, sensitive: boolean, cloud: boolean, expectedVersion?: number) => request(
     `/memory/proposals/${id}/resolve`, json("POST", { accept, sensitive_acknowledged: sensitive,
-      use_policy: cloud ? "cloud_allowed" : "local_only" })),
+      use_policy: cloud ? "cloud_allowed" : "local_only",
+      ...(expectedVersion != null ? { expected_version: expectedVersion } : {}) })),
   context: (conversationId: string) => request<ConversationContext>(`/conversations/${encodeURIComponent(conversationId)}/context`),
   contextReceipts: (conversationId: string, taskId: string, beforeId?: string) => request<ContextReceiptRecord[]>(
     `/conversations/${encodeURIComponent(conversationId)}/context/receipts?task_id=${encodeURIComponent(taskId)}&limit=20`
     + (beforeId ? `&before_id=${encodeURIComponent(beforeId)}` : "")),
   contextMemory: (conversationId: string, receiptId: string, entryId: string) => request<ContextMemoryReview>(
     `/conversations/${encodeURIComponent(conversationId)}/context/receipts/${encodeURIComponent(receiptId)}/memories/${encodeURIComponent(entryId)}`),
+  /** SB1-2: pin or unpin a conversation in the sidebar (its own route: allowed while it runs, never bumps `version`). */
+  pin: (conversationId: string, pinned: boolean) =>
+    request<{ conversation_id: string; pinned: boolean }>(`/conversations/${encodeURIComponent(conversationId)}/pin`,
+      json("PUT", { pinned })),
   saveContext: (context: ConversationContext, changes: Partial<ConversationContext>) => {
     // memory_by_default is read-only (a global setting); the server refuses unknown fields.
     const { conversation_id, version, memory_by_default: _readOnly, ...settings } = { ...context, ...changes };

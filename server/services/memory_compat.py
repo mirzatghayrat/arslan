@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite
 from server.db.models import MemoryEntry, MemoryLegacyMap, MemoryRevision
-from server.services import fact_dedup, personal_context
+from server.services import fact_dedup, memory_merge, personal_context
 from server.services.memory_repository import repository
 
 
@@ -55,11 +55,28 @@ async def save_facts(facts):
         if any(fact_dedup.similar(content, other) for other in known):
             continue
         known.append(content)
+        # MEM1: the same meaning in other words updates the older entry (memory_merge). A refresh is not a new
+        # memory, so it is not announced ("remembered … [Undo]" would undo the older entry); a proposal it makes or
+        # joins is, as INB2's memory_proposed, in the write's own words (②Main's review of #559, L2).
+        match = await memory_merge.same_meaning(content, ctx=ctx, kind="preference", scope=scope, core=None,
+                                                sensitive=bool(fact.get("sensitive")))
         try:
             async with repository() as repo:
-                value = await repo.create(MemoryWrite(content=content, scope=scope,
-                    sensitivity="sensitive" if fact.get("sensitive") else "normal"), actor)
-                result.append(await fact_dto(repo, await repo.get(value["id"])))
+                write = MemoryWrite(content=content, scope=scope,
+                                    sensitivity="sensitive" if fact.get("sensitive") else "normal")
+                merged = await repo.merge_into(match.id, match.version, write, actor) if match else None
+                if merged is not None:
+                    if merged.get("proposal_id"):
+                        dto = await fact_dto(repo, await repo.get(merged["id"]))
+                        dto.content, dto.status = content, "proposed"
+                        dto.proposal_id, dto.reason = merged["proposal_id"], merged.get("reason")
+                        result.append(dto)
+                    continue
+                value = await repo.create(write, actor)
+                dto = await fact_dto(repo, await repo.get(value["id"]))
+                # INB2: the proposal it waits as, for the chat line's two buttons (memory_proposed).
+                dto.proposal_id, dto.reason = value.get("proposal_id"), value.get("reason")
+                result.append(dto)
         except MemoryError as exc:
             if exc.code not in {"credentials_not_memory", "memory_source_deleted", "memory_previously_deleted"}:
                 raise

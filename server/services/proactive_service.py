@@ -95,6 +95,8 @@ def present(item: ProactiveItem) -> dict:
     return {"id": item.id, "kind": item.kind, "title_key": item.title_key, "params": item.params or {},
             "evidence": item.evidence or [], "goal": item.goal, "priority": item.priority, "status": item.status,
             "diagnosis": item.diagnosis, "conversation_id": item.conversation_id, "job_id": item.job_id,
+            # INB3: the Scheduled page puts a change under its watch (watch:<id>), a problem under its task (sched:<id>).
+            "source_key": item.source_key,
             "created_at": item.created_at.isoformat() + "Z",
             "snooze_until": item.snooze_until.isoformat() + "Z" if item.snooze_until else None}
 
@@ -296,30 +298,14 @@ async def summary() -> dict:
         rows = (await db.execute(select(ProactiveItem.status, ProactiveItem.priority, func.count())
                                  .where(ProactiveItem.status.in_(OPEN))
                                  .group_by(ProactiveItem.status, ProactiveItem.priority))).all()
-        memory = await _memory_waiting(db)
     from server.services import approvals
     return {"open": sum(n for _, _, n in rows),
             "unread": sum(n for status, _, n in rows if status == "new"),
             "high": sum(n for status, p, n in rows if status == "new" and p == "high"),
-            # 0.1.55 §12: the Inbox is everything waiting for the user's decision —
-            # cards to approve (any conversation or job) and memory waiting for an OK.
-            # INB1 (v0.1.64): learned practices no longer wait for an OK, so none is counted.
-            "approvals": len(approvals.all_pending()),
-            "memory": memory}
-
-
-async def _memory_waiting(db) -> int:
-    """Pending memory proposals (all kinds: noticed facts that wait, curation). Learned practices
-    are not counted since INB1: one that is not in effect is listed in Memory with its reason, it
-    does not wait for an OK. INB2 removes this count too. Fails soft: the badge must never break
-    the page."""
-    from server.db.models import MemoryProposal
-    try:
-        proposals = (await db.execute(select(func.count()).select_from(MemoryProposal)
-                                      .where(MemoryProposal.status == "pending"))).scalar_one()
-        return int(proposals)
-    except Exception:  # noqa: BLE001
-        return 0
+            # 0.1.55 §12: the Inbox is everything waiting for the user's decision — cards to
+            # approve (any conversation or job). INB1/INB2 (v0.1.64): memory no longer waits for an
+            # OK; what did not take effect is in Memory's "To sort" list, never in the badge.
+            "approvals": len(approvals.all_pending())}
 
 
 async def mark_seen(ids: list[int]) -> None:

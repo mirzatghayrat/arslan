@@ -26,7 +26,7 @@ import OrchestratorChat from './components/OrchestratorChat';
 import { composerDrafts, discardComposerDraft } from './lib/composerDrafts';
 import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
-import { Globe, PanelRight } from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 import { ThemeApplier } from './components/ThemeApplier';
 import ActivityView from './components/ActivityView';
 import MemorySection from './components/companion/MemorySection';
@@ -42,8 +42,9 @@ import { TURN_UNDONE_EVENT, showUndone, type TurnUndoneDetail } from './componen
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import Workbench from './components/workbench/Workbench';
-import { OPEN_PROJECT_EVENT } from './components/workbench/TaskTab';
 import { useWorkbench } from './stores/workbenchStore';
+import { useRecency } from './stores/recencyStore';
+import { useSidebar } from './stores/sidebarStore';
 import { resolveSection, type SettingsSectionId } from './components/settings/sectionRegistry';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
@@ -53,7 +54,9 @@ import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
+import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
+import { useScheduledAttention } from './hooks/useScheduledAttention';
 import { request } from './api/client';
 
 interface ArslanThread {
@@ -76,6 +79,7 @@ export default function App() {
   const backendStatus = useBackendStatus();
   // 0.1.47: the Inbox badge (unread proactive items), polled while the window is visible.
   const proactive = useProactiveSummary();
+  const scheduledAttention = useScheduledAttention();
   const [legacyExperts, setLegacyExperts] = useState(0);
   useEffect(() => {
     request<{ experts: { converted: boolean }[] }>('/experts/legacy')
@@ -194,7 +198,7 @@ export default function App() {
 
   // The server's conversation list kept fresh: glyphs for each conversation, and conversations
   // started elsewhere (a task handed over from the iPhone) appear without a restart.
-  const conversationIndex = useConversationIndex();
+  const conversationIndex = useConversationIndex(8000, activeSection, activeThreadId);
   useEffect(() => {
     const rows = conversationIndex.rows;
     if (!rows.length) return;
@@ -220,6 +224,9 @@ export default function App() {
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
     useArslanStore.getState().handleFrame(raw as ArslanServerMessage);
+    // SB1: a reply that finished, or a result a job posted, moves this conversation to the top now.
+    const type = (raw as { type?: unknown } | null)?.type;
+    if ((type === 'stream_end' || type === 'message') && activeThreadIdRef.current) useRecency.getState().touch(activeThreadIdRef.current);
   }, []);
 
   // Connect to the live orchestrator WebSocket using the active thread's id as
@@ -285,6 +292,7 @@ export default function App() {
     // only text-bearing attachments ride to the backend as attached_context below.
     useArslanStore.getState().addUserMessage(text, attached?.display);
     useArslanStore.getState().setThinking(true);
+    useRecency.getState().touch(activeThreadIdRef.current);      // SB1: a sent message moves it to the top
     wsSend({
       type: 'user_message',
       content: text,
@@ -401,6 +409,7 @@ export default function App() {
     // backend will send an empty `history` frame for the new conversation_id).
     useArslanStore.getState().resetForNewConversation();
     setThreads(prev => [...prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)), newThread]);
+    useRecency.getState().touch(threadId);                       // SB1: a new conversation goes to the top
     setActiveThreadId(threadId);
     setActiveSection('arslan');
     setPanelView('default');
@@ -430,15 +439,8 @@ export default function App() {
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   // 0.1.58 §3: the workbench, and how many background jobs run in this conversation ("后台 N").
   const workbench = useWorkbench();
+  const sidebarCollapsed = useSidebar((s) => s.collapsed);
   const runningJobs = useArslanStore((s) => Object.values(s.jobs).filter((j) => j.phase !== 'finished').length);
-  useEffect(() => {
-    const open = (e: Event) => {
-      const id = (e as CustomEvent<string>).detail;
-      if (typeof id === 'string') { setOpenProjectId(id); setActiveSection('projects'); }
-    };
-    window.addEventListener(OPEN_PROJECT_EVENT, open);
-    return () => window.removeEventListener(OPEN_PROJECT_EVENT, open);
-  }, []);
   // 0.1.58 §1: a reply's ⋯ → "在「动态」里看这一轮" opens Activity with that run in its drawer.
   useEffect(() => {
     const open = (e: Event) => {
@@ -468,6 +470,17 @@ export default function App() {
       showToast(projectId ? t('sidebar.movedTo', { name }) : t('sidebar.movedOut'));
     } catch {
       showToast(t('sidebar.moveFailed'));
+    }
+  };
+
+  /** SB1-2: pin or unpin. Shown at once; stored on the server's conversation record; a failure takes it back. */
+  const handlePinThread = async (threadId: string, pinned: boolean) => {
+    useSidebar.getState().setPin(threadId, pinned);
+    try {
+      await companionApi.pin(threadId, pinned);
+    } catch {
+      useSidebar.getState().setPin(threadId, null);
+      showToast(t('sidebar.pinFailed'));
     }
   };
 
@@ -609,8 +622,9 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
-        inboxUnread={proactive.unread + (proactive.approvals ?? 0) + (proactive.memory ?? 0)}
+        inboxUnread={proactive.unread + (proactive.approvals ?? 0)}
         inboxHigh={proactive.high + (proactive.approvals ?? 0)}
+        scheduledDot={scheduledAttention.any}
         activeSection={activeSection}
         onChangeSection={(section) => {
           if (section === 'settings') setSettingsInitialSection(undefined);
@@ -629,6 +643,7 @@ export default function App() {
         }}
         onOpenProject={(projectId) => { setOpenProjectId(projectId); setActiveSection('projects'); }}
         onMoveToProject={(threadId, projectId) => void handleMoveToProject(threadId, projectId)}
+        onPinThread={(threadId, pinned) => void handlePinThread(threadId, pinned)}
       />}
 
       {/* Main Workspace Frame container with glass window feel */}
@@ -646,7 +661,7 @@ export default function App() {
               everywhere rather than only in chat. "deep" covers the labels
               inside; Tauri's drag script skips real controls on its own. */}
           <div data-tauri-drag-region="deep" data-testid="workspace-bar"
-            className="h-14 shrink-0 gap-3 border-b border-border px-4 lg:px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+            className={`h-14 shrink-0 gap-3 border-b border-border px-4 lg:px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30 ${sidebarCollapsed ? 'pl-[120px] lg:pl-[120px]' : ''}`}>
             {activeSection === 'settings' && <span className="absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground pointer-events-none">Arslan</span>}
             {/* The label is a CONVERSATION thing, so it appears only there.
                 The BAR itself stays on every section, and that is not tidiness:
@@ -692,9 +707,9 @@ export default function App() {
             <div className={`flex shrink-0 items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
 
 
-              {/* 0.1.58 §3: one workbench (任务 / 文件 / 浏览器) — a "后台 N" mark while a job runs here. */}
+              {/* 0.1.58 §3, WB1: one workbench (Working folder / Progress / Browser) — a "后台 N" mark while a job runs here opens Progress. */}
               {activeSection === 'arslan' && runningJobs > 0 && (
-                <button type="button" data-testid="workbench-bg" onClick={() => workbench.show('task')}
+                <button type="button" data-testid="workbench-bg" onClick={() => workbench.show('progress')}
                   className="flex items-center gap-1.5 rounded-full bg-info/10 px-2.5 py-1 text-[11.5px] font-semibold text-info">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-info" aria-hidden />{t('workbench.bg', { count: runningJobs })}
                 </button>
@@ -715,17 +730,7 @@ export default function App() {
                   <PanelRight className="w-3.5 h-3.5" />
                 </button>
               )}
-
-              {/* Explicit-user static preview, not an autonomous browser agent. */}
-              <button
-                data-testid="browser-indicator"
-                onClick={() => { setActiveSection('arslan'); workbench.show('browser'); }}
-                title={t('dock.title')}
-                aria-label={t('dock.title')}
-                className="flex items-center px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary"
-              >
-                <Globe className="w-3.5 h-3.5" />
-              </button>
+              {/* WB1 (user, 2026-10-30: 「标题栏只留一个按钮」): the globe button is gone; Browser is a fixed tab in the workbench. */}
             </div>
           </div>
 
@@ -781,6 +786,8 @@ export default function App() {
             {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
               onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
+            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openInboxConversation}
+              onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'activity' && <ActivityView />}
 
@@ -800,9 +807,15 @@ export default function App() {
             )}
           </div>
         </main>
+        {/* WB1-2: Overview shows this conversation's model with the composer chip's own picker. */}
         {activeSection === 'arslan' && <Workbench conversationId={activeThreadId}
           taskId={dockTaskFrame?.conversation_id === activeThreadId ? dockTaskFrame.task_id : null}
-          temporary={Boolean(activeThread.temporary)} />}
+          temporary={Boolean(activeThread.temporary)}
+          models={{ configs: providerConfigs, llmProviders,
+            onSetDefault: async (id) => { await setPrimaryProviderConfig(id); listProviderConfigs().then(setProviderConfigs).catch(() => {}); },
+            onManage: () => { setSettingsInitialSection('models'); setActiveSection('settings'); } }}
+          onOpenCapabilities={() => setActiveSection('capabilities')}
+          onOpenSettings={(section) => { setSettingsInitialSection(resolveSection(section)); setActiveSection('settings'); }} />}
       </div>
       </main>
 

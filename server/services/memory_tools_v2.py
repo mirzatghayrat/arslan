@@ -11,6 +11,105 @@ from server.services import personal_context as pc
 from server.services.memory_repository import repository
 
 
+async def _about_you(actor, ctx):
+    """INB2: the turn's own state for a new "about you" entry: the user present (the allowlist,
+    server/services/presence.py) and the whole conversation clean: everything this turn took in is on the
+    user's allowlist (untrusted.known_local: nothing attached, no project knowledge, only known-local tools;
+    #475 F2), and every other run of the conversation recorded the same (`runs.read_outside`; no record,
+    NULL, counts as off it: older runs, a crashed one, a job still running). Off the list too: a turn with a
+    note or practice in view that came from a run off it, or with the project card (#475 H1/H2)."""
+    from sqlalchemy import or_
+
+    from server.db import session as db_session
+    from server.db.models import Run
+    from server.orchestrator import run_trace, untrusted
+    from server.services import presence
+    # This turn and every earlier turn of this run (#475 review, F5); with no conversation whose other runs can
+    # be checked, nothing is known to be clean (F7).
+    clean = untrusted.known_local() and run_trace.outside() is not True and bool(ctx.conversation_id)
+    if clean:
+        async with db_session.AsyncSessionLocal() as db:
+            query = select(Run.id).where(Run.conversation_id == ctx.conversation_id,
+                                         or_(Run.read_outside.is_(None), Run.read_outside.is_(True)))
+            if ctx.source_run_id is not None:
+                query = query.where(Run.id != ctx.source_run_id)
+            clean = (await db.execute(query.limit(1))).first() is None
+    return replace(actor, user_present=presence.present(), conversation_clean=clean)
+
+
+# #475 H1 (the user, 2026-10-29): entries that took effect as the user's words or choice, or as an "about you"
+# entry from a clean conversation. Every other entry in a turn's context (Arslan's notes, and any kind added
+# later) is traced back to the run that wrote it.
+USER_KINDS = frozenset({"user_form", "explicit_user_request", "legacy_user_edit", "legacy_manual", "auto_noticed",
+                        "arslan_about_you"})
+
+
+async def from_off_the_list(used) -> bool:
+    """#475 H1 (the user, 2026-10-29): whether a memory entry in a turn's context (its receipt's `used`) came
+    from a run off the list, which puts the turn off it too (untrusted.off_list_in), so what it writes or says
+    counts the same later. The version in view is traced: one the user wrote or switched on (a source of
+    theirs) is clean; otherwise every run its sources name must have recorded `runs.read_outside` false. No
+    run named, a run that is not there, or NULL counts as off the list."""
+    from server.db import session as db_session
+    from server.db.companion_models import MemorySource
+    from server.db.models import Run
+    shown = {(ref.id, ref.revision) for ref in used if ref.kind == "memory"}
+    if not shown:
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(MemoryEntry.id, MemoryEntry.confirmation_kind, MemoryRevision.id,
+                                        MemoryRevision.version).join(
+            MemoryRevision, MemoryRevision.entry_id == MemoryEntry.id).where(
+            MemoryEntry.id.in_({entry for entry, _ in shown})))).all()
+        traced = {revision for entry, kind, revision, version in rows
+                  if (entry, version) in shown and kind not in USER_KINDS}
+        if not traced:
+            return False
+        sources = (await db.scalars(select(MemorySource).where(MemorySource.revision_id.in_(traced)))).all()
+        named = {source.source_ref.get("run_id") for source in sources} - {None}
+        clean = set((await db.scalars(select(Run.id).where(Run.id.in_(named), Run.read_outside.is_(False)))).all())
+    for revision in traced:
+        mine = [source for source in sources if source.revision_id == revision]
+        if any(source.author == "user" for source in mine):
+            continue
+        if not mine or any(source.source_ref.get("run_id") not in clean for source in mine):
+            return True
+    return False
+
+
+def _flagged(args, sensitivity: str = "normal") -> str:
+    """#475 F4 (the user, 2026-10-29): Arslan may add `sensitive: true` to a write. It only ever makes the
+    write stricter: normal or unknown becomes sensitive; leaving it out or saying false changes nothing, and
+    decide_write's keywords still apply. Judging sensitivity by category is later."""
+    return "sensitive" if args.get("sensitive") and sensitivity in ("normal", "unknown") else sensitivity
+
+
+async def _same_meaning(content: str, kind: str, scope, core, args, ctx):
+    """MEM1: the entry this new one would repeat in other words (memory_merge), or None."""
+    from server.services import memory_merge
+    return await memory_merge.same_meaning(content, ctx=ctx, kind=kind, scope=scope, core=core,
+                                           sensitive=_flagged(args) != "normal")
+
+
+def _tell_the_window(ctx, result: dict) -> None:
+    """INB2: the chat line after a turn. A new entry that took effect reads "remembered … [Undo]"
+    (fact_saved); one that waits names its proposal, version, text and reason (memory_proposed), so a
+    sensitive one's two buttons answer exactly that proposal. Window socket only; the Bridge never
+    forwards these frames (desktop/bridge FrameMapper maps a fixed list of types)."""
+    from server.services import run_registry
+    if not ctx.conversation_id or not result.get("ok") or not result.get("id"):
+        return
+    if result.get("status") not in ("active", "proposed"):
+        return          # #475 recheck, G2: it landed on a paused or quarantined entry: nothing was remembered
+    waiting = result.get("status") == "proposed"
+    frame = {"type": "memory_proposed" if waiting else "fact_saved", "content": result.get("content"),
+             "sensitive": result.get("sensitivity", "normal") != "normal",
+             "entry_id": result.get("id"), "version": result.get("version")}
+    if waiting:
+        frame |= {"proposal_id": result.get("proposal_id"), "reason": result.get("reason")}
+    run_registry.make_emit(ctx.conversation_id)(frame)     # each window is isolated there: a dead one breaks nothing
+
+
 def _context(caller):
     ctx = pc.current()
     if ctx is None or caller is None or caller.actor not in {"host", "spawn"}:
@@ -59,11 +158,16 @@ async def remember(args, caller):
     scope = MemoryScope(kind="expert", id=ctx.expert_id) if caller.actor == "spawn" else (
         MemoryScope(kind="project", id=ctx.project_id) if ctx.project_id else MemoryScope(kind="global"))
     kind = "experience" if args.get("kind") == "learning" else "preference"
+    if action == "append" and caller.actor == "host" and kind == "preference":
+        actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
+    content = str(args.get("content") or "")
+    match = await _same_meaning(content, kind, scope, None, args, ctx) if action == "append" else None
     try:
         async with repository() as repo:
             if action == "append":
-                result = await repo.create(MemoryWrite(content=str(args.get("content") or ""),
-                                                       kind=kind, scope=scope), actor)
+                write = MemoryWrite(content=content, kind=kind, scope=scope, sensitivity=_flagged(args))
+                result = (await repo.merge_into(match.id, match.version, write, actor) if match else None) \
+                    or await repo.create(write, actor)
             else:
                 target = args.get("target_id")
                 if not isinstance(target, int) or isinstance(target, bool):
@@ -81,14 +185,19 @@ async def remember(args, caller):
                 # review of the exact old/new versions.
                 result = await repo.revise(entry.id, expected, MemoryWrite(
                     content=str(args.get("content") or ""), kind=entry.kind, scope=scope,
-                    sensitivity=entry.sensitivity, use_policy=entry.use_policy,
+                    sensitivity=_flagged(args, entry.sensitivity), use_policy=entry.use_policy,
                     topic=(revision.structured_value or {}).get("topic"),
                     valid_from=entry.valid_from.replace(tzinfo=UTC) if entry.valid_from else None,
                     review_at=entry.review_at.replace(tzinfo=UTC) if entry.review_at else None,
                     expires_at=entry.expires_at.replace(tzinfo=UTC) if entry.expires_at else None,
                 ), replace(actor, explicit_save_ref=None, allow_global_save=False))
-        return {"ok": True, **result, "saved": result.get("status") == "active",
-                "requires_confirmation": result.get("status") == "proposed"}
+        out = {"ok": True, **result, "saved": result.get("status") == "active",
+               "requires_confirmation": result.get("status") == "proposed"}
+        # MEM1: a refresh is not a new memory; a proposal a merge made or joined is announced (②Main's L2).
+        if action == "append" and kind == "preference" and caller.actor == "host" and (
+                not result.get("merged") or result.get("proposal_id")):
+            _tell_the_window(ctx, out)
+        return out
     except MemoryError as exc:
         return {"ok": False, "code": exc.code}
     except ValidationError:
@@ -135,17 +244,29 @@ async def note(args, caller):
     actor = ctx.actor("host")
     if member == "notes":
         actor = replace(actor, auto_activate_own_notes=not untrusted.external_seen())
+    elif action == "add":
+        actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
+    match = await _same_meaning(text, kind, MemoryScope(kind="global"), member, args, ctx) if action == "add" else None
     try:
         async with repository() as repo:
             current = await _note_set(repo, ctx.owner_id, member)
             used = sum(len(row["text"]) for row in current if row["status"] == "active")
             listing = {"set": member, "limit_chars": cap, "used_chars": used, "entries": current}
-            if action == "add":
+            merged = await repo.merge_into(match.id, match.version, MemoryWrite(
+                content=text, kind=kind, scope=MemoryScope(kind="global"), core=member,
+                sensitivity=_flagged(args)), actor) if match else None
+            if merged is not None:
+                result = merged                               # MEM1: nothing added to the set
+                if member == "about_you" and merged.get("proposal_id"):
+                    _tell_the_window(ctx, {"ok": True, **merged})
+            elif action == "add":
                 if used + len(text) > cap:
                     return {"ok": False, "code": "core_set_full", **listing,
                             "next_action": "replace or remove an entry by id, then add"}
                 result = await repo.create(MemoryWrite(content=text, kind=kind, scope=MemoryScope(kind="global"),
-                                                       core=member), actor)
+                                                       core=member, sensitivity=_flagged(args)), actor)
+                if member == "about_you":
+                    _tell_the_window(ctx, {"ok": True, **result})
             else:
                 target = next((row for row in current if row["id"] == args.get("id")), None)
                 if target is None:
@@ -160,13 +281,13 @@ async def note(args, caller):
                 result = await repo.revise(entry.id, entry.version, MemoryWrite(
                     content=text if action == "replace" else (revision.content or target["text"]),
                     kind=kind, scope=MemoryScope(kind="global"),
-                    sensitivity=entry.sensitivity if entry.sensitivity != "secret" else "unknown",
+                    sensitivity=_flagged(args, entry.sensitivity if entry.sensitivity != "secret" else "unknown"),
                     use_policy=entry.use_policy if entry.use_policy != "never" else "local_only",
                     topic=(revision.structured_value or {}).get("topic"),
                     core=member if action == "replace" else None,
                 ), replace(actor, explicit_save_ref=None, allow_global_save=False))
         return {"ok": True, "id": result.get("id") or result.get("target_id"), "status": result.get("status"),
-                "saved": result.get("status") == "active",
+                "version": result.get("version"), "saved": result.get("status") == "active",
                 "requires_confirmation": result.get("status") == "proposed",
                 "note": "Takes effect from the next turn." if result.get("status") == "active" else
                         "Proposed: the user confirms it in Brain."}

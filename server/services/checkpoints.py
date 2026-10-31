@@ -50,6 +50,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ctypes
+import difflib
 import errno
 import hashlib
 import json
@@ -629,6 +630,153 @@ def _tidy_locked(newest: int) -> None:
         if rid not in keep:
             shutil.rmtree(_run_dir(rid), ignore_errors=True)
             total -= sizes[rid]
+
+
+def changes(run_id: int, not_before: float) -> dict | None:
+    """WB1-3: what this run did in the user's folders, path by path, for Overview's Changes: `made` (absent
+    when the folder was saved), `deleted` (gone when the run ended) or `edited`; and whether it was undone.
+    None when there is no copy, or the copy is an earlier run's under the same id (`not_before`): the same
+    rule as `summary` and a restore, so the list covers exactly the turns an undo can still take back (②Main's
+    review of #545: no separate age rule). Only what an undo can put back is listed: changes it could not save
+    (`not_saved`) are not. `.git` is left out (it goes back whole); paths are relative to their folder, with
+    the folder alongside. One manifest read; a caller runs it off the event loop."""
+    data = manifest(run_id)
+    if data is None or data["created_at"] < not_before:
+        return None
+    out = []
+    for entry in data["roots"]:
+        for rel, state in sorted((entry.get("finished") or {}).items()):
+            if _in_git(rel):
+                continue
+            kind = "made" if state.get("saved") is None else "deleted" if state.get("now") is None else "edited"
+            out.append({"folder": entry["path"], "path": rel, "kind": kind})
+    return {"paths": out, "undone": bool(data.get("restored_at"))}
+
+
+#: DIFF1: a side larger than this, or with more lines, is not compared (the reader keeps just "Edited").
+DIFF_MAX_BYTES = 1024 ** 2
+DIFF_MAX_LINES = 20_000
+
+
+class NoDiff(Exception):
+    """Why a path has no line diff: `not_listed` (not a change an undo can still take back), `hidden` (a
+    dot-path or a secret-shaped name, which the reader never shows), `too_big`, `not_text`, or `copy_changed`
+    (the saved copy no longer has the hash `finish` recorded)."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def _read_side(base: Path, parts: tuple[str, ...]) -> bytes | None:
+    """The file at base/parts, None when there is none. Every folder below `base` and the file itself are
+    opened without following a link (②Main's review of PR 553: walking from a trusted base, never from a
+    folder a link above it could redirect); a side that is not a regular file is not text. Any other error
+    on the way (a folder now a link, unreadable) is a refusal, not a server error."""
+    try:
+        fd = _open_folder(base, parts[:-1], create=False)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise NoDiff("not_listed") from None
+    try:
+        try:
+            handle = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        except FileNotFoundError:
+            return None
+        except OSError:                            # a link where the file was, or unreadable
+            raise NoDiff("not_text") from None
+        with os.fdopen(handle, "rb") as f:
+            st = os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode):
+                raise NoDiff("not_text")
+            if st.st_size > DIFF_MAX_BYTES:
+                raise NoDiff("too_big")
+            data = f.read(DIFF_MAX_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(data) > DIFF_MAX_BYTES:                # grew between the fstat and the read
+        raise NoDiff("too_big")
+    return data
+
+
+def _text_lines(data: bytes | None) -> list[str]:
+    if data is None:
+        return []
+    if b"\0" in data:
+        raise NoDiff("not_text")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise NoDiff("not_text") from None
+    lines = text.splitlines()
+    if len(lines) > DIFF_MAX_LINES:
+        raise NoDiff("too_big")
+    return lines
+
+
+def diff(run_id: int, not_before: float, folder: str, rel: str, readable: list[Path]) -> dict:
+    """DIFF1: one path a run changed, as lines: the saved copy (before the run) against the file now, the
+    view Overview's Changes opens. Only a path `changes` lists for the run (same manifest, same
+    `not_before` rule: it exists only while the turn can still be undone), never a dot-path or a
+    secret-shaped name (file_reader's rule), and only inside one of `readable` (file_reader.roots), the folder
+    taken as recorded (resolved) and the file opened by walking from that root with no link followed.
+    `lines` is every line with its op (" ", "-", "+") and its old
+    and new numbers, so the reader can fold what did not change; `since` is True when the file changed
+    after the run ended (the diff is still against the file now). Read only; raises NoDiff. A caller runs
+    it off the event loop."""
+    from server.services import file_reader
+    from server.services.workspace_paths import _contained as _within
+    data = manifest(run_id)
+    if data is None or data["created_at"] < not_before:
+        raise NoDiff("not_listed")
+    entry = next((r for r in data["roots"] if r["path"] == folder and r["skipped"] is None), None)
+    state = (entry.get("finished") or {}).get(rel) if entry else None
+    if state is None or not _contained(rel) or _in_git(rel):
+        raise NoDiff("not_listed")
+    # The folder as recorded (finish stores roots resolved): absolute, and still itself once resolved, so no
+    # link and no `..` above it moved it; then the reader root it lies in, and the way down from there.
+    where = Path(folder)
+    try:
+        if not where.is_absolute() or where.resolve(strict=True) != where:
+            raise NoDiff("not_listed")
+    except (OSError, RuntimeError):
+        raise NoDiff("not_listed") from None
+    root = next((r for r in readable if _within(where, r)), None)
+    if root is None:
+        raise NoDiff("not_listed")
+    down = where.relative_to(root)
+    if down.parts and not _contained(str(down)):
+        raise NoDiff("not_listed")
+    if file_reader._hidden(where / rel, root):          # the reader's own rule, so the two stay one
+        raise NoDiff("hidden")
+    before = None
+    if state.get("saved") is not None:
+        if not _CLONE_NAME.fullmatch(str(entry.get("clone"))):   # the manifest can be written outside the sandbox
+            raise NoDiff("copy_changed")
+        before = _read_side(_run_dir(run_id), (entry["clone"], *Path(rel).parts))
+        if before is None or hashlib.sha256(before).hexdigest() != state["saved"]:
+            raise NoDiff("copy_changed")
+    after = _read_side(root, (*down.parts, *Path(rel).parts))
+    now = state.get("now")
+    since = (hashlib.sha256(after).hexdigest() if after is not None else None) != (now or {}).get("sha256")
+    return {"kind": "made" if state.get("saved") is None else "deleted" if now is None else "edited",
+            **line_diff(before, after), "since": since}
+
+
+def line_diff(before: bytes | None, after: bytes | None) -> dict:
+    """Two sides as lines with their op (" ", "-", "+") and old and new numbers, and the counts: DIFF1's shape,
+    which DIFF2 (git_changes) shares so one reader draws both. None is an absent side. Raises NoDiff."""
+    old, new = _text_lines(before), _text_lines(after)
+    lines: list[list] = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if op == "equal":
+            lines += [[" ", i + 1, j1 + k + 1, old[i]] for k, i in enumerate(range(i1, i2))]
+            continue
+        lines += [["-", i + 1, None, old[i]] for i in range(i1, i2)]
+        lines += [["+", None, j + 1, new[j]] for j in range(j1, j2)]
+    return {"added": sum(1 for line in lines if line[0] == "+"),
+            "removed": sum(1 for line in lines if line[0] == "-"), "lines": lines}
 
 
 def summary(run_id: int, not_before: float) -> dict:

@@ -11,6 +11,8 @@ export type ScannedSkill = {
   name?: string;
   description?: string;
   body_bytes?: number;
+  /** UNI1b: how many characters of its text show nothing, and the first runs' labels (shown, never blocking). */
+  hidden?: { count: number; runs: string[]; more?: number };
   scripts: string[];
   importable: boolean;
   reason: string | null;
@@ -21,6 +23,8 @@ export type SkillScanResult = {
   license_ok: boolean;
   license_note: string | null;
   skills: ScannedSkill[];
+  /** CAP4a-1: the commit the listing was read at; the import pins to it. */
+  commit?: string;
 };
 
 export type ImportedSkill = {

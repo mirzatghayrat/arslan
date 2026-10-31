@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import logging
+import re
 from typing import Any
 
 from arslan.llm.cached_system import build_cached_system
@@ -57,8 +58,26 @@ _SYSTEM = (
     "method or steps (\"for reminders don't use AppleScript, use EventKit\"); avoid=true when the "
     "advice is what not to do. Not a one-off instruction for this task. "
     "Write each fact and practice in the same language as the user's own messages "
-    "(事实条目必须使用用户消息所用的语言书写); never translate it."
+    "(事实条目必须使用用户消息所用的语言书写); never translate it. "
+    "Call the user \"the user\" (or the same words in the user's language) and never he, she, his or her: "
+    "never guess the user's gender. One-off task state is not a fact about the user: file paths and folders, "
+    "ports and local addresses, and what the user is currently doing (\"is deploying X\") stay out."
 )
+
+# MEM1 (memory plan item A2/A3): never kept, whatever the reply says. A guessed gender (the user is "the user") and
+# one-off task state: a path, a local address or port, what the user is doing right now. Cheap and deliberately
+# narrow: a durable fact that happens to match is lost, never a guess stored.
+_GENDERED = re.compile(r"\b(?:he|she|him|his|her|hers|himself|herself)\b", re.IGNORECASE)
+# A pronoun in a fact that also names another person is about that person (②Main's review of #559, L3).
+_SOMEONE_ELSE = re.compile(
+    r"\b(?:sister|brother|mother|father|mom|mum|dad|wife|husband|spouse|partner|girlfriend|boyfriend|son|daughter"
+    r"|child|kid|parent|grand(?:mother|father|ma|pa)|aunt|uncle|cousin|niece|nephew|friend|colleague|coworker"
+    r"|boss|manager|teacher|doctor|neighbou?r|roommate)s?\b", re.IGNORECASE)
+_TASK_STATE = re.compile(
+    r"(?<![\w/])(?:~/|/(?:[\w.-]+/)+)|\b[A-Za-z]:\\"                          # a path
+    r"|\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?|\bports?\s*\d{2,5}\b|端口\s*\d+"  # a local address; lang-check: allow (Chinese input to match)
+    r"|\b(?:currently|right now|at the moment)\b|正在(?:部署|安装|调试|配置|运行|迁移|修复)",  # lang-check: allow (Chinese input to match)
+    re.IGNORECASE)
 
 
 async def _get_adapter():
@@ -75,7 +94,8 @@ def parse(content: str | None) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         text = " ".join(str(item.get("content") or "").split())[:MAX_FACT_CHARS]
-        if text:
+        guessed = _GENDERED.search(text) and not _SOMEONE_ELSE.search(text)
+        if text and not guessed and not _TASK_STATE.search(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]
 
@@ -90,6 +110,44 @@ def parse_practices(content: str | None) -> list[dict[str, Any]]:
     return out[:MAX_PRACTICES]
 
 
+async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
+    """The user's recent messages. Q1 #3 (the user, 2026-10-29): a quick question turned into a chat learns
+    from then on, so for one, only the user's messages after the turn (`learns_after_message_id`, migration
+    0078), read as memory allows (memory_history.eligible_messages: a deleted entry's source never seeds memory
+    again). Every conversation is looked up, whatever its id looks like. What remains of "its quick turns never
+    teach" is in server/api/phone.py (phone_update_conversation)."""
+    from sqlalchemy import select
+
+    from server.db import session as db_session
+    from server.db.companion_models import ConversationContext
+    from server.db.models import ArslanMessage
+    from server.services.memory_history import eligible_messages
+    async with db_session.AsyncSessionLocal() as db:
+        after = await db.scalar(select(ConversationContext.learns_after_message_id).where(
+            ConversationContext.id == conversation_id))
+        if after is None:
+            return [m["content"] for m in history if m.get("role") == "user"]
+        rows = (await db.scalars(eligible_messages(conversation_id).with_only_columns(ArslanMessage.content).where(
+            ArslanMessage.role == "user", ArslanMessage.id > after).order_by(ArslanMessage.id.desc()).limit(8))).all()
+    return list(reversed(rows))
+
+
+async def _known() -> str:
+    """The memory block, so the model skips facts already known. #475 recheck, J3: what this reply names takes
+    effect as the user's own (a noticed fact, a correction), so a block holding a note from a run off the list
+    (memory_tools_v2.from_off_the_list) is left out, and so is one that cannot be traced: the model then reads
+    only the user's own words."""
+    from server.services import memory_tools_v2
+    block = await memory.facts_context(include_sensitive=True)
+    if block is None or not block.text:
+        return ""
+    try:
+        traced = await memory_tools_v2.from_off_the_list(block.receipt.used)
+    except Exception:  # noqa: BLE001 — remembering is a bonus: the block is left out
+        traced = True
+    return "" if traced else block.text
+
+
 async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any]]:
     """0.1.52: reads ONLY the user's own messages (and the facts already known).
     Arslan's replies and the rolling summary can carry web pages, files and tool
@@ -97,8 +155,8 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     the user's words — by construction, not by a filter on the output."""
     ctx = await memory.assemble_working_context(conversation_id)
     _after_reply.set(answers_earlier_reply(ctx["history"], ctx.get("summary") or ""))
-    known = await memory.facts_text(include_sensitive=True)
-    own = [m["content"] for m in ctx["history"] if m.get("role") == "user"]
+    known = await _known()
+    own = await _own_words(conversation_id, ctx["history"])
     prompt = (
         "The user's recent messages:\n" + ("\n".join(f"- {c}" for c in own[-8:]) or "(none)")
         + f"\n\n{known}\n\nUser's latest message:\n{user_message}"
@@ -135,16 +193,20 @@ async def capture(conversation_id: str, user_message: str, emit, *, recheck=None
         logger.info("turn facts skipped: %s", type(exc).__name__)
         return 0
     for fact in created:
-        emit({"type": "memory_proposed" if getattr(fact, "status", "active") != "active" else "fact_saved",
+        waiting = getattr(fact, "status", "active") != "active"
+        emit({"type": "memory_proposed" if waiting else "fact_saved",
               "content": fact.content, "sensitive": fact.sensitive,
-              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None)})
+              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None),
+              # INB2: which proposal it waits as, and why (window socket only; the Bridge never forwards it).
+              **({"proposal_id": getattr(fact, "proposal_id", None), "reason": getattr(fact, "reason", None)}
+                 if waiting else {})})
     if created:
         try:
             from server.services import recap_service
             summary = " · ".join((getattr(f, "label", None) or f.content or "")[:24] for f in created[:3])
             await recap_service.log_event(conversation_id, "memory", None, summary)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 — the recap line is a nicety; the facts are saved
+            logger.debug("memory recap event failed: %s", type(exc).__name__)
     return len(created)
 
 

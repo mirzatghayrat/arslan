@@ -9,7 +9,9 @@ from server.orchestrator import arslan
 from tests.server.k7_mcp_fixture import mac_with_mcp  # noqa: F401 — the fixture
 from tests.server.tool_json import rendered_tool_json_chars
 
-BUDGET = 12_000
+# About 12,000: main stood at 11,994 when INB2's `sensitive` flag on remember (#475 F4, the user's decision of
+# 2026-10-29) added 34 characters.
+BUDGET = 12_050
 
 
 async def test_the_fixture_is_the_size_the_card_describes(mac_with_mcp):  # noqa: F811

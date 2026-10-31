@@ -33,6 +33,8 @@
     "setup_notice": "固定バージョンのオープンソースブラウザーを Arslan のデータフォルダーにダウンロードします。数分と数百 MB の容量が必要な場合があります。アカウントや有料 API は不要です。",
     "setup": "ブラウザーをダウンロード",
     "url": "公開 HTTPS アドレス",
+    "searchOrAddress": "Bing で検索、またはアドレスを入力",
+    "httpsOnly": "ここで開けるのは https:// のアドレスだけです。",
     "open": "プレビュー",
     "stop": "停止",
     "blocked": "ブロックまたは制限された接続：{{n}}",
@@ -96,7 +98,8 @@
     "arslan": "メインアシスタント",
     "capabilities": "ケイパビリティ",
     "brain": "記憶",
-    "activity": "アクティビティ"
+    "activity": "アクティビティ",
+    "scheduled": "定期タスク"
   },
   "brain": {
     "strip_details": "記録範囲と制限",
@@ -252,11 +255,18 @@
     "thinking": "考えています…",
     "stopRun": "停止",
     "remembered": "覚えました：{{text}}",
-    "wantsToRemember": "Arslan が覚えたいこと：{{text}}",
     "rememberedUndo": "取り消す",
     "rememberedUndone": "取り消しました",
-    "rememberedReview": "「メモリー」で確認",
-    "rememberedChanged": "その後変更されています。「メモリー」で確認してください"
+    "rememberedChanged": "その後変更されています。「メモリー」で確認してください",
+    "memoryAsk": "Arslan が機微な内容を覚えたがっています：{{text}}",
+    "memoryKeptLocal": "覚えました（この Mac だけ）：{{text}}",
+    "memorySkipped": "わかりました。覚えません。",
+    "memoryWaits": "Arslan が覚えたいこと：{{text}}。理由：{{reason}}。「整理待ち」に入れました",
+    "memoryWhy_external_seen": "この会話でウェブページなど外部の内容を読んだ",
+    "memoryWhy_not_present": "あなたがいないときに書かれた",
+    "memoryWhy_sensitive": "機微な内容",
+    "memoryWhy_confirmation_required": "あなたの確認が必要",
+    "memorySeeInMemory": "「メモリ」で見る"
   },
   "clarify_card": {
     "answered": "選択済み"
@@ -575,7 +585,7 @@
     "desktopNotificationsDesc": "ウィンドウが閉じているか背面にあるとき、タスクの完了、確認が必要な操作、スケジュールタスクの失敗を macOS が通知します。通知にメッセージ本文は表示されません。",
     "labelIsland": "ノッチに Arslan を表示",
     "islandDesc": "画面上部の小さな Arslan が、作業中の内容、あなたの対応が必要なとき、タスクが終わったときを知らせます。ポインタを乗せると詳細が見られます。スクリーンショット、画面収録、画面共有には映りません。",
-    "automationElsewhere": "定期タスク、トークン使用量、過去の実行はすべて「アクティビティ」にあります。",
+    "automationElsewhere": "定期タスクは専用のページに移りました。トークン使用量と過去の実行は「アクティビティ」にあります。",
     "automationOpenActivity": "アクティビティを開く",
     "searchPlaceholder": "設定を検索…",
     "searchNoHits": "一致するセクションはありません",
@@ -705,7 +715,7 @@
     "grpWhatsNew": "このバージョンの変更点",
     "watchesInInbox": "見守るページやフォルダー、通知しない項目は受信箱で管理します。",
     "openInbox": "受信箱を開く",
-    "openActivity": "スケジュールタスク、使用量、すべての実行は「アクティビティ」にあります。",
+    "openActivity": "使用量とすべての実行は「アクティビティ」にあります。定期タスクは専用のページです。",
     "openActivityBtn": "アクティビティを開く",
     "whatsNewEmpty": "このバージョンの説明はありません。"
   },
@@ -740,6 +750,16 @@
     "more": "その他"
   },
   "sidebar": {
+    "pinFailed": "固定できませんでした。もう一度お試しください。",
+    "pinned": "固定済み",
+    "pin": "固定",
+    "unpin": "固定を解除",
+    "today": "今日",
+    "yesterday": "昨日",
+    "previous7": "過去 7 日間",
+    "earlier": "それ以前",
+    "hide": "サイドバーを隠す",
+    "show": "サイドバーを表示",
     "new_session": "新しい会話",
     "spawns_ledger": "エキスパート一覧",
     "active_chats": "進行中の会話",
@@ -770,7 +790,8 @@
       "done": "完了",
       "unfinished": "未達成",
       "failed": "問題で停止",
-      "scheduled": "スケジュール"
+      "scheduled": "スケジュール",
+      "done_unseen": "完了、まだ見ていません"
     },
     "projects": "プロジェクト",
     "allProjects": "すべてのプロジェクト",
@@ -938,7 +959,7 @@
       "orphaned": "孤立ファイル"
     },
     "import": {
-      "subtitle": "標準 SKILL.md をそのまま取り込み — ライセンス審査あり。",
+      "subtitle": "標準 SKILL.md を書かれたとおりに取り込み(ライセンス確認と安全スキャンのあと)。見えない文字は数を表示。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "サブパス(任意)",
       "scan": "スキャン",
@@ -946,7 +967,10 @@
       "imported": "インポート済み",
       "no_license": "ライセンスなし",
       "none_found": "SKILL.md ファイルが見つかりません。",
-      "scripts_n": "{{n}} 件のスクリプト"
+      "scripts_n": "{{n}} 件のスクリプト",
+      "hidden": "SKILL.md の見えない文字:{{count}} 個",
+      "hiddenRuns": "テキストに {{runs}} があります。こうした並びは文章を隠せます。",
+      "hiddenMore": "ほか {{count}} 種類"
     },
     "filter": {
       "placeholder": "手元のものを絞り込む…",
@@ -1360,8 +1384,6 @@
     "stalled": "止まっています",
     "changed": "変化あり",
     "other": "その他",
-    "memoryWaiting": "確認待ちの記憶",
-    "memoryOpen": "「メモリー」ですべて見る",
     "watching": "見守り中",
     "muted": "通知しない",
     "addWatch": "ページやフォルダーを追加で見守る",
@@ -1378,15 +1400,14 @@
   },
   "pendingMemory": {
     "curationFallback": "記憶を整理する提案",
-    "keep": "残す",
-    "keepLocal": "残す（ローカルモデルのみ）",
+    "keep": "覚える",
+    "keepLocal": "覚える（この Mac だけ）",
     "drop": "いらない",
     "apply": "適用",
     "source": {
       "memory": "あなたについて",
       "curation": "整理"
-    },
-    "sensitive": "機微"
+    }
   },
   "confirm": {
     "delete": "削除",
@@ -1417,5 +1438,13 @@
     "memoryBody": "Arslan はこれを忘れ、古い会話から学び直すこともありません。",
     "unsavedTitle": "保存せずに移動しますか？",
     "unsavedBody": "このノートの変更は失われます。"
+  },
+  "scheduledPage": {
+    "intro": "決まった時間に動くタスクと、Arslan が見張っているページやフォルダ。点が付いた行は確認が必要です。",
+    "watches": "見張っているページとフォルダ",
+    "awayTitle": "不在中にできなかったこと（このタスクのみ）",
+    "attention": "確認が必要",
+    "changed": "変更あり",
+    "failing": "失敗したか自動で一時停止しました"
   }
 }

@@ -85,6 +85,7 @@ class SettingsIn(BaseModel):
     lan_discovery_enabled: str | None = None
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
+    folder_rules_enabled: str | None = None
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
@@ -158,6 +159,7 @@ class SettingsOut(BaseModel):
     lan_discovery_enabled: str = ""
     ssh_enabled: str = ""
     default_read_enabled: str = ""
+    folder_rules_enabled: str = ""
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""
@@ -802,8 +804,12 @@ class ConversationListItem(BaseModel):
     last_at: str | None = None
     #: What it is, for the sidebar's and the phone's glyphs: remote | chat | task | scheduled.
     kind: str = "chat"
-    #: idle | working | waiting | done | failed.
+    #: SB1-2: pinned to the top of the sidebar (conversation_contexts.pinned, migration 0079).
+    pinned: bool = False
+    #: idle | working | waiting | done | done_unseen (INB4) | unfinished | failed.
     state: str = "idle"
+    #: INB4: the state without "done, not seen", for phones until INB4's phone half; never in the window's response.
+    phone_state: str | None = Field(default=None, exclude=True)
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
     origin: str = "mac"
     #: The last message, one line.
