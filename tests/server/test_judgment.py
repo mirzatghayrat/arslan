@@ -115,9 +115,9 @@ async def test_tests_never_reach_a_real_judge(execution_db):
 
 async def test_recent_and_prune(execution_db, judge_with, monkeypatch):
     judge_with(_Adapter())
-    for i in range(3):
-        await judgment.judge("memory.worth", {"candidate": f"c{i}"})
-    assert [r["state"]["candidate"] for r in await judgment.recent(10)] == ["c2", "c1", "c0"]
+    for i in range(3):                                     # a point that keeps its state (memory points are redacted)
+        await judgment.judge("job.accomplished", {"goal": f"c{i}", "answer": "done"})
+    assert [r["state"]["goal"] for r in await judgment.recent(10)] == ["c2", "c1", "c0"]
     monkeypatch.setattr(judgment, "KEEP_ROWS", 1)
     assert await judgment.prune() == 2
     assert len(await judgment.recent(10)) == 1

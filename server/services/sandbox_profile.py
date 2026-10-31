@@ -12,8 +12,9 @@ which no product caller reaches and SBX-4 deletes.
 
 What every profile relies on:
 
-- Seatbelt applies the LAST matching rule (measured 2026-10-03), so the order of the rules is the
-  policy: a deny written after an allow wins over it, and the other way round.
+- Rule order matters for the tested path rules, but source order alone does not guarantee
+  enforcement. On macOS 26.6.2 the compiler can discard TCP port denies when `*:*` is allowed;
+  see #507's "Port-deny finding: explained". Network boundaries need real-kernel checks.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
 - A path is written as an SBPL string (`sbpl_string`): its own UTF-8, with `\\` and `"` escaped, so a
   folder name cannot add rules, and control characters as `\\xHH`. sandbox-exec decodes those but
@@ -76,7 +77,7 @@ def remote_tcp(host: str, port: int) -> str:
 
 
 class Profile:
-    """The rules of one profile, in the order they are added (the last matching rule wins)."""
+    """Emit rules in the supplied order; source order is not an enforcement guarantee."""
 
     def __init__(self, default: str):
         self._lines = ["(version 1)", f"({default} default)"]
@@ -136,9 +137,11 @@ def default_deny_profile(
     ownership check. Do not give two runs the same prefix.
 
     Network grants are TCP only. Unix sockets are a separate exact allowlist;
-    online modes allow outbound localhost connections, excluding all supplied
-    Arslan listener ports. All modes deny binds/listens: Seatbelt's localhost
-    bind filter also permits wildcard binds. Restoring dev servers requires a
+    online modes allow outbound localhost connections. Proxy and port-22 exclude
+    supplied Arslan listener ports; any-declared rejects nonempty denied_ports
+    because Seatbelt cannot reliably enforce them alongside its wildcard grant.
+    All modes deny binds/listens: Seatbelt's localhost bind filter also permits
+    wildcard binds. Restoring dev servers requires a
     card decision before SBX-3 wiring. Offline also denies Unix sockets.
     """
     network = NetworkMode(network)
@@ -146,6 +149,8 @@ def default_deny_profile(
     for port in (*denied_ports, *((proxy_port,) if proxy_port is not None else ())):
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError("ports must be integers from 1 to 65535")
+    if network == NetworkMode.ANY_DECLARED and denied_ports:
+        raise ValueError("any-declared cannot enforce denied_ports; use proxy, port-22, or none")
     if network == NetworkMode.PROXY and proxy_port is None:
         raise ValueError("proxy mode requires a proxy port")
     if network != NetworkMode.PROXY and proxy_port is not None:
