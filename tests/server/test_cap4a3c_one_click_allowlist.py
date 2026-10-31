@@ -376,6 +376,11 @@ async def test_an_update_from_a_listed_organization_is_checked_by_its_id(card_wo
     with pytest.raises(capability_dossier.DossierError) as refused:
         await capability_dossier.update("src1")
     assert refused.value.code == al.ACCOUNT_CHANGED_HANDS and installed == []
+    for down in (httpx.ConnectError("down"), 503):                       # #584 re-check: GitHub not answering
+        _github(monkeypatch, {"getsentry": down})
+        with pytest.raises(capability_dossier.DossierError) as refused:
+            await capability_dossier.update("src1")
+        assert refused.value.code == al.ACCOUNT_NOT_CHECKED and installed == []
     _github(monkeypatch, {"getsentry": 1396951})
     await capability_dossier.update("src1")
     assert installed == ["registry:io.github.getsentry/sentry@2.0.0"]
