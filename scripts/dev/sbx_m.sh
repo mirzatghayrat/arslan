@@ -70,7 +70,7 @@ echo "== 2/2 the listener-refusal loop ($LOOPS runs)"
 SECONDS=0
 for ((i = 1; i <= LOOPS; i++)); do
   run=$(printf '%03d' "$i")
-  if "$PY" -m pytest tests/server/sbx/test_sbx2_kernel.py -k listener_refusal -q -o xfail_strict=true \
+  if "$PY" -m pytest tests/server/sbx/test_sbx2_kernel.py -m sbx_mac -k listener_refusal -q -o xfail_strict=true \
       -p no:cacheprovider --junitxml="$OUT/loop/$run.xml" > "$OUT/loop/$run.txt" 2>&1; then
     printf '.'
   else
