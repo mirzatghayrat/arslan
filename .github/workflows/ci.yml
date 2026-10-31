@@ -345,7 +345,8 @@ jobs:
           # 0.1.63 D4 follow-up: +1, osacompile confirms an AppleScript syntax error without running it.
           # 0.1.64 SBX-1b: +9, non-ASCII and control-character paths under real seatbelt.
           # 0.1.64 SBX-2 (#507): +293, the default-deny base, its macOS corpus and three localhost measurements.
-          EXPECTED = 362
+          # 0.1.64 SBX-2 follow-up (#574): +2, compile checks that the TCP port denies on a fixed port list survive in the proxy and port-22 modes.
+          EXPECTED = 364
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is

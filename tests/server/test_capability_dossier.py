@@ -28,10 +28,14 @@ async def _installed(execution_db, tmp_path, monkeypatch):
     async def mit(repo):
         return "MIT", "LICENSE"
 
-    async def pypi(root, identifier, version):
+    async def lock(root, identifier, version):                 # CAP4a-2: the lock before the card
         (root / "requirements.lock").write_text("x")
+        return {"file": "requirements.lock", "sha256": __import__("hashlib").sha256(b"x").hexdigest(), "packages": []}
+
+    async def pypi(root, identifier, prepared_lock):
         return {"command": str(root / "venv/bin/excel-mcp-server"), "args": [], "lock_sha256": "a" * 64}
     monkeypatch.setattr(capability_install, "source_license", mit)
+    monkeypatch.setattr(capability_install, "lock_pypi", lock)
     monkeypatch.setattr(capability_install, "install_pypi", pypi)
     old = tmp_path / "Old"
     old.mkdir()

@@ -957,7 +957,7 @@
       "orphaned": "Fichiers orphelins"
     },
     "import": {
-      "subtitle": "SKILL.md standard, importé tel qu’écrit, sans caractères cachés — contrôle de licence.",
+      "subtitle": "SKILL.md standard, importé tel qu’écrit, après le contrôle de licence et l’analyse de sécurité ; les caractères invisibles sont comptés.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "sous-chemin (optionnel)",
       "scan": "Scanner",
@@ -965,7 +965,10 @@
       "imported": "Importé",
       "no_license": "SANS LICENCE",
       "none_found": "Aucun fichier SKILL.md trouvé.",
-      "scripts_n": "{{n}} scripts"
+      "scripts_n": "{{n}} scripts",
+      "hidden": "Caractères invisibles dans SKILL.md : {{count}}",
+      "hiddenRuns": "Son texte contient {{runs}}. Une suite de ce genre peut cacher du texte.",
+      "hiddenMore": "et {{count}} autres"
     },
     "filter": {
       "placeholder": "Filtrer ce que vous avez…",

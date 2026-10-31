@@ -8,11 +8,12 @@ import { useDismissable } from "../../hooks/useDismissable";
 import { OPEN_ARTIFACT, validArtifact } from "../../lib/workDock";
 import { useArslanStore } from "../../stores/arslanStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { READER_WIDTH, useWorkbench, type WorkbenchTab } from "../../stores/workbenchStore";
+import { MAX_WIDTH, READER_WIDTH, useWorkbench, type WorkbenchTab } from "../../stores/workbenchStore";
 import WorkDock from "../WorkDock";
 import FilesTab from "./FilesTab";
 import OverviewTab, { type OverviewModels } from "./OverviewTab";
 import ProgressTab, { type Job } from "./ProgressTab";
+import DiffReader from "./DiffReader";
 import Reader from "./Reader";
 
 // WB1 (user, 2026-10-30): a fixed row, always shown, drawn as icons with a tooltip (WB1-2: four words
@@ -101,9 +102,15 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
     return () => clearInterval(timer);
   }, [open, loadJobs, storeJobs]);
 
+  // DIFF1/DIFF2: a diff belongs to its conversation; switching away closes it (#588 review).
+  useEffect(() => {
+    if ((reader?.kind === "diff" || reader?.kind === "repo-diff") && reader.conversationId !== conversationId) closeReader();
+  }, [conversationId, reader, closeReader]);
+
   const touched = useMemo(() => new Set(files.map((f) => f.title)), [files]);
   if (!open) return null;
-  const shownWidth = reader ? Math.max(width, READER_WIDTH) : width;
+  // DIFF1: two columns side by side need the panel's full width.
+  const shownWidth = reader?.kind === "diff" || reader?.kind === "repo-diff" ? MAX_WIDTH : reader ? Math.max(width, READER_WIDTH) : width;
   return (
     <aside aria-label={t("workbench.toggle")} data-testid="workbench" style={{ width: shownWidth, maxWidth: "60vw" }}
       className="relative z-20 flex h-full min-w-0 shrink-0 flex-col border-l border-border bg-sidebar">
@@ -135,8 +142,12 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
           {tab === "browser" && <WorkDock embedded open onOpen={() => {}} onClose={close} conversationId={conversationId} taskId={taskId} temporary={temporary} />}
         </div>
         {/* keyed per file: a new file starts from "reading…", never from the last file's view */}
-        {reader && <div className="absolute inset-0 bg-sidebar"><Reader key={reader.kind === "path" ? reader.path
-          : `${reader.file.run_id}/${reader.file.filename}`} source={reader} onBack={closeReader} /></div>}
+        {reader && <div className="absolute inset-0 bg-sidebar">{reader.kind === "diff" || reader.kind === "repo-diff"
+          ? <DiffReader key={`${reader.kind === "diff" ? reader.runId : "repo"}/${reader.folder}/${reader.path}`}
+            conversationId={reader.conversationId} runId={reader.kind === "diff" ? reader.runId : undefined}
+            folder={reader.folder} path={reader.path} onBack={closeReader} />
+          : <Reader key={reader.kind === "path" ? reader.path : `${reader.file.run_id}/${reader.file.filename}`}
+            source={reader} onBack={closeReader} />}</div>}
       </div>
     </aside>
   );
