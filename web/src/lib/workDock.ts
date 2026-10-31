@@ -2,7 +2,9 @@ import type { StoredArtifact } from "../api/client.types";
 
 export const DOCK_KEY = "arslan.work-dock.v1";
 export const OPEN_ARTIFACT = "arslan:open-artifact";
-export type DockTab = ({ id: string; kind: "browser"; conversationId: string; taskId: string | null; title?: string }
+export type DockTab = ({ id: string; kind: "browser"; conversationId: string; taskId: string | null; title?: string;
+  /** DIFF2: an address the tab opens once when it starts (a PR's link); never saved. */
+  startUrl?: string }
   | { id: string; kind: "artifact"; file: StoredArtifact }) & { temporary?: boolean };
 
 export function validArtifact(value: unknown): value is StoredArtifact {

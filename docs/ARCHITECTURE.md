@@ -233,7 +233,7 @@ graph LR
 
 **SQLite, one file.** `server/db/` holds `models.py` (SQLAlchemy models), `session.py` (`AsyncSessionLocal`, async engine), and `migrations/`. Access is async via `sqlite+aiosqlite`.
 
-**Notable tables:** `spawns`, `spawn_capabilities`, `roster`, `spawn_phase`, `knowledge_chunks` + FTS5, `user_facts`, `arslan_messages`, `arslan_summaries`, `runs` / `run_evaluations`, `evolution_proposals`, `router_decisions`, `conversation_events`, `notes` (+ `notes_fts`), `provider_configs` (encrypted keys), `mcp_servers`.
+**Notable tables:** `spawns`, `spawn_capabilities`, `roster`, `spawn_phase`, `knowledge_chunks` + FTS5, `user_facts`, `arslan_messages`, `arslan_summaries`, `runs` / `run_evaluations`, `evolution_proposals`, `conversation_events`, `notes` (+ `notes_fts`), `provider_configs` (encrypted keys), `mcp_servers`.
 
 **Key data-model facts to keep in mind before you change schema:**
 

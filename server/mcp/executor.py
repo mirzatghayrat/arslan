@@ -278,12 +278,15 @@ class MCPProxyExecutor:
         title = (f"Use {untrusted.clean_name(srv.label, 80) or 'MCP'}\u2019s "
                  f"{untrusted.clean_name(self.external_name, 128) or 'tool'}?")
         # The card shows the user the label as installed; the model reads it as a label (`label_of`, #495
-        # O2), so each refusal below names the server that way (S64-0c, the recheck of #498).
+        # O2), so each refusal below names the server that way (S64-0c, the recheck of #498), and so do
+        # permissions' own words, through the request's model title (TITLE1).
         shown = label_of(srv)
+        model_title = f"Use {shown}\u2019s {self.external_name}?"
         extra = {"mcp_server": srv.label, "mcp_tool": self.external_name}
         if read_only(self.annotations):
             await permissions.record_standing(permissions.Request(
-                kind="mcp_tool", target=self.key, title=title, detail=detail, extra=extra), ctx, by="mode")
+                kind="mcp_tool", target=self.key, title=title, model_title=model_title, detail=detail,
+                extra=extra), ctx, by="mode")
             return None
         if len(detail) > protocol.DETAIL_MAX:
             # ⓪Plan's review: a card shows at most DETAIL_MAX characters, so padding could push the real
@@ -295,11 +298,11 @@ class MCPProxyExecutor:
                                  f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed.")
         frame = protocol.propose_action(uuid.uuid4().hex, "mcp_tool", target, detail)
         if destructive(self.annotations):     # red on the web, never from the island, "delete" on the phone
-            req = permissions.Request(kind="destructive", target=self.key, title=title, detail=detail,
-                                      once_only=True, extra=extra, frame=frame)
+            req = permissions.Request(kind="destructive", target=self.key, title=title, model_title=model_title,
+                                      detail=detail, once_only=True, extra=extra, frame=frame)
         else:
-            req = permissions.Request(kind="mcp_tool", target=self.key, title=title, detail=detail,
-                                      extra=extra, frame=frame)
+            req = permissions.Request(kind="mcp_tool", target=self.key, title=title, model_title=model_title,
+                                      detail=detail, extra=extra, frame=frame)
         decision = await permissions.decide(req, ctx)        # with nobody to ask: refused by policy (U14 a)
         if decision.allowed:
             return None
@@ -307,9 +310,8 @@ class MCPProxyExecutor:
         if decision.by == "user":
             error = (f"The user did not allow {shown}\u2019s {self.external_name}."
                      f"{' They said: ' + decision.note if decision.note else ''} Do not retry; report it.")
-        else:       # permissions' own words quote the card's title
-            error = (decision.model_text or f"{title} was not allowed.").replace(
-                title, f"Use {shown}\u2019s {self.external_name}?")
+        else:       # permissions' own words, which name the step by the model title
+            error = decision.model_text or f"{model_title} was not allowed."
         return self._refusal(code, error)
 
     async def execute(self, args: dict) -> dict:
@@ -319,6 +321,7 @@ class MCPProxyExecutor:
             return {"ok": False, "error": f"MCP server {self.server_id} not found"}
         if srv.state != "ready":
             return not_ready_result(srv)
+        generation = manager.generation(self.server_id)    # the session the check above saw
         try:
             refused = await self._approve(srv, args)
         except Exception:  # noqa: BLE001 — a failed check is a refusal that never reached the server
@@ -327,6 +330,20 @@ class MCPProxyExecutor:
                                                    f"{self.external_name} may run. Tell the user.")
         if refused is not None:
             return refused
+        # CAP5a (#577 review F1): the card may have been open while the server was parked (its tools changed since
+        # it was installed) or its session replaced. Read it again after the answer, and send nothing unless it is
+        # still ready on the same session. The re-read waits for a listing under way (re-check G1): a re-list that
+        # found a change holds the server's listing lock until it has dropped the session.
+        from server.mcp import discovery
+        async with discovery._write_locks.hold(self.server_id):
+            async with db_session.AsyncSessionLocal() as db:
+                srv = await db.get(MCPServer, self.server_id)
+        if srv is None:
+            return {"ok": False, "error": f"MCP server {self.server_id} not found"}
+        if srv.state != "ready":
+            return not_ready_result(srv)
+        if manager.generation(self.server_id) != generation:
+            return not_ready_result(srv, state="starting")
         from server.mcp.discovery import runtime_dict
         from server.mcp.supervisor import supervisor
         server = runtime_dict(srv)

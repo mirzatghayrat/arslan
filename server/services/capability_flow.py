@@ -57,13 +57,14 @@ def card_for(c: dict, *, why: str, retry: str, folders: list[str]) -> dict:
     needs = c.get("needs") or {"keys": [], "network": None}
     grants = capability_install.grants_for(folders, needs)
     runtime = c.get("runtime")
-    download = runtime in ("uv", "node") and not capability_runtime.ready(runtime)
     return {
         "kind": c["kind"], "name": c["name"], "summary": c.get("summary") or "", "source_url": c.get("source_url"),
         "repo": c.get("repo"), "version": (c.get("package") or {}).get("version") or c.get("version"),
         "license": {"spdx": c["license"]["spdx"], "read_from": c["license"]["read_from"]},
         "stars": c.get("stars"), "pushed_days": c.get("pushed_days"), "runtime": runtime,
-        "runtime_download": ({"name": runtime, "size_mb": capability_runtime.PINS[runtime].size_mb} if download else None),
+        # CAP4a-2: Arslan's runtime is ready before the card (`capability_install.prepare`), so the card never
+        # announces a download. DELETE-BY: CAP4b, when the card's face (after its mock) drops the field.
+        "runtime_download": None,
         "remote_host": (c.get("remote") or {}).get("url"), "network": grants["network"] if c["kind"] == "mcp" else False,
         "folders": grants["folders"] if c["kind"] == "mcp" else [],
         "keys": [k for k in needs.get("keys") or [] if k.get("required") or k.get("secret")][:6],
@@ -116,9 +117,11 @@ async def test_mcp(source_id: str) -> dict:
     return {"ok": True, "tools": names[:60], "at": at}
 
 
-async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:
+async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict | None = None) -> dict:
+    """`prepared`: what the card showed (capability_install.prepare, CAP4a-2); without it (the dossier's
+    reinstall, no card) the install prepares first."""
     try:
-        row = await capability_install.install(c, folders=folders, keys=keys)
+        row = await capability_install.install(c, folders=folders, keys=keys, prepared=prepared)
     except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
         return {"state": "failed", "stage": "install", "code": exc.code, "detail": getattr(exc, "detail", "")[-400:]}
     if row.runtime != "remote":
@@ -132,6 +135,8 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:
     else:
         scan = None
     test = await test_mcp(row.id)
+    # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
+    test = {**((await _source(row.id)).test or {}), **test}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}
@@ -266,8 +271,17 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was added. Say in "
                         "your answer that the capability you proposed (`missing`) is not there and that the user "
                         "can add it by asking for it in a conversation."}
-    prepared = scan = None
-    if cand["kind"] == "skill":
+    prepared = scan = locked = None
+    if cand["kind"] == "mcp":
+        # CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock before the card,
+        # so the card shows the locked versions and a yes installs exactly them. After the "nobody to ask" answer
+        # above: a run that cannot install resolves nothing.
+        try:
+            locked = await capability_install.prepare(cand)
+        except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
+            return {"ok": False, "error": f"cannot be added: {exc.code}"}
+        card.update(lock=capability_install.lock_summary(locked))
+    elif cand["kind"] == "skill":
         # CAP4a-1: fetched whole at one pinned commit, scanned and hashed before the card; a blocked scan gets none.
         # After the "nobody to ask" answer above: a run that cannot install fetches nothing.
         try:
@@ -287,16 +301,22 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                                                                  *(prepared.get("references") or {}).values()])))
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
-    decision = await ask(card)
+    try:
+        decision = await ask(card)
+    except BaseException:
+        capability_install.discard(locked)
+        raise
     # S7: the card's answer in the ledger (§5.4) — never the key or the folders it carried back.
     await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
                                           expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
+        capability_install.discard(locked)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
                                                         "way or say what is missing; do not propose it again now."}
     if cand["kind"] == "mcp":
-        result = await install_mcp(cand, folders=decision.get("folders") or [], keys=decision.get("keys") or {})
+        result = await install_mcp(cand, folders=decision.get("folders") or [], keys=decision.get("keys") or {},
+                                   prepared=locked)
     else:
         result = await install_skill(cand, prepared=prepared, scan=scan)
     emit({"type": "capability_result", "call_id": decision.get("call_id"), **{k: v for k, v in result.items()

@@ -12,9 +12,10 @@ which no product caller reaches and SBX-4 deletes.
 
 What every profile relies on:
 
-- Rule order matters for the tested path rules, but source order alone does not guarantee
-  enforcement. On macOS 26.6.2 the compiler can discard TCP port denies when `*:*` is allowed;
-  see #507's "Port-deny finding: explained". Network boundaries need real-kernel checks.
+- Rule order matters for path and TCP rules alike (deny after allow), but for TCP port denies
+  it is not enough: survival also depends on the exact set of TCP allows, not only on `*:*`.
+  Proxy and port-22 are measured to hold on macOS 26.6.2 only with their allow pairs as built
+  below. See #574, comment 6543830944. Compile checks complement real-kernel checks.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
 - A path is written as an SBPL string (`sbpl_string`): its own UTF-8, with `\\` and `"` escaped, so a
   folder name cannot add rules, and control characters as `\\xHH`. sandbox-exec decodes those but
@@ -140,6 +141,7 @@ def default_deny_profile(
     online modes allow outbound localhost connections. Proxy and port-22 exclude
     supplied Arslan listener ports; any-declared rejects nonempty denied_ports
     because Seatbelt cannot reliably enforce them alongside its wildcard grant.
+    Port-22 also rejects excluding port 22: its non-localhost allow covers that port.
     All modes deny binds/listens: Seatbelt's localhost bind filter also permits
     wildcard binds. Restoring dev servers requires a
     card decision before SBX-3 wiring. Offline also denies Unix sockets.
@@ -151,6 +153,8 @@ def default_deny_profile(
             raise ValueError("ports must be integers from 1 to 65535")
     if network == NetworkMode.ANY_DECLARED and denied_ports:
         raise ValueError("any-declared cannot enforce denied_ports; use proxy, port-22, or none")
+    if network == NetworkMode.PORT_22 and 22 in denied_ports:
+        raise ValueError("port-22 cannot exclude port 22; use proxy or none")
     if network == NetworkMode.PROXY and proxy_port is None:
         raise ValueError("proxy mode requires a proxy port")
     if network != NetworkMode.PROXY and proxy_port is not None:
@@ -187,10 +191,14 @@ def default_deny_profile(
         rules.allow_paths("network-outbound", map(real, SYSTEM_UNIX_SOCKETS), literal)
         rules.allow("network-outbound", '(remote tcp "localhost:*")')
         if network == NetworkMode.PROXY:
+            # Load-bearing with localhost:*: removing this can drop TCP denies.
+            # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("localhost", proxy_port))
         elif network == NetworkMode.ANY_DECLARED:
             rules.allow("network-outbound", '(remote tcp "*:*")')
         elif network == NetworkMode.PORT_22:
+            # Load-bearing with localhost:*: removing this can drop TCP denies.
+            # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("*", 22))
         for port in sorted(set(denied_ports)):
             rules.deny("network-outbound", remote_tcp("localhost", port))
