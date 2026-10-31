@@ -128,17 +128,32 @@ def _console_script(venv: Path, identifier: str) -> str:
     raise InstallFailure("no_command", f"{identifier}: console scripts {scripts or 'none'}")
 
 
-def _uv_env() -> dict:
+#: CAP5 (the card's "own cache"): uv and npm download into a cache inside the install's own folder, never one every
+#: install shares, so no install is built from a file that another install, or anything else, left in a cache. The
+#: lock step fills it in the staging folder, which moves in whole; the install removes it (`_drop_cache`).
+CACHE = ".cache"
+
+
+def _drop_cache(root: Path) -> None:
+    """The install's own cache, once its packages are in: nothing runs uv or npm in this folder again, and the
+    server then runs with its folder writable. A link there goes itself, never what it points at."""
+    cache = root / CACHE
+    if cache.is_symlink():
+        cache.unlink()
+    else:
+        shutil.rmtree(cache, ignore_errors=True)
+
+
+def _uv_env(root: Path) -> dict:
     rt = capability_runtime.root()
-    return _base_env({"UV_CACHE_DIR": str(rt / "uv-cache"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
+    return _base_env({"UV_CACHE_DIR": str(root / CACHE / "uv"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
                       "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed"})
 
 
 def _npm_env(node: Path, root: Path) -> dict:
-    rt = capability_runtime.root()
     # #561 review: no git (a dependency from a git host would be cloned, and its tree installed, before the card)
     # and only the public registry; `_registry_only` then refuses any lock entry from elsewhere.
-    return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(rt / "npm-cache"),
+    return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(root / CACHE / "npm"),
                       "npm_config_ignore_scripts": "true", "npm_config_audit": "false", "npm_config_fund": "false",
                       "npm_config_update_notifier": "false", "npm_config_git": "/usr/bin/false",
                       "npm_config_registry": NPM_REGISTRY, "HOME": str(root)})
@@ -153,7 +168,7 @@ async def lock_pypi(root: Path, identifier: str, version: str) -> dict:
     uv = await capability_runtime.ensure("uv")
     (root / "requirements.in").write_text(f"{identifier}=={version}\n")
     await _run([str(uv), "pip", "compile", "requirements.in", "--generate-hashes", "--only-binary", ":all:",
-                "--python-version", PYTHON_VERSION, "-o", "requirements.lock", "--quiet"], cwd=root, env=_uv_env())
+                "--python-version", PYTHON_VERSION, "-o", "requirements.lock", "--quiet"], cwd=root, env=_uv_env(root))
     text = (root / "requirements.lock").read_text()
     return {"file": "requirements.lock", "sha256": _sha256(root / "requirements.lock"),
             "packages": [{"name": n, "version": v} for n, v in _PYPI_LOCKED.findall(text)]}
@@ -198,7 +213,7 @@ def _check_lock(root: Path, lock: dict) -> None:
 async def install_pypi(root: Path, identifier: str, lock: dict) -> dict:
     """Install exactly the prepared lock (`--require-hashes`)."""
     uv = await capability_runtime.ensure("uv")
-    env = _uv_env()
+    env = _uv_env(root)
     _check_lock(root, lock)
     await _run([str(uv), "venv", "venv", "--python", PYTHON_VERSION, "--quiet"], cwd=root, env=env)
     await _run([str(uv), "pip", "install", "--python", str(root / "venv" / "bin" / "python"), "--require-hashes",
@@ -441,6 +456,7 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
                 spec = await install_npm(root, pkg["identifier"], prepared["lock"])
             else:
                 spec = await install_mcpb(root, pkg["identifier"], prepared["lock"]["sha256"])
+            _drop_cache(root)
             spec["args"] = [*spec.get("args", []), *argv]
             spec["transport"] = "stdio"
         row.lock_sha256 = spec.get("lock_sha256")
