@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.session import get_session
 from server.db.models import Run, RunEvaluation, RunStep
+from server.run_kinds import USER_RUN_KINDS
 from server.services import run_registry
 from server.schemas import (
     AnomalyOut,
@@ -168,7 +169,7 @@ async def list_runs(
     # surface in the runs list. get_run detail stays unfiltered so the card can link into a
     # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
     # already counted them, the list beneath silently did not.
-    q = select(Run).where(Run.kind.in_(("live", "host", "scheduled"))).order_by(Run.id.desc()).limit(limit)
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS)).order_by(Run.id.desc()).limit(limit)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
@@ -279,7 +280,7 @@ N_CATALOG_TREND = 12
 async def runs_catalog(rng: str = Query("1h", alias="range"),
                        db: AsyncSession = Depends(get_session)) -> RunCatalogOut:
     start = _window_start(rng)
-    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS))  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -345,7 +346,7 @@ N_VITALS_BUCKETS = 30
 async def runs_vitals(rng: str = Query("1h", alias="range"),
                       db: AsyncSession = Depends(get_session)) -> VitalsOut:
     start = _window_start(rng)
-    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS))  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -384,7 +385,7 @@ async def runs_vitals(rng: str = Query("1h", alias="range"),
 async def runs_anomalies(range: str = Query("1h"),
                          db: AsyncSession = Depends(get_session)) -> list[AnomalyOut]:
     start = _window_start(range)
-    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS))  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -464,7 +465,7 @@ N_TIMELINE_BUCKETS = 24
 async def runs_timeline(rng: str = Query("1h", alias="range"),
                         db: AsyncSession = Depends(get_session)) -> TimelineOut:
     start = _window_start(rng)
-    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS))  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -586,7 +587,7 @@ async def conversation_changes(conversation_id: str, db: AsyncSession = Depends(
     from server.db.models import ArslanMessage
     from server.services import checkpoints
     runs = (await db.execute(select(Run).where(Run.conversation_id == conversation_id,
-                                               Run.kind.in_(("live", "host", "scheduled")))
+                                               Run.kind.in_(USER_RUN_KINDS))
                              .order_by(Run.id.desc()).limit(200))).scalars().all()
     if not runs and (await db.execute(select(ArslanMessage.id).where(
             ArslanMessage.conversation_id == conversation_id).limit(1))).first() is None:
