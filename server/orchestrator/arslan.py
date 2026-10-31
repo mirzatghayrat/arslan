@@ -1360,7 +1360,8 @@ async def _every_tool() -> list[dict]:
         "license, how they would run and what they need; it installs nothing. "
         "args: {need, keywords: [1-4 English words], kinds?: [mcp|skill|project]}."})
     tools.append({"key": "propose_capability", "description":
-        "After find_capability, ask the user to add ONE candidate (license_verdict usable, not_here null) "
+        "After find_capability, ask the user to add ONE candidate (not_here null; for a skill, license_verdict "
+        "usable; an MCP server's license is read at its version when proposed) "
         "so you can retry the failed step. The user sees a card with its source, license, how it runs "
         "(sandboxed, which folders, network) and any key it needs, and decides; if they add it, it is "
         "installed pinned, scanned and tested, and its tools become available in this turn — then "
