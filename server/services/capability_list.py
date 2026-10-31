@@ -29,7 +29,7 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 
-DELETABLE = ("installed", "authored", "manual")
+DELETABLE = ("installed", "authored", "manual", "unknown")    # unknown: the user's D2(2), 2026-10-30
 # A key the server may delete by: what every skill writer makes (skill_forge, skill_import, the seeder). The key
 # names the scripts folder, and `{key:path}` lets "/" through (#499 review F3).
 _SKILL_KEY = re.compile(r"[a-z0-9-]+")
@@ -166,6 +166,7 @@ async def _mcp_rows() -> list[dict]:
     # the stored legacy status: "never connected" (registered) and an old error decide the row below;
     # `last_error` comes masked (final review I-2)
     for server in await mcp_service.list_servers(stored_status=True):
+        # UNI1: labels are cleaned when written (models.py), and migration 0082 cleaned those stored before.
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         # CAP3a-1: installed from a card (its capability source) or added by hand; its use is its tools'
         # calls (`mcp_<id>__…`, see capabilities()).
@@ -259,15 +260,18 @@ async def _installed_servers() -> dict[int, str]:
 
 def _skill_origin(pack) -> str:
     """By the marks D7 reads as the user's (seeder._USERS_SKILL): written by Arslan (skill_forge.WRITTEN; a skill
-    promoted from Skill Forge before CAP2a got one of those marks in migration 0077), installed from a card
-    (`source_id`), pasted as a link ("imported") or made in Discover before v0.1.64 ("gh-" keys, which no seed
-    key is; tested); anything else the seeder planted. Written first: create_skill takes "gh-" keys too."""
+    promoted from Skill Forge before CAP2a got one of those marks in migration 0077, and one the old Discover page
+    made, in 0080), installed from a card (`source_id`) or pasted as a link ("imported"). Built in only for a
+    seed row (skill_trust.is_seed); a row with no mark that is not a seed is "unknown", deletable like any skill
+    the user has (the user's D2(2), 2026-10-30), its text to the Trash. Written first: create_skill takes any
+    plain key."""
+    from server.registry import skill_trust
     from server.services import skill_forge
     if pack.category in skill_forge.WRITTEN:
         return "authored"
-    if pack.source_id or pack.category == "imported" or pack.key.startswith("gh-"):
+    if skill_trust.has_users_mark(pack):                          # imported, or a capability source
         return "installed"
-    return "builtin"
+    return "builtin" if skill_trust.is_seed(pack) else "unknown"
 
 
 async def _skill_rows() -> list[dict]:
@@ -277,7 +281,7 @@ async def _skill_rows() -> list[dict]:
             SkillPack.status == "registered", SkillPack.body.is_not(None), func.trim(SkillPack.body) != "",
         ).order_by(SkillPack.key))).scalars().all()
     return [_row(f"skill:{p.key}", "off" if p.enabled is False else "on", switch="skill",
-                 name=p.name, detail=p.description[:160] if p.description else None,
+                 name=p.name or p.key, detail=p.description[:160] if p.description else None,   # clean: models.py, 0082
                  section="skills", origin=_skill_origin(p), source_id=p.source_id, removable=safe_skill_key(p.key))
             for p in packs]
 

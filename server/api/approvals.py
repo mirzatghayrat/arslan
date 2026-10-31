@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,7 +57,8 @@ REFUSED_GROUPS = 100
 
 
 @router.get("/approvals/refused")
-async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session)) -> list[dict]:
+async def list_refused(hours: int = 24, conversation_id: str | None = Query(None, min_length=1, max_length=100),
+                       db: AsyncSession = Depends(get_session)) -> list[dict]:
     """What could not be asked (`permission_store.NOT_ASKED`), the last `hours` (1 to 168): what
     a run with nobody to ask refused (a scheduled run: `decided_by` policy, `unattended` true), and the
     cards of a job or a chat turn that never opened because an earlier one went unanswered (the person
@@ -67,10 +68,11 @@ async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session))
     recorded the set). `always` (0.1.61, F2): what "Always allow" will store, exactly the rules
     `POST /permissions/rules {refused_id: id}` makes — `[{kind, target, label}]`, each label the
     words its card used; empty when `always_ok` is false. The Inbox shows it before the click.
-    An entry whose "Always" set is all allowed already is left out."""
+    An entry whose "Always" set is all allowed already is left out. `conversation_id` (INB3): only that
+    conversation's (a scheduled task's is `task.conversation_id` or `scheduled-<id>`)."""
     hours = max(1, min(168, hours))
     since = datetime.utcnow() - timedelta(hours=hours)
-    groups = await permission_store.refused_groups(db, since)
+    groups = await permission_store.refused_groups(db, since, conversation_id=conversation_id)
     rules = {(r.kind, r.target) for r in await permission_store.list_rules(db)}
     out = []
     for row, count, first in groups:

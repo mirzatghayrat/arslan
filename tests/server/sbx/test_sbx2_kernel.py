@@ -264,20 +264,30 @@ def test_listener_refusal_and_arslan_port_exclusion(sbx, mode):
         port = listener.getsockname()[1]
         source = """
 import errno, socket, sys
-with socket.socket() as sock:
+with socket.socket(int(sys.argv[2])) as sock:
     try:
-        sock.connect(('127.0.0.1', int(sys.argv[1])))
+        sock.connect((sys.argv[3], int(sys.argv[1])))
     except OSError as exc:
         print(exc.errno)
     else:
         print(0)
 """
-        allowed = sbx.python(source, port, probe="loopback-connect")
+        allowed = sbx.python(source, port, socket.AF_INET, "127.0.0.1", probe="loopback-connect")
         assert allowed.returncode == 0 and allowed.stdout.strip() == "0", allowed.stderr
-        denied = sbx.python(source, port, profile=sbx.profile(denied_ports=[port]),
-                            probe="arslan-port-refusal")
-        assert denied.returncode == 0, denied.stderr
-        assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
+        if mode == NetworkMode.ANY_DECLARED:
+            with pytest.raises(ValueError, match="any-declared cannot enforce denied_ports"):
+                sbx.profile(denied_ports=[port])
+        else:
+            mapped = "::ffff:127.0.0.1"
+            control = sbx.python(source, port, socket.AF_INET6, mapped,
+                                 profile="(version 1)(allow default)", probe="mapped-loopback-control")
+            assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
+            for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, mapped)):
+                denied = sbx.python(source, port, family, address,
+                                    profile=sbx.profile(denied_ports=[port]),
+                                    probe="arslan-port-refusal-" + family.name)
+                assert denied.returncode == 0, denied.stderr
+                assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
     result = sbx.python("""
 import errno, socket
 for family, hosts in ((socket.AF_INET, ('0.0.0.0', '127.0.0.1')),

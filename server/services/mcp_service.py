@@ -1,6 +1,7 @@
 """CRUD + connect/expose/wire + health probe for MCP servers. env stored encrypted, masked on read."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -11,6 +12,7 @@ from server import crypto
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
+from server.orchestrator import untrusted
 from server.services.secret_state import secret_state
 from server.services.settings_service import mask_secret
 
@@ -71,8 +73,21 @@ def _to_dict(srv: MCPServer, *, mask: bool = True, stored_status: bool = False) 
     # dialects.
     shown = _shown(srv)
     status, health = _legacy_words(srv, shown)
+    # SEC1: where a secret still sits in the address or arguments (never its value), and both as every place may
+    # show them. DELETE-BY: SEC1b, when the card shows `url_shown`/`args_shown` and the raw two leave the payload.
+    from server.services import connection_secrets as cs
+    url_shown, args_shown = cs.shown(srv.url, srv.args or [])
+    try:
+        moved = json.loads(crypto.decrypt(srv.secrets)) if srv.secrets else {}
+    except Exception:  # noqa: BLE001 — unreadable: every placeholder counts as missing
+        moved = {}
     return {"id": srv.id, "label": srv.label, "command": srv.command, "args": srv.args or [],
-            "url": srv.url, "env": _mask_env(env) if mask else env,
+            "url": srv.url, "url_shown": url_shown, "args_shown": args_shown,
+            "secret_parts": [{**part, "name": cs.suggest_name(srv.label, part)}
+                             for part in cs.find(srv.url, srv.args or [])],
+            # A placeholder with no stored value, by name: the start sends it as text (#536 review).
+            "secrets_missing": cs.missing(srv.url, srv.args or [], moved),
+            "env": _mask_env(env) if mask else env,
             "status": srv.status if stored_status else status,
             "env_status": secret_state(srv.env), "last_error": masked_error(srv),
             "transport": srv.transport,
@@ -95,6 +110,9 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
         raise ValueError("http transport requires a url")
     if transport == "stdio" and not (command or "").strip():
         raise ValueError("stdio transport requires a command")
+    label = untrusted.clean_name(label, 80)                 # UNI1: one cleaner for names, wherever they come in
+    if not label:
+        raise ValueError("a label is required")
     async with db_session.AsyncSessionLocal() as db:
         # Dedup guard: return existing row if (label, url) or (label, command, args) already present
         existing = None
@@ -124,6 +142,34 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
 
     supervisor.schedule(out["id"])        # 0.1.61 §B1: adding starts it (in the background)
     return out
+
+
+#: One move at a time per connection: two at once read the same stored values, and the second write lost the
+#: first's (#536 review 4). One process serves the API, so a lock per server is enough.
+_MOVES: dict[int, asyncio.Lock] = {}
+
+
+async def move_secret(server_id: int, part: dict, name: str) -> dict:
+    """SEC1: one secret-looking part of a connection's address or arguments into its encrypted store, a `${name}`
+    placeholder in its place (connection_secrets.move). Raises connection_secrets.NothingToMove when there is
+    nothing there to move; then nothing changes. The connection restarts with it."""
+    async with _MOVES.setdefault(server_id, asyncio.Lock()):
+        result = await _move_secret(server_id, part, name)
+    await restart_after_edit(server_id)
+    return result
+
+
+async def _move_secret(server_id: int, part: dict, name: str) -> dict:
+    from server.services import connection_secrets as cs
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+        if srv is None:
+            raise ValueError("server not found")
+        values = json.loads(crypto.decrypt(srv.secrets)) if srv.secrets else {}
+        url, args, values = cs.move(srv.url, srv.args or [], part, name, values)
+        srv.url, srv.args, srv.secrets = url, args, crypto.encrypt(json.dumps(values))
+        await db.commit()
+        return _to_dict(srv)
 
 
 async def list_servers(*, stored_status: bool = False) -> list[dict]:
@@ -170,7 +216,8 @@ async def connect(server_id: int) -> list[dict]:
                              + fix_for("starting", has_headers=False), state="starting")
     if result.state != "ready":
         raise MCPStartFailed(result.last_error or result.state, state=result.state)
-    return result.tools
+    # UNI1 (#526 review 4): the page shows each tool by its name through the name rule, as list_tools does.
+    return [{**tool, "shown": untrusted.clean_name(tool.get("name"), 128) or tool.get("key")} for tool in result.tools]
 
 
 async def list_tools(server_id: int) -> list[dict]:
@@ -178,7 +225,11 @@ async def list_tools(server_id: int) -> list[dict]:
         rows = (await db.execute(
             select(Tool).where(Tool.toolset_key == f"mcp_{server_id}").order_by(Tool.key)
         )).scalars().all()
-        return [{"key": t.key, "name": t.external_name or t.key, "description": t.description,
+        # UNI1 (#526 review 4): a tool's name is the server's own words. `shown` is what the connections page
+        # shows, through the name rule; `name` stays as the server sent it, because list_my_capabilities judges it
+        # against MCP's name rule (S64-0c) and the key stays the identity.
+        return [{"key": t.key, "name": t.external_name or t.key,
+                 "shown": untrusted.clean_name(t.external_name, 128) or t.key, "description": t.description,
                  "tier": t.tier, "status": t.status, "host_enabled": t.host_enabled,
                  "suggested_tier": discovery.suggest_tier(t.external_name or "")}
                 for t in rows]
