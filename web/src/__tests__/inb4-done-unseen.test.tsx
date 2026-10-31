@@ -55,19 +55,23 @@ describe("marking seen", () => {
 
   it("marks the open conversation seen once the window shows it: a chat reads idle, a job done", async () => {
     vi.mocked(api.listConversations).mockResolvedValue(rows as never);
-    const { result, rerender } = renderHook(({ open }) => useConversationIndex(60_000, open), { initialProps: { open: null as string | null } });
+    const { result, rerender } = renderHook(({ section, open }) => useConversationIndex(60_000, section, open),
+      { initialProps: { section: "arslan", open: null as string | null } });
     await waitFor(() => expect(result.current.meta.c1?.state).toBe("done_unseen"));
     expect(api.markConversationSeen).not.toHaveBeenCalled();                    // nothing is open
-    rerender({ open: "c1" });
+    rerender({ section: "scheduled", open: "c1" });                             // another page shows: c1 is not on screen
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(api.markConversationSeen).not.toHaveBeenCalled();
+    rerender({ section: "arslan", open: "c1" });
     await waitFor(() => expect(result.current.meta.c1.state).toBe("idle"));
     expect(api.markConversationSeen).toHaveBeenCalledWith("c1");
-    rerender({ open: "t1" });
+    rerender({ section: "arslan", open: "t1" });
     await waitFor(() => expect(result.current.meta.t1.state).toBe("done"));
   });
 
   it("waits while the window is hidden, and marks it when the window shows again", async () => {
     vi.mocked(api.listConversations).mockResolvedValue(rows as never);
-    const { result, rerender } = renderHook(({ open }) => useConversationIndex(60_000, open), { initialProps: { open: null as string | null } });
+    const { result, rerender } = renderHook(({ open }) => useConversationIndex(60_000, "arslan", open), { initialProps: { open: null as string | null } });
     await waitFor(() => expect(result.current.meta.c1?.state).toBe("done_unseen"));
     setVisibility("hidden");
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
@@ -77,5 +81,13 @@ describe("marking seen", () => {
     setVisibility("visible");
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
     await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledWith("c1"));
+  });
+
+  it("tries again on the next poll when marking failed (#589 F3)", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue(rows as never);
+    vi.mocked(api.markConversationSeen).mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ seen_message_id: 9 } as never);
+    const { result } = renderHook(() => useConversationIndex(40, "arslan", "c1"));
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.meta.c1.state).toBe("idle"));
   });
 });

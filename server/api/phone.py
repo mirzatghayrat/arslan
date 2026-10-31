@@ -102,13 +102,6 @@ async def revoke(device_id: str):
     return {"device_id": device_id, "revoked": True}
 
 
-# INB4: phones keep today's values until the Bridge frame lets a phone say it knows `done_unseen` (INB4's phone half, the
-# user's nod on the frame): unseen reads `done` for a job, `idle` otherwise, as before.
-# DELETE-BY: INB4's phone half, when conversations.result sends done_unseen to phones whose hello says they know it.
-def _phone_state(kind: str, state: str) -> str:
-    return ("done" if kind == "task" else "idle") if state == "done_unseen" else state
-
-
 @router.get("/phone/conversations")
 async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | None = None,
                               before: str | None = None, db: AsyncSession = Depends(get_session)):
@@ -131,7 +124,10 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
         edge = _iso(page[-1].last_at)
         page = [r for r in page if _iso(r.last_at) != edge] or [r for r in rows if _iso(r.last_at) == edge]
     return {"conversations": [{"id": r.conversation_id, "title": r.title, "updated_at": _iso(r.last_at),
-                               "kind": r.kind, "state": _phone_state(r.kind, r.state), "origin": r.origin, "preview": r.preview,
+                               "kind": r.kind,
+                               # INB4: phones keep the state without "done, not seen" until the Bridge frame lets a phone say it
+                               # knows done_unseen (INB4's phone half, the user's nod). DELETE-BY: INB4's phone half.
+                               "state": r.phone_state or r.state, "origin": r.origin, "preview": r.preview,
                                "files": r.files, **({"job": r.job} if r.job else {})}
                               for r in page],
             "has_more": len(rows) > len(page)}
