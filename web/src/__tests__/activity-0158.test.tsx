@@ -20,7 +20,9 @@ import UsageCard from "../components/UsageCard";
 import JudgmentsCard from "../components/JudgmentsCard";
 import HandsTraceCard from "../components/HandsTraceCard";
 import { useActivityStore } from "../stores/activityStore";
+import type { WaitingView } from "../hooks/useWaiting";
 
+const WAITING: WaitingView = { count: 0, conversations: [], projects: [], scheduled: [], loaded: true };
 const run = (id: number, origin = "chat") => ({ id, spawn_id: null, spawn_name: "Arslan", status: "recorded", overall_score: null,
   overall_badge: null, total_ms: 1200, user_message: `task ${id}`, created_at: "2026-10-09T08:00:00", origin });
 const page = (from: number, n: number) => Array.from({ length: n }, (_, i) => run(from - i));
@@ -38,7 +40,7 @@ const summary = {
 };
 
 beforeEach(() => {
-  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, scroll: {} });
+  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockResolvedValue(summary);
   request.mockResolvedValue({ items: [], entries: [] });
 });
@@ -47,7 +49,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("最近的工作", () => {
   it("shows where each run came from with its own icon", async () => {
     listRuns.mockResolvedValue([run(3, "job"), run(2, "phone"), run(1)]);
-    render(<ActivityView />);
+    render(<ActivityView waiting={WAITING} />);
     await screen.findByTestId("activity-run-3");
     const origins = Array.from(document.querySelectorAll("[data-origin]")).map((el) => el.getAttribute("data-origin"));
     expect(origins).toEqual(["job", "phone", "chat"]);
@@ -55,7 +57,7 @@ describe("最近的工作", () => {
 
   it("opens a run in a drawer while the list stays, and Esc / arrows work", async () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
-    render(<ActivityView />);
+    render(<ActivityView waiting={WAITING} />);
     fireEvent.click(await screen.findByTestId("activity-run-2"));
     expect(screen.getByTestId("run-drawer")).toHaveTextContent("run 2");
     // the list is still there, with the opened row marked
@@ -69,7 +71,7 @@ describe("最近的工作", () => {
 
   it("loads the next 20 back from the last row when the box reaches its end", async () => {
     listRuns.mockResolvedValueOnce(page(100, RUNS_PAGE)).mockResolvedValueOnce(page(80, 5));
-    render(<ActivityView />);
+    render(<ActivityView waiting={WAITING} />);
     const box = await screen.findByTestId("activity-runs-box");
     Object.defineProperty(box, "scrollHeight", { value: 1000, configurable: true });
     Object.defineProperty(box, "clientHeight", { value: 400, configurable: true });
@@ -81,13 +83,13 @@ describe("最近的工作", () => {
 
   it("comes back to the same place after leaving the page", async () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
-    const first = render(<ActivityView />);
+    const first = render(<ActivityView waiting={WAITING} />);
     fireEvent.click(await screen.findByTestId("activity-run-2"));
     const box = screen.getByTestId("activity-runs-box");
     box.scrollTop = 120;
     fireEvent.scroll(box);
     first.unmount();                               // App unmounts the page on leaving it
-    render(<ActivityView />);
+    render(<ActivityView waiting={WAITING} />);
     expect(await screen.findByTestId("run-drawer")).toHaveTextContent("run 2");
     expect((await screen.findByTestId("activity-runs-box")).scrollTop).toBe(120);
   });
@@ -105,7 +107,7 @@ describe("the usage chart", () => {
 
   it("clicking a column narrows recent work to that slice; the chip clears it", async () => {
     listRuns.mockResolvedValue([run(1)]);
-    render(<ActivityView />);
+    render(<ActivityView waiting={WAITING} />);
     fireEvent.click(await screen.findByTestId("usage-col-1"));
     await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(
       expect.objectContaining({ since: 1_790_003_600, until: 1_790_007_200 })));
@@ -116,7 +118,8 @@ describe("the usage chart", () => {
 
   it("clicking a model row narrows recent work to that model", async () => {
     listRuns.mockResolvedValue([run(1)]);
-    render(<ActivityView />);
+    render(<ActivityView waiting={WAITING} />);
+    fireEvent.click(await screen.findByTestId("usage-cost"));                  // INB7-a: the model rows open from the cost tile
     fireEvent.click(await screen.findByTestId("usage-row"));
     await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ model: "deepseek-v4-flash" })));
   });

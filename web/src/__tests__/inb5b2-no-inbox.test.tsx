@@ -38,8 +38,8 @@ describe("the sidebar", () => {
     render(<Sidebar {...p} />);
     expect(document.getElementById("nav-btn-inbox-deck")).toBeNull();
     expect(screen.getByTestId("progress-badge")).toHaveTextContent("3");
-    fireEvent.click(document.getElementById("nav-btn-activity-footer")!);
-    expect(p.onChangeSection).toHaveBeenCalledWith("activity");
+    fireEvent.click(document.getElementById("nav-btn-progress-footer")!);
+    expect(p.onChangeSection).toHaveBeenCalledWith("progress");
   });
 
   it("shows no number when nothing waits, and caps a big one", () => {

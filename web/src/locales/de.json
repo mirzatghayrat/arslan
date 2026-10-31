@@ -97,7 +97,7 @@
     "arslan": "Hauptassistent",
     "capabilities": "Fähigkeiten",
     "brain": "Gedächtnis",
-    "activity": "Aktivität",
+    "progress": "Fortschritt",
     "scheduled": "Geplant"
   },
   "brain": {
@@ -584,8 +584,8 @@
     "desktopNotificationsDesc": "Ist das Fenster geschlossen oder im Hintergrund, meldet macOS, wenn eine Aufgabe fertig ist, eine Aktion deine Bestätigung braucht oder eine geplante Aufgabe fehlschlägt. Mitteilungen zeigen nie Nachrichtentext.",
     "labelIsland": "Arslan in der Notch zeigen",
     "islandDesc": "Ein kleiner Arslan oben am Bildschirm zeigt, woran er arbeitet, wann er dich braucht und wann eine Aufgabe fertig ist. Zeiger darüber bewegen für mehr. Er erscheint nie in Bildschirmfotos, Aufnahmen oder bei der Bildschirmfreigabe.",
-    "automationElsewhere": "Geplante Aufgaben haben jetzt eine eigene Seite; Token-Verbrauch und jeder frühere Lauf liegen unter Aktivität.",
-    "automationOpenActivity": "Aktivität öffnen",
+    "automationElsewhere": "Geplante Aufgaben haben jetzt eine eigene Seite; Token-Verbrauch und jeder frühere Lauf liegen unter Fortschritt.",
+    "automationOpenActivity": "Fortschritt öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
     "searchNoHits": "Kein Bereich passt",
     "modeSystem": "System",
@@ -713,8 +713,8 @@
     "grpVersion": "Version",
     "grpWhatsNew": "Neu in dieser Version",
     "watchesOnScheduled": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du auf der Seite „Geplant“.",
-    "openActivity": "Nutzung und jeder Lauf stehen unter Aktivität; geplante Aufgaben haben eine eigene Seite.",
-    "openActivityBtn": "Aktivität öffnen",
+    "openActivity": "Nutzung und jeder Lauf stehen unter Fortschritt; geplante Aufgaben haben eine eigene Seite.",
+    "openActivityBtn": "Fortschritt öffnen",
     "whatsNewEmpty": "Keine Notizen zu dieser Version."
   },
   "errors": {
