@@ -206,6 +206,31 @@ _IDEOGRAPHS = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0
 _IVS_UNCOUNTED_MAX = 8
 #: The RGI subdivision flags' tag letters (England, Scotland, Wales), between U+1F3F4 and U+E007F.
 _FLAG_TAGS = ("gbeng", "gbsct", "gbwls")
+#: UNI1b-4: ZWNJ and ZWJ stay unmarked where ordinary text needs them (Persian, the Indic scripts, emoji sequences),
+#: but between two ASCII letters they join nothing, so there each one is marked, a run of them too. Since UNI1b-3
+#: the import's scan no longer blocks them, and a run of the two can carry bits between the letters of a word.
+_JOINERS = (0x200C, 0x200D)
+
+
+def _ascii_letter(cp: int) -> bool:
+    return 0x41 <= cp <= 0x5A or 0x61 <= cp <= 0x7A
+
+
+def _joiners_between_letters(cps: list[int]) -> set[int]:
+    """The positions of each run of ZWNJ and ZWJ that sits between two ASCII letters (one pass)."""
+    marked: set[int] = set()
+    i = 0
+    while i < len(cps):
+        if cps[i] not in _JOINERS:
+            i += 1
+            continue
+        end = i
+        while end < len(cps) and cps[end] in _JOINERS:
+            end += 1
+        if i > 0 and end < len(cps) and _ascii_letter(cps[i - 1]) and _ascii_letter(cps[end]):
+            marked.update(range(i, end))
+        i = end
+    return marked
 
 
 def _in(cp: int, ranges) -> bool:
@@ -244,13 +269,14 @@ def _flag_tags(cps: list[int]) -> set[int]:
 def hidden_runs(text) -> list[tuple[int, list[int]]]:
     """UNI1b: each run of characters in `text` that show nothing, as (start, code points), in order. A run is one
     code point repeated, or characters of one range (variation selectors, their supplement, tags). Not counted:
-    one selector that does what ordinary text uses one for (`_takes_selector`), and an RGI flag's tags."""
+    one selector that does what ordinary text uses one for (`_takes_selector`), and an RGI flag's tags. Counted
+    besides the table: a joiner between two ASCII letters (`_joiners_between_letters`, UNI1b-4)."""
     cps = [ord(ch) for ch in str(text or "")]
-    flagged = _flag_tags(cps)
+    flagged, stray = _flag_tags(cps), _joiners_between_letters(cps)
     runs: list[tuple[int, list[int]]] = []
     open_run, ivs_uncounted = False, 0
     for i, cp in enumerate(cps):
-        hidden = i not in flagged and _in(cp, _HIDDEN)
+        hidden = i not in flagged and (_in(cp, _HIDDEN) or i in stray)
         if (hidden and _is_selector(cp) and not (i + 1 < len(cps) and _is_selector(cps[i + 1]))
                 and _takes_selector(cps[i - 1] if i else None, cp)):
             ivs = 0xE0100 <= cp <= 0xE01EF

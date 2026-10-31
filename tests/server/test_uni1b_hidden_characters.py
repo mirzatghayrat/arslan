@@ -38,6 +38,7 @@ def test_the_tables_are_the_shared_ones():
     assert [list(r) for r in PRESENTATION_BASES] == RULE["presentation_bases"]
     assert untrusted._IVS_UNCOUNTED_MAX == RULE["ivs_uncounted_max"]
     assert list(untrusted._FLAG_TAGS) == RULE["flags"]
+    assert list(untrusted._JOINERS) == RULE["joiners_between_ascii_letters"]
 
 
 def test_every_hidden_range_has_a_case():
@@ -59,7 +60,17 @@ def test_the_cases_cover_both_sides_of_every_rule():
     assert len(VECTORS) >= 20 and any(c["count"] == 0 for c in VECTORS) and any(c["count"] > 10 for c in VECTORS)
     assert {"one variation selector after an emoji", "two variation selectors after a letter",
             "a ZWJ inside an emoji sequence", "a ZWNJ between Arabic-script letters",
-            "the England flag's tag sequence", "a stray tag character"} <= names
+            "the England flag's tag sequence", "a stray tag character",
+            "a ZWNJ between two ASCII letters", "joiners between two ASCII letters, each one marked",
+            "a joiner next to a space is not marked"} <= names
+
+
+def test_a_long_run_of_joiners_between_letters_is_marked_in_one_pass():
+    """UNI1b-4: each joiner of the run is marked, and the pass stays linear in the run's length."""
+    import time
+    start = time.monotonic()
+    out = untrusted.hidden_summary("a" + "\u200c\u200d" * 100_000 + "b")
+    assert out["count"] == 200_000 and time.monotonic() - start < 5
 
 
 def test_a_run_starts_where_it_is():

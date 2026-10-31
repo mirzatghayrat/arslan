@@ -1,5 +1,5 @@
 {
- "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ, ZWNJ, LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
+ "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ and ZWNJ, but between two ASCII letters, where they join nothing and each one of a run is marked (`joiners_between_ascii_letters`, UNI1b-4); LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
  "rule": {
   "hidden": [
    [
@@ -114,6 +114,10 @@
    "gbeng",
    "gbsct",
    "gbwls"
+  ],
+  "joiners_between_ascii_letters": [
+   8204,
+   8205
   ],
   "presentation_bases": [
    [
@@ -1234,6 +1238,56 @@
    "runs": [
     "U+FE0F"
    ]
+  },
+  {
+   "name": "a ZWNJ between two ASCII letters",
+   "text": "pa\u200cypal",
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
+  },
+  {
+   "name": "a ZWJ between two ASCII letters",
+   "text": "Pay\u200dPal",
+   "count": 1,
+   "runs": [
+    "U+200D"
+   ]
+  },
+  {
+   "name": "joiners between two ASCII letters, each one marked",
+   "text": "a\u200c\u200d\u200d\u200cb",
+   "count": 4,
+   "runs": [
+    "U+200C",
+    "2 \u00d7 U+200D",
+    "U+200C"
+   ]
+  },
+  {
+   "name": "a joiner next to a space is not marked",
+   "text": "word\u200c next",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a joiner between an accented letter and an ASCII letter is not marked",
+   "text": "caf\u00e9\u200cs",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a joiner between ASCII digits is not marked",
+   "text": "1\u200c2",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a joiner at the start or the end is not marked",
+   "text": "\u200cab\u200d",
+   "count": 0,
+   "runs": []
   }
  ]
 }
