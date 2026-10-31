@@ -39,6 +39,8 @@ _ENV = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LO
 # Variables that would point git somewhere else than the repo found (⓪Plan's review of #583).
 _DROP_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
              "GIT_COMMON_DIR", "GIT_NAMESPACE")
+# Variables that would point gh at another repo, host or token (#587 review); GH_HOST is pinned to github.com.
+_GH_DROP_ENV = ("GH_REPO", "GH_HOST", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_CONFIG_DIR")
 #: On a Mac without the command-line tools this is a shim that opens macOS's install dialog (SBX-M runbook).
 _SHIM = "/usr/bin/git"
 _ON_MAC = sys.platform == "darwin"
@@ -294,7 +296,9 @@ def prs(repo: str, branch: str) -> dict:
     if hit and time.monotonic() - hit[0] < PR_CACHE_S:
         return hit[1]
     exe = shutil.which("gh", path=merged_path())
-    env = {**os.environ, "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "PATH": merged_path()}
+    # Only github.com, whatever the launch environment says: the token goes nowhere else (#587 review).
+    env = {k: v for k, v in os.environ.items() if k not in _GH_DROP_ENV}
+    env.update(GH_HOST="github.com", GH_PROMPT_DISABLED="1", GH_NO_UPDATE_NOTIFIER="1", PATH=merged_path())
     out: dict = {"signed_in": False, "prs": []}
     try:
         away = tempfile.gettempdir()

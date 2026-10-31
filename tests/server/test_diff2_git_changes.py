@@ -107,10 +107,22 @@ def test_programs_named_in_the_repos_config_never_run(repo):
     """The card's probe as a test: plain `git diff` ran this filter driver; nothing here may."""
     marks = repo.parent / "marks"
     marks.mkdir()
+    # A signed commit on the branch, so `log` would verify it if it were allowed to (gpg.program below marks).
+    signer = repo.parent / "signer"
+    signer.write_text("#!/bin/sh\necho '[GNUPG:] SIG_CREATED D 1 8 00 1 X' >&2\n"
+                      "printf -- '-----BEGIN PGP SIGNATURE-----\\nc3lu\\n-----END PGP SIGNATURE-----\\n'\n")
+    signer.chmod(0o755)
+    write(repo, "signed.md", "signed\n")
+    git(repo, "add", "-A")
+    git(repo, "-c", f"gpg.program={signer}", "-c", "user.signingkey=synthetic", "commit", "-qS", "-m", "signed")
     for key, name in (("filter.evil.clean", "clean"), ("filter.evil.smudge", "smudge"), ("filter.evil.process", "process"),
                       ("core.fsmonitor", "fsmonitor"), ("diff.evil.textconv", "textconv"), ("diff.evil.command", "extdiff"),
-                      ("diff.external", "external"), ("gpg.program", "gpg"), ("core.pager", "pager")):
+                      ("diff.external", "external"), ("core.pager", "pager")):
         git(repo, "config", key, f"sh -c 'touch {marks / name}; cat'")
+    verifier = repo.parent / "verifier"             # git runs gpg.program as a program, not through a shell
+    verifier.write_text(f"#!/bin/sh\ntouch {marks / 'gpg'}\n")
+    verifier.chmod(0o755)
+    git(repo, "config", "gpg.program", str(verifier))
     git(repo, "config", "log.showSignature", "true")
     (repo / ".git" / "info").mkdir(exist_ok=True)
     (repo / ".git" / "info" / "attributes").write_text("* filter=evil diff=evil\n")
@@ -395,3 +407,29 @@ async def test_gh_not_answering_is_not_the_repos_error(client, repo, monkeypatch
     monkeypatch.setattr(git_changes, "prs", lambda *a: {"signed_in": True, "prs": [], "error": "unavailable"})
     body = (await client.get("/api/v1/conversations/c1/repo-changes")).json()["repo"]
     assert "error" not in body and body["prs_error"] == "unavailable" and body["branch"] == "feature"
+
+
+@pytest.mark.parametrize("rel,ok", [("a.md", True), ("docs/a.md", True), (".github/workflows/ci.yml", True),
+                                    ("", False), ("/etc/passwd", False), ("../x", False), ("a/../../x", False),
+                                    ("..", False), (".git", False), (".git/config", False), (".git/hooks/pre-commit", False)])
+def test_contained_paths(rel, ok):
+    assert git_changes._contained(rel) is ok
+
+
+def test_gh_talks_to_github_com_only(repo, tmp_path, monkeypatch):
+    log = tmp_path / "gh.env"
+    bin_dir = tmp_path / "envbin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(f"""#!/bin/sh
+echo "host=$GH_HOST repo=$GH_REPO ent=$GH_ENTERPRISE_TOKEN cfg=$GH_CONFIG_DIR :: $@" >> {log}
+[ "$1" = auth ] && exit 0
+echo '[]'
+""")
+    (bin_dir / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    for key, value in (("GH_HOST", "ghe.example.com"), ("GH_REPO", "evil/repo"), ("GH_ENTERPRISE_TOKEN", "t"),
+                       ("GH_CONFIG_DIR", str(tmp_path / "other-config"))):
+        monkeypatch.setenv(key, value)
+    git_changes.prs("o/r", "feature")
+    lines = log.read_text().splitlines()
+    assert len(lines) == 2 and all(line.startswith("host=github.com repo= ent= cfg= ::") for line in lines)
