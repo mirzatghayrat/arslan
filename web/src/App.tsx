@@ -54,6 +54,7 @@ import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
+import { AwayEntries, StoppedJobCards } from './components/conversation/WhileAway';
 import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
 import { useScheduledAttention } from './hooks/useScheduledAttention';
@@ -763,6 +764,11 @@ export default function App() {
                   setPanelView('default');
                 }}
                 conversationId={activeThreadId}
+                // INB5b: what waited in the Inbox comes back to the conversation (a temporary one has neither).
+                header={activeThread?.temporary ? undefined : <AwayEntries conversationId={activeThreadId} />}
+                footer={activeThread?.temporary ? undefined : <StoppedJobCards conversationId={activeThreadId}
+                  onOpenConversation={openInboxConversation}
+                  onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
               />

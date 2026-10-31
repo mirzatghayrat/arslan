@@ -1443,5 +1443,9 @@
     "attention": "要你看一眼",
     "changed": "有变化",
     "failing": "没跑成或已自动暂停"
+  },
+  "whileAway": {
+    "title": "你不在时没做的（这个对话）",
+    "stopped": "停在这里的任务"
   }
 }

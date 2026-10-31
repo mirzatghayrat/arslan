@@ -1443,5 +1443,9 @@
     "attention": "Bitte ansehen",
     "changed": "Geändert",
     "failing": "Fehlgeschlagen oder selbst pausiert"
+  },
+  "whileAway": {
+    "title": "Nicht erledigt, während du weg warst (dieses Gespräch)",
+    "stopped": "Eine Aufgabe, die hier angehalten hat"
   }
 }

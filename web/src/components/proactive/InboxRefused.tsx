@@ -51,8 +51,12 @@ interface Allowed { row: Refusal; at: number; rules: number[] }
  * INB3: `conversationId` lists one conversation's entries (the server filters before it groups, #568) over `hours` (1 to 168);
  * `unattended` keeps only a scheduled run's own, since a task may write into an ordinary conversation.
  */
-export default function InboxRefused({ onCount, conversationId, hours = 24, unattended = false, title }: {
-  onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean; title?: string;
+export default function InboxRefused({ onCount, conversationId, hours = 24, unattended = false, awayOnly = false, title, className = "" }: {
+  onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean;
+  /** INB5b: only a card that went unanswered (`away`), as a conversation shows; a scheduled run's entries are its task's. */
+  awayOnly?: boolean; title?: string;
+  /** INB5b: how it sits where it is shown (a conversation shows it as a card). */
+  className?: string;
 }) {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<Refusal[]>([]);
@@ -81,11 +85,11 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
       const query = new URLSearchParams({ hours: String(hours), ...(conversationId ? { conversation_id: conversationId } : {}) });
       const body = await request<Refusal[]>(`/approvals/refused?${query}`);
       if (!alive.current) return;
-      const list = (Array.isArray(body) ? body : []).filter((row) => !unattended || row.unattended);
+      const list = (Array.isArray(body) ? body : []).filter((row) => (!unattended || row.unattended) && (!awayOnly || !row.unattended));
       setRows(list);
       onCount?.(list.length);
     } catch { /* the rest of the Inbox still works */ }
-  }, [onCount, conversationId, hours, unattended]);
+  }, [onCount, conversationId, hours, unattended, awayOnly]);
   useEffect(() => {
     void load();
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, POLL_MS);
@@ -155,7 +159,7 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
   }, [guard, shownKey]);
   if (!shown.length) return null;
   return (
-    <section data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className="flex flex-col gap-2">
+    <section data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className={`flex flex-col gap-2 ${className}`}>
       <h2 className="flex items-center gap-2 text-[13px] font-semibold">
         <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-subtle-foreground" />{title ?? t("inbox.refusedTitle")}
         <span className="font-mono text-[12px] text-subtle-foreground">{rows.length}</span>

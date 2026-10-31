@@ -1443,5 +1443,9 @@
     "attention": "Needs a look",
     "changed": "Changed",
     "failing": "Failed or paused itself"
+  },
+  "whileAway": {
+    "title": "Not done while you were away, in this conversation",
+    "stopped": "A job that stopped here"
   }
 }
