@@ -67,7 +67,9 @@ async def run_phase(phase, profile, evidence, adapter):
         "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
     profile.mkdir(parents=True, exist_ok=True)
     await initialize(engine)
-    workspace = profile / "workspace"
+    # Beside the data folder, not inside it: tools never write Arslan's own folders (CAP6b, SBX-5a), and no
+    # default layout puts the working folder there (data ~/Library/Application Support/Arslan, work ~/Arslan).
+    workspace = profile.parent / f"{profile.name}-workspace"
     workspace.mkdir(exist_ok=True)
     target = workspace / "brief.md"
     production_tools = arslan._arslan_tools
