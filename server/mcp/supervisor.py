@@ -289,6 +289,9 @@ def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=No
         return ("re-check the key/token on this server in Capabilities" if has_headers
                 else "the user must sign in from Capabilities (Authorize)")
     if state == "parked":
+        if reason.startswith(discovery.HELD_REASONS):
+            # CAP5a (#577 review F6): Reconnect does not start it; only the user's review in Capabilities does.
+            return f"it is stopped until the user reviews it in Capabilities ({reason}); Reconnect does not start it"
         cause = f": {reason}" if reason else ""
         return f"it is stopped until the cause is fixed{cause}; then the user can press Reconnect in Capabilities"
     if state == "off":

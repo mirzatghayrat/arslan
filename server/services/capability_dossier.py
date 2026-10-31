@@ -81,23 +81,29 @@ async def set_folders(source_id: str, folders: list[str]) -> dict:
 
 async def accept_tools(source_id: str, digest: str) -> dict:
     """CAP5a: the user read a server's tool change (its `test.tools_changed`) and accepts it: those tools become
-    the pin, and the server starts again in the background, so its next listing is compared to them. `digest`
-    names the change the user read: a change recorded since, or none, is refused, and nothing is pinned."""
+    the pin, the hold ends, and the server starts again in the background, so its next listing is compared to
+    them. `digest` names the change the user read: a change recorded since, or none, is refused, and nothing is
+    pinned; so is a change too large to show whole (#577 review F2), which only a removal or a reinstall ends.
+    It runs under the server's listing lock, so a listing's record and this accept never interleave."""
+    from server.mcp import discovery
     from server.services import mcp_service
     row = await source(source_id)
-    if row.kind != "mcp" or row.state != "installed" or not row.mcp_server_id:
+    if row.kind != "mcp" or not row.mcp_server_id:
         raise DossierError("no_tool_change")
-    async with db_session.AsyncSessionLocal() as db:
-        stored = await db.get(CapabilitySource, source_id)
-        test = dict(stored.test or {})
-        change = test.get("tools_changed") or {}
-        if not change:
-            raise DossierError("no_tool_change")
-        if not isinstance(digest, str) or digest != change.get("digest"):
-            raise DossierError("tool_change_moved")
-        test.pop("tools_changed")
-        stored.test = {**test, "tools_pin": change["pin"]}
-        await db.commit()
+    async with discovery._write_locks.hold(row.mcp_server_id):
+        async with db_session.AsyncSessionLocal() as db:
+            stored = await db.get(CapabilitySource, source_id)
+            test = dict(stored.test or {})
+            change = test.get("tools_changed") or {}
+            if not change:
+                raise DossierError("no_tool_change")
+            if not isinstance(digest, str) or digest != change.get("digest"):
+                raise DossierError("tool_change_moved")
+            if not change.get("reviewable", True):
+                raise DossierError("too_long_to_review")
+            test.pop("tools_changed")
+            stored.test = {**test, "tools_pin": change["pin"]}
+            await db.commit()
     await mcp_service.restart_after_edit(row.mcp_server_id)
     return view(await source(source_id))
 
@@ -106,19 +112,21 @@ async def accept_source(source_id: str, seen: str) -> dict:
     """CAP4a-3d: the user read why this server's Registry entry parked it (withdrawn, or changed) and keeps it:
     that answer (`seen`, its digest) is remembered, so the same answer does not park it again, and the server
     starts again in the background. Another answer since, or none, is refused."""
+    from server.mcp import discovery
     from server.services import mcp_service
     row = await source(source_id)
-    if row.kind != "mcp" or row.state != "installed" or not row.mcp_server_id:
+    if row.kind != "mcp" or not row.mcp_server_id:
         raise DossierError("no_source_problem")
-    async with db_session.AsyncSessionLocal() as db:
-        stored = await db.get(CapabilitySource, source_id)
-        check = dict((stored.test or {}).get("registry_check") or {})
-        if not check.get("problem"):
-            raise DossierError("no_source_problem")
-        if not isinstance(seen, str) or seen != check.get("seen"):
-            raise DossierError("source_answer_moved")
-        stored.test = {**(stored.test or {}), "registry_check": {**check, "accepted": seen}}
-        await db.commit()
+    async with discovery._write_locks.hold(row.mcp_server_id):     # never interleaved with a start's check
+        async with db_session.AsyncSessionLocal() as db:
+            stored = await db.get(CapabilitySource, source_id)
+            check = dict((stored.test or {}).get("registry_check") or {})
+            if not check.get("problem"):
+                raise DossierError("no_source_problem")
+            if not isinstance(seen, str) or seen != check.get("seen"):
+                raise DossierError("source_answer_moved")
+            stored.test = {**(stored.test or {}), "registry_check": {**check, "accepted": seen}}
+            await db.commit()
     await mcp_service.restart_after_edit(row.mcp_server_id)
     return view(await source(source_id))
 

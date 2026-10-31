@@ -253,3 +253,6 @@ async def test_a_start_is_stopped_before_any_listing_and_parked_in_arslans_words
     state, line = supervisor_mod.classify(stopped.value, server={"transport": "stdio"}, non_json=0, budget_s=60)
     assert (state, line) == ("parked", rc.LINES[rc.WITHDRAWN]) and supervisor_mod.safe_reason(line) == line
     assert supervisor_mod.safe_reason(rc.LINES[rc.CHANGED]) == rc.LINES[rc.CHANGED]
+    for reason in rc.LINES.values():                             # only the user ends it, never Reconnect
+        fix = supervisor_mod.fix_for("parked", has_headers=False, reason=reason)
+        assert "reviews it in Capabilities" in fix and "Reconnect does not start it" in fix
