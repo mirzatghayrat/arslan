@@ -37,7 +37,7 @@ scripts/dev/sbx_m.sh
 |---|---|---|
 | Preflight | versions, firewall state, other pytest processes | seconds |
 | 1/2 corpus | `pytest tests/server/sbx -m sbx_mac`: 293 cases (71 kernel gates, 222 measurement rows) | about 10–20 minutes, not yet measured alone. CI's macOS step ran these plus 69 other cases in about 13 minutes on a VM (run 41171810403). |
-| 2/2 loop | `test_sbx2_kernel.py -k listener_refusal`, 3 cases per run, 30 runs | about 3 seconds a run: 85 seconds for 30 runs on this Mac (2026-10-31, at `dc926523`, with other suites running) |
+| 2/2 loop | `test_sbx2_kernel.py -m sbx_mac -k listener_refusal`, 3 cases per run, 30 runs | about 3 seconds a run: 85 seconds for 30 runs on this Mac (2026-10-31, at `dc926523`, with other suites running) |
 
 ## macOS prompts to expect
 
@@ -55,7 +55,7 @@ scripts/dev/sbx_m.sh
   - Note the time. It would mean a launch-job write got through.
   - Only the default-deny candidate tries one, a job whose program is `true`. It is removed at once whether or not it was accepted.
 
-The same corpus runs inside every local full-suite run on macOS. `pytest tests/` has no marker filter, so it includes `-m sbx_mac`. The sessions' full runs on this Mac have run it since #507 merged (2026-10-30), but nobody watched the screen during those runs.
+A local `pytest tests/` leaves the corpus out (the user, 2026-10-31). It runs only when a run asks: `-m sbx_mac`, `-m macos` (CI's macOS step) or `--sbx-mac` (`tests/conftest.py`). Before that, every local full-suite run on macOS ran it, from #507's merge (2026-10-30), and nobody watched the screen during those runs.
 
 ## Where the results land
 
