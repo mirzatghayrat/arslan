@@ -20,9 +20,15 @@ the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
 an availability skip. The `sbx_mac` corpus has 293 cases: 71 assertion gates and
-222 measurement rows. With two compile checks and the existing 69, the macOS job
-must expect 364, as set by PR #576. Widening the port sample within the same
+222 measurement rows. With two compile checks and the existing 69, those cases
+total 364, as set by PR #576. Widening the port sample within the same
 two compile cases does not change that count.
+
+SBX-3p adds 56 commands cases, making the macOS selection 420. They strictly
+xfail with `raises=AssertionError` until `commands` is registered in the harness's
+`BUILT_BASES` adapter table. A separate Claude CI change must raise `EXPECTED`
+from 364 to 420; the count-mirror guard fails until then. Once SBX-3a registers
+its real commands adapter, these cases must run with zero skips and zero xfails.
 
 The compile checks compare libsandbox bytecode with/without each deny over the
 fixed regression ports plus every 65th port starting at 1: 1,018 ports for proxy
@@ -44,10 +50,15 @@ card costs and may pass as pytest rows while reporting `tool-failed`, `timeout`,
 `tool-unavailable`, `not-supplied`, or `boundary-open`. Such a row is **not** a
 successful compatibility or security result. The terminal summary and JUnit
 properties preserve those distinctions. Inspect them before approving SBX-M.
-A hard-link `boundary-open` requires a follow-up before SBX-3 merges.
+A hard-link `boundary-open` requires a follow-up before SBX-3 merges. That row
+now targets scratch Arslan data and first requires a direct write to be denied
+under the exact same profile. The outside-floor profile uses scratch HOME too.
+An already-writable target fails this precondition instead of reporting an
+invented boundary crossing; the old report's historical rows remain unchanged.
 
 Every row records macOS release/build and architecture. Its `executions` JUnit
-property is a JSON list with one entry per launched subprocess: sequence number,
+property is a JSON list with one entry per sandboxed subprocess launched by the
+harness (unsandboxed host-side setup and cleanup checks are not entries): sequence number,
 probe label, base, configured network mode, whether the profile was overridden,
 exact profile SHA-256, completion/timeout result and return code. The test id plus
 sequence identifies the invocation. This includes the fixture smoke probe,
@@ -71,11 +82,22 @@ the historical profiles mean their historical online behavior; they have no
 proxy. On the candidate, the reserved proxy port has **no listener**: this tests
 compatibility with the restriction, not end-to-end proxy forwarding (SBX-6).
 
-Future p PRs add their strict-xfail gate when needed, together with a separate
-Claude CI change that distinguishes strict xfails from skips. The corresponding
-a PR must show zero skips and zero xfails on its own macOS job. No future gate is
-implemented here. An unknown adapter raises; it never silently uses the candidate
-or a historical profile.
+The commands gate fails explicitly before any smoke or probe while its adapter
+is absent. CI already distinguishes strict xfails from skips (#542). The adapter
+table is the only registration point: SBX-3a adds a callable using its real product
+preset and the harness's scratch HOME/TMPDIR, work/temp paths, protected fixture,
+IPC prefix, network mode and supplied listener-port exclusions. It must not return
+the candidate profile. Unknown adapters raise; there is no historical fallback.
+
+`test_sbx3_commands.py` reuses the SBX-2 service, IPC, device, pty/signal,
+filesystem, Unix-socket, Apple Event and loopback gates. It adds scratch closed-app
+paths (including symlink aliases), offline loopback refusal, six shared/other-run
+temp locations and two hard-link boundaries, with a workspace-link positive
+control. The IPC test is a confinement check, not a claim that SBX-M's failed
+Python Pool row now works. Hardcoded temp writes remain an expected refusal.
+Run creation/lifetime/boot sweep and classifier helpers belong to SBX-3a; cache
+isolation and proxy forwarding belong to SBX-5p/6p. These tests do not implement
+those surfaces or resolve the postponed localhost-server decision.
 
 ## Safety and coverage
 
