@@ -2521,8 +2521,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         synth = await build_synthesis_adapter()
         if synth is not None:
             a = synth
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — synthesis falls back to the tool-loop adapter, as when none is set
+        logger.warning("synthesis adapter unavailable, keeping the tool-loop model: %s", type(exc).__name__)
     synth_system = (
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
