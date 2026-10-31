@@ -92,7 +92,6 @@
     "tagline": "Erstelle deine eigenen KI-Spawns"
   },
   "nav": {
-    "inbox": "Posteingang",
     "projects": "Projekte",
     "settings": "Einstellungen",
     "arslan": "Hauptassistent",
@@ -1379,13 +1378,6 @@
     "hiddenEnrollFailed": "{{name}} konnte nicht gemerkt werden. {{why}}"
   },
   "inbox": {
-    "approveNow": "Jetzt freigeben",
-    "answerFailed": "Diese Karte wurde schon beantwortet oder ist abgelaufen.",
-    "stalled": "Angehalten",
-    "changed": "Geändert",
-    "other": "Sonstiges",
-    "watching": "Beobachtet",
-    "muted": "Keine Erinnerung",
     "addWatch": "Weitere Seite oder Ordner beobachten",
     "refusedTitle": "Nicht erledigt, während du weg warst",
     "alwaysAllow": "Immer erlauben",
@@ -1394,9 +1386,7 @@
     "scheduledNeverAsks": "Eine geplante Aufgabe tut nichts, was dein OK braucht. Mach es in einem Chat.",
     "allowedNow": "Ab jetzt erlaubt",
     "refusedTimes": "{{count}}-mal seit {{since}}",
-    "undo": "Rückgängig",
-    "openInArslan": "Gespräch öffnen",
-    "heldCapability": "Das erweitert Arslan um eine neue Fähigkeit. Erlauben lässt es sich nur in seinem Gespräch, wo die ganze Karte zu sehen ist."
+    "undo": "Rückgängig"
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",
@@ -1450,5 +1440,8 @@
   "whileAway": {
     "title": "Nicht erledigt, während du weg warst (dieses Gespräch)",
     "stopped": "Eine Aufgabe, die hier angehalten hat"
+  },
+  "waiting": {
+    "count": "Wartet auf dich: {{count}}"
   }
 }

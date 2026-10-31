@@ -28,7 +28,7 @@ import { api, request } from "../api/client";
 import { proactiveApi } from "../api/proactive";
 import ScheduledPage from "../components/scheduled/ScheduledPage";
 import Sidebar from "../components/Sidebar";
-import InboxRefused from "../components/proactive/InboxRefused";
+import NotDoneList from "../components/proactive/NotDoneList";
 import { useScheduledAttention } from "../hooks/useScheduledAttention";
 
 const setVisibility = (value: "visible" | "hidden") => Object.defineProperty(document, "visibilityState", { value, configurable: true });
@@ -121,11 +121,15 @@ describe("the Scheduled page", () => {
     expect(screen.getByTestId("proactive-mutes")).toBeInTheDocument();
   });
 
-  it("checks now from here", async () => {
+  it("checks now from here, and says what it found (moved from the Inbox's test, INB5b-2)", async () => {
     seed();
+    vi.mocked(proactiveApi.scan).mockResolvedValueOnce({ created: 0, rejected: {} } as never).mockResolvedValueOnce({ created: 2, rejected: {} } as never);
     render(<Page />);
     fireEvent.click(await screen.findByText("proactive.page.checkNow"));
-    await waitFor(() => expect(proactiveApi.scan).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('proactive.page.checkedNone:{"count":0}')).toBeInTheDocument();
+    fireEvent.click(screen.getByText("proactive.page.checkNow"));
+    expect(await screen.findByText('proactive.page.checkedSome:{"count":2}')).toBeInTheDocument();
+    expect(proactiveApi.scan).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -145,13 +149,13 @@ describe("the sidebar's Scheduled entry", () => {
   });
 });
 
-describe("InboxRefused for one conversation", () => {
+describe("NotDoneList for one conversation", () => {
   it("keeps the 24-hour list for the Inbox and asks for one conversation when given one", async () => {
     vi.mocked(request).mockResolvedValue([] as never);
-    render(<InboxRefused />);
+    render(<NotDoneList />);
     await waitFor(() => expect(request).toHaveBeenCalledWith("/approvals/refused?hours=24"));
     cleanup();
-    render(<InboxRefused conversationId="scheduled-4" hours={168} unattended />);
+    render(<NotDoneList conversationId="scheduled-4" hours={168} unattended />);
     await waitFor(() => expect(request).toHaveBeenCalledWith("/approvals/refused?hours=168&conversation_id=scheduled-4"));
   });
 });
