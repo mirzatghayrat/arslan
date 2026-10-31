@@ -239,3 +239,31 @@ async def confirm_account(c: dict, allow: dict) -> str | None:
         logger.info("capability allowlist: GitHub did not answer for %s (%s)", login, type(exc).__name__)
         return ACCOUNT_NOT_CHECKED
     return None if found == pinned else ACCOUNT_CHANGED_HANDS
+
+
+def account_pin(c: dict, allow: dict) -> dict | None:
+    """#584 re-check: the listed GitHub organization a card was confirmed against, by login and numeric id, for the
+    installed source to keep (`candidate["account_pin"]`), so a later update checks that same id even once the list
+    no longer names the organization or reads closed."""
+    from server.services import capability_search
+    who = capability_search.publisher_of(c)
+    if who is None or who["kind"] != "github":
+        return None
+    login = who["value"].lower()
+    pinned = allow["accounts"].get(login)
+    return {"login": login, "id": pinned} if type(pinned) is int else None
+
+
+async def confirm_pin(c: dict, pin: dict) -> str | None:
+    """An update of a source installed from a listed organization: the newer version's publisher is the pinned
+    login, and that login still has the pinned id. Another publisher or id, or GitHub not answering, refuses it."""
+    from server.services import capability_search
+    who = capability_search.publisher_of(c)
+    if who is None or who["kind"] != "github" or who["value"].lower() != pin.get("login"):
+        return ACCOUNT_CHANGED_HANDS
+    try:
+        found = await _account_id(pin["login"])
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:
+        logger.info("capability allowlist: GitHub did not answer for %s (%s)", pin["login"], type(exc).__name__)
+        return ACCOUNT_NOT_CHECKED
+    return None if type(found) is int and found == pin.get("id") else ACCOUNT_CHANGED_HANDS

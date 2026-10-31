@@ -400,3 +400,93 @@ async def test_nobody_to_ask_asks_github_nothing(card_world, monkeypatch):
     out = await capability_flow.propose({"candidate_id": "x", "why": "w"}, conversation_id="c1", ask=None,
                                         emit=lambda frame: None)
     assert out.get("not_added") and calls == []
+
+
+# ── #584 re-check: the organization's id kept on the installed source ───────────────────────────────────────
+
+async def test_a_card_from_a_listed_organization_keeps_its_id_for_the_install(card_world, monkeypatch):
+    installed = []
+
+    async def install_mcp(cand, **kw):
+        installed.append(cand)
+        return {"state": "failed", "stage": "install", "code": "x", "detail": ""}
+    monkeypatch.setattr(capability_flow, "install_mcp", install_mcp)
+
+    async def ask(card):
+        return {"approved": True, "call_id": "c", "keys": {}, "folders": []}
+    _github(monkeypatch, {"getsentry": 1396951})
+    for name in ("io.github.GetSentry/sentry", "com.example/notes"):
+        cand = _cand(name)
+        monkeypatch.setattr(capability_search, "seen", lambda conversation_id, candidate_id, c=cand: dict(c))
+        await capability_flow.propose({"candidate_id": cand["id"], "why": "w"}, conversation_id="c1", ask=ask,
+                                      emit=lambda frame: None)
+    assert installed[0]["account_pin"] == {"login": "getsentry", "id": 1396951}
+    assert "account_pin" not in installed[1]                                    # a domain publisher has none
+
+
+async def _pinned_source(monkeypatch, pin, newer_name="io.github.getsentry/sentry"):
+    from server.db.models import CapabilitySource
+    from server.services import capability_dossier
+    async with __import__("server.db.session", fromlist=["x"]).AsyncSessionLocal() as db:
+        db.add(CapabilitySource(id="pin1", kind="mcp", name="sentry", candidate_id="c", runtime="uv", needs={},
+                                grants={}, state="installed", candidate={**_cand("io.github.getsentry/sentry"),
+                                                                         "account_pin": pin},
+                                created_at=__import__("datetime").datetime.utcnow()))
+        await db.commit()
+    newer = {**_cand(newer_name), "id": f"registry:{newer_name}@2.0.0"}
+
+    async def check_update(source_id):
+        return {"newer": True, "candidate": dict(newer)}
+    monkeypatch.setattr(capability_dossier, "check_update", check_update)
+
+    async def usable(cand):
+        return {"spdx": "MIT", "read_from": "LICENSE", "verdict": "usable"}
+    monkeypatch.setattr(capability_dossier, "check_candidate_license", usable)
+    installed = []
+
+    async def install_mcp(cand, **kw):
+        installed.append(cand)
+        return {"state": "on"}
+    monkeypatch.setattr(capability_flow, "install_mcp", install_mcp)
+    monkeypatch.setattr(capability_dossier.capability_install, "remove", lambda source_id: _done())
+    return capability_dossier, installed
+
+
+@pytest.mark.parametrize("the_list", ["without the organization", "closed"])
+async def test_an_update_checks_the_pinned_id_whatever_the_list_says_now(card_world, monkeypatch, the_list):
+    """The red case: the user took the organization off the list (or the list read closed), and an update of a
+    source installed from it was installed without asking GitHub, as for any unlisted publisher."""
+    pin = {"login": "getsentry", "id": 1396951}
+    dossier, installed = await _pinned_source(monkeypatch, pin)
+    now = al.CLOSED if the_list == "closed" else {**ALLOW, "accounts": {k: v for k, v in ALLOW["accounts"].items()
+                                                                        if k != "getsentry"}}
+
+    async def current():
+        return now
+    monkeypatch.setattr(al, "current", current)
+    for answer, refusal in ((99999999, al.ACCOUNT_CHANGED_HANDS), (404, al.ACCOUNT_CHANGED_HANDS),   # no such login
+                            (httpx.ConnectError("down"), al.ACCOUNT_NOT_CHECKED), (503, al.ACCOUNT_NOT_CHECKED)):
+        _github(monkeypatch, {"getsentry": answer})
+        with pytest.raises(dossier.DossierError) as refused:
+            await dossier.update("pin1")
+        assert refused.value.code == refusal and installed == []
+    calls = _github(monkeypatch, {"getsentry": 1396951})
+    await dossier.update("pin1")
+    assert calls == ["getsentry"] and installed[0]["account_pin"] == pin        # and the newer source keeps it
+
+
+async def test_a_pin_for_another_login_refuses_the_update(card_world, monkeypatch):
+    dossier, installed = await _pinned_source(monkeypatch, {"login": "getsentry", "id": 1396951},
+                                              newer_name="io.github.someone/sentry")
+    calls = _github(monkeypatch, {"someone": 1396951})
+    with pytest.raises(dossier.DossierError) as refused:
+        await dossier.update("pin1")
+    assert refused.value.code == al.ACCOUNT_CHANGED_HANDS and installed == [] and calls == []
+
+
+async def test_an_update_without_a_pin_takes_one_from_the_list(card_world, monkeypatch):
+    """A source installed before the pin: checked against the list as before, and the newer one keeps the id."""
+    dossier, installed = await _pinned_source(monkeypatch, None)
+    _github(monkeypatch, {"getsentry": 1396951})
+    await dossier.update("pin1")
+    assert installed[0]["account_pin"] == {"login": "getsentry", "id": 1396951}
