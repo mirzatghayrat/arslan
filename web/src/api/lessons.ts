@@ -35,4 +35,11 @@ export const lessonsApi = {
     json("POST", expectedUpdatedAt ? { status, expected_updated_at: expectedUpdatedAt } : { status })),
   pin: (id: number, pinned: boolean) => request<Lesson>(`/lessons/${id}/pin`, json("POST", { pinned })),
   remove: (id: number) => request(`/lessons/${id}`, { method: "DELETE" }),
+  /** L11-2: the "make this a rule?" card: add the lesson to the folder's rules file, "not now", or take it back. */
+  rule: (id: number, conversationId: string, action: "add" | "skip" | "remove") =>
+    request<{ state: string; file?: string }>(`/lessons/${id}/rule`, json("POST", { conversation_id: conversationId, action })),
+  /** K10-1 / L11-0: the rules files this conversation follows, with their text, for Overview. */
+  folderRules: (conversationId: string) =>
+    request<{ enabled: boolean; files: { file: string; text: string }[]; notes?: string[] }>(
+      `/conversations/${encodeURIComponent(conversationId)}/folder-rules`),
 };

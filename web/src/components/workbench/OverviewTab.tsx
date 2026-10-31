@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, Plug, Smartphone } from "lucide-react";
+import { FolderOpen, Plug, ScrollText, Smartphone } from "lucide-react";
 import type { ConversationChangeTurn, ConversationFile } from "../../api/files";
 import { filesApi } from "../../api/files";
 import { ApiError, api } from "../../api/client";
@@ -8,6 +8,7 @@ import type { RunCheckpoint } from "../../api/client.types";
 import UndoTurnSheet from "../reply/UndoTurnSheet";
 import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
+import { lessonsApi } from "../../api/lessons";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
 import { baseName } from "../../lib/fileKinds";
@@ -83,6 +84,18 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   useEffect(() => { void loadServers(); }, [loadServers]);
   const { needs, readyCount } = connectorSummary(servers ?? []);
 
+  // L11-0 (the user's pick): the rules files this conversation follows, as one row in Environment.
+  const [rules, setRules] = useState<{ id: string; enabled: boolean; files: { file: string; text: string }[] } | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve().then(() => lessonsApi.folderRules(conversationId))
+      .then((r) => { if (alive) setRules({ id: conversationId, enabled: r.enabled, files: r.files }); })
+      .catch(() => { /* no row: rules are context */ });
+    return () => { alive = false; };
+  }, [conversationId, files.length, home]);
+  const shownRules = rules?.id === conversationId ? rules : null;
+
   // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
   const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
   const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
@@ -129,6 +142,21 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={home}>{home}</span>
             <button type="button" className={link} onClick={() => void filesApi.reveal(home)} data-testid="overview-reveal">
               {t("workbench.reveal")}</button>
+          </div>}
+          {shownRules && (!shownRules.enabled || shownRules.files.length > 0) && <div data-testid="overview-rules">
+            <div className={row}>
+              <ScrollText size={14} className="shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{shownRules.enabled
+                ? t("workbench.rulesRow", { count: shownRules.files.length }) : t("workbench.rulesOff")}</span>
+              {shownRules.enabled && <button type="button" className={link} aria-expanded={rulesOpen} data-testid="overview-rules-toggle"
+                onClick={() => setRulesOpen(!rulesOpen)}>{t(rulesOpen ? "workbench.rulesHide" : "workbench.rulesShow")}</button>}
+            </div>
+            {shownRules.enabled && rulesOpen && <div className="mb-1 ml-[22px]">
+              <ul className="space-y-0.5">{shownRules.files.map((f) => <li key={f.file}>
+                <button type="button" className="max-w-full truncate text-left font-mono text-[11.5px] hover:underline"
+                  onClick={() => openReader({ kind: "text", name: f.file, text: f.text })}>{isolate(f.file)}</button></li>)}</ul>
+              <p className="mt-0.5 text-[11px] leading-snug text-subtle-foreground">{t("workbench.rulesNote")}</p>
+            </div>}
           </div>}
           <div className={row}>
             <Smartphone size={14} className="shrink-0 text-muted-foreground" aria-hidden />

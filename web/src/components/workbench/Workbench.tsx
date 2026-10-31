@@ -135,7 +135,7 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
           {tab === "browser" && <WorkDock embedded open onOpen={() => {}} onClose={close} conversationId={conversationId} taskId={taskId} temporary={temporary} />}
         </div>
         {/* keyed per file: a new file starts from "reading…", never from the last file's view */}
-        {reader && <div className="absolute inset-0 bg-sidebar"><Reader key={reader.kind === "path" ? reader.path
+        {reader && <div className="absolute inset-0 bg-sidebar"><Reader key={reader.kind === "path" ? reader.path : reader.kind === "text" ? `text:${reader.name}`
           : `${reader.file.run_id}/${reader.file.filename}`} source={reader} onBack={closeReader} /></div>}
       </div>
     </aside>

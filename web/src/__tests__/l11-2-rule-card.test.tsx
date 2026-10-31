@@ -1,0 +1,135 @@
+/**
+ * L11-2 (v0.1.64; the user's L11-0 picks, 2026-10-31): "Make this a rule for this folder?" in the conversation after the
+ * same correction twice (Add / Not now; Remove after Add), the rules a conversation follows as one row in Overview's
+ * Environment (each file opening in the reader), and the "Follow folder rules" switch in Settings → Advanced.
+ */
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k),
+    i18n: { resolvedLanguage: "en", language: "en" } }),
+}));
+const { files, jobsApi, mcp, client, conv } = vi.hoisted(() => ({
+  files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn(),
+    changes: vi.fn() },
+  jobsApi: { list: vi.fn(), stop: vi.fn() },
+  mcp: { listMcpServers: vi.fn(), reconnectMcpServer: vi.fn() },
+  client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn(), api: { runCheckpoint: vi.fn(), undoTurn: vi.fn() } },
+  conv: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
+}));
+vi.mock("../api/files", () => ({ filesApi: files }));
+vi.mock("../api/tasks", () => ({ backgroundJobsApi: jobsApi }));
+vi.mock("../api/mcp", () => mcp);
+vi.mock("../api/client", async (orig) => ({ ...(await orig<object>()), ...client }));
+vi.mock("../api/conversationModel", () => ({ conversationModelApi: conv }));
+vi.mock("../components/BrowserReader", () => ({ default: () => <div /> }));
+
+import { lessonsApi } from "../api/lessons";
+import { toUiMessages } from "../api/adapters";
+import { useArslanStore, initialArslanState } from "../stores/arslanStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import { useWorkbench } from "../stores/workbenchStore";
+import RuleOfferCard from "../components/RuleOfferCard";
+import Workbench from "../components/workbench/Workbench";
+import AdvancedSection from "../components/settings/AdvancedSection";
+
+const FILE = "~/Projects/photo/AGENTS.md";
+
+beforeEach(() => {
+  useArslanStore.setState(initialArslanState(), true);
+  useWorkbench.setState({ open: false, tab: "overview", reader: null, folder: null });
+  useSettingsStore.setState({ settings: {} } as never);
+  files.home.mockResolvedValue({ path: "~/Projects/photo", project: null });
+  files.conversationFiles.mockResolvedValue({ files: [] });
+  files.changes.mockResolvedValue({ turns: [] });
+  jobsApi.list.mockResolvedValue({ jobs: [] });
+  mcp.listMcpServers.mockResolvedValue([]);
+  conv.get.mockResolvedValue({ choice: null });
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+describe("the card in the conversation", () => {
+  it("a rule_offer frame becomes one card, not a bubble", () => {
+    useArslanStore.getState().handleFrame({ type: "rule_offer", lesson_id: 7, text: "reports → 24-hour times", file: FILE } as never);
+    const items = useArslanStore.getState().items;
+    expect(items[items.length - 1]).toMatchObject({ kind: "rule_offer", content: "reports → 24-hour times",
+      ruleOffer: { lessonId: 7, file: FILE } });
+    const [msg] = toUiMessages(items.slice(-1));
+    expect(msg.ruleOffer).toEqual({ lessonId: 7, file: FILE });
+  });
+
+  it("Add writes it (the user's click), Open shows the file, Remove takes it back", async () => {
+    const rule = vi.spyOn(lessonsApi, "rule").mockResolvedValueOnce({ state: "added", file: FILE })
+      .mockResolvedValueOnce({ state: "removed", file: FILE });
+    render(<RuleOfferCard lessonId={7} file={FILE} text="reports → 24-hour times" conversationId="c1" />);
+    expect(screen.getByTestId("rule-offer")).toHaveTextContent("reports → 24-hour times");
+    expect(screen.getByTestId("rule-offer")).toHaveTextContent(FILE);
+    fireEvent.click(screen.getByTestId("rule-offer-add"));
+    expect(await screen.findByTestId("rule-offer-added")).toHaveTextContent("workbench.ruleAdded");
+    expect(rule).toHaveBeenCalledWith(7, "c1", "add");
+    fireEvent.click(screen.getByRole("button", { name: /workbench\.ruleOpen/ }));
+    expect(useWorkbench.getState().reader).toEqual({ kind: "path", path: FILE });
+    fireEvent.click(screen.getByTestId("rule-offer-remove"));
+    expect(await screen.findByTestId("rule-offer-removed")).toBeInTheDocument();
+    expect(rule).toHaveBeenLastCalledWith(7, "c1", "remove");
+  });
+
+  it("Not now is one click; a failure says so and keeps the buttons", async () => {
+    vi.spyOn(lessonsApi, "rule").mockRejectedValueOnce(new Error("409")).mockResolvedValueOnce({ state: "skipped" });
+    render(<RuleOfferCard lessonId={7} file={FILE} text="x" conversationId="c1" />);
+    fireEvent.click(screen.getByTestId("rule-offer-add"));
+    expect(await screen.findByTestId("rule-offer-failed")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("rule-offer-skip"));
+    expect(await screen.findByTestId("rule-offer-skipped")).toHaveTextContent("workbench.ruleSkipped");
+  });
+});
+
+describe("Overview's row", () => {
+  const mount = () => render(<Workbench conversationId="c1" taskId={null} temporary={false} />);
+
+  it("names how many files the conversation follows; each opens in the reader with its text", async () => {
+    vi.spyOn(lessonsApi, "folderRules").mockResolvedValue({ enabled: true, files: [
+      { file: "~/Projects/AGENTS.md", text: "outer" }, { file: FILE, text: "inner" }] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const row = await screen.findByTestId("overview-rules");
+    expect(row).toHaveTextContent('workbench.rulesRow:{"count":2}');
+    fireEvent.click(within(row).getByTestId("overview-rules-toggle"));
+    expect(row).toHaveTextContent("workbench.rulesNote");
+    fireEvent.click(within(row).getByRole("button", { name: new RegExp(FILE.replace(/[.~/]/g, "\\$&")) }));
+    expect(useWorkbench.getState().reader).toEqual({ kind: "text", name: FILE, text: "inner" });
+  });
+
+  it("switched off says so; with no rules files there is no row", async () => {
+    const spy = vi.spyOn(lessonsApi, "folderRules").mockResolvedValue({ enabled: false, files: [] });
+    useWorkbench.getState().show("overview");
+    const view = mount();
+    expect(await screen.findByTestId("overview-rules")).toHaveTextContent("workbench.rulesOff");
+    view.unmount();
+    spy.mockResolvedValue({ enabled: true, files: [] });
+    mount();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("overview-rules")).toBeNull();
+  });
+});
+
+describe("Settings → Advanced", () => {
+  it("the switch shows the value and says when it changes", () => {
+    const onChange = vi.fn();
+    const props = {
+      telemetry: false, onTelemetryChange: vi.fn(), orchestratorShellEnabled: false, onOrchestratorShellChange: vi.fn(),
+      shellConfirmPolicy: "ask_all", onShellConfirmPolicyChange: vi.fn(), workspaceDir: "", onWorkspaceDirChange: vi.fn(),
+      lanDiscoveryEnabled: false, onLanDiscoveryChange: vi.fn(), sshEnabled: false, onSshChange: vi.fn(),
+      defaultReadEnabled: true, onDefaultReadChange: vi.fn(), voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
+      voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(), voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
+    } as unknown as React.ComponentProps<typeof AdvancedSection>;
+    const { rerender } = render(<AdvancedSection {...props} folderRulesEnabled onFolderRulesChange={onChange} />);
+    const toggle = screen.getByTestId("folder-rules-toggle");
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith(false);
+    rerender(<AdvancedSection {...props} folderRulesEnabled={false} onFolderRulesChange={onChange} />);
+    expect(screen.getByTestId("folder-rules-toggle")).not.toBeChecked();
+  });
+});
