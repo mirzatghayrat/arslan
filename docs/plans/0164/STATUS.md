@@ -153,7 +153,7 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 1. **#565** at `f43eb675`: app names are shown cleaned everywhere. CI green.
 2. **#569** at `39662487`: CAP4a-3b, the license read at the installed version.
 3. **#584** at `85086df6`: CAP4a-3c, allowlist D at card time. The effort=max re-check approves it.
-4. **#563** at `e4762e2b` (draft): the scan blocks "download and run". ④参谋 re-checked it as OK. One narrow part was stopped by a classifier: the 40-character window and the interpreter pattern. The choice is Codex Astra for that part (the paste is on ④参谋's list), or accept the gap.
+4. **#563** at `e4762e2b` (draft; click Ready): the scan blocks "download and run". ④参谋 re-checked it as OK. The part a classifier stopped (the 40-character window and the interpreter pattern) is accepted as a known limit (user, 2026-11-01), with no Astra paste.
 5. **#597** at `7406dba7`, then **#607** at `1e09b8f3`, then **#608** at `8cefe374`: UNI1b's follow-up, then the user's 3A (scan blocks only Tag/bidi; keyword rules read a copy with hidden characters stripped), then joiners and direction marks counted. All are re-checked OK; #608's parity sweep shows 0 differences.
 6. **#590** at `8c63fd8f`, then **#601** at `adb6c4fd` and **#602** at `012e9929`, then **#605** at `3d46e6c4`, then **#610** at `f1b49118`, **#611** at `57a400bb` and **#612** at `1880ab26`:
    - #590: the waiting count;
@@ -172,7 +172,7 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 **Click Ready for review first** (the lanes' ready step was blocked by the classifier): #452, #563, #607, #608. The rest are marked ready.
 
 **Not ready yet:**
-- **#604** (CAP4a-3d): re-checked OK. It waits for two user decisions (below) and the web keep button.
+- **#604** (CAP4a-3d): the user's two answers are in (below). ⑤CAP drops KEEP_FOR and aligns the redirect wording, then ⓪Plan re-checks at effort=max. It also waits for the web keep button.
 - **#606** (CAP5b) at `b12ddca9`: re-checked OK. It's a draft, and the user merges it once it's ready and green. npm's compile cache is off, TMPDIR is per install, and a boot sweep removes leftover caches.
 - **The #584 follow-up PR** (the org-id pin plus the GitHub-down test): it opens after #584 merges.
 
@@ -199,9 +199,6 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 | ⓪Plan | Re-checks as heads move; this page |
 
 ## Waiting on the user
-
-- **#604, two questions (④参谋 asks).** (1) KEEP_FOR: a kept, still-withdrawn server parks again every 30 days. ⑤CAP added this beyond the 10-31 decisions. Keep it or drop it? (2) F3: should the start check also check the host a remote server actually connected to, given that the SDK follows cross-host redirects? Recommended: a stated limit, as mainstream clients do. The alternative is a same-host redirect policy.
-- **#563's narrow gap:** Astra for the classifier-stopped part, or accept it.
 
 - **SEC1 mock** (⑤CAP), sent as a private link.
 - **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
@@ -315,7 +312,7 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - The report is `SBX-measurement.md` (#592, `71f79c3d`).
 - The two boundary-open rows (the hard-link measurement on today's shipped bases) are a probe artifact, not a shipped gap; no point release (the effort=max assessment, #592 comment 6545067946). The probe fix is in Codex's SBX-3p paste.
 
-**Decided on 2026-11-01, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
+**Decided on 2026-10-31, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
 1. **The #584 and #563 pushes:** allowed. ⑤CAP pushes them in its own session; no other session pushes for it.
 2. **INB7:** **B**: all of it goes into v0.1.64, the map and the timeline replay included (②Main). The plan is the newest board, F ("fused", version 11 of ②Main's canvas). That board came after C+, when the user asked to fuse it with today's Activity.
    - Usage's tiles are on top, with 「要你做」 as the first tile. One time axis carries a runs lane and replay. 「最近的工作」 is the only list. The map follows. An inspector holds 「要你做」, 「回放」, 「改动」 and 「诊断」.
@@ -327,6 +324,15 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
    - 50 conversations, 5 of them in a project.
    - By section: Today 0, Yesterday 2, Previous 7 days 20, Older 28 (one month group).
    - So Older needs no "show more" today. Pinned can't be read yet, since the installed database predates 0079.
+
+**Decided on 2026-11-01, morning (user, relayed by ④参谋).** The user's words: 「1A，2 已知限制，3 去掉，额度按你的建议」.
+1. **#563:** accept the gap. The 40-character window and the interpreter pattern weren't reviewed (classifier blocks). The scan is a heuristic, so this is a known limit, with no Astra paste. #563 goes to Ready and merge.
+2. **#604 F3, cross-host redirects for remote MCP:** a stated limit, as mainstream clients have it. #604's body and #584's text are aligned, so neither says the other handles it. Recorded in [CAP-capabilities.md](CAP-capabilities.md), "Stated limits recorded on 2026-11-01".
+3. **#604 KEEP_FOR:** removed. A keep holds until the entry changes again, with no 30-day expiry. ⑤CAP drops it and its card line; ⓪Plan re-checks.
+4. **Quota pacing** (the weekly quota went from 7% to 35% overnight):
+   - effort=max only for security-surface reviews;
+   - all other reviews and lane work at high;
+   - only lanes with unblocked work stay active.
 
 ## Spend
 
