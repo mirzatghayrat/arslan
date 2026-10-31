@@ -98,7 +98,8 @@
     "arslan": "Hauptassistent",
     "capabilities": "Fähigkeiten",
     "brain": "Gedächtnis",
-    "activity": "Aktivität"
+    "activity": "Aktivität",
+    "scheduled": "Geplant"
   },
   "brain": {
     "strip_details": "Umfang und Grenzen",
@@ -1433,5 +1434,12 @@
     "memoryBody": "Arslan vergisst sie und lernt sie nicht aus alten Unterhaltungen zurück.",
     "unsavedTitle": "Ohne Speichern verlassen?",
     "unsavedBody": "Deine Änderungen an dieser Notiz gehen verloren."
+  },
+  "scheduledPage": {
+    "intro": "Aufgaben, die nach Zeitplan laufen, und die Seiten und Ordner, die Arslan für dich beobachtet. Ein Punkt markiert eine Zeile, die du dir ansehen solltest.",
+    "watches": "Beobachtete Seiten und Ordner",
+    "awayTitle": "Nicht erledigt, während du weg warst (nur diese Aufgabe)",
+    "attention": "Bitte ansehen",
+    "changed": "Geändert"
   }
 }

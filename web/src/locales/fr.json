@@ -98,7 +98,8 @@
     "arslan": "Assistant principal",
     "capabilities": "Capacités",
     "brain": "Mémoire",
-    "activity": "Activité"
+    "activity": "Activité",
+    "scheduled": "Planifiées"
   },
   "brain": {
     "strip_details": "Couverture et limites",
@@ -1433,5 +1434,12 @@
     "memoryBody": "Arslan l’oublie et ne le réapprendra pas des anciennes conversations.",
     "unsavedTitle": "Partir sans enregistrer ?",
     "unsavedBody": "Tes modifications de cette note seront perdues."
+  },
+  "scheduledPage": {
+    "intro": "Les tâches qui s'exécutent selon un horaire, et les pages et dossiers qu'Arslan surveille pour vous. Un point signale une ligne à regarder.",
+    "watches": "Pages et dossiers surveillés",
+    "awayTitle": "Pas fait pendant votre absence (cette tâche uniquement)",
+    "attention": "À regarder",
+    "changed": "Modifié"
   }
 }

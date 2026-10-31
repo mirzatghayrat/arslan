@@ -98,7 +98,8 @@
     "arslan": "Main assistant",
     "capabilities": "Capabilities",
     "brain": "Memory",
-    "activity": "Activity"
+    "activity": "Activity",
+    "scheduled": "Scheduled"
   },
   "brain": {
     "strip_details": "Coverage and limits",
@@ -1433,5 +1434,12 @@
     "memoryBody": "Arslan forgets it and won't learn it back from old conversations.",
     "unsavedTitle": "Leave without saving?",
     "unsavedBody": "Your changes to this note will be lost."
+  },
+  "scheduledPage": {
+    "intro": "Tasks that run on a schedule, and the pages and folders Arslan watches for you. A dot marks a row that needs a look.",
+    "watches": "Watched pages and folders",
+    "awayTitle": "Not done while you were away (this task only)",
+    "attention": "Needs a look",
+    "changed": "Changed"
   }
 }

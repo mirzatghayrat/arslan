@@ -98,7 +98,8 @@
     "arslan": "メインアシスタント",
     "capabilities": "ケイパビリティ",
     "brain": "記憶",
-    "activity": "アクティビティ"
+    "activity": "アクティビティ",
+    "scheduled": "定期タスク"
   },
   "brain": {
     "strip_details": "記録範囲と制限",
@@ -1433,5 +1434,12 @@
     "memoryBody": "Arslan はこれを忘れ、古い会話から学び直すこともありません。",
     "unsavedTitle": "保存せずに移動しますか？",
     "unsavedBody": "このノートの変更は失われます。"
+  },
+  "scheduledPage": {
+    "intro": "決まった時間に動くタスクと、Arslan が見張っているページやフォルダ。点が付いた行は確認が必要です。",
+    "watches": "見張っているページとフォルダ",
+    "awayTitle": "不在中にできなかったこと（このタスクのみ）",
+    "attention": "確認が必要",
+    "changed": "変更あり"
   }
 }

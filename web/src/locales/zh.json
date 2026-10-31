@@ -98,7 +98,8 @@
     "arslan": "主助手",
     "capabilities": "能力库",
     "brain": "记忆",
-    "activity": "活动"
+    "activity": "活动",
+    "scheduled": "定时任务"
   },
   "brain": {
     "strip_details": "记录范围与限制",
@@ -1433,5 +1434,12 @@
     "memoryBody": "Arslan 会忘掉它，也不会再从旧对话里学回来。",
     "unsavedTitle": "不保存就离开？",
     "unsavedBody": "这篇笔记的改动会丢失。"
+  },
+  "scheduledPage": {
+    "intro": "按时自动跑的任务，和你让 Arslan 盯着的网页、文件夹。哪一行有点，就是那一行要你看一眼。",
+    "watches": "盯着的网页和文件夹",
+    "awayTitle": "你不在时没做的（只算这个任务的）",
+    "attention": "要你看一眼",
+    "changed": "有变化"
   }
 }

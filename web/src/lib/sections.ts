@@ -15,6 +15,7 @@ export const SECTIONS = [
   "arslan",
   "inbox",
   "projects",
+  "scheduled",
   "capabilities",
   "brain",
   "activity",

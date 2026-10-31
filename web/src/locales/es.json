@@ -98,7 +98,8 @@
     "arslan": "Asistente principal",
     "capabilities": "Capacidades",
     "brain": "Memoria",
-    "activity": "Actividad"
+    "activity": "Actividad",
+    "scheduled": "Programadas"
   },
   "brain": {
     "strip_details": "Cobertura y límites",
@@ -1433,5 +1434,12 @@
     "memoryBody": "Arslan lo olvida y no lo volverá a aprender de conversaciones antiguas.",
     "unsavedTitle": "¿Salir sin guardar?",
     "unsavedBody": "Se perderán los cambios de esta nota."
+  },
+  "scheduledPage": {
+    "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
+    "watches": "Páginas y carpetas vigiladas",
+    "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
+    "attention": "Necesita tu atención",
+    "changed": "Ha cambiado"
   }
 }
