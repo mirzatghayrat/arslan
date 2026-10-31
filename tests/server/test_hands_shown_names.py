@@ -162,3 +162,31 @@ async def test_an_app_with_no_bundle_id_and_no_visible_name_shows_none_of_its_na
         for key in ("title", "target", "detail", "always_label"):
             assert plain(frame.get(key, "")), (frame["kind"], key, frame.get(key))
     assert seen[0]["always_label"] == "" and "always" not in seen[0]["options"]
+
+
+async def test_the_access_card_leaves_out_an_app_with_no_visible_name(hands, asks, in_job):
+    """⓪Plan's review of #565 at a701c4e8: with no bundle id and an all-invisible name, the card naming several
+    apps fell back to Hands' raw name (`decide_many`), so its heading carried U+202E. Such an app is left out
+    and said; its own card still asks."""
+    seen, _ = asks
+    ghost = chr(0x202E) + chr(0x200B)
+    hands.apps = [{"name": ghost, "bundle_id": "", "tier": "full"}, *hands.apps]
+    result = await hands_tools.DesktopAccessExecutor().execute({"apps": [ghost, "Safari"], "why": "compare them"})
+    assert result["ok"] and "Not included: an app with no visible name (no_visible_name)" in result["text"], result
+    [card] = seen
+    assert card["target"] == "Safari" and card["title"].startswith("Use Safari? ")
+    for key in ("title", "target", "detail", "always_label", "why"):
+        assert plain(card.get(key, "")), (key, card.get(key))
+
+
+async def test_the_access_card_keeps_both_of_two_apps_whose_names_read_the_same(hands, asks, in_job):
+    """Two apps with no bundle id (Hands sends "") are two apps. The second looked like the first's duplicate, so
+    the card named only the first and only the first was allowed."""
+    seen, _ = asks
+    hands.apps = [{**app, "bundle_id": ""} for app in NO_BUNDLE_IDS]
+    result = await hands_tools.DesktopAccessExecutor().execute({"apps": ["Notes", TWIN], "why": "compare them"})
+    assert result["ok"], result
+    [card] = seen
+    assert card["target"] == "Notes, Notes" and card["detail"].count("· Notes — look and act") == 2
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": TWIN}))["ok"]
+    assert len(seen) == 1, "the card allowed the twin too"

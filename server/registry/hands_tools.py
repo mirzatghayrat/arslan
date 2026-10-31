@@ -1561,7 +1561,11 @@ class DesktopAccessExecutor:
             app, failure = await _resolve_app(name, job_id)
             if app is None:
                 skipped.append(f"{hands_contract.shown_name(name)} ({failure.code if failure else 'not running'})")
-            elif all(a["bundle_id"] != app.get("bundle_id") for a in found):
+            elif not app["name"]:
+                # No bundle id and not one visible character: the card naming several apps had only Hands' raw
+                # name to name it by (⓪Plan's review of #565). Left out and said; its own card still asks.
+                skipped.append("an app with no visible name (no_visible_name)")
+            elif all(_target(a) != _target(app) for a in found):     # two apps with no bundle id are two apps
                 found.append(app)
         if not found:
             return _not_run({"ok": False, "external": False, "code": "no_apps",
