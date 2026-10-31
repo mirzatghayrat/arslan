@@ -750,6 +750,11 @@ function makeActions(set: SetState, get: GetState) {
                 cleared: frame.cleared } }],
           });
           break;
+        case "rule_offer":
+          // L11-2: the same correction twice — offer it as a rule for this folder (a card; the user decides).
+          set({ items: [...state.items, { id: nextClientId(), kind: "rule_offer", role: "arslan", content: frame.text,
+            ruleOffer: { lessonId: frame.lesson_id, file: frame.file } }] });
+          break;
         case "lesson_learned":
           set({
             items: [

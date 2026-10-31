@@ -73,6 +73,62 @@ async def lesson_pin(lesson_id: int, body: LessonPin):
     return await _change(lesson_id, pinned=body.pinned)
 
 
+class LessonRule(BaseModel):
+    conversation_id: str
+    action: Literal["add", "skip", "remove"]
+
+
+@router.post("/lessons/{lesson_id}/rule")
+async def lesson_rule(lesson_id: int, body: LessonRule):
+    """L11-2: the "make this a rule for this folder?" card. `add` appends the lesson's words to the conversation's
+    folder's rules file (only a lesson the card offered, once); `skip` records "not now"; `remove` takes the line the
+    card added back out. The user's click, never the model's tools (HR keeps model writes to these files)."""
+    from server.services import folder_rules
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(Lesson, lesson_id)
+        if row is None:
+            raise HTTPException(404, "lesson_not_found")
+        evidence = dict(row.evidence or {})
+        state = evidence.get(lessons.RULE_OFFER)
+        needed = {"add": "offered", "skip": "offered", "remove": "added"}[body.action]
+        if state != needed:
+            raise HTTPException(409, "rule_not_offered" if body.action != "remove" else "rule_not_added")
+        out: dict = {}
+        if body.action == "skip":
+            evidence[lessons.RULE_OFFER] = "skipped"
+        elif body.action == "add":
+            folder = await folder_rules.conversation_folder(db, body.conversation_id)
+            if folder is None or folder == folder_rules._home():
+                raise HTTPException(409, "no_folder")
+            line = lessons.render(row)
+            try:
+                path = await folder_rules.add_rule(db, folder, line)
+            except (folder_rules.RuleRefused, OSError):
+                raise HTTPException(409, "rules_file_refused") from None
+            evidence.update({lessons.RULE_OFFER: "added", "rule_file": str(path), "rule_line": line})
+            out["file"] = folder_rules._shown(path, folder_rules._home())
+        else:
+            from pathlib import Path
+            path = Path(evidence.get("rule_file") or "")
+            try:
+                await folder_rules.remove_rule(db, path, evidence.get("rule_line") or "")
+            except (folder_rules.RuleRefused, OSError):
+                raise HTTPException(409, "rules_file_refused") from None
+            evidence[lessons.RULE_OFFER] = "removed"
+            out["file"] = folder_rules._shown(path, folder_rules._home())
+        row.evidence = evidence
+        await db.commit()
+    return {"state": evidence[lessons.RULE_OFFER], **out}
+
+
+@router.get("/conversations/{conversation_id}/folder-rules")
+async def conversation_folder_rules(conversation_id: str):
+    """K10-1 / L11-0: the rules files this conversation follows, for Overview (each with its text), and whether the
+    switch is on. Read only; the same exact-name, no-link reads as the turn's block."""
+    from server.services import folder_rules
+    return await folder_rules.listing(conversation_id)
+
+
 @router.delete("/lessons/{lesson_id}")
 async def delete_lesson(lesson_id: int):
     async with db_session.AsyncSessionLocal() as db:
