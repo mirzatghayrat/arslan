@@ -36,27 +36,32 @@
      - `rev-parse`;
      - `symbolic-ref`;
      - `merge-base`;
-     - `log --no-show-signature --format=…`;
+     - `log --no-show-signature --format=…`, with no `%G…` placeholder (those run gpg whatever the flag says);
      - `ls-tree -r -z`;
      - `cat-file --batch`;
      - `ls-files --others --exclude-standard -z`, for files not in git yet.
    - **Never `diff` or `status` against the working tree.** The probe (Raw material) showed a filter driver from the repo's own `.git/config` running under plain `git diff`, `--no-textconv` included.
    - **Comparing with the working tree.** Arslan reads each candidate file's bytes and hashes them the way git hashes a blob, then compares that with the tree's blob id. A cache keyed by (path, size, mtime) keeps a large repo cheap between polls. A file that is a symlink, or resolves outside the repo, is listed but not read.
    - **Every call:**
+     - `--git-dir=<the git folder>` and `--work-tree=<the repo>`, so neither the repo's own `core.worktree` nor the environment moves them (⓪Plan's review: `core.worktree` could otherwise make `ls-files --others` list another folder). A `.git` that is a file (`gitdir:`, as linked worktrees and submodules use) is followed to its git folder: reading objects and refs there is fine, and nothing is written;
+     - `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` (and the other location variables) dropped from the environment, and `GIT_CEILING_DIRECTORIES` set to the repo's parent;
      - `-c core.fsmonitor=false` (the probe: a command-line `-c` overrides the repo's own setting);
      - `-c core.hooksPath=/dev/null`;
      - `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`;
      - no network;
      - a 10 s timeout;
      - `cwd` = the repo.
+   - **Which git:** on a Mac, when `git` is `/usr/bin/git` (a shim that opens macOS's install dialog without the command-line tools), it is used only if `xcode-select -p` succeeds, as ③Hands' SBX-M runbook checks. Otherwise the answer is "git isn't available", with no dialog.
+   - **A repo git refuses** (`safe.directory`, owned by another user) answers "not readable", not an error.
    - **Why this is enough without over-defending:**
      - none of these commands run a program that the repo's config names: no filter, textconv, external diff, pager, hook or signature check;
      - a turn writing `.git/config` (HR's "written now, run later" list) therefore can't make this view run anything;
      - the user's own global config (for example git-lfs's filter) isn't run either, because nothing here applies filters.
 5. **PRs (gh), only when `gh` is on PATH and signed in:**
-   - **The call:** `gh pr list --head <branch> --state all --limit 10 --json number,title,state,isDraft,url,statusCheckRollup`, in the repo.
+   - **Which repo:** `owner/name` read from `remote.origin.url` with the same safe git flags, only for a `github.com` remote (https, ssh or scp-like), which is all `gh auth status --hostname github.com` covers. Another host: no PR rows, and gh isn't asked.
+   - **The call:** `gh pr list --repo <owner>/<name> --head <branch> --state all --limit 10 --json number,title,state,isDraft,url,statusCheckRollup`, from a folder outside the repo (the temp folder). gh then runs no git in the repo, without our flags, and sends the user's token only to github.com (⓪Plan's review).
    - **Environment:** `GH_PROMPT_DISABLED=1`, `GH_NO_UPDATE_NOTIFIER=1`, a 10 s timeout.
-   - **Cache:** 60 s per (repo, branch), so the 10 s poll doesn't call GitHub each time.
+   - **Cache:** 60 s per (owner/name, branch), so the 10 s poll doesn't call GitHub each time.
    - **Checks** reduce to passed / failing / running / none.
    - **Signed out** (`gh auth status` fails) or `gh` missing: the answer says `signed_in: false`, and the view shows the sign-in line. A GitHub connector as the other sign-in path is listed below as an extra.
 6. **Outside content.** Branch names, commit subjects, PR titles and file paths come from the repo and GitHub. They're shown in the UI only, as plain text through `isolate()`. Nothing here goes into a model's prompt, so nothing marks a turn.
@@ -109,7 +114,11 @@
      - the 500 cap;
      - the cache hit.
    - **Server, the probe kept as a test:** a repo whose `.git/config` holds a filter driver, fsmonitor, a hook and a textconv. The listing and a diff run none of them (marker files stay absent).
+   - **Where git looks:** `core.worktree` pointing at a sibling folder, and `GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` set to another repo, change nothing in git's own output; a linked worktree's `.git` file is followed.
+   - **The shim:** a fake `/usr/bin/git` with a failing `xcode-select` is never run.
    - **gh,** through a fake `gh` on PATH:
+     - `--repo owner/name` passed, and gh's folder is outside the repo even when Arslan's is inside it;
+     - only a `github.com` remote names a repo (a look-alike host, a short path or another host: none);
      - the four check states;
      - signed out;
      - missing;
