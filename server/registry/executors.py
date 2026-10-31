@@ -516,7 +516,9 @@ class FindCapabilityExecutor:
         out = capability_search.for_model(result)
         return {"ok": True, "external": True, **out,
                 "note": "Candidates only; nothing is installed. Prefer license_verdict 'usable' and not_here null. "
-                        "Never install by other means (no pip/npm/git clone in the terminal for this)."}
+                        "not_here 'add_by_hand': the user's one-click list does not cover it; only the user can add "
+                        "it, by hand in Capabilities. Never install by other means (no pip/npm/git clone in the "
+                        "terminal for this)."}
 
 
 class WhatsNewExecutor:
