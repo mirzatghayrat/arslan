@@ -24,11 +24,12 @@ an availability skip. The `sbx_mac` corpus has 293 cases: 71 assertion gates and
 must expect 364, as set by PR #576. Widening the port sample within the same
 two compile cases does not change that count.
 
-The compile checks compare libsandbox bytecode with/without each deny over a
+The compile checks compare libsandbox bytecode with/without each deny over the
 fixed regression ports plus every 65th port starting at 1: 1,018 ports for proxy
 and 1,017 for port-22. The regression ports include the original dropped ports
-and the proxy port itself. The required macOS job's JUnit report records each
-compile case's duration; include those timings with the CI run id in PR evidence.
+and the proxy port itself. CI publishes the macOS pytest step's total duration,
+not per-case timings or its JUnit file. Report that total with the CI run id;
+it includes the whole selected suite and does not isolate compilation cost.
 They exercise the exact proxy and port-22 allow pairs; removing either mode's
 port allow can lose denies. They do not apply a sandbox or replace runtime gates.
 The portable check compares the complete network allow list, including any new
