@@ -43,8 +43,9 @@ export const proactiveApi = {
   summary: () => request<ProactiveSummary>("/proactive/summary"),
   /** INB5b: `conversationId` and `kind` narrow the list, so a conversation reads only its own stopped-job reminders. */
   items: (scope: ProactiveScope = "open", only: { conversationId?: string; kind?: ProactiveKind } = {}) => {
-    const query = new URLSearchParams({ scope, ...(only.conversationId ? { conversation_id: only.conversationId } : {}),
-      ...(only.kind ? { kind: only.kind } : {}) });
+    // A filter given empty is sent, not dropped: the server refuses it, rather than listing every conversation's items (#602 review).
+    const query = new URLSearchParams({ scope, ...(only.conversationId !== undefined ? { conversation_id: only.conversationId } : {}),
+      ...(only.kind !== undefined ? { kind: only.kind } : {}) });
     return request<{ items: ProactiveItem[] }>(`/proactive/items?${query}`);
   },
   seen: (ids: number[]) => changed(request<{ ok: boolean }>("/proactive/items/seen", send("POST", { ids }))),

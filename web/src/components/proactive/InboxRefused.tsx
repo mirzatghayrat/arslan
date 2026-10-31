@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { useTranslation } from "react-i18next";
 import { ApiError, request } from "../../api/client";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { useQueueGuard } from "../kit/guard";
+import { Escaped, isolate } from "../../lib/outsideText";
+import { ANSWER_GUARD_MS, useQueueGuard } from "../kit/guard";
 
 /** It changes only when something goes undone for want of someone to ask: twice a minute is enough. */
 const POLL_MS = 30_000;
@@ -79,10 +80,25 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
   const guard = useQueueGuard();
   const held = useSyncExternalStore(guard.subscribe, guard.held, guard.held);
   const mounted = useRef(false);
+  // #602 review: in a conversation this list sits on top of the messages, and the conversation's scroll (a reply streaming in while it
+  // is stuck to the bottom) moves these rows under a pointer that did not move. That holds this list's own clicks for the guard time;
+  // not the shared guard, since the slot's card floats and does not move with the conversation.
+  const listRef = useRef<HTMLElement>(null);
+  const movedAt = useRef(-Infinity);
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      const list = listRef.current;
+      if (list && e.target instanceof Node && (e.target.contains(list) || list.contains(e.target))) movedAt.current = performance.now();
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => document.removeEventListener("scroll", onScroll, true);
+  }, []);
+  const stopped = () => guard.held() || performance.now() - movedAt.current < ANSWER_GUARD_MS;
 
   const load = useCallback(async () => {
     try {
-      const query = new URLSearchParams({ hours: String(hours), ...(conversationId ? { conversation_id: conversationId } : {}) });
+      // An empty id is sent, not dropped: the server refuses it, rather than listing every conversation's entries (#602 review).
+      const query = new URLSearchParams({ hours: String(hours), ...(conversationId !== undefined ? { conversation_id: conversationId } : {}) });
       const body = await request<Refusal[]>(`/approvals/refused?${query}`);
       if (!alive.current) return;
       const list = (Array.isArray(body) ? body : []).filter((row) => (!unattended || row.unattended) && (!awayOnly || !row.unattended));
@@ -103,7 +119,7 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
   };
 
   async function allowAlways(r: Refusal) {
-    if (guard.held()) return;
+    if (stopped()) return;
     setBusy(r.id);
     try {
       // Only the entry's id: the server stores what its card would have offered, never a kind or a target from here.
@@ -127,7 +143,7 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
 
   /** Delete exactly the rules the click created. A rule that is gone already counts as undone; any other failure keeps Undo for a retry. */
   async function undo(r: Refusal) {
-    if (guard.held()) return;
+    if (stopped()) return;
     const made = allowed.get(r.id);
     if (!made) return;
     setBusy(r.id);
@@ -159,7 +175,7 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
   }, [guard, shownKey]);
   if (!shown.length) return null;
   return (
-    <section data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className={`flex flex-col gap-2 ${className}`}>
+    <section ref={listRef} data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className={`flex flex-col gap-2 ${className}`}>
       <h2 className="flex items-center gap-2 text-[13px] font-semibold">
         <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-subtle-foreground" />{title ?? t("inbox.refusedTitle")}
         <span className="font-mono text-[12px] text-subtle-foreground">{rows.length}</span>
@@ -175,8 +191,10 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
             <li key={`${row.kind}\u0000${row.target}\u0000${row.unattended ? "scheduled" : "away"}`} data-testid="inbox-refused-row"
               className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5">
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex min-w-0 flex-col" title={lines.join(", ")}>
-                  {lines.map((line, i) => <span key={i} data-testid="inbox-refused-what" className="truncate font-mono text-[12px] text-foreground">{line}</span>)}
+                {/* What was attempted comes from outside (a command, or Arslan's sentence around a UI element's or a file's name): shown as
+                    stored, a bidi control as a marker (#602 review). */}
+                <div className="flex min-w-0 flex-col" title={isolate(lines.join(", "))}>
+                  {lines.map((line, i) => <span key={i} data-testid="inbox-refused-what" className="truncate font-mono text-[12px] text-foreground"><Escaped text={line} /></span>)}
                 </div>
                 <span className="text-[12px] text-muted-foreground">
                   {row.count > 1
@@ -186,8 +204,8 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
                 {offered && !done && <div data-testid="inbox-refused-stores" className="flex flex-col gap-0.5">
                   {row.always.map((rule, i) => {
                     const label = rule.label || rule.target;
-                    return <span key={i} data-testid="inbox-refused-rule" title={label} className="text-[12px] text-muted-foreground [overflow-wrap:anywhere]">
-                      {t("inbox.alwaysStores", { what: label })}</span>;
+                    return <span key={i} data-testid="inbox-refused-rule" title={isolate(label)} className="text-[12px] text-muted-foreground [overflow-wrap:anywhere]">
+                      {t("inbox.alwaysStores", { what: isolate(label) })}</span>;
                   })}
                 </div>}
               </div>
