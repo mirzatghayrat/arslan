@@ -1110,7 +1110,7 @@ async def _asks_for_everything() -> bool:
     try:
         async with db_session.AsyncSessionLocal() as db:
             return await settings_service.shell_confirm_policy(db) == "ask_all"
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
         return True
 
 
@@ -1182,7 +1182,7 @@ async def _writing_in_own_folder() -> bool:
     try:
         async with db_session.AsyncSessionLocal() as db:
             return await settings_service.workspace_is_default(db)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: unknown means the folder is the user's, so writing asks
         return False
 
 
