@@ -712,8 +712,7 @@
     "grpAccess": "他のアプリからのアクセス",
     "grpVersion": "バージョン",
     "grpWhatsNew": "このバージョンの変更点",
-    "watchesInInbox": "見守るページやフォルダー、通知しない項目は受信箱で管理します。",
-    "openInbox": "受信箱を開く",
+    "watchesOnScheduled": "見守るページやフォルダー、通知しない項目は「定期タスク」ページで管理します。",
     "openActivity": "使用量とすべての実行は「アクティビティ」にあります。定期タスクは専用のページです。",
     "openActivityBtn": "アクティビティを開く",
     "whatsNewEmpty": "このバージョンの説明はありません。"

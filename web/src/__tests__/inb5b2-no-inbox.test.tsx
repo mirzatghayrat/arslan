@@ -16,6 +16,12 @@ import Sidebar from "../components/Sidebar";
 import { useWaiting } from "../hooks/useWaiting";
 import { notificationTarget, PROGRESS_TARGET } from "../lib/openConversation";
 import { SECTIONS } from "../lib/sections";
+import de from "../locales/de.json";
+import en from "../locales/en.json";
+import es from "../locales/es.json";
+import fr from "../locales/fr.json";
+import ja from "../locales/ja.json";
+import zh from "../locales/zh.json";
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -59,6 +65,18 @@ describe("the count", () => {
     await waitFor(() => expect(proactiveApi.summary).toHaveBeenCalledTimes(3));
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });       // the failed poll has been handled
     expect(result.current.count).toBe(5);                                         // a restarting service does not zero it
+  });
+});
+
+describe("Settings", () => {
+  // Watched pages and folders, and what was muted, are managed on the Scheduled page (WatchesPanel, INB3), not in an Inbox that is gone.
+  const INBOX: Record<string, string> = { en: "Inbox", zh: "收件箱", ja: "受信箱", de: "Posteingang", es: "Bandeja", fr: "boîte de réception" };
+  it.each(Object.entries({ en, zh, ja, de, es, fr }))("points watches and mutes at the Scheduled page, not the Inbox, in %s", (language, words) => {
+    const settings = words.settings as unknown as Record<string, string | undefined>;
+    expect(settings.watchesOnScheduled, language).toContain(words.nav.scheduled);
+    expect(settings.watchesOnScheduled, language).not.toContain(INBOX[language]);
+    expect(settings.watchesInInbox, language).toBeUndefined();
+    expect(settings.openInbox, language).toBeUndefined();
   });
 });
 

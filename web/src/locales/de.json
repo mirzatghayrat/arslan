@@ -712,8 +712,7 @@
     "grpAccess": "Zugang für andere Apps",
     "grpVersion": "Version",
     "grpWhatsNew": "Neu in dieser Version",
-    "watchesInInbox": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du im Posteingang.",
-    "openInbox": "Posteingang öffnen",
+    "watchesOnScheduled": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du auf der Seite „Geplant“.",
     "openActivity": "Nutzung und jeder Lauf stehen unter Aktivität; geplante Aufgaben haben eine eigene Seite.",
     "openActivityBtn": "Aktivität öffnen",
     "whatsNewEmpty": "Keine Notizen zu dieser Version."

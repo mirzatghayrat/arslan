@@ -55,7 +55,7 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
   const caps = CAPS.includes(config.notify_daily_cap) ? CAPS : [...CAPS, config.notify_daily_cap].sort((a, b) => a - b);
   const sources: [keyof ProactiveConfig, string][] = [['job_followups', 'jobFollowups'], ['scheduled_problems', 'scheduledProblems'], ['watches', 'watches']];
   // 0.1.55 §11: notify + quiet hours live in General › Notifications; looking out and the
-  // brief in Background; watches and mutes are managed in the Inbox. Without `only`, all.
+  // brief in Background; watches and mutes are managed on the Scheduled page (INB3; the Inbox is gone, INB5). Without `only`, all.
   const show = (k: ProactiveBlock) => !only || only.includes(k);
   const content = <div className="space-y-5">
     {error && <p role="alert" className="text-[11px] text-destructive">{error}</p>}

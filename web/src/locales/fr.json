@@ -712,8 +712,7 @@
     "grpAccess": "Accès pour d’autres apps",
     "grpVersion": "Version",
     "grpWhatsNew": "Nouveautés de cette version",
-    "watchesInInbox": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la boîte de réception.",
-    "openInbox": "Ouvrir la boîte de réception",
+    "watchesOnScheduled": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la page Planifiées.",
     "openActivity": "L’usage et chaque exécution sont dans Activité ; les tâches planifiées ont leur propre page.",
     "openActivityBtn": "Ouvrir Activité",
     "whatsNewEmpty": "Pas de notes pour cette version."

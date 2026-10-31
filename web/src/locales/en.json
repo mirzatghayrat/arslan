@@ -712,8 +712,7 @@
     "grpAccess": "Access for other apps",
     "grpVersion": "Version",
     "grpWhatsNew": "What's new",
-    "watchesInInbox": "Watched pages and folders, and what you muted, are managed in the Inbox.",
-    "openInbox": "Open the Inbox",
+    "watchesOnScheduled": "Watched pages and folders, and what you muted, are managed on the Scheduled page.",
     "openActivity": "Usage and every run are in Activity; scheduled tasks have their own page.",
     "openActivityBtn": "Open Activity",
     "whatsNewEmpty": "No notes for this version."

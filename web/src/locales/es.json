@@ -712,8 +712,7 @@
     "grpAccess": "Acceso para otras apps",
     "grpVersion": "Versión",
     "grpWhatsNew": "Novedades de esta versión",
-    "watchesInInbox": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la Bandeja.",
-    "openInbox": "Abrir la Bandeja",
+    "watchesOnScheduled": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la página Programadas.",
     "openActivity": "El uso y cada ejecución están en Actividad; las tareas programadas tienen su propia página.",
     "openActivityBtn": "Abrir Actividad",
     "whatsNewEmpty": "No hay notas para esta versión."

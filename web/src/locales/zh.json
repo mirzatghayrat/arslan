@@ -712,8 +712,7 @@
     "grpAccess": "给其他应用的访问",
     "grpVersion": "版本",
     "grpWhatsNew": "这一版更新了什么",
-    "watchesInInbox": "盯着的网页和文件夹、不再提醒的，在收件箱里管理。",
-    "openInbox": "打开收件箱",
+    "watchesOnScheduled": "盯着的网页和文件夹、不再提醒的，在「定时任务」页管理。",
     "openActivity": "用量和每一次运行在「活动」里；定时任务在「定时任务」页。",
     "openActivityBtn": "打开动态",
     "whatsNewEmpty": "这一版没有更新说明。"
