@@ -7,7 +7,7 @@ never a count of their own. A unit is a conversation, a project or a scheduled t
   or an open "the job stopped" reminder. Only conversations that still exist count (a deleted one keeps its ledger rows and
   reminders; #590 review F2), except a pending card, which is live by definition;
 - a conversation in an active project counts as its project. One in an archived project counts by itself: that project has no
-  row in the sidebar, where its conversations are listed under 最近 (#590 review F3c). INB5b makes the sidebar show every project
+  row in the sidebar, where its conversations are listed under 「最近」 (#590 review F3c). INB5b makes the sidebar show every project
   that has something waiting, so a counted project always has a row even below its top few;
 - a scheduled task waits when its last run failed or it paused itself, it has an open problem reminder, or one of its runs could not
   ask something newer than your last look at the task (`scheduled_tasks.seen_at`, migration 0084, set when you open the task).

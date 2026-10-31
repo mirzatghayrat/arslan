@@ -163,7 +163,7 @@ async def test_conversations_in_a_project_count_as_the_project(client):
 
 
 async def test_conversations_in_an_archived_project_count_one_by_one(client):
-    """#590 review F3c: an archived project has no row in the sidebar; its conversations are listed under 最近."""
+    """#590 review F3c: an archived project has no row in the sidebar; its conversations are listed under 「最近」."""
     await _add(client, Project(id="p1", name="Old", status="archived"))
     await _add(client, ConversationContext(id="chat-a", project_id="p1"), ConversationContext(id="chat-b", project_id="p1"),
                *_chat("chat-a"), *_chat("chat-b"), _refused("chat-a"), _refused("chat-b"))
