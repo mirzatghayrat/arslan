@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -258,17 +259,29 @@ async def prune() -> int:
     return int(removed)
 
 
+_DIGEST = re.compile(r"sha256:[0-9a-f]{16}")      # exactly what `judge` keeps for a `redact` point's field
+
+
 async def drop_unredacted() -> int:
-    """JUDGE1 follow-up (the user, 2026-10-31: a one-time clean): rows recorded for a `redact` point before JUDGE1 hold
-    the lesson's words. Dropped at boot; after the first boot nothing matches, since `judge` records digests only."""
-    from sqlalchemy import delete, select
-    from server.db.models import Judgment
+    """JUDGE1 follow-up (the user, 2026-10-31: "the text outlives the lessons you deleted"; a one-time clean at boot).
+    Two kinds of rows from before JUDGE1 hold a lesson's words: a `redact` point's row with a field that isn't a digest,
+    and any row naming a lesson that is gone (`memory.applied` keeps its text; before JUDGE1 deleting a lesson left
+    them, and DELETE /lessons now answers 404 for it). Lesson ids are reused, so a row older than the lesson that
+    now has its id counts as gone too. After the first boot nothing matches: `judge` records digests only, and deleting
+    a lesson deletes its rows. Returns how many went.
+    DELETE-BY: v0.1.66, once two releases have booted every v0.1.63 database through it (the 90-day prune would
+    remove what it misses by then anyway)."""
+    from sqlalchemy import String, cast, delete, literal, select
+    from server.db.models import Judgment, Lesson
     points = [p.name for p in REGISTRY.values() if p.redact]
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(Judgment.id, Judgment.state).where(Judgment.point.in_(points)))).all()
         plain = [row_id for row_id, state in rows
-                 if any(not (isinstance(v, str) and v.startswith("sha256:")) for v in (state or {}).values())]
+                 if any(not (isinstance(v, str) and _DIGEST.fullmatch(v)) for v in (state or {}).values())]
         for start in range(0, len(plain), 500):
             await db.execute(delete(Judgment).where(Judgment.id.in_(plain[start:start + 500])))
+        owner = (select(Lesson.id).where(literal("lesson:") + cast(Lesson.id, String) == Judgment.ref,
+                                         Lesson.created_at <= Judgment.created_at).correlate(Judgment))
+        orphans = (await db.execute(delete(Judgment).where(Judgment.ref.like("lesson:%"), ~owner.exists()))).rowcount
         await db.commit()
-    return len(plain)
+    return len(plain) + int(orphans or 0)
