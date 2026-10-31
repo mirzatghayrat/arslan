@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, Plug, Smartphone } from "lucide-react";
+import { ChevronRight, FolderOpen, Plug, Smartphone } from "lucide-react";
 import type { ConversationChangeTurn, ConversationFile } from "../../api/files";
 import { filesApi } from "../../api/files";
 import { ApiError, api } from "../../api/client";
@@ -10,7 +10,7 @@ import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { baseName } from "../../lib/fileKinds";
+import { baseName, kindOf } from "../../lib/fileKinds";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { useArslanStore } from "../../stores/arslanStore";
@@ -42,6 +42,9 @@ function splitPath(path: string): [string, string] {
   const i = path.lastIndexOf("/");
   return i < 0 ? [path, ""] : [path.slice(i + 1), path.slice(0, i + 1)];
 }
+/** DIFF1: kinds with no line diff (the server would answer `not_text`), so their rows don't open one. */
+const NO_DIFF = new Set(["image", "video", "audio", "pdf", "xlsx", "doc"]);
+export const opensDiff = (path: string) => !NO_DIFF.has(kindOf(baseName(path)));
 const link = "shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground";
 
 /** Newest first: by creation time when the server sent one, else the server's order reversed. */
@@ -172,11 +175,20 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             </div>
             <ul className="mt-0.5 space-y-0.5">{shown.map((p) => {
               const [name, dir] = splitPath(p.path);
-              return <li key={`${p.folder}/${p.path}`} className="flex min-w-0 items-center gap-2 text-[12.5px]"
-                title={isolate(`${p.folder}/${p.path}`)}>
+              const parts = <>
                 <span className={`min-w-12 shrink-0 text-[11px] ${KIND_COLOR[p.kind]}`}>{t(`workbench.${p.kind}`)}</span>
                 <span className="min-w-0 max-w-[70%] truncate" data-testid="overview-change-name">{isolate(name)}</span>
                 {dir && <span className="min-w-0 flex-1 truncate text-[11px] text-subtle-foreground" dir="rtl">{isolate(dir)}</span>}
+              </>;
+              const line = "flex w-full min-w-0 items-center gap-2 text-[12.5px]";
+              // DIFF1: a text path of a turn that can still be undone opens its line diff (made and deleted too).
+              return <li key={`${p.folder}/${p.path}`} title={isolate(`${p.folder}/${p.path}`)}>
+                {!turn.undone && opensDiff(p.path)
+                  ? <button type="button" data-testid="overview-change-open"
+                    className={`${line} -mx-1 rounded-md px-1 text-left hover:bg-foreground/[0.04]`}
+                    onClick={() => openReader({ kind: "diff", conversationId, runId: turn.run_id, folder: p.folder, path: p.path })}>
+                    {parts}<ChevronRight size={13} className="ml-auto shrink-0 text-subtle-foreground" aria-hidden /></button>
+                  : <div className={line}>{parts}</div>}
               </li>;
             })}</ul>
             {turn.paths.length > PATHS_SHOWN && !all && <button type="button" className={`${link} mt-0.5`}
