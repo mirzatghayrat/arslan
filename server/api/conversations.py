@@ -111,12 +111,15 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
         select(ConversationContext.id, ConversationContext.project_id).where(
             ConversationContext.id.in_([c.conversation_id for c in out]),
             ConversationContext.project_id.isnot(None)))).all())
+    pinned = set((await db.execute(select(ConversationContext.id).where(       # SB1-2
+        ConversationContext.id.in_([c.conversation_id for c in out]), ConversationContext.pinned.is_(True)))).scalars())
     for item in out:
         for key, value in extra.get(item.conversation_id, {}).items():
             setattr(item, key, value)
         if quick:
             item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
+        item.pinned = item.conversation_id in pinned
         # DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
         if item.conversation_id == phone_reads.REMOTE_ID:
             item.title = phone_reads.REMOTE_TITLE

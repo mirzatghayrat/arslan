@@ -334,8 +334,12 @@ def test_a_window_card_a_job_joined_expires_for_both_at_the_time_it_showed(app_c
 
 def test_a_window_ask_that_joins_a_jobs_card_waits_only_what_is_left_of_it(app_client, monkeypatch):
     """The other way round: the window joins the job's card, and its wait ends when the card's
-    does — not a fresh 30 minutes after it joined (PR 2b plan review)."""
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 4)                    # the job's card's time
+    does — not a fresh 30 minutes after it joined (PR 2b plan review).
+
+    LOAD3: the times are 10 s against 120 s, with a bound of 60 s between them (it was 4 s against
+    30 s, bound 8 s), so load can neither stop the window joining in time nor push the end past the
+    bound; a fresh wait still could not finish under it."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 10)                   # the job's card's time
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
     executor = _stub_run_command_executor(monkeypatch)
@@ -345,13 +349,13 @@ def test_a_window_ask_that_joins_a_jobs_card_waits_only_what_is_left_of_it(app_c
         started = time.monotonic()
         asked = app_client.portal.start_task_soon(job.command, "rm -rf build", [])
         job_card = _collect_until(ws, "propose_run_command")[-1]
-        monkeypatch.setattr(approvals, "TIMEOUT_S", 30)               # a fresh wait would be longer
+        monkeypatch.setattr(approvals, "TIMEOUT_S", 120)              # a fresh wait would be longer
         ws.send_json({"type": "user_message", "content": "clean the build"})
-        _until(lambda: _waiters(job_card["call_id"]) == 2)            # the window joined it
+        _until(lambda: _waiters(job_card["call_id"]) == 2, seconds=10)   # the window joined it
         frames = _collect_until(ws, "stream_end")
-        assert time.monotonic() - started < 8
+        assert time.monotonic() - started < 60
         assert "NOT a refusal" in str([f for f in frames if f.get("type") == "tool_result"])
-        assert asked.result(timeout=5) is False
+        assert asked.result(timeout=30) is False
     assert executor.calls == [] and approvals.known_ids() == set()
 
 
@@ -457,6 +461,8 @@ def test_a_card_answered_after_the_turns_wall_clock_still_finishes_the_turn(app_
     assert frames[-1]["type"] == "stream_end", frames[-1]
     assert [f["ok"] for f in frames if f.get("type") == "tool_result"] == [True]
     assert len(executor.calls) == 1
+    # LOAD3: and the step after the card ran, which the budget would have stopped had the wait counted
+    assert "done" in "".join(f.get("content", "") for f in frames if f.get("type") == "stream_chunk")
 
 
 # ── review fix round 1 ───────────────────────────────────────────────────────
@@ -624,8 +630,11 @@ def test_a_turns_task_grants_end_with_the_turn_and_its_conversation_grants_stay(
 
 
 def test_a_window_ask_that_joins_a_card_on_screen_shares_it_and_nothing_is_judged(app_client, monkeypatch, judge):
-    """J1: one card — the job's, which opened it; the window's ask joins it. C4: nothing judged."""
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 8)
+    """J1: one card — the job's, which opened it; the window's ask joins it. C4: nothing judged.
+
+    LOAD3: the card's own time plays no part here, so it is long (60 s) and the join gets 30 s: a
+    loaded machine took longer than 5 s to reach the card."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 60)
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
     _stub_run_command_executor(monkeypatch)
@@ -635,10 +644,10 @@ def test_a_window_ask_that_joins_a_card_on_screen_shares_it_and_nothing_is_judge
         asked = app_client.portal.start_task_soon(job.command, "rm -rf build", [])
         job_card = _collect_until(ws, "propose_run_command")[-1]
         ws.send_json({"type": "user_message", "content": "clean the build"})
-        _until(lambda: _waiters(job_card["call_id"]) == 2)
+        _until(lambda: _waiters(job_card["call_id"]) == 2, seconds=30)
         ws.send_json({"type": "confirm_run_command", "call_id": job_card["call_id"], "scope": "once"})
         _collect_until(ws, "stream_end")
-        assert asked.result(timeout=5) is True
+        assert asked.result(timeout=30) is True
     assert _judgments(app_client, 0) == [] and judge == []
 
 
@@ -751,6 +760,6 @@ def test_a_turns_forget_that_raises_does_not_stop_the_turn_from_ending(app_clien
             card = _collect_until(ws, "propose_action")[-1]
             ws.send_json({"type": "confirm_action", "call_id": card["call_id"], "scope": "task"})
             _collect_until(ws, "stream_end")
-            _until(ended, seconds=2)
+            _until(ended, seconds=30)       # LOAD3: it ends; 2 s was too short on a loaded machine
     assert len(forgetting) == 1                                       # it was tried, for the turn's task
     assert "task grants not forgotten" in caplog.text

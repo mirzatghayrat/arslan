@@ -128,8 +128,13 @@ class GeminiProvider(BaseLLMProvider):
         included). Each result answers its call with a functionResponse whose `response` is the
         result itself: the JSON object a tool returned, or {"output": text} for anything else
         (an untrusted result keeps its data frame). Screenshots, host-run results and the step's
-        status follow as their own parts in the same user turn; same-role turns merge."""
+        status follow as their own parts in the same user turn; same-role turns merge.
+        NAME1: a response is named as the call it answers was replayed. The k-th call is the k-th functionCall
+        part, as _parse_response made them, so two calls that share an id keep their own names.
+        That is the name the model wrote, which is not always the one the tool list gave it.
+        For example, K7's find_tools shows real keys."""
         calls: dict[str, dict] = {}
+        replayed: dict[str, str] = {}           # call id -> the name in the replayed parts
         turns: list[tuple[str, list[dict[str, Any]]]] = []
         for m in messages:
             role = m.get("role")
@@ -138,12 +143,22 @@ class GeminiProvider(BaseLLMProvider):
                     calls[call["id"]] = call
                 cont = m.get("_continuation") or {}
                 if cont.get("protocol") == "gemini":
+                    parts = [part.get("functionCall") for part in cont["provider_content"].get("parts") or []
+                             if isinstance(part, dict) and isinstance(part.get("functionCall"), dict)]
+                    calls_here = m.get("tool_calls") or []
+                    # 1:1 as _parse_response built them and run_native keeps them (unique_ids renames ids only).
+                    # If that ever stops holding, nothing is paired, and responses keep the trajectory's names.
+                    if len(parts) == len(calls_here):
+                        for call, part in zip(calls_here, parts):
+                            if isinstance(part.get("name"), str):
+                                replayed[call["id"]] = part["name"]
                     turns.append(("assistant", [{"type": "provider_content", **cont["provider_content"]}]))
                 else:
                     turns.append(("assistant", [{"type": "text", "text": m.get("content") or ""}]))
             elif role == "tool" and not m.get("_synthetic"):
-                response = {"type": "function_response", "name": m["name"], "response": _structured(m["content"])}
                 provider_id = (calls.get(m.get("tool_call_id")) or {}).get("provider_id")
+                response = {"type": "function_response", "name": replayed.get(m.get("tool_call_id")) or m["name"],
+                            "response": _structured(m["content"])}
                 if provider_id:
                     response["id"] = provider_id
                 turns.append(("user", [response]))
