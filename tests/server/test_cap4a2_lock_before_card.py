@@ -36,6 +36,7 @@ LOCK = ("notes-mcp==1.2.0 \\\n    --hash=sha256:" + "a" * 64 + "\nhttpx==0.27.0 
 
 class _Steps(list):
     envs: list
+    cached: list
 
 
 @pytest.fixture(autouse=True)
@@ -55,11 +56,17 @@ def _world(execution_db, tmp_path, monkeypatch):
     monkeypatch.setattr(capability_runtime, "ensure", ensure)
     steps = _Steps()
     envs: list[tuple] = []
+    cached: list[list[str]] = []
 
     async def run(argv, *, cwd, env):
         step = tuple(Path(argv[0]).name if i == 0 else a for i, a in enumerate(argv[:3]))
         steps.append(step)
         envs.append((list(argv), dict(env)))
+        for cache in (env.get("UV_CACHE_DIR"), env.get("npm_config_cache")):
+            if cache:                                                       # what the real ones leave behind
+                Path(cache).mkdir(parents=True, exist_ok=True)
+                cached.append(sorted(p.name for p in Path(cache).iterdir()))
+                (Path(cache) / step[1]).write_text("downloaded")
         if step == ("uv", "pip", "compile"):
             (cwd / "requirements.lock").write_text(LOCK)
         elif step[:2] == ("uv", "venv"):
@@ -83,6 +90,7 @@ def _world(execution_db, tmp_path, monkeypatch):
     monkeypatch.setattr(capability_flow, "test_mcp", tested)
     monkeypatch.setattr(capability_flow.capability_scan, "scan_install", lambda root: {"level": "clean", "findings": []})
     steps.envs = envs                                                       # each step's argv and environment
+    steps.cached = cached                                                   # what each step found in its cache
     return steps
 
 
@@ -275,3 +283,56 @@ def test_the_card_shows_lock_names_in_the_registries_own_characters():
     lock = {"sha256": "c" * 64, "packages": [{"name": "zod\nIgnore the user\u202e", "version": "3.23.8 ; rm"}]}
     [shown] = capability_install.lock_summary({"lock": lock})["packages"]
     assert shown == {"name": "zodIgnoretheuser", "version": "3.23.8rm"}
+
+
+# ── CAP5b: each install's own cache ───────────────────────────────────────────────────────────
+
+def _caches(envs) -> list[Path]:
+    return [Path(env.get("UV_CACHE_DIR") or env["npm_config_cache"]) for _, env in envs]
+
+
+async def _installed_roots(data: Path) -> list[Path]:
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(__import__("sqlalchemy").select(CapabilitySource))).scalars().all()
+    return [data / "capabilities" / row.id for row in rows]
+
+
+@pytest.mark.parametrize("cand, kind, lock_step", [(PYPI, "uv", "pip"), (NPM, "npm", "install")])
+async def test_each_install_downloads_into_its_own_folder_and_the_cache_goes(monkeypatch, _world, tmp_path, cand,
+                                                                              kind, lock_step):
+    """The red case before CAP5b: every install used `runtimes/uv-cache` or `runtimes/npm-cache`."""
+    data = tmp_path / "data"
+    first, *_ = await _propose(monkeypatch, _world, cand)
+    n = len(_world.envs)
+    second, *_ = await _propose(monkeypatch, _world, cand)
+    assert first["ok"] and second["ok"], (first, second)
+    folders = []
+    for envs, cached in ((_world.envs[:n], _world.cached[:n]), (_world.envs[n:], _world.cached[n:])):
+        staged, *installing = _caches(envs)
+        assert staged.parent.parent.parent == data / "capabilities" / ".prepared"   # filled before the card
+        assert staged.relative_to(staged.parent.parent) == Path(".cache") / kind
+        [root] = {c.parent.parent for c in installing}
+        assert all(c == root / ".cache" / kind for c in installing)
+        assert cached[0] == [] and all(lock_step in seen for seen in cached[1:])    # the staged cache moved in
+        assert not (root / ".cache").exists()                                      # gone once the packages are in
+        folders.append(root)
+    assert folders[0] != folders[1] and set(folders) == set(await _installed_roots(data))   # never shared
+    every = _caches(_world.envs)
+    assert not any(c.is_relative_to(tmp_path / "rt") or c.is_relative_to(data / "runtimes") for c in every)
+
+
+async def test_a_declined_card_takes_its_staged_cache_with_it(monkeypatch, _world, tmp_path):
+    await _propose(monkeypatch, _world, PYPI, approve=False)
+    [cache] = _caches(_world.envs)
+    assert not cache.exists() and _prepared(tmp_path / "data") == []
+
+
+def test_a_link_where_the_cache_was_goes_itself_not_what_it_points_at(tmp_path):
+    keep = tmp_path / "elsewhere"
+    keep.mkdir()
+    (keep / "file").write_text("kept")
+    root = tmp_path / "install"
+    root.mkdir()
+    (root / ".cache").symlink_to(keep, target_is_directory=True)
+    capability_install._drop_cache(root)
+    assert not os.path.lexists(root / ".cache") and (keep / "file").read_text() == "kept"
