@@ -153,7 +153,7 @@ The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is 
 1. **#565** (app names shown cleaned everywhere) at `f43eb675`. It's an empty commit on the reviewed `10b9f472`, pushed with the user's OK so CI could run. CI 41221815387 passed all five jobs.
 2. **#569** (CAP4a-3b: the license is read at the version being installed) at `39662487`. The effort=max review's fixes are in, and ⓪Plan's re-check is OK. A remote MCP server now has no license gate (stated).
 3. **#590** (INB5a: the waiting-on-you count, migration 0084): re-OK'd at `71adc88c`. ②Main retargets it to main now that #589 is in; it needs a quick re-OK on the new head.
-4. **#597** (UNI1b follow-up: the 8-IVS budget, the emoji bases, the listing's scan): re-checked OK at `1ec0e90f`. ⑤CAP retargets it to main now that #586 is in.
+4. **#597** (UNI1b follow-up: the 8-IVS budget, the emoji bases, the listing's scan): re-checked OK at `1ec0e90f`, already based on main. ⑤CAP marks it ready (it's still a draft).
 
 **Pushes that wait for the user's OK** (the classifier stopped ⑤CAP; nothing was run):
 - **#584** (CAP4a-3c, allowlist D at card time): it would retarget to main and push `85086df6`, which holds the effort=max review's fixes. Then a re-check.
@@ -301,8 +301,8 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 **SBX-M ran on 2026-10-31** (the user, at main `ef6283b2`, macOS 26.6.2 25G83).
 - The corpus: 293 cases, 293 passed; 101 rows need a look.
 - The listener loop: 30/30 in each mode.
-- The report is `SBX-measurement.md` (③Hands, in progress).
-- Two boundary-open rows, the hard-link measurement on today's shipped bases, get an effort=max assessment of whether v0.1.63 is affected (⓪Plan). Details stay on the card and PR.
+- The report is `SBX-measurement.md` (#592, `71f79c3d`).
+- The two boundary-open rows (the hard-link measurement on today's shipped bases) are a probe artifact, not a shipped gap; no point release (the effort=max assessment, #592 comment 6545067946). The probe fix is in Codex's SBX-3p paste.
 
 ## Spend
 
