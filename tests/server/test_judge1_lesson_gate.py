@@ -8,6 +8,7 @@ Now: a stored lesson reaches the judge only where memory may be shown to a model
 deleting the lesson deletes them; the ledger is pruned at most hourly while the app runs, not only at boot.
 Fixture text is synthetic."""
 import dataclasses
+import time
 from datetime import datetime, timedelta
 
 import pytest
@@ -139,7 +140,9 @@ async def test_the_ledger_is_pruned_while_the_app_runs(execution_db, router, mon
         session.add(Judgment(point="memory.merge", mode="active", state={}, state_hash="h",
                              created_at=datetime.utcnow() - timedelta(days=judgment.KEEP_DAYS + 1)))
         await session.commit()
-    monkeypatch.setitem(judgment._last_prune, "at", 0.0)
+    # An hour or more ago, whatever this machine's monotonic clock reads: on a runner booted less than an hour ago,
+    # 0.0 is not an hour back (CI run 41146525662).
+    monkeypatch.setitem(judgment._last_prune, "at", time.monotonic() - judgment.PRUNE_EVERY_S - 1)
     await judgment.judge("memory.worth", {"kind": "detour", "candidate": "x", "evidence": "{}"})
     async with execution_db() as session:
         points = (await session.scalars(select(Judgment.point))).all()
