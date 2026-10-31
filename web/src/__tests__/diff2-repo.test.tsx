@@ -335,6 +335,14 @@ describe("a repo folder and a plain folder (#588 review, F7)", () => {
       .toHaveLength(1);
   });
 
+  it("another folder whose path merely ends the same way keeps DIFF1's rows", async () => {
+    files.changes.mockResolvedValue({ turns: [{ run_id: 7, at: null, undone: false, paths: [
+      { folder: "/Users/u/Other/Code/journal", path: "notes.md", kind: "edited" }] }] });
+    useWorkbench.getState().show("overview");
+    mount();
+    expect(await screen.findByTestId("overview-turn-7")).toHaveTextContent("notes.md");
+  });
+
   it("a turn whose every path is in the repo isn't listed at all", async () => {
     files.changes.mockResolvedValue({ turns: [{ run_id: 7, at: null, undone: false,
       paths: [{ folder: "/Users/u/Code/journal", path: "src/styles/theme.css", kind: "edited" }] }] });

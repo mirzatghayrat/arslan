@@ -139,8 +139,14 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   // DIFF2 (#588 review, F7): in a repo folder the repo's list is the one place a change shows; a turn's paths there are
   // left out of the per-turn list (its undo stays in the reply), and paths in other folders keep DIFF1's rows.
   const repoShown = !!repo && !gitError(repo);
-  const inRepo = (folder: string) => repoShown && !!home
-    && (home.startsWith("~/") ? folder.endsWith(home.slice(1)) : folder === home);
+  // `home` comes home-relative ("~/Code/journal"), the turn's folder absolute: the same folder only when what comes before
+  // is itself a home folder, so "/Users/u/Other/Code/journal" isn't taken for it (⓪Plan's re-check of #588).
+  const inRepo = (folder: string) => {
+    if (!repoShown || !home) return false;
+    if (!home.startsWith("~/")) return folder === home;
+    const rest = home.slice(1);
+    return folder.endsWith(rest) && /^\/(Users|home)\/[^/]+$/.test(folder.slice(0, folder.length - rest.length));
+  };
   const shownTurns = changes.map((turn) => ({ ...turn, paths: turn.paths.filter((p) => !inRepo(p.folder)) }))
     .filter((turn) => turn.paths.length > 0);
   const askUndo = async (runId: number, button: HTMLButtonElement) => {
