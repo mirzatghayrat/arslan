@@ -95,9 +95,12 @@ export default function Sidebar(props: SidebarProps) {
   // then the ones without any by when they changed; the top few form the group.
   const rank = new Map<string, number>();
   live.forEach((thread, i) => { const p = projectOf(thread); if (p && !rank.has(p)) rank.set(p, i); });
-  const shownProjects = [...projects].sort((a, b) =>
-    (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
-    .slice(0, SIDEBAR_PROJECTS);
+  const ranked = [...projects].sort((a, b) =>
+    (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+  // INB5b-3 ("Not covered" in PR 590): a project with a conversation waiting on you is listed even past the most recent few, so what
+  // the badge on Progress counts always has a row to open.
+  const waitingProjects = new Set(live.filter(thread => meta[thread.id]?.state === "waiting").map(projectOf));
+  const shownProjects = [...ranked.slice(0, SIDEBAR_PROJECTS), ...ranked.slice(SIDEBAR_PROJECTS).filter(p => waitingProjects.has(p.id))];
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
   // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
