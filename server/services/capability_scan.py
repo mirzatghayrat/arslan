@@ -12,7 +12,6 @@ whole dependency tree — HTTP clients there phone home by design and would drow
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -59,30 +58,23 @@ RULES = (
     _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:"),
 )
 
+#: UNI1b-3 (the user's 3A, 2026-11-01): what the scan blocks in a skill's text, and nothing else hidden. Unicode Tag
+#: characters (U+E0000-E007F, text no reader sees: the hidden-text smuggling vector), but those of the three RGI
+#: subdivision flags; and the bidi controls, U+202A-202E (embeddings and overrides) and U+2066-2069
+#: (isolates), which make text read in another order than it is stored (Trojan Source) and which GitHub warns about
+#: as bidirectional text. Every other character that shows nothing (a zero-width space, a soft hyphen, a word
+#: joiner, a run of variation selectors) is counted and marked wherever the skill is shown (UNI1b's
+#: `untrusted.hidden_summary`), never blocked, as GitHub's hidden-character warning does. Explicit code points,
+#: never the Unicode database (#586 review F5).
+_BLOCKED = ((0x202A, 0x202E), (0x2066, 0x2069), (0xE0000, 0xE007F))
+HIDDEN_RULE = "tag_or_bidi_characters"
+
+
 def _invisible(text: str) -> int:
-    """How many format characters (Cf: zero-width, bidi overrides, tags) hide something. Not counted, as they
-    hide nothing where they stand (#526 review 5): the byte-order mark; the direction marks LRM, RLM and ALM;
-    the tags of an RGI subdivision flag; a lone ZWNJ or ZWJ inside a word of a script other than Latin (Persian,
-    the Indic scripts); and a ZWJ inside an emoji sequence. A run of them is counted, each one."""
+    """How many Tag characters (outside an RGI flag) and bidi controls the text holds, each one counted."""
     from server.orchestrator import untrusted
     text = untrusted.TAG_FLAG.sub("", text)
-    count = 0
-    for i, ch in enumerate(text):
-        if unicodedata.category(ch) != "Cf" or ch in "\ufeff\u200e\u200f\u061c":
-            continue
-        if ch in "\u200c\u200d" and 0 < i < len(text) - 1 and _joins(text[i - 1], ch, text[i + 1]):
-            continue
-        count += 1
-    return count
-
-
-def _joins(before: str, joiner: str, after: str) -> bool:
-    """Whether a ZWNJ or ZWJ sits where a script or an emoji sequence uses it: between two letters or marks
-    of a non-Latin word, or (ZWJ only) between two emoji, the first maybe with VS16 or a skin tone."""
-    b, a = unicodedata.category(before), unicodedata.category(after)
-    if b[0] in "LM" and a[0] in "LM" and max(ord(before), ord(after)) > 0x24F:
-        return True
-    return joiner == "\u200d" and (b in ("So", "Sk") or before == "\ufe0f") and a == "So"
+    return sum(1 for ch in text if any(lo <= ord(ch) <= hi for lo, hi in _BLOCKED))
 
 
 @dataclass
@@ -115,7 +107,7 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     if kind == "text":
         hidden = _invisible(text)
         if hidden:
-            out.append(Finding("invisible_characters", "high", name, 0, f"{hidden} invisible characters"))
+            out.append(Finding(HIDDEN_RULE, "high", name, 0, f"{hidden} tag or bidi control characters"))
         if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", text):
             out.append(Finding("long_encoded_blob", "note", name, 0, "a long base64-like block"))
     return out
