@@ -219,12 +219,12 @@ def migrate_legacy_ciphertext(connection) -> int:
         try:
             primary.decrypt(raw)
             continue                      # already current
-        except Exception:                 # noqa: BLE001
+        except Exception:                 # noqa: BLE001 — a trial decrypt: failing is the expected path, the legacy try decides
             pass
         try:
             plaintext = legacy.decrypt(raw).decode("utf-8")
-        except Exception:                 # noqa: BLE001
-            continue                      # group B — not ours to touch
+        except Exception:                 # noqa: BLE001 — neither key opens it: group B, not ours to touch
+            continue
         replacement = crypto.encrypt(plaintext)
         try:
             if primary.decrypt(replacement.encode("utf-8")).decode("utf-8") != plaintext:
@@ -307,7 +307,7 @@ def _fernet_for_salt(salt: bytes):
 def _opens(fernet, value: str) -> str | None:
     try:
         return fernet.decrypt(value.encode("utf-8")).decode("utf-8")
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — "this key does not open it" is the answer (None), not an error
         return None
 
 

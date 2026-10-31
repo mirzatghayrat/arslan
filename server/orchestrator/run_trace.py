@@ -41,6 +41,12 @@ def record(*, tool: str, args, result, ok: bool, error: str | None, ms: int | No
         "error": (_cap(error) if error else None),
         "ms": ms,
     }
+    # INB6: the files a read read, whole. result_raw is cut at RUN_RAW_CAP, which loses most of a search's matches.
+    if isinstance(result, dict) and result.get("ok") and tool in ("read_file", "search_files"):
+        found = [result.get("path")] if tool == "read_file" else [m.get("path") for m in result.get("matches") or ()]
+        paths = list(dict.fromkeys(path for path in found if path))
+        if paths:
+            entry["paths"] = paths
     held = _denial.get()
     denial = held.pop("code", None) if held is not None else None
     if denial and tool == "run_command":

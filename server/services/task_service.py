@@ -864,8 +864,8 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                              "Task final checkpoint failed")
             try:
                 await asyncio.shield(stopping)
-            except Exception:
-                pass                                  # logged by _kept
+            except Exception:  # noqa: BLE001 — its failure is logged by _kept
+                pass
             finally:
                 for run_id in runtime.run_ids:
                     _run_owners.pop(run_id, None)

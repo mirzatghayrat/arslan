@@ -25,6 +25,7 @@ from datetime import datetime
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
+from server.orchestrator import untrusted
 from server.services import capability_install, capability_runtime, capability_scan, capability_search
 from arslan.aio import within
 
@@ -56,13 +57,14 @@ def card_for(c: dict, *, why: str, retry: str, folders: list[str]) -> dict:
     needs = c.get("needs") or {"keys": [], "network": None}
     grants = capability_install.grants_for(folders, needs)
     runtime = c.get("runtime")
-    download = runtime in ("uv", "node") and not capability_runtime.ready(runtime)
     return {
         "kind": c["kind"], "name": c["name"], "summary": c.get("summary") or "", "source_url": c.get("source_url"),
         "repo": c.get("repo"), "version": (c.get("package") or {}).get("version") or c.get("version"),
         "license": {"spdx": c["license"]["spdx"], "read_from": c["license"]["read_from"]},
         "stars": c.get("stars"), "pushed_days": c.get("pushed_days"), "runtime": runtime,
-        "runtime_download": ({"name": runtime, "size_mb": capability_runtime.PINS[runtime].size_mb} if download else None),
+        # CAP4a-2: Arslan's runtime is ready before the card (`capability_install.prepare`), so the card never
+        # announces a download. DELETE-BY: CAP4b, when the card's face (after its mock) drops the field.
+        "runtime_download": None,
         "remote_host": (c.get("remote") or {}).get("url"), "network": grants["network"] if c["kind"] == "mcp" else False,
         "folders": grants["folders"] if c["kind"] == "mcp" else [],
         "keys": [k for k in needs.get("keys") or [] if k.get("required") or k.get("secret")][:6],
@@ -115,9 +117,11 @@ async def test_mcp(source_id: str) -> dict:
     return {"ok": True, "tools": names[:60], "at": at}
 
 
-async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:
+async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict | None = None) -> dict:
+    """`prepared`: what the card showed (capability_install.prepare, CAP4a-2); without it (the dossier's
+    reinstall, no card) the install prepares first."""
     try:
-        row = await capability_install.install(c, folders=folders, keys=keys)
+        row = await capability_install.install(c, folders=folders, keys=keys, prepared=prepared)
     except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
         return {"state": "failed", "stage": "install", "code": exc.code, "detail": getattr(exc, "detail", "")[-400:]}
     if row.runtime != "remote":
@@ -188,17 +192,17 @@ def _ledger_request(cand: dict, why: str):
     from, the version the card shows (the pinned package's), and the model's reason. Built from the
     search result only; the card's answer (a key, folders) adds nothing."""
     from server.services import permissions
-    name = _plain(str(cand.get("name") or ""))
+    name = untrusted.clean_name(cand.get("name"), 200)             # UNI1: the one name cleaner (#526 review)
     version = (cand.get("package") or {}).get("version") or cand.get("version")
     return permissions.Request(kind="capability", target=f"capability:{name}"[:200],
                                title=f"Add {name}?", detail=why[:500],
                                extra={"source_url": _ledger_url(cand.get("source_url")),
-                                      "version": _plain(str(version))[:100] if version else None})
+                                      "version": untrusted.clean_name(version, 100) if version else None})
 
 
 def _plain(text: str, keep: str = "") -> str:
-    """Without control, format (bidi, zero-width) or unassigned characters (but those in `keep`): a ledger row
-    reads as it is."""
+    """Without control, format (bidi, zero-width) or unassigned characters (but those in `keep`): a ledger row's
+    address or detail reads as it is. Names go through `untrusted.clean_name` instead."""
     import unicodedata
     return "".join(ch for ch in text if ch in keep or not unicodedata.category(ch).startswith("C"))
 
@@ -211,7 +215,7 @@ def outside_label(text, limit: int = 100) -> str:
     hands it to the model: its own field, never inside Arslan's sentence; letters, digits and ``._/ -`` only,
     one line, at most `limit` characters (③Hands' review of #449). list_my_capabilities and the MCP status line use it too."""
     # A new line or a tab separates words, as in the status line before #495 (O2), instead of gluing them.
-    return " ".join(_LABEL_CHARS.sub(" ", _plain(str(text or ""), keep="\t\n\v\f\r")).split())[:limit].strip()
+    return " ".join(_LABEL_CHARS.sub(" ", untrusted.clean_name(text, 100_000)).split())[:limit].strip()   # UNI1
 
 
 def _ledger_url(url) -> str | None:
@@ -235,7 +239,6 @@ def _outside_text() -> None:
     """This result carries outside text (a label, a program's output): the turn has read outside content now,
     as `find_capability` marks it. A candidate seen in an earlier turn can be proposed in a later one without
     searching again, so that turn is not marked yet (the independent review of #461, F1)."""
-    from server.orchestrator import untrusted
     untrusted.mark_external()
 
 
@@ -266,8 +269,17 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was added. Say in "
                         "your answer that the capability you proposed (`missing`) is not there and that the user "
                         "can add it by asking for it in a conversation."}
-    prepared = scan = None
-    if cand["kind"] == "skill":
+    prepared = scan = locked = None
+    if cand["kind"] == "mcp":
+        # CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock before the card,
+        # so the card shows the locked versions and a yes installs exactly them. After the "nobody to ask" answer
+        # above: a run that cannot install resolves nothing.
+        try:
+            locked = await capability_install.prepare(cand)
+        except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
+            return {"ok": False, "error": f"cannot be added: {exc.code}"}
+        card.update(lock=capability_install.lock_summary(locked))
+    elif cand["kind"] == "skill":
         # CAP4a-1: fetched whole at one pinned commit, scanned and hashed before the card; a blocked scan gets none.
         # After the "nobody to ask" answer above: a run that cannot install fetches nothing.
         try:
@@ -283,16 +295,22 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                     skipped=prepared["skipped"], scan=scan)
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
-    decision = await ask(card)
+    try:
+        decision = await ask(card)
+    except BaseException:
+        capability_install.discard(locked)
+        raise
     # S7: the card's answer in the ledger (§5.4) — never the key or the folders it carried back.
     await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
                                           expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
+        capability_install.discard(locked)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
                                                         "way or say what is missing; do not propose it again now."}
     if cand["kind"] == "mcp":
-        result = await install_mcp(cand, folders=decision.get("folders") or [], keys=decision.get("keys") or {})
+        result = await install_mcp(cand, folders=decision.get("folders") or [], keys=decision.get("keys") or {},
+                                   prepared=locked)
     else:
         result = await install_skill(cand, prepared=prepared, scan=scan)
     emit({"type": "capability_result", "call_id": decision.get("call_id"), **{k: v for k, v in result.items()

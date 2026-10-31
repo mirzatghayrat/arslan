@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { AuthoredSkillCard } from "../../api/client.types";
 import { AskCard, type AskQueuePosition } from "../kit";
+import { Escaped, isolate } from "../../lib/outsideText";
 import { Row } from "./CapabilityProposeCard";
 
 /**
@@ -17,14 +18,15 @@ export default function SkillSaveCard({ card, callId, expiresAt, queue, onConfir
   const { t } = useTranslation();
   const detail = (
     <div className="flex flex-col" data-testid="skill-save-rows">
-      <Row label={t("discover.save_purpose")}>{card.description}</Row>
+      <Row label={t("discover.save_purpose")}><Escaped text={card.description} /></Row>
       <Row label={t("discover.save_key")}>
         <span className="rounded-md bg-fill px-1.5 py-0.5 font-mono text-[11.5px]">{card.key}</span>
       </Row>
       <Row label={t("discover.save_body")}>
         <pre data-testid="skill-save-body"
           className="m-0 max-h-[190px] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-raised px-2.5 py-2 font-mono text-[11.5px] leading-normal [overflow-wrap:anywhere]">
-          {card.body}
+          {/* UNI1: the text as stored; a bidi control shows as a marker, never reorders what is read. */}
+          <Escaped text={card.body} block />
         </pre>
         {/* #472 review F5: how much there is, so a long text is read to its end. */}
         <span data-testid="skill-save-lines" className="mt-1 block text-[11px] text-subtle-foreground">
@@ -35,7 +37,7 @@ export default function SkillSaveCard({ card, callId, expiresAt, queue, onConfir
     </div>
   );
   return (
-    <AskCard testId="skill-save-card" who={t("discover.save_who")} title={t("discover.save_title", { name: card.name })}
+    <AskCard testId="skill-save-card" who={t("discover.save_who")} title={t("discover.save_title", { name: isolate(card.name) })}
       said={card.why || null} risk={card.outside ? t("discover.save_outside") : null} detail={detail}
       extra={<span className="text-[11px] text-subtle-foreground">{t("discover.save_footer")}</span>}
       expiresAt={expiresAt} queue={queue}

@@ -34,7 +34,10 @@ const decode = (buf: ArrayBuffer) => new TextDecoder("utf-8", { fatal: false }).
  * runs it on purpose), PDF in WebKit's own viewer with a page-image fallback, images, players,
  * tables for csv/xlsx, Word through macOS's textutil, text with line numbers. Read-only.
  */
-export default function Reader({ source, onBack }: { source: ReaderSource; onBack: () => void }) {
+/** A file shown as itself; a turn's change (DIFF1) has its own reader, DiffReader. */
+type FileSource = Exclude<ReaderSource, { kind: "diff" }>;
+
+export default function Reader({ source, onBack }: { source: FileSource; onBack: () => void }) {
   const { t } = useTranslation();
   const name = source.kind === "artifact" ? baseName(source.file.title) : baseName(source.path);
   const path = source.kind === "path" ? source.path : null;
