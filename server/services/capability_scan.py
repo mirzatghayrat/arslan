@@ -59,11 +59,30 @@ RULES = (
     _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:"),
 )
 
-_INVISIBLE = {"Cf"}          # format characters: zero-width, bidi overrides
-
-
 def _invisible(text: str) -> int:
-    return sum(1 for ch in text if unicodedata.category(ch) in _INVISIBLE and ch not in "﻿")
+    """How many format characters (Cf: zero-width, bidi overrides, tags) hide something. Not counted, as they
+    hide nothing where they stand (#526 review 5): the byte-order mark; the direction marks LRM, RLM and ALM;
+    the tags of an RGI subdivision flag; a lone ZWNJ or ZWJ inside a word of a script other than Latin (Persian,
+    the Indic scripts); and a ZWJ inside an emoji sequence. A run of them is counted, each one."""
+    from server.orchestrator import untrusted
+    text = untrusted.TAG_FLAG.sub("", text)
+    count = 0
+    for i, ch in enumerate(text):
+        if unicodedata.category(ch) != "Cf" or ch in "\ufeff\u200e\u200f\u061c":
+            continue
+        if ch in "\u200c\u200d" and 0 < i < len(text) - 1 and _joins(text[i - 1], ch, text[i + 1]):
+            continue
+        count += 1
+    return count
+
+
+def _joins(before: str, joiner: str, after: str) -> bool:
+    """Whether a ZWNJ or ZWJ sits where a script or an emoji sequence uses it: between two letters or marks
+    of a non-Latin word, or (ZWJ only) between two emoji, the first maybe with VS16 or a skin tone."""
+    b, a = unicodedata.category(before), unicodedata.category(after)
+    if b[0] in "LM" and a[0] in "LM" and max(ord(before), ord(after)) > 0x24F:
+        return True
+    return joiner == "\u200d" and (b in ("So", "Sk") or before == "\ufe0f") and a == "So"
 
 
 @dataclass

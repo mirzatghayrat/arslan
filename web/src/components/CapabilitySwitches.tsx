@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { isolate } from "../lib/outsideText";
 import { ChevronRight, KeyRound, MessageSquare, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { capabilitiesApi, type CapabilityRow } from "../api/capabilities";
@@ -26,11 +27,8 @@ const DELETE_BODY: Record<string, string> = {
   "skills:unknown": "capabilityList.deleteBodyAuthored",     // D2(2): deletable; no link to add it back, its text to the Trash
   "connections:manual": "capabilityList.deleteBodyManual", "connections:installed": "capabilityList.deleteBodyInstalledConnection",
 };
-/** A name from outside (a SKILL.md, a server label) inside one of Arslan's sentences: isolated, so bidi controls
- *  in it cannot reorder the sentence around it (#500 review). */
-export const isolate = (text: string) => `\u2068${text.replace(BIDI_CONTROLS, "")}\u2069`;
-/** Marks and controls that could close the isolate early or reorder what follows it (#500 recheck). */
-const BIDI_CONTROLS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+// One helper for outside text across the web (UNI1): lib/outsideText.
+export { isolate } from "../lib/outsideText";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 

@@ -366,7 +366,8 @@ async def test_a_skill_installs_at_its_commit_and_a_dangerous_one_is_never_writt
     def preparer(body):
         async def prepare_skill(ref, path):
             refs.append((ref, path))
-            return {"key": "csv-tidy", "info": {"key": "csv-tidy", "name": "csv-tidy", "description": "d", "body": body},
+            return {"key": "csv-tidy", "info": {"key": "csv-tidy", "name": "csv-tidy", "description": "d", "body": body,
+                             "frontmatter": "csv-tidy\nd"},
                     "full_name": "anthropics/skills", "commit": "abc123def456" + "0" * 28, "license": "MIT",
                     "license_source": "skills/csv/LICENSE.txt", "skill_md": body, "scripts": {}, "references": {},
                     "files": {"skills/csv/SKILL.md": "f" * 64}, "sizes": {}, "skipped": []}
