@@ -2,7 +2,8 @@
 
 Formalizes the previously hand-wired boot chain. Each migration exposes an
 idempotent ``upgrade_sync(conn)``; we record applied ids in ``schema_version`` so
-an install re-applies only the pending tail. VERBATIM order from the old main.py
+an install applies only the ids it has not recorded: a set, not a tail, so a number
+that merges after higher ones still runs (0073). VERBATIM order from the old main.py
 chain (do not reorder).
 
 Canonical chain (from the old ``main.py`` boot block, verbatim, in order):

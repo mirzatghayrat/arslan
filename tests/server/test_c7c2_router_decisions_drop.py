@@ -4,6 +4,10 @@ Nothing has written it since 0.1.48 and no code reads it (C7c-1 removed the mode
 PR, after the code (v0.1.64 plan §6): code can be reverted, a table can't. Idempotent, and a database
 without the table (a fresh install since C7c-1) is left alone.
 """
+import sqlite3
+import zipfile
+from contextlib import closing
+
 import sqlalchemy as sa
 
 from server.db.migrations import runner
@@ -62,4 +66,26 @@ def test_an_install_that_already_ran_the_later_migrations_still_gets_0073(tmp_pa
     assert "router_decisions" in _names(engine, "table")
     with engine.begin() as conn:
         assert runner.apply_pending(conn) == ["0073"]
+    assert "router_decisions" not in _names(engine, "table")
+
+
+def test_the_gap_install_is_backed_up_before_0073_drops_the_table(tmp_path, monkeypatch):
+    # The dropped rows survive only in the upgrade backup. On an install that has already recorded the later
+    # ids, prepare_upgrade_backup must still count 0073 as pending and take a backup before the drop.
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'arslan.db'}")
+    Base.metadata.create_all(engine)
+    _with_table(engine)
+    monkeypatch.setattr(runner, "MIGRATIONS", [m for m in runner.MIGRATIONS if m[0] != "0073"])
+    with engine.begin() as conn:
+        runner.apply_pending(conn)
+    monkeypatch.undo()
+    before = set((tmp_path / "backups").glob("*.zip"))
+    with engine.begin() as conn:
+        assert runner.apply_pending(conn) == ["0073"]
+    taken = sorted(set((tmp_path / "backups").glob("*.zip")) - before)
+    assert len(taken) == 1
+    with zipfile.ZipFile(taken[0]) as archive:
+        archive.extract("arslan.db", tmp_path / "restored")
+    with closing(sqlite3.connect(tmp_path / "restored" / "arslan.db")) as copy:
+        assert copy.execute("SELECT user_message FROM router_decisions").fetchall() == [("hi",)]
     assert "router_decisions" not in _names(engine, "table")
