@@ -585,7 +585,7 @@
     "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
     "labelIsland": "Mostrar Arslan en el notch",
     "islandDesc": "Un pequeño Arslan en la parte superior de la pantalla muestra en qué está trabajando, cuándo te necesita y cuándo termina una tarea. Pasa el puntero por encima para ver más. Nunca aparece en capturas, grabaciones ni al compartir pantalla.",
-    "automationElsewhere": "Las tareas programadas, el uso de tokens y cada ejecución pasada están en Actividad.",
+    "automationElsewhere": "Las tareas programadas tienen su propia página; el uso de tokens y cada ejecución pasada están en Actividad.",
     "automationOpenActivity": "Abrir Actividad",
     "searchPlaceholder": "Buscar ajustes…",
     "searchNoHits": "Ninguna sección coincide",
@@ -715,7 +715,7 @@
     "grpWhatsNew": "Novedades de esta versión",
     "watchesInInbox": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la Bandeja.",
     "openInbox": "Abrir la Bandeja",
-    "openActivity": "Las tareas programadas, el uso y cada ejecución están en Actividad.",
+    "openActivity": "El uso y cada ejecución están en Actividad; las tareas programadas tienen su propia página.",
     "openActivityBtn": "Abrir Actividad",
     "whatsNewEmpty": "No hay notas para esta versión."
   },
@@ -1440,6 +1440,7 @@
     "watches": "Páginas y carpetas vigiladas",
     "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
     "attention": "Necesita tu atención",
-    "changed": "Ha cambiado"
+    "changed": "Ha cambiado",
+    "failing": "Falló o se pausó sola"
   }
 }

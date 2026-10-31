@@ -35,7 +35,9 @@ export default function ScheduledPage({ attention, onOpenConversation, onOpenMod
     onOpenConversation={() => item.conversation_id && onOpenConversation(item.conversation_id, false)} />;
   const needsLook = (task: ScheduledTaskDto) => {
     const a = attention.tasks[task.id];
-    return Boolean(a && (a.failing || a.problems.length > 0 || a.away > 0));
+    if (!a) return null;
+    if (a.failing) return "failing";                                   // red, as the board drew a task that paused itself
+    return a.problems.length > 0 || a.away > 0 ? "look" : null;
   };
 
   async function checkNow() {

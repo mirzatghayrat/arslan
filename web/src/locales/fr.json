@@ -585,7 +585,7 @@
     "desktopNotificationsDesc": "Fenêtre fermée ou en arrière-plan, macOS vous prévient quand une tâche se termine, qu’une action attend votre confirmation ou qu’une tâche planifiée échoue. Les notifications n’affichent jamais le texte des messages.",
     "labelIsland": "Afficher Arslan dans l’encoche",
     "islandDesc": "Un petit Arslan en haut de l’écran montre ce qu’il fait, quand il a besoin de vous et quand une tâche est terminée. Survolez-le pour en voir plus. Il n’apparaît jamais dans les captures, les enregistrements ni le partage d’écran.",
-    "automationElsewhere": "Les tâches planifiées, l'utilisation des tokens et chaque exécution passée sont dans Activité.",
+    "automationElsewhere": "Les tâches planifiées ont leur propre page ; l'utilisation des tokens et chaque exécution passée sont dans Activité.",
     "automationOpenActivity": "Ouvrir Activité",
     "searchPlaceholder": "Rechercher des paramètres…",
     "searchNoHits": "Aucune section ne correspond",
@@ -715,7 +715,7 @@
     "grpWhatsNew": "Nouveautés de cette version",
     "watchesInInbox": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la boîte de réception.",
     "openInbox": "Ouvrir la boîte de réception",
-    "openActivity": "Les tâches planifiées, l’usage et chaque exécution sont dans Activité.",
+    "openActivity": "L’usage et chaque exécution sont dans Activité ; les tâches planifiées ont leur propre page.",
     "openActivityBtn": "Ouvrir Activité",
     "whatsNewEmpty": "Pas de notes pour cette version."
   },
@@ -1440,6 +1440,7 @@
     "watches": "Pages et dossiers surveillés",
     "awayTitle": "Pas fait pendant votre absence (cette tâche uniquement)",
     "attention": "À regarder",
-    "changed": "Modifié"
+    "changed": "Modifié",
+    "failing": "Échouée ou mise en pause d'elle-même"
   }
 }

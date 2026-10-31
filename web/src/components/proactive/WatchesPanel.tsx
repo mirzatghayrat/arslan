@@ -5,6 +5,7 @@ import { proactiveApi, type ProactiveWatch } from '../../api/proactive';
 import { formatRelativeTime } from '../settings/relativeTime';
 import { proactiveErrorText } from '../../lib/proactive';
 import { confirmSheet } from '../kit';
+import { Escaped, isolate } from '../../lib/outsideText';
 
 /** Intervals a watch may use, in seconds. The backend bounds it to 30 min – 7 days; these are the ones offered. */
 export const WATCH_INTERVALS = [1800, 3600, 21600, 43200, 86400, 604800];
@@ -67,10 +68,10 @@ export default function WatchesPanel({ watchesOn = true, quiet = false, marked, 
             className="text-[11px] text-warning max-w-xl">{t('proactive.settings.watchesOff')}</p>}
           {watches.length === 0 && <p className="text-xs text-muted-foreground">{t('proactive.settings.noWatches')}</p>}
           <ul className="space-y-2">{watches.map((w) => <li key={w.id} data-testid={`proactive-watch-${w.id}`} className="rounded-xl border border-border bg-surface p-3 text-xs">
-            <p className="flex items-center gap-2 font-medium" title={w.label}><span className="truncate">{w.label}</span>
+            <p className="flex items-center gap-2 font-medium" title={isolate(w.label)}><span className="truncate"><Escaped text={w.label} /></span>
               {marked?.(w) && <span role="img" aria-label={t('scheduledPage.changed')} data-testid={`watch-attention-${w.id}`}
                 className="h-2 w-2 shrink-0 rounded-full bg-warning" />}</p>
-            <p className="truncate text-[11px] text-muted-foreground" title={w.target}>{w.target}</p>
+            <p className="truncate text-[11px] text-muted-foreground" title={isolate(w.target)}><Escaped text={w.target} /></p>
             <p className="mt-1 text-[11px] text-muted-foreground">
               {w.last_checked_at ? t('proactive.settings.lastChecked', { when: formatRelativeTime(w.last_checked_at, t) }) : t('proactive.settings.neverChecked')}
               {w.last_changed_at && <> · {t('proactive.settings.lastChange', { when: formatRelativeTime(w.last_changed_at, t) })}</>}
@@ -88,7 +89,7 @@ export default function WatchesPanel({ watchesOn = true, quiet = false, marked, 
               <button type="button" aria-label={t('proactive.settings.remove')} title={t('proactive.settings.remove')} className="rounded-lg bg-fill p-1.5 text-muted-foreground hover:text-danger-strong"
                 onClick={() => void (async () => {
                   // 0.1.55: removing a watch also drops its history; it asks first.
-                  if (await confirmSheet({ title: t('proactive.settings.removeTitle', { label: w.label }), body: t('proactive.settings.removeBody'),
+                  if (await confirmSheet({ title: t('proactive.settings.removeTitle', { label: isolate(w.label) }), body: t('proactive.settings.removeBody'),
                     action: t('proactive.settings.remove') })) await run(() => proactiveApi.deleteWatch(w.id));
                 })()}><Trash2 size={13} /></button>
             </div>

@@ -1,10 +1,11 @@
 /** INB3 (v0.1.64): the Scheduled page. Scheduled tasks and the watched pages and folders live in one place, out of Activity and the
  *  Inbox; a row is dotted when it needs a look, and a task's away entries are its own (the server keeps each conversation apart, #568). */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
+import { render, renderHook, screen, fireEvent, cleanup, waitFor, within, act } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en", resolvedLanguage: "en" } }),
+  useTranslation: () => ({ t: (key: string, params?: object) => (params ? `${key}:${JSON.stringify(params)}` : key),
+    i18n: { language: "en", resolvedLanguage: "en" } }),
 }));
 vi.mock("../api/client", () => {
   class ApiError extends Error { status = 500; }
@@ -30,7 +31,8 @@ import Sidebar from "../components/Sidebar";
 import InboxRefused from "../components/proactive/InboxRefused";
 import { useScheduledAttention } from "../hooks/useScheduledAttention";
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+const setVisibility = (value: "visible" | "hidden") => Object.defineProperty(document, "visibilityState", { value, configurable: true });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); setVisibility("visible"); });
 
 const task = (id: number, over: Record<string, unknown> = {}) => ({
   id, name: `task ${id}`, prompt: "p", spawn_id: null, spawn_name: null, conversation_id: null, schedule_kind: "interval",
@@ -41,10 +43,12 @@ const item = (id: number, kind: string, source_key: string, diagnosis: unknown =
   id, kind, title_key: `title.${kind}`, params: {}, evidence: [], goal: "g", priority: "normal", status: "new",
   diagnosis, conversation_id: null, job_id: null, created_at: "2026-10-31T08:00:00Z", snooze_until: null, source_key,
 });
-const away = (unattended: boolean) => ({
+const away = (unattended: boolean, conversation_id = "conv-chat") => ({
   id: unattended ? 11 : 12, created_at: "2026-10-31T08:00:00Z", first_at: "2026-10-30T08:00:00Z", count: 2,
-  conversation_id: "conv-chat", kind: "send", target: "mail:team", detail: "send mail", always_ok: false, always: [], unattended,
+  conversation_id, kind: "send", target: "mail:team", detail: "send mail", always_ok: false, always: [], unattended,
 });
+const watch = (id: number, label: string) => ({ id, kind: "web", target: `https://example.com/${id}`, label, enabled: true,
+  interval_s: 3600, notify: true, last_error: null, last_checked_at: null, last_changed_at: null });
 
 function seed() {
   vi.mocked(api.listScheduledTasks).mockResolvedValue([
@@ -53,22 +57,24 @@ function seed() {
     task(3, { conversation_id: "conv-chat" }),                     // could not do something while you were away
     task(4),                                                       // fine
     task(5, { enabled: false }),                                   // paused by hand: no dot
+    task(6, { last_outcome: "error" }),                            // its last run failed, not paused
+    task(7, { conversation_id: "conv-only-chat" }),                // its conversation has only a chat turn's entry
   ] as never);
   vi.mocked(proactiveApi.items).mockResolvedValue({ items: [
     item(21, "scheduled_problem", "sched:1"),
     item(22, "web_change", "watch:7", { cause: "a new team plan", next_step: "compare the two", model: "m", usd: 0 }),
     item(23, "job_followup", "job:9"),
   ] } as never);
-  vi.mocked(proactiveApi.watches).mockResolvedValue({ watches: [
-    { id: 7, kind: "web", target: "https://example.com/pricing", label: "pricing", enabled: true, interval_s: 3600, notify: true,
-      last_error: null, last_checked_at: null, last_changed_at: null },
-    { id: 8, kind: "folder", target: "~/Downloads", label: "downloads", enabled: true, interval_s: 3600, notify: true,
-      last_error: null, last_checked_at: null, last_changed_at: null },
-  ] } as never);
+  vi.mocked(proactiveApi.watches).mockResolvedValue({ watches: [watch(7, "pricing"), watch(8, "downloads")] } as never);
   vi.mocked(proactiveApi.mutes).mockResolvedValue({ mutes: ["watch:9"] } as never);
   vi.mocked(proactiveApi.scan).mockResolvedValue({ created: 0, rejected: {} } as never);
-  vi.mocked(request).mockImplementation((async (path: string) =>
-    (path.startsWith("/approvals/refused") && path.includes("conversation_id=conv-chat") ? [away(true), away(false)] : [])) as never);
+  // Only a week's window holds them: the page's own list must ask for the same 168 hours as the dot (#585 review, C2).
+  vi.mocked(request).mockImplementation((async (path: string) => {
+    if (!path.startsWith("/approvals/refused?hours=168")) return [];
+    if (path.includes("conversation_id=conv-chat")) return [away(true), away(false)];
+    if (path.includes("conversation_id=conv-only-chat")) return [away(false, "conv-only-chat")];
+    return [];
+  }) as never);
 }
 
 function Page() {
@@ -81,10 +87,9 @@ describe("the Scheduled page", () => {
     seed();
     render(<Page />);
     await screen.findByTestId("sched-attention-1");
-    expect(screen.getByTestId("sched-attention-2")).toBeInTheDocument();
-    expect(screen.getByTestId("sched-attention-3")).toBeInTheDocument();
-    expect(screen.queryByTestId("sched-attention-4")).toBeNull();
-    expect(screen.queryByTestId("sched-attention-5")).toBeNull();
+    const tone = (id: number) => screen.queryByTestId(`sched-attention-${id}`)?.getAttribute("data-tone") ?? null;
+    expect([tone(1), tone(2), tone(3), tone(6)]).toEqual(["look", "failing", "look", "failing"]);
+    expect([tone(4), tone(5), tone(7)]).toEqual([null, null, null]);   // fine; paused by hand; only a chat turn's entry
   });
 
   it("asks for each task's away entries in that task's conversation, over a week", async () => {
@@ -148,5 +153,66 @@ describe("InboxRefused for one conversation", () => {
     cleanup();
     render(<InboxRefused conversationId="scheduled-4" hours={168} unattended />);
     await waitFor(() => expect(request).toHaveBeenCalledWith("/approvals/refused?hours=168&conversation_id=scheduled-4"));
+  });
+});
+
+describe("the attention hook", () => {
+  it("lights the sidebar for a watch's change alone, but not for a removed watch's", async () => {
+    vi.mocked(api.listScheduledTasks).mockResolvedValue([task(4)] as never);
+    vi.mocked(request).mockResolvedValue([] as never);
+    vi.mocked(proactiveApi.watches).mockResolvedValue({ watches: [watch(7, "pricing")] } as never);
+    vi.mocked(proactiveApi.items).mockResolvedValue({ items: [item(22, "web_change", "watch:7")] } as never);
+    const first = renderHook(() => useScheduledAttention());
+    await waitFor(() => expect(first.result.current.any).toBe(true));
+    first.unmount();
+    vi.mocked(proactiveApi.items).mockResolvedValue({ items: [item(24, "web_change", "watch:99")] } as never);
+    const second = renderHook(() => useScheduledAttention());
+    await waitFor(() => expect(proactiveApi.items).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    expect(second.result.current.any).toBe(false);
+    expect(second.result.current.changes).toEqual({});
+  });
+
+  it("stops polling when it goes away, waits while the window is hidden, and loads when it shows again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    seed();
+    const hook = renderHook(() => useScheduledAttention());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const calls = () => vi.mocked(api.listScheduledTasks).mock.calls.length;
+    expect(calls()).toBe(1);
+    setVisibility("hidden");
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+    expect(calls()).toBe(1);                                                    // hidden: no poll
+    setVisibility("visible");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(0); });
+    expect(calls()).toBe(2);                                                    // shown again: at once
+    hook.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });
+    expect(calls()).toBe(2);                                                    // gone: no more polls
+  });
+});
+
+describe("outside text on the page", () => {
+  it("shows bidi controls in a task's name, a watch's label and target, a page's quote and the guess as markers, and isolates title params", async () => {
+    seed();
+    vi.mocked(api.listScheduledTasks).mockResolvedValue([task(1, { name: "pay\u202Eroll" })] as never);
+    vi.mocked(proactiveApi.watches).mockResolvedValue({ watches: [{ ...watch(7, "price\u202Elist"), target: "https://e.com/\u202Ex" }] } as never);
+    vi.mocked(proactiveApi.items).mockResolvedValue({ items: [{
+      ...item(22, "web_change", "watch:7", { cause: "cause\u202Ehere", next_step: "step\u202Etwo", model: "m", usd: 0 }),
+      params: { label: "x\u202Ey" }, evidence: [{ key: "web.changed", params: { n: 2 }, quote: "line\u202Eend" }],
+    }] } as never);
+    render(<Page />);
+    const row = await screen.findByTestId("sched-row");
+    expect(within(row).getAllByTestId("escaped-control")).toHaveLength(1);
+    const watchRow = await screen.findByTestId("proactive-watch-7");
+    await waitFor(() => expect(within(watchRow).getByTestId("proactive-diagnosis")).toBeInTheDocument());
+    const card = within(watchRow).getByTestId("proactive-item-22");
+    const title = within(card).getByRole("heading").textContent ?? "";
+    expect(title).toContain("\u2068xy\u2069");                             // isolated, the control dropped
+    expect(title).not.toContain("\u202E");
+    expect(within(card).getAllByTestId("escaped-control")).toHaveLength(2);    // the quote and the guess
+    expect(within(card).getByTestId("proactive-diagnosis").textContent).toContain("\u2068steptwo\u2069");
+    // label and target, beside the card's two
+    expect(within(watchRow).getAllByTestId("escaped-control")).toHaveLength(4);
   });
 });

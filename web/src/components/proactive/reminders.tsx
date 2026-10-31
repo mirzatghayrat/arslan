@@ -7,6 +7,7 @@ import { formatUiDateTime } from "../../lib/localeFormatting";
 import { evidenceLines, groupEvidence, proactiveErrorText, titleOf } from "../../lib/proactive";
 import { buttonClass, primaryClass } from "../companion/CompanionDialog";
 import { useDismissable } from "../../hooks/useDismissable";
+import { Escaped, isolate } from "../../lib/outsideText";
 
 // INB3: a reminder's card and what its buttons do, moved here from ProactiveInbox (the INB card: extract, then delete) so the
 // Scheduled page shows a task's problem and a watch's change the same way. The Inbox uses them too until INB5 removes it.
@@ -53,13 +54,13 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
     <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
       {groups.map((group, index) => <li key={`${group.key}-${index}`}>
         <span>{group.text}</span>
-        {group.quotes.map((quote, n) => <blockquote key={n} title={t("proactive.item.quoted")} className="mt-1 whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-xs italic">“{quote}”</blockquote>)}
+        {group.quotes.map((quote, n) => <blockquote key={n} title={t("proactive.item.quoted")} className="mt-1 whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-xs italic">“<Escaped text={quote} />”</blockquote>)}
       </li>)}
     </ul>
     {item.diagnosis && <div data-testid="proactive-diagnosis" className="mt-3 rounded-lg bg-background/60 p-3 text-xs">
       <p className="font-medium">{t("proactive.item.guess")}</p>
-      <p className="mt-1 break-words">{item.diagnosis.cause}</p>
-      {item.diagnosis.next_step && <p className="mt-1 break-words">{t("proactive.item.guessNext", { step: item.diagnosis.next_step })}</p>}
+      <p className="mt-1 break-words"><Escaped text={item.diagnosis.cause} /></p>
+      {item.diagnosis.next_step && <p className="mt-1 break-words">{t("proactive.item.guessNext", { step: isolate(item.diagnosis.next_step) })}</p>}
       <p className="mt-1 text-[11px] text-muted-foreground">{t("proactive.item.guessNote")}</p>
     </div>}
     {actionable ? <div className="mt-4 flex flex-wrap items-center gap-2">

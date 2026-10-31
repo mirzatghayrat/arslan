@@ -585,7 +585,7 @@
     "desktopNotificationsDesc": "When the window is closed or in the background, macOS notifies you when a task finishes, an action needs your confirmation, or a scheduled task fails. Notifications never show message text.",
     "labelIsland": "Show Arslan in the notch",
     "islandDesc": "A small Arslan at the top of the screen shows what it is working on, when something needs you, and when a task is done. Hover to see more. It never appears in screenshots, recordings or screen sharing.",
-    "automationElsewhere": "Scheduled tasks, token usage and every past run live in Activity.",
+    "automationElsewhere": "Scheduled tasks have their own page; token usage and every past run live in Activity.",
     "automationOpenActivity": "Open Activity",
     "searchPlaceholder": "Search settings…",
     "searchNoHits": "No section matches",
@@ -715,7 +715,7 @@
     "grpWhatsNew": "What's new",
     "watchesInInbox": "Watched pages and folders, and what you muted, are managed in the Inbox.",
     "openInbox": "Open the Inbox",
-    "openActivity": "Scheduled tasks, usage and every run are in Activity.",
+    "openActivity": "Usage and every run are in Activity; scheduled tasks have their own page.",
     "openActivityBtn": "Open Activity",
     "whatsNewEmpty": "No notes for this version."
   },
@@ -1440,6 +1440,7 @@
     "watches": "Watched pages and folders",
     "awayTitle": "Not done while you were away (this task only)",
     "attention": "Needs a look",
-    "changed": "Changed"
+    "changed": "Changed",
+    "failing": "Failed or paused itself"
   }
 }
