@@ -670,7 +670,10 @@ async def conversation_repo_changes(conversation_id: str, db: AsyncSession = Dep
     elif data["branch"] is None:
         pulls = {"signed_in": None, "prs": [], "github": slug}
     else:
-        pulls = {**await asyncio.to_thread(git_changes.prs, slug, data["branch"]), "github": slug}
+        found = await asyncio.to_thread(git_changes.prs, slug, data["branch"])
+        # gh's own error is `prs_error`, apart from `error` (git missing or refusing the repo).
+        pulls = {"signed_in": found["signed_in"], "prs": found["prs"], "github": slug,
+                 **({"prs_error": found["error"]} if "error" in found else {})}
     return {"repo": {**data, **pulls}}
 
 

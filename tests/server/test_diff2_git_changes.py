@@ -383,3 +383,15 @@ def test_macos_shim_without_the_command_line_tools_is_no_git(repo, tmp_path, mon
     with pytest.raises(git_changes.GitError, match="no git"):
         git_changes.summary(repo, repo)
     assert not marker.exists()
+
+
+async def test_gh_not_answering_is_not_the_repos_error(client, repo, monkeypatch):
+    from server.services import settings_service
+
+    async def workspace(_db):
+        return repo
+    monkeypatch.setattr(settings_service, "workspace_dir", workspace)
+    git(repo, "remote", "add", "origin", "https://github.com/someone/proj.git")
+    monkeypatch.setattr(git_changes, "prs", lambda *a: {"signed_in": True, "prs": [], "error": "unavailable"})
+    body = (await client.get("/api/v1/conversations/c1/repo-changes")).json()["repo"]
+    assert "error" not in body and body["prs_error"] == "unavailable" and body["branch"] == "feature"
