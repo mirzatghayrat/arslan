@@ -144,10 +144,18 @@ def _drop_cache(root: Path) -> None:
         shutil.rmtree(cache, ignore_errors=True)
 
 
+def _tmp(root: Path) -> str:
+    """#606 review F1: the steps' temporary folder, inside the install's own cache, so nothing they write goes to
+    the shared /tmp (Node keeps its compile cache under os.tmpdir() when TMPDIR is unset)."""
+    tmp = root / CACHE / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    return str(tmp)
+
+
 def _uv_env(root: Path) -> dict:
     rt = capability_runtime.root()
     return _base_env({"UV_CACHE_DIR": str(root / CACHE / "uv"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
-                      "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed"})
+                      "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed", "TMPDIR": _tmp(root)})
 
 
 def _npm_env(node: Path, root: Path) -> dict:
@@ -156,7 +164,10 @@ def _npm_env(node: Path, root: Path) -> dict:
     return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(root / CACHE / "npm"),
                       "npm_config_ignore_scripts": "true", "npm_config_audit": "false", "npm_config_fund": "false",
                       "npm_config_update_notifier": "false", "npm_config_git": "/usr/bin/false",
-                      "npm_config_registry": NPM_REGISTRY, "HOME": str(root)})
+                      "npm_config_registry": NPM_REGISTRY, "HOME": str(root), "TMPDIR": _tmp(root),
+                      # #606 review F1: npm turns on Node's compile cache, shared by every Node process of the user
+                      # under /tmp, which a sandboxed command can write; the lock step runs npm before the card.
+                      "NODE_DISABLE_COMPILE_CACHE": "1"})
 
 
 #: A locked requirement line: `name==version \` (uv pip compile --generate-hashes).
@@ -395,6 +406,27 @@ def _sweep_prepared() -> None:
                     shutil.rmtree(leftover, ignore_errors=True)
         except OSError:
             continue
+
+
+#: CAP5b (#606 review F5): the caches every one-click install shared before CAP5b, unused since. They go at boot
+#: (`sweep_leftover_caches`). DELETE-BY: v0.1.66, this cleanup with them, once every Mac that ran v0.1.64 has run it.
+_OLD_SHARED_CACHES = ("uv-cache", "npm-cache")
+
+
+def sweep_leftover_caches() -> None:
+    """At boot (#606 review F2, F5). No install runs yet, so an install folder's `.cache` is one that a stop, a crash
+    or an unexpected error left after the move (a finished install drops its own); and the old shared caches go. A
+    link goes itself, never what it points at."""
+    root = capabilities_root()
+    for folder in (root.iterdir() if root.is_dir() and not root.is_symlink() else ()):
+        if not folder.name.startswith(".") and folder.is_dir() and not folder.is_symlink():
+            _drop_cache(folder)
+    for name in _OLD_SHARED_CACHES:
+        old = capability_runtime.root() / name
+        if old.is_symlink():
+            old.unlink()
+        elif old.is_dir():
+            shutil.rmtree(old, ignore_errors=True)
 
 
 def discard(prepared: dict | None) -> None:

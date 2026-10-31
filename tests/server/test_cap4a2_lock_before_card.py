@@ -37,6 +37,7 @@ LOCK = ("notes-mcp==1.2.0 \\\n    --hash=sha256:" + "a" * 64 + "\nhttpx==0.27.0 
 class _Steps(list):
     envs: list
     cached: list
+    scanned: list
 
 
 @pytest.fixture(autouse=True)
@@ -88,9 +89,15 @@ def _world(execution_db, tmp_path, monkeypatch):
     async def tested(source_id):
         return {"ok": True, "tools": ["read_note"], "at": "now"}
     monkeypatch.setattr(capability_flow, "test_mcp", tested)
-    monkeypatch.setattr(capability_flow.capability_scan, "scan_install", lambda root: {"level": "clean", "findings": []})
+    scanned: list[bool] = []
+
+    def scan(root):
+        scanned.append((root / ".cache").exists())
+        return {"level": "clean", "findings": []}
+    monkeypatch.setattr(capability_flow.capability_scan, "scan_install", scan)
     steps.envs = envs                                                       # each step's argv and environment
     steps.cached = cached                                                   # what each step found in its cache
+    steps.scanned = scanned                                                 # whether the cache was there at the scan
     return steps
 
 
@@ -226,6 +233,10 @@ async def test_the_npm_lock_step_runs_no_scripts_and_no_git(monkeypatch, _world)
     assert "--package-lock-only" in argv and "--ignore-scripts" in argv
     assert env["npm_config_ignore_scripts"] == "true" and env["npm_config_git"] == "/usr/bin/false"
     assert env["npm_config_registry"] == "https://registry.npmjs.org/"
+    folder = Path(env["npm_config_cache"]).parent.parent                   # the staging folder
+    assert env["HOME"] == str(folder)                                       # #606 review F4: not the account's ~/.npmrc
+    assert env["NODE_DISABLE_COMPILE_CACHE"] == "1"                         # F1: no shared compile cache in /tmp
+    assert env["TMPDIR"] == str(folder / ".cache" / "tmp")
 
 
 @pytest.mark.parametrize("entry", [
@@ -315,10 +326,14 @@ async def test_each_install_downloads_into_its_own_folder_and_the_cache_goes(mon
         assert all(c == root / ".cache" / kind for c in installing)
         assert cached[0] == [] and all(lock_step in seen for seen in cached[1:])    # the staged cache moved in
         assert not (root / ".cache").exists()                                      # gone once the packages are in
+        assert all(env["TMPDIR"] in (str(staged.parent / "tmp"), str(root / ".cache" / "tmp")) for _, env in envs)
+        assert (root / ("requirements.lock" if kind == "uv" else "package-lock.json")).is_file()   # #606 review F3
+        assert (root / ("venv" if kind == "uv" else "node_modules")).is_dir()
         folders.append(root)
     assert folders[0] != folders[1] and set(folders) == set(await _installed_roots(data))   # never shared
     every = _caches(_world.envs)
     assert not any(c.is_relative_to(tmp_path / "rt") or c.is_relative_to(data / "runtimes") for c in every)
+    assert _world.scanned == [False, False]                    # #606 review F3 (O13): dropped before the scan reads it
 
 
 async def test_a_declined_card_takes_its_staged_cache_with_it(monkeypatch, _world, tmp_path):
@@ -336,3 +351,38 @@ def test_a_link_where_the_cache_was_goes_itself_not_what_it_points_at(tmp_path):
     (root / ".cache").symlink_to(keep, target_is_directory=True)
     capability_install._drop_cache(root)
     assert not os.path.lexists(root / ".cache") and (keep / "file").read_text() == "kept"
+
+
+def test_the_boot_sweep_drops_leftover_caches_and_the_old_shared_ones(tmp_path, monkeypatch):
+    """#606 review F2: a stop, a crash or an unexpected error after the move left an install's `.cache` for good;
+    F5: the caches every install shared before CAP5b stayed on disk. At boot no install runs, so both go."""
+    from server import config
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
+    caps, rt = tmp_path / "data" / "capabilities", tmp_path / "data" / "runtimes"
+    left = caps / "abc"
+    (left / ".cache" / "npm").mkdir(parents=True)
+    (left / ".cache" / "npm" / "entry").write_text("x")
+    (left / "package-lock.json").write_text("{}")
+    staged = caps / ".prepared" / "s1" / ".cache"                 # a card's staging folder: the prepare sweep's
+    staged.mkdir(parents=True)
+    keep = tmp_path / "elsewhere"
+    keep.mkdir()
+    (keep / "file").write_text("kept")
+    (caps / "def").mkdir()
+    (caps / "def" / ".cache").symlink_to(keep, target_is_directory=True)
+    for name in ("uv-cache", "npm-cache", "python"):
+        (rt / name).mkdir(parents=True)
+        (rt / name / "f").write_text("x")
+    capability_install.sweep_leftover_caches()
+    assert not (left / ".cache").exists() and (left / "package-lock.json").is_file()
+    assert staged.is_dir()
+    assert not os.path.lexists(caps / "def" / ".cache") and (keep / "file").read_text() == "kept"
+    assert not (rt / "uv-cache").exists() and not (rt / "npm-cache").exists() and (rt / "python" / "f").is_file()
+    capability_install.sweep_leftover_caches()                    # nothing left: a second boot changes nothing
+
+
+def test_the_boot_sweep_with_no_capabilities_folder_does_nothing(tmp_path, monkeypatch):
+    from server import config
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
+    capability_install.sweep_leftover_caches()
+
