@@ -331,8 +331,8 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                     "\nOutput:\n" + wrap_external(text[:100_000]), tools=None)
             except (BudgetExceeded, TaskError):
                 raise
-            except Exception:
-                continue  # Unavailable assessment is not a passing vote.
+            except Exception:  # noqa: BLE001 — an unavailable assessment is not a passing vote
+                continue
             if getattr(response, "tool_calls", None):
                 continue
             try:

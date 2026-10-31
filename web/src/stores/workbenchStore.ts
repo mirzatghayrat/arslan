@@ -3,8 +3,10 @@ import type { StoredArtifact } from "../api/client.types";
 
 /** WB1 (v0.1.64): a fixed row, Overview (WB1-2, the default), Working folder (id "files"), Progress and Browser. */
 export type WorkbenchTab = "overview" | "files" | "progress" | "browser";
-/** What the reader shows: a file Arslan delivered (its snapshot), or a file on disk by path. */
-export type ReaderSource = { kind: "artifact"; file: StoredArtifact } | { kind: "path"; path: string };
+/** What the reader shows: a file Arslan delivered (its snapshot), a file on disk by path, or (DIFF1) one path a
+ * turn changed, as a side-by-side line diff opened from Overview's Changes. */
+export type ReaderSource = { kind: "artifact"; file: StoredArtifact } | { kind: "path"; path: string }
+  | { kind: "diff"; conversationId: string; runId: number; folder: string; path: string };
 
 const WIDTH_KEY = "arslan.workbench.width.v1";
 export const MIN_WIDTH = 320;
