@@ -3,15 +3,21 @@ once a day per server, and on the first start after Arslan is updated).
 
 The card showed one Registry entry: a package at one version, or a remote server's URL. Before a later start, when a
 check is due, Arslan asks the Registry for that same version again:
-- **withdrawn** (marked deleted, or gone): the server is parked;
+- **withdrawn** (that entry marked deleted): the server is parked;
 - **changed** (that version now names another package, version or URL): parked;
-- **the same:** it starts. The next check is due in a day, or after the next update of Arslan.
+- **the same:** it starts. The next check is due in a day, or at the first start after Arslan is updated. A parked
+  server whose entry comes back the same starts again by itself: the code it runs never changed.
 
-**The Registry not answering is no answer:** a server that passed its last check starts, a parked one stays parked,
-and the next start asks again. **The user can keep a parked server** (`capability_dossier.accept_source`): that
-answer is remembered, so the same answer does not park it again; another answer does. A just-installed server
-counts as checked when it was installed. Hand-added servers have no Registry entry and are not checked; neither is
-a newer version (the dossier's update installs it beside the old one, from a card the user answered).
+**Only the entry asked for is an answer** (#604 review F1): a 200 whose body is that name at that version. A 404
+from anywhere (a moved route answers 404 too), an error, a body that is not JSON or not an object, or an entry for
+another name or version is no answer. **No answer decides nothing:** a server that passed its last check starts, a
+parked one stays parked, and the next start asks again, as installed npm and PyPI packages keep running while their
+registry is down. **The user can keep a parked server** (`capability_dossier.accept_source`): that answer is
+remembered for `KEEP_FOR`, so the same answer does not park it again; another answer does, and a clean answer ends
+the keep (F4). The install's own start records the check the card just made, with this Arslan version (F5). Hand-
+added servers have no Registry entry and are not checked. A newer version is not asked about here: the dossier's
+update (the user's click in Capabilities, with no card) installs it beside the old one, and its own starts are
+checked like any other.
 
 The state lives in the capability source's `test` JSON (`registry_check`), like CAP5a's tool pin.
 """
@@ -24,7 +30,6 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource
@@ -33,7 +38,11 @@ from server.mcp import discovery
 logger = logging.getLogger(__name__)
 
 RECHECK = timedelta(days=1)
+#: How long the user's keep of one answer holds (#604 review F4); then the same answer parks the server again.
+KEEP_FOR = timedelta(days=30)
 TIMEOUT_S = 10.0
+#: What `_ask` returns for anything that is not the entry asked for (#604 review F1).
+NO_ANSWER = object()
 WITHDRAWN, CHANGED = "withdrawn", "changed"
 LINES = {WITHDRAWN: "its Registry entry was withdrawn since it was installed — see Capabilities",
          CHANGED: "its Registry entry no longer names what was installed — see Capabilities"}
@@ -77,37 +86,51 @@ def _seen(problem: str | None, names: dict | None) -> str:
     return hashlib.sha256(json.dumps([problem, names], sort_keys=True).encode()).hexdigest()
 
 
-async def _ask(name: str, version: str) -> dict | None:
-    """The entry for that version, or None when the Registry has none. Anything else raises."""
+async def _ask(name: str, version: str):
+    """The Registry's entry for that name at that version, or NO_ANSWER for anything else (#604 review F1): a non-200
+    answer, a body that is not an object, a server that is another name or version, or packages or remotes that are
+    not lists of objects. A body that is not JSON raises ValueError, which the caller takes as no answer too."""
     from server.services import capability_search
     url = f"{capability_search.REGISTRY}/v0/servers/{quote(name, safe='')}/versions/{quote(version, safe='')}"
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
         r = await client.get(url)
-    if r.status_code == 404:
-        return None
-    r.raise_for_status()
-    return r.json()
+    if r.status_code != 200:
+        return NO_ANSWER
+    body = r.json()
+    srv = body.get("server", body) if isinstance(body, dict) else None
+    if not isinstance(srv, dict) or srv.get("name") != name or srv.get("version") != version:
+        return NO_ANSWER
+    for key in ("packages", "remotes"):
+        items = srv.get(key) or []
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+            return NO_ANSWER
+    return body
 
 
-def _due(check: dict, source: CapabilitySource, now: datetime, version: str) -> bool:
-    if not check:                                   # never checked: due a day after the install's own check
-        return source.checked_at is None or now - source.checked_at >= RECHECK
+def _when(value) -> datetime | None:
     try:
-        at = datetime.fromisoformat(str(check.get("at")).removesuffix("Z"))
+        return datetime.fromisoformat(str(value).removesuffix("Z"))
     except ValueError:
-        return True
-    return now - at >= RECHECK or check.get("arslan") != version
+        return None
 
 
-async def _source_for(db, server_id: int) -> CapabilitySource | None:
-    """The installed source of this server, which existed when the source was installed (#577 re-check G2: a
-    number can be reused by a server added by hand later, which has no Registry entry of its own)."""
-    from server.db.models import MCPServer
-    return (await db.execute(select(CapabilitySource).join(MCPServer, MCPServer.id == CapabilitySource.mcp_server_id)
-                             .where(CapabilitySource.mcp_server_id == server_id, CapabilitySource.kind == "mcp",
-                                    CapabilitySource.state == "installed",
-                                    MCPServer.created_at <= CapabilitySource.installed_at)
-                             .order_by(CapabilitySource.created_at.desc()))).scalars().first()
+def _due(check: dict, now: datetime, version: str) -> bool:
+    """A day after the last check, at the first start after an update, or when the last check is dated in the
+    future (a clock set back since: #604 review F5)."""
+    at = _when(check.get("at"))
+    return at is None or at > now or now - at >= RECHECK or check.get("arslan") != version
+
+
+def _just_installed(source: CapabilitySource, now: datetime) -> bool:
+    """The install's own start: the card read this entry within the day, and no check is recorded yet."""
+    return source.checked_at is not None and source.checked_at <= now and now - source.checked_at < RECHECK
+
+
+def _kept(check: dict, now: datetime) -> bool:
+    """The user kept this very answer (its digest), within `KEEP_FOR`."""
+    keep = check.get("accepted")
+    at = _when(keep.get("at")) if isinstance(keep, dict) else None
+    return (at is not None and keep.get("seen") == check.get("seen") and at <= now and now - at < KEEP_FOR)
 
 
 async def before_start(server_id: int) -> None:
@@ -115,29 +138,38 @@ async def before_start(server_id: int) -> None:
     it. Asks the Registry only when a check is due."""
     from server import config
     async with db_session.AsyncSessionLocal() as db:
-        source = await _source_for(db, server_id)
+        # #604 review F2: the same sources CAP5a pins (`discovery._source_of`): installed, or kept after a failed
+        # test (the user can switch one on), and never a server added by hand on a reused number.
+        source = await discovery._source_of(db, server_id)
         entry_ref = _entry_of(source.candidate or {}) if source is not None else None
         if entry_ref is None:
             return
         check = dict((source.test or {}).get("registry_check") or {})
         now, version = datetime.utcnow(), str(config._app_version())
-        if _due(check, source, now, version):
-            installed = _installed(source.candidate)
+        installed = _installed(source.candidate)
+        if not check and _just_installed(source, now):
+            check = {"at": source.checked_at.isoformat() + "Z", "arslan": version, "problem": None,
+                     "seen": _seen(None, installed), "names": installed, "accepted": None}
+            source.test = {**(source.test or {}), "registry_check": check}
+            await db.commit()
+        elif _due(check, now, version):
             try:
                 entry = await _ask(*entry_ref)
-            except (httpx.HTTPError, ValueError) as exc:
+                if entry is not NO_ANSWER:
+                    from server.services import capability_search
+                    if capability_search._deleted(entry):
+                        problem, names = WITHDRAWN, None
+                    else:
+                        names = _now_names(entry, installed)
+                        problem = None if names == installed else CHANGED
+            except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:
                 logger.info("mcp %s: the Registry did not answer the start check (%s)", server_id, type(exc).__name__)
-                entry = False
-            if entry is not False:
-                from server.services import capability_search
-                if entry is None or capability_search._deleted(entry):
-                    problem, names = WITHDRAWN, None
-                else:
-                    names = _now_names(entry, installed)
-                    problem = None if names == installed else CHANGED
-                check = {"at": now.isoformat() + "Z", "arslan": version, "problem": problem,
-                         "seen": _seen(problem, names), "names": names, "accepted": check.get("accepted")}
+                entry = NO_ANSWER
+            if entry is not NO_ANSWER:
+                seen = _seen(problem, names)
+                check = {"at": now.isoformat() + "Z", "arslan": version, "problem": problem, "seen": seen,
+                         "names": names, "accepted": check.get("accepted") if problem else None}    # F4
                 source.test = {**(source.test or {}), "registry_check": check}
                 await db.commit()
-    if check.get("problem") and check.get("seen") != check.get("accepted"):
+    if check.get("problem") and not _kept(check, now):
         raise SourceChanged(server_id, check["problem"])

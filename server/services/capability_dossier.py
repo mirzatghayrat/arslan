@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 
 import httpx
 from sqlalchemy import select
@@ -110,8 +111,8 @@ async def accept_tools(source_id: str, digest: str) -> dict:
 
 async def accept_source(source_id: str, seen: str) -> dict:
     """CAP4a-3d: the user read why this server's Registry entry parked it (withdrawn, or changed) and keeps it:
-    that answer (`seen`, its digest) is remembered, so the same answer does not park it again, and the server
-    starts again in the background. Another answer since, or none, is refused."""
+    that answer (`seen`, its digest) is remembered for `capability_recheck.KEEP_FOR`, so the same answer does not
+    park it again, and the server starts again in the background. Another answer since, or none, is refused."""
     from server.mcp import discovery
     from server.services import mcp_service
     row = await source(source_id)
@@ -125,7 +126,8 @@ async def accept_source(source_id: str, seen: str) -> dict:
                 raise DossierError("no_source_problem")
             if not isinstance(seen, str) or seen != check.get("seen"):
                 raise DossierError("source_answer_moved")
-            stored.test = {**(stored.test or {}), "registry_check": {**check, "accepted": seen}}
+            keep = {"seen": seen, "at": datetime.utcnow().isoformat() + "Z"}      # #604 review F4: for KEEP_FOR
+            stored.test = {**(stored.test or {}), "registry_check": {**check, "accepted": keep}}
             await db.commit()
     await mcp_service.restart_after_edit(row.mcp_server_id)
     return view(await source(source_id))

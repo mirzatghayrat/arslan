@@ -20,13 +20,20 @@ REMOTE = {**PKG, "id": "registry:com.example/notes-cloud@2.0.0", "runtime": "rem
           "remote": {"type": "streamable-http", "url": "https://mcp.example.com/notes"}}
 
 
-def _entry(packages=None, remotes=None, status=None, version="1.2.0"):
+def _entry(packages=None, remotes=None, status=None, version="1.2.0", name="com.example/notes"):
     meta = {"io.modelcontextprotocol.registry/official": {"status": status}} if status else {}
-    return {"server": {"name": "com.example/notes", "version": version, "packages": packages or [],
+    return {"server": {"name": name, "version": version, "packages": packages or [],
                        "remotes": remotes or []}, "_meta": meta}
 
 
 SAME = _entry(packages=[{"registryType": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}])
+WITHDRAWN = _entry(packages=SAME["server"]["packages"], status="deleted")
+URL = {"type": "streamable-http", "url": "https://mcp.example.com/notes"}
+ELSEWHERE = {"type": "streamable-http", "url": "https://elsewhere.example.net/notes"}
+
+
+def _cloud(*remotes):
+    return _entry(remotes=list(remotes), name="com.example/notes-cloud", version="2.0.0")
 
 
 @pytest.fixture
@@ -42,18 +49,20 @@ def world(execution_db, monkeypatch):
             raise answer
         if isinstance(answer, int):
             return httpx.Response(answer, json={})
+        if isinstance(answer, tuple):                           # (status, raw body)
+            return httpx.Response(answer[0], content=answer[1])
         return httpx.Response(200, json=answer)
     real = httpx.AsyncClient
     monkeypatch.setattr(rc.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
     return SimpleNamespace(maker=execution_db, answers=answers, calls=calls)
 
 
-async def _install(world, cand=PKG, *, days_ago=2, test=None):
+async def _install(world, cand=PKG, *, days_ago=2, test=None, state="installed"):
     async with world.maker() as s:
         s.add(MCPServer(id=1, label="notes", command="x", args=[], status="registered"))
         await s.flush()
         s.add(CapabilitySource(id="src1", kind="mcp", name="notes", candidate_id=cand.get("id", "c"),
-                               runtime=cand.get("runtime"), needs={}, grants={}, state="installed", mcp_server_id=1,
+                               runtime=cand.get("runtime"), needs={}, grants={}, state=state, mcp_server_id=1,
                                candidate=cand or None, test=test, installed_at=datetime.utcnow(),
                                checked_at=datetime.utcnow() - timedelta(days=days_ago), created_at=datetime.utcnow()))
         await s.commit()
@@ -75,10 +84,49 @@ async def test_the_same_entry_starts_and_is_not_asked_again_within_a_day(world):
     assert len(world.calls) == 1
 
 
-async def test_a_just_installed_server_counts_as_checked(world):
+async def _age(world, days=2, **check):
+    """The recorded check, made `days` ago (and changed by `check`)."""
+    async with world.maker() as s:
+        row = await s.get(CapabilitySource, "src1")
+        old = row.test["registry_check"]
+        when = (datetime.utcnow() - timedelta(days=days)).isoformat() + "Z"
+        row.test = {**row.test, "registry_check": {**old, "at": when, **check}}
+        await s.commit()
+
+
+async def test_the_installs_own_start_records_the_cards_check_and_an_update_asks(world, monkeypatch):
+    """#604 review F5: a server installed less than a day before an update was not asked at the first start after
+    it, since no Arslan version was recorded for it."""
     await _install(world, days_ago=0)
     await rc.before_start(1)
-    assert world.calls == []
+    check = await _check(world)
+    assert world.calls == [] and check["arslan"] == "0.1.64" and check["problem"] is None
+    monkeypatch.setattr(config, "_app_version", lambda: "0.1.65")
+    world.answers.append(SAME)
+    await rc.before_start(1)
+    assert len(world.calls) == 1 and (await _check(world))["arslan"] == "0.1.65"
+
+
+@pytest.mark.parametrize("where", ["the check", "the install"])
+async def test_a_check_dated_in_the_future_is_due(world, where):
+    """#604 review F5: a clock set back since made `now - at` negative, and nothing was asked again."""
+    future = datetime.utcnow() + timedelta(days=3)
+    if where == "the check":
+        await _install(world, test={"registry_check": {"at": future.isoformat() + "Z", "arslan": "0.1.64",
+                                                       "problem": None}})
+    else:
+        await _install(world, days_ago=-3)
+    world.answers.append(SAME)
+    await rc.before_start(1)
+    assert len(world.calls) == 1
+
+
+async def test_a_source_whose_test_failed_is_asked_too(world):
+    """#604 review F2: only `installed` sources were asked; one kept after a failed test can be switched on."""
+    await _install(world, state="failed")
+    world.answers.append(WITHDRAWN)
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
 
 
 async def test_an_update_of_arslan_makes_the_check_due_again(world, monkeypatch):
@@ -98,15 +146,17 @@ async def test_a_day_later_it_is_asked_again(world):
     assert len(world.calls) == 1
 
 
-@pytest.mark.parametrize("answer", [404, _entry(packages=SAME["server"]["packages"], status="deleted")],
-                         ids=["gone", "marked deleted"])
-async def test_a_withdrawn_entry_parks_it(world, answer):
+async def test_a_withdrawn_entry_parks_it_and_so_does_every_start_that_day(world):
+    """#604 review F7 (M23): the park holds on a start that asks nothing (the probe, Reconnect, a restart)."""
     await _install(world)
-    world.answers.append(answer)
+    world.answers.append(WITHDRAWN)
     with pytest.raises(rc.SourceChanged) as stopped:
         await rc.before_start(1)
     assert stopped.value.problem == rc.WITHDRAWN and stopped.value.line == rc.LINES[rc.WITHDRAWN]
     assert (await _check(world))["problem"] == rc.WITHDRAWN
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    assert len(world.calls) == 1
 
 
 @pytest.mark.parametrize("packages", [
@@ -124,20 +174,54 @@ async def test_a_changed_package_parks_it(world, packages):
 
 async def test_a_remote_whose_url_changed_is_parked_and_the_same_url_starts(world):
     await _install(world, REMOTE)
-    world.answers += [_entry(remotes=[{"type": "streamable-http", "url": "https://mcp.example.com/notes"}])]
+    world.answers += [_cloud(URL), _cloud(ELSEWHERE)]
     await rc.before_start(1)
-    async with world.maker() as s:
-        row = await s.get(CapabilitySource, "src1")
-        row.test = {}
-        row.checked_at = datetime.utcnow() - timedelta(days=2)
-        await s.commit()
-    world.answers.append(_entry(remotes=[{"type": "streamable-http", "url": "https://elsewhere.example.net/notes"}]))
+    await _age(world)
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
 
 
-@pytest.mark.parametrize("failure", [503, httpx.ConnectError("down")], ids=["5xx", "unreachable"])
+@pytest.mark.parametrize("first, second, parked", [(URL, ELSEWHERE, False), (ELSEWHERE, URL, True)])
+async def test_the_first_remote_is_the_one_compared(world, first, second, parked):
+    """#604 review F7 (M30): the search installs `remotes[0]`, so the check compares that one."""
+    await _install(world, REMOTE)
+    world.answers.append(_cloud(first, second))
+    if parked:
+        with pytest.raises(rc.SourceChanged):
+            await rc.before_start(1)
+    else:
+        await rc.before_start(1)
+
+
+@pytest.mark.parametrize("parked", [False, True])
+async def test_the_first_package_of_the_type_is_the_one_compared(world, parked):
+    """#604 review F7 (M31): the search installs the first runnable package, so the check compares that one."""
+    same, other = SAME["server"]["packages"][0], {"registryType": "pypi", "identifier": "notes-mcp-evil", "version": "1"}
+    await _install(world)
+    world.answers.append(_entry(packages=[other, same] if parked else [same, other]))
+    if parked:
+        with pytest.raises(rc.SourceChanged):
+            await rc.before_start(1)
+    else:
+        await rc.before_start(1)
+
+
+NOT_THE_ENTRY = {
+    "5xx": 503, "unreachable": httpx.ConnectError("down"), "a 404": 404, "a plain-text 404": (404, b"page not found"),
+    "an HTML page": (200, b"<html>portal</html>"), "a null body": None, "an empty object": {},
+    "an error object": {"error": "rate limited"}, "an empty server": {"server": {}}, "a list of servers": {"servers": []},
+    "another version": _entry(packages=SAME["server"]["packages"], version="9.9.9"),
+    "another name": _entry(packages=SAME["server"]["packages"], name="com.example/other"),
+    "a list": [], "a string": "x", "a number": 1, "a null server": {"server": None},
+    "a null package": {"server": {"name": "com.example/notes", "version": "1.2.0", "packages": [None]}},
+    "withdrawn, but another version": _entry(status="deleted", version="9.9.9"),
+}
+
+
+@pytest.mark.parametrize("failure", list(NOT_THE_ENTRY.values()), ids=list(NOT_THE_ENTRY))
 async def test_no_answer_starts_a_server_that_passed_and_asks_again_next_time(world, failure):
+    """#604 review F1 (and M26): only the entry asked for decides; anything else was recorded as withdrawn or
+    changed, so one change on the Registry's side parked every installed server."""
     await _install(world)
     world.answers += [failure, SAME]
     await rc.before_start(1)
@@ -146,18 +230,16 @@ async def test_no_answer_starts_a_server_that_passed_and_asks_again_next_time(wo
     assert len(world.calls) == 2 and (await _check(world))["problem"] is None
 
 
-async def test_no_answer_keeps_a_parked_server_parked(world):
+@pytest.mark.parametrize("failure", [404, httpx.ConnectError("down")], ids=["a 404", "unreachable"])
+async def test_no_answer_keeps_a_parked_server_parked(world, failure):
     await _install(world)
-    world.answers += [404, httpx.ConnectError("down")]
+    world.answers += [WITHDRAWN, failure]
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
-    async with world.maker() as s:                               # a day later, the Registry is down
-        row = await s.get(CapabilitySource, "src1")
-        check = row.test["registry_check"]
-        row.test = {"registry_check": {**check, "at": (datetime.utcnow() - timedelta(days=2)).isoformat() + "Z"}}
-        await s.commit()
+    await _age(world)                                            # a day later, the Registry does not answer
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
+    assert len(world.calls) == 2
 
 
 @pytest.mark.parametrize("cand", [{**PKG, "id": "github:acme/notes"}, None], ids=["not from the Registry", "no card"])
@@ -197,7 +279,8 @@ async def test_keeping_a_parked_server_remembers_that_answer_only(world, monkeyp
         restarted.append(server_id)
     monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
     await _install(world)
-    world.answers += [404, 404, _entry(packages=[{"registryType": "pypi", "identifier": "other", "version": "9"}])]
+    world.answers += [WITHDRAWN, WITHDRAWN, _entry(packages=[{"registryType": "pypi", "identifier": "other",
+                                                              "version": "9"}])]
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
     seen = (await _check(world))["seen"]
@@ -245,6 +328,50 @@ async def test_a_kept_change_does_not_cover_another_change(world, monkeypatch):
     assert again.value.problem == rc.CHANGED and (await _check(world))["names"]["identifier"] == "notes-mcp-evil"
 
 
+async def test_a_clean_answer_ends_a_keep_so_a_later_withdrawal_parks_again(world, monkeypatch):
+    """#604 review F4: the keep was carried forward on every answer, and "withdrawn" has one digest, so keeping one
+    withdrawal also kept every later one."""
+    from server.services import mcp_service
+
+    async def restart(server_id):
+        return None
+    monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
+    await _install(world)
+    world.answers += [WITHDRAWN, SAME, WITHDRAWN]
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    await capability_dossier.accept_source("src1", (await _check(world))["seen"])
+    await _age(world)
+    await rc.before_start(1)                                     # restored: clean, and the keep ends
+    assert (await _check(world))["accepted"] is None
+    await _age(world)
+    with pytest.raises(rc.SourceChanged):                        # withdrawn again: parked again
+        await rc.before_start(1)
+
+
+async def test_a_keep_expires(world, monkeypatch):
+    """#604 review F4: a keep holds for KEEP_FOR; then the same answer parks the server again."""
+    from server.services import mcp_service
+
+    async def restart(server_id):
+        return None
+    monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
+    await _install(world)
+    world.answers.append(WITHDRAWN)
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    await capability_dossier.accept_source("src1", (await _check(world))["seen"])
+    await rc.before_start(1)
+    check = await _check(world)
+    stale = (datetime.utcnow() - rc.KEEP_FOR - timedelta(minutes=1)).isoformat() + "Z"
+    async with world.maker() as s:
+        row = await s.get(CapabilitySource, "src1")
+        row.test = {**row.test, "registry_check": {**check, "accepted": {**check["accepted"], "at": stale}}}
+        await s.commit()
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+
+
 async def test_keeping_with_nothing_to_keep_is_refused(world):
     await _install(world)
     with pytest.raises(capability_dossier.DossierError) as none:
@@ -254,7 +381,7 @@ async def test_keeping_with_nothing_to_keep_is_refused(world):
 
 async def test_a_start_is_stopped_before_any_listing_and_parked_in_arslans_words(world, monkeypatch):
     await _install(world)
-    world.answers.append(404)
+    world.answers.append(WITHDRAWN)
     listed = []
 
     async def fake_list(server, cursor=None):
