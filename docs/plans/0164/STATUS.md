@@ -2,7 +2,7 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), night, after the user's bedtime batch.
+**Updated:** 2026-11-01 (UTC), early morning: the night's reviews are done; one merge list below.
 
 ## Merged for v0.1.64 (newest first)
 
@@ -148,16 +148,31 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge (in this order)
 
-The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is posted on its PR at that head.
+Every PR below is OK'd at the head shown, with the verdict posted on the PR. A PR stacked on another is retargeted to main by its lane once the one below it lands. A draft needs **Ready for review** clicked first, whenever the lane's own ready step was blocked.
 
-1. **#565** (app names shown cleaned everywhere) at `f43eb675`. It's an empty commit on the reviewed `10b9f472`, pushed with the user's OK so CI could run. CI 41221815387 passed all five jobs.
-2. **#569** (CAP4a-3b: the license is read at the version being installed) at `39662487`. The effort=max review's fixes are in, and ⓪Plan's re-check is OK. A remote MCP server now has no license gate (stated).
-3. **#590** (INB5a: the waiting-on-you count, migration 0084): re-OK'd at `71adc88c`. ②Main retargets it to main now that #589 is in; it needs a quick re-OK on the new head.
-4. **#597** (UNI1b follow-up: the 8-IVS budget, the emoji bases, the listing's scan): re-checked OK at `1ec0e90f`, already based on main. ⑤CAP marks it ready (it's still a draft).
+1. **#565** at `f43eb675`: app names are shown cleaned everywhere. CI green.
+2. **#569** at `39662487`: CAP4a-3b, the license read at the installed version.
+3. **#584** at `85086df6`: CAP4a-3c, allowlist D at card time. The effort=max re-check approves it.
+4. **#563** at `e4762e2b` (draft): the scan blocks "download and run". ④参谋 re-checked it as OK. One narrow part was stopped by a classifier: the 40-character window and the interpreter pattern. The choice is Codex Astra for that part (the paste is on ④参谋's list), or accept the gap.
+5. **#597** at `7406dba7`, then **#607** at `1e09b8f3`, then **#608** at `8cefe374`: UNI1b's follow-up, then the user's 3A (scan blocks only Tag/bidi; keyword rules read a copy with hidden characters stripped), then joiners and direction marks counted. All are re-checked OK; #608's parity sweep shows 0 differences.
+6. **#590** at `8c63fd8f`, then **#601** at `adb6c4fd` and **#602** at `012e9929`, then **#605** at `3d46e6c4`, then **#610** at `f1b49118`, **#611** at `57a400bb` and **#612** at `08f452c4`:
+   - #590: the waiting count;
+   - #601: an interrupted job reads unfinished;
+   - #602: the conversation pieces and the shared answer guard;
+   - #605: the Inbox removed;
+   - #610: Progress tiles;
+   - #611: held cards;
+   - #612: the Scheduled dots from the count.
+   All OK, the last three after #605.
+7. **#603** at `2e24003b`: L11-2, "make this a rule for this folder". Effort=max reviewed twice; ⓪Plan checked the hard-link fix.
+8. **#452** at `ac050bf6` (draft): STY. The bench gate passes: passes equal, correct +1, waiting −1, cost +12%. Click Ready, then Merge.
 
-**Pushes the user allowed (2026-11-01, about 17:45 UTC, relayed by ④参谋); ⑤CAP pushes them in its own session:**
-- **#584** (CAP4a-3c, allowlist D at card time): it would retarget to main and push `85086df6`, which holds the effort=max review's fixes. Then a re-check.
-- **#563** (CAP4a-3a).
+**Not ready yet:**
+- **#604** (CAP4a-3d): re-checked OK. It waits for two user decisions (below) and the web keep button.
+- **#606** (CAP5b): ⑤CAP is fixing F1 (npm's compile cache in /tmp) and F2–F5.
+- **The #584 follow-up PR** (the org-id pin plus the GitHub-down test): it opens after #584 merges.
+
+**For the user's Mac:** push Codex's SBX-3p branch `codex/sbx3p-commands-deny-tests` (3 commits). Then ⓪Plan opens the stacked ci.yml PR (364 → 420) and the effort=max plumbing review.
 
 **Under review or on hold (don't merge these):**
 
@@ -181,12 +196,14 @@ The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is 
 
 ## Waiting on the user
 
+- **#604, two questions (④参谋 asks).** (1) KEEP_FOR: a kept, still-withdrawn server parks again every 30 days. ⑤CAP added this beyond the 10-31 decisions. Keep it or drop it? (2) F3: should the start check also check the host a remote server actually connected to, given that the SDK follows cross-host redirects? Recommended: a stated limit, as mainstream clients do. The alternative is a same-host redirect policy.
+- **#563's narrow gap:** Astra for the classifier-stopped part, or accept it.
+
 - **SEC1 mock** (⑤CAP), sent as a private link.
 - **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
 - **(Done: the load flakes below are LOAD4, #551.)** Earlier note: `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
 - **SBX-2's any-declared network mode can't hold a port deny (explained; recorded on #507):** on macOS 26.6.2 the profile compiler drops a `localhost:<port>` deny for about 7.8% of ports when `*:*` is also allowed, and an IPv4-mapped connect passes it at every port. Proxy and port-22 modes hold. **Released v0.1.63 isn't affected:** no shipped profile denies a TCP port, and every path-based network deny was checked by bytecode diff and a runtime connect (#507, with file:line). SBX-2 isn't wired, so nobody is exposed. Codex's fail-closed fix is merged (#570, `dc926523`: any-declared refuses `denied_ports`), and its follow-up is #574 with #576. **Your call:** whether any-declared stays a mode at all, together with the listening decision. Also from it: Seatbelt's `localhost` matches the Mac's LAN IP.
 - **An SBX-2 deny that let a connection through once (③Hands, on macOS 26.6.2; since #570 the any-declared case is a build-time refusal, and the SBX-M loop measures the proxy and port-22 cases):** `test_sbx2_kernel.py::test_listener_refusal_and_arslan_port_exclusion[any-declared-default-deny]` connected to a denied port (errno 0) once in a 14-minute run, and passed 4 of 4 alone. It goes into SBX-M as a repeat loop (hundreds of runs, each errno recorded, and a check that the connecting process was the sandboxed one). What follows is your call once that's measured.
-- **SB1 raw material:** a read-only count of conversations by section. ⑥Helper's query was blocked, so the user runs it or allows it.
 - **Real-Mac checks:** Quick Chat end to end with build 30 (needs a 0.1.64 dev build and pairing); FS1 (#451); the Hands smoke for F5b-2 (#456).
 - **Release secrets into an Environment** (plan B for Codex), once the user has the originals of the updater's private key and the Apple certificate.
 
