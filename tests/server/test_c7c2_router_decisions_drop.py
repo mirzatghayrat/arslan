@@ -8,6 +8,7 @@ import sqlalchemy as sa
 
 from server.db.migrations import runner
 from server.db.migrations.versions import _0073_drop_router_decisions as m0073
+from server.db.models import Base
 
 
 def _with_table(engine):
@@ -46,3 +47,19 @@ def test_a_second_run_and_a_database_without_the_table_are_left_alone(tmp_path):
 
 def test_0073_is_in_the_boot_chain():
     assert ("0073", m0073.upgrade_sync) in runner.MIGRATIONS
+
+
+def test_an_install_that_already_ran_the_later_migrations_still_gets_0073(tmp_path, monkeypatch):
+    # 0073 merges after 0074 and later ones, so an upgraded install meets it below ids it has already recorded.
+    # The runner applies every id the ledger lacks, not only a tail, so the drop still runs there.
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'c.db'}")
+    Base.metadata.create_all(engine)
+    _with_table(engine)
+    monkeypatch.setattr(runner, "MIGRATIONS", [m for m in runner.MIGRATIONS if m[0] != "0073"])
+    with engine.begin() as conn:
+        runner.apply_pending(conn)
+    monkeypatch.undo()
+    assert "router_decisions" in _names(engine, "table")
+    with engine.begin() as conn:
+        assert runner.apply_pending(conn) == ["0073"]
+    assert "router_decisions" not in _names(engine, "table")
