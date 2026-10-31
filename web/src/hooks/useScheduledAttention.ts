@@ -73,7 +73,7 @@ export function useScheduledAttention(waitingTasks: number[] = []): ScheduledAtt
         return request<Refusal[]>(`/approvals/refused?${query}`).then((rows) => rows.filter((row) => row.unattended).length);
       }));
       if (mine !== latest.current) return;
-      // Every open one (the dots), and each kind's rows that are kept (Q7), once each: open ones first, then the newest.
+      // Every open one, and each kind's rows that are kept (Q7), once each: open ones first, then the newest.
       const now = Date.now();
       const byId = new Map<number, ProactiveItem>();
       for (const item of [...items, ...kinds.flatMap((kind) => kind.items)]) if (hasRow(item, now)) byId.set(item.id, item);
@@ -82,7 +82,9 @@ export function useScheduledAttention(waitingTasks: number[] = []): ScheduledAtt
       const watched = new Set(watches.map((watch) => watch.id));
       const ofWatches = (list: ProactiveItem[]) => Object.fromEntries(Object.entries(bySource(list, "watch:", ["web_change", "folder_change"]))
         .filter(([id]) => watched.has(Number(id))));
-      const changes = ofWatches(items.filter(isOpen));
+      // A watch's dot reads the same rows as its list: an open change past the newest hundred open reminders, which a busier kind
+      // can fill, keeps its dot (PR 615 review F3).
+      const changes = ofWatches(rows.filter(isOpen));
       const changeRows = ofWatches(rows);
       const byTask: Record<number, TaskAttention> = {};
       tasks.forEach((task, i) => {
