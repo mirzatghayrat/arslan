@@ -122,8 +122,8 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR below waits on its lane's push and a re-OK at the new head. Every verdict is posted on its PR with the sha.
 
 1. **#548** (TITLE1): ③Hands pushes it rebased on main, which now has #526, with `test_title1_model_title.py:85` updated. Then a re-OK.
-2. **#557** (EXC1b): ⑥Helper retargets it to main and pushes. Then a re-OK.
-3. **#559** (MEM1): ②Main retargets it to main and pushes; the replay over the merged batch is identical to the reviewed diff. ⓪Plan re-OKs. Then **#560** the same way.
+2. **#557** (EXC1b): already retargeted to main; ⑥Helper pushes it. Then a re-OK.
+3. **#559** (MEM1): already retargeted to main; ②Main pushes it; the replay over the merged batch is identical to the reviewed diff. ⓪Plan re-OKs. Then **#560** the same way.
 4. **#561** (CAP4a-2): ⑤CAP pushes it rebased on main, which now has #526. It conflicted with both in `capability_flow.py`. ⓪Plan re-OKs at effort=max. **#569** (CAP4a-3b, draft) comes after it.
 5. **#565** (app names everywhere) at `10b9f472`: OK, and ready for review. No CI has run on this head: close and reopen it, or OK ③Hands' empty commit. Merge once it's green.
 6. **#573** (the K10 + L11 card, docs): re-OK at `86b3c6c5`; it auto-merges.
@@ -141,7 +141,6 @@ The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR be
   - no global file;
   - a file's language defaults to the user's message.
 - SBX-M on your Mac: ③Hands is making it a single runbook.
-- #570's follow-up for Codex: the paste is comment 6542970496 on #570.
 - The decisions under "Waiting on the user" below.
 
 **Under review or on hold (don't merge these):**
@@ -161,7 +160,7 @@ The user merged #570, #526, #553, #567 and #555 at 11:51–11:59 UTC. Each PR be
 | ⑤CAP | #561's push, then #569; the next CAP card that needs no user decision |
 | ⑥Helper | #557's push; #573's card merged next; DIFF1/DIFF2 wait on the mock picks; STY waits on its bench |
 | ①iOS | Q1c done (build 30 on TestFlight). After #525 merges, it copies the 42-example `messages.json` again |
-| Codex (via ⑦Codex) | #570 merged; its follow-up paste is ready; SBX-3p waits on SBX-M |
+| Codex (via ⑦Codex) | #570 merged; its follow-up is with Codex (local branch `codex/sbx2-port-deny-followups`; the user pushes); SBX-3p waits on SBX-M |
 | ④参谋 | Merges docs, cards, tests, bench and deletion-only PRs in the #467 tier |
 | ⓪Plan | Re-OKs as heads move; this page |
 
