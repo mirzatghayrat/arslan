@@ -428,3 +428,35 @@ async def test_a_parked_server_has_no_process_and_nothing_but_the_accept_starts_
     async with db() as s:
         assert (await s.get(MCPServer, 1)).state == "ready"
     assert await _descriptions(db) == {"read": "changed"}
+
+
+@pytest.mark.parametrize("during_the_card", ["parked", "session replaced", "nothing"])
+async def test_a_yes_given_while_the_server_was_parked_sends_nothing(db, monkeypatch, during_the_card):
+    """#577 review F1: the card may be open while the server is parked or its session replaced; the call is
+    read again after the answer and sent only when the server is still ready on the same session."""
+    from server.mcp import executor
+    async with db() as s:
+        (await s.get(MCPServer, 1)).state = "ready"
+        await s.commit()
+    sent = []
+
+    async def call_tool(server, name, args):
+        sent.append(name)
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text="note")], isError=False)
+    monkeypatch.setattr(session.manager, "call_tool", call_tool)
+
+    async def approve(self, srv, args):                      # the user answers yes after this happened
+        if during_the_card == "parked":
+            async with db() as s:
+                (await s.get(MCPServer, 1)).state = "parked"
+                await s.commit()
+        if during_the_card != "nothing":
+            await session.manager.drop(1)                    # the generation moves with a drop
+        return None
+    monkeypatch.setattr(executor.MCPProxyExecutor, "_approve", approve)
+    out = await executor.MCPProxyExecutor(server_id=1, external_name="read").execute({})
+    if during_the_card == "nothing":
+        assert out["ok"] is True and sent == ["read"]
+    else:
+        expected = "parked" if during_the_card == "parked" else "starting"
+        assert (out["ok"], out["code"], out["state"], sent) == (False, "mcp_not_ready", expected, [])
