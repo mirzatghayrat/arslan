@@ -166,6 +166,7 @@ async def _mcp_rows() -> list[dict]:
     # the stored legacy status: "never connected" (registered) and an old error decide the row below;
     # `last_error` comes masked (final review I-2)
     for server in await mcp_service.list_servers(stored_status=True):
+        # UNI1: labels are cleaned when written (models.py), and migration 0082 cleaned those stored before.
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         # CAP3a-1: installed from a card (its capability source) or added by hand; its use is its tools'
         # calls (`mcp_<id>__…`, see capabilities()).
@@ -280,7 +281,7 @@ async def _skill_rows() -> list[dict]:
             SkillPack.status == "registered", SkillPack.body.is_not(None), func.trim(SkillPack.body) != "",
         ).order_by(SkillPack.key))).scalars().all()
     return [_row(f"skill:{p.key}", "off" if p.enabled is False else "on", switch="skill",
-                 name=p.name, detail=p.description[:160] if p.description else None,
+                 name=p.name or p.key, detail=p.description[:160] if p.description else None,   # clean: models.py, 0082
                  section="skills", origin=_skill_origin(p), source_id=p.source_id, removable=safe_skill_key(p.key))
             for p in packs]
 

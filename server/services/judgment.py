@@ -34,8 +34,13 @@ logger = logging.getLogger(__name__)
 # point a card waited on, tool.approval's shadow, was removed in v0.1.63 (C4, decision D8).
 AFTER_TURN_TIMEOUT_S = 15.0
 DAILY_TOKEN_CAP = 200_000          # ~$0.05/day at DeepSeek flash prices; above it, no judging
+#: MEM1's own share (②Main's review of #559, L1): up to 3 questions per new memory never starve the shared cap,
+#: the green check's job.accomplished included.
+MEMORY_SAME_DAILY_CAP = 50_000
 KEEP_DAYS = 90
 KEEP_ROWS = 20_000
+PRUNE_EVERY_S = 3600               # JUDGE1: pruned while the app runs too (at most this often), not only at boot
+_last_prune = {"at": time.monotonic()}
 MAX_FIELD_CHARS = 400
 
 _SYSTEM = (
@@ -53,6 +58,12 @@ class DecisionPoint:
     mode: str                        # off | shadow | active
     threshold: float = 0.9
     after_turn: bool = False         # runs after the answer (every point does since C4)
+    budget: str = "judgment"         # the usage-ledger scope its tokens count under, against daily_cap
+    daily_cap: int = DAILY_TOKEN_CAP
+    # JUDGE1 (②Main's review of #567, M1): the ledger keeps a digest of each field, not the field. For points whose
+    # state is memory text (a candidate lesson or an existing one): the ledger outlives the lesson's deletion, and
+    # its rows are not all keyed to that lesson. scripts/judgment_replay.py cannot replay these points.
+    redact: bool = False
 
 
 REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
@@ -60,14 +71,21 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
     DecisionPoint("memory.worth",
                   "Is this worth remembering for future conversations with this user (a stable preference, "
                   "a fix that will matter again, a quirk of this machine), rather than a one-off?",
-                  ("kind", "candidate", "evidence"), "active", 0.7, after_turn=True),
+                  ("kind", "candidate", "evidence"), "active", 0.7, after_turn=True, redact=True),
     DecisionPoint("memory.merge",
                   "Does the candidate say the same thing as the existing entry (a duplicate or a more precise "
                   "version of it)?",
-                  ("candidate", "existing"), "active", 0.8, after_turn=True),
+                  ("candidate", "existing"), "active", 0.8, after_turn=True, redact=True),
+    # MEM1 (v0.1.64): before Arslan stores a new memory entry (memory_merge). Narrower than memory.merge on purpose
+    # (②Main's review of #559, M1): a merge keeps the older words, so a candidate that adds anything is not the same.
+    DecisionPoint("memory.same",
+                  "Do the candidate and the existing entry say the same thing about the user, so that the candidate "
+                  "adds nothing the existing entry does not already say?",
+                  ("candidate", "existing"), "active", 0.8, after_turn=True,
+                  budget="judgment.memory_same", daily_cap=MEMORY_SAME_DAILY_CAP, redact=True),
     DecisionPoint("memory.conflict",
                   "Does the candidate advise the opposite of the existing entry for the same situation?",
-                  ("candidate", "existing"), "active", 0.8, after_turn=True),
+                  ("candidate", "existing"), "active", 0.8, after_turn=True, redact=True),
     DecisionPoint("memory.applied",
                   "Did the assistant act on this lesson in the steps shown?",
                   ("lesson", "steps"), "active", 0.7, after_turn=True),
@@ -143,29 +161,32 @@ async def _adapter():
     return slotted if slotted is not None else await build_adapter(role="router")
 
 
-async def _tokens_today(db) -> int:
+async def _tokens_today(db, budget: str = "judgment") -> int:
     from sqlalchemy import func, select
     from server.db.models import UsageLedger
     start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     total = await db.scalar(select(func.coalesce(func.sum(UsageLedger.tokens_total), 0)).where(
-        UsageLedger.scope == "judgment", UsageLedger.ts >= start))
+        UsageLedger.scope == budget, UsageLedger.ts >= start))
     return int(total or 0)
 
 
 async def judge(point_name: str, state: dict, *, ref: str | None = None,
                 conversation_id: str | None = None) -> Verdict | None:
-    """Ask, record, answer. None = no answer (off, cap, timeout, error): the caller falls back."""
+    """Ask, record, answer. None = no answer (off, cap, timeout, error): the caller falls back. A point marked
+    `redact` is recorded as digests of its fields (and `ref`), never the fields."""
     point = REGISTRY.get(point_name)
     if point is None or point.mode == "off":
         return None
     small = minimal_state(point, state)
-    digest = state_hash(point.name, small)
+    kept = {key: "sha256:" + hashlib.sha256(str(value).encode()).hexdigest()[:16]
+            for key, value in small.items()} if point.redact else small
+    digest = state_hash(point.name, kept)
     from server.db.models import Judgment
     verdict = probability = model = error = None
     started = time.monotonic()
     try:
         async with db_session.AsyncSessionLocal() as db:
-            capped = await _tokens_today(db) >= DAILY_TOKEN_CAP
+            capped = await _tokens_today(db, point.budget) >= point.daily_cap
         if capped:
             error = "daily_cap"
         else:
@@ -178,7 +199,7 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
             # A short structured judgment: thinking off where the endpoint allows it
             # (official DeepSeek), temperature 0, bounded output — as research review.
             with critique_request():
-                async with usage_ledger.scope("judgment", conversation_id):
+                async with usage_ledger.scope(point.budget, conversation_id):
                     response = await within(
                         adapter.chat(system=build_cached_system(_SYSTEM, ""), user=user),
                         timeout=AFTER_TURN_TIMEOUT_S)
@@ -194,7 +215,7 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
     latency = int((time.monotonic() - started) * 1000)
     try:
         async with db_session.AsyncSessionLocal() as db:
-            row = Judgment(point=point.name, mode=point.mode, state=small, state_hash=digest, verdict=verdict,
+            row = Judgment(point=point.name, mode=point.mode, state=kept, state_hash=digest, verdict=verdict,
                            probability=probability, latency_ms=latency, model=(str(model)[:80] if model else None),
                            error=error, ref=(ref or None) and str(ref)[:80], conversation_id=conversation_id)
             db.add(row)
@@ -203,6 +224,12 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
     except Exception as exc:  # noqa: BLE001
         logger.info("judgment not recorded: %s", type(exc).__name__)
         return None
+    if time.monotonic() - _last_prune["at"] >= PRUNE_EVERY_S:
+        _last_prune["at"] = time.monotonic()
+        try:
+            await prune()
+        except Exception as exc:  # noqa: BLE001 — a missed prune is retried within the hour; the answer stands
+            logger.info("judgments not pruned: %s", type(exc).__name__)
     if verdict is None or probability is None:
         return None
     return Verdict(verdict, probability, judgment_id)

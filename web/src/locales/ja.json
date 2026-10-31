@@ -957,7 +957,7 @@
       "orphaned": "孤立ファイル"
     },
     "import": {
-      "subtitle": "標準 SKILL.md をそのまま取り込み — ライセンス審査あり。",
+      "subtitle": "標準 SKILL.md を書かれたとおりに取り込み(隠し文字は除去) — ライセンス審査あり。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "サブパス(任意)",
       "scan": "スキャン",

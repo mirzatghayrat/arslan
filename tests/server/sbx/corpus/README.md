@@ -15,13 +15,21 @@ sbx_output="$(mktemp -d "${TMPDIR:-/tmp}/arslan-sbx-evidence.XXXXXX")"
   --junitxml="$sbx_output/results.xml" --sbx-artifacts="$sbx_output/profiles"
 ```
 
-The existing CI command (`pytest tests/ -m macos`) selects the same SBX-2 tests.
+The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
+the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The current set adds 293 cases: 71 assertion gates and
-222 measurement rows. Together with the existing 69, the job must expect 362.
-The separate CI change in PR #524 sets the expected count to 362, including
-the three localhost measurements.
+an availability skip. The `sbx_mac` corpus has 293 cases: 71 assertion gates and
+222 measurement rows. With two compile checks and the existing 69, the macOS job
+must expect 364. PR #524 set the count to 362; a separate Claude CI change must
+raise it to 364. The count-mirror guard fails until that companion change lands.
+
+The compile checks compare libsandbox bytecode with/without each deny over a
+fixed port list, including the original dropped ports and the proxy port itself.
+They exercise the exact proxy and port-22 allow pairs; removing either mode's
+port allow can lose denies. They do not apply a sandbox or replace runtime gates.
+Port-22 rejects an exclusion of port 22 before generating a profile, because its
+non-localhost `*:22` grant also covers mapped addresses that `localhost:22` misses.
 
 ## Reading results
 
@@ -80,8 +88,10 @@ or a historical profile.
 - Git, Python, node, Swift, brew, HTTPS/DNS, IPC, ptys, temp paths and two cache
   runs are represented. Remote fetches are small public fixtures, not model calls.
   Failed network/toolchain probes remain visible measurements, never skips.
-- Loopback gates use test-owned listeners, deny a supplied Arslan-port stand-in,
-  and reject IPv4/IPv6 wildcard and loopback binds plus implicit listens. Every
+- Loopback gates use test-owned listeners. Proxy and port-22 refuse a supplied
+  Arslan-port stand-in over IPv4 and IPv4-mapped IPv6; any-declared rejects the
+  requested port exclusion before generating a profile. All three cases still
+  reject IPv4/IPv6 wildcard and loopback binds plus implicit listens. Every
   candidate network mode denies binds/listens. The separate localhost dev-server
   measurement still binds, serves and fetches under each base; it records `ok`,
   `refused` (expected under the candidate), or `tool-failed`, without making

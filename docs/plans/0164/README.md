@@ -105,7 +105,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | C5a（过程文档移到存档分支、删隐私段落） | 应该 | 对用户没影响。 |
 | C5b 的同类清理 + `__version__` | 必须 | 用户 10-27 同意的删除期限。 |
 | C7c（专家表、旧专家转技能页、记忆 v1 旧表、`router_decisions`、专家 REST 接口） | 必须 | 一次迁移；代码里已写 `DELETE-BY: v0.1.64`。**Also (user, 2026-10-28):** decide in the same PR whether the 30 quarantined `scope_kind=expert` memory entries are deleted or moved, and say which in the PR. |
-| K6（文件工具补齐）、K10（读 AGENTS.md） | 应该 | K10 和 L11「文件夹规矩」一起做；AGENTS.md 是不是给分类器看，跟 #432 一起定。**L11 also gets (user, 2026-10-28, memory plan item 15):** output language follows where the output goes (chat: the language of the user's message; a file: that folder's rules; a message: the recipient), and after the user corrects the same thing twice, Arslan asks "make this a rule for this folder?". |
+| K6（文件工具补齐）、K10（读 AGENTS.md） | 应该 | K10 和 L11「文件夹规矩」一起做；AGENTS.md 是不是给分类器看，跟 #432 一起定。**L11 also gets (user, 2026-10-28, memory plan item 15):** output language follows where the output goes (chat: the language of the user's message; a file: that folder's rules; a message: the recipient), and after the user corrects the same thing twice, Arslan asks "make this a rule for this folder?". Card: [K10-L11-folder-rules.md](K10-L11-folder-rules.md) (⑥Helper). |
 | S4b、S5、S6，S4a 的两个跟进 | 看 #432 | 都建在权限模型上。#432 若选五档模式，S5 扩写。 |
 | #298b（SECURITY / ARCHITECTURE 按三层模型重写） | 必须 | 跟着安全模型的结果写。 |
 
@@ -183,7 +183,7 @@ Four code rules adapted from OpenCode's `AGENTS.md` are now `docs/sessions.md` �
 | Card | What | Lane | Tier | Notes |
 |---|---|---|---|---|
 | **DIFF1** | Line diffs in Overview's Changes. The user asked 「arslan 的 改动也像Claude的一样能看到 PR，code 改了第几行啥的？」. Clicking an "Edited" text file (code, Markdown, config, CSV) opens the reader with a line diff of removed and added lines, like Claude's changes view. Office files, images and PDFs keep just "Edited". The diff is S3's saved pre-change copy against the file now, so it exists only while the turn can still be undone (WB1-3's limit). It needs a read-only server endpoint per changed path (saved copy vs current, with a size cap and a text-only check) and a diff view in the reader. For a folder that is a git repo, see DIFF2 | ⑥Helper (②Main reviews the endpoint) | v0.1.64 if time allows, else v0.1.65 | After WB1-3, which provides the list of changed paths. Server plus web, so the user merges. |
-| **DIFF2** | Changes like Claude's, for a working folder that is a git repo (the user, 2026-10-30: 「我要做的跟Claude 一样的」). It shows the branch, a per-file line diff of the uncommitted changes (git's own diff), and that branch's PRs with their state, like Claude's Changes card. Read-only: no commit, push or merge from this view. PRs need the user's GitHub sign-in (gh or a connector); without one, the view shows only the branch and the diffs. Folders that aren't repos keep DIFF1 | ⑥Helper (②Main reviews) | v0.1.65 candidate (⓪Plan's call: larger, and it needs the GitHub sign-in path) | Security surface: the server runs git and gh in the user's folder with the user's GitHub credentials, so it gets an effort=max review and the user merges. git runs read-only commands only (status, diff, branch), with no hooks and no config from the repo executed (HR's e list). Text shown from the repo (branch and PR titles) is outside content. |
+| **DIFF2** | Changes like Claude's, for a working folder that is a git repo (the user, 2026-10-30: 「我要做的跟Claude 一样的」). It shows the branch, a per-file line diff of the uncommitted changes (git's own diff), and that branch's PRs with their state, like Claude's Changes card. Read-only: no commit, push or merge from this view. PRs need the user's GitHub sign-in (gh or a connector); without one, the view shows only the branch and the diffs. Folders that aren't repos keep DIFF1 | ⑥Helper (②Main reviews) | v0.1.65 candidate (⓪Plan's call: larger, and it needs the GitHub sign-in path) | Security surface: the server runs git and gh in the user's folder with the user's GitHub credentials, so it gets an effort=max review and the user merges. git runs read-only commands only (status, diff, branch), with no hooks and no config from the repo executed (HR's e list). Text shown from the repo (branch and PR titles) is outside content. Card: [DIFF2-git-changes.md](DIFF2-git-changes.md) (⑥Helper, 2026-10-31; the user's mock picks). |
 
 ### 3.11 Follow-ups found in review (2026-10-30)
 
@@ -307,8 +307,11 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0079 | SB1 | Pinning a conversation in the sidebar, a flag on `conversation_contexts`; lands after the pocket deletion and INB4 | ⓪Plan's card |
 | 0080 | CAP gh- follow-up | Marks the old Discover page's `gh-` skill rows as outside (no source → `authored-outside`, a card's → `imported`); drops nothing; listed after 0077 | ⑤CAP |
 | 0081 | SEC1 | One nullable encrypted column on `mcp_servers` (`secrets`) for the values behind `${NAME}` placeholders in a connection's address and arguments; drops nothing; no-op downgrade | ⑤CAP |
+| 0082 | UNI1a | Data only: names stored before UNI1 (a skill's name and description, an MCP server's label, a capability source's name) go through the name rule once. The rule is frozen in the migration; only rows that change are written (#526) | ⑤CAP |
+| 0083 | INB4 | The "seen" marks behind the sidebar's "done, not seen" dot (the INB card's read mark) | ②Main |
+| 0084 | INB5a | `scheduled_tasks.seen_at`: when you last opened a scheduled task. Its runs' "could not ask" entries newer than it wait on you (the INB card's count). The task's own column, so no conversation id can collide with it | #590 |
 
-The next free number is 0082. Ask ②Main before taking it.
+The next free number is 0085. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 

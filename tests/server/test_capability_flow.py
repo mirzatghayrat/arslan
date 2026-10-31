@@ -24,6 +24,11 @@ SKILL = {"id": "library:anthropics/skills:skills/csv/SKILL.md", "kind": "skill",
          "license": {"spdx": "MIT", "read_from": "skills/csv/LICENSE.txt", "verdict": "usable"}}
 
 
+@pytest.fixture(autouse=True)
+def _prepared_without_network(fake_capability_prepare):
+    """CAP4a-2: an MCP card is prepared first (license, runtime, lock); here without the network."""
+
+
 def shown(conversation_id, *cands):
     capability_search.remember(conversation_id, {"candidates": [copy.deepcopy(c) for c in cands]})
 
@@ -84,7 +89,7 @@ async def test_the_card_is_built_from_the_search_result_not_the_models_words(exe
     seen = []
     shown("c-card", CAND)
 
-    async def no_install(c, *, folders, keys):
+    async def no_install(c, *, folders, keys, prepared=None):
         return {"state": "failed", "stage": "install", "code": "x", "detail": ""}
     monkeypatch.setattr(capability_flow, "install_mcp", no_install)
     (tmp_path / "Downloads").mkdir()
@@ -127,7 +132,7 @@ async def test_outside_names_never_enter_the_sentence_arslan_tells_the_model(exe
     """③Hands' review of #449: the candidate's name (a registry entry, a repository, a SKILL.md), an MCP
     server's tool names and its start error are outside text. Each comes back in its own field — names cut to
     letters, digits and ``._/ -`` on one line, the error as data — and never inside the note or the error."""
-    async def install(c, *, folders, keys):
+    async def install(c, *, folders, keys, prepared=None):
         if ask == "failed":
             return {"state": "failed", "stage": "test", "source_id": "s1", "detail": HOSTILE}
         return {"state": "on", "source_id": "s1", "tools": [HOSTILE, "read_range"], "scan": {"level": "clean"}}
@@ -259,7 +264,7 @@ async def test_a_decline_installs_nothing(execution_db, monkeypatch):
 async def test_an_approved_install_that_tests_well_is_on_and_the_loop_refreshes(execution_db, monkeypatch):
     frames, calls = [], []
 
-    async def install(c, *, folders, keys):
+    async def install(c, *, folders, keys, prepared=None):
         calls.append((folders, keys))
         return {"state": "on", "source_id": "s1", "tools": ["read_range", "write_range"], "scan": {"level": "clean"}}
     monkeypatch.setattr(capability_flow, "install_mcp", install)
@@ -280,7 +285,7 @@ async def test_install_mcp_switches_on_only_after_scan_and_test(execution_db, mo
     from server.mcp.supervisor import StartResult, supervisor
     from server.services import capability_scan
 
-    async def fake_install(c, *, folders, keys):
+    async def fake_install(c, *, folders, keys, prepared=None):
         async with __import__("server.db.session", fromlist=["x"]).AsyncSessionLocal() as db:
             srv = MCPServer(label="x", transport="stdio", command="/bin/x", args=[], status="registered",
                             host_allowed=False)
@@ -366,7 +371,8 @@ async def test_a_skill_installs_at_its_commit_and_a_dangerous_one_is_never_writt
     def preparer(body):
         async def prepare_skill(ref, path):
             refs.append((ref, path))
-            return {"key": "csv-tidy", "info": {"key": "csv-tidy", "name": "csv-tidy", "description": "d", "body": body},
+            return {"key": "csv-tidy", "info": {"key": "csv-tidy", "name": "csv-tidy", "description": "d", "body": body,
+                             "frontmatter": "csv-tidy\nd"},
                     "full_name": "anthropics/skills", "commit": "abc123def456" + "0" * 28, "license": "MIT",
                     "license_source": "skills/csv/LICENSE.txt", "skill_md": body, "scripts": {}, "references": {},
                     "files": {"skills/csv/SKILL.md": "f" * 64}, "sizes": {}, "skipped": []}

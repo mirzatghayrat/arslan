@@ -162,5 +162,5 @@ async def _locale() -> str:
     from server.services import runtime_messages
     try:
         return await runtime_messages.selected_locale()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — an unreadable locale is the default, English
         return "en"

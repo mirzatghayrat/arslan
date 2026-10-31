@@ -123,7 +123,7 @@ class _Worker:
             self.task.cancel()
             try:
                 await self.task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 — the task cancelled just above; run() logged its failure
                 pass
         self.task, self.url = None, None
 

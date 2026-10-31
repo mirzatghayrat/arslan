@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileDown, RefreshCcw, Check, X, Shield, FileCode2 } from 'lucide-react';
 import { scanSkills, importSkill, type SkillScanResult } from '../api/discovery';
+import { Escaped } from '../lib/outsideText';
 
 /**
  * SkillImportPanel (P3) — faithful SKILL.md importer. Scan a repo for standard
@@ -109,7 +110,7 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
               className="bg-background border border-border/60 rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[11.5px] font-bold text-foreground">{s.name ?? s.path}</span>
+                  <span className="text-[11.5px] font-bold text-foreground"><Escaped text={s.name ?? s.path} /></span>
                   {typeof s.body_bytes === 'number' && (
                     <span className="text-[9px] font-mono text-subtle-foreground">{Math.round(s.body_bytes / 100) / 10}KB</span>
                   )}
@@ -120,7 +121,7 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
                   )}
                 </div>
                 {s.description && (
-                  <p className="text-[10.5px] text-subtle-foreground font-sans mt-0.5 line-clamp-1">{s.description}</p>
+                  <p className="text-[10.5px] text-subtle-foreground font-sans mt-0.5 line-clamp-1"><Escaped text={s.description} /></p>
                 )}
                 {(importErr[s.path] || (!s.importable && s.reason)) && (
                   <p className="text-[10px] text-danger font-sans mt-0.5">{importErr[s.path] || s.reason}</p>
