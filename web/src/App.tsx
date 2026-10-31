@@ -198,7 +198,7 @@ export default function App() {
 
   // The server's conversation list kept fresh: glyphs for each conversation, and conversations
   // started elsewhere (a task handed over from the iPhone) appear without a restart.
-  const conversationIndex = useConversationIndex();
+  const conversationIndex = useConversationIndex(8000, activeSection, activeThreadId);
   useEffect(() => {
     const rows = conversationIndex.rows;
     if (!rows.length) return;

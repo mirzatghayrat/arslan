@@ -790,7 +790,8 @@
       "done": "Done",
       "unfinished": "Not done",
       "failed": "Stopped with a problem",
-      "scheduled": "Scheduled"
+      "scheduled": "Scheduled",
+      "done_unseen": "Done, not seen yet"
     },
     "projects": "Projects",
     "allProjects": "All projects",

@@ -264,6 +264,8 @@ export const api = {
    *  truth for this; localStorage cannot be, because the packaged app gets a
    *  fresh origin (and so a fresh, empty store) on every launch. */
   listConversations: () => request<ServerConversation[]>("/conversations"),
+  /** INB4: the window shows this conversation; its newest message is seen. */
+  markConversationSeen: (id: string) => request<{ seen_message_id: number }>(`/conversations/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
   getBrainEntry: (kind: string, ref: string) =>
     request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),
