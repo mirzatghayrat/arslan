@@ -90,4 +90,50 @@ describe("marking seen", () => {
     await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(result.current.meta.c1.state).toBe("idle"));
   });
+
+  it("marks a conversation each time it opens, whatever it reads: a stopped job too (#590 review F1)", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([...rows, { conversation_id: "t2", kind: "task", state: "unfinished" },
+      { conversation_id: "c3", kind: "chat", state: "idle" }] as never);
+    const { result, rerender } = renderHook(({ open }) => useConversationIndex(60_000, "arslan", open), { initialProps: { open: "t2" as string | null } });
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledWith("t2"));
+    rerender({ open: "c3" });
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledWith("c3"));
+    rerender({ open: "t2" });                                                   // opened again: marked again
+    await waitFor(() => expect(vi.mocked(api.markConversationSeen).mock.calls.filter(([id]) => id === "t2")).toHaveLength(2));
+    expect(result.current.meta.t2.state).toBe("unfinished");                    // its own state stays; only done, not seen changes at once
+  });
+
+  it("leaves a conversation the server has not listed alone, and marks one with a live card once, not on every poll", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c4", kind: "chat", state: "waiting" }] as never);
+    const { rerender } = renderHook(({ open }) => useConversationIndex(30, "arslan", open), { initialProps: { open: "new-1" as string | null } });
+    await act(async () => { await new Promise((r) => setTimeout(r, 120)); });  // a few polls
+    expect(api.markConversationSeen).not.toHaveBeenCalled();                    // not listed yet: nothing to mark, so no 404
+    rerender({ open: "c4" });
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
+    expect(api.markConversationSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks again when a reply lands while it is open, and when the window shows again", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c5", kind: "chat", state: "idle" }] as never);
+    const { result } = renderHook(() => useConversationIndex(30, "arslan", "c5"));
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(1));
+    vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c5", kind: "chat", state: "done_unseen" }] as never);
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));   // the reply that landed is seen
+    vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c5", kind: "chat", state: "idle" }] as never);
+    await waitFor(() => expect(result.current.meta.c5.state).toBe("idle"));
+    setVisibility("hidden");
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    setVisibility("visible");
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(3));
+  });
+
+  it("marks it again after another section showed, since coming back opens it again", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([{ conversation_id: "c6", kind: "chat", state: "idle" }] as never);
+    const { rerender } = renderHook(({ section }) => useConversationIndex(60_000, section, "c6"), { initialProps: { section: "arslan" } });
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(1));
+    rerender({ section: "scheduled" });
+    rerender({ section: "arslan" });
+    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));
+  });
 });

@@ -31,14 +31,26 @@ export function useConversationIndex(intervalMs = 8000, section: string | null =
     document.addEventListener("visibilitychange", onVisible);
     return () => { cancelled = true; clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [intervalMs]);
-  // INB4: the conversation the window shows is seen: once its reply or its job is done and the window is visible, the server marks
-  // its newest message, and it reads idle (a chat) or done (a job) at once, without waiting for the next poll. A mark that failed
-  // is tried again after the next poll while the server still says done_unseen (#589 F3).
+  // INB4/INB5: the conversation the window shows is seen. The server marks its newest message each time it opens, whatever it
+  // reads (a stopped job or a failed turn stops waiting on you too, #590 review F1), when the window shows again, and when it starts
+  // reading "done, not seen" or "waiting" while open. A clean reply then reads idle (a chat) or done (a job) at once, without
+  // waiting for the next poll. Only conversations the server lists are marked (a new one has nothing to mark yet), a live card
+  // is marked once rather than on every poll, and a mark that failed is tried again after the next poll (#589 F3).
+  const known = openId !== null && openId in meta;
   const openState = openId ? meta[openId]?.state : undefined;
+  const marked = useRef<{ id: string; state: string | undefined } | null>(null);
   useEffect(() => {
-    if (!openId || openState !== "done_unseen" || !visible) return;
+    if (!openId || !visible) { marked.current = null; return; }
+    if (!known) return;
+    const prior = marked.current;
+    if (prior?.id === openId && (prior.state === openState || !ATTENTION.has(openState ?? ""))) return;
+    marked.current = { id: openId, state: openState };
     api.markConversationSeen(openId).then(() => setMeta((all) => all[openId]?.state !== "done_unseen" ? all
-      : { ...all, [openId]: { ...all[openId], state: all[openId].kind === "task" ? "done" : "idle" } }), () => { /* the next poll shows it again */ });
-  }, [openId, openState, visible, polls]);
+      : { ...all, [openId]: { ...all[openId], state: all[openId].kind === "task" ? "done" : "idle" } }),
+    () => { marked.current = null; /* tried again after the next poll */ });
+  }, [openId, known, openState, visible, polls]);
   return { rows, meta };
 }
+
+/** States that ask for a fresh mark while the conversation stays open. */
+const ATTENTION = new Set(["done_unseen", "waiting"]);
