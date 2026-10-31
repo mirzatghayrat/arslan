@@ -35,8 +35,11 @@ TEST_TIMEOUT_S = 90
 
 
 def installable(c: dict) -> str | None:
-    """Why this candidate cannot be offered for install, or None."""
-    if c.get("license", {}).get("verdict") != "usable":
+    """Why this candidate cannot be offered for install, or None. An MCP server's license is decided by the read at
+    the version being installed (`capability_install.prepare`, before the card; #569 review F1, ⓪Plan's call under
+    the user's no-over-defence rule): the search's verdict is GitHub's detection at the repository's HEAD, so for
+    MCP it is a hint, never a refusal. A skill keeps it, and its own license is read at the pinned commit too."""
+    if c.get("kind") != "mcp" and c.get("license", {}).get("verdict") != "usable":
         return "license_not_usable"
     if c.get("not_here"):
         return c["not_here"]

@@ -512,7 +512,8 @@ class FindCapabilityExecutor:
         capability_search.remember(ctx.conversation_id if ctx else None, result)
         out = capability_search.for_model(result)
         return {"ok": True, "external": True, **out,
-                "note": "Candidates only; nothing is installed. Prefer license_verdict 'usable' and not_here null. "
+                "note": "Candidates only; nothing is installed. Prefer not_here null; a skill needs license_verdict "
+                        "'usable', and an MCP server's license is read at its version when proposed. "
                         "Never install by other means (no pip/npm/git clone in the terminal for this)."}
 
 

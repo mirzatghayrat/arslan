@@ -356,6 +356,31 @@ async def test_an_odd_version_is_never_a_ref(monkeypatch):
     assert all(not a.startswith(("1.2.0", "v1.2.0")) for a in asked)
 
 
+async def test_every_name_is_tried_at_the_tag_before_any_at_head(monkeypatch):
+    """#569 review F5 (M7): a release whose license file has another name than HEAD's is judged at the release."""
+    _github_raw(monkeypatch, {"v1.2.0/COPYING": GPL, "HEAD/LICENSE": MIT})
+    assert await ci.source_license("acme/notes", "1.2.0") == (None, "COPYING@v1.2.0")
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+async def test_only_a_404_moves_on_and_any_other_answer_refuses(monkeypatch, status):
+    """#569 review F3a: a rate limit or an outage at the tag never falls through to HEAD's license."""
+    import httpx
+    asked = []
+
+    def handler(request):
+        ref_and_name = request.url.path.split("/", 3)[3]
+        asked.append(ref_and_name)
+        if ref_and_name.startswith("HEAD/"):
+            return httpx.Response(200, text=MIT)
+        return httpx.Response(status)
+    real = httpx.AsyncClient
+    monkeypatch.setattr(ci.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    with pytest.raises(ci.InstallFailure) as refused:
+        await ci.source_license("acme/notes", "1.2.0")
+    assert refused.value.code == "license_unreadable" and asked == ["v1.2.0/LICENSE"]
+
+
 async def test_the_card_and_the_dossier_ask_for_the_license_at_the_package_version(execution_db, data, monkeypatch):
     from server.services import capability_dossier
     asked = []
@@ -365,7 +390,8 @@ async def test_the_card_and_the_dossier_ask_for_the_license_at_the_package_versi
         return "MIT", f"LICENSE@v{version}"
     monkeypatch.setattr(ci, "source_license", license_at)
     monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
-    prepared = await ci.prepare(CAND)
+    cand = {**CAND, "version": "9.9.9"}       # #569 review F5 (M2, M3): the entry's version is not the package's
+    prepared = await ci.prepare(cand)
     assert prepared["license"] == ("MIT", "LICENSE@v1.1.2")
-    await capability_dossier.check_candidate_license(CAND)
+    await capability_dossier.check_candidate_license(cand)
     assert asked == [("haris-musa/excel-mcp-server", "1.1.2")] * 2
