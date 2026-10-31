@@ -36,11 +36,13 @@ async def test_each_conversation_sees_its_own_refusal_of_the_same_thing(client):
 
 async def test_the_list_takes_a_conversation(client):
     await _seed(client, [_row("scheduled-1", 30), _row("scheduled-2", 10),
-                         _row("c-chat", 5, decided_by="away", decision="expired")])
+                         _row("c-chat", 5, decided_by="away", decision="expired"),
+                         _row("c-chat", 4, decided_by="user", decision="allow"),          # asked: not listed
+                         _row("c-chat", 60 * 25, decided_by="away", decision="expired")])   # outside the 24 h
     mine = (await client.get("/api/v1/approvals/refused", params={"conversation_id": "scheduled-1"})).json()
     assert [(e["conversation_id"], e["count"], e["unattended"]) for e in mine] == [("scheduled-1", 1, True)]
     chat = (await client.get("/api/v1/approvals/refused", params={"conversation_id": "c-chat"})).json()
-    assert [(e["conversation_id"], e["unattended"]) for e in chat] == [("c-chat", False)]
+    assert [(e["conversation_id"], e["count"], e["unattended"]) for e in chat] == [("c-chat", 1, False)]
     everything = (await client.get("/api/v1/approvals/refused")).json()
     assert sorted(e["conversation_id"] for e in everything) == ["c-chat", "scheduled-2"]      # grouped as today
 
@@ -49,3 +51,10 @@ async def test_the_list_takes_a_conversation(client):
 async def test_a_conversation_id_that_names_none_is_refused(client, bad):
     got = await client.get("/api/v1/approvals/refused", params={"conversation_id": bad})
     assert got.status_code == 422
+
+
+async def test_an_id_of_a_hundred_characters_is_taken(client):
+    longest = "c" * 100                                    # the column's width (approval_events.conversation_id)
+    await _seed(client, [_row(longest, 5)])
+    got = await client.get("/api/v1/approvals/refused", params={"conversation_id": longest})
+    assert got.status_code == 200 and [e["conversation_id"] for e in got.json()] == [longest]
