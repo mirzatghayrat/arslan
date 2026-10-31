@@ -662,10 +662,15 @@ async def conversation_repo_changes(conversation_id: str, db: AsyncSession = Dep
         return {"repo": None}
     try:
         data = await asyncio.to_thread(git_changes.summary, root, folder)
-    except git_changes.GitError:
-        return {"repo": {"error": "unreadable"}}
-    pulls = await asyncio.to_thread(git_changes.prs, root, data["branch"]) if data["branch"] \
-        else {"signed_in": False, "prs": []}
+        slug = await asyncio.to_thread(git_changes.github_repo, root)
+    except git_changes.GitError as exc:   # no git (or macOS's shim), or a repo git refuses (safe.directory)
+        return {"repo": {"error": "no_git" if str(exc) == "no git" else "unreadable"}}
+    if slug is None:
+        pulls = {"signed_in": None, "prs": [], "github": None}
+    elif data["branch"] is None:
+        pulls = {"signed_in": None, "prs": [], "github": slug}
+    else:
+        pulls = {**await asyncio.to_thread(git_changes.prs, slug, data["branch"]), "github": slug}
     return {"repo": {**data, **pulls}}
 
 

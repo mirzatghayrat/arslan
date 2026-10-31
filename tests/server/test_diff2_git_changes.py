@@ -221,7 +221,7 @@ def fake_gh(tmp_path, monkeypatch, *, auth_ok=True, prs="[]", sleep=0.0) -> Path
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / "gh.log"
     (bin_dir / "gh").write_text(f"""#!/bin/sh
-echo "$@" >> {log}
+echo "$(pwd) :: $@" >> {log}
 if [ "$1" = auth ]; then {'exit 0' if auth_ok else 'echo "not logged in" >&2; exit 1'}; fi
 sleep {sleep}
 cat <<'JSON'
@@ -246,38 +246,42 @@ ROLLUP = """[
 
 def test_prs_with_their_state_and_checks(repo, tmp_path, monkeypatch):
     log = fake_gh(tmp_path, monkeypatch, prs=ROLLUP)
-    out = git_changes.prs(repo, "feature")
+    monkeypatch.chdir(repo)                                   # even called from inside the repo, gh runs elsewhere
+    out = git_changes.prs("o/r", "feature")
     assert out["signed_in"] is True
     assert [(p["number"], p["state"], p["draft"], p["checks"]) for p in out["prs"]] == [
         (42, "open", False, "passed"), (41, "open", True, "failing"), (40, "merged", False, "running"),
         (39, "closed", False, None)]
     assert out["prs"][3]["url"] is None                                         # only an https link is kept
-    assert "--head feature" in log.read_text()
+    calls = [line for line in log.read_text().splitlines() if "pr list" in line]
+    assert len(calls) == 1 and "--repo o/r --head feature" in calls[0]
+    cwd = Path(calls[0].split(" :: ")[0]).resolve()
+    assert repo.resolve() != cwd and repo.resolve() not in cwd.parents                # gh runs no git in the repo
 
 
 def test_gh_signed_out_or_missing_is_not_signed_in(repo, tmp_path, monkeypatch):
     fake_gh(tmp_path, monkeypatch, auth_ok=False)
-    assert git_changes.prs(repo, "feature") == {"signed_in": False, "prs": []}
+    assert git_changes.prs("o/r", "feature") == {"signed_in": False, "prs": []}
     git_changes._pr_cache.clear()
     monkeypatch.setenv("PATH", str(tmp_path / "nothing"))
     monkeypatch.setattr(git_changes, "merged_path", lambda: str(tmp_path / "nothing"))
-    assert git_changes.prs(repo, "feature") == {"signed_in": False, "prs": []}
+    assert git_changes.prs("o/r", "feature") == {"signed_in": False, "prs": []}
 
 
 def test_a_slow_gh_is_unavailable_not_a_hang(repo, tmp_path, monkeypatch):
     fake_gh(tmp_path, monkeypatch, sleep=5)
     monkeypatch.setattr(git_changes, "GH_TIMEOUT_S", 0.5)
-    assert git_changes.prs(repo, "feature") == {"signed_in": True, "prs": [], "error": "unavailable"}
+    assert git_changes.prs("o/r", "feature") == {"signed_in": True, "prs": [], "error": "unavailable"}
 
 
 def test_prs_are_cached_for_a_minute(repo, tmp_path, monkeypatch):
     log = fake_gh(tmp_path, monkeypatch, prs=ROLLUP)
-    git_changes.prs(repo, "feature")
-    git_changes.prs(repo, "feature")
+    git_changes.prs("o/r", "feature")
+    git_changes.prs("o/r", "feature")
     assert log.read_text().count("pr list") == 1
     real = time.monotonic
     monkeypatch.setattr(git_changes.time, "monotonic", lambda: real() + git_changes.PR_CACHE_S + 1)
-    git_changes.prs(repo, "feature")
+    git_changes.prs("o/r", "feature")
     assert log.read_text().count("pr list") == 2
 
 
@@ -289,12 +293,14 @@ async def test_the_routes_answer_for_the_conversations_folder(client, repo, monk
     async def workspace(_db):
         return repo
     monkeypatch.setattr(settings_service, "workspace_dir", workspace)
-    monkeypatch.setattr(git_changes, "prs", lambda root, branch: {"signed_in": False, "prs": []})
+    git(repo, "remote", "add", "origin", "git@github.com:someone/proj.git")
+    asked = []
+    monkeypatch.setattr(git_changes, "prs", lambda slug, branch: asked.append((slug, branch)) or {"signed_in": False, "prs": []})
     r = await client.get("/api/v1/conversations/c1/repo-changes")
     assert r.status_code == 200
     body = r.json()["repo"]
     assert body["branch"] == "feature" and {f["path"] for f in body["files"]} == {"a.md", "gone.md"}
-    assert body["signed_in"] is False
+    assert (body["signed_in"], body["github"], asked) == (False, "someone/proj", [("someone/proj", "feature")])
     d = await client.get("/api/v1/conversations/c1/repo-changes/diff", params={"path": "a.md"})
     assert d.status_code == 200 and d.json()["added"] == 1
     assert (await client.get("/api/v1/conversations/c1/repo-changes/diff", params={"path": "b.md"})).status_code == 404
@@ -308,3 +314,72 @@ async def test_a_folder_that_is_not_a_repo_answers_none(client, tmp_path, monkey
     monkeypatch.setattr(settings_service, "workspace_dir", workspace)
     r = await client.get("/api/v1/conversations/c1/repo-changes")
     assert r.json() == {"repo": None}
+
+
+async def test_a_repo_not_on_github_asks_gh_nothing(client, repo, monkeypatch):
+    from server.services import settings_service
+
+    async def workspace(_db):
+        return repo
+    monkeypatch.setattr(settings_service, "workspace_dir", workspace)
+    git(repo, "remote", "add", "origin", "https://gitlab.com/someone/proj.git")
+    monkeypatch.setattr(git_changes, "prs", lambda *a: pytest.fail("gh asked about a repo not on github.com"))
+    body = (await client.get("/api/v1/conversations/c1/repo-changes")).json()["repo"]
+    assert (body["github"], body["signed_in"], body["prs"]) == (None, None, [])
+
+
+@pytest.mark.parametrize("url,slug", [
+    ("https://github.com/o/r.git", "o/r"), ("https://github.com/o/r", "o/r"), ("git@github.com:o/r.git", "o/r"),
+    ("ssh://git@github.com/o/r.git", "o/r"), ("https://github.com.evil.com/o/r", None), ("https://github.com/o", None),
+    ("https://gitlab.com/o/r", None), ("https://github.com/o/r/../x", None)])
+def test_only_a_github_com_remote_names_a_repo(repo, url, slug):
+    git(repo, "remote", "add", "origin", url)
+    assert git_changes.github_repo(repo) == slug
+
+
+def test_core_worktree_in_the_repos_config_cannot_move_the_work_tree(repo, tmp_path):
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    (sibling / "elsewhere.md").write_text("outside\n")
+    git(repo, "config", "core.worktree", str(sibling))
+    untracked = git_changes._git(repo, "ls-files", "--others", "--exclude-standard", "-z")
+    assert b"elsewhere" not in untracked                                     # git itself looked at the repo
+    assert set(by_path(git_changes.summary(repo, repo))) == {"a.md", "gone.md"}
+
+
+def test_the_environment_cannot_point_git_elsewhere(repo, tmp_path, monkeypatch):
+    other = tmp_path / "other"
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))
+    assert git_changes.summary(repo, repo)["branch"] == "feature"
+    # With the other repo's (empty) index, every tracked file of this one would be "untracked".
+    assert git_changes._git(repo, "ls-files", "--others", "--exclude-standard", "-z") == b""
+
+
+def test_a_dot_git_file_points_at_the_git_folder(repo, tmp_path):
+    linked = tmp_path / "linked"
+    git(repo, "worktree", "add", "-q", "-b", "side", str(linked))
+    assert (linked / ".git").is_file()
+    write(linked, "b.md", "edited in the worktree\n")
+    s = git_changes.summary(linked, linked)
+    assert s["branch"] == "side" and by_path(s)["b.md"]["uncommitted"] is True
+
+
+def test_macos_shim_without_the_command_line_tools_is_no_git(repo, tmp_path, monkeypatch):
+    bin_dir = tmp_path / "shimbin"
+    bin_dir.mkdir()
+    shim = bin_dir / "git"
+    marker = tmp_path / "dialog"
+    shim.write_text(f"#!/bin/sh\ntouch {marker}\n")
+    (bin_dir / "xcode-select").write_text("#!/bin/sh\nexit 2\n")
+    for f in (shim, bin_dir / "xcode-select"):
+        f.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(git_changes, "_ON_MAC", True)
+    monkeypatch.setattr(git_changes, "_SHIM", str(shim))
+    with pytest.raises(git_changes.GitError, match="no git"):
+        git_changes.summary(repo, repo)
+    assert not marker.exists()

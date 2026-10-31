@@ -5,8 +5,11 @@ since the branch left the base (committed or not), one file's diff in DIFF1's sh
 git only reads its object store and refs (rev-parse, symbolic-ref, merge-base, log, ls-tree, cat-file, ls-files
 --others); Arslan reads and hashes the working files itself. `git diff` or `status` against the working tree would run
 a filter driver the repo's own .git/config names (the card's probe), and a turn can write that file. So no program the
-repo's config names runs here: no filter, textconv, external diff, fsmonitor, hook, pager or signature check. Read only;
-callers run these off the event loop.
+repo's config names runs here: no filter, textconv, external diff, fsmonitor, hook, pager or signature check (and no
+`%G` placeholder in `log --format`, which would run gpg). Every call pins `--git-dir` and `--work-tree`, so neither the
+repo's `core.worktree` nor the environment moves them (⓪Plan's review of #583). `gh` runs with `--repo owner/name` read
+from `remote.origin.url` (github.com only), from a folder outside the repo, so it runs no git there. Read only; callers
+run these off the event loop.
 """
 from __future__ import annotations
 
@@ -16,6 +19,8 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -31,6 +36,12 @@ MAX_FILES = 500
 MAX_COMMITS = 50
 _SAFE = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
 _ENV = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
+# Variables that would point git somewhere else than the repo found (⓪Plan's review of #583).
+_DROP_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+             "GIT_COMMON_DIR", "GIT_NAMESPACE")
+#: On a Mac without the command-line tools this is a shim that opens macOS's install dialog (SBX-M runbook).
+_SHIM = "/usr/bin/git"
+_ON_MAC = sys.platform == "darwin"
 _LFS = b"version https://git-lfs.github.com/spec/"
 _GITLINK = "160000"                      # a submodule's commit: not a file here
 
@@ -56,13 +67,39 @@ def repo_root(folder: Path, home: Path) -> Path | None:
     return next((p for p in candidates if os.path.lexists(p / ".git")), None)
 
 
-def _git(root: Path, *args: str, data: bytes | None = None) -> bytes:
+def _git_exe() -> str | None:
+    """git, unless it is macOS's shim with no command-line tools behind it (no install dialog from a poll)."""
     exe = shutil.which("git", path=merged_path())
+    if exe and _ON_MAC and os.path.realpath(exe) == _SHIM:
+        select = shutil.which("xcode-select", path=merged_path()) or "/usr/bin/xcode-select"
+        try:
+            if subprocess.run([select, "-p"], capture_output=True, timeout=GIT_TIMEOUT_S).returncode != 0:
+                return None
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    return exe
+
+
+def git_dir(root: Path) -> Path:
+    """The repo's git folder: `.git` itself, or where a `.git` file's `gitdir:` line points (a linked worktree or a
+    submodule). Reading objects and refs there is fine; nothing is written."""
+    dot = root / ".git"
+    if dot.is_file() and not dot.is_symlink():
+        line = dot.read_text(errors="replace").strip()
+        if line.startswith("gitdir:"):
+            return (root / line.removeprefix("gitdir:").strip()).resolve()
+    return dot
+
+
+def _git(root: Path, *args: str, data: bytes | None = None) -> bytes:
+    exe = _git_exe()
     if exe is None:
         raise GitError("no git")
+    env = {k: v for k, v in os.environ.items() if k not in _DROP_ENV}
+    env.update(_ENV, PATH=merged_path(), GIT_CEILING_DIRECTORIES=str(root.parent))
     try:
-        done = subprocess.run([exe, *_SAFE, *args], cwd=root, input=data, capture_output=True, timeout=GIT_TIMEOUT_S,
-                              env={**os.environ, **_ENV, "PATH": merged_path()})
+        done = subprocess.run([exe, f"--git-dir={git_dir(root)}", f"--work-tree={root}", *_SAFE, *args], cwd=root,
+                              input=data, capture_output=True, timeout=GIT_TIMEOUT_S, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitError(type(exc).__name__) from None
     if done.returncode != 0:
@@ -236,11 +273,23 @@ def _checks(rollup: list) -> str | None:
     return "passed"
 
 
-def prs(root: Path, branch: str) -> dict:
-    """The branch's PRs through `gh`, newest first, cached PR_CACHE_S: number, title, state (open / closed /
-    merged), draft, url (https only) and checks (passed / failing / running / None). `signed_in` is False when
-    `gh` is missing or not signed in; `error` "unavailable" when it didn't answer in time."""
-    key = (str(root), branch)
+def github_repo(root: Path) -> str | None:
+    """`owner/name` from `remote.origin.url` when it is on github.com (https, ssh or scp-like), else None."""
+    url = _maybe(root, "config", "--get", "remote.origin.url") or ""
+    for lead in ("https://github.com/", "ssh://git@github.com/", "git@github.com:"):
+        if url.startswith(lead):
+            parts = url[len(lead):].removesuffix("/").removesuffix(".git").split("/")
+            if len(parts) == 2 and all(p and all(c.isalnum() or c in "-_." for c in p) for p in parts):
+                return "/".join(parts)
+    return None
+
+
+def prs(repo: str, branch: str) -> dict:
+    """The branch's PRs on GitHub repo `owner/name` through `gh`, newest first, cached PR_CACHE_S: number, title,
+    state (open / closed / merged), draft, url (https only) and checks (passed / failing / running / None).
+    `signed_in` is False when `gh` is missing or not signed in; `error` "unavailable" when it didn't answer in time.
+    `gh` runs from a folder outside the repo with `--repo`, so it runs no git in the repo."""
+    key = (repo, branch)
     hit = _pr_cache.get(key)
     if hit and time.monotonic() - hit[0] < PR_CACHE_S:
         return hit[1]
@@ -248,11 +297,12 @@ def prs(root: Path, branch: str) -> dict:
     env = {**os.environ, "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "PATH": merged_path()}
     out: dict = {"signed_in": False, "prs": []}
     try:
-        if exe and subprocess.run([exe, "auth", "status"], cwd=root, env=env, capture_output=True,
-                                  timeout=GH_TIMEOUT_S).returncode == 0:
-            done = subprocess.run([exe, "pr", "list", "--head", branch, "--state", "all", "--limit", "10", "--json",
-                                   "number,title,state,isDraft,url,statusCheckRollup"],
-                                  cwd=root, env=env, capture_output=True, timeout=GH_TIMEOUT_S)
+        away = tempfile.gettempdir()
+        if exe and subprocess.run([exe, "auth", "status", "--hostname", "github.com"], cwd=away, env=env,
+                                  capture_output=True, timeout=GH_TIMEOUT_S).returncode == 0:
+            done = subprocess.run([exe, "pr", "list", "--repo", repo, "--head", branch, "--state", "all", "--limit", "10",
+                                   "--json", "number,title,state,isDraft,url,statusCheckRollup"],
+                                  cwd=away, env=env, capture_output=True, timeout=GH_TIMEOUT_S)
             out = {"signed_in": True, "prs": []} if done.returncode == 0 else \
                 {"signed_in": True, "prs": [], "error": "unavailable"}
             for p in json.loads(done.stdout or b"[]") if done.returncode == 0 else []:
