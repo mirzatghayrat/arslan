@@ -1,5 +1,5 @@
 {
- "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: a ZWNJ or ZWJ where ordinary text uses one: alone, after a letter or mark of a script in `joining_scripts`, or, for a ZWJ, after a character in `presentation_bases` (but # * 0-9) or `emoji_joins`; every other joiner is marked, each one of a run (UNI1b-4, #608 review J1). Not marked either: LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
+ "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: a ZWNJ or ZWJ where ordinary text uses one: alone, after a letter or mark of a script in `joining_scripts`, or, for a ZWJ, after a character in `presentation_bases` (but # * 0-9) or `emoji_joins`; every other joiner is marked, each one of a run (UNI1b-4, #608 review J1). A direction mark (`direction_marks`: LRM, RLM, ALM) is not marked only when it is alone (no mark, joiner or character that shows nothing next to it) in a text with a letter in `rtl_letters`; every other one is marked (#608 re-check D1). Not marked either: the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
  "rule": {
   "hidden": [
    [
@@ -122,6 +122,10 @@
   "joining_scripts": [
    [
     1536,
+    1563
+   ],
+   [
+    1565,
     1791
    ],
    [
@@ -185,6 +189,73 @@
    [
     917631,
     917631
+   ]
+  ],
+  "direction_marks": [
+   8206,
+   8207,
+   1564
+  ],
+  "rtl_letters": [
+   [
+    1424,
+    1535
+   ],
+   [
+    1568,
+    1610
+   ],
+   [
+    1646,
+    1747
+   ],
+   [
+    1749,
+    1749
+   ],
+   [
+    1786,
+    1791
+   ],
+   [
+    1792,
+    1805
+   ],
+   [
+    1808,
+    1871
+   ],
+   [
+    1872,
+    1983
+   ],
+   [
+    1984,
+    2047
+   ],
+   [
+    2048,
+    2207
+   ],
+   [
+    2208,
+    2303
+   ],
+   [
+    64285,
+    65023
+   ],
+   [
+    65136,
+    65276
+   ],
+   [
+    67584,
+    69631
+   ],
+   [
+    124928,
+    126975
    ]
   ],
   "presentation_bases": [
@@ -918,10 +989,14 @@
    "runs": []
   },
   {
-   "name": "LRM, RLM and ALM",
+   "name": "LRM, RLM and ALM in text with no right-to-left letter are marked",
    "text": "a\u200eb\u200fc\u061cd",
-   "count": 0,
-   "runs": []
+   "count": 3,
+   "runs": [
+    "U+200E",
+    "U+200F",
+    "U+061C"
+   ]
   },
   {
    "name": "a run of blank braille",
@@ -1535,6 +1610,70 @@
    "count": 1,
    "runs": [
     "U+200D"
+   ]
+  },
+  {
+   "name": "calm marks: Hebrew with LRM and RLM",
+   "text": "Version \u200e2.0 \u05d2\u05e8\u05e1\u05d4\u200f ok",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm marks: Arabic with ALM",
+   "text": "\u0627\u0644\u0631\u0642\u0645 \u061c12",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm marks: Persian with RLM",
+   "text": "\u0641\u0627\u0631\u0633\u06cc\u200f (1)",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "one LRM in English text is marked",
+   "text": "a\u200eb",
+   "count": 1,
+   "runs": [
+    "U+200E"
+   ]
+  },
+  {
+   "name": "a run of direction marks is marked, each one",
+   "text": "a\u200e\u200f\u200f\u200eb",
+   "count": 4,
+   "runs": [
+    "U+200E",
+    "2 \u00d7 U+200F",
+    "U+200E"
+   ]
+  },
+  {
+   "name": "a run of direction marks in Arabic text is marked",
+   "text": "\u0645\u200f\u200f\u062e",
+   "count": 2,
+   "runs": [
+    "2 \u00d7 U+200F"
+   ]
+  },
+  {
+   "name": "a direction mark next to a zero-width space is marked",
+   "text": "\u0645\u200f\u200b\u062e",
+   "count": 2,
+   "runs": [
+    "U+200F",
+    "U+200B"
+   ]
+  },
+  {
+   "name": "a joiner after ALM is marked, and so is the ALM",
+   "text": "end\u061c\u200d\u061c\u200c ",
+   "count": 4,
+   "runs": [
+    "U+061C",
+    "U+200D",
+    "U+061C",
+    "U+200C"
    ]
   }
  ]

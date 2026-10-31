@@ -41,6 +41,8 @@ def test_the_tables_are_the_shared_ones():
     assert list(untrusted._JOINERS) == RULE["joiners"]
     assert [list(r) for r in untrusted._JOINING_SCRIPTS] == RULE["joining_scripts"]
     assert [list(r) for r in untrusted._EMOJI_JOINS] == RULE["emoji_joins"]
+    assert list(untrusted._DIRECTION_MARKS) == RULE["direction_marks"]
+    assert [list(r) for r in untrusted._RTL_LETTERS] == RULE["rtl_letters"]
 
 
 def test_every_hidden_range_has_a_case():

@@ -50,14 +50,35 @@ export const FLAG_TAGS = ["gbeng", "gbsct", "gbwls"];
  *  (the server's `_joiners_marked`). */
 export const JOINERS = [0x200c, 0x200d];
 export const JOINING_SCRIPTS: [number, number][] = [
-  [0x0600, 0x06ff], [0x0700, 0x074f], [0x0750, 0x077f], [0x07c0, 0x07ff], [0x08a0, 0x08ff], [0x0900, 0x0dff],
+  [0x0600, 0x061b], [0x061d, 0x06ff], [0x0700, 0x074f], [0x0750, 0x077f], [0x07c0, 0x07ff], [0x08a0, 0x08ff], [0x0900, 0x0dff],
   [0x0f00, 0x0fff], [0x1000, 0x109f], [0x1780, 0x17ff], [0x1800, 0x18af], [0xa8e0, 0xa8ff], [0xfb50, 0xfdff],
   [0xfe70, 0xfefc]];
 export const EMOJI_JOINS: [number, number][] = [[0x1f3fb, 0x1f3ff], [0xfe0f, 0xfe0f], [0xe007f, 0xe007f]];
+/** #608 re-check D1: a direction mark (LRM, RLM, ALM) stays unmarked only when it is alone (no mark, joiner or
+ *  other character that shows nothing next to it) in a text that has a right-to-left letter (RTL_LETTERS). Every
+ *  other one is marked (the server's `_marks_marked`). */
+export const DIRECTION_MARKS = [0x200e, 0x200f, 0x061c];
+export const RTL_LETTERS: [number, number][] = [
+  [0x0590, 0x05ff], [0x0620, 0x064a], [0x066e, 0x06d3], [0x06d5, 0x06d5], [0x06fa, 0x06ff], [0x0700, 0x070d],
+  [0x0710, 0x074f], [0x0750, 0x07bf], [0x07c0, 0x07ff], [0x0800, 0x089f], [0x08a0, 0x08ff], [0xfb1d, 0xfdff],
+  [0xfe70, 0xfefc], [0x10800, 0x10fff], [0x1e800, 0x1efff]];
 
 const within = (cp: number, ranges: [number, number][]) => ranges.some(([lo, hi]) => lo <= cp && cp <= hi);
 const runRange = (cp: number) => RUN_RANGES.find(([, lo, hi]) => lo <= cp && cp <= hi)?.[0] ?? null;
 const isSelector = (cp: number) => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+
+/** The positions of each direction mark that right-to-left text does not use there (one pass). */
+function marksMarked(cps: number[]): Set<number> {
+  const marked = new Set<number>();
+  if (!cps.some(cp => DIRECTION_MARKS.includes(cp))) return marked;
+  const rtl = cps.some(cp => within(cp, RTL_LETTERS));
+  const near = (cp: number | undefined) => cp !== undefined
+    && (DIRECTION_MARKS.includes(cp) || JOINERS.includes(cp) || within(cp, HIDDEN));
+  cps.forEach((cp, i) => {
+    if (DIRECTION_MARKS.includes(cp) && (!rtl || near(i ? cps[i - 1] : undefined) || near(cps[i + 1]))) marked.add(i);
+  });
+  return marked;
+}
 
 /** The positions of each ZWNJ and ZWJ that ordinary text does not use there (one pass). */
 function joinersMarked(cps: number[]): Set<number> {
@@ -84,7 +105,7 @@ export type HiddenRun = { start: number; cps: number[] };
 
 /** UNI1b: each run of characters that show nothing, in order. A run is one code point repeated, or characters of
  *  one range. Not counted: one selector that does what ordinary text uses one for, and an RGI flag's tags.
- *  Counted besides the table: a joiner ordinary text does not use there (UNI1b-4). */
+ *  Counted besides the table: a joiner or a direction mark ordinary text does not use there (UNI1b-4). */
 export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
   const cps = [...(text ?? "")].map(ch => ch.codePointAt(0)!);
   const flagged = new Set<number>();
@@ -96,7 +117,7 @@ export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
       for (let j = i + 1; j <= i + 6; j++) flagged.add(j);
     }
   });
-  const stray = joinersMarked(cps);
+  const stray = new Set([...joinersMarked(cps), ...marksMarked(cps)]);
   const runs: HiddenRun[] = [];
   let open = false, ivsUncounted = 0;
   cps.forEach((cp, i) => {

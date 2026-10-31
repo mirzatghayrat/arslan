@@ -216,16 +216,37 @@ _FLAG_TAGS = ("gbeng", "gbsct", "gbwls")
 #: import's scan no longer blocks a joiner, and a run of the two carries bits. Left unmarked: one joiner after a
 #: letter of those scripts, before a space (about a bit a word).
 _JOINERS = (0x200C, 0x200D)
-_JOINING_SCRIPTS = ((0x0600, 0x06FF), (0x0700, 0x074F), (0x0750, 0x077F), (0x07C0, 0x07FF), (0x08A0, 0x08FF),
+_JOINING_SCRIPTS = ((0x0600, 0x061B), (0x061D, 0x06FF), (0x0700, 0x074F), (0x0750, 0x077F), (0x07C0, 0x07FF), (0x08A0, 0x08FF),
                     (0x0900, 0x0DFF), (0x0F00, 0x0FFF), (0x1000, 0x109F), (0x1780, 0x17FF), (0x1800, 0x18AF),
                     (0xA8E0, 0xA8FF), (0xFB50, 0xFDFF), (0xFE70, 0xFEFC))
 _EMOJI_JOINS = ((0x1F3FB, 0x1F3FF), (0xFE0F, 0xFE0F), (0xE007F, 0xE007F))
+#: #608 re-check D1 (⓪Plan, the user's 3A: everything else is counted): LRM, RLM and ALM were never marked, in any
+#: number. A direction mark stays unmarked only where right-to-left text uses one: alone (no mark, joiner or other
+#: character that shows nothing next to it) in a text that has a right-to-left letter (`_RTL_LETTERS`: Hebrew,
+#: Arabic letters, Syriac, Thaana, NKo and the scripts after them, the presentation forms, and the right-to-left
+#: supplementary blocks). Every other one is marked. (re-check A1: ALM is not a joining-script letter either.)
+_DIRECTION_MARKS = (0x200E, 0x200F, 0x061C)
+_RTL_LETTERS = ((0x0590, 0x05FF), (0x0620, 0x064A), (0x066E, 0x06D3), (0x06D5, 0x06D5), (0x06FA, 0x06FF),
+                (0x0700, 0x070D), (0x0710, 0x074F), (0x0750, 0x07BF), (0x07C0, 0x07FF), (0x0800, 0x089F),
+                (0x08A0, 0x08FF), (0xFB1D, 0xFDFF), (0xFE70, 0xFEFC), (0x10800, 0x10FFF), (0x1E800, 0x1EFFF))
 
 
 def _in_sorted(cp: int, ranges) -> bool:
     """`_in` for a long table sorted by start, without overlaps, by bisection."""
     i = bisect.bisect_right(ranges, (cp, 0x10FFFF)) - 1
     return i >= 0 and ranges[i][0] <= cp <= ranges[i][1]
+
+
+def _marks_marked(cps: list[int]) -> set[int]:
+    """The positions of each direction mark that right-to-left text does not use there (one pass)."""
+    if not any(cp in _DIRECTION_MARKS for cp in cps):
+        return set()
+    rtl = any(_in_sorted(cp, _RTL_LETTERS) for cp in cps)
+
+    def near(cp: int | None) -> bool:
+        return cp is not None and (cp in _DIRECTION_MARKS or cp in _JOINERS or _in(cp, _HIDDEN))
+    return {i for i, cp in enumerate(cps) if cp in _DIRECTION_MARKS
+            and (not rtl or near(cps[i - 1] if i else None) or near(cps[i + 1] if i + 1 < len(cps) else None))}
 
 
 def _joiners_marked(cps: list[int]) -> set[int]:
@@ -281,9 +302,10 @@ def hidden_runs(text) -> list[tuple[int, list[int]]]:
     """UNI1b: each run of characters in `text` that show nothing, as (start, code points), in order. A run is one
     code point repeated, or characters of one range (variation selectors, their supplement, tags). Not counted:
     one selector that does what ordinary text uses one for (`_takes_selector`), and an RGI flag's tags. Counted
-    besides the table: a joiner ordinary text does not use there (`_joiners_marked`, UNI1b-4)."""
+    besides the table: a joiner or a direction mark ordinary text does not use there (`_joiners_marked`,
+    `_marks_marked`, UNI1b-4)."""
     cps = [ord(ch) for ch in str(text or "")]
-    flagged, stray = _flag_tags(cps), _joiners_marked(cps)
+    flagged, stray = _flag_tags(cps), _joiners_marked(cps) | _marks_marked(cps)
     runs: list[tuple[int, list[int]]] = []
     open_run, ivs_uncounted = False, 0
     for i, cp in enumerate(cps):
