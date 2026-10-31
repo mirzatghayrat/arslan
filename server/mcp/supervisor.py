@@ -278,7 +278,7 @@ def safe_reason(text: str | None) -> str:
     return line[:120] if line.startswith(SAFE_REASON_PREFIXES) else ""
 
 
-def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=None) -> str:
+def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=None, held: bool = False) -> str:
     """What fixes a server in this state, in words for the model and the user."""
     if state == "starting":
         return "wait a moment; it is starting by itself"
@@ -289,9 +289,10 @@ def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=No
         return ("re-check the key/token on this server in Capabilities" if has_headers
                 else "the user must sign in from Capabilities (Authorize)")
     if state == "parked":
-        if reason.startswith(discovery.HELD_REASONS):
+        if held or reason.startswith(discovery.HELD_REASONS):
             # CAP5a (#577 review F6): Reconnect does not start it; only the user's review in Capabilities does.
-            return f"it is stopped until the user reviews it in Capabilities ({reason}); Reconnect does not start it"
+            cause = f" ({reason})" if reason else ""
+            return f"it is stopped until the user reviews it in Capabilities{cause}; Reconnect does not start it"
         cause = f": {reason}" if reason else ""
         return f"it is stopped until the cause is fixed{cause}; then the user can press Reconnect in Capabilities"
     if state == "off":

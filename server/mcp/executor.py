@@ -330,9 +330,12 @@ class MCPProxyExecutor:
             return refused
         # CAP5a (#577 review F1): the card may have been open while the server was parked (its tools changed since
         # it was installed) or its session replaced. Read it again after the answer, and send nothing unless it is
-        # still ready on the same session.
-        async with db_session.AsyncSessionLocal() as db:
-            srv = await db.get(MCPServer, self.server_id)
+        # still ready on the same session. The re-read waits for a listing under way (re-check G1): a re-list that
+        # found a change holds the server's listing lock until it has dropped the session.
+        from server.mcp import discovery
+        async with discovery._write_locks.hold(self.server_id):
+            async with db_session.AsyncSessionLocal() as db:
+                srv = await db.get(MCPServer, self.server_id)
         if srv is None:
             return {"ok": False, "error": f"MCP server {self.server_id} not found"}
         if srv.state != "ready":

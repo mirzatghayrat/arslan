@@ -54,7 +54,7 @@ async def _install(world, cand=PKG, *, days_ago=2, test=None):
         await s.flush()
         s.add(CapabilitySource(id="src1", kind="mcp", name="notes", candidate_id=cand.get("id", "c"),
                                runtime=cand.get("runtime"), needs={}, grants={}, state="installed", mcp_server_id=1,
-                               candidate=cand or None, test=test,
+                               candidate=cand or None, test=test, installed_at=datetime.utcnow(),
                                checked_at=datetime.utcnow() - timedelta(days=days_ago), created_at=datetime.utcnow()))
         await s.commit()
 
@@ -164,6 +164,20 @@ async def test_no_answer_keeps_a_parked_server_parked(world):
 async def test_a_server_with_no_registry_entry_is_not_asked(world, cand):
     await _install(world, cand or {})
     await rc.before_start(1)
+    assert world.calls == []
+
+
+async def test_a_hand_added_server_on_a_reused_number_is_not_asked(world):
+    """#577 re-check G2: a stale source keeps its server's number; a server added by hand on it later is not its."""
+    long_ago = datetime.utcnow() - timedelta(days=30)
+    async with world.maker() as s:
+        s.add(CapabilitySource(id="old", kind="mcp", name="notes", candidate_id=PKG["id"], runtime="uv", needs={},
+                               grants={}, state="installed", mcp_server_id=3, candidate=PKG, created_at=long_ago,
+                               installed_at=long_ago, checked_at=long_ago))
+        s.add(MCPServer(id=3, label="added by hand", command="z", args=[], status="registered",
+                        created_at=datetime.utcnow()))
+        await s.commit()
+    await rc.before_start(3)
     assert world.calls == []
 
 

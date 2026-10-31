@@ -100,9 +100,14 @@ def _due(check: dict, source: CapabilitySource, now: datetime, version: str) -> 
 
 
 async def _source_for(db, server_id: int) -> CapabilitySource | None:
-    return (await db.execute(select(CapabilitySource).where(
-        CapabilitySource.mcp_server_id == server_id, CapabilitySource.kind == "mcp",
-        CapabilitySource.state == "installed").order_by(CapabilitySource.created_at.desc()))).scalars().first()
+    """The installed source of this server, which existed when the source was installed (#577 re-check G2: a
+    number can be reused by a server added by hand later, which has no Registry entry of its own)."""
+    from server.db.models import MCPServer
+    return (await db.execute(select(CapabilitySource).join(MCPServer, MCPServer.id == CapabilitySource.mcp_server_id)
+                             .where(CapabilitySource.mcp_server_id == server_id, CapabilitySource.kind == "mcp",
+                                    CapabilitySource.state == "installed",
+                                    MCPServer.created_at <= CapabilitySource.installed_at)
+                             .order_by(CapabilitySource.created_at.desc()))).scalars().first()
 
 
 async def before_start(server_id: int) -> None:
