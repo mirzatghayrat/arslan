@@ -162,17 +162,23 @@ def _not_asked():
                  for decided_by, decision in NOT_ASKED))
 
 
-async def refused_groups(db, since: datetime, *, limit: int = 500
+async def refused_groups(db, since: datetime, *, limit: int = 500, conversation_id: str | None = None
                          ) -> list[tuple[ApprovalEvent, int, datetime]]:
     """Boundaries that could not be asked (`NOT_ASKED`) since `since`: a run with nobody to ask (a
     scheduled run), or a card that never opened while the person was away. One entry per (kind,
     target, who refused it): its latest row, how many times it was refused, and when first — newest
     first, at most `limit` groups. The Inbox offers "Always allow" for next time over an away entry
     (spec §A4); never over a scheduled run's, which no "Always" answers (S1, ⓪Plan's review: grouped
-    together, an away row's set would have been offered over both)."""
+    together, an away row's set would have been offered over both).
+
+    `conversation_id` (INB3): only that conversation's rows, picked before grouping. Grouped first, two
+    conversations that refused the same thing would make one group whose latest row names one of them."""
+    where = [_not_asked(), ApprovalEvent.created_at >= since]
+    if conversation_id is not None:
+        where.append(ApprovalEvent.conversation_id == conversation_id)
     groups = (await db.execute(
         select(func.max(ApprovalEvent.id), func.count(), func.min(ApprovalEvent.created_at))
-        .where(_not_asked(), ApprovalEvent.created_at >= since)
+        .where(*where)
         .group_by(ApprovalEvent.kind, ApprovalEvent.target, ApprovalEvent.decided_by)
         .order_by(func.max(ApprovalEvent.id).desc()).limit(limit))).all()
     rows = {row.id: row for row in (await db.execute(select(ApprovalEvent).where(

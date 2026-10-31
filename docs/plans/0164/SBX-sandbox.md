@@ -36,9 +36,11 @@ Why: a safety classifier stopped ③Hands' response as it started SBX-2, right a
   - p's PRs give their macOS-job counts too. The Linux job has no seatbelt, and a skip there reads as green.
   - **Correction (⓪Plan's plumbing review of #507, 2026-10-30; ③Hands checked pytest 9.1.1):** JUnit records an xfail that fails as expected as `<skipped type="pytest.xfail">`. ci.yml's macOS step fails on any skip, and its ran-count uses `total - skipped` (`ci.yml:352-355`). So a p PR with strict-xfail tests can't go green as written above. Nothing uses the gate before the first p PR, and the gate needs a ci.yml change, which Codex doesn't make. So SBX-2 doesn't build it yet. The first p PR comes with a Claude ci.yml change that:
     - counts `type="pytest.xfail"` entries apart from skips, and as ran;
-    - doesn't count a strict xfail that passes (a plain `<skipped>` with no type; pytest already exits 1 for it);
+    - doesn't count a strict xfail that passes. pytest 9.1.1 writes it as a `<failure>` ("[XPASS(strict)]") and exits 1, so the step fails on it (⓪Plan's probe, 2026-10-30; the earlier "a plain `<skipped>`" here was wrong);
     - runs the macOS pytest with `-o xfail_strict=true`, because JUnit doesn't record strictness. No test uses xfail on main today.
+    - **Done** in the ci.yml PR that follows SBX-2, tested by `tests/server/test_ci_macos_xfail_gate.py`, which runs the step's own script from ci.yml.
 
+    - every p test's xfail pins `raises=` (normally `AssertionError`), and none uses `strict=False` or `pytest.xfail()`. An xfail counts as ran whatever made it fail, so without `raises=` a fixture error or a NameError would also read as "failed as expected" (③Hands' review of #542). `test_ci_macos_xfail_gate.py` guards this over `tests/`.
     Na's gate stays as above: 0 skipped and 0 xfail.
 - **In parallel:** while Codex writes SBX-2, Claude may draft 3a, 4a, 5a and 7 on SBX-1's builder. They are rebased after SBX-2 merges, and **none of them merges before SBX-M**.
 - **A Claude review stopped part-way** goes to Astra as it is, not reworded.

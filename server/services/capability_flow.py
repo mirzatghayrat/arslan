@@ -19,6 +19,8 @@ import asyncio
 import logging
 import re
 import uuid
+
+import httpx
 from datetime import datetime
 
 from server.db import session as db_session
@@ -66,6 +68,9 @@ def card_for(c: dict, *, why: str, retry: str, folders: list[str]) -> dict:
         "folders": grants["folders"] if c["kind"] == "mcp" else [],
         "keys": [k for k in needs.get("keys") or [] if k.get("required") or k.get("secret")][:6],
         "why": why[:300], "retry": retry[:300],
+        # CAP4a-1: who published it, as a fact (a domain the Registry verified, or a GitHub account), never
+        # "official"; the card shows it in CAP4b.
+        "publisher": capability_search.publisher_of(c),
     }
 
 
@@ -135,31 +140,39 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict
     return {"state": "on", "source_id": row.id, "tools": test["tools"], "scan": scan}
 
 
-async def install_skill(c: dict, owner_id: str = "local") -> dict:
-    from server import config
+async def prepare_skill(c: dict) -> tuple[dict, dict]:
+    """CAP4a-1: the skill fetched whole at one pinned commit (skill_import.prepare_skill) and scanned, before any
+    card. Raises ValueError when it cannot be fetched or added."""
     from server.services import skill_import
     sha = c.get("version") if c.get("source") == "library" else None
+    if c.get("source") == "library" and not re.fullmatch(r"[0-9a-f]{40}", str(sha or "")):
+        # #539 review 6: a library card pins the archive's commit, all 40 digits; an abbreviation could lose to a
+        # branch or tag of that name.
+        raise ValueError("the library named no full commit")
+    prepared = await skill_import.prepare_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"])
+    return prepared, skill_import.scan_prepared(prepared)
+
+
+async def install_skill(c: dict, owner_id: str = "local", *, prepared: dict | None = None,
+                        scan: dict | None = None) -> dict:
+    """Write the skill the card showed: exactly the files `prepare_skill` fetched and scanned (no second fetch),
+    then its capability source. Without them (a caller that showed no card), prepared and scanned here first; a
+    blocked scan writes nothing."""
+    from server.services import skill_import
     try:
-        out = await skill_import.import_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"])
+        if prepared is None:
+            prepared, scan = await prepare_skill(c)
+        if scan["level"] == "blocked":
+            return {"state": "blocked", "source_id": None, "scan": scan}
+        out = await skill_import.install_prepared(prepared)
     except ValueError as exc:
         return {"state": "failed", "stage": "install", "code": "skill_import", "detail": str(exc)[:400]}
     key = out["key"]
-    folder = config.data_dir() / "skill_scripts" / key
-    read = lambda sub, exts: {p.name: p.read_text("utf-8", errors="replace")  # noqa: E731
-                              for p in (folder / sub if sub else folder).glob("*") if p.suffix in exts}
-    async with db_session.AsyncSessionLocal() as db:
-        pack = await db.get(SkillPack, key)
-        body = pack.body or ""
-    scan = capability_scan.scan_skill(body, read("", (".py",)), read("references", (".md", ".txt")))
     source_id = uuid.uuid4().hex
     async with db_session.AsyncSessionLocal() as db:
         pack = await db.get(SkillPack, key)
         state = "installed"
-        if scan["level"] == "blocked":
-            await db.delete(pack)
-            state = "failed"
-        else:
-            pack.source_id = source_id
+        pack.source_id = source_id
         db.add(CapabilitySource(
             id=source_id, owner_id=owner_id, kind="skill", name=out["name"][:120], candidate_id=c["id"][:300],
             source_url=c.get("source_url"), repo=c.get("repo"), version=out["commit"][:12], commit_sha=out["commit"],
@@ -170,9 +183,6 @@ async def install_skill(c: dict, owner_id: str = "local") -> dict:
             error=None if state == "installed" else "scan", created_at=datetime.utcnow(),
             installed_at=datetime.utcnow() if state == "installed" else None))
         await db.commit()
-    if state != "installed":
-        capability_install.to_trash(folder)
-        return {"state": "blocked", "source_id": source_id, "scan": scan}
     return {"state": "on", "source_id": source_id, "skill": key, "scan": scan}
 
 
@@ -259,38 +269,52 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was added. Say in "
                         "your answer that the capability you proposed (`missing`) is not there and that the user "
                         "can add it by asking for it in a conversation."}
-    prepared = None
+    prepared = scan = locked = None
     if cand["kind"] == "mcp":
         # CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock before the card,
         # so the card shows the locked versions and a yes installs exactly them. After the "nobody to ask" answer
         # above: a run that cannot install resolves nothing.
         try:
-            prepared = await capability_install.prepare(cand)
+            locked = await capability_install.prepare(cand)
         except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
             return {"ok": False, "error": f"cannot be added: {exc.code}"}
         # CAP4a-3: the license the gate read, at the version being installed (`<file>@<ref>`), not the search's.
-        spdx, read_from = prepared["license"]
-        card.update(lock=capability_install.lock_summary(prepared), license={"spdx": spdx, "read_from": read_from})
+        spdx, read_from = locked["license"]
+        card.update(lock=capability_install.lock_summary(locked), license={"spdx": spdx, "read_from": read_from})
+    elif cand["kind"] == "skill":
+        # CAP4a-1: fetched whole at one pinned commit, scanned and hashed before the card; a blocked scan gets none.
+        # After the "nobody to ask" answer above: a run that cannot install fetches nothing.
+        try:
+            prepared, scan = await prepare_skill(cand)
+        except ValueError as exc:
+            return {"ok": False, "error": f"cannot be added: {_plain(str(exc))[:200]}"}
+        except httpx.HTTPError:                     # #539 review 8: a 404, a 5xx, a timeout
+            return {"ok": False, "error": "cannot be added: GitHub could not be reached or has no such skill"}
+        if scan["level"] == "blocked":
+            rules = ", ".join(f["rule"] for f in scan["findings"] if f["level"] == "high")
+            return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); nothing was added"}
+        card.update(commit=prepared["commit"], files=prepared["files"], sizes=prepared["sizes"],
+                    skipped=prepared["skipped"], scan=scan)
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     try:
         decision = await ask(card)
     except BaseException:
-        capability_install.discard(prepared)
+        capability_install.discard(locked)
         raise
     # S7: the card's answer in the ledger (§5.4) — never the key or the folders it carried back.
     await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
                                           expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
-        capability_install.discard(prepared)
+        capability_install.discard(locked)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
                                                         "way or say what is missing; do not propose it again now."}
     if cand["kind"] == "mcp":
         result = await install_mcp(cand, folders=decision.get("folders") or [], keys=decision.get("keys") or {},
-                                   prepared=prepared)
+                                   prepared=locked)
     else:
-        result = await install_skill(cand)
+        result = await install_skill(cand, prepared=prepared, scan=scan)
     emit({"type": "capability_result", "call_id": decision.get("call_id"), **{k: v for k, v in result.items()
                                                                             if k in ("state", "source_id", "stage",
                                                                                      "code", "detail")},

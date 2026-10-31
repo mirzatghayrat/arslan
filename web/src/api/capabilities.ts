@@ -6,7 +6,7 @@ export interface CapabilityRow {
   /** v0.1.64 CAP3a: the page's three groups. */
   section: "builtin" | "skills" | "connections";
   /** built in · installed (by you, or from a card) · authored (written by Arslan) · manual (a connection you added) */
-  origin: "builtin" | "installed" | "authored" | "manual";
+  origin: "builtin" | "installed" | "authored" | "manual" | "unknown";   // unknown: no mark and not a seed (SKF1)
   /** Only what is not built in; the server refuses the rest too (DELETE /capabilities/{key}). */
   deletable: boolean;
   /** When it was last used, from the run records; null: not used yet. */

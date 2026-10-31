@@ -132,6 +132,8 @@ def secret_forms(server: dict) -> list[str]:
     import urllib.parse
 
     values = [str(v) for v in (server.get("env") or {}).values() if v]
+    moved = [str(v) for v in (server.get("secrets") or {}).values() if v]     # SEC1: moved secrets, as written
+    values += moved + [urllib.parse.unquote(v) for v in moved]                  # and as a server may echo them
     url = urllib.parse.urlsplit(server.get("url") or "")
     values += [v for _, v in urllib.parse.parse_qsl(url.query) if v]
     values += [pair.partition("=")[2] for pair in url.query.split("&") if "=" in pair]

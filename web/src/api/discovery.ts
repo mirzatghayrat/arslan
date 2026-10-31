@@ -21,6 +21,8 @@ export type SkillScanResult = {
   license_ok: boolean;
   license_note: string | null;
   skills: ScannedSkill[];
+  /** CAP4a-1: the commit the listing was read at; the import pins to it. */
+  commit?: string;
 };
 
 export type ImportedSkill = {

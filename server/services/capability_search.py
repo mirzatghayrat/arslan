@@ -136,6 +136,38 @@ def _repo_of(url: str | None) -> str | None:
     return f"{parsed[0]}/{parsed[1]}" if parsed and "github.com" in url else None
 
 
+def publisher_of(c: dict) -> dict | None:
+    """Who published a candidate, as a fact (CAP4a-1): a Registry name's reverse-DNS namespace, which the Registry
+    verified, is a domain the publisher owns (`com.example/notes` -> example.com), and `io.github.<account>/…` a
+    GitHub account; a candidate from GitHub is its repository's account. Neither proves "official". An account
+    is one GitHub would accept (letters, digits and single hyphens, at most 39), else there is no fact to say."""
+    if c.get("source") == "registry":
+        namespace = str(c.get("id") or "").removeprefix("registry:").rpartition("@")[0].partition("/")[0]
+        if namespace.startswith("io.github."):
+            return _github_account(namespace[len("io.github."):])
+        labels = namespace.split(".")
+        if len(labels) >= 2 and all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) for label in labels):
+            return {"kind": "domain", "value": ".".join(reversed(labels))}
+        return None
+    repo = str(c.get("repo") or "")
+    return _github_account(repo.split("/")[0]) if "/" in repo else None
+
+
+def _github_account(login: str) -> dict | None:
+    if re.fullmatch(r"[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}", login):
+        return {"kind": "github", "value": login}
+    return None
+
+
+def _deleted(entry: dict) -> bool:
+    """The Registry marks a withdrawn entry `deleted` (its official `_meta`, or `status` in older answers)."""
+    srv = entry.get("server", entry)
+    meta = entry.get("_meta")
+    official = meta.get("io.modelcontextprotocol.registry/official") if isinstance(meta, dict) else None
+    status = official.get("status") if isinstance(official, dict) else None
+    return (status or (srv.get("status") if isinstance(srv, dict) else None)) == "deleted"
+
+
 def from_registry(entry: dict) -> Candidate:
     srv = entry.get("server", entry)
     name = srv.get("name") or "?"
@@ -143,6 +175,9 @@ def from_registry(entry: dict) -> Candidate:
     cand = Candidate(id=f"registry:{name}@{srv.get('version')}", kind="mcp", name=name.rsplit("/", 1)[-1],
                      summary=(srv.get("description") or "")[:300], source="registry",
                      source_url=repo_url or None, repo=_repo_of(repo_url), version=srv.get("version"))
+    if _deleted(entry):                                        # CAP4a-1: never offered
+        cand.not_here = "deleted_in_registry"
+        return cand
     packages = srv.get("packages") or []
     remotes = srv.get("remotes") or []
     usable = next((p for p in packages if p.get("registryType") in RUNTIMES), None)
@@ -185,6 +220,8 @@ async def search_registry(client: httpx.AsyncClient, word: str) -> list[Candidat
     for entry in r.json().get("servers") or []:
         srv = entry.get("server", entry)
         name = srv.get("name")
+        if _deleted(entry):                                    # CAP4a-1: a withdrawn entry is not a result
+            continue
         if name and (name not in newest or _version_key(srv.get("version")) >
                      _version_key(newest[name].get("server", newest[name]).get("version"))):
             newest[name] = entry
@@ -313,7 +350,7 @@ def index_archive(library: str, data: bytes) -> list[Candidate]:
         out.append(Candidate(
             id=f"library:{library}:{path}", kind="skill", name=parsed["name"], summary=parsed["description"],
             source="library", source_url=f"https://github.com/{library}/tree/{sha or 'HEAD'}/{folder}", repo=library,
-            version=sha[:12] or None, runtime="skill", path=path,
+            version=sha or None, runtime="skill", path=path,     # all 40 digits: the card pins it (#539 review 6)
             license={"spdx": spdx, "read_from": lic_path, "verdict": license_verdict(spdx, proprietary=bool(proprietary))},
             checked_at=time.time()))
     return out
