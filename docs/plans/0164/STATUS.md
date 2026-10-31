@@ -2,12 +2,18 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-10-31, morning (after the quota reset).
+**Updated:** 2026-11-01, after the user's first merges.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #519 | SKF1: every skill the user has reads unframed (D2), in one place | `a2bb4a25` |
+| #539 | CAP4a-1: a skill's card shows what was fetched, scanned and hashed at one commit | `be31eb43` |
+| #536 | SEC1 server half: a secret in a connection's address or arguments can move to an encrypted store (migration 0081) | `c0dd6a7c` |
+| #547 | NAME1: provider-safe tool names | `a8edd8eb` |
+| #542 | ci.yml: a strict xfail counts as ran; every xfail pins `raises=` | `e6895710` |
+| #537 | LOAD2 part 2: a stdio program that exits early is a closed connection | `f966a8e7` |
 | #552 | LOAD4 card; this page | `bc2d814b` |
 | #551 | Tests: LOAD4, four waits a loaded machine overran | `8e112bf7` |
 | #550 | SB1-2: pin and drag in the sidebar (migration 0079) | `b7fdbc78` |
@@ -103,31 +109,19 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge
 
-Only PRs with an independent effort=max OK **at the current head** and green CI are listed here. All of them are on the security surface, so the user merges each one.
+Every verdict is posted on its PR with the sha. The user merged six on 2026-11-01 (above).
 
-The user is out; these wait for their return.
-
-In any order unless noted. Every verdict below is posted on its PR with the sha.
-
-1. **#537** (LOAD2 part 2) at `4352ee1b`: ⑤CAP's OK, CI green. Product code.
-2. **#542** (ci.yml: a strict xfail counts as ran; every xfail pins `raises=`) at `8e67f6b6`: ③Hands' effort=max OK, CI green. Touches `.github`; before SBX-3p's first push.
-3. **#547** (NAME1: provider-safe tool names) at `0b59f0be`: ⓪Plan's effort=max OK, re-OKs through `0b59f0be`; CI green (its macOS job re-ran after the SBX-2 finding below, which is unrelated).
-4. **#526** (UNI1a, migration 0082) at `e2f155b6`: ⓪Plan's effort=max recheck OK, CI green. **Merge this one before #548.**
-5. **#548** (TITLE1) at `97627182`: ⓪Plan's effort=max OK, re-OK at this head. **Don't merge it right after #526:** together they break `test_title1_model_title.py:85`. After #526 lands, ③Hands rebases #548 and updates that test; merge #548 at its new head once it has a re-OK.
-6. **#536** (SEC1, server half, migration 0081) at `dfdd1e5a`: ⓪Plan's effort=max recheck OK, CI green.
-7. **#545** (WB1-3: Overview's Changes) at `1ca9f05e`: ②Main's endpoint OK; ④参谋's web review "merge" at this head; CI green.
-8. **#553** (DIFF1 server half: the line-diff endpoint) at `85135033`: ②Main's effort=max re-review OK. Stacked on #545, so after it.
-9. **#555** (EXC1a: silent broad `pass` handlers get a reason or a log) at `d984b12d`: ②Main's OK. It touches hot files by a line or two; it merges after #547, #519, #452 and #375, or ⑥Helper rebases it.
-10. **#539** (CAP4a-1: a skill's card shows what was fetched, scanned and hashed at one commit) at `7b43b92f`: ④参谋's effort=max reviewer says merge, on its third round; CI 41051353420 green. Low follow-ups go to CAP4a-3 (a per-key install lock, the wider `skipped` list, the short-sha prefix).
-11. **#519** (SKF1 for D2) at `0de987d2`: ⓪Plan's effort=max OK after three rechecks. **Right after #539.**
-12. **#554** (Hands' DesktopAccess card: Arslan's own heading, the model's `why` on its own line) at `7e8cc65c`: ⓪Plan's effort=max OK and re-OK at this head (app names now cleaned). Merge once its macos job is green.
-13. **#557** (EXC1b: silent `return`/`continue` handlers get a reason) at `73325eed`: ②Main's OK at `5bdac90e`; the one later commit is comment-only (why stop() absorbs a cancelled shutdown). Stacked on #555, so after it.
+1. **#554** (Hands' DesktopAccess card) at `7e8cc65c` and **#545** (WB1-3: Overview's Changes) at `1ca9f05e`: next on the user's list; they touch none of the files just merged.
+2. **#553** (DIFF1 server half) after #545: ⑥Helper retargets it to main so CI runs; ②Main's effort=max OK stands if the merge brings only main's changes.
+3. **#526** (UNI1a, migration 0082): **conflicts now** with SEC1's 0081 and CAP4a-1. ⑤CAP rebases it (0081 then 0082; UNI1a's cleaner on CAP4a-1's `scan_prepared` path), then a re-OK. Then **#548** (TITLE1): ③Hands rebases it and updates `test_title1_model_title.py:85`, then a re-OK.
+4. **#567** (JUDGE1, the shipped lessons gap) at `6ed9ed43`, then **#559** (MEM1) at `fddfe4e5`, then **#560** (its fail-safe tests): ②Main's effort=max re-reviews OK; once CI is green.
+5. **#561** (CAP4a-2) at `199df6fb`: ⓪Plan's effort=max re-review OK; the two stated limits are corrected in the body; once CI is green. Then **#569** (CAP4a-3b, draft, stacked).
+6. **#555** (EXC1a) and **#557** (EXC1b): ⑥Helper merges main in now that #547 and #519 have landed; a quick re-OK follows.
+7. **#568** (INB3 server half): ③Hands' OK, auto-merging.
+8. **#565** (app names everywhere; the risky-label gap) after #554: OK once its money check runs on the full label (③Hands).
 
 **Under review or on hold (don't merge these):**
 
-- **#559** (MEM1: merge memories by meaning) at `35047f0a`: changes requested by ②Main (effort=max). High: the merge check sends existing memories, sensitive and local-only ones included, to the judge model, which can be a cloud model, without personal_context's gates, and the judge's ledger keeps both texts for 90 days. ⑥Helper is fixing it. #560 (its fail-safe tests) is stacked on it and OK'd.
-- **#561** (CAP4a-2: the lock before the card, with Arslan's own runtime) at `ba8b4854`: fix then merge (⓪Plan's effort=max review). The uv path holds. Medium: the npm lock step isn't sandboxed, so a transitive git dependency is fetched before the card and locked without integrity. ⑤CAP rejects non-registry or integrity-less lock entries, or moves the resolve into the sandbox. A few lows and two missing tests.
-- **JUDGE1** (not opened yet; ⑥Helper): a **shipped gap** in v0.1.63 and main. Lessons' memory.merge and memory.conflict send up to two stored lessons to the judge without recall()'s cloud gate, so with cloud memory off a stored lesson can reach a cloud router model, and the judge's ledger keeps that text after the lesson is deleted. Lessons carry no sensitivity, so it's low to medium; every other judge point sends only what the chat model already gets. The fix: the gate in `_nearest`, ledger rows carry `ref=lesson:<id>` and go with the lesson, and the prune runs on a timer. ②Main reviews at effort=max. It shares one gate helper with #559's fix.
 - **#525** (Q1 #4, retire the pocket) at `63c70a69`: OK (⓪Plan's reviewer). Main is merged with SB1's pocket cases removed, and run.get and status now fail closed. CI 41062445096 passed. A draft until Q1c ships and you say go.
 - **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
 - **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts, rebasing onto SBX-2; they don't merge before SBX-M. #538's early read is posted (the tripwire is text-only; approving a re-run erases the denial); ③Hands takes it after the rebases. 3a is rebased at `c596ed3d`. The wiring onto the default-deny base waits for SBX-M and the listening decision (card :255).
