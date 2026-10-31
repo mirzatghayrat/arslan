@@ -445,3 +445,16 @@ The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直�
   - This replaces CAP2a's "keep the mark" and CAP2b's "split by source" for reading. CAP4's install-time checks are unchanged: pinned sha, scan, hashes, the card.
   - **Stated limit:** a skill's text reaches the model as trusted instructions, the same trust model as MCP tool descriptions from an approved server (user, 2026-10-29). The guard is at install time (the card, the scan and the pinned sha), not at read time. Skills that came in before CAP4's install-time checks (the old Discover page's `gh-` skills, Skill Forge's promoted ones, `create_skill` from outside text) never passed them; under D2 they read unframed too. Their origin mark still shows in Capabilities, and they can be deleted (D2(2)). Whether to re-check those rows once is the user's call (STATUS, "Waiting on the user"; ②Main's review of #540).
 - **D2(2): skills of unknown origin are deletable,** like any other skill; the body goes to the Trash. Built-in and seeded skills stay non-deletable (user, 2026-10-30).
+
+## Decided on 2026-10-31 (user, relayed by ④参谋)
+
+The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI1b 草图推荐选 B（我还是那个要求 借鉴主流agent产品做法，不要过度防御）」. These override the sections above where they differ.
+
+- **CAP4a-3, the allowlist: option D** (⑤CAP's Registry walk, #563 comment 6527457019: 2,583 one-click). Packages from any verified domain are one-click. The lock, the scan and the sandbox still apply. Remote servers are one-click only from B's list of about 40 vendors' own domains and GitHub orgs.
+- **CAP4a-3, Q2:** a remote server whose publisher has no verified domain (`io.github.<account>`) is manual-only, as the card says.
+- **CAP4a-3, Q3:** the start-time Registry re-check runs once a day per server, and on the first start after an update.
+- **CAP4a-2, the runtimes:** fetched on first need against the SHA-256 pinned in the repository, not shipped in the app.
+- **UNI1b:** option B of ⑤CAP's mock. A notice only, never blocking (D3).
+- **Skills from before CAP4's checks (D2's remaining half): to confirm.** That question had no recommendation, so 「全按推荐」 doesn't settle it. ④参谋 and ⓪Plan read "mainstream, no over-defence" as no one-time rescan, as Claude Code and Codex don't rescan installed skills. Until the user confirms, nothing is built either way. The skills keep their origin mark in Capabilities and stay deletable.
+- **INB2 and skills:** INB2's allowlist (`server/orchestrator/untrusted.py:241-276` on main `2876f11a`) still counts a skill read as off the list. So after a skill read, "about you" memories wait for the user. Kept, and recorded as a stated limit: D2 covers reading, not memory writes.
+- **The standing rule:** follow mainstream agent products, and don't over-defend (`docs/sessions.md` §12).
