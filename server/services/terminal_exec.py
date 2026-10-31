@@ -1,9 +1,16 @@
 """Run one shell command for Arslan (0.1.48).
 
-A real shell (zsh -c) in the user's folder, with the user's PATH (Homebrew
-included, which a Finder-launched app does not inherit) and only the ambient
-basics in its environment: provider keys and Arslan's own secret never reach a
-command. Whether a command may run at all is decided before this, by
+A real shell in the user's folder, with the user's PATH (Homebrew included,
+which a Finder-launched app does not inherit) and only the ambient basics in
+its environment: provider keys and Arslan's own secret never reach a command.
+
+S2a-3 (the user's decision, 2026-10-22): the shell is /bin/bash, the one whose
+grammar terminal_policy reads (server/services/shell_grammar.py), run as
+`bash -p -c`. Privileged mode skips $ENV and $BASH_ENV, imports no functions
+from the environment and ignores SHELLOPTS, so nothing outside the command's
+text changes how bash reads it (child_environment never passes them either).
+It used to be `zsh -c`, which read the user's ~/.zshenv first and has its own
+quoting and globbing that the reader did not model. Whether a command may run at all is decided before this, by
 terminal_policy and the confirmation card; this only runs it, bounded in time
 and output — since 0.1.51 inside the workspace sandbox (command_sandbox) unless
 the user clicked to let it out.
@@ -137,9 +144,9 @@ async def _cancel(tasks) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def _shell() -> str:
-    """zsh, the macOS login shell, wherever it exists; /bin/sh elsewhere (CI runs on Linux)."""
-    return "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh"
+def _shell() -> list[str]:
+    """bash in privileged mode: on macOS /bin/bash 3.2, the grammar shell_grammar reads; Linux CI has its own."""
+    return ["/bin/bash", "-p"] if os.path.exists("/bin/bash") else ["/bin/sh"]
 
 
 def _reads_a_saved_output(result: dict) -> bool:
@@ -159,13 +166,11 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     (sandbox="outside"), except an approved plain osascript or `shortcuts run` (`unwrapped`, set by
     the tool loop for that one call), which runs with no wrapper (sandbox="off"), as does any
     command where seatbelt cannot start."""
-    # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
-    # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
-    # failed (0.1.49 bench). Keep both inside the process temp dir.
+    # Here-documents are written under TMPDIR (bash), inside the process temp dir: where /tmp is not
+    # writable every `python3 - <<'PY'` save failed (0.1.49 bench, under zsh's TMPPREFIX).
     tmp = tempfile.gettempdir()
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
-                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp,
-                                 "TMPPREFIX": os.path.join(tmp, "zsh")})
+                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp})
     from server.services import command_sandbox
     prefix: list[str] = []
     mode = "off"
@@ -181,7 +186,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
                 "error": "commands run without network now, and this run cannot isolate the network — "
                          "save the deliverable with write_file instead"}
     proc = await asyncio.create_subprocess_exec(
-        *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
+        *prefix, *_shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
     # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the

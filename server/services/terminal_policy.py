@@ -11,12 +11,15 @@ Three answers for any shell command:
           folder, killing other programs, changing how the Mac starts or behaves, the keychain
           or system settings, controlling other apps (osascript, Shortcuts), opening an app or
           a link outside the sandbox, reading the screen or the clipboard — and a command this
-          module cannot read (`unreadable`: unbalanced quoting, over the parser limit, `eval`,
-          something downloaded or decoded piped into a shell, an inline script that reaches
-          out, starts programs or drives apps).
-  run     layer ③, everything else. The tool loop runs it in the workspace sandbox without a
-          card when the sandbox can start (`command_sandbox.available()`); otherwise, or when
-          the sandbox is switched off, it asks (target `unsandboxed:*`).
+          module cannot read (`unreadable`: anything outside the grammar shell_grammar reads,
+          which also covers unbalanced quoting, `eval` and inline code of another interpreter;
+          too many commands to read; reading that takes too long; something downloaded or
+          decoded piped into a shell; an inline script that reaches out).
+  run     layer ③, everything else. Since S2a-3 that has to be earned: only a command whose
+          whole text shell_grammar understands gets here. The tool loop runs it in the
+          workspace sandbox without a card when the sandbox can start
+          (`command_sandbox.available()`); otherwise, or when the sandbox is switched off, it
+          asks (target `unsandboxed:*`).
 
 The rules are Arslan's own; the hard floor (layer ①) is adapted from Hermes Agent's (MIT;
 NousResearch/hermes-agent), keeping what applies to macOS. Commands are read through
@@ -30,11 +33,14 @@ holds a layer ③ command, and a command outside it runs with the user's own per
 """
 from __future__ import annotations
 
+import asyncio
+import collections
 import re
 import shlex
+import threading
 from dataclasses import dataclass
 
-from server.services import shell_text
+from server.services import shell_grammar, shell_text
 
 MAX_COMMAND_CHARS = 8000
 
@@ -416,40 +422,100 @@ def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
 
 
-def assess(command: str) -> Assessment:
-    """The layer a command is in, with its first rule (the one its card names)."""
-    text = str(command or "")
+@dataclass(frozen=True)
+class _Analysis:
+    verdict: Assessment
+    rules: frozenset[str] = frozenset()      # every layer ② rule it matches (and `unreadable`), for ask_rules
+
+
+def _analyse(text: str) -> _Analysis:
     if not text.strip():
-        return Assessment("forbid", "empty", "no command")
+        return _Analysis(Assessment("forbid", "empty", "no command"))
     if len(text) > MAX_COMMAND_CHARS:
-        return Assessment("forbid", "too-long", "command is too long to review")
-    texts = _detection_texts(text) if not shell_text.too_complex(text) else (text,)
+        return _Analysis(Assessment("forbid", "too-long", "command is too long to review"))
+    # S2a-3: read first. The reader is linear and stops at MAX_COMMANDS; past it, or past the text
+    # parser's own limit, only the text as written and normalized is matched (building the detection
+    # variants is quadratic in the number of commands: ②Main measured ~37 s for one command).
+    reading = shell_grammar.read(text)
+    heavy = reading.capped or shell_text.too_complex(text)
+    texts = (text, shell_text.normalize(text)) if heavy else _detection_texts(text)
     forbidden = _forbid(text, texts)
     if forbidden is not None:
-        return forbidden
+        return _Analysis(forbidden)
     unparseable = _unparseable(text)
     if unparseable:
-        return Assessment("ask", UNREADABLE, unparseable)
+        return _Analysis(Assessment("ask", UNREADABLE, unparseable), frozenset({UNREADABLE}))
     found = _layer_two(texts)
+    hidden = _hidden_code(texts) or (reading.why if not reading.understood else "")
+    rules = frozenset(key for key, _why in found) | ({UNREADABLE} if hidden else frozenset())
     if found:
-        return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
-    hidden = _hidden_code(texts)
+        # The named rule first: its card says what it is. A command the reader did not understand keeps
+        # `unreadable` among its rules too (the card's target lists every rule), and asks this time only.
+        return _Analysis(Assessment("ask", found[0][0], found[0][1]), rules)
     if hidden:
-        return Assessment("ask", UNREADABLE, hidden)
-    return Assessment("run")
+        return _Analysis(Assessment("ask", UNREADABLE, hidden), rules)
+    return _Analysis(Assessment("run"))
+
+
+# One analysis per command text: the tool loop, the card, the approvals and the Island all ask about
+# the same command, and each used to read it again (on the event loop). Pure in the text, so caching
+# changes nothing but the cost. A timed-out reading (assess_async) is stored here too, so every later
+# caller gets the same answer instead of reading it again on the loop.
+_CACHE_SIZE = 512
+_cache: collections.OrderedDict[str, _Analysis] = collections.OrderedDict()
+_cache_lock = threading.Lock()
+
+#: How long the tool loop waits for a command to be read before it counts as not understood (S2a-3 c).
+#: Reading takes about a millisecond; the caps keep the slowest well under this.
+READ_TIMEOUT_S = 2.0
+TIMED_OUT = Assessment("ask", UNREADABLE, "it takes too long to read before running")
+
+
+def _store(text: str, analysis: _Analysis, *, replace: bool) -> _Analysis:
+    with _cache_lock:
+        if not replace and text in _cache:
+            _cache.move_to_end(text)
+            return _cache[text]
+        _cache[text] = analysis
+        _cache.move_to_end(text)
+        while len(_cache) > _CACHE_SIZE:
+            _cache.popitem(last=False)
+        return analysis
+
+
+def _analysis(text: str) -> _Analysis:
+    with _cache_lock:
+        hit = _cache.get(text)
+        if hit is not None:
+            _cache.move_to_end(text)
+            return hit
+    return _store(text, _analyse(text), replace=False)
+
+
+def assess(command: str) -> Assessment:
+    """The layer a command is in, with its first rule (the one its card names)."""
+    return _analysis(str(command or "")).verdict
+
+
+async def assess_async(command: str, *, timeout_s: float = READ_TIMEOUT_S) -> Assessment:
+    """`assess` off the event loop, within `timeout_s` (S2a-3 c): one that takes longer is not
+    understood, and that answer is the one every later caller gets for this text."""
+    text = str(command or "")
+    with _cache_lock:
+        hit = _cache.get(text)
+    if hit is not None:
+        return hit.verdict
+    try:
+        return (await asyncio.wait_for(asyncio.to_thread(_analysis, text), timeout_s)).verdict
+    except asyncio.TimeoutError:
+        return _store(text, _Analysis(TIMED_OUT, frozenset({UNREADABLE})), replace=True).verdict
 
 
 def ask_rules(command: str) -> set[str]:
     """Every layer ② rule the command matches (and `unreadable`). `assess` names only the first,
     which is what the card shows; a card's target lists all of them (`rules:<rule>|<rule>`)."""
-    verdict = assess(command)
-    if verdict.level != "ask":
-        return set()
-    text = str(command or "")
-    if _unparseable(text):
-        return {UNREADABLE}
-    texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
+    analysis = _analysis(str(command or ""))
+    return set(analysis.rules) if analysis.verdict.level == "ask" else set()
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

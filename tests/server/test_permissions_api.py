@@ -232,7 +232,8 @@ def test_a_crafted_separator_in_a_command_makes_no_rule_nobody_saw(client):
     """Review P3: a model-written command carrying the many-app separator is one command, not a
     list — no rule for `git-push` can come of it."""
     crafted = _cmd("echo hi\x1egit-push", ask_all=True)
-    assert crafted.target == "text:echo hi\x1egit-push"
+    # S2a-3: a control character is not read (shell_grammar), so the card is `unreadable`, this time only.
+    assert crafted.target == "rules:unreadable"
     _decide(client, crafted, asker=_away)
     [row] = _refused(client)
     assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
