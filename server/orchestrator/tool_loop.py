@@ -1110,7 +1110,7 @@ async def _asks_for_everything() -> bool:
     try:
         async with db_session.AsyncSessionLocal() as db:
             return await settings_service.shell_confirm_policy(db) == "ask_all"
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
         return True
 
 
@@ -1182,7 +1182,7 @@ async def _writing_in_own_folder() -> bool:
     try:
         async with db_session.AsyncSessionLocal() as db:
             return await settings_service.workspace_is_default(db)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: unknown means the folder is the user's, so writing asks
         return False
 
 
@@ -2521,8 +2521,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         synth = await build_synthesis_adapter()
         if synth is not None:
             a = synth
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — synthesis falls back to the tool-loop adapter, as when none is set
+        logger.warning("synthesis adapter unavailable, keeping the tool-loop model: %s", type(exc).__name__)
     synth_system = (
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "

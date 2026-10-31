@@ -647,7 +647,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         try:
             await ws.send_json(protocol.error("INTERNAL_ERROR", str(exc), recoverable=True))
             await ws.close(code=1011)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the socket is likely broken already; `finally` below still cleans up
             pass
         return
     finally:

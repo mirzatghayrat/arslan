@@ -20,8 +20,9 @@ def test_default_deny_golden():
 
 @pytest.mark.parametrize("mode", list(NetworkMode))
 def test_network_is_explicit_and_services_never_wholesale(mode):
+    ports = () if mode == NetworkMode.ANY_DECLARED else (43211, 43212)
     text = default_deny_profile(network=mode, proxy_port=43210 if mode == NetworkMode.PROXY else None,
-                                denied_ports=[43211, 43212])
+                                denied_ports=ports)
     assert "(allow default)" not in text
     assert "(allow mach-lookup)" not in text
     assert "(allow network*)" not in text
@@ -32,9 +33,18 @@ def test_network_is_explicit_and_services_never_wholesale(mode):
     if mode == NetworkMode.NONE:
         assert "(deny network*)" in text
         assert "(allow network" not in text
+    elif mode == NetworkMode.ANY_DECLARED:
+        assert '(allow network-outbound (remote tcp "*:*"))' in text
     else:
         assert '(deny network-outbound (remote tcp "localhost:43211"))' in text
         assert '(deny network-outbound (remote tcp "localhost:43212"))' in text
+
+
+@pytest.mark.parametrize("ports", [(49345,), (59626,), (22, 443)])
+def test_any_declared_rejects_port_denials(ports):
+    # Include the two reported dropped ports and a multi-port iterable.
+    with pytest.raises(ValueError, match="any-declared cannot enforce denied_ports"):
+        default_deny_profile(network="any-declared", denied_ports=iter(ports))
 
 
 def test_protection_is_last_even_inside_a_grant(tmp_path):

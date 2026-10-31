@@ -384,9 +384,9 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     """One Arslan turn with no socket behind it (P2 §1.1).
 
     Frames go to run_registry's fan-out: a tab open on this conversation sees
-    it live, no tab means they simply drop (the recorder journal is not
-    involved — an answer turn has no Run row). Never an exception for want of
-    a listener.
+    it live, no tab means they simply drop. The turn records a host run
+    (host_run.execute), linked to the fire's task; the fire keeps its id
+    (INB6). Never an exception for want of a listener.
 
     🔴 Every confirm callback is deliberately omitted, and no card surface is
     bound (permissions.asking_with): that omission IS the safety property. It
@@ -469,25 +469,37 @@ async def _fire_body(task: ScheduledTask) -> None:
         await db.commit()
 
     from server.services.task_service import current as current_task
+    # INB6: "fire now" from a present turn runs inside that turn's task (task_context.execute_entry hands the body
+    # the current runtime), whose run_ids already hold the turn's own run: only ids added from here are the fire's.
+    outer = current_task()
+    before = set(outer.run_ids) if outer else set()
+
+    def made_run() -> int | None:
+        # INB6: the run the fire's turn recorded (host_run links it to the task), so the Scheduled page opens each
+        # run, a failed one included. The newest, if the turn recorded more than one; None if it recorded none.
+        runtime = current_task()
+        made = runtime.run_ids - before if runtime else set()
+        return max(made) if made else None
     try:
         await run_arslan_turn(cid, prompt)
     except Exception as exc:  # noqa: BLE001 — a failed fire is an error outcome, not a crash
         if current_task():
             current_task().saw_error = True
         logger.warning("scheduled task %s fire failed: %s", task_id, exc)
-        await record_outcome(task_id, False, row_id=row_id, run_id=None, reason=str(exc))
+        await record_outcome(task_id, False, row_id=row_id, run_id=made_run(), reason=str(exc))
         return
     runtime = current_task()
     if runtime and (runtime.saw_error or runtime.pause_reason or runtime.cancelled):
-        await record_outcome(task_id, False, row_id=row_id,
+        await record_outcome(task_id, False, row_id=row_id, run_id=made_run(),
             reason=runtime.pause_reason or ("cancelled by user" if runtime.cancelled else "execution failed"),
             count_failure=not runtime.cancelled)
         return
-    await record_outcome(task_id, True, row_id=row_id, run_id=None)
+    run_id = made_run()
+    await record_outcome(task_id, True, row_id=row_id, run_id=run_id)
     # Best-effort timeline entry (log_event never raises) — the recap shows the fire
     # even when nobody was online to see the stream.
     await recap_service.log_event(
-        cid, "scheduled_fire", {"task_id": task_id, "run_id": None},
+        cid, "scheduled_fire", {"task_id": task_id, "run_id": run_id},
         f"定时任务「{name}」已执行")
 
 
@@ -546,6 +558,9 @@ async def stop() -> None:
     if _loop_task is not None:
         try:
             await within(asyncio.shield(_loop_task), timeout=5.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
+        # Awaiting the loop this function just told to stop. A cancel of shutdown itself is absorbed too, so the
+        # remaining stops in main._shutdown_services still run, as proactive_service.stop does: re-raising would
+        # skip them (they catch Exception only), which is worse on a cancelled shutdown (EXC1, ⓪Plan).
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001 — shutdown runs every stop
             pass
         _loop_task = None
