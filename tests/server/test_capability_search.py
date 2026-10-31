@@ -204,7 +204,7 @@ async def test_a_library_is_indexed_per_skill_with_each_skills_own_license_at_on
     assert found["csv-tidy"].license == {"spdx": "MIT", "read_from": "skills/csv-tidy/LICENSE.txt", "verdict": "usable"}
     assert found["xlsx"].license["verdict"] == "reference_only"           # a license file that is not permissive
     assert found["poetry"].license["verdict"] == "unknown"                 # no license file at all
-    assert found["xlsx"].version == LIB_SHA[:12] and f"/tree/{LIB_SHA}/skills/xlsx" in found["xlsx"].source_url
+    assert found["xlsx"].version == LIB_SHA and f"/tree/{LIB_SHA}/skills/xlsx" in found["xlsx"].source_url
     # One archive, no API call (60 an hour without a token).
     assert [u for u in net.calls if "anthropics" in u] == ["https://codeload.github.com/anthropics/skills/tar.gz/HEAD"]
 

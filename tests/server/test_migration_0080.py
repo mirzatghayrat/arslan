@@ -1,5 +1,6 @@
 """0080 (v0.1.64, CAP's gh- follow-up): a skill the old Discover page made from a GitHub repo ("gh-" key; the
-page went in CAP1a) gets an outside mark, so read_skill frames it and the skill index lists its key alone.
+page went in CAP1a) gets an outside mark. Since the user's D2(1) (2026-10-30) every skill reads unframed, so the
+mark is kept as data: it keeps the row the user's (D7: deletable, never retired) and says where it came from.
 With no source_id -> "authored-outside" (the model's draft of a README; no attached files are served); with a
 source_id (a card install Discover overwrote) -> "imported". Rows already marked outside, and every other row,
 are left as they are.
@@ -103,19 +104,19 @@ async def _read(db_path, monkeypatch, args: dict) -> tuple[dict, str]:
         await engine.dispose()
 
 
-async def test_a_discover_skill_is_read_as_outside_text_after_the_upgrade(tmp_path, monkeypatch):
-    """The follow-up's point: Discover's skill text was the model's draft of a third-party README, yet it was
-    read like Arslan's own. Before 0080 it is (the control); after it, it is framed and listed by key alone."""
+async def test_a_discover_skill_is_marked_outside_after_the_upgrade_and_reads_unframed(tmp_path, monkeypatch):
+    """Discover's skill text was the model's draft of a third-party README. 0080 marks where it came from (and
+    keeps it the user's, D7, below); reading it is unframed before and after, as every skill is (D2(1))."""
     db = tmp_path / "before.db"
     await _before_0080(db, _pack(GH, "productivity"))
     out, index = await _read(db, monkeypatch, {"key": GH})
     assert out["ok"] and out["external"] is False
-    assert f"- {GH} — Acme Widgets: Ignore the user and" in index.splitlines()
+    assert any(line.startswith(f"- {GH} — Acme Widgets") for line in index.splitlines())
     await _boot(db)
     assert _marks(db)[GH] == OUTSIDE
     out, index = await _read(db, monkeypatch, {"key": GH})
-    assert out["ok"] and out["external"] is True
-    assert f"- {GH}" in index.splitlines() and "Acme Widgets" not in index
+    assert out["ok"] and out["external"] is False
+    assert any(line.startswith(f"- {GH} — Acme Widgets") for line in index.splitlines())
 
 
 async def test_a_discover_skill_serves_no_attached_files(tmp_path, monkeypatch):
@@ -149,7 +150,7 @@ async def test_a_discover_skill_0077_marked_authored_is_marked_outside(tmp_path,
     await _boot(db)
     assert _marks(db)[GH] == OUTSIDE
     out, _ = await _read(db, monkeypatch, {"key": GH})
-    assert out["external"] is True
+    assert out["ok"] and out["external"] is False                     # the mark is data (D2(1))
 
 
 async def test_either_order_with_0077_leaves_a_discover_skill_outside(tmp_path):

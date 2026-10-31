@@ -228,14 +228,19 @@ async def test_a_tool_listed_again_is_updated_in_place(db, monkeypatch):
 
 
 def _watch_writes(monkeypatch):
-    """Wrap the write so the test sees how many run at once; each takes a moment."""
-    real, seen = discovery._write_once, {"now": 0, "most": 0, "calls": 0}
+    """Wrap the write so the test sees how many run at once; each takes a moment. With `meet` set, a write waits
+    (up to 5 s) until that many are inside at once, so two that may overlap do, however slow the machine is
+    (LOAD4: under load one server's write finished before the other's began, and `most` stayed 1)."""
+    real, seen = discovery._write_once, {"now": 0, "most": 0, "calls": 0, "meet": 0}
 
     async def watched(*args, **kwargs):
         seen["calls"] += 1
         seen["now"] += 1
         seen["most"] = max(seen["most"], seen["now"])
         try:
+            deadline = asyncio.get_running_loop().time() + 5
+            while seen["meet"] and seen["now"] < seen["meet"] and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.01)
             await asyncio.sleep(0.02)
             return await real(*args, **kwargs)
         finally:
@@ -252,6 +257,7 @@ async def test_one_servers_writes_never_overlap_but_two_servers_may(db, monkeypa
     monkeypatch.setattr(session.manager, "list_tools", listing)
     await asyncio.gather(*(discovery.connect_and_discover(1) for _ in range(3)))
     assert seen["calls"] == 3 and seen["most"] == 1
+    seen["meet"] = 2                               # each waits for the other: a global lock would never let it in
     await asyncio.gather(discovery.connect_and_discover(1), discovery.connect_and_discover(2))
     assert seen["most"] == 2                       # the lock is per server, not global
 

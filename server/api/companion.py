@@ -262,6 +262,29 @@ async def _conversation_lock(conversation_id: str):
         yield
 
 
+class ConversationPin(Contract):
+    pinned: Annotated[bool, Field(strict=True)]
+
+
+@router.put("/conversations/{conversation_id}/pin")
+async def pin_conversation(conversation_id: str, body: ConversationPin, repo=Depends(_repository, scope="function")):
+    """SB1-2: pin or unpin a conversation in the sidebar. Its own route, not a field of the context PUT (⑥Helper's
+    review of #484): that one is refused while the conversation runs, replaces every field (a caller that left the
+    pin out would clear it) and bumps `version` (a pin would race a settings edit). This one upserts the row (many
+    conversations have none), is allowed while the conversation runs, and touches nothing but `pinned`."""
+    if len(conversation_id) > 100 or not conversation_id.strip():
+        raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+    row = await repo.db.get(ConversationContext, conversation_id)
+    if row and row.owner_id != USER.owner_id:
+        raise HTTPException(404, detail={"code": "conversation_not_found"})
+    from sqlalchemy.dialects.sqlite import insert
+    statement = insert(ConversationContext).values(id=conversation_id, owner_id=USER.owner_id, version=1,
+                                                   pinned=body.pinned)
+    await repo.db.execute(statement.on_conflict_do_update(index_elements=[ConversationContext.id],
+                                                          set_={"pinned": body.pinned}))
+    return {"conversation_id": conversation_id, "pinned": body.pinned}
+
+
 @router.put("/conversations/{conversation_id}/context")
 async def update_conversation_context(conversation_id: str, body: ConversationSettings,
                                       _lock=Depends(_conversation_lock, scope="function"),
