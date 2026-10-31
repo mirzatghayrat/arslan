@@ -155,7 +155,7 @@ The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is 
 3. **#590** (INB5a: the waiting-on-you count, migration 0084): re-OK'd at `71adc88c`. ②Main retargets it to main now that #589 is in; it needs a quick re-OK on the new head.
 4. **#597** (UNI1b follow-up: the 8-IVS budget, the emoji bases, the listing's scan): re-checked OK at `1ec0e90f`, already based on main. ⑤CAP marks it ready (it's still a draft).
 
-**Pushes that wait for the user's OK** (the classifier stopped ⑤CAP; nothing was run):
+**Pushes the user allowed (2026-11-01, about 17:45 UTC, relayed by ④参谋); ⑤CAP pushes them in its own session:**
 - **#584** (CAP4a-3c, allowlist D at card time): it would retarget to main and push `85086df6`, which holds the effort=max review's fixes. Then a re-check.
 - **#563** (CAP4a-3a).
 
@@ -181,16 +181,6 @@ The user merged 12 PRs at bedtime on 2026-10-31 (above). Every verdict below is 
 
 ## Waiting on the user
 
-- **The #584 and #563 pushes** (above).
-- **INB7 C+** (②Main's board, version 9). Is the layout OK? And which version gets the map and the timeline replay?
-  - **(A) Recommended:** v0.1.64 ships the ledger strip, the list, 「要你做」 and the four tabs; the map and the replay go to v0.1.65.
-  - **(B)** Everything in v0.1.64.
-- **The import scan** (#586 review F3): which hidden characters block an import?
-  - **(A) Recommended, mainstream (GitHub warns):** only Tag characters and bidi overrides block; every other hidden character is counted and marked.
-  - **(B)** Keep blocking all of them, as today.
-- **The L11-0 mock** (⑥Helper). Two picks:
-  - where the rules show: the Overview row (recommended), or Settings only;
-  - the card's buttons: Add / Not now (recommended), or a third, "Edit first".
 - **SEC1 mock** (⑤CAP), sent as a private link.
 - **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
 - **(Done: the load flakes below are LOAD4, #551.)** Earlier note: `test_mcp_discovery_v2.py:256` (two servers' writes didn't overlap under load) and `test_inb2_presence_entry_points.py:80` [phone-chat-send] (presence read before it was written). A third is `test_chat_liveness_0159.py:146` (`test_a_message_sent_right_after_the_answer_is_not_queued`): it starts a 4 s `threading.Timer` fallback before the first turn, so a slow pair of turns under load lets the fallback fire first (②Main; not the test #521 fixed). Not a decision; listed so they aren't lost.
@@ -303,6 +293,13 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - The listener loop: 30/30 in each mode.
 - The report is `SBX-measurement.md` (#592, `71f79c3d`).
 - The two boundary-open rows (the hard-link measurement on today's shipped bases) are a probe artifact, not a shipped gap; no point release (the effort=max assessment, #592 comment 6545067946). The probe fix is in Codex's SBX-3p paste.
+
+**Decided on 2026-11-01, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
+1. **The #584 and #563 pushes:** allowed. ⑤CAP pushes them in its own session; no other session pushes for it.
+2. **INB7 C+:** **B**. The layout is OK, and all of it goes into v0.1.64: the ledger strip, the list, 「要你做」 with its four tabs, the map and the timeline replay (②Main).
+3. **The import scan:** **A**. The rule that blocks an import blocks only Tag characters and bidi overrides. Every other hidden character is counted and marked, not blocked, as GitHub's warning does. This is a new small PR on the security surface (⑤CAP).
+4. **L11-0:** both picks as recommended. The rules show as an Overview row, and the card has two buttons, Add and Not now. L11-2 can be built now (⑥Helper).
+5. **The SB1 count:** allowed. It's read-only, counts by section only, and runs in ⑥Helper's session.
 
 ## Spend
 
