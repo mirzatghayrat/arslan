@@ -256,6 +256,24 @@ async def test_the_listing_counts_what_a_skills_text_hides_and_says_what_the_sca
         await skill_import.import_skill("x/y", "c/SKILL.md")
 
 
+@pytest.mark.parametrize("where", ["a YAML escape in the description", "a reference file"])
+async def test_the_listing_scans_what_the_import_scans(maker, monkeypatch, where):
+    """#586 re-check R3: the listing ran the scan on the raw SKILL.md only, so a zero-width space the raw file does
+    not show (a YAML escape) or one in a reference file was offered, then blocked at import."""
+    if where == "a reference file":
+        md, raws = VALID_MD, {"r/SKILL.md": VALID_MD, "r/references/notes.md": "See\u200bthis.\n"}
+        tree = ["r/SKILL.md", "r/references/notes.md"]
+    else:
+        md = VALID_MD.replace("description: ", 'description: "Escaped\\u200bhere" #', 1)
+        raws, tree = {"r/SKILL.md": md}, ["r/SKILL.md"]
+    _mock_github(monkeypatch, tree=tree, raws=raws)
+    out = await skill_import.scan_skills("x/y")
+    [entry] = out["skills"]
+    assert (entry["importable"], entry["reason"]) == (False, "blocked by the safety check: invisible_characters")
+    with pytest.raises(ValueError, match="invisible_characters"):
+        await skill_import.import_skill("x/y", "r/SKILL.md")
+
+
 async def test_a_proprietary_skill_is_refused_on_import_too(maker, monkeypatch):
     _anthropic_like(monkeypatch)
     with pytest.raises(ValueError, match="not a permissive license"):

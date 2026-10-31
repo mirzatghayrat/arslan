@@ -234,7 +234,6 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
     """Find standard SKILL.md skills in a repo and report per-skill importability.
     0.1.55: the license gate is per skill — its own license file, else the repo's."""
     from server.orchestrator import untrusted
-    from server.services import capability_scan
     ref, _, pin = (ref or "").partition("@")
     parsed = github_eval.parse_repo_ref(ref)
     if parsed is None:
@@ -270,8 +269,11 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
             spdx, source = await _skill_license(owner, repo, p, paths, meta["license"], sha)
             block = _skill_license_block(spdx, source)
             entry.update(license=spdx, license_source=source)
-            # UNI1b (#586 review F3): what the import's scan will block, said here, so the panel never offers it.
-            scanned = capability_scan.summarise(capability_scan.scan_text(p, raw, kind="text"))
+            # UNI1b (#586 review F3, re-check R3): the import's own scan, over the same files (the SKILL.md as
+            # written and as stored, its scripts and references), said here, so the panel never offers what the
+            # import will block.
+            scripts, references = await _bundles(owner, repo, sha, p, paths, [])
+            scanned = scan_prepared({"skill_md": raw, "info": info, "scripts": scripts, "references": references})
             if block:
                 entry.update(importable=False, reason=block)
             elif scanned["level"] == "blocked":
@@ -321,6 +323,42 @@ def scan_prepared(prepared: dict) -> dict:
     return capability_scan.scan_skill(text, prepared["scripts"], prepared["references"])
 
 
+async def _bundled(owner: str, repo: str, sha: str, found: list[str], cap: int, max_bytes: int, name_re: str,
+                   skipped: list, keep) -> dict[str, str]:
+    kept: dict[str, str] = {}
+    taken: set[str] = set()                         # basenames ignoring case: APFS keeps one of two
+    for n, file_path in enumerate(found):
+        fname = file_path.rsplit("/", 1)[-1]
+        if n >= cap:
+            skipped.append({"path": file_path, "reason": f"more than {cap} files"})
+            continue
+        if not re.fullmatch(name_re, fname):
+            skipped.append({"path": file_path, "reason": "not a file name the import keeps"})
+            continue
+        if fname.lower() in taken:
+            skipped.append({"path": file_path, "reason": "the same file name as another"})
+            continue
+        content = await _fetch_raw(owner, repo, file_path, sha)
+        if len(content.encode("utf-8")) > max_bytes:
+            skipped.append({"path": file_path, "reason": f"larger than {max_bytes} bytes"})
+            continue
+        kept[fname] = keep(file_path, content)
+        taken.add(fname.lower())
+    return kept
+
+
+async def _bundles(owner: str, repo: str, sha: str, path: str, paths: list[str], skipped: list,
+                   keep=lambda file_path, content: content):
+    """A skill's bundled scripts (flat names, .py only, capped) and references (flat basenames, .md/.txt only, the
+    same per-file and per-skill caps; PC-3 mounts these read-only), as the import keeps them. The import panel's
+    listing fetches the same files, so it scans what the import will scan (#586 re-check R3)."""
+    scripts = await _bundled(owner, repo, sha, _scripts_for(path, paths), _MAX_SCRIPTS, _MAX_SCRIPT_BYTES,
+                             r"[A-Za-z0-9._-]+\.py", skipped, keep)
+    references = await _bundled(owner, repo, sha, _references_for(path, paths), _MAX_REFERENCES,
+                                _MAX_REFERENCE_BYTES, r"[A-Za-z0-9._-]+\.(md|txt)", skipped, keep)
+    return scripts, references
+
+
 async def prepare_skill(ref: str, path: str) -> dict:
     """Fetch ONE skill whole at one pinned commit, in memory: nothing is written (v0.1.64 CAP4a-1: the card is
     built from this, scanned and hashed, and a yes installs exactly it).
@@ -363,35 +401,7 @@ async def prepare_skill(ref: str, path: str) -> dict:
         if await db.get(SkillPack, info["key"]) is not None:
             raise ValueError(f"skill '{info['key']}' already exists in the library")
 
-    # bundled scripts (flat names, .py only, capped) and references (flat basenames, .md/.txt only, the same
-    # per-file and per-skill caps; PC-3 mounts these read-only), kept in memory until `install_prepared`.
-    async def _bundled(found: list[str], cap: int, max_bytes: int, name_re: str) -> dict[str, str]:
-        kept: dict[str, str] = {}
-        taken: set[str] = set()                         # basenames ignoring case: APFS keeps one of two
-        for n, file_path in enumerate(found):
-            fname = file_path.rsplit("/", 1)[-1]
-            if n >= cap:
-                skipped.append({"path": file_path, "reason": f"more than {cap} files"})
-                continue
-            if not re.fullmatch(name_re, fname):
-                skipped.append({"path": file_path, "reason": "not a file name the import keeps"})
-                continue
-            if fname.lower() in taken:
-                skipped.append({"path": file_path, "reason": "the same file name as another"})
-                continue
-            content = await _fetch_raw(owner, repo, file_path, sha)
-            if len(content.encode("utf-8")) > max_bytes:
-                skipped.append({"path": file_path, "reason": f"larger than {max_bytes} bytes"})
-                continue
-            kept[fname] = _keep(file_path, content)
-            taken.add(fname.lower())
-        return kept
-
-    # bundled scripts (flat names, .py only, capped) and references (flat basenames, .md/.txt only, the same
-    # per-file and per-skill caps; PC-3 mounts these read-only), kept in memory until `install_prepared`.
-    scripts = await _bundled(_scripts_for(path, paths), _MAX_SCRIPTS, _MAX_SCRIPT_BYTES, r"[A-Za-z0-9._-]+\.py")
-    references = await _bundled(_references_for(path, paths), _MAX_REFERENCES, _MAX_REFERENCE_BYTES,
-                                r"[A-Za-z0-9._-]+\.(md|txt)")
+    scripts, references = await _bundles(owner, repo, sha, path, paths, skipped, _keep)
     return {"key": info["key"], "info": info, "full_name": meta["full_name"], "commit": sha, "license": spdx,
             "license_source": source, "skill_md": raw, "scripts": scripts, "references": references,
             "files": files, "sizes": sizes, "skipped": skipped}
