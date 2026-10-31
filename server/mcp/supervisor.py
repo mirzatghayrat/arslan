@@ -135,7 +135,7 @@ def _secrets(server: dict) -> list[str]:
         logger.debug("mcp %s: secret_forms failed; masking with the fallback", server.get("id"),
                      exc_info=True)
     try:
-        forms = spawn_env.secret_forms({"env": server.get("env") or {}})
+        forms = spawn_env.secret_forms({"env": server.get("env") or {}, "secrets": server.get("secrets") or {}})
     except Exception:  # noqa: BLE001 — an env that is not a dict of strings
         forms = []
     url = str(server.get("url") or "")
