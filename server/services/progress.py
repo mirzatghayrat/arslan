@@ -66,8 +66,9 @@ async def _latest_not_asked(db: AsyncSession, decided_by: str, hours: int) -> di
 
 async def waiting_reasons(db: AsyncSession) -> dict[str, str]:
     """The conversations waiting on you, before projects and tasks group them, and what each waits on (INB5b-3, #590's re-check):
-    "card" when a card is open or one went unanswered while you were away, "reminder" when a job that stopped left one. A card wins:
-    it is a decision, the reminder an offer."""
+    "card" when a card is open, "away" when one went unanswered while you were away (nothing is left to approve, only the "not done
+    while you were away" list; ⓪Plan's review of PR 614, N2), "reminder" when a job that stopped left one. A card wins, then an away
+    entry: a card is a decision, the reminder an offer."""
     pending = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
     away = await _latest_not_asked(db, "away", AWAY_HOURS)
     seen = dict((await db.execute(select(ConversationSeen.conversation_id, ConversationSeen.seen_at)
@@ -81,7 +82,7 @@ async def waiting_reasons(db: AsyncSession) -> dict[str, str]:
                                      .where(ArslanMessage.conversation_id.in_(list(candidates))))).scalars()) if candidates else set()
     reasons = dict.fromkeys(pending, "card")
     for cid in existing:
-        reasons.setdefault(cid, "card" if cid in unanswered else "reminder")
+        reasons.setdefault(cid, "away" if cid in unanswered else "reminder")
     return reasons
 
 

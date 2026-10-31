@@ -291,9 +291,10 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
             state = "done_unseen"
         if cid in asking:                    # INB5: the badge counts it, so its row says so (#590 review F3a)
             state = "waiting"
-        # INB5b-3: what a waiting row waits on, a card or a stopped job's reminder (which hides the job's own outcome), for the
-        # window's list only: phones build their list field by field and are not sent it (api/phone.py).
-        waiting_on = (asking.get(cid) or ("card" if cid in waiting else None)) if state == "waiting" else None
+        # INB5b-3: what a waiting row waits on, a card, an away entry or a stopped job's reminder (which hides the job's own outcome),
+        # for the window's list only: phones build their list field by field and are not sent it (api/phone.py). The island's open
+        # card wins, as a card does in waiting_reasons.
+        waiting_on = ("card" if cid in waiting else asking.get(cid)) if state == "waiting" else None
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
         item = {"kind": kind, "state": state, "phone_state": phone_state, "waiting_on": waiting_on,
                 "origin": "phone" if (first is not None and first.source == "phone") else "mac",

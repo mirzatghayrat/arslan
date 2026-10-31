@@ -783,6 +783,7 @@
     "glyph": {
       "waiting": "Attend ton accord",
       "waiting_reminder": "Un travail arrêté t’a laissé un rappel",
+      "waiting_away": "N’a pas pu te demander pendant ton absence",
       "remote": "Remote · ton iPhone",
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",

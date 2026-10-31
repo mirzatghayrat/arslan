@@ -8,7 +8,7 @@ import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { REMOTE_ID, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { REMOTE_ID, mostUrgent, remoteFirst, waitingLabel, type ConversationMeta } from "../lib/conversationMeta";
 import { groupByDay, newestFirst } from "../lib/sidebarOrder";
 import { useRecency } from "../stores/recencyStore";
 import { useSidebar } from "../stores/sidebarStore";
@@ -175,6 +175,10 @@ export default function Sidebar(props: SidebarProps) {
     const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
     // INB4: the row carries its most urgent conversation: waiting, then working, then done, not seen.
     const urgent = (["waiting", "working", "done_unseen"] as const).find(state => chats.some(thread => meta[thread.id]?.state === state));
+    // INB5b-3: and what it waits on, rolled up the same way: the bell only when every waiting conversation under it waits on a
+    // reminder (⓪Plan's review of PR 614, N1).
+    const waitingOn = urgent === "waiting"
+      ? mostUrgent(chats.filter(thread => meta[thread.id]?.state === "waiting").map(thread => meta[thread.id]?.waitingOn)) : undefined;
     const takes = (event: React.DragEvent) => Boolean(onMoveToProject) && event.dataTransfer.types.includes(DRAG_TYPE);
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
       <div data-testid={`sidebar-project-drop-${project.id}`} data-drop={dropTarget === project.id || undefined}
@@ -194,9 +198,10 @@ export default function Sidebar(props: SidebarProps) {
           {open ? <ChevronDown size={12} className="shrink-0 text-subtle-foreground" /> : <ChevronRight size={12} className="shrink-0 text-subtle-foreground" />}
           <Folder size={13} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-          {urgent && <span data-testid={`project-state-${project.id}`} role="img" aria-label={t(`sidebar.glyph.${urgent}`)} className="flex shrink-0">
+          {urgent && <span data-testid={`project-state-${project.id}`} role="img"
+            aria-label={t(`sidebar.glyph.${waitingOn ? waitingLabel(waitingOn) : urgent}`)} className="flex shrink-0">
             {urgent === "done_unseen" ? <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-info-strong" />
-              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0 }} size={13} />}</span>}
+              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0, waitingOn }} size={13} />}</span>}
         </button>
         {onStartInProject && <button type="button" onClick={() => onStartInProject(project.id)}
           aria-label={t("sidebar.newInProject", { name: project.name })} title={t("sidebar.newInProject", { name: project.name })}
