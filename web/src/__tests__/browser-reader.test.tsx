@@ -178,7 +178,11 @@ it("DIFF2: a start address (a PR's link) opens once at start, https only", async
   expect(browserApi.readerAction).toHaveBeenCalledWith("session", { action: "navigate", url: "https://github.com/o/r/pull/42" });
   unmount();
   vi.mocked(browserApi.readerAction).mockClear();
-  render(<BrowserReader conversationId="conversation" taskId={null} onTitle={() => {}} startUrl="javascript:alert(1)" />);
-  await act(async () => { await Promise.resolve(); });
-  expect(browserApi.readerAction).not.toHaveBeenCalled();
+  for (const bad of ["javascript:alert(1)", "http://github.com/o/r", "https://user:pw@github.com/o/r", "github.com/o/r",
+                     "two words", "data:text/html,x"]) {
+    const { unmount: gone } = render(<BrowserReader conversationId="conversation" taskId={null} onTitle={() => {}} startUrl={bad} />);
+    await act(async () => { await Promise.resolve(); });
+    gone();
+  }
+  expect(browserApi.readerAction).not.toHaveBeenCalled();                  // never a search, a scheme added, or credentials
 });

@@ -25,12 +25,14 @@ export default function BrowserReader({ conversationId, taskId, onTitle, startUr
     return () => { alive.current = false; generation.current++; if (session.current) void browserApi.closeReader(session.current).catch(() => {}); };
   }, []);
 
-  // DIFF2: the start address opens once, as if typed (https only, as the address bar allows).
+  // DIFF2: the start address opens once. It must already be an https address with no credentials: it never becomes a
+  // search or gets a scheme added, as a typed one would (#588 review).
   useEffect(() => {
-    const target = startUrl ? addressOrSearch(startUrl) : null;
-    if (!target || !target.startsWith("https://")) return;
-    setUrl(target);
-    void act({ action: "navigate", url: target });
+    let target: URL | null = null;
+    try { target = startUrl ? new URL(startUrl) : null; } catch { target = null; }
+    if (!target || target.protocol !== "https:" || target.username || target.password) return;
+    setUrl(target.href);
+    void act({ action: "navigate", url: target.href });
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps -- once, at the tab's start
 
   async function stop() {

@@ -102,6 +102,11 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
     return () => clearInterval(timer);
   }, [open, loadJobs, storeJobs]);
 
+  // DIFF1/DIFF2: a diff belongs to its conversation; switching away closes it (#588 review).
+  useEffect(() => {
+    if ((reader?.kind === "diff" || reader?.kind === "repo-diff") && reader.conversationId !== conversationId) closeReader();
+  }, [conversationId, reader, closeReader]);
+
   const touched = useMemo(() => new Set(files.map((f) => f.title)), [files]);
   if (!open) return null;
   // DIFF1: two columns side by side need the panel's full width.

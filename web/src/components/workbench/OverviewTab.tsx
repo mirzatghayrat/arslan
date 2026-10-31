@@ -19,7 +19,7 @@ import ConversationModelChip, { PART_LABEL, ringRows } from "../models/Conversat
 import { useConversationModel } from "../models/useConversationModel";
 import { opensDiff } from "./DiffReader";
 import FileIcon from "./FileIcon";
-import RepoChanges from "./RepoChanges";
+import RepoChanges, { gitError } from "./RepoChanges";
 import { HEADING } from "./FilesTab";
 
 /** What the workbench needs from App to show and change this conversation's model (the chip's own props). */
@@ -87,7 +87,11 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
 
   // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
   const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
-  const [repo, setRepo] = useState<Repo | null>(null);              // DIFF2: the folder as a git repo
+  // DIFF2: the folder as a git repo, kept with the conversation it was asked for, so another conversation's answer
+  // is never drawn, not even for the first render after a switch (#588 review).
+  const [repoFor, setRepoFor] = useState<{ id: string; repo: Repo | null } | null>(null);
+  const repo = repoFor?.id === conversationId ? repoFor.repo : null;
+  const repoAsking = useRef<string | null>(null);
   const [undo, setUndo] = useState<{ runId: number; info: RunCheckpoint } | null>(null);
   const [opened, setOpened] = useState<number[]>([]);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -98,7 +102,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   // (404, a new one) is an empty list; any other failure keeps this conversation's last list.
   const current = useRef(conversationId);
   current.current = conversationId;
-  useEffect(() => { setChanges([]); setRepo(null); setUndo(null); setOpened([]); }, [conversationId]);
+  useEffect(() => { setChanges([]); setUndo(null); setOpened([]); }, [conversationId]);
   const loadChanges = useCallback(async () => {
     const asked = conversationId;
     try {
@@ -108,16 +112,37 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
     } catch (err) {
       if (current.current === asked && err instanceof ApiError && err.status === 404) setChanges([]);
     }
-    try {
-      const found = await Promise.resolve().then(() => filesApi.repoChanges(asked));
-      if (current.current === asked) setRepo(found.repo);
-    } catch { /* keep the last answer */ }
   }, [conversationId]);
   useEffect(() => { void loadChanges(); }, [loadChanges, files.length, turns]);
   useEffect(() => {
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadChanges(); }, CHANGES_MS);
     return () => clearInterval(timer);
   }, [loadChanges]);
+  // DIFF2: the repo on its own timer, never per chat item, and one request at a time per conversation: a large repo's
+  // first answer can take longer than the poll (#588 review, F4).
+  const loadRepo = useCallback(async () => {
+    const asked = conversationId;
+    if (repoAsking.current === asked) return;
+    repoAsking.current = asked;
+    try {
+      const found = await Promise.resolve().then(() => filesApi.repoChanges(asked));
+      if (current.current === asked) setRepoFor({ id: asked, repo: found.repo });
+    } catch { /* keep the last answer */ } finally {
+      if (repoAsking.current === asked) repoAsking.current = null;
+    }
+  }, [conversationId]);
+  useEffect(() => {
+    void loadRepo();
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void loadRepo(); }, CHANGES_MS);
+    return () => clearInterval(timer);
+  }, [loadRepo]);
+  // DIFF2 (#588 review, F7): in a repo folder the repo's list is the one place a change shows; a turn's paths there are
+  // left out of the per-turn list (its undo stays in the reply), and paths in other folders keep DIFF1's rows.
+  const repoShown = !!repo && !gitError(repo);
+  const inRepo = (folder: string) => repoShown && !!home
+    && (home.startsWith("~/") ? folder.endsWith(home.slice(1)) : folder === home);
+  const shownTurns = changes.map((turn) => ({ ...turn, paths: turn.paths.filter((p) => !inRepo(p.folder)) }))
+    .filter((turn) => turn.paths.length > 0);
   const askUndo = async (runId: number, button: HTMLButtonElement) => {
     opener.current = button;
     try { setUndo({ runId, info: await api.runCheckpoint(runId) }); } catch { toast(t("process.undoFailed")); }
@@ -162,11 +187,11 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             </li>))}</ul>}
       </section>
 
-      {(changes.length > 0 || repo) && <section data-testid="overview-changes">
+      {(shownTurns.length > 0 || repo) && <section data-testid="overview-changes">
         <h3 ref={heading} tabIndex={-1} className={`${HEADING} outline-none`}>{t("workbench.chH")}</h3>
-        {repo && <RepoChanges repo={repo} conversationId={conversationId} folder={home ?? ""} onOpenSettings={onOpenSettings} />}
-        {changes.length > 0 && <p className="mt-2 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>}
-        <ul className="mt-1.5 space-y-2">{changes.map((turn) => {
+        {repo && <RepoChanges repo={repo} conversationId={conversationId} folder={home ?? ""} />}
+        {shownTurns.length > 0 && <p className="mt-2 text-[11px] text-subtle-foreground">{t("workbench.chNote")}</p>}
+        <ul className="mt-1.5 space-y-2">{shownTurns.map((turn) => {
           const all = opened.includes(turn.run_id);
           const shown = all ? turn.paths : turn.paths.slice(0, PATHS_SHOWN);
           return <li key={turn.run_id} data-testid={`overview-turn-${turn.run_id}`} data-undone={turn.undone || undefined}
