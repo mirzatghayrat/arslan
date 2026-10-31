@@ -135,6 +135,8 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict
     else:
         scan = None
     test = await test_mcp(row.id)
+    # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
+    test = {**((await _source(row.id)).test or {}), **test}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}
@@ -292,7 +294,11 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             rules = ", ".join(f["rule"] for f in scan["findings"] if f["level"] == "high")
             return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); nothing was added"}
         card.update(commit=prepared["commit"], files=prepared["files"], sizes=prepared["sizes"],
-                    skipped=prepared["skipped"], scan=scan)
+                    skipped=prepared["skipped"], scan=scan,
+                    # UNI1b (#586 review F2, F4): under D2 this card is the guard, so it says how many characters of
+                    # the skill's text and its references show nothing, as the import panel does.
+                    hidden=untrusted.hidden_summary("\n".join([prepared["info"]["body"],
+                                                                 *(prepared.get("references") or {}).values()])))
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     try:

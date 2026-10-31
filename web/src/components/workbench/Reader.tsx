@@ -35,7 +35,7 @@ const decode = (buf: ArrayBuffer) => new TextDecoder("utf-8", { fatal: false }).
  * tables for csv/xlsx, Word through macOS's textutil, text with line numbers. Read-only.
  */
 /** A file shown as itself; a turn's change (DIFF1) has its own reader, DiffReader. */
-type FileSource = Exclude<ReaderSource, { kind: "diff" }>;
+type FileSource = Exclude<ReaderSource, { kind: "diff" } | { kind: "repo-diff" }>;
 
 export default function Reader({ source, onBack }: { source: FileSource; onBack: () => void }) {
   const { t } = useTranslation();

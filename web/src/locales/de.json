@@ -98,7 +98,8 @@
     "arslan": "Hauptassistent",
     "capabilities": "Fähigkeiten",
     "brain": "Gedächtnis",
-    "activity": "Aktivität"
+    "activity": "Aktivität",
+    "scheduled": "Geplant"
   },
   "brain": {
     "strip_details": "Umfang und Grenzen",
@@ -584,7 +585,7 @@
     "desktopNotificationsDesc": "Ist das Fenster geschlossen oder im Hintergrund, meldet macOS, wenn eine Aufgabe fertig ist, eine Aktion deine Bestätigung braucht oder eine geplante Aufgabe fehlschlägt. Mitteilungen zeigen nie Nachrichtentext.",
     "labelIsland": "Arslan in der Notch zeigen",
     "islandDesc": "Ein kleiner Arslan oben am Bildschirm zeigt, woran er arbeitet, wann er dich braucht und wann eine Aufgabe fertig ist. Zeiger darüber bewegen für mehr. Er erscheint nie in Bildschirmfotos, Aufnahmen oder bei der Bildschirmfreigabe.",
-    "automationElsewhere": "Geplante Aufgaben, Token-Verbrauch und jeder frühere Lauf liegen unter Aktivität.",
+    "automationElsewhere": "Geplante Aufgaben haben jetzt eine eigene Seite; Token-Verbrauch und jeder frühere Lauf liegen unter Aktivität.",
     "automationOpenActivity": "Aktivität öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
     "searchNoHits": "Kein Bereich passt",
@@ -714,7 +715,7 @@
     "grpWhatsNew": "Neu in dieser Version",
     "watchesInInbox": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du im Posteingang.",
     "openInbox": "Posteingang öffnen",
-    "openActivity": "Geplante Aufgaben, Nutzung und jeder Lauf stehen unter Aktivität.",
+    "openActivity": "Nutzung und jeder Lauf stehen unter Aktivität; geplante Aufgaben haben eine eigene Seite.",
     "openActivityBtn": "Aktivität öffnen",
     "whatsNewEmpty": "Keine Notizen zu dieser Version."
   },
@@ -958,7 +959,7 @@
       "orphaned": "Verwaiste Dateien"
     },
     "import": {
-      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, ohne versteckte Zeichen — lizenzgeprüft.",
+      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, nach Lizenzprüfung und Sicherheitsscan; unsichtbare Zeichen werden gezählt.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "Unterpfad (optional)",
       "scan": "Scannen",
@@ -966,7 +967,10 @@
       "imported": "Importiert",
       "no_license": "KEINE LIZENZ",
       "none_found": "Keine SKILL.md-Dateien gefunden.",
-      "scripts_n": "{{n}} Skripte"
+      "scripts_n": "{{n}} Skripte",
+      "hidden": "Unsichtbare Zeichen in SKILL.md: {{count}}",
+      "hiddenRuns": "Sein Text enthält {{runs}}. Eine solche Folge kann Text verbergen.",
+      "hiddenMore": "und {{count}} weitere"
     },
     "filter": {
       "placeholder": "Vorhandenes filtern…",
@@ -1434,5 +1438,13 @@
     "memoryBody": "Arslan vergisst sie und lernt sie nicht aus alten Unterhaltungen zurück.",
     "unsavedTitle": "Ohne Speichern verlassen?",
     "unsavedBody": "Deine Änderungen an dieser Notiz gehen verloren."
+  },
+  "scheduledPage": {
+    "intro": "Aufgaben, die nach Zeitplan laufen, und die Seiten und Ordner, die Arslan für dich beobachtet. Ein Punkt markiert eine Zeile, die du dir ansehen solltest.",
+    "watches": "Beobachtete Seiten und Ordner",
+    "awayTitle": "Nicht erledigt, während du weg warst (nur diese Aufgabe)",
+    "attention": "Bitte ansehen",
+    "changed": "Geändert",
+    "failing": "Fehlgeschlagen oder selbst pausiert"
   }
 }
