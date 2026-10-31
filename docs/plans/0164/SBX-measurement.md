@@ -22,7 +22,7 @@
 - **71 kernel gates** (assertions): all passed. The gates are listed below.
 - **222 measurement rows:** 119 ok, 2 refused, 80 tool-failed, 10 timeout, 9 not-supplied, 2 boundary-open. A measurement row passes as a pytest case whatever it measured (corpus README, "Reading results"). The outcomes are the result.
 - **On the candidate**, 48 rows need a look: 42 tool-failed and 6 timeout. Each is classified below with its card cost. None is boundary-open.
-- **The two boundary-open rows** are the hard-link measurement on legacy and outside, today's shipped bases. On the candidate it is refused. Follow-up: ⓪Plan's assessment of today's bases (link to be added). This report doesn't analyse it.
+- **The two boundary-open rows** are the hard-link measurement on legacy and outside, today's shipped bases. On the candidate it is refused. ⓪Plan's assessment ([#592 comment](https://github.com/mirzatghayrat/arslan/pull/592#issuecomment-6545067946)) found them a measurement artifact, not a shipped gap; the probe fix is Codex's. This report doesn't analyse it.
 - **Listener-refusal loop:** 30 of 30 for each of the three cases:
   - any-declared, where the builder refuses the port exclusion (#570);
   - port-22;
@@ -125,7 +125,7 @@ All are `tests/server/sbx/corpus/test_sbx2_corpus.py::<test>[<base>]`.
 | `test_real_socket_reachability[docker-…]` | not-supplied | not-supplied | not-supplied |
 
 - **Localhost dev server:** refused on the candidate. That is the user's decision of 2026-10-30, listening denied for now (card §3).
-- **Hard link:** refused on the candidate. On today's shipped bases it is open; see the follow-up above. The card's acceptance line asks for that follow-up before SBX-3 merges.
+- **Hard link:** refused on the candidate. On today's shipped bases the row reports boundary-open, which ⓪Plan's assessment (linked above) found a measurement artifact. The card's acceptance line asked for that follow-up before SBX-3 merges; the probe fix is Codex's.
 - **Background child:** measures a child's temp access, not the run's cleanup (corpus README).
 - **Real agent sockets:** not supplied. The runbook leaves `SBX_SSH_AGENT_SOCKET`, `SBX_GPG_AGENT_SOCKET` and `SBX_DOCKER_SOCKET` to the operator. The stand-in gate (`test_unlisted_unix_socket_is_refused_in_every_network_mode`) passed.
 
@@ -230,7 +230,7 @@ Every two-run cache row on the candidate fails before it uses its cache: offline
 
 ## Follow-ups this report names
 
-- **Hard link on today's bases:** ⓪Plan's assessment (link to be added). Needed before SBX-3 merges.
+- **Hard link:** ⓪Plan's assessment ([#592 comment](https://github.com/mirzatghayrat/arslan/pull/592#issuecomment-6545067946)) found the two boundary-open rows a measurement artifact, not a shipped gap. The probe fix is Codex's.
 - **Allowlist** (Codex, Astra; at most 50 lines):
   - DNS, from `dns-any-declared-default-deny`;
   - FSEvents, from `node-watch-none-default-deny`;
