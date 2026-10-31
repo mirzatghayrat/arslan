@@ -48,6 +48,14 @@ PROGRESS = ("task_progress", {})
 JOB = ("start_background_work", {"goal": "Set the project up the way the page says", "criteria": []})
 
 
+@pytest.fixture(autouse=True)
+def _a_local_turn():
+    """JUDGE1: capture asks the judge about stored lessons only where memory may be shown to a model; these tests
+    run as a local model's turn, as the app binds one (a test that binds another context inside still can)."""
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c-lessons", model_is_local=True)):
+        yield
+
+
 def _turn(*steps):
     """The model's side of one turn: each step a tool call, then a plain answer."""
     calls = [LLMResponse(usage={}, content=None, tool_calls=[

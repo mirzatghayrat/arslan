@@ -749,6 +749,16 @@
     "more": "更多"
   },
   "sidebar": {
+    "pinFailed": "没能置顶，请再试一次。",
+    "pinned": "已置顶",
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "today": "今天",
+    "yesterday": "昨天",
+    "previous7": "7 天内",
+    "earlier": "更早",
+    "hide": "隐藏边栏",
+    "show": "显示边栏",
     "new_session": "新对话",
     "spawns_ledger": "专家账本",
     "active_chats": "活跃对话",
@@ -947,7 +957,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,逐字导入——许可证把关。",
+      "subtitle": "标准 SKILL.md,按原文导入(去掉隐藏字符)——许可证把关。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",

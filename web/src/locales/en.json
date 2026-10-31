@@ -749,6 +749,16 @@
     "more": "More"
   },
   "sidebar": {
+    "pinFailed": "Couldn't pin it. Try again.",
+    "pinned": "Pinned",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "previous7": "Previous 7 Days",
+    "earlier": "Earlier",
+    "hide": "Hide sidebar",
+    "show": "Show sidebar",
     "new_session": "New conversation",
     "spawns_ledger": "Spawns Ledger",
     "active_chats": "Active Chats",
@@ -947,7 +957,7 @@
       "orphaned": "Orphaned files"
     },
     "import": {
-      "subtitle": "Standard SKILL.md files, imported verbatim — license-gated.",
+      "subtitle": "Standard SKILL.md files, imported as written, without hidden characters — license-gated.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subpath (optional)",
       "scan": "Scan",

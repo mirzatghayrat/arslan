@@ -26,6 +26,11 @@ async function blob(path: string): Promise<Response> {
   return response;
 }
 
+export interface ConversationChangeTurn {
+  run_id: number; at: string | null; undone: boolean;
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+}
+
 export const filesApi = {
   list: (path: string, offset = 0) => request<Folder>(`/files/list?${q(path)}&offset=${offset}`),
   /** The file's bytes, typed by the caller — the server always sends an opaque attachment. */
@@ -41,6 +46,10 @@ export const filesApi = {
   reveal: (path: string) => request<{ ok: boolean }>("/files/reveal", json({ path })),
   home: (conversationId?: string) => request<{ path: string | null; project: { id: string; name: string } | null }>(
     `/files/home${conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : ""}`),
+  /** WB1-3: what each turn of this conversation changed in the user's folders, newest first; only turns
+   *  that can still be undone (server: GET /conversations/{id}/changes). */
+  changes: (conversationId: string) =>
+    request<{ turns: ConversationChangeTurn[] }>(`/conversations/${encodeURIComponent(conversationId)}/changes`),
   conversationFiles: (conversationId: string) =>
     request<{ files: ConversationFile[] }>(`/conversations/${encodeURIComponent(conversationId)}/files`),
 };

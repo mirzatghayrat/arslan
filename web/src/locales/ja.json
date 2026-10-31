@@ -749,6 +749,16 @@
     "more": "その他"
   },
   "sidebar": {
+    "pinFailed": "固定できませんでした。もう一度お試しください。",
+    "pinned": "固定済み",
+    "pin": "固定",
+    "unpin": "固定を解除",
+    "today": "今日",
+    "yesterday": "昨日",
+    "previous7": "過去 7 日間",
+    "earlier": "それ以前",
+    "hide": "サイドバーを隠す",
+    "show": "サイドバーを表示",
     "new_session": "新しい会話",
     "spawns_ledger": "エキスパート一覧",
     "active_chats": "進行中の会話",
@@ -947,7 +957,7 @@
       "orphaned": "孤立ファイル"
     },
     "import": {
-      "subtitle": "標準 SKILL.md をそのまま取り込み — ライセンス審査あり。",
+      "subtitle": "標準 SKILL.md を書かれたとおりに取り込み(隠し文字は除去) — ライセンス審査あり。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "サブパス(任意)",
       "scan": "スキャン",

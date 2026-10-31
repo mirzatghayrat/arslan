@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Escaped } from "../lib/outsideText";
 import { useTranslation } from "react-i18next";
 import { capabilitiesApi, type CapabilityRow, type CapabilitySource } from "../api/capabilities";
 import { professionalMethodsApi, type ProfessionalMethod } from "../api/professionalMethods";
@@ -38,10 +39,10 @@ export default function CapabilitySheet({ row, name, what, used, error, onClose,
   const link = (label: string, testId: string, onClick: () => void) => (
     <button type="button" data-testid={testId} className="underline hover:text-foreground" onClick={onClick}>{label}</button>);
   return <Dialog open onClose={onClose} width={600} testId="cap-sheet" padded
-    title={<span className="flex items-center gap-2"><Tag>{t(`capabilityList.kind_${kind}`)}</Tag><bdi>{name}</bdi></span>}>
+    title={<span className="flex items-center gap-2"><Tag>{t(`capabilityList.kind_${kind}`)}</Tag><Escaped text={name} /></span>}>
     <div className="flex flex-col gap-4">
       <div>
-        {what && line(t("capabilityList.sheetWhat"), <bdi>{what}</bdi>, "cap-sheet-what")}
+        {what && line(t("capabilityList.sheetWhat"), <Escaped text={what} />, "cap-sheet-what")}
         {line(t("capabilityList.sheetOrigin"), <>{t(`capabilityList.origin_${row.origin}`)}
           {row.source_id && <> · {link(t("capabilityList.sheetDossier"), "cap-sheet-dossier",
             () => void open(() => capabilitiesApi.source(row.source_id!), setSource))}</>}</>, "cap-sheet-origin")}

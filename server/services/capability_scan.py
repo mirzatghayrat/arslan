@@ -59,11 +59,30 @@ RULES = (
     _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:"),
 )
 
-_INVISIBLE = {"Cf"}          # format characters: zero-width, bidi overrides
-
-
 def _invisible(text: str) -> int:
-    return sum(1 for ch in text if unicodedata.category(ch) in _INVISIBLE and ch not in "﻿")
+    """How many format characters (Cf: zero-width, bidi overrides, tags) hide something. Not counted, as they
+    hide nothing where they stand (#526 review 5): the byte-order mark; the direction marks LRM, RLM and ALM;
+    the tags of an RGI subdivision flag; a lone ZWNJ or ZWJ inside a word of a script other than Latin (Persian,
+    the Indic scripts); and a ZWJ inside an emoji sequence. A run of them is counted, each one."""
+    from server.orchestrator import untrusted
+    text = untrusted.TAG_FLAG.sub("", text)
+    count = 0
+    for i, ch in enumerate(text):
+        if unicodedata.category(ch) != "Cf" or ch in "\ufeff\u200e\u200f\u061c":
+            continue
+        if ch in "\u200c\u200d" and 0 < i < len(text) - 1 and _joins(text[i - 1], ch, text[i + 1]):
+            continue
+        count += 1
+    return count
+
+
+def _joins(before: str, joiner: str, after: str) -> bool:
+    """Whether a ZWNJ or ZWJ sits where a script or an emoji sequence uses it: between two letters or marks
+    of a non-Latin word, or (ZWJ only) between two emoji, the first maybe with VS16 or a skin tone."""
+    b, a = unicodedata.category(before), unicodedata.category(after)
+    if b[0] in "LM" and a[0] in "LM" and max(ord(before), ord(after)) > 0x24F:
+        return True
+    return joiner == "\u200d" and (b in ("So", "Sk") or before == "\ufe0f") and a == "So"
 
 
 @dataclass
@@ -103,13 +122,17 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
 
 
 def summarise(findings: list[Finding]) -> dict:
-    findings = findings[:MAX_FINDINGS]
+    """The level from every finding, then at most MAX_FINDINGS of them, the high ones first: notes can never
+    push a high finding off the list, or the level down to "notes" (#539 review 1)."""
     level = "blocked" if any(f.level == "high" for f in findings) else ("notes" if findings else "clean")
-    return {"level": level, "findings": [asdict(f) for f in findings]}
+    shown = sorted(findings, key=lambda f: f.level != "high")[:MAX_FINDINGS]
+    return {"level": level, "findings": [asdict(f) for f in shown]}
 
 
-def scan_skill(body: str, scripts: dict[str, str], references: dict[str, str]) -> dict:
-    found = scan_text("SKILL.md", body, kind="text")
+def scan_skill(skill_md: str, scripts: dict[str, str], references: dict[str, str]) -> dict:
+    """`skill_md` is the whole SKILL.md as fetched, its frontmatter's name and description included: under the
+    user's D2 every skill's name and description reach the model unframed (#539 review 4)."""
+    found = scan_text("SKILL.md", skill_md, kind="text")
     for name, text in references.items():
         found += scan_text(name, text, kind="text")
     for name, text in scripts.items():

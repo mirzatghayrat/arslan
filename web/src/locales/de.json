@@ -749,6 +749,16 @@
     "more": "Mehr"
   },
   "sidebar": {
+    "pinFailed": "Anheften fehlgeschlagen. Bitte noch einmal versuchen.",
+    "pinned": "Angeheftet",
+    "pin": "Anheften",
+    "unpin": "Loslösen",
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "previous7": "Letzte 7 Tage",
+    "earlier": "Früher",
+    "hide": "Seitenleiste ausblenden",
+    "show": "Seitenleiste einblenden",
     "new_session": "Neues Gespräch",
     "spawns_ledger": "Expertenübersicht",
     "active_chats": "Aktive Gespräche",
@@ -947,7 +957,7 @@
       "orphaned": "Verwaiste Dateien"
     },
     "import": {
-      "subtitle": "Standard-SKILL.md, wortgetreu importiert — lizenzgeprüft.",
+      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, ohne versteckte Zeichen — lizenzgeprüft.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "Unterpfad (optional)",
       "scan": "Scannen",
