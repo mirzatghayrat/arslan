@@ -89,9 +89,15 @@ def _seen(problem: str | None, names: dict | None) -> str:
 async def _ask(name: str, version: str):
     """The Registry's entry for that name at that version, or NO_ANSWER for anything else (#604 review F1): a non-200
     answer, a body that is not an object, a server that is another name or version, or packages or remotes that are
-    not lists of objects. A body that is not JSON raises ValueError, which the caller takes as no answer too."""
+    not lists of objects. A body that is not JSON raises ValueError, which the caller takes as no answer too.
+
+    `include_deleted=true` (#604 re-check 3; checked against the live Registry on 2026-11-01): without it, a deleted
+    version answers 404 "Server not found", like a name that never existed; with it, a deleted version answers 200
+    with its `deleted` mark, an active or deprecated one answers as before, and only an unknown name or version
+    answers 404 (no answer here)."""
     from server.services import capability_search
-    url = f"{capability_search.REGISTRY}/v0/servers/{quote(name, safe='')}/versions/{quote(version, safe='')}"
+    url = (f"{capability_search.REGISTRY}/v0/servers/{quote(name, safe='')}/versions/{quote(version, safe='')}"
+           "?include_deleted=true")
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
         r = await client.get(url)
     if r.status_code != 200:
@@ -101,10 +107,21 @@ async def _ask(name: str, version: str):
     if not isinstance(srv, dict) or srv.get("name") != name or srv.get("version") != version:
         return NO_ANSWER
     for key in ("packages", "remotes"):
-        items = srv.get(key) or []
+        items = srv.get(key, [])            # #604 re-check 1: {}, "", 0 or false is not a list, so no answer
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             return NO_ANSWER
     return body
+
+
+def _names_something(entry: dict, installed: dict) -> bool:
+    """#604 re-check 1: whether a live entry names what the check compares, in the fields the parser reads: a remote
+    with a URL for a remote install, or a package with its type and identifier. An entry that names none of it (a
+    renamed field, no remotes) is no answer, not a change."""
+    srv = entry.get("server", entry)
+    if "url" in installed:
+        return any(isinstance(r.get("url"), str) and r["url"] for r in srv.get("remotes", []))
+    return any(isinstance(p.get("registryType"), str) and isinstance(p.get("identifier"), str) and p["identifier"]
+               for p in srv.get("packages", []))
 
 
 def _when(value) -> datetime | None:
@@ -159,6 +176,8 @@ async def before_start(server_id: int) -> None:
                     from server.services import capability_search
                     if capability_search._deleted(entry):
                         problem, names = WITHDRAWN, None
+                    elif not _names_something(entry, installed):
+                        entry = NO_ANSWER
                     else:
                         names = _now_names(entry, installed)
                         problem = None if names == installed else CHANGED

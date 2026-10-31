@@ -77,7 +77,8 @@ async def test_the_same_entry_starts_and_is_not_asked_again_within_a_day(world):
     await _install(world)
     world.answers.append(SAME)
     await rc.before_start(1)
-    assert world.calls == ["https://registry.modelcontextprotocol.io/v0/servers/com.example%2Fnotes/versions/1.2.0"]
+    assert world.calls == ["https://registry.modelcontextprotocol.io/v0/servers/com.example%2Fnotes/versions/1.2.0"
+                           "?include_deleted=true"]      # #604 re-check 3: without it, a deleted version answers 404
     check = await _check(world)
     assert check["problem"] is None and check["arslan"] == "0.1.64" and check["at"].endswith("Z")
     await rc.before_start(1)
@@ -215,6 +216,14 @@ NOT_THE_ENTRY = {
     "a list": [], "a string": "x", "a number": 1, "a null server": {"server": None},
     "a null package": {"server": {"name": "com.example/notes", "version": "1.2.0", "packages": [None]}},
     "withdrawn, but another version": _entry(status="deleted", version="9.9.9"),
+    # #604 re-check 1: the entry asked for, but in a shape the parser only half understands.
+    "packages as an object": {"server": {"name": "com.example/notes", "version": "1.2.0", "packages": {}}},
+    "packages as an empty string": {"server": {"name": "com.example/notes", "version": "1.2.0", "packages": ""}},
+    "packages as 0": {"server": {"name": "com.example/notes", "version": "1.2.0", "packages": 0}},
+    "packages as false": {"server": {"name": "com.example/notes", "version": "1.2.0", "packages": False}},
+    "a renamed registryType": _entry(packages=[{"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}]),
+    "a renamed identifier": _entry(packages=[{"registryType": "pypi", "name": "notes-mcp", "version": "1.2.0"}]),
+    "no packages at all": _entry(),
 }
 
 
@@ -228,6 +237,16 @@ async def test_no_answer_starts_a_server_that_passed_and_asks_again_next_time(wo
     assert await _check(world) == {}                            # nothing recorded: the next start asks again
     await rc.before_start(1)
     assert len(world.calls) == 2 and (await _check(world))["problem"] is None
+
+
+@pytest.mark.parametrize("answer", [_cloud(), _cloud({"type": "streamable-http"}), _cloud({"type": "sse", "uri": "x"})],
+                         ids=["no remotes", "a remote without its URL", "a renamed URL field"])
+async def test_a_remote_entry_that_names_no_url_is_no_answer(world, answer):
+    """#604 re-check 1: for a remote install, an entry with no remote URL the parser can read is not a change."""
+    await _install(world, REMOTE)
+    world.answers.append(answer)
+    await rc.before_start(1)
+    assert await _check(world) == {}
 
 
 @pytest.mark.parametrize("failure", [404, httpx.ConnectError("down")], ids=["a 404", "unreachable"])
@@ -367,6 +386,28 @@ async def test_a_keep_expires(world, monkeypatch):
     async with world.maker() as s:
         row = await s.get(CapabilitySource, "src1")
         row.test = {**row.test, "registry_check": {**check, "accepted": {**check["accepted"], "at": stale}}}
+        await s.commit()
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+
+
+async def test_a_keep_dated_in_the_future_does_not_hold(world, monkeypatch):
+    """#604 re-check R12: a keep whose time is ahead of the clock (set back since) is no keep."""
+    from server.services import mcp_service
+
+    async def restart(server_id):
+        return None
+    monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
+    await _install(world)
+    world.answers.append(WITHDRAWN)
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    await capability_dossier.accept_source("src1", (await _check(world))["seen"])
+    check = await _check(world)
+    ahead = (datetime.utcnow() + timedelta(days=2)).isoformat() + "Z"
+    async with world.maker() as s:
+        row = await s.get(CapabilitySource, "src1")
+        row.test = {**row.test, "registry_check": {**check, "accepted": {**check["accepted"], "at": ahead}}}
         await s.commit()
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
