@@ -164,6 +164,6 @@ async def update(source_id: str) -> dict:
 
 
 async def check_candidate_license(cand: dict) -> dict:
-    spdx, path = await capability_install.source_license(cand.get("repo"))
+    spdx, path = await capability_install.source_license(cand.get("repo"), (cand.get("package") or {}).get("version"))
     return {"spdx": spdx, "read_from": path,
             "verdict": capability_search.license_verdict(spdx, proprietary=bool(path) and spdx is None)}
