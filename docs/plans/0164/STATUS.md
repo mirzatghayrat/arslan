@@ -119,12 +119,12 @@ The user is out until tonight and does what needs them in one sitting (「继续
 2. **#553** (DIFF1 server half) at `2c3085a5`: ②Main's re-OK at this head.
 3. **#526** (UNI1a, migration 0082) at `955ef188`. After it:
    - ③Hands pushes **#548** (TITLE1), rebased with `test_title1_model_title.py:85` updated. Re-OK, then merge.
-   - ⑤CAP pushes **#561** (CAP4a-2), rebased. It conflicts with #526 in `capability_flow.py`, so it waits for #526. Re-OK, then merge. **#569** (CAP4a-3b, draft) comes later.
+   - ⑤CAP pushes **#561** (CAP4a-2), rebased. It already conflicts with main in `capability_flow.py`, and with #526 there too, so it is rebased once, after #526. Re-OK, then merge. **#569** (CAP4a-3b, draft) comes later.
 4. **#555** (EXC1a) at `68b217a8`. After it, ⑥Helper retargets and pushes **#557** (EXC1b). Re-OK, then merge.
 5. **#567** (JUDGE1) at `6ed9ed43`. After it, ②Main retargets and pushes **#559** (MEM1). Re-OK, then merge. Then **#560** the same way.
-6. **#565** (app names everywhere) at `10b9f472`: OK (⓪Plan's effort=max reviewer). No CI has run on this head. Close and reopen it, or let ③Hands push an empty commit, then merge once it's green.
+6. **#565** (app names everywhere) at `10b9f472`: OK (⓪Plan's effort=max reviewer). It is still a draft, and no CI has run on this head. ③Hands marks it ready for review. That alone doesn't start CI, because `ci.yml`'s `pull_request` trigger uses the default types, which leave out `ready_for_review`. So then close and reopen it, or let ③Hands push an empty commit, and merge once it's green.
 
-`git merge-tree` on the heads: #553 with #526, #555 with #526, and #555 with #567 merge cleanly. #526 with #561 conflicts, hence #561 after #526. #548 merges cleanly with #526 but its test needs the update.
+`git merge-tree` on the heads: #553 with #526, #555 with #526, and #555 with #567 merge cleanly. #526 with #561 conflicts (as does #561 with today's main), hence #561 after #526. #548 merges cleanly with #526 but its test needs the update.
 
 **Also for the user tonight (not merges):**
 - #563 (CAP4a-3a): OK ⑤CAP's push.
@@ -144,7 +144,7 @@ The user is out until tonight and does what needs them in one sitting (「继续
 
 | Lane | Work |
 |---|---|
-| ②Main | #559 and #560 ready to push after #567; C7c-2 #450 retargeted to main; #298b rebased; INB4, INB5 and INB7 mocks; then the K10 + L11 card |
+| ②Main | #559 and #560 ready to push after #567; C7c-2 #450 (a draft on #448's merged branch) to retarget to main; #298b rebased; INB4, INB5 and INB7 mocks; then the K10 + L11 card |
 | ③Hands | #548 ready to push after #526; SBX-M as a one-sitting runbook for the user's Mac (the critical path); the four SBX drafts wait on SBX-M |
 | ⑤CAP | #561 ready to push after #526, then #569; the next CAP card that needs no user decision (CAP8b on MEM1, or CAP5/CAP6 parts without SBX) |
 | ⑥Helper | #557 ready to push after #555; DIFF2's mock; SB1 pieces that need no decision; STY waits on its bench |
