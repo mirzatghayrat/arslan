@@ -34,8 +34,8 @@ def test_each_rule_finds_its_pattern_and_not_a_near_miss(rule_id):
 
 
 def test_the_text_checks_hidden_characters_and_long_blobs():
-    found = {f.rule for f in capability_scan.scan_text("SKILL.md", "a\u200bb\n" + "QUJD" * 120, kind="text")}
-    assert {"invisible_characters", "long_encoded_blob"} <= found
+    found = {f.rule for f in capability_scan.scan_text("SKILL.md", "a\u202eb\n" + "QUJD" * 120, kind="text")}
+    assert {"tag_or_bidi_characters", "long_encoded_blob"} <= found
 
 
 def test_notes_never_push_a_high_finding_off_the_list():
