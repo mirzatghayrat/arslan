@@ -458,3 +458,16 @@ def test_f5b_the_append_itself_never_follows_a_link(home, tmp_path, monkeypatch)
     with pytest.raises(folder_rules.RuleRefused):
         folder_rules._append(agents(home), "x")
     assert outside.read_text() == "keep\n"
+
+
+async def test_r9_remove_never_makes_a_foreign_file_the_users(execution_db, home):
+    agents(home).write_text(REPO_TEXT)
+    for i, line in enumerate(("first rule", "second rule"), start=1):
+        async with execution_db() as db:
+            await folder_rules.add_rule(db, agents(home), line, i)
+            await db.commit()
+    async with execution_db() as db:
+        await folder_rules.remove_rule(db, agents(home), 2)
+        await db.commit()
+    agents(home).write_text("- first rule\n")                    # the repo's lines removed by hand
+    assert (await folder_rules.for_turn(CID))[1] == 1
