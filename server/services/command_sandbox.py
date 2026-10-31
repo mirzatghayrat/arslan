@@ -166,10 +166,21 @@ def user_secrets() -> list[Path]:
     return [p for p in _resolved(Path.home() / name for name in _SECRETS) if p not in ours]
 
 
+# CAP6b (SBX-5): the skill folder and the plugin folders (CAP6a, CAP7) hold what Arslan runs later, so commands can
+# neither read nor write them, in or out of the sandbox; an MCP server cannot reach them through a granted folder;
+# and the file tools never write them. CAP7 appends its plugin folder here instead of editing a profile.
+PLUGIN_FOLDERS: list[Path] = []
+
+
+def capability_folders() -> list[Path]:
+    return _resolved([Path.home() / ".agents" / "skills", *PLUGIN_FOLDERS])
+
+
 def default_protected() -> list[Path]:
     """Never readable or writable from a sandboxed command, whatever else is allowed: Arslan's own
-    paths and the user's secrets."""
-    return [*arslan_protected(), *user_secrets()]
+    paths, the user's secrets, and the skill and plugin folders (CAP6b)."""
+    shut = [*arslan_protected(), *user_secrets()]
+    return shut + [p for p in capability_folders() if p not in shut]
 
 
 # SBX-3 §1 (the user's Q3, 2026-10-28): other apps' private data. Commands inherit Arslan's TCC grants, so
@@ -264,7 +275,8 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
     rules.deny("appleevent-send")
     if offline:
         rules.deny("network*")
-    ours = [file_or_folder(p) for p in arslan_protected()]
+    # CAP6b (SBX-5): the skill and plugin folders too, to reads and writes (ssh and git keep the user's secrets).
+    ours = [file_or_folder(p) for p in (*arslan_protected(), *capability_folders())]
     rules.deny("file-read* file-write*", *ours)
     rules.deny("network-outbound", *ours)
     rules.allow_paths("file-read*", map(_real, copies), literal)
