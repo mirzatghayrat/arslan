@@ -319,6 +319,7 @@ class MCPProxyExecutor:
             return {"ok": False, "error": f"MCP server {self.server_id} not found"}
         if srv.state != "ready":
             return not_ready_result(srv)
+        generation = manager.generation(self.server_id)    # the session the check above saw
         try:
             refused = await self._approve(srv, args)
         except Exception:  # noqa: BLE001 — a failed check is a refusal that never reached the server
@@ -327,6 +328,17 @@ class MCPProxyExecutor:
                                                    f"{self.external_name} may run. Tell the user.")
         if refused is not None:
             return refused
+        # CAP5a (#577 review F1): the card may have been open while the server was parked (its tools changed since
+        # it was installed) or its session replaced. Read it again after the answer, and send nothing unless it is
+        # still ready on the same session.
+        async with db_session.AsyncSessionLocal() as db:
+            srv = await db.get(MCPServer, self.server_id)
+        if srv is None:
+            return {"ok": False, "error": f"MCP server {self.server_id} not found"}
+        if srv.state != "ready":
+            return not_ready_result(srv)
+        if manager.generation(self.server_id) != generation:
+            return not_ready_result(srv, state="starting")
         from server.mcp.discovery import runtime_dict
         from server.mcp.supervisor import supervisor
         server = runtime_dict(srv)
