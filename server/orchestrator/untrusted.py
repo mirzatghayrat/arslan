@@ -10,6 +10,7 @@ cannot reach the execution tier.
 """
 from __future__ import annotations
 
+import bisect
 import contextlib
 import contextvars
 import re
@@ -206,30 +207,40 @@ _IDEOGRAPHS = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0
 _IVS_UNCOUNTED_MAX = 8
 #: The RGI subdivision flags' tag letters (England, Scotland, Wales), between U+1F3F4 and U+E007F.
 _FLAG_TAGS = ("gbeng", "gbsct", "gbwls")
-#: UNI1b-4: ZWNJ and ZWJ stay unmarked where ordinary text needs them (Persian, the Indic scripts, emoji sequences),
-#: but between two ASCII letters they join nothing, so there each one is marked, a run of them too. Since UNI1b-3
-#: the import's scan no longer blocks them, and a run of the two can carry bits between the letters of a word.
+#: UNI1b-4 (#608 review J1): a ZWNJ or ZWJ stays unmarked only where ordinary text uses one: alone (not one of a
+#: run), after a letter or mark of a script that uses joiners (`_JOINING_SCRIPTS`: Arabic with its supplements and
+#: presentation forms, Syriac, NKo, the Indic blocks through Sinhala, Tibetan, Myanmar, Khmer, Mongolian), or, for
+#: a ZWJ, after an emoji, a skin tone, VS16 or a cancel tag (an emoji ZWJ sequence; `PRESENTATION_BASES` without
+#: the keycap bases # * 0-9, which no ZWJ sequence uses). Every other joiner is marked: a run of them, one at either
+#: end, before a space, after punctuation, between digits, in Latin, Cyrillic or CJK text. Since UNI1b-3 the
+#: import's scan no longer blocks a joiner, and a run of the two carries bits. Left unmarked: one joiner after a
+#: letter of those scripts, before a space (about a bit a word).
 _JOINERS = (0x200C, 0x200D)
+_JOINING_SCRIPTS = ((0x0600, 0x06FF), (0x0700, 0x074F), (0x0750, 0x077F), (0x07C0, 0x07FF), (0x08A0, 0x08FF),
+                    (0x0900, 0x0DFF), (0x0F00, 0x0FFF), (0x1000, 0x109F), (0x1780, 0x17FF), (0x1800, 0x18AF),
+                    (0xA8E0, 0xA8FF), (0xFB50, 0xFDFF), (0xFE70, 0xFEFC))
+_EMOJI_JOINS = ((0x1F3FB, 0x1F3FF), (0xFE0F, 0xFE0F), (0xE007F, 0xE007F))
 
 
-def _ascii_letter(cp: int) -> bool:
-    return 0x41 <= cp <= 0x5A or 0x61 <= cp <= 0x7A
+def _in_sorted(cp: int, ranges) -> bool:
+    """`_in` for a long table sorted by start, without overlaps, by bisection."""
+    i = bisect.bisect_right(ranges, (cp, 0x10FFFF)) - 1
+    return i >= 0 and ranges[i][0] <= cp <= ranges[i][1]
 
 
-def _joiners_between_letters(cps: list[int]) -> set[int]:
-    """The positions of each run of ZWNJ and ZWJ that sits between two ASCII letters (one pass)."""
+def _joiners_marked(cps: list[int]) -> set[int]:
+    """The positions of each ZWNJ and ZWJ that ordinary text does not use there (one pass)."""
+    from server.orchestrator.emoji_bases import PRESENTATION_BASES
     marked: set[int] = set()
-    i = 0
-    while i < len(cps):
-        if cps[i] not in _JOINERS:
-            i += 1
+    for i, cp in enumerate(cps):
+        if cp not in _JOINERS:
             continue
-        end = i
-        while end < len(cps) and cps[end] in _JOINERS:
-            end += 1
-        if i > 0 and end < len(cps) and _ascii_letter(cps[i - 1]) and _ascii_letter(cps[end]):
-            marked.update(range(i, end))
-        i = end
+        prev = cps[i - 1] if i else None
+        alone = prev not in _JOINERS and not (i + 1 < len(cps) and cps[i + 1] in _JOINERS)
+        calm = alone and prev is not None and (_in(prev, _JOINING_SCRIPTS) or (cp == 0x200D and prev > 0x39 and (
+            _in(prev, _EMOJI_JOINS) or _in_sorted(prev, PRESENTATION_BASES))))
+        if not calm:
+            marked.add(i)
     return marked
 
 
@@ -270,9 +281,9 @@ def hidden_runs(text) -> list[tuple[int, list[int]]]:
     """UNI1b: each run of characters in `text` that show nothing, as (start, code points), in order. A run is one
     code point repeated, or characters of one range (variation selectors, their supplement, tags). Not counted:
     one selector that does what ordinary text uses one for (`_takes_selector`), and an RGI flag's tags. Counted
-    besides the table: a joiner between two ASCII letters (`_joiners_between_letters`, UNI1b-4)."""
+    besides the table: a joiner ordinary text does not use there (`_joiners_marked`, UNI1b-4)."""
     cps = [ord(ch) for ch in str(text or "")]
-    flagged, stray = _flag_tags(cps), _joiners_between_letters(cps)
+    flagged, stray = _flag_tags(cps), _joiners_marked(cps)
     runs: list[tuple[int, list[int]]] = []
     open_run, ivs_uncounted = False, 0
     for i, cp in enumerate(cps):

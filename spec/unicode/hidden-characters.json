@@ -1,5 +1,5 @@
 {
- "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ and ZWNJ, but between two ASCII letters, where they join nothing and each one of a run is marked (`joiners_between_ascii_letters`, UNI1b-4); LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
+ "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: a ZWNJ or ZWJ where ordinary text uses one: alone, after a letter or mark of a script in `joining_scripts`, or, for a ZWJ, after a character in `presentation_bases` (but # * 0-9) or `emoji_joins`; every other joiner is marked, each one of a run (UNI1b-4, #608 review J1). Not marked either: LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
  "rule": {
   "hidden": [
    [
@@ -115,9 +115,77 @@
    "gbsct",
    "gbwls"
   ],
-  "joiners_between_ascii_letters": [
+  "joiners": [
    8204,
    8205
+  ],
+  "joining_scripts": [
+   [
+    1536,
+    1791
+   ],
+   [
+    1792,
+    1871
+   ],
+   [
+    1872,
+    1919
+   ],
+   [
+    1984,
+    2047
+   ],
+   [
+    2208,
+    2303
+   ],
+   [
+    2304,
+    3583
+   ],
+   [
+    3840,
+    4095
+   ],
+   [
+    4096,
+    4255
+   ],
+   [
+    6016,
+    6143
+   ],
+   [
+    6144,
+    6319
+   ],
+   [
+    43232,
+    43263
+   ],
+   [
+    64336,
+    65023
+   ],
+   [
+    65136,
+    65276
+   ]
+  ],
+  "emoji_joins": [
+   [
+    127995,
+    127999
+   ],
+   [
+    65039,
+    65039
+   ],
+   [
+    917631,
+    917631
+   ]
   ],
   "presentation_bases": [
    [
@@ -1266,28 +1334,208 @@
    ]
   },
   {
-   "name": "a joiner next to a space is not marked",
+   "name": "a joiner before a space is marked",
    "text": "word\u200c next",
-   "count": 0,
-   "runs": []
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
   },
   {
-   "name": "a joiner between an accented letter and an ASCII letter is not marked",
+   "name": "a joiner after an accented letter is marked",
    "text": "caf\u00e9\u200cs",
-   "count": 0,
-   "runs": []
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
   },
   {
-   "name": "a joiner between ASCII digits is not marked",
+   "name": "a joiner between digits is marked",
    "text": "1\u200c2",
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
+  },
+  {
+   "name": "a joiner at the start and one at the end are marked",
+   "text": "\u200cab\u200d",
+   "count": 2,
+   "runs": [
+    "U+200C",
+    "U+200D"
+   ]
+  },
+  {
+   "name": "calm joiners: Persian mi-khaham",
+   "text": "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
    "count": 0,
    "runs": []
   },
   {
-   "name": "a joiner at the start or the end is not marked",
-   "text": "\u200cab\u200d",
+   "name": "calm joiners: Persian ketab-ha",
+   "text": "\u06a9\u062a\u0627\u0628\u200c\u0647\u0627",
    "count": 0,
    "runs": []
+  },
+  {
+   "name": "calm joiners: Hindi ZWJ half form",
+   "text": "\u0915\u094d\u200d\u0937",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: Hindi ZWNJ",
+   "text": "\u0915\u094d\u200c\u0937",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: Marathi eyelash ra",
+   "text": "\u0930\u094d\u200d\u092f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: Bengali ra-phala",
+   "text": "\u09b0\u200d\u09cd\u09af",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: Malayalam chillu",
+   "text": "\u0d28\u0d4d\u200d",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: Sinhala shri",
+   "text": "\u0dc1\u0dca\u200d\u0dbb\u0dd3",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: family",
+   "text": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: technologist",
+   "text": "\ud83d\udc69\u200d\ud83d\udcbb",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: astronaut",
+   "text": "\ud83e\uddd1\u200d\ud83d\ude80",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: rainbow flag",
+   "text": "\ud83c\udff3\ufe0f\u200d\ud83c\udf08",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: transgender flag",
+   "text": "\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: pirate flag",
+   "text": "\ud83c\udff4\u200d\u2620\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: polar bear",
+   "text": "\ud83d\udc3b\u200d\u2744\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: mending heart",
+   "text": "\u2764\ufe0f\u200d\ud83e\ude79",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: holding hands with skin tones",
+   "text": "\ud83e\uddd1\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c\udfff",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: man running",
+   "text": "\ud83c\udfc3\u200d\u2642\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm joiners: eye in bubble",
+   "text": "\ud83d\udc41\ufe0f\u200d\ud83d\udde8\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "a joiner between Cyrillic letters is marked",
+   "text": "\u043e\u200c\u0442",
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
+  },
+  {
+   "name": "a joiner between ideographs is marked",
+   "text": "\u4e00\u200d\u4e01",
+   "count": 1,
+   "runs": [
+    "U+200D"
+   ]
+  },
+  {
+   "name": "a joiner after punctuation is marked",
+   "text": "Done.\u200cNext",
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
+  },
+  {
+   "name": "a run of joiners after an Arabic letter is marked",
+   "text": "\u0645\u200c\u200d\u062e",
+   "count": 2,
+   "runs": [
+    "U+200C",
+    "U+200D"
+   ]
+  },
+  {
+   "name": "a ZWNJ after an emoji is marked",
+   "text": "\ud83d\ude00\u200c",
+   "count": 1,
+   "runs": [
+    "U+200C"
+   ]
+  },
+  {
+   "name": "a ZWJ after a keycap digit is marked",
+   "text": "1\u200d2",
+   "count": 1,
+   "runs": [
+    "U+200D"
+   ]
+  },
+  {
+   "name": "a ZWJ at the start, before an emoji, is marked",
+   "text": "\u200d\ud83d\udd25",
+   "count": 1,
+   "runs": [
+    "U+200D"
+   ]
   }
  ]
 }

@@ -38,7 +38,9 @@ def test_the_tables_are_the_shared_ones():
     assert [list(r) for r in PRESENTATION_BASES] == RULE["presentation_bases"]
     assert untrusted._IVS_UNCOUNTED_MAX == RULE["ivs_uncounted_max"]
     assert list(untrusted._FLAG_TAGS) == RULE["flags"]
-    assert list(untrusted._JOINERS) == RULE["joiners_between_ascii_letters"]
+    assert list(untrusted._JOINERS) == RULE["joiners"]
+    assert [list(r) for r in untrusted._JOINING_SCRIPTS] == RULE["joining_scripts"]
+    assert [list(r) for r in untrusted._EMOJI_JOINS] == RULE["emoji_joins"]
 
 
 def test_every_hidden_range_has_a_case():
@@ -62,7 +64,8 @@ def test_the_cases_cover_both_sides_of_every_rule():
             "a ZWJ inside an emoji sequence", "a ZWNJ between Arabic-script letters",
             "the England flag's tag sequence", "a stray tag character",
             "a ZWNJ between two ASCII letters", "joiners between two ASCII letters, each one marked",
-            "a joiner next to a space is not marked"} <= names
+            "a joiner before a space is marked", "a joiner between Cyrillic letters is marked",
+            "a ZWJ after a keycap digit is marked", "calm joiners: Malayalam chillu", "calm joiners: family"} <= names
 
 
 def test_a_long_run_of_joiners_between_letters_is_marked_in_one_pass():
@@ -71,6 +74,9 @@ def test_a_long_run_of_joiners_between_letters_is_marked_in_one_pass():
     start = time.monotonic()
     out = untrusted.hidden_summary("a" + "\u200c\u200d" * 100_000 + "b")
     assert out["count"] == 200_000 and time.monotonic() - start < 5
+    start = time.monotonic()
+    calm = untrusted.hidden_summary("\U0001F469\u200d" * 100_000)        # each one alone, after an emoji
+    assert calm["count"] == 0 and time.monotonic() - start < 5
 
 
 def test_a_run_starts_where_it_is():

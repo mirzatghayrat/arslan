@@ -12,15 +12,15 @@ import vectors from "../../../spec/unicode/hidden-characters.json";
 import * as discovery from "../api/discovery";
 import AskSlot from "../components/AskSlot";
 import SkillImportPanel from "../components/SkillImportPanel";
-import { Escaped, FLAG_TAGS, HIDDEN, IDEOGRAPHS, IVS_UNCOUNTED_MAX, JOINERS, PRESENTATION_SELECTORS, RUN_RANGES,
-  hiddenCount, hiddenLabel, hiddenRuns } from "../lib/outsideText";
+import { EMOJI_JOINS, Escaped, FLAG_TAGS, HIDDEN, IDEOGRAPHS, IVS_UNCOUNTED_MAX, JOINERS, JOINING_SCRIPTS,
+  PRESENTATION_SELECTORS, RUN_RANGES, hiddenCount, hiddenLabel, hiddenRuns } from "../lib/outsideText";
 import { PRESENTATION_BASES } from "../lib/emojiBases";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 type Case = { name: string; text: string; count: number; runs: string[] };
 type Rule = { hidden: number[][]; run_ranges: [string, number, number][]; presentation_selectors: number[];
   ideographs: number[][]; presentation_bases: number[][]; ivs_uncounted_max: number; flags: string[];
-  joiners_between_ascii_letters: number[] };
+  joiners: number[]; joining_scripts: number[][]; emoji_joins: number[][] };
 const CASES = (vectors as { cases: Case[] }).cases;
 const RULE = (vectors as unknown as { rule: Rule }).rule;
 const MOCK = CASES.find(c => c.name === "the mock's skill text")!;
@@ -46,7 +46,9 @@ describe("the tables are the shared ones (#586 review F6)", () => {
     expect(PRESENTATION_BASES).toEqual(RULE.presentation_bases);
     expect(IVS_UNCOUNTED_MAX).toBe(RULE.ivs_uncounted_max);
     expect(FLAG_TAGS).toEqual(RULE.flags);
-    expect(JOINERS).toEqual(RULE.joiners_between_ascii_letters);
+    expect(JOINERS).toEqual(RULE.joiners);
+    expect(JOINING_SCRIPTS).toEqual(RULE.joining_scripts);
+    expect(EMOJI_JOINS).toEqual(RULE.emoji_joins);
   });
 });
 
