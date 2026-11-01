@@ -959,7 +959,7 @@
       "orphaned": "Fichiers orphelins"
     },
     "import": {
-      "subtitle": "SKILL.md standard, importé tel qu’écrit, après le contrôle de licence et l’analyse de sécurité ; les caractères invisibles sont comptés.",
+      "subtitle": "SKILL.md standard, importé tel qu’écrit, après le contrôle de licence et l’analyse de sécurité. L’analyse bloque les caractères d’étiquette cachés et les contrôles de sens du texte ; les autres caractères invisibles sont comptés, sans blocage.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "sous-chemin (optionnel)",
       "scan": "Scanner",
@@ -1446,5 +1446,9 @@
     "attention": "À regarder",
     "changed": "Modifié",
     "failing": "Échouée ou mise en pause d'elle-même"
+  },
+  "whileAway": {
+    "title": "Pas fait pendant votre absence (cette conversation)",
+    "stopped": "Une tâche arrêtée ici"
   }
 }

@@ -18,12 +18,12 @@ from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer
 from server.services import capability_flow, capability_install, capability_runtime, capability_search, permission_store
 
-PYPI = {"id": "registry:io.github.acme/notes@1.2.0", "kind": "mcp", "name": "notes-mcp", "summary": "Notes",
+PYPI = {"id": "registry:com.acme/notes@1.2.0", "kind": "mcp", "name": "notes-mcp", "summary": "Notes",
         "source": "registry", "source_url": "https://github.com/acme/notes-mcp", "repo": "acme/notes-mcp",
         "version": "1.2.0", "runtime": "uv", "remote": None, "not_here": None, "stars": 3, "pushed_days": 1,
         "package": {"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0", "arguments": []},
         "needs": {"keys": [], "network": None}, "license": {"spdx": "MIT", "read_from": "LICENSE", "verdict": "usable"}}
-NPM = {**PYPI, "id": "registry:io.github.acme/notes-js@2.0.1", "name": "notes-js", "runtime": "node",
+NPM = {**PYPI, "id": "registry:com.acme/notes-js@2.0.1", "name": "notes-js", "runtime": "node",
        "package": {"registry_type": "npm", "identifier": "@acme/notes-js", "version": "2.0.1", "arguments": []}}
 REG = "https://registry.npmjs.org/"
 NPM_LOCKED = {"node_modules/@acme/notes-js": {"version": "2.0.1", "resolved": REG + "@acme/notes-js/-/notes-js-2.0.1.tgz",
@@ -215,7 +215,7 @@ def test_the_runtime_pins_carry_a_checksum_in_the_repository():
 
 
 async def test_a_bundle_shows_its_published_checksum_and_one_without_gets_no_card(monkeypatch, _world):
-    bundle = {**PYPI, "id": "registry:io.github.acme/notes-bundle@1.0.0", "runtime": "mcpb",
+    bundle = {**PYPI, "id": "registry:com.acme/notes-bundle@1.0.0", "runtime": "mcpb",
               "package": {"registry_type": "mcpb", "identifier": "https://github.com/acme/notes/releases/notes.mcpb",
                           "version": "1.0.0", "file_sha256": "D" * 64, "arguments": []}}
     out, [card], before_card = await _propose(monkeypatch, _world, bundle, approve=False)

@@ -49,6 +49,31 @@ def _dossier_error(exc) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": exc.code})
 
 
+# ── CAP4a-3c: the one-click list (the user's; the model has no way to it) ──────────
+
+@router.get("/capability-allowlist")
+async def capability_allowlist_get() -> dict:
+    from server.services import capability_allowlist
+    return {"list": await capability_allowlist.current(), "default": capability_allowlist.validate(
+        capability_allowlist.DEFAULT)}
+
+
+@router.put("/capability-allowlist")
+async def capability_allowlist_put(body: dict) -> dict:
+    from server.services import capability_allowlist
+    try:
+        return {"list": await capability_allowlist.save(body)}
+    except capability_allowlist.AllowlistError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
+
+
+@router.delete("/capability-allowlist")
+async def capability_allowlist_reset() -> dict:
+    """Back to the first version of the list."""
+    from server.services import capability_allowlist
+    return {"list": await capability_allowlist.reset()}
+
+
 @router.get("/capability-sources")
 async def capability_sources() -> list[dict]:
     from server.services import capability_dossier

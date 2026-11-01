@@ -2,12 +2,29 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), early morning: the night's reviews are done; one merge list below.
+**Updated:** 2026-11-01 (UTC), afternoon: the user's morning batch merged (17 PRs); the user is out, and the list below is for their return.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #607 | UNI1b-3: the import scan blocks only Tag characters and bidi controls; whatever else shows nothing is counted | `11940e65` |
+| #602 | INB5b-1: what waited in the Inbox comes back to its conversation | `ca10c0db` |
+| #601 | INB7-1: a job a restart cut short says so when it happens | `431b1cc1` |
+| #584 | CAP4a-3c: the one-click list (D) decides which Registry MCP entries get a card | `2ceabb40` |
+| #618 | L11-3 card; K10 + L11 smoke steps | `19b55a22` |
+| #563 | CAP4a-3a: the scan blocks "download and run" (a known limit: two parts unreviewed) | `6953a7c4` (main CI 41255177791 success, covering the morning batch) |
+| #606 | CAP5b: each one-click install downloads into its own cache | `845feff8` |
+| #452 | STY: warm but not fake in chat; four rules for task reports | `022b97aa` |
+| #603 | L11-2: "make this a rule for this folder?" | `209e5381` |
+| #590 | INB5a: one count of what waits on you (migration 0084) | `b4cdc0b4` |
+| #597 | UNI1b-2: VS15/VS16 and IVS budget; the listing scans what the import scans | `f107f594` |
+| #569 | CAP4a-3b: an MCP server's license is read at the installed version | `e40cae3a` |
+| #565 | Hands: app names shown cleaned everywhere | `ce12502e` |
+| #613 | STATUS: the morning merge list | `425396f1` |
+| #609 | Tests: LOAD5, DIFF2's marker test survives a busy signer | `0595fb22` |
+| #600 | Tests: INB4's retry test | `0de91cc8` |
+| #599 | STATUS: the bedtime batch | `27639d13` |
 | #591 | The user's 14:45 decisions; SBX-M ran; CAP5a's hand-added limit | `874cc159` |
 | #594 | L11-1: a file's and a message's language have their own rule | `fe611fbc` |
 | #595 | K10-1: a folder's rules (AGENTS.md, else CLAUDE.md) go into each turn | `71cc82f4` |
@@ -148,37 +165,29 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready for the user to merge (in this order)
 
-Every PR below is OK'd at the head shown, with the verdict posted on the PR. A PR stacked on another is retargeted to main by its lane once the one below it lands. A draft needs **Ready for review** clicked first, whenever the lane's own ready step was blocked.
+Every PR below is OK'd at the head shown, with the verdict posted on the PR. A PR stacked on another is retargeted to main by its lane once the one below it lands, then re-checked at the new head. A draft needs **Ready for review** clicked first, whenever the lane's own ready step was blocked.
 
-1. **#565** at `f43eb675`: app names are shown cleaned everywhere. CI green.
-2. **#569** at `39662487`: CAP4a-3b, the license read at the installed version.
-3. **#584** at `85086df6`: CAP4a-3c, allowlist D at card time. The effort=max re-check approves it.
-4. **#563** at `e4762e2b` (draft): the scan blocks "download and run". ④参谋 re-checked it as OK. One narrow part was stopped by a classifier: the 40-character window and the interpreter pattern. The choice is Codex Astra for that part (the paste is on ④参谋's list), or accept the gap.
-5. **#597** at `7406dba7`, then **#607** at `1e09b8f3`, then **#608** at `8cefe374`: UNI1b's follow-up, then the user's 3A (scan blocks only Tag/bidi; keyword rules read a copy with hidden characters stripped), then joiners and direction marks counted. All are re-checked OK; #608's parity sweep shows 0 differences.
-6. **#590** at `8c63fd8f`, then **#601** at `adb6c4fd` and **#602** at `012e9929`, then **#605** at `3d46e6c4`, then **#610** at `f1b49118`, **#611** at `57a400bb` and **#612** at `08f452c4`:
-   - #590: the waiting count;
-   - #601: an interrupted job reads unfinished;
-   - #602: the conversation pieces and the shared answer guard;
-   - #605: the Inbox removed;
-   - #610: Progress tiles;
-   - #611: held cards;
-   - #612: the Scheduled dots from the count.
-   All OK, the last three after #605.
-7. **#603** at `2e24003b`: L11-2, "make this a rule for this folder". Effort=max reviewed twice; ⓪Plan checked the hard-link fix.
-8. **#452** at `ac050bf6` (draft): STY. The bench gate passes: passes equal, correct +1, waiting −1, cost +12%. Click Ready, then Merge.
+1. **#616** at `0ccc7b22` or later, and **#617** (docs): STATUS and the IMG1 card. Both are OK'd. They show "clean", so auto-merge can't be armed after the checks finish, and they're the user's click. #617 needs main merged in first (⑥Helper).
+2. **#621** at `03d140d1`: L11-3a, Overview's Remove works from the rules record. Security surface: effort=max reviewed twice, then ⓪Plan's delta check. It moves the macOS count from 364 to 365.
+3. **#605** at `9be4ed0a`: INB5b-2, the Inbox removed. Re-checked at the main merge; the diff is identical (2881 lines).
+4. **Then, after #605, as ②Main retargets each:**
+   - **#610** INB7-a (the tiles), **#611** (held cards), **#612** (Scheduled from the count), **#614** (why each thing waits);
+   - **#615** after #612 (set-aside reminders);
+   - **#622** after #610: INB7-b, the time axis. Re-checked OK at `666cd4f3`; the "+N" overflow chip is in.
+   Each needs ⓪Plan's normalized re-check at its new head, then CI.
+5. **#608** (UNI1b-4, joiners): ⑤CAP retargets it to main now that #607 is in. A draft, so click Ready.
 
 **Not ready yet:**
-- **#604** (CAP4a-3d): re-checked OK. It waits for two user decisions (below) and the web keep button.
-- **#606** (CAP5b): ⑤CAP is fixing F1 (npm's compile cache in /tmp) and F2–F5.
-- **The #584 follow-up PR** (the org-id pin plus the GitHub-down test): it opens after #584 merges.
-
-**For the user's Mac:** push Codex's SBX-3p branch `codex/sbx3p-commands-deny-tests` (3 commits). Then ⓪Plan opens the stacked ci.yml PR (364 → 420) and the effort=max plumbing review.
+- **#619** (SBX-3p, Codex) at `0632d234`, with #620 merged into it. The Claude effort=max re-check of Codex's fixes is running, and so is CI 41263204658. Astra (⑦Codex) comes after. If #621 lands first, the count becomes 421 here (⓪Plan).
+- **#623** (CAP5c, a hand-added npx/uvx package pinned or refused) at `91086149`: the fix round for the effort=max review is in, and the same reviewer is re-checking it. A draft.
+- **#604** (CAP4a-3d) at `be2cf748`: re-checked OK, with KEEP_FOR gone and F3 a stated limit. It waits for the web keep button, whose mock needs the user's OK first.
 
 **Under review or on hold (don't merge these):**
 
-- **#525** (Q1 #4, retire the pocket) at `63c70a69`: OK (⓪Plan's reviewer). Main is merged with SB1's pocket cases removed, and run.get and status now fail closed. CI 41062445096 passed. A draft until Q1c ships and you say go.
-- **#527** (MCPOUT1): stacked on #519; ⑤CAP looks at what's left after D2.
-- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts. SBX-M is done (#592), so they're merged with main and adjusted to the report. They wait for SBX-3p's tests from Codex and the listening decision (card :255).
+- **#525** (Q1 #4, retire the pocket): a draft until Q1c ships and you say go. It now conflicts with main; ②Main merges main in when it's time.
+- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts on main `e40cae3a`. They wait for #619.
+  - 3a's to-dos from #619's review are in #520's body.
+  - At 3a: EXPECTED goes 420 + 2 = 422, and EXPECTED_XFAIL goes 56 → 0.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -186,18 +195,20 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 
 | Lane | Work |
 |---|---|
-| ②Main | #590's retarget; INB5b (the badge on 「活动」, inbox removed; the items in #590's "Not covered"); then the saw_error follow-up from #581 |
-| ③Hands | The SBX drafts (3a #520, 4a, 5a, 7) merged with main and adjusted to the SBX-M report; they stay drafts |
-| ⑤CAP | #597's retarget; CAP4a-3d (the start-time Registry re-check) as a draft; #584 and #563 held for the user |
-| ⑥Helper | The STY bench's after run (before: 12/27, many ending task_waiting_user); results go on #452; the L11-0 mock is ready |
-| Codex (via ⑦Codex) | SBX-3p pasted by the user: the hard-link probe fix, #598's three items, then 3p. Committed locally overnight; ⑦Codex checks it in the morning |
-| ④参谋 | Runs effort=max reviews overnight, and pushes blockers to the user's phone |
+| ②Main | Retargets the INB chain as each parent lands; INB7-c1 (one pick, the inspector) on top of #622, at high |
+| ③Hands | Idle until #619 lands; then 3a's merge with the counts and the to-dos |
+| ⑤CAP | #608's retarget; #623's re-check |
+| ⑥Helper | #617's main merge; L11-3d and the L11-3b mock |
+| Codex (via ⑦Codex) | #619's Astra review on the combined head |
+| ④参谋 | Main CI and the user's return list |
 | ⓪Plan | Re-checks as heads move; this page |
 
 ## Waiting on the user
 
-- **#604, two questions (④参谋 asks).** (1) KEEP_FOR: a kept, still-withdrawn server parks again every 30 days. ⑤CAP added this beyond the 10-31 decisions. Keep it or drop it? (2) F3: should the start check also check the host a remote server actually connected to, given that the SDK follows cross-host redirects? Recommended: a stated limit, as mainstream clients do. The alternative is a same-host redirect policy.
-- **#563's narrow gap:** Astra for the classifier-stopped part, or accept it.
+- **IMG1's scope** (#617): A, web images as a chip that opens in the browser (recommended); B, a CSP on the main window; C, a CSP in the reader's HTML and Word frames. Recommended: A + C now, B after A is on a real Mac.
+- **#604's keep button:** the mock (the parked row plus 「keep it」, on CAP5a's board) needs your OK before ⑤CAP builds it.
+- **L11-3b's mock** (Memory's lesson rows show the rule state), once ⑥Helper sends it. The extra, "also remove it from AGENTS.md", is recommended no.
+- **③Hands' session effort:** switch it to high, per the pacing rule (②Main is switched).
 
 - **SEC1 mock** (⑤CAP), sent as a private link.
 - **A probe-rule slip in ⑤CAP's session (reported by ⑤CAP itself):** while editing #526, one bare `python -c "import server.services…"` ran outside probe.sh/pytest, without a scratch HOME. ⑤CAP says it opened no file on purpose. The rule exists because of #409 (a real-HOME import read the real key file). Whether anything more is needed, for example rotating a key, is your call; ⑤CAP notes the command in #526's PR body.
@@ -311,7 +322,7 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - The report is `SBX-measurement.md` (#592, `71f79c3d`).
 - The two boundary-open rows (the hard-link measurement on today's shipped bases) are a probe artifact, not a shipped gap; no point release (the effort=max assessment, #592 comment 6545067946). The probe fix is in Codex's SBX-3p paste.
 
-**Decided on 2026-11-01, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
+**Decided on 2026-10-31, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
 1. **The #584 and #563 pushes:** allowed. ⑤CAP pushes them in its own session; no other session pushes for it.
 2. **INB7:** **B**: all of it goes into v0.1.64, the map and the timeline replay included (②Main). The plan is the newest board, F ("fused", version 11 of ②Main's canvas). That board came after C+, when the user asked to fuse it with today's Activity.
    - Usage's tiles are on top, with 「要你做」 as the first tile. One time axis carries a runs lane and replay. 「最近的工作」 is the only list. The map follows. An inspector holds 「要你做」, 「回放」, 「改动」 and 「诊断」.
@@ -323,6 +334,15 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
    - 50 conversations, 5 of them in a project.
    - By section: Today 0, Yesterday 2, Previous 7 days 20, Older 28 (one month group).
    - So Older needs no "show more" today. Pinned can't be read yet, since the installed database predates 0079.
+
+**Decided on 2026-11-01, morning (user, relayed by ④参谋).** The user's words: 「1A，2 已知限制，3 去掉，额度按你的建议」.
+1. **#563:** accept the gap. The 40-character window and the interpreter pattern weren't reviewed (classifier blocks). The scan is a heuristic, so this is a known limit, with no Astra paste. #563 goes to Ready and merge.
+2. **#604 F3, cross-host redirects for remote MCP:** a stated limit, as mainstream clients have it. #604's body and #584's text are aligned, so neither says the other handles it. Recorded in [CAP-capabilities.md](CAP-capabilities.md), "Stated limits recorded on 2026-11-01".
+3. **#604 KEEP_FOR:** removed. A keep holds until the entry changes again, with no 30-day expiry. ⑤CAP drops it and its card line; ⓪Plan re-checks.
+4. **Quota pacing** (the weekly quota went from 7% to 35% overnight):
+   - effort=max only for security-surface reviews;
+   - all other reviews and lane work at high;
+   - only lanes with unblocked work stay active.
 
 ## Spend
 

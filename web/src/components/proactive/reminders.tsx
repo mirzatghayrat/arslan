@@ -8,6 +8,7 @@ import { evidenceLines, groupEvidence, proactiveErrorText, titleOf } from "../..
 import { buttonClass, primaryClass } from "../companion/CompanionDialog";
 import { useDismissable } from "../../hooks/useDismissable";
 import { Escaped, isolate } from "../../lib/outsideText";
+import { useAnswerGuard } from "../kit/guard";
 
 // INB3: a reminder's card and what its buttons do, moved here from ProactiveInbox (the INB card: extract, then delete) so the
 // Scheduled page shows a task's problem and a watch's change the same way. The Inbox uses them too until INB5 removes it.
@@ -35,6 +36,10 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
   onDo: () => void; onSnooze: (days: 1 | 3 | 7) => void; onDismiss: (mute?: MuteChoice) => void; onOpenConversation: () => void;
 }) {
   const { t } = useTranslation();
+  // #602 review: in a conversation this card sits at its end, under the ask slot's floating card, so its doors answer to the same
+  // guard: the second click of a double-click aimed at the slot never starts, sets aside or dismisses it. Outside a scope (the
+  // Scheduled page, the Inbox) the guard never holds.
+  const held = useAnswerGuard();
   const Icon = ICONS[item.kind] ?? Inbox;
   const groups = groupEvidence(evidenceLines(t, language, item.evidence));
   const actionable = ACTIONABLE.has(item.status);
@@ -65,17 +70,17 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
     </div>}
     {actionable ? <div className="mt-4 flex flex-wrap items-center gap-2">
       {readOnly
-        ? <button className={primaryClass} disabled={busy} onClick={() => onDismiss()}><Check size={14} />{t("proactive.item.gotIt")}</button>
-        : <button className={primaryClass} disabled={busy} onClick={onDo}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
+        ? <button className={primaryClass} disabled={busy} onClick={() => { if (!held()) onDismiss(); }}><Check size={14} />{t("proactive.item.gotIt")}</button>
+        : <button className={primaryClass} disabled={busy} onClick={() => { if (!held()) onDo(); }}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
       <Menu label={t("proactive.item.snooze")} icon={<Clock size={14} />}>{(close) => <>
         {([1, 3, 7] as const).map((days) => <button key={days} role="menuitem" className={menuItem} disabled={busy}
-          onClick={() => { close(); onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
+          onClick={() => { close(); if (!held()) onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
       </>}</Menu>
       {!readOnly && <Menu label={t("proactive.item.notUseful")} icon={<X size={14} />}>{(close) => <>
-        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); onDismiss(); }}>{t("proactive.item.dismissOnly")}</button>
+        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); if (!held()) onDismiss(); }}>{t("proactive.item.dismissOnly")}</button>
         {/* A one-off job has no recurring source to silence; pages, folders and schedules do. */}
-        {item.kind !== "job_followup" && <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); onDismiss("source"); }}>{t("proactive.item.stopSource")}</button>}
-        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); onDismiss("kind"); }}>{t("proactive.item.stopKind")}</button>
+        {item.kind !== "job_followup" && <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); if (!held()) onDismiss("source"); }}>{t("proactive.item.stopSource")}</button>}
+        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); if (!held()) onDismiss("kind"); }}>{t("proactive.item.stopKind")}</button>
       </>}</Menu>}
       {item.status === "snoozed" && item.snooze_until && <span className="text-[11px] text-muted-foreground">{t("proactive.item.snoozedUntil", { date: formatUiDateTime(item.snooze_until, language) })}</span>}
     </div> : <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
