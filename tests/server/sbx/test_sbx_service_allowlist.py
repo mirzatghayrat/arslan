@@ -91,6 +91,18 @@ def test_trust_service_is_limited_to_measured_https_mode(sbx, mode, record_prope
     for key, value in properties.items():
         record_property(key, value)
     assert properties["outcome"] == "ok", properties
+    # Hold DNS, TCP and the prepared HTTPS probe constant; withhold only trustd.
+    profile = sbx.profile()
+    without = profile.replace('(allow mach-lookup (global-name "com.apple.trustd.agent"))\n', '')
+    assert without != profile
+    lookup = sbx.run([sys.executable, "-I", str(PROBE), "mach-lookup", "com.apple.trustd.agent"],
+                     profile=without, probe="trust-service-withheld")
+    assert lookup.returncode == 0 and json.loads(lookup.stdout)["policy"] == 1
+    withheld = sbx.run(case.argv, profile=without, timeout=45, discard=True,
+                       probe="swift-certificate-trust-withheld")
+    assert withheld.returncode != 0
+    restored = sbx.run(case.argv, timeout=45, discard=True, probe="swift-certificate-trust-restored")
+    assert restored.returncode == 0
 
 
 @pytest.mark.macos
