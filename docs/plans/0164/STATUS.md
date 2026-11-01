@@ -2,12 +2,15 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), evening. #628, #630, #615 and #638 have merged since the afternoon. The user chose to keep iPhone 1.0's part B in v0.1.64, as the new card IPB. The list below is for the user's return.
+**Updated:** 2026-11-01 (UTC), late evening. #639, #640 and #641 have merged since the last update, and Codex's SBX-3a gates branch is ready to push. The user chose to keep iPhone 1.0's part B in v0.1.64, as the new card IPB. The list below is for the user's return.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #641 | LOAD6: DIFF2's signed commit is built with git plumbing, so setup runs no signer (the flake that turned #639's backend red) | `983c8e48` |
+| #639 | IPB card for iPhone 1.0's part B; STATUS after the evening merges | `c08ca213` |
+| #640 | IPB's frame change list (②Main, reviewed by ①iOS), for the user's OK before any frame code | `f853a811` |
 | #638 | STATUS: the midday merges, the user's return list, SBX-3a's D1 and D2 | `d98a411c` |
 | #615 | INB: set-aside reminders | `ffd605c6` |
 | #630 | INB follow-ups from the #611 and #605 reviews | `fcab85a7` |
@@ -199,9 +202,13 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 **Under review or on hold (don't merge these):**
 
 - **#525** (Q1 #4, retire the pocket): a draft until Q1c ships and you say go. It now conflicts with main; ②Main merges main in when it's time.
-- **#520** (SBX-3a, ③Hands) at `de71df02`, a draft: main is merged in, and #619's file keeps its path while 3a's is renamed. The counts are 422 and EXPECTED_XFAIL 56 (423 if #621 lands first).
+- **#520** (SBX-3a, ③Hands) at `de71df02`, a draft: #619's file keeps its path while 3a's is renamed. It conflicts with main again since #621 landed; ③Hands merges main in with the flip commit.
   - **The flip onto the default-deny base is blocked.** ③Hands measured it on macOS 26.6.2: the current preset passes 20 of #619's 56 cases.
-  - Gates 1 and 3 are decided (D1 and D2, below). Two gates are still open, both queued for Codex: 2, the mach allowlist (`SYSTEM_MACH_SERVICES = ()` at `server/services/sandbox_profile.py:117`) plus the DNS entry, and 4, multiprocessing's `/mp-` names.
+  - Gates 1 and 3 are decided (D1 and D2, below). Codex has done gates 2 and 4 on its local branch `codex/sbx-allowlist-gates` (head `f30c59f9`, base `ffd605c6`, not pushed yet):
+    - gate 2: FSEvents in every mode, trustd in ANY_DECLARED, and the mDNSResponder socket in ANY_DECLARED **and PORT_22** (Codex measured that ssh needs DNS to resolve a host name; the effort=max review checks this);
+    - gate 4: option (b), no IPC rule change, with the cost recorded for SBX-8;
+    - Astra's P3s from #619.
+  - The macOS count goes 421 → 434 with EXPECTED_XFAIL 56. Codex's addendum (ANY_DECLARED in #619's two commands tests) comes next and makes it 450 / 72; the stacked ci.yml count PR uses those final numbers.
   - The flip, the BUILT_BASES line and EXPECTED_XFAIL → 0 go in one commit, and the effort=max review waits for that commit.
 - **#531, #535, #538** (SBX-4a, 5a, 7): drafts. They pick up 3a after the flip, so the carry happens once.
 
@@ -211,18 +218,19 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 
 | Lane | Work |
 |---|---|
-| ②Main | Retargets the INB7 chain as each parent lands; then IPB's frame change list with ①iOS |
-| ③Hands | Idle until Codex's gates 2 and 4 are done (#520's body marks D1 and D2 decided) |
+| ②Main | Retargets the INB7 chain as each parent lands. IPB's frame list (#640) is merged; no frame code before your OK |
+| ③Hands | Idle until Codex's gates branch is on main; then the flip commit on #520, and its effort=max review |
 | ⑤CAP | Idle: #625 is re-checked; #604 waits on the keep mock |
-| ⑥Helper | The L11-3b mock (#626 is re-checked) |
-| Codex (via ⑦Codex) | Working since 18:45 CST (you pasted it from the phone): SBX-3a gate 2 (the mach allowlist and the DNS entry), then gate 4. Then an addendum, which adds ANY_DECLARED to #619's two commands tests (+16 strict xfails); ⑦Codex sends it once Codex reports gates 2 and 4. A Claude lane then opens the ci.yml count PR with Codex's final numbers |
+| ⑥Helper | The L11-3b mock (#626 is re-checked); LOAD6 (#641) merged |
+| Codex (via ⑦Codex) | Gates 2 and 4 done on the local branch (above). The addendum (+16 ANY_DECLARED strict xfails) is on the Mac's clipboard for you to send to Codex's writer thread from the phone, since the Mac is on a fullscreen Space. Then you push the branch and open its PR (plan A); a Claude lane stacks the ci.yml count PR on it |
 | ④参谋 | Main CI and the user's return list |
-| ①iOS | IPB's frame change list with ②Main; iPhone 1.0's pre-submission list (below) |
+| ①iOS | Reviewed IPB's frame list; iPhone 1.0's pre-submission list (below) |
 | ⓪Plan | Re-checks as heads move; this page |
 
 ## Waiting on the user
 
-- **IPB's frame OK (coming):** ②Main and ①iOS write the frame change list: each field, its shape, which frame carries it, how often it's sent, and what an older phone does with it. ④参谋 brings it to you. Nothing that touches a frame starts before your OK. The card is [IPB](IPB-iphone-part-b.md).
+- **IPB's frame OK:** the frame change list is merged as [IPB-frame-list](IPB-frame-list.md) (#640): each field, its shape, which frame carries it, how often it's sent, and what an older phone does with it. ④参谋 brings it to you. It has four Decides; ①iOS agrees with 1, 2 and 4 and has no preference on 3 (context needs migration 0086, or leave it out). Nothing that touches a frame starts before your OK. The card is [IPB](IPB-iphone-part-b.md).
+- **Codex's addendum, then the gates push:** send the addendum from the phone to Codex's writer thread; when Codex has committed it, push `codex/sbx-allowlist-gates` and open its PR (plan A).
 
 - **#636's full lists:** (b) keep the Hands trace in Settings › Hands, and (a) drop the judgments list. Both recommended.
 - **The drawer:** drop the radar and the sparkline (recommended).
