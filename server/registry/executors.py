@@ -471,8 +471,11 @@ class ListMyCapabilitiesExecutor:
                 if reason:
                     entry["reason"] = reason
                 # the reason is said once (`reason`), never again inside the fix (review M-3)
+                # CAP5a (re-check G3): a server held for the user's review is told so, without saying its reason again.
+                from server.mcp.discovery import HELD_REASONS
                 entry["fix"] = fix_for(state, has_headers=rechecks_key(s.get("last_error"), s.get("env")),
-                                       next_retry_at=s.get("next_retry_at"))
+                                       next_retry_at=s.get("next_retry_at"),
+                                       held=state == "parked" and (stored or "").startswith(HELD_REASONS))
                 if s.get("next_retry_at"):
                     entry["next_retry_at"] = s["next_retry_at"]
             mcp.append(entry)
@@ -512,7 +515,8 @@ class FindCapabilityExecutor:
         capability_search.remember(ctx.conversation_id if ctx else None, result)
         out = capability_search.for_model(result)
         return {"ok": True, "external": True, **out,
-                "note": "Candidates only; nothing is installed. Prefer license_verdict 'usable' and not_here null. "
+                "note": "Candidates only; nothing is installed. Prefer not_here null; a skill needs license_verdict "
+                        "'usable', and an MCP server's license is read at its version when proposed. "
                         "Never install by other means (no pip/npm/git clone in the terminal for this)."}
 
 

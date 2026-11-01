@@ -10,6 +10,8 @@ export interface ProactiveItem {
   evidence: ProactiveEvidence[]; goal: string; priority: "high" | "normal" | "low"; status: ProactiveStatus;
   diagnosis: { cause: string; next_step: string; model: string; usd: number } | null;
   conversation_id: string | null; job_id: string | null; created_at: string; snooze_until: string | null;
+  /** INB3: where it came from: `watch:<id>` for a page or folder, `sched:<id>` for a scheduled task. */
+  source_key?: string | null;
 }
 export interface ProactiveSummary {
   open: number; unread: number; high: number;

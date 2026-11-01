@@ -380,6 +380,13 @@ async def lifespan(app: FastAPI):
         await judgment.prune()
     except Exception as exc:  # noqa: BLE001
         logger.warning("judgment ledger prune failed (non-fatal): %s", exc)
+    # JUDGE1 (the user, 2026-10-31): drop ledger rows holding memory text from before digests. After the prune, in
+    # its own try, so a failure here neither skips the prune nor reads as a prune failure (#582 review, L3).
+    try:
+        from server.services import judgment
+        await judgment.drop_unredacted()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("judgment ledger clean failed (non-fatal): %s", exc)
 
     # E1 reaper: re-enqueue judge scoring for runs stuck in 'recorded'/'score_failed'
     # for >10 minutes (process died around the fire-and-forget scoring task). The judge

@@ -2,15 +2,20 @@ import type { TFunction } from "i18next";
 import { ApiError } from "../api/client";
 import type { ProactiveEvidence, ProactiveItem } from "../api/proactive";
 import { formatUiDateTime } from "./localeFormatting";
+import { isolate } from "./outsideText";
 
 /** One line of "why": `text` is the sentence; `quote` is text that came from outside (a page, a
  * file name, an earlier request) and is only ever shown, in quotation marks. */
 export interface EvidenceLine { key: string; text: string; quote?: string }
 
 const countOf = (params: Record<string, unknown>) => (typeof params.count === "number" ? { count: params.count } : {});
+/** A param is outside text (a watch's label, a task's name, a page's line): isolated, so bidi controls in it cannot reorder the
+ *  sentence around it (#585 review). Numbers stay numbers. */
+const isolated = (params: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(params).map(([key, value]) => [key, typeof value === "string" ? isolate(value) : value]));
 
 export function titleOf(t: TFunction, item: Pick<ProactiveItem, "title_key" | "params">): string {
-  return t(`proactive.${item.title_key}`, { ...item.params, ...countOf(item.params) }) as string;
+  return t(`proactive.${item.title_key}`, { ...isolated(item.params), ...countOf(item.params) }) as string;
 }
 
 /** The catalog key a line is translated under. `sched.state` has two wordings (still failing /
@@ -22,8 +27,8 @@ export function evidencePath(evidence: Pick<ProactiveEvidence, "key" | "params">
 
 export function evidenceLines(t: TFunction, language: string, evidence: ProactiveEvidence[]): EvidenceLine[] {
   return evidence.map((line) => {
-    const params: Record<string, unknown> = { ...line.params, ...countOf(line.params) };
-    if (typeof params.at === "string") params.at = formatUiDateTime(params.at, language);
+    const params: Record<string, unknown> = { ...isolated(line.params), ...countOf(line.params) };
+    if (typeof line.params.at === "string") params.at = formatUiDateTime(line.params.at, language);
     return { key: line.key, text: t(`proactive.evidence.${evidencePath(line)}`, params) as string, ...(line.quote ? { quote: line.quote } : {}) };
   });
 }

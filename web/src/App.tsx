@@ -54,7 +54,9 @@ import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
+import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
+import { useScheduledAttention } from './hooks/useScheduledAttention';
 import { request } from './api/client';
 
 interface ArslanThread {
@@ -77,6 +79,7 @@ export default function App() {
   const backendStatus = useBackendStatus();
   // 0.1.47: the Inbox badge (unread proactive items), polled while the window is visible.
   const proactive = useProactiveSummary();
+  const scheduledAttention = useScheduledAttention();
   const [legacyExperts, setLegacyExperts] = useState(0);
   useEffect(() => {
     request<{ experts: { converted: boolean }[] }>('/experts/legacy')
@@ -195,7 +198,7 @@ export default function App() {
 
   // The server's conversation list kept fresh: glyphs for each conversation, and conversations
   // started elsewhere (a task handed over from the iPhone) appear without a restart.
-  const conversationIndex = useConversationIndex();
+  const conversationIndex = useConversationIndex(8000, activeSection, activeThreadId);
   useEffect(() => {
     const rows = conversationIndex.rows;
     if (!rows.length) return;
@@ -621,6 +624,7 @@ export default function App() {
         onAddThread={() => handleAddArslanThread()}
         inboxUnread={proactive.unread + (proactive.approvals ?? 0)}
         inboxHigh={proactive.high + (proactive.approvals ?? 0)}
+        scheduledDot={scheduledAttention.any}
         activeSection={activeSection}
         onChangeSection={(section) => {
           if (section === 'settings') setSettingsInitialSection(undefined);
@@ -781,6 +785,8 @@ export default function App() {
               openProjectId={openProjectId} onOpenedProject={() => setOpenProjectId(null)} />}
             {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
               onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
+              onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
+            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openInboxConversation}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'activity' && <ActivityView />}

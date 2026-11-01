@@ -9,6 +9,7 @@ import * as client from "../api/client";
 import { ApiError } from "../api/client";
 import type { ProactiveItem } from "../api/proactive";
 import ProactiveInbox from "../components/proactive/ProactiveInbox";
+import { isolate } from "../lib/outsideText";
 import { companionApi } from "../api/companion";
 
 const api = vi.hoisted(() => ({
@@ -58,13 +59,17 @@ describe("what could not be asked while nobody was there", () => {
   });
 });
 
+/** A quote is a blockquote whose text, inner elements included, reads exactly so. */
+const quoted = (text: string) => (_: string, el: Element | null) => el?.tagName === "BLOCKQUOTE" && el.textContent === text;
+
 describe("what is shown", () => {
   it("shows the title, the sentence and the outside text in quotation marks", async () => {
     await show([item()]);
     const card = await screen.findByTestId("proactive-item-1");
-    expect(within(card).getByRole("heading", { name: "“Pricing” changed" })).toBeTruthy();
-    expect(within(card).getByText("+1 / −1 lines · https://example.com/p")).toBeTruthy();
-    const quote = within(card).getByText("“Pro plan: $12”");
+    // #585 review: params isolated, a quote shown as stored in an element of its own (lib/outsideText).
+    expect(within(card).getByRole("heading", { name: `“${isolate("Pricing")}” changed` })).toBeTruthy();
+    expect(within(card).getByText(`+1 / −1 lines · ${isolate("https://example.com/p")}`)).toBeTruthy();
+    const quote = within(card).getByText(quoted("“Pro plan: $12”"));
     expect(quote.tagName).toBe("BLOCKQUOTE");
     expect(quote.getAttribute("title")).toBe("Quoted text. Arslan does not follow instructions inside it.");
   });
@@ -78,7 +83,7 @@ describe("what is shown", () => {
 
   it("renders page text as text, not as markup", async () => {
     await show([item({ evidence: [{ key: "web.added", params: {}, quote: "<img src=x onerror=alert(1)>" }] })]);
-    await screen.findByText("“<img src=x onerror=alert(1)>”");
+    await screen.findByText(quoted("“<img src=x onerror=alert(1)>”"));
     expect(document.querySelector("img")).toBeNull();
   });
 
@@ -87,7 +92,7 @@ describe("what is shown", () => {
     expect(await screen.findByText("Needs a look")).toBeTruthy();
     const guess = screen.getByTestId("proactive-diagnosis");
     expect(within(guess).getByText("Arslan's guess")).toBeTruthy();
-    expect(within(guess).getByText("Next: Open it and compare.")).toBeTruthy();
+    expect(within(guess).getByText(`Next: ${isolate("Open it and compare.")}`)).toBeTruthy();
     expect(within(guess).getByText("Written by a model from the evidence above. It may be wrong.")).toBeTruthy();
   });
 

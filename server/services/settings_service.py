@@ -55,6 +55,8 @@ _PLAIN_KEYS = (
                # DELETE-BY: v0.1.64, when M3 #10 passes and v0.1.63 has no steering issue (card K9).
                "steering_off",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
+               # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
+               "folder_rules_enabled",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
@@ -310,6 +312,14 @@ async def default_read_enabled(session: AsyncSession) -> bool:
 
     This governs READS only. Writes stay workspace-bound and gated regardless."""
     raw = await _get_raw(session, "default_read_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def folder_rules_enabled(session: AsyncSession) -> bool:
+    """K10-1: whether a folder's rules (AGENTS.md, else CLAUDE.md) go into each turn. Default ON; only an explicit
+    'false' turns it off, for example for a cloned repo whose rules the user doesn't want. A long-lived user switch,
+    not an old path (§9)."""
+    raw = await _get_raw(session, "folder_rules_enabled")
     return raw is None or str(raw).strip().lower() != "false"
 
 

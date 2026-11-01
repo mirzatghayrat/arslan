@@ -758,9 +758,16 @@ def diff(run_id: int, not_before: float, folder: str, rel: str, readable: list[P
         if before is None or hashlib.sha256(before).hexdigest() != state["saved"]:
             raise NoDiff("copy_changed")
     after = _read_side(root, (*down.parts, *Path(rel).parts))
-    old, new = _text_lines(before), _text_lines(after)
     now = state.get("now")
     since = (hashlib.sha256(after).hexdigest() if after is not None else None) != (now or {}).get("sha256")
+    return {"kind": "made" if state.get("saved") is None else "deleted" if now is None else "edited",
+            **line_diff(before, after), "since": since}
+
+
+def line_diff(before: bytes | None, after: bytes | None) -> dict:
+    """Two sides as lines with their op (" ", "-", "+") and old and new numbers, and the counts: DIFF1's shape,
+    which DIFF2 (git_changes) shares so one reader draws both. None is an absent side. Raises NoDiff."""
+    old, new = _text_lines(before), _text_lines(after)
     lines: list[list] = []
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         if op == "equal":
@@ -768,10 +775,8 @@ def diff(run_id: int, not_before: float, folder: str, rel: str, readable: list[P
             continue
         lines += [["-", i + 1, None, old[i]] for i in range(i1, i2)]
         lines += [["+", None, j + 1, new[j]] for j in range(j1, j2)]
-    return {"kind": "made" if state.get("saved") is None else "deleted" if now is None else "edited",
-            "added": sum(1 for line in lines if line[0] == "+"),
-            "removed": sum(1 for line in lines if line[0] == "-"),
-            "since": since, "lines": lines}
+    return {"added": sum(1 for line in lines if line[0] == "+"),
+            "removed": sum(1 for line in lines if line[0] == "-"), "lines": lines}
 
 
 def summary(run_id: int, not_before: float) -> dict:
