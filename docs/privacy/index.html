@@ -46,7 +46,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <div class="eyebrow">Privacy policy</div>
 <h1>No servers.<br><span class="g">Nothing collected.</span></h1>
 <p class="lead">Your iPhone talks only to your own Mac, through your own iCloud, end-to-end encrypted. The AI works on your Mac, with the model service and key you chose. We, the developer, are not in the path.</p>
-<p class="meta">Last updated 13 October 2026 · Arslan for iPhone 1.0 · Arslan for Mac 0.1.61</p>
+<p class="meta">Last updated 2 November 2026 · Arslan for iPhone 1.0 · Arslan for Mac 0.1.64</p>
 
 <div class="cards">
   <div class="card"><div class="dot d1">0</div><b>We collect nothing</b><p>No analytics, no tracking, no ads, no account. We never receive your messages, files, tasks or how you use the app.</p></div>
@@ -74,6 +74,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <h2><span class="n">02</span>How your messages travel</h2>
 <p>When you send a message, a task or an approval from your iPhone, it is encrypted on the iPhone and saved as a record in <strong>your own iCloud private database</strong> (Apple CloudKit), under your Apple ID. Arslan for Mac, signed in to the same Apple ID, reads and decrypts it. Replies, progress and files travel back the same way.</p>
 <p>Photos and files you attach to a message (up to 20 MB each) travel the same way, each encrypted with its own key and checked when it arrives. Arslan for Mac saves them in its work folder, under <span class="k">~/Arslan/Inbox/iPhone</span>, so the task can use them. Each record is deleted from your iCloud once the other device has it.</p>
+<p>Arslan for Mac also sends your iPhone, the same way, what its Overview and a conversation's details show (Arslan for Mac 0.1.64 or later): your Mac's battery, CPU, memory and disk use, its network type and whether the link is good (never the Wi-Fi name, a network address or a device identifier), whether Arslan is keeping the Mac awake, and its macOS version; for each conversation, the model and mode, the working folder (as <span class="k">~/…</span> inside your home folder, otherwise only the folder's own name), the names of the tools it can use (anything that looks like a key or a web address is masked), how many files and lines it changed, and what it cost; and over the last 7 days, how many replies, tasks and cards there were, plus your finished tasks' titles, whether their checks passed, whether they needed you and what they cost. None of this goes anywhere but your own iCloud, encrypted end to end.</p>
 <p>The encryption keys are created when you pair the two devices and stay in the keychains of your iPhone and your Mac, so neither Apple nor we can read the contents. To deliver records, iCloud does see a few routing details next to the ciphertext: which of your devices sent a record and which should receive it, a sequence number, a coarse kind, whether it should notify you, and the time. Apple stores the encrypted records for you under <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>.</p>
 
 <h2><span class="n">03</span>AI processing happens on your Mac</h2>
