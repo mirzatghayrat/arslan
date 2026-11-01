@@ -111,14 +111,16 @@ async def test_the_trace_api_gives_every_entry_a_run_id_null_where_there_was_non
 async def test_an_entry_keeps_the_fields_it_sets_and_one_it_cannot_write_is_logged(hands, asks, caplog):
     started = time.monotonic()
     with _turn("c1"), execution_context.bind_run(7):
-        hands_tools._trace("click", "Notes", "ok", started, run_id=99, conversation="c9", ms=-1)
+        hands_tools._trace("click", "Notes", "ok", started, run_id=99, conversation="c9", ms=-1,
+                           at="1999-01-01T00:00:00+00:00")
     with execution_context.bind_run(uuid.uuid4()):          # not an int: no run
         hands_tools._trace("click", "Notes", "ok", started)
     with caplog.at_level(logging.WARNING, logger=hands_tools.__name__):
         hands_tools._trace("click", "Notes" + chr(0xD800), "error", started)   # a lone surrogate: not UTF-8
         hands_tools._trace("look", "Notes", "ok", started, screenshot=object())  # not JSON
-    assert [(e["run_id"], e["conversation"], e["ms"] >= 0) for e in hands_service.read_trace()] == [
-        (None, None, True), (7, "c1", True)]
+    entries = hands_service.read_trace()
+    assert [(e["run_id"], e["conversation"], e["ms"] >= 0) for e in entries] == [(None, None, True), (7, "c1", True)]
+    assert not any(e["at"].startswith("1999") for e in entries)    # the time is the writer's
     assert caplog.text.count("not written") == 2
 
 

@@ -788,7 +788,7 @@ def prune_trace(today: date | None = None) -> None:
 def trace(entry: dict) -> None:
     """Append one Hands call (0600 file, 0700 folder). Never typed text: its length."""
     now = datetime.now(timezone.utc)
-    line = json.dumps({"at": now.isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
+    line = json.dumps({**entry, "at": now.isoformat(timespec="seconds")}, ensure_ascii=False)   # its own time
     path = _trace_dir() / f"{now.date().isoformat()}.jsonl"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a") as f:
