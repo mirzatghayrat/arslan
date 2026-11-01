@@ -185,14 +185,14 @@ async def test_the_brief_counts_what_is_open_running_and_due_soon(execution_db, 
     assert keys["brief.schedules"].params["count"] == 1 and keys["brief.schedules"].quote == "Weekly numbers"
 
 
-async def test_one_brief_a_day_and_only_when_switched_on(execution_db):
+async def test_the_scan_makes_no_brief_even_when_it_was_switched_on(execution_db):
+    """The user's Q9 (#605 review F2): the morning brief goes. Since the Inbox went (INB5) nothing shows a brief, so the scan makes
+    none and no notice leads nowhere. build_brief, brief_due and the config's brief fields go with the brief in INB7-e."""
     await ingest(found(cand(1)), ProactiveConfig(notify=False))
-    off = await svc.scan_once(now_utc=NOON, now_local=NOON)
-    assert not any(i.kind == "brief" for i in await rows(execution_db)) and off is not None
     await svc.save_config({"brief_enabled": True, "brief_time": "08:30", "watches": False})
     await svc.scan_once(now_utc=NOON, now_local=NOON)
     await svc.scan_once(now_utc=NOON + timedelta(hours=1), now_local=NOON + timedelta(hours=1))
-    assert [i.fingerprint for i in await rows(execution_db) if i.kind == "brief"] == ["brief:2026-09-30"]
+    assert not any(i.kind == "brief" for i in await rows(execution_db))
 
 
 # ── scanning ─────────────────────────────────────────────────────────────────
@@ -609,10 +609,11 @@ async def test_stop_before_the_first_scan_never_scans(execution_db, monkeypatch)
 
 # ── everything together, on real detector output ─────────────────────────────
 
-async def test_every_detector_and_the_brief_produce_items_the_gate_and_the_catalog_accept(execution_db, tmp_path):
+async def test_every_detector_produces_items_the_gate_and_the_catalog_accept(execution_db, tmp_path):
     """No stubbed detectors: a stopped job, a failing schedule, a page that changed and a
     folder that got a file all travel scan -> gate -> inbox. A key the catalog did not know
-    would be rejected here as `unknown_key`."""
+    would be rejected here as `unknown_key`. The brief, switched on, makes nothing since it
+    retired (the user's Q9, #605 review F2)."""
     from server.db.models import CompanionTask, ProactiveWatch, TaskRevision
     from tests.server.test_proactive_detectors import add_schedule
 
@@ -645,16 +646,13 @@ async def test_every_detector_and_the_brief_produce_items_the_gate_and_the_catal
     result = await svc.scan_once(now_utc=NOON, now_local=NOON, fetch=fetch)
     items = await rows(execution_db)
     assert result["rejected"] == {}, result["rejected"]
-    assert sorted(i.kind for i in items) == ["brief", "folder_change", "job_followup", "scheduled_problem", "web_change"]
+    assert sorted(i.kind for i in items) == ["folder_change", "job_followup", "scheduled_problem", "web_change"]
     assert {i.kind for i in items if i.goal} == {"folder_change", "job_followup", "scheduled_problem", "web_change"}
-    brief = next(i for i in items if i.kind == "brief")
-    open_line = next(e for e in brief.evidence if e["key"] == "brief.open")
-    assert open_line["params"]["count"] == 4          # the brief counts what this same pass just found
     job = next(i for i in items if i.kind == "job_followup")
     assert job.conversation_id == "c-e2e" and "Compare two phones" in job.goal
     # The same scan again finds nothing new: items dedupe, baselines moved only after storing.
     again = await svc.scan_once(now_utc=NOON + timedelta(minutes=10), now_local=NOON + timedelta(minutes=10), fetch=fetch)
-    assert again["created"] == [] and len(await rows(execution_db)) == 5
+    assert again["created"] == [] and len(await rows(execution_db)) == 4
 
 
 async def test_the_inbox_counts_cards_waiting_and_never_memory(execution_db):

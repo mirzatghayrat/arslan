@@ -1025,22 +1025,31 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         value = await repo.start(spec.id, created["version"])
     async def body(sink):
         return await function(conversation_id, user_message, sink, *args, **kwargs)
+    turn_run: dict = {}
+
+    def noting(event: dict) -> None:
+        if "id" not in turn_run and type(event.get("run_id")) is int:
+            turn_run["id"] = event["run_id"]     # v0.1.64: the turn's run, which host_run puts on each of its events
+        emit(event)
     token = _answer_only.set(_acceptance is None)
     try:
-        result = await _launch(value, emit, body, context=ctx)
+        result = await _launch(value, noting, body, context=ctx)
     finally:
         _answer_only.reset(token)
     if ctx.project_id:
-        _project_evidence_later(ctx.project_id, conversation_id, user_message)
+        _project_evidence_later(ctx.project_id, conversation_id, user_message, run_id=turn_run.get("id"))
     return result
 
 
-def _project_evidence_later(project_id: str, conversation_id: str, user_message: str) -> None:
+def _project_evidence_later(project_id: str, conversation_id: str, user_message: str, *,
+                            run_id: int | None = None) -> None:
     """0.1.56 §4: after a turn in a project conversation, look at the folder and (for the
-    user's own turns, not a background job's) at what the user said. Off the reply path."""
-    from server.services import background_jobs, lessons, project_evidence
-    lessons.later(project_evidence.after_turn(project_id, conversation_id, user_message,
-                                              said=not background_jobs.inside_job()))
+    user's own turns, not a background job's) at what the user said. Off the reply path. What it
+    judges belongs to the turn's run (v0.1.64: judgments.run_id), over by then, so the id is bound."""
+    from server.services import background_jobs, judgment, lessons, project_evidence
+    with judgment.of_run(run_id):        # lessons.later copies the context from here
+        lessons.later(project_evidence.after_turn(project_id, conversation_id, user_message,
+                                                  said=not background_jobs.inside_job()))
 
 
 async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None):

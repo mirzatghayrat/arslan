@@ -315,7 +315,8 @@ jobs:
         # tests still carries its own skip, which is why they stay green on Linux.
         # -o xfail_strict=true: SBX's p tests for a surface not built yet are strict
         # xfails, and JUnit doesn't record strictness, so every xfail is made strict here.
-        run: .venv/bin/pytest tests/ -m macos -q -rfEs -o xfail_strict=true --junitxml=macos-results.xml
+        # -rfEsx: the x lists each xfail in the log, so the pinned count below can be read.
+        run: .venv/bin/pytest tests/ -m macos -q -rfEsx -o xfail_strict=true --junitxml=macos-results.xml
 
       - name: Assert they RAN, and did not skip
         # 🔴 THE LOAD-BEARING STEP. pytest exits 0 when every selected test is
@@ -346,12 +347,20 @@ jobs:
           # 0.1.64 SBX-1b: +9, non-ASCII and control-character paths under real seatbelt.
           # 0.1.64 SBX-2 (#507): +293, the default-deny base, its macOS corpus and three localhost measurements.
           # 0.1.64 SBX-2 follow-up (#574): +2, compile checks that the TCP port denies on a fixed port list survive in the proxy and port-22 modes.
-          EXPECTED = 364
+          # 0.1.64 SBX-3p (#619): +56, the commands base's denial cases, strict xfails until SBX-3a's product adapter exists.
+          # 0.1.64 L11-3a (#621): +1, a rules file's write refused by O_NOFOLLOW_ANY after a folder swap.
+          EXPECTED = 421
+          # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
+          # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
+          # job green (#620 review). The PR that builds the surface moves this down with its evidence;
+          # a new p PR moves it up.
+          # 0.1.64 SBX-3p (#619): 56, all in tests/server/sbx/test_sbx3_commands.py; SBX-3a takes it to 0.
+          EXPECTED_XFAIL = 56
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is
           # <skipped type="pytest.xfail">: it ran, so it counts as ran, not as a skip.
-          # A strict xfail that passed is a <failure>. Na's own gate (0 xfail) is in its evidence.
+          # A strict xfail that passed is a <failure>. How many there are is pinned (EXPECTED_XFAIL).
           xfailed = sum(1 for s in suite.iter("skipped") if s.get("type") == "pytest.xfail")
           skipped = int(suite.get("skipped", 0)) - xfailed
           failures = int(suite.get("failures", 0)) + int(suite.get("errors", 0))
@@ -361,6 +370,9 @@ jobs:
               problems.append(f"{skipped} of {total} SKIPPED — a skip here is a silent pass")
           if total - skipped != EXPECTED:
               problems.append(f"{total - skipped} tests actually ran, expected {EXPECTED}")
+          if xfailed != EXPECTED_XFAIL:
+              problems.append(f"{xfailed} strict xfails, expected {EXPECTED_XFAIL}: a surface was built, or a "
+                              "gate's failure was absorbed, without moving the number")
           if failures:
               problems.append(f"{failures} failed/errored")
           if problems:

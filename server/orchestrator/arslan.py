@@ -464,11 +464,13 @@ async def handle_user_message(
     # this replaces was the expert-era dispatcher: an extra model call per message that
     # could answer in the agent's place. "Add today's to-dos to Reminders" came back as
     # a canned "no preset for that connector" and never reached a tool.
-    reply = {"id": None}                 # K2b: the reply this turn ended with, as its stream_end said
+    reply = {"id": None, "run": None}    # K2b: the reply this turn ended with, as its stream_end said
 
     def watch(event: dict) -> None:
         if event.get("type") == "stream_end" and isinstance(event.get("message_id"), int):
             reply["id"] = event["message_id"]
+        if reply["run"] is None and type(event.get("run_id")) is int:
+            reply["run"] = event["run_id"]   # v0.1.64: the turn's run, which host_run puts on each of its events
         emit(event)
     await _handle_answer(conversation_id, user_message, watch, attached_context=attached_context,
                          images=images, confirm_command=confirm_command,
@@ -478,7 +480,8 @@ async def handle_user_message(
     # compaction: both after the turn, outside its lock (K2b). The budget is the turn's, noted on
     # the turn's run as before.
     budget = await memory.turn_budget(conversation_id, has_images=bool(images))
-    _after_turn_later(conversation_id, user_message, emit, active_context, budget=budget, reply_id=reply["id"])
+    _after_turn_later(conversation_id, user_message, emit, active_context, budget=budget, reply_id=reply["id"],
+                      run_id=reply["run"])
 
 
 # K2b (U5 ①②): the post-turn jobs still running, and each conversation's latest one.
@@ -488,7 +491,7 @@ AFTER_TURN_SECONDS = 300
 
 
 def _after_turn_later(conversation_id: str, user_message: str, emit: EventSink, turn_context,
-                      *, budget: int, reply_id: int | None) -> None:
+                      *, budget: int, reply_id: int | None, run_id: int | None = None) -> None:
     """Look for facts and compact after the turn has returned, so its lock is free and the next
     message starts at once (K2b; U5 ①, M3 #11).
 
@@ -498,16 +501,18 @@ def _after_turn_later(conversation_id: str, user_message: str, emit: EventSink, 
     one before it saved. A job still pending when the process exits is lost: only that turn's
     facts, and the next compaction covers its history (K2 card, accepted risk). Deleting the
     conversation does not stop a pending job's facts either: memories outlive a conversation by
-    design; its summary is not written back (memory.maybe_compact)."""
-    from server.services import task_service
+    design; its summary is not written back (memory.maybe_compact). What it judges belongs to the turn's run
+    (`run_id`, v0.1.64: judgments.run_id); the turn's run is over by then, so the id is bound for the job."""
+    from server.services import judgment, task_service
     loop = asyncio.get_running_loop()
     previous = _after_turn_tail.get(conversation_id)
     if previous is not None and previous.get_loop() is not loop:
         previous = None                 # left by a loop that has ended (tests run one loop each)
-    job = loop.create_task(
-        _after_turn(conversation_id, user_message, emit, turn_context, budget=budget, reply_id=reply_id,
-                    after=previous),
-        context=task_service.detached_context())
+    with judgment.of_run(run_id):        # the job's context is copied from here
+        job = loop.create_task(
+            _after_turn(conversation_id, user_message, emit, turn_context, budget=budget, reply_id=reply_id,
+                        after=previous),
+            context=task_service.detached_context())
     _AFTER_TURN.add(job)
     _after_turn_tail[conversation_id] = job
 
@@ -725,7 +730,7 @@ PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them
 #: up front rather than finding out from a refusal. DELETE-BY: v0.1.64, with S2a-3 and PR4.
 SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything: it runs no commands "
                   "(run_command is not available here). Save what you make with write_file, in Arslan's own "
-                  "folder; a step that needs the user's OK is refused and listed in their Inbox.")
+                  "folder; a step that needs the user's OK is refused and listed under the task on their Scheduled page.")
 
 
 BACKGROUND_SYSTEM = (
@@ -1521,7 +1526,8 @@ async def _every_tool() -> list[dict]:
                         "task, or for any scheduled task for the rest of the conversation. A scheduled "
                         "run is unattended: it can write files only in Arslan's own folder, it runs no "
                         "commands, it only calls MCP tools the server marks read-only, and any step that "
-                        "needs the user's OK is refused and listed in their Inbox."},
+                        # INB5: the Inbox is gone; what a run could not do is listed under its task (#605 review F3).
+                        "needs the user's OK is refused and listed under the task on their Scheduled page."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},
         {"key": "cancel_task",

@@ -290,9 +290,11 @@ interface Props {
   attention?: (task: ScheduledTaskDto) => "failing" | "look" | null;
   /** INB3: shown under the task's runs when its row is open: its problem and what it could not do while you were away. */
   details?: (task: ScheduledTaskDto) => ReactNode;
+  /** INB5b-3: a task's row was opened (not closed). */
+  onOpen?: (taskId: number) => void;
 }
 
-export default function ScheduledTasksCard({ onOpenRun, attention, details }: Props) {
+export default function ScheduledTasksCard({ onOpenRun, attention, details, onOpen }: Props) {
   const { t, i18n } = useTranslation();
   const [tasks, setTasks] = useState<ScheduledTaskDto[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -333,6 +335,7 @@ export default function ScheduledTasksCard({ onOpenRun, attention, details }: Pr
       return;
     }
     setExpanded(id);
+    onOpen?.(id);
     api.getScheduledTaskRuns(id)
       .then((rs) => setRuns((prev) => ({ ...prev, [id]: rs })))
       .catch(() => { /* history stays empty */ });

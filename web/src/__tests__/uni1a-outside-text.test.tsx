@@ -14,7 +14,7 @@ import * as discovery from "../api/discovery";
 import AskSlot from "../components/AskSlot";
 import CapabilitySheet from "../components/CapabilitySheet";
 import SkillImportPanel from "../components/SkillImportPanel";
-import InboxRefused from "../components/proactive/InboxRefused";
+import NotDoneList from "../components/proactive/NotDoneList";
 import { Escaped, isolate } from "../lib/outsideText";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
@@ -85,7 +85,7 @@ describe("outside text on the web", () => {
       id: 7, created_at: "2026-11-01T09:00:00Z", first_at: "2026-11-01T09:00:00Z", count: 1, conversation_id: "c", kind: "app",
       target: "app:x", detail: MIXED, always_ok: true, always: [{ kind: "app", target: "x", label: MIXED }], unattended: false,
     }] : {}) as never);
-    render(<InboxRefused conversationId="c" />);
+    render(<NotDoneList conversationId="c" />);
     const what = await screen.findByTestId("inbox-refused-what");
     shownEscaped(what);
     expect(what.parentElement!.getAttribute("title")).toBe(isolate(MIXED));
@@ -99,7 +99,7 @@ describe("outside text on the web", () => {
     // (untrusted.clean_name at every write, models.py; migration 0082 for those stored before; the tools list),
     // so this list is for text shown as stored (a skill's text) and names inside Arslan's own sentences.
     for (const file of ["CapabilitySwitches.tsx", "CapabilitySheet.tsx", "SkillImportPanel.tsx",
-      "capabilities/SkillSaveCard.tsx", "capabilities/CapabilityProposeCard.tsx", "proactive/InboxRefused.tsx"]) {
+      "capabilities/SkillSaveCard.tsx", "capabilities/CapabilityProposeCard.tsx", "proactive/NotDoneList.tsx"]) {
       expect(readFileSync(`src/components/${file}`, "utf8"), file).toMatch(/from "(\.\.\/)+lib\/outsideText"|from '\.\.\/lib\/outsideText'/);
     }
   });

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { proactiveApi, type ProactiveItem } from "../../api/proactive";
-import InboxRefused from "../proactive/InboxRefused";
+import NotDoneList from "../proactive/NotDoneList";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import { Notice } from "../kit";
-import { useQueueGuard } from "../kit/guard";
+import { AnswerGuardScope, eitherGuard, useAnswerGuardState, useQueueGuard, useScopeGuard, useScrollHold } from "../kit/guard";
 
 // INB5b (v0.1.64): what waited in the Inbox comes back to its conversation (the INB5 board, approved 2026-10-31). Approval cards
 // were already there; these two pieces join them.
@@ -17,7 +17,7 @@ const POLL_MS = 30_000;
  *  (those are its task's, on the Scheduled page). Nothing at all when nothing waits. */
 export function AwayEntries({ conversationId }: { conversationId: string }) {
   const { t } = useTranslation();
-  return <InboxRefused conversationId={conversationId} hours={AWAY_HOURS} awayOnly title={t("whileAway.title")}
+  return <NotDoneList conversationId={conversationId} hours={AWAY_HOURS} awayOnly title={t("whileAway.title")}
     className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-surface p-4" />;
 }
 
@@ -56,8 +56,16 @@ export function StoppedJobCards({ conversationId, onOpenConversation, onOpenMode
     if (mounted.current || shownKey !== "|") guard.hold();
     mounted.current = true;
   }, [guard, shownKey]);
+  // INB5b-3 (#602 re-check): the cards sit at the end of the conversation, so a reply streaming in scrolls them under a still pointer,
+  // as it does the away entries: their doors wait it out too (useScrollHold, on a guard of their own; not the slot's card, which floats).
+  // Only inside a scope, as everywhere a card answers to one: outside one (a test of the card alone) nothing holds.
+  const above = useScopeGuard();
+  const own = useAnswerGuardState();
+  const doors = useMemo(() => above && eitherGuard(above, own), [above, own]);
+  const sectionRef = useRef<HTMLElement>(null);
+  useScrollHold(sectionRef, own);
   if (items.length === 0 && !notice) return null;
-  return <section aria-label={t("whileAway.stopped")} className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+  const cards = <section ref={sectionRef} aria-label={t("whileAway.stopped")} className="mx-auto flex w-full max-w-3xl flex-col gap-3">
     {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}
       action={notice.needsModel && onOpenModelSettings
         ? <button className="text-[13px] underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button> : undefined}>
@@ -66,4 +74,5 @@ export function StoppedJobCards({ conversationId, onOpenConversation, onOpenMode
       onDo={() => void doIt(item)} onSnooze={(days) => void snooze(item, days)} onDismiss={(mute) => void dismiss(item, mute)}
       onOpenConversation={() => onOpenConversation(conversationId, false)} />)}
   </section>;
+  return doors ? <AnswerGuardScope value={doors}>{cards}</AnswerGuardScope> : cards;
 }

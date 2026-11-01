@@ -10,13 +10,14 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k),
     i18n: { resolvedLanguage: "en", language: "en" } }),
 }));
-const { files, jobsApi, mcp, client, conv } = vi.hoisted(() => ({
+const { files, jobsApi, mcp, client, conv, toast } = vi.hoisted(() => ({
   files: { list: vi.fn(), read: vi.fn(), stat: vi.fn(), open: vi.fn(), reveal: vi.fn(), home: vi.fn(), conversationFiles: vi.fn(),
     changes: vi.fn() },
   jobsApi: { list: vi.fn(), stop: vi.fn() },
   mcp: { listMcpServers: vi.fn(), reconnectMcpServer: vi.fn() },
   client: { fetchProviderModels: vi.fn(), updateProviderConfig: vi.fn(), api: { runCheckpoint: vi.fn(), undoTurn: vi.fn() } },
   conv: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
+  toast: vi.fn(),
 }));
 vi.mock("../api/files", () => ({ filesApi: files }));
 vi.mock("../api/tasks", () => ({ backgroundJobsApi: jobsApi }));
@@ -24,6 +25,7 @@ vi.mock("../api/mcp", () => mcp);
 vi.mock("../api/client", async (orig) => ({ ...(await orig<object>()), ...client }));
 vi.mock("../api/conversationModel", () => ({ conversationModelApi: conv }));
 vi.mock("../components/BrowserReader", () => ({ default: () => <div /> }));
+vi.mock("../components/kit", async (orig) => ({ ...(await orig<object>()), toast }));
 
 import { lessonsApi } from "../api/lessons";
 import { ApiError } from "../api/client";
@@ -49,6 +51,7 @@ beforeEach(() => {
   jobsApi.list.mockResolvedValue({ jobs: [] });
   mcp.listMcpServers.mockResolvedValue([]);
   conv.get.mockResolvedValue({ choice: null });
+  toast.mockClear();
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -128,7 +131,8 @@ describe("Overview's row", () => {
     const list = vi.spyOn(lessonsApi, "folderRules").mockImplementation(async () => (removed
       ? { enabled: true, files: [{ file: FILE, text: "", added: [] }] }
       : { enabled: true, files: [{ file: FILE, text: "- 24-hour\n", added: [{ lesson_id: 7, line: `use ${RLO}24-hour` }] }] }));
-    const rule = vi.spyOn(lessonsApi, "rule").mockImplementation(async () => { removed = true; return { state: "removed", file: FILE }; });
+    const rule = vi.spyOn(lessonsApi, "removeFolderRule").mockImplementation(async () => {
+      removed = true; return { state: "removed", file: FILE, in_file: true }; });
     useWorkbench.getState().show("overview");
     mount();
     const row = await screen.findByTestId("overview-rules");
@@ -137,10 +141,58 @@ describe("Overview's row", () => {
     expect(added.textContent).not.toMatch(REORDER);                              // W9: isolated too
     expect(added.textContent).toContain(`${FSI}use 24-hour${PDI}`);
     fireEvent.click(within(added).getByRole("button", { name: "workbench.ruleRemove" }));
-    await waitFor(() => expect(rule).toHaveBeenCalledWith(7, "c1", "remove"));
+    await waitFor(() => expect(rule).toHaveBeenCalledWith("c1", FILE, 7, `use ${RLO}24-hour`));   // L11-3a: the record
     const before = list.mock.calls.length;
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
     await waitFor(() => expect(screen.queryByTestId("overview-rules-added")).toBeNull());
+  });
+
+  it("L11-3a: two lines under one lesson id are both listed, and each Remove names its own line", async () => {
+    vi.spyOn(lessonsApi, "folderRules").mockResolvedValue({ enabled: true, files: [{ file: FILE, text: "- a\n- b\n",
+      added: [{ lesson_id: 7, line: "a" }, { lesson_id: 7, line: "b" }] }] });
+    const remove = vi.spyOn(lessonsApi, "removeFolderRule").mockResolvedValue({ state: "removed", file: FILE, in_file: true });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    useWorkbench.getState().show("overview");
+    mount();
+    const row = await screen.findByTestId("overview-rules");
+    fireEvent.click(within(row).getByTestId("overview-rules-toggle"));
+    const added = await within(row).findAllByTestId("overview-rules-added");
+    expect(added.map((a) => a.textContent)).toEqual([expect.stringContaining("a"), expect.stringContaining("b")]);
+    fireEvent.click(within(added[1]).getByRole("button", { name: "workbench.ruleRemove" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("c1", FILE, 7, "b"));
+    expect(errors.mock.calls.flat().join(" ")).not.toMatch(/same key/);          // #621 review, F7: the row key
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("#621 F3: a line that had changed in the file says so", async () => {
+    vi.spyOn(lessonsApi, "folderRules").mockResolvedValue({ enabled: true, files: [{ file: FILE, text: "- a\r\n",
+      added: [{ lesson_id: 7, line: "a" }] }] });
+    vi.spyOn(lessonsApi, "removeFolderRule").mockResolvedValue({ state: "removed", file: FILE, in_file: false });
+    useWorkbench.getState().show("overview");
+    mount();
+    const row = await screen.findByTestId("overview-rules");
+    fireEvent.click(within(row).getByTestId("overview-rules-toggle"));
+    fireEvent.click(within(await within(row).findByTestId("overview-rules-added")).getByRole("button", { name: "workbench.ruleRemove" }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("workbench.ruleNotInFile"));
+  });
+
+  it("#621 R2: the live card's Remove says when the line had changed in the file", async () => {
+    vi.spyOn(lessonsApi, "rule").mockResolvedValueOnce({ state: "added", file: FILE })
+      .mockResolvedValueOnce({ state: "removed", file: FILE, in_file: false });
+    render(<RuleOfferCard lessonId={7} file={FILE} text="reports" conversationId="c1" />);
+    fireEvent.click(screen.getByTestId("rule-offer-add"));
+    fireEvent.click(await screen.findByTestId("rule-offer-remove"));
+    expect(await screen.findByTestId("rule-offer-kept")).toHaveTextContent("workbench.ruleNotInFile");
+  });
+
+  it("#621 F7: Remove posts the file, the lesson and the line to the conversation's endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ state: "removed", file: FILE, in_file: true }), { status: 200 }));
+    expect(await lessonsApi.removeFolderRule("c 1", FILE, 7, "use 24-hour")).toEqual({ state: "removed", file: FILE, in_file: true });
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/v1\/conversations\/c%201\/folder-rules\/remove$/);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ file: FILE, lesson_id: 7, line: "use 24-hour" });
   });
 
   it("W9: Overview's file names are isolated", async () => {
