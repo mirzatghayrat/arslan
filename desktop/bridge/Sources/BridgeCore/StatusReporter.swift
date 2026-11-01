@@ -40,7 +40,15 @@ public final class StatusReporter {
 
     func post(_ body: [String: Any], to peer: String, now: Date) async {
         guard let record = try? await mailbox.send(type: "status.snapshot", body: body, to: peer, now: now) else { return }
-        if let older = unread.updateValue(record.id, forKey: peer) { try? mailbox.withdraw(older) }
+        if let older = replaceUnread(record.id, for: peer) { try? mailbox.withdraw(older) }
+    }
+
+    /// A tick and a phone's hello can post at once (BRG1): the one unread snapshot per phone is swapped under a lock.
+    let unreadLock = NSLock()
+    func replaceUnread(_ id: String, for peer: String) -> String? {
+        unreadLock.lock()
+        defer { unreadLock.unlock() }
+        return unread.updateValue(id, forKey: peer)
     }
 
     func snapshot(now: Date) async throws -> [String: Any] {
