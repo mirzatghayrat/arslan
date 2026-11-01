@@ -116,8 +116,10 @@ describe("one gesture answers one thing in the conversation", () => {
     </AnswerGuardScope>);
     const card = (id: number) => within(screen.getByTestId(`proactive-item-${id}`));
     const choose = (id: number, menu: string, choice: string) => {
-      fireEvent.click(card(id).getByText(menu));
+      if (!card(id).queryByText(choice)) fireEvent.click(card(id).getByText(menu));
       fireEvent.click(card(id).getByText(choice));
+      // A held pick keeps the menu open (#611 review, 2), so it is closed here before the next one.
+      if (card(id).queryByText(choice)) fireEvent.click(card(id).getByText(menu));
     };
     const tryAll = () => {
       fireEvent.click(card(5).getByText("proactive.item.doIt"));

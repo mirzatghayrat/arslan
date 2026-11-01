@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { proactiveApi, type ProactiveItem } from "../../api/proactive";
+import { hasRow } from "../../lib/proactive";
 import NotDoneList from "../proactive/NotDoneList";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import { Notice } from "../kit";
@@ -37,7 +38,8 @@ export function StoppedJobCards({ conversationId, onOpenConversation, onOpenMode
   const load = useCallback(async () => {
     try {
       const body = await proactiveApi.items("all", { conversationId, kind: "job_followup" });
-      if (alive.current) setItems([...body.items].sort((a, b) => a.id - b.id));       // oldest first, as the conversation reads
+      // Q7: a card set aside stays while it is set aside, a handled one for a job reminder's 7 days, an expired one goes.
+      if (alive.current) setItems(body.items.filter((item) => hasRow(item)).sort((a, b) => a.id - b.id));   // oldest first, as the conversation reads
     } catch { /* an older server has no such filter: the conversation still works */ }
   }, [conversationId]);
   useEffect(() => {
