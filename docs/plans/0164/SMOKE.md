@@ -50,3 +50,18 @@ The card's external evidence (`docs/plans/0164/SB1-sidebar.md`, Four lines §4) 
    - **Expected:** it moves into that project, as "Move to project…" does.
 8. **Drag one that is running:** drag a conversation onto a project while its reply is still coming.
    - **Expected:** it stays where it was, and the notice says it couldn't move because it may be working ("Couldn't move it — it may be working right now.").
+
+## K10 + L11 (#594, #603; `docs/plans/0164/L11-3-rule-followups.md` §L11-3c)
+
+1. **Rules load:** in a project folder that has an `AGENTS.md`, start a conversation and open Overview.
+   - **Expected:** Environment shows "Folder rules · 1 file"; expanding it lists the file, and clicking it opens the reader.
+2. **The card:** in that conversation, correct Arslan on the same thing twice (for example "write the summary as a bullet list", two turns apart).
+   - **Expected:** after the second correction, a card asks "Make this a rule for this folder?" with the line and the file, and the buttons Add and Not now.
+3. **Add:** click Add.
+   - **Expected:** the file ends with `- <the line>`, and nothing else in it changed (compare with a copy made before).
+4. **Remove after a reload:** reload the window, open Overview, and click Remove under the file.
+   - **Expected:** the line is gone and the file is byte for byte the copy from step 3's "before".
+5. **The switch:** Settings → Advanced, turn "Follow folder rules" off.
+   - **Expected:** Overview says "Folder rules: off", and the next turn doesn't follow the file's rules.
+6. **Language (L11-1):** in a folder whose `AGENTS.md` says "Write files in English", ask in Chinese for a short note saved as a file.
+   - **Expected:** the reply is in Chinese and the file is in English.

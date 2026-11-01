@@ -58,6 +58,8 @@ export interface Message {
   /** 0.1.52 S5: a practice learned in this turn (render one quiet line with undo). */
   /** INB1: a practice not in effect says why (lessons.not_in_effect: outside_content, conflicts, …). */
   learned?: { id: number; status: string; notInEffect?: string | null };
+  /** L11-2: "make this a rule for this folder?" (render the card, not a bubble). */
+  ruleOffer?: { lessonId: number; file: string };
   /** 0.1.57: how a capability the user approved ended (one quiet line). */
   capabilityResult?: import('./api/client.types').CapabilityResult;
   /** 0.1.56 §7: Arslan proposes a changed plan for the project (a card, answered here). */
