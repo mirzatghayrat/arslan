@@ -114,7 +114,8 @@ do {
 control.onConnect = { try? await runtime.hello() }
 control.onFrame = { frame in try? await runtime.handleControl(frame) }
 let backend = LocalBackend(port: port, token: token)
-let status = StatusReporter(backend: backend, mailbox: runtime.mailbox, deviceName: macName)
+let status = StatusReporter(backend: backend, mailbox: runtime.mailbox, deviceName: macName,
+                            mac: MacState(probe: SystemMacProbe()))
 let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox,
                               backend: backend, status: status)
 Task { await control.run() }
