@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from server.services.code_sandbox import TTY_DEVICES
 from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
@@ -33,8 +34,9 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -
     the user (read/write); `read` = extra read-only paths (Arslan's runtimes).
 
     SBX-4: SBX-2's shared base (`default_deny_profile`): only the listed system services (no wholesale
-    `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS;
-    SBX-6's proxy mode for MCP is `mcp-proxy`, later). The base closes the user's protected paths last, over
+    `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS).
+    DELETE-BY: v0.1.64, with the "SBX-6 MCP proxy" PR, which moves a declared server to proxy mode through
+    `sandbox_proxy` (SBX-6p's mcp-proxy gate); SBX-6 is a release condition for MCP as for commands. The base closes the user's protected paths last, over
     the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
     (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
     from server.services import command_sandbox
@@ -43,6 +45,11 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -
                                 readable=[*map(real, SYSTEM_READ), *granted],
                                 network=NetworkMode.ANY_DECLARED if network else NetworkMode.NONE)
     rules = Profile("deny")
+    # #666 review: an MCP server talks over stdio and never had a terminal: the base's tty devices, their
+    # ioctls and pseudo-ttys close again here, after the base, which stays identical across presets.
+    rules.deny("file-write*", *TTY_DEVICES)
+    rules.deny("file-ioctl", *TTY_DEVICES)
+    rules.deny("pseudo-tty")
     rules.allow("file-read-data", literal("/"))
     rules.allow_paths("file-read* file-map-executable", map(real, read))
     rules.allow("file-read* file-write* file-map-executable", subpath(real(root)))

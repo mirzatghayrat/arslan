@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from server.services import capability_sandbox, code_sandbox, command_sandbox
-from server.services.sandbox_profile import default_deny_profile
+from server.services.sandbox_profile import NetworkMode, default_deny_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="seatbelt is macOS-only")
 
@@ -53,6 +53,31 @@ def test_the_base_block_is_byte_identical_in_every_preset(home):
     for name, text in _presets(home).items():
         assert _block(text) == base, name
         assert text.startswith("(version 1)\n(deny default)\n(allow process-exec process-fork)\n"), name
+
+
+_PARAMETERISED = ("(allow file-read* file-write-data ", "(allow file-ioctl ", "(allow mach-lookup ",
+                  "(allow network-outbound ", "(deny network")
+
+
+def test_the_bases_parameterised_lines_match_too(home):
+    """#666 review: the device, ioctl, service and network lines the base writes for a preset's mode appear in
+    the preset exactly and in the base's order (a preset closes what it doesn't need after them)."""
+    modes = {"run-python": NetworkMode.NONE, "artifact": NetworkMode.NONE, "mcp": NetworkMode.NONE,
+             "mcp-online": NetworkMode.ANY_DECLARED}
+    for name, text in _presets(home).items():
+        base = [line for line in default_deny_profile(network=modes[name]).splitlines()
+                if line.startswith(_PARAMETERISED)]
+        assert base and [line for line in text.splitlines() if line in base] == base, name
+
+
+def test_computation_and_mcp_close_the_terminal_the_base_opens(home):
+    for name, text in _presets(home).items():
+        tail = text.split("(deny user-preference-write)", 1)[1]
+        assert "(deny pseudo-tty)" in tail, name
+        assert '(literal "/dev/tty") (literal "/dev/ptmx")' in tail.split("(deny file-ioctl", 1)[1], name
+    python = _presets(home)["run-python"]
+    assert '(deny mach-lookup (global-name "com.apple.FSEvents"))' in python
+    assert "(deny user-preference-read)" in python and "(deny file-map-executable (subpath " in python
 
 
 def test_no_preset_has_a_wholesale_grant(home):
@@ -94,6 +119,14 @@ def test_the_sbx_harness_registers_the_three_presets():
     from tests.server.sbx.harness import BUILT_BASES, Harness
     for base in ("run-python", "artifact", "mcp"):
         assert BUILT_BASES[base] is not Harness._measurement_profile, base
+
+
+@pytest.mark.parametrize("mode", [NetworkMode.PROXY, NetworkMode.PORT_22])
+def test_the_harness_refuses_an_mcp_mode_the_product_lacks(tmp_path, mode):
+    """MCP has none and any-declared only, until the SBX-6 MCP proxy PR: no quiet mapping to any-declared."""
+    from tests.server.sbx.harness import Harness
+    with pytest.raises(ValueError, match="SBX-6 MCP proxy"):
+        Harness(tmp_path, "mcp", mode).profile()
 
 
 @pytest.mark.macos

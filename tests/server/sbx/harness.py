@@ -166,6 +166,8 @@ def _mcp_profile(self, **parameters) -> str:
     parameters.pop("references", None)
     if parameters:
         raise ValueError(f"MCP takes no {sorted(parameters)}")
+    if self.network not in (NetworkMode.NONE, NetworkMode.ANY_DECLARED):
+        raise ValueError(f"MCP has no {self.network.value} mode yet (SBX-6 MCP proxy)")
     with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
         return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
                                           network=self.network != NetworkMode.NONE,
