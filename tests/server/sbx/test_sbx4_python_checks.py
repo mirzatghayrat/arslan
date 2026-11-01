@@ -30,7 +30,7 @@ def test_the_venv_lines_do_not_follow_the_hash_seed(tmp_path):
                             env={**os.environ, "PYTHONHASHSEED": str(seed)}).stdout for seed in range(12)}
     assert len(texts) == 1
     text = texts.pop()
-    for marker in ("(allow process-exec ", "pyvenv.cfg"):
+    for marker in ("(allow process-exec (literal ", "pyvenv.cfg"):   # SBX-4: the base adds its own exec line
         lines = [line for line in text.splitlines() if marker in line]
         assert len(lines) == 2 and lines == sorted(lines), marker
 

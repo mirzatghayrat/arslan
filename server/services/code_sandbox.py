@@ -30,7 +30,7 @@ import sys
 import tempfile
 from pathlib import Path
 from arslan.aio import within
-from server.services.sandbox_profile import Profile, literal, subpath
+from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, subpath
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +127,10 @@ def _child_limits() -> None:
 def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:
     """Default-deny compute policy: runtime reads, workspace writes, no network/host IPC.
 
+    SBX-4: SBX-2's shared base (`default_deny_profile`) with reads narrowed to the runtime and the workspace,
+    no network and no POSIX IPC, then this preset's own rules after it (the last rule wins): only its own
+    interpreter may run, dyld's root read, the few device and zone files it reads, and `references` read-only.
+
     Grant only the interpreter's installation and venv libraries, never their parent
     project or the app-data root. Resolve symlinks before constructing Seatbelt paths.
     Paths are written as SBPL strings (`sandbox_profile`), which prevents path injection.
@@ -138,30 +142,26 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
              Path("/usr/lib"), Path("/usr/share/locale")}
     for prefix in prefixes:
         reads.update({(prefix / "lib").resolve(), (prefix / "bin").resolve()})
+    text = default_deny_profile([workspace.resolve()], readable=[*sorted(reads), workspace.resolve()],
+                                network=NetworkMode.NONE)
     rules = Profile("deny")
-    rules.allow("sysctl-read")
     # dyld on macOS 26 reads the root vnode while locating its shared cache.
     # Literal '/', unlike subpath '/', does NOT grant descendants.
     rules.allow("file-read-data", literal("/"))
-    rules.allow("file-read-metadata")
-    rules.allow("process-fork")
-    rules.allow("process-info*", "(target self)")
-    for path in sorted(reads):
-        rules.allow("file-read* file-map-executable", subpath(path))
     for path in ("/dev/null", "/dev/random", "/dev/urandom", "/private/etc/localtime"):
         rules.allow("file-read*", literal(path))
-    # Sorted (SBX-4): in set order, which follows the hash seed, a linked interpreter's (a venv's) two
-    # process-exec lines and two pyvenv.cfg lines swapped between processes, one policy in several texts.
+    # The base lets any readable program run; computation runs only its own interpreter. Sorted (SBX-4): in
+    # set order, which follows the hash seed, a linked interpreter's (a venv's) two process-exec lines and
+    # two pyvenv.cfg lines swapped between processes, one policy in several texts.
+    rules.deny("process-exec")
     for path in sorted({executable, resolved}):
         rules.allow("process-exec", literal(path))
     # Python uses pyvenv.cfg to locate the base stdlib; this does not grant sibling reads.
     for prefix in sorted(prefixes):
         rules.allow("file-read*", literal(prefix / "pyvenv.cfg"))
-    rules.allow("file-read* file-write*", subpath(workspace.resolve()))
-    rules.allow("file-write*", literal("/dev/null"))
     if references is not None:
         rules.deny("file-write*", subpath(references.resolve()))
-    return rules.text()
+    return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
 def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:

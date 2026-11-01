@@ -352,7 +352,8 @@ jobs:
           # 0.1.64 SBX-3a gates (#645, Codex): +13, the measured service allowlist (+12) and the multiprocessing diagnosis (+1).
           # 0.1.64 SBX-3a gates (#645, Codex): +16, any-declared mode added to #619's two commands tests, strict xfails.
           # 0.1.64 SBX-3a gates review round (#645, Codex): −17. The keychain gate's list drops four services that don't exist on macOS and swaps securityd for the live SecurityServer and securityd.xpc (−3 per mode: −12 in the SBX-2 kernel tests, −9 strict xfails in the commands tests); complete-list pins and the raw-UDP gate add +4.
-          EXPECTED = 433
+          # 0.1.64 SBX-4a: +1, Python still computes and an MCP server still starts on the shared base.
+          EXPECTED = 434
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
