@@ -224,7 +224,7 @@ async def test_the_import_says_verbatim_only_when_nothing_was_removed(maker, mon
 async def test_an_import_with_a_tag_payload_is_blocked_by_the_scan(maker, monkeypatch):  # noqa: F811
     md = "---\nname: handoff\ndescription: Hand work over\n---\n1. State the goal." + TAGS + "\n"
     _mock_github(monkeypatch, license="MIT", tree=["SKILL.md"], raws={"SKILL.md": md})
-    with pytest.raises(ValueError, match="invisible_characters"):
+    with pytest.raises(ValueError, match="tag_or_bidi_characters"):
         await skill_import.import_skill("acme/skills", "SKILL.md")
 
 
@@ -234,16 +234,16 @@ def test_the_scan_passes_format_characters_that_hide_nothing(text):
     """A Persian word's ZWNJ, emoji ZWJ sequences, an RGI flag, LRM/RLM, a Devanagari ZWJ, a BOM."""
     from server.services import capability_scan
     found = capability_scan.scan_text("SKILL.md", f"## Trigger\n{text}\n", kind="text")
-    assert "invisible_characters" not in {f.rule for f in found}
+    assert "tag_or_bidi_characters" not in {f.rule for f in found}
 
 
-@pytest.mark.parametrize("text,count", [(OVERRIDE, 4), ("pa\u200bypal", 1), ("pa\u200cypal", 1),
-                                        ("\u0645\u06cc\u200c\u200c\u062e", 2), (TAGS, 16),
-                                        ("\U0001F3F4" + TAGS, 16), ("\u200d\U0001F525", 1)])
-def test_the_scan_counts_format_characters_that_hide_something(text, count):
+@pytest.mark.parametrize("text,count", [(OVERRIDE, 4), (TAGS, 16), ("\U0001F3F4" + TAGS, 16)])
+def test_the_scan_counts_the_characters_it_blocks(text, count):
+    """UNI1b-3: Tag characters and bidi controls; whatever else hides something is counted, not blocked
+    (test_uni1b3_scan_blocks_tags_and_bidi.py)."""
     from server.services import capability_scan
     found = {f.rule: f for f in capability_scan.scan_text("SKILL.md", f"## Trigger\n{text}\n", kind="text")}
-    assert found["invisible_characters"].excerpt == f"{count} invisible characters"
+    assert found["tag_or_bidi_characters"].excerpt == f"{count} tag or bidi control characters"
 
 
 # ── #526 review 4: names the connections page and the confirm card show ─────────────────────────

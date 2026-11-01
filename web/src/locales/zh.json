@@ -92,7 +92,6 @@
     "tagline": "打造你专属的 AI 专家"
   },
   "nav": {
-    "inbox": "收件箱",
     "projects": "项目",
     "settings": "设置",
     "arslan": "主助手",
@@ -578,7 +577,7 @@
     "automationLede": "这些会在后台运行并调用你的模型服务商，是要花钱的。它们默认全部关闭，而且任何一个都不会绕过你直接改动什么。",
     "navDesktop": "桌面",
     "navProactive": "主动性",
-    "desktopLede": "关窗不再退出 Arslan：它会留在菜单栏，任务和定时任务照常运行；需要你确认的动作仍在窗口里等你（最多 30 分钟；没人回应就不做，但这不算拒绝）。定时任务从不等你回应：它只做不需要你确认的事，其余的会被拒绝（其中大多数会列在收件箱里）。之前点过的「始终允许」在定时任务里不算数。要彻底退出，请用 ⌘Q 或菜单栏的「退出 Arslan」。",
+    "desktopLede": "关窗不再退出 Arslan：它会留在菜单栏，任务和定时任务照常运行；需要你确认的动作仍在窗口里等你（最多 30 分钟；没人回应就不做，但这不算拒绝）。定时任务从不等你回应：它只做不需要你确认的事，其余的会被拒绝（其中大多数会列在「定时任务」页的这个任务下面）。之前点过的「始终允许」在定时任务里不算数。要彻底退出，请用 ⌘Q 或菜单栏的「退出 Arslan」。",
     "labelKeepAwake": "工作时防止 Mac 睡眠",
     "keepAwakeDesc": "有任务或定时任务在运行时，Mac 不会自己进入睡眠。屏幕照样可以熄灭；合盖或电量低时仍会睡眠。",
     "labelDesktopNotifications": "系统通知",
@@ -713,8 +712,7 @@
     "grpAccess": "给其他应用的访问",
     "grpVersion": "版本",
     "grpWhatsNew": "这一版更新了什么",
-    "watchesInInbox": "盯着的网页和文件夹、不再提醒的，在收件箱里管理。",
-    "openInbox": "打开收件箱",
+    "watchesOnScheduled": "盯着的网页和文件夹、不再提醒的，在「定时任务」页管理。",
     "openActivity": "用量和每一次运行在「活动」里；定时任务在「定时任务」页。",
     "openActivityBtn": "打开动态",
     "whatsNewEmpty": "这一版没有更新说明。"
@@ -959,7 +957,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描;看不见的字符会数出来。",
+      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描。扫描会拦下隐藏的标签字符和文字方向控制符;其他看不见的字符只数出来,不拦。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",
@@ -1310,7 +1308,7 @@
     "every_minute": "每分钟",
     "every_n_minutes": "每 {{count}} 分钟",
     "prompt": "每次要做的事：",
-    "unattended": "定时任务自己运行，从不等你：需要你确认的步骤会被拒绝，并列在收件箱里。它可以查资料，只在 Arslan 自己的工作文件夹里写文件；不运行命令。",
+    "unattended": "定时任务自己运行，从不等你：需要你确认的步骤会被拒绝，并列在「定时任务」页的这个任务下面。它可以查资料，只在 Arslan 自己的工作文件夹里写文件；不运行命令。",
     "anyTask": "创建任何定时任务"
   },
   "enroll": {
@@ -1379,13 +1377,6 @@
     "hiddenEnrollFailed": "未能记住 {{name}}。{{why}}"
   },
   "inbox": {
-    "approveNow": "现在就要你批准",
-    "answerFailed": "这张卡已经被处理或过期了。",
-    "stalled": "停住了",
-    "changed": "有变化",
-    "other": "其他",
-    "watching": "正在盯着",
-    "muted": "不再提醒",
     "addWatch": "再盯一个网页或文件夹",
     "refusedTitle": "你不在时没做的事",
     "alwaysAllow": "始终允许",
@@ -1394,9 +1385,7 @@
     "scheduledNeverAsks": "定时任务不做需要你确认的事，请在对话里做。",
     "allowedNow": "以后都允许",
     "refusedTimes": "自 {{since}} 起共 {{count}} 次",
-    "undo": "撤销",
-    "openInArslan": "打开对话",
-    "heldCapability": "这一步会给 Arslan 添加新能力，只能在它所在的对话里看完整张卡片后批准。"
+    "undo": "撤销"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",
@@ -1446,5 +1435,12 @@
     "attention": "要你看一眼",
     "changed": "有变化",
     "failing": "没跑成或已自动暂停"
+  },
+  "whileAway": {
+    "title": "你不在时没做的（这个对话）",
+    "stopped": "停在这里的任务"
+  },
+  "waiting": {
+    "count": "等你处理：{{count}}"
   }
 }

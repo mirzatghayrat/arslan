@@ -268,8 +268,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     background: (
       <div className="space-y-6" data-testid="settings-background">
         {intro('background')}
-        <SettingsGroup title={t('settings.grpLookingOut')} note={t('settings.watchesInInbox')}>
-          <ProactiveSection bare only={['looking', 'brief']} />
+        <SettingsGroup title={t('settings.grpLookingOut')} note={t('settings.watchesOnScheduled')}>
+          <ProactiveSection bare only={['looking']} />
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpSpends')}>
       <AutomationSection

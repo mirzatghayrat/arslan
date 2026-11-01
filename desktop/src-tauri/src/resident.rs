@@ -173,7 +173,7 @@ pub fn notification(locale: &str, event: &Event) -> Option<(String, String)> {
         ("scheduled_finished", Some("error")) => "notify_scheduled_failed",
         ("scheduled_paused", _) => "notify_scheduled_paused",
         // 0.1.47: Arslan noticed something. Fixed words only, even on the lock screen:
-        // what it noticed is in the inbox, never in the banner.
+        // what it noticed is in Arslan (on Progress and in its conversation), never in the banner.
         ("proactive", _) => "notify_proactive",
         _ => return None,
     };
@@ -195,10 +195,10 @@ pub fn parse_response(raw: &str) -> Option<Status> {
 
 /// A notification's identifier carries the conversation to open on click.
 pub fn notification_id(event: &Event) -> String {
-    // A proactive notice has no conversation; clicking it opens the inbox. "@inbox"
-    // cannot collide with a real conversation id (those are `thread-<uuid>`).
+    // A proactive notice has no conversation; clicking it opens Progress (INB5: the Inbox is gone).
+    // "@progress" cannot collide with a real conversation id (those are `thread-<uuid>`).
     let target = if event.kind == "proactive" {
-        "@inbox"
+        "@progress"
     } else {
         event.conversation_id.as_deref().unwrap_or("")
     };
@@ -986,7 +986,7 @@ mod tests {
     }
 
     #[test]
-    fn a_proactive_notice_says_only_fixed_words_and_opens_the_inbox() {
+    fn a_proactive_notice_says_only_fixed_words_and_opens_progress() {
         // Even if an event ever carried a name or a conversation, none of it shows.
         let noticed = Event {
             task_name: Some("Quarterly taxes".into()),
@@ -1000,7 +1000,7 @@ mod tests {
         }
         assert_eq!(
             conversation_from_id(&notification_id(&noticed)).as_deref(),
-            Some("@inbox")
+            Some("@progress")
         );
         let with_conversation = Event {
             conversation_id: Some("thread-secret".into()),
@@ -1008,7 +1008,7 @@ mod tests {
         };
         assert_eq!(
             conversation_from_id(&notification_id(&with_conversation)).as_deref(),
-            Some("@inbox")
+            Some("@progress")
         );
     }
 }
