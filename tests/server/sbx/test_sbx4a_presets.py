@@ -70,6 +70,28 @@ def test_the_bases_parameterised_lines_match_too(home):
         assert base and [line for line in text.splitlines() if line in base] == base, name
 
 
+def test_tty_devices_are_the_bases_own_filters():
+    """#666 review F1/F2: the one TTY_DEVICES is what the base opens, so closing it closes all of it."""
+    from server.services.sandbox_profile import TTY_DEVICES
+    base = default_deny_profile().splitlines()
+    assert f"(allow file-ioctl {' '.join(TTY_DEVICES)})" in base
+    devices = next(line for line in base if line.startswith("(allow file-read* file-write-data "))
+    assert all(f" {f}" in devices for f in TTY_DEVICES)
+
+
+def test_nothing_reopens_the_terminal_after_the_closures(home):
+    from server.services.sandbox_profile import TTY_DEVICES
+    for name, text in _presets(home).items():
+        lines = text.splitlines()
+        start = lines.index("(deny pseudo-tty)")
+        closures = lines[start - 2:start + 1]
+        assert closures[0].startswith(("(deny file-read* file-write* ", "(deny file-write* ")), name
+        assert closures[1] == f"(deny file-ioctl {' '.join(TTY_DEVICES)})", name
+        for line in lines[start + 1:]:
+            assert not (line.startswith("(allow") and (any(f in line for f in TTY_DEVICES) or "pseudo-tty" in line
+                                                       or "file-ioctl" in line)), (name, line)
+
+
 def test_computation_and_mcp_close_the_terminal_the_base_opens(home):
     for name, text in _presets(home).items():
         tail = text.split("(deny user-preference-write)", 1)[1]

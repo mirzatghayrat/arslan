@@ -102,6 +102,11 @@ def _rule(verb: str, operations: str, filters: tuple[str, ...]) -> str:
     return "(" + " ".join((verb, operations, *filters)) + ")"
 
 
+#: The tty devices the base opens (reads, data writes and ioctls), for presets that run a terminal. SBX-4a: one
+#: definition, so computation and MCP, which run none, close exactly these after the base (#666 review, F2).
+TTY_DEVICES = (literal("/dev/tty"), literal("/dev/ptmx"), '(regex #"^/dev/ttys[0-9]+$")')
+
+
 class NetworkMode(str, Enum):
     NONE = "none"
     PROXY = "proxy"
@@ -178,13 +183,12 @@ def default_deny_profile(
         rules.allow_paths("file-read* file-map-executable", map(real, readable), file_or_folder)
     rules.allow_paths("file-write*", map(real, writable), file_or_folder)
 
-    devices = [literal(p) for p in ("/dev/null", "/dev/zero", "/dev/tty", "/dev/ptmx",
-                                    "/dev/stdout", "/dev/stderr")]
-    devices += [subpath("/dev/fd"), '(regex #"^/dev/ttys[0-9]+$")']
+    tty, ptmx, ttys = TTY_DEVICES
+    devices = [literal("/dev/null"), literal("/dev/zero"), tty, ptmx, literal("/dev/stdout"),
+               literal("/dev/stderr"), subpath("/dev/fd"), ttys]
     rules.allow("file-read* file-write-data", *devices)
     rules.allow("pseudo-tty")
-    rules.allow("file-ioctl", literal("/dev/tty"), literal("/dev/ptmx"),
-                '(regex #"^/dev/ttys[0-9]+$")')
+    rules.allow("file-ioctl", *TTY_DEVICES)
     if ipc_prefix is not None:
         rules.allow("ipc-posix-shm* ipc-posix-sem*",
                     f"(ipc-posix-name-prefix {sbpl_string(ipc_prefix)})")

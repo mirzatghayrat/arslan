@@ -30,7 +30,8 @@ import sys
 import tempfile
 from pathlib import Path
 from arslan.aio import within
-from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
+from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
+                                             subpath)
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +123,6 @@ def _child_limits() -> None:
     except (ValueError, OSError):
         pass  # RLIMIT_AS is unreliable on some macOS versions; CPU+timeout still bound us
     resource.setrlimit(resource.RLIMIT_FSIZE, (_FSIZE_BYTES, _FSIZE_BYTES))
-
-
-#: What the shared base opens for a terminal: the tty devices (and their ioctls). Presets that run no terminal
-#: (computation, MCP servers) close them again after the base, so the base itself stays identical (#666 review).
-TTY_DEVICES = (literal("/dev/tty"), literal("/dev/ptmx"), '(regex #"^/dev/ttys[0-9]+$")')
 
 
 def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:

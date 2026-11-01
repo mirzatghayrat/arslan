@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from server.services.code_sandbox import TTY_DEVICES
-from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
+from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
+                                             subpath)
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
@@ -36,7 +36,7 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -
     SBX-4: SBX-2's shared base (`default_deny_profile`): only the listed system services (no wholesale
     `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS).
     DELETE-BY: v0.1.64, with the "SBX-6 MCP proxy" PR, which moves a declared server to proxy mode through
-    `sandbox_proxy` (SBX-6p's mcp-proxy gate); SBX-6 is a release condition for MCP as for commands. The base closes the user's protected paths last, over
+    `sandbox_proxy`; SBX-6 is a release condition for MCP as for commands. The base closes the user's protected paths last, over
     the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
     (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
     from server.services import command_sandbox
