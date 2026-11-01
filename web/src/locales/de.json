@@ -782,6 +782,8 @@
     "fromPhone": "Vom iPhone gestartet",
     "glyph": {
       "waiting": "Wartet auf deine Freigabe",
+      "waiting_reminder": "Ein angehaltener Auftrag hat dir eine Erinnerung hinterlassen",
+      "waiting_away": "Konnte dich nicht fragen, während du weg warst",
       "remote": "Remote · dein iPhone",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
@@ -957,7 +959,7 @@
       "orphaned": "Verwaiste Dateien"
     },
     "import": {
-      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, nach Lizenzprüfung und Sicherheitsscan; unsichtbare Zeichen werden gezählt.",
+      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, nach Lizenzprüfung und Sicherheitsscan. Der Scan blockiert versteckte Tag-Zeichen und Steuerzeichen der Textrichtung; andere unsichtbare Zeichen werden gezählt, nicht blockiert.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "Unterpfad (optional)",
       "scan": "Scannen",
@@ -1432,6 +1434,7 @@
     "intro": "Aufgaben, die nach Zeitplan laufen, und die Seiten und Ordner, die Arslan für dich beobachtet. Ein Punkt markiert eine Zeile, die du dir ansehen solltest.",
     "watches": "Beobachtete Seiten und Ordner",
     "awayTitle": "Nicht erledigt, während du weg warst (nur diese Aufgabe)",
+    "seenNote": "Wenn du eine Aufgabe öffnest, gilt, was ihre Läufe nicht tun konnten, als gesehen. Was in ihrer eigenen Unterhaltung liegen blieb, während du weg warst, verschwindet, wenn du diese Unterhaltung öffnest; eine Karte dort erst, wenn du sie beantwortest.",
     "attention": "Bitte ansehen",
     "changed": "Geändert",
     "failing": "Fehlgeschlagen oder selbst pausiert"

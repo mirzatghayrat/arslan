@@ -782,6 +782,8 @@
     "fromPhone": "Started from iPhone",
     "glyph": {
       "waiting": "Waiting for your approval",
+      "waiting_reminder": "A stopped job left you a reminder",
+      "waiting_away": "Couldn't ask you while you were away",
       "remote": "Remote · your iPhone",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
@@ -957,7 +959,7 @@
       "orphaned": "Orphaned files"
     },
     "import": {
-      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan; invisible characters are counted.",
+      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan. The scan blocks hidden tag characters and text-direction controls; other invisible characters are counted, not blocked.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subpath (optional)",
       "scan": "Scan",
@@ -1432,6 +1434,7 @@
     "intro": "Tasks that run on a schedule, and the pages and folders Arslan watches for you. A dot marks a row that needs a look.",
     "watches": "Watched pages and folders",
     "awayTitle": "Not done while you were away (this task only)",
+    "seenNote": "Opening a task marks what its runs could not do as seen. In the task's own conversation, what was not done while you were away clears when you open that conversation, and a card there clears only once it is answered.",
     "attention": "Needs a look",
     "changed": "Changed",
     "failing": "Failed or paused itself"

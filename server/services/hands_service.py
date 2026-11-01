@@ -589,14 +589,19 @@ _RISKY_KEYS = {"cmd+delete", "cmd+backspace", "cmd+shift+delete", "cmd+shift+bac
 
 def risky_label(label: str | None) -> bool:
     """A button or menu item whose real label (read from the app, not the model's
-    words) deletes, sends, pays, buys, transfers or submits."""
-    return money_label(label) or (bool(label) and bool(_RISKY_WORDS.search(str(label))))
+    words) deletes, sends, pays, buys, transfers or submits, judged as it reads
+    (hands_contract.as_read: no invisible characters, full-width letters folded)."""
+    from server.services.hands_contract import as_read
+    label = as_read(label)
+    return money_label(label) or (bool(label) and bool(_RISKY_WORDS.search(label)))
 
 
 def money_label(label: str | None) -> bool:
     """A label that moves money: pay, buy, purchase, order, check out, transfer (0.1.61 §A11).
-    Such a step is `money`: a card every time, in every mode, Full access included."""
-    return bool(label) and bool(_MONEY_WORDS.search(str(label)))
+    Such a step is `money`: a card every time, in every mode, Full access included. Judged as it reads."""
+    from server.services.hands_contract import as_read
+    label = as_read(label)
+    return bool(label) and bool(_MONEY_WORDS.search(label))
 
 
 # Apps that reach every other app or the whole Mac (0.1.61 §A4): their card never offers
