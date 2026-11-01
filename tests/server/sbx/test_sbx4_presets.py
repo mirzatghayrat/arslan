@@ -41,17 +41,35 @@ def test_presets_have_no_wholesale_grants(tmp_path, base):
         stage = "SBX-3a" if base == "commands" else "SBX-4a"
         assert base in BUILT_BASES, f"{stage} {base} adapter is not built"
         text = Harness(tmp_path, base).profile()
-    # Ignore quoted paths, but include modifier-first and wildcard operations.
-    for line in text.splitlines():
-        code = re.sub(r'"(?:\\.|[^"\\])*"', '""', line)
-        if not re.match(r"\s*\(allow\b", code):
+    # Read complete top-level forms, including multiline/modifier-first grants.
+    # String contents and comments are data, not operation names or parentheses.
+    code = re.sub(r'"(?:\\.|[^"\\])*"', '""', text)
+    code = re.sub(r";[^\n]*", "", code)
+    forms = []
+    depth = 0
+    for token in re.finditer(r"[()]", code):
+        if token.group() == "(":
+            if depth == 0:
+                start = token.start()
+            depth += 1
+        else:
+            depth -= 1
+            assert depth >= 0, "unbalanced policy form"
+            if depth == 0:
+                forms.append(code[start:token.end()])
+    assert depth == 0, "unclosed policy form"
+    for form in forms:
+        form = re.sub(r"\s+", " ", form)
+        form = re.sub(r"\(\s+", "(", form)
+        if not re.match(r"\(allow\b", form):
             continue
-        assert not re.search(r"\buser-preference-write\b", code), line
-        assert not re.search(r"\bmach\*(?:\s|\))", code), line
-        if re.search(r"\bmach-lookup\b", code):
-            assert "(global-name " in line and "global-name-prefix" not in line, line
+        assert not re.search(r"\buser-preference-write\b", form), form
+        assert not re.search(r"\bmach\*(?:\s|\))", form), form
+        if re.search(r"\bmach-lookup\b", form):
+            assert "(global-name " in form and "global-name-prefix" not in form, form
         if base not in {"outside-floor", "ssh"}:
-            assert not re.search(r"\bdefault\b", code), line
+            assert not re.search(r"\bdefault\b", form), form
+
 
 
 @pytest.mark.macos
@@ -120,6 +138,45 @@ def test_preset_preference_and_unlisted_service_policy(sbx, mode):
 @pytest.mark.sbx_mac
 @macos
 @cases
+def test_preset_apple_events(sbx, mode):
+    control = sbx.run(["/usr/bin/osascript", "-e", "return 1"],
+                      profile="(version 1)(allow default)", probe="osascript-executable-control")
+    assert control.returncode == 0 and control.stdout.strip() == "1", control.stderr
+    control = sbx.python("""
+import ctypes as C, os
+lib = C.CDLL('/usr/lib/libsandbox.dylib')
+lib.sandbox_check.argtypes = [C.c_int, C.c_char_p, C.c_int]
+flag = C.c_int.in_dll(lib, 'SANDBOX_CHECK_NO_REPORT').value
+assert lib.sandbox_check(os.getpid(), b'appleevent-send', flag) == 0
+""", profile="(version 1)(allow default)", probe="apple-event-policy-control")
+    assert control.returncode == 0, control.stderr
+    # No live app receives an event. The policy query distinguishes a denied
+    # operation from the intentionally absent target of the execution probe.
+    gates.test_apple_events_refused_without_contacting_an_app(sbx)
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@cases
+def test_preset_launch_submission(sbx, mode):
+    # As for commands, launchd may refuse even allow-default. Pin the missing
+    # lookup grant too: ambient rejection alone must not satisfy this gate.
+    for profile, expected in (("(version 1)(allow default)", 0), (sbx.profile(), 1)):
+        result = sbx.python(gates.PROBE.read_text(), "mach-lookup",
+                            "com.arslan.sbx-probe.launch-policy", profile=profile,
+                            probe="preset-launch-policy")
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["policy"] == expected, result.stdout
+    # The shared gate controls the executable and live user domain, submits a
+    # unique inert job, checks its absence, and cleans that label in all paths.
+    gates.test_launch_submission_is_refused(sbx)
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@cases
 def test_preset_filesystem(sbx, mode):
     grant = sbx.root / "grant"
     grant.mkdir(exist_ok=True)
@@ -166,4 +223,17 @@ else:
     raise AssertionError('computation host read allowed')
 print('checked')
 """, targets[0], reference / "input", profile=profile, probe="computation-reads")
+        assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
+    else:
+        result = sbx.python("""
+import errno, pathlib, sys
+assert pathlib.Path(sys.argv[1]).read_text() == 'ok'
+try:
+    pathlib.Path(sys.argv[2]).read_text()
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    raise AssertionError('MCP protected read allowed inside a granted folder')
+print('checked')
+""", grant / "own", protected / "sentinel", profile=profile, probe="mcp-protected-read")
         assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
