@@ -76,14 +76,18 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
         ? <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDismiss(); }}><Check size={14} />{t("proactive.item.gotIt")}</button>
         : <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDo(); }}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
       <Menu label={t("proactive.item.snooze")} icon={<Clock size={14} />}>{(close) => <>
-        {([1, 3, 7] as const).map((days) => <button key={days} role="menuitem" className={menuItem} disabled={busy}
-          onClick={() => { close(); if (!held()) onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
+        {/* #611 review, 2: the choices look held as the buttons do, and a held pick keeps the menu open (it is not dropped silently). */}
+        {([1, 3, 7] as const).map((days) => <button key={days} role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy}
+          aria-disabled={heldNow || undefined} onClick={() => { if (held()) return; close(); onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
       </>}</Menu>
       {!readOnly && <Menu label={t("proactive.item.notUseful")} icon={<X size={14} />}>{(close) => <>
-        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); if (!held()) onDismiss(); }}>{t("proactive.item.dismissOnly")}</button>
+        <button role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined}
+          onClick={() => { if (held()) return; close(); onDismiss(); }}>{t("proactive.item.dismissOnly")}</button>
         {/* A one-off job has no recurring source to silence; pages, folders and schedules do. */}
-        {item.kind !== "job_followup" && <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); if (!held()) onDismiss("source"); }}>{t("proactive.item.stopSource")}</button>}
-        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); if (!held()) onDismiss("kind"); }}>{t("proactive.item.stopKind")}</button>
+        {item.kind !== "job_followup" && <button role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy}
+          aria-disabled={heldNow || undefined} onClick={() => { if (held()) return; close(); onDismiss("source"); }}>{t("proactive.item.stopSource")}</button>}
+        <button role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined}
+          onClick={() => { if (held()) return; close(); onDismiss("kind"); }}>{t("proactive.item.stopKind")}</button>
       </>}</Menu>}
       {item.status === "snoozed" && item.snooze_until && <span className="text-[11px] text-muted-foreground">{t("proactive.item.snoozedUntil", { date: formatUiDateTime(item.snooze_until, language) })}</span>}
     </div> : <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
