@@ -24,6 +24,7 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   RunTimelineDto,
   RecapDto,
   RunDetailDto,
+  RunChangesOut,
   RunListItem,
   RunSummary,
   ScheduledTaskCreateBody,
@@ -436,14 +437,27 @@ export const api = {
   /** Aggregates for the evaluation-summary charts. */
   /** 0.1.58 §7: Activity's list — a page of 20 back from `beforeId`, narrowed to a chart
    *  slice (epoch seconds) and/or one model. */
-  listRuns: (o: { limit?: number; beforeId?: number; since?: number; until?: number; model?: string } = {}) => {
+  listRuns: (o: { limit?: number; beforeId?: number; since?: number; until?: number; model?: string;
+    outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone" } = {}) => {
     const qs = new URLSearchParams({ limit: String(o.limit ?? 20) });
     if (o.beforeId != null) qs.set("before_id", String(o.beforeId));
     if (o.since != null) qs.set("since", new Date(o.since * 1000).toISOString());
     if (o.until != null) qs.set("until", new Date(o.until * 1000).toISOString());
     if (o.model) qs.set("model", o.model);
+    if (o.outcome) qs.set("outcome", o.outcome);         // INB7-c2: board F's chips
+    if (o.origin) qs.set("origin", o.origin);
     return request<RunListItem[]>(`/runs?${qs.toString()}`);
   },
+  /** INB7-c2: how many runs each chip would list, in the list's span and model. */
+  runCounts: (o: { since?: number; until?: number; model?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (o.since != null) qs.set("since", new Date(o.since * 1000).toISOString());
+    if (o.until != null) qs.set("until", new Date(o.until * 1000).toISOString());
+    if (o.model) qs.set("model", o.model);
+    return request<Record<"waiting" | "failed" | "scheduled" | "phone", number>>(`/runs/counts?${qs.toString()}`);
+  },
+  /** INB7-c3: what one run changed in your folders, from its own checkpoint, and in which state (server: GET /runs/{id}/changes). */
+  runChanges: (runId: number) => request<RunChangesOut>(`/runs/${runId}/changes`),
   /** 0.1.58 §1: what a reply did, in plain data (the list under its footer row). */
   runProcess: (runId: number) => request<RunProcessOut>(`/runs/${runId}/process`),
   /** 0.1.63 S3: what undoing this turn would put back and take back. */

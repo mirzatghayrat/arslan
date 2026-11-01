@@ -7,7 +7,7 @@ import { PROACTIVE_CHANGED } from "../../api/proactive";
 import { utcIso } from "../../lib/conversationMeta";
 import { stepWords } from "../../lib/process";
 import { fmtMs } from "../../lib/usageFormat";
-import { useActivityStore } from "../../stores/activityStore";
+import { useActivityStore, type RunChip } from "../../stores/activityStore";
 
 /** Board F: a run shorter than this still draws a bar this wide, so it can be seen and hit; packing counts the same width. */
 export const MIN_BAR_MS = 14 * 60_000;
@@ -37,6 +37,11 @@ export function outcomeOf(run: Pick<RunListItem, "status" | "waiting">): Outcome
   if (run.status === "failed") return "failed";
   if (run.status === "cancelled" || run.status === "interrupted") return "stopped";
   return "ok";
+}
+
+/** INB7-c2: whether a run is one a chip lists (the server decides the list; the axis dims by the same rule). */
+export function chipHas(chip: RunChip, run: RunListItem): boolean {
+  return chip === "waiting" ? outcomeOf(run) === "waiting" : chip === "failed" ? run.status === "failed" : run.origin === chip;
 }
 
 /** Each run goes into the first row that is free when it starts, so a row never overlaps; a short run counts as MIN_BAR_MS. When
@@ -161,6 +166,7 @@ export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; n
   const width = t1 - t0;
   const rowCount = placed.rows.size ? Math.max(...placed.rows.values()) + 1 : 1;
   const filteredOut = (run: RunListItem, start: number) => (!!filter.model && run.model !== filter.model)
+    || (!!filter.chip && !chipHas(filter.chip, run))
     || (filter.since != null && filter.until != null && (start < filter.since * 1000 || start >= filter.until * 1000));
 
   return (
@@ -197,7 +203,7 @@ export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; n
   );
 }
 
-type Step = RunProcessOut["entries"][number];
+export type Step = RunProcessOut["entries"][number];
 
 /** A read of one run's steps shared by everyone who asks while it is in flight (the axis's lane and the inspector open together),
  *  then forgotten: a run's steps are written when it ends, so a later read must reach the server. */
@@ -212,6 +218,12 @@ function readSteps(runId: number): Promise<RunProcessOut> {
   return read;
 }
 
+/** Who shows a run's steps, told to read them again when they changed under them (its debug details were cleared). */
+const rereaders = new Map<number, Set<() => void>>();
+export function stepsChanged(runId: number): void {
+  rereaders.get(runId)?.forEach((reread) => reread());
+}
+
 /**
  * The picked run's steps (GET /runs/{id}/process), read again once the list says it stopped running: a run's steps are written
  * when it ends (run_recorder.finalize). With none, `empty` says why: not written yet while it runs (⓪Plan's review of PR 622, 1);
@@ -222,11 +234,21 @@ export function useRunSteps(runId: number, run: RunListItem | null): { proc: Run
   const [proc, setProc] = useState<RunProcessOut | null>(null);
   const running = run?.status === "recording";
   const read = useCallback(() => readSteps(runId), [runId]);
+  // A clear in 「诊断」 asks every view of the run's steps (the axis's lane and the inspector) to read them again, so the cleared
+  // details are gone from the replay too (⓪Plan's review of PR 631, 2).
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const reread = () => setVersion((n) => n + 1);
+    const views = rereaders.get(runId) ?? new Set<() => void>();
+    views.add(reread);
+    rereaders.set(runId, views);
+    return () => { views.delete(reread); if (!views.size) rereaders.delete(runId); };
+  }, [runId]);
   useEffect(() => {
     let cancelled = false;
     read().then((p) => { if (!cancelled) setProc(p); }).catch(() => { /* nothing to show */ });
     return () => { cancelled = true; };
-  }, [read, running]);
+  }, [read, running, version]);
   // While the run itself says it runs, its steps are read again on the badge's beat, so they show once it ends whether or not
   // the list it was picked from is read again (⓪Plan's review of PR 624, A: over 7 and 30 days nothing else is).
   useFreshRead(proc?.status === "recording" ? read : null, setProc);

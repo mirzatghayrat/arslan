@@ -10,7 +10,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, model_validator
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
@@ -111,14 +112,16 @@ _BROWSER_RUN_NAME = "Browser preview"
 
 async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     """Where each run came from, read from records that already exist (0.1.58 §7):
-    a scheduled fire (Run.kind), a browser preview (its run name), a background job
-    (its result message carries job_outcome), a message sent from the paired iPhone
+    a scheduled fire (Run.kind, or since C1 a host turn its scheduled_task_runs row names), a browser preview (its run name),
+    a background job (its result message carries job_outcome), a message sent from the paired iPhone
     (the user message that started the turn has source="phone"); otherwise chat."""
-    from server.db.models import ArslanMessage
+    from server.db.models import ArslanMessage, ScheduledTaskRun
     out: dict[int, str] = {}
     pending: list[Run] = []
+    fired = set((await db.execute(select(ScheduledTaskRun.run_id).where(
+        ScheduledTaskRun.run_id.in_([r.id for r in runs])))).scalars()) if runs else set()
     for r in runs:
-        if r.kind == "scheduled":
+        if r.kind == "scheduled" or r.id in fired:
             out[r.id] = "scheduled"
         elif r.spawn_name == _BROWSER_RUN_NAME:
             out[r.id] = "browser"
@@ -166,6 +169,77 @@ async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     return out
 
 
+#: INB7-c2: a phone turn is found from its messages, after the query, so the phone chip reads runs in batches this big until a page
+#: is full.
+_PHONE_BATCH = 200
+
+
+def _scoped(since: datetime | None, until: datetime | None, model: str | None):
+    """The runs the list may show (user kinds, newest first) within a span and a model."""
+    # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
+    # surface in the runs list. get_run detail stays unfiltered so the card can link into a
+    # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
+    # already counted them, the list beneath silently did not.
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS)).order_by(Run.id.desc())
+    # Stored times are naive UTC; an aware bound is converted, never compared raw.
+    if since is not None:
+        q = q.where(Run.created_at >= _naive_utc(since))
+    if until is not None:
+        q = q.where(Run.created_at < _naive_utc(until))
+    if model:
+        q = q.where(Run.model == model)
+    return q
+
+
+def _asking() -> set[str]:
+    """INB7-b: the conversations with a card open, the same live list progress.waiting_reasons reads."""
+    from server.services import approvals
+    return {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
+
+
+def _phoned():
+    """The conversations a phone message ever reached: the only ones a phone turn can be in."""
+    from server.db.models import ArslanMessage
+    return select(ArslanMessage.conversation_id).where(ArslanMessage.source == "phone").distinct()
+
+
+def _chip(q, outcome: str | None, origin: str | None, asking: set[str]):
+    """INB7-c2, board F's chips: 「失败」 and 「要你做」 (outcome), 「定时」 and 「手机」 (origin). 「手机」 only narrows to the conversations a phone
+    message reached; which of their turns came from the phone is read after the query (run_origins)."""
+    if outcome == "failed":
+        q = q.where(Run.status == "failed")
+    elif outcome == "waiting":
+        q = q.where(Run.status == "recording", Run.conversation_id.in_(asking))
+    if origin == "scheduled":
+        # Since C1 (0.1.63) a fire is a host turn, linked only by scheduled_task_runs.run_id (scheduler.py); older ones kept
+        # kind "scheduled" (⓪Plan's review of PR 627).
+        from server.db.models import ScheduledTaskRun
+        fired = select(ScheduledTaskRun.run_id).where(ScheduledTaskRun.run_id.is_not(None))
+        q = q.where(or_(Run.kind == "scheduled", Run.id.in_(fired)))
+    elif origin == "phone":
+        q = q.where(Run.conversation_id.in_(_phoned()))
+    return q
+
+
+async def _phone_turns(db: AsyncSession, q, limit: int | None) -> tuple[list[Run], dict[int, str]]:
+    """The phone chip's runs: read in batches, newest first, keeping those that came from the phone, until `limit` are found
+    (None: all of them, for the count)."""
+    found: list[Run] = []
+    origins: dict[int, str] = {}
+    cursor: int | None = None
+    while limit is None or len(found) < limit:
+        batch = list((await db.execute((q if cursor is None else q.where(Run.id < cursor)).limit(_PHONE_BATCH))).scalars())
+        if not batch:
+            break
+        seen = await run_origins(db, batch)
+        origins.update(seen)
+        found += [r for r in batch if seen.get(r.id) == "phone"]
+        cursor = batch[-1].id
+        if len(batch) < _PHONE_BATCH:
+            break
+    return (found if limit is None else found[:limit]), origins
+
+
 @router.get("/runs", response_model=list[RunListItemOut])
 async def list_runs(
     spawn_id: int | None = None,
@@ -175,31 +249,23 @@ async def list_runs(
     since: datetime | None = None,
     until: datetime | None = None,
     model: str | None = Query(None, max_length=200),
+    outcome: Literal["failed", "waiting"] | None = None,
+    origin: Literal["scheduled", "phone"] | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
-    # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
-    # surface in the runs list. get_run detail stays unfiltered so the card can link into a
-    # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
-    # already counted them, the list beneath silently did not.
-    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS)).order_by(Run.id.desc()).limit(limit)
+    asking = _asking()
+    q = _chip(_scoped(since, until, model), outcome, origin, asking)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
         q = q.where(Run.conversation_id == conversation_id)
     if before_id is not None:
         q = q.where(Run.id < before_id)
-    # Stored times are naive UTC; an aware bound is converted, never compared raw.
-    if since is not None:
-        q = q.where(Run.created_at >= _naive_utc(since))
-    if until is not None:
-        q = q.where(Run.created_at < _naive_utc(until))
-    if model:
-        q = q.where(Run.model == model)
-    rows = (await db.execute(q)).scalars().all()
-    origins = await run_origins(db, list(rows))
-    from server.services import approvals
-    # INB7-b: the conversations with a card open, the same live list progress.waiting_reasons reads.
-    asking = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
+    if origin == "phone":
+        rows, origins = await _phone_turns(db, q, limit)
+    else:
+        rows = list((await db.execute(q.limit(limit))).scalars().all())
+        origins = await run_origins(db, rows)
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
@@ -212,6 +278,28 @@ async def list_runs(
         )
         for r in rows
     ]
+
+
+# NOTE: must stay registered BEFORE /runs/{run_id} (path-param collision).
+@router.get("/runs/counts")
+async def run_counts(
+    since: datetime | None = None,
+    until: datetime | None = None,
+    model: str | None = Query(None, max_length=200),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, int]:
+    """INB7-c2: how many runs each of board F's chips would list, in the same span and model as the list."""
+    asking = _asking()
+    scope = _scoped(since, until, model)
+
+    async def count(q) -> int:
+        return int((await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar() or 0)
+
+    # Only what run_origins reads, not whole rows: the count may walk every phone turn in the span.
+    lean = _chip(scope, None, "phone", asking).options(load_only(Run.id, Run.kind, Run.spawn_name, Run.conversation_id))
+    phone, _ = await _phone_turns(db, lean, None)
+    return {"waiting": await count(_chip(scope, "waiting", None, asking)), "failed": await count(_chip(scope, "failed", None, asking)),
+            "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone)}
 
 
 def _naive_utc(ts: datetime) -> datetime:
@@ -556,8 +644,10 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
     raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
     summary = (await rp.summaries(db, [run_id])).get(run_id, {})
-    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span.
-    return {"run_id": run_id, "status": run.status, **summary, "started_at": rp.utc(run.started_at),
+    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span. INB7-c3: its
+    # conversation, whose changes (GET /conversations/{id}/changes) the inspector's 「改动」 reads.
+    return {"run_id": run_id, "status": run.status, "conversation_id": run.conversation_id, **summary,
+            "started_at": rp.utc(run.started_at),
             "ended_at": rp.utc(run.ended_at), "entries": rp.entries(list(steps), raw=raw)}
 
 
@@ -595,6 +685,53 @@ async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
     return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
+
+
+#: INB7-c3: the tools whose first call in a run saves its folder (checkpoints: write_file, edit_file, run_command).
+_SAVING_TOOLS = ("write_file", "edit_file", "run_command")
+
+
+@router.get("/runs/{run_id}/changes")
+async def run_changes(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """INB7-c3: what this one run changed in the user's folders, for Progress's 「改动」, from its own checkpoint manifest only
+    (⓪Plan's review of PR 629: not a scan of its conversation). `state`:
+    - `running`: it has not ended, so nothing is final;
+    - `finishing`: it ended, but how it left a saved folder is not recorded yet (checkpoints.finish runs after);
+    - `interrupted`: the same, but no process holds it any more (a crash, a quit mid-run), so it never will be;
+    - `kept`: the paths an undo can still take back (the list WB1-3 shows), and whether it was undone;
+    - `none`: nothing to list (it never saved a folder, or saved one and changed nothing in it);
+    - `expired`: a call that saves the folder ran, but its copy is gone (KEEP_S or the quota) or is an earlier run's;
+    - `not_saved`: no folder could be saved (too many files, too little disk, another volume).
+    Read only."""
+    from server.services import checkpoints
+    run = await db.get(Run, run_id)
+    if run is None or run.kind not in USER_RUN_KINDS:
+        raise HTTPException(404, detail={"code": "run_not_found"})
+    base = {"undone": False, "paths": [], "conversation_id": run.conversation_id}
+    if run.status == "recording":
+        return {"state": "running", **base}
+    not_before = _started(run)
+
+    def read() -> tuple[str, dict]:
+        data = checkpoints.manifest(run_id)
+        if data is None or data["created_at"] < not_before:
+            return "missing", {}
+        roots = data.get("roots") or []
+        if roots and all(entry.get("skipped") for entry in roots):
+            return "not_saved", {}
+        if any(entry.get("skipped") is None and entry.get("finished") is None for entry in roots):
+            # Being finished only while this process holds it; else finish will never run (⓪Plan's re-check of PR 629).
+            return ("finishing" if checkpoints.holding(run_id) else "interrupted"), {}
+        found = checkpoints.changes(run_id, not_before) or {"paths": [], "undone": False}
+        return ("kept" if found["paths"] else "none"), found
+    state, found = await asyncio.to_thread(read)
+    if state == "missing":
+        tools = (await db.execute(select(RunStep.ref).where(RunStep.run_id == run_id, RunStep.kind == "tool_call"))).scalars()
+        # Only a call that ran saves the folder: a failed write_file or edit_file, or a refused command, never does.
+        state = "expired" if any(isinstance(ref, dict) and ref.get("tool") in _SAVING_TOOLS and ref.get("ok") for ref in tools) else "none"
+    if state == "kept":
+        return {"state": "kept", "undone": found["undone"], "paths": found["paths"], "conversation_id": run.conversation_id}
+    return {"state": state, **base}
 
 
 @router.get("/conversations/{conversation_id}/changes")

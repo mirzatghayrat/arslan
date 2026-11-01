@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
 const { getUsageSummary, listRuns, request } = vi.hoisted(() => ({ getUsageSummary: vi.fn(), listRuns: vi.fn(), request: vi.fn() }));
-vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns }, request }));
+vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts: () => new Promise(() => {}), listScheduledTasks: () => new Promise(() => {}) }, request }));
 
 import ActivityView from "../components/ActivityView";
 import Sidebar from "../components/Sidebar";
