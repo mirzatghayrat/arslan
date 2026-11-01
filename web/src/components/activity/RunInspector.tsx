@@ -120,6 +120,7 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
       <div role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
       {tab === "diag" ? (
         <RunDiagnosis detail={detail} usd={proc?.usage?.usd ?? null} problems={problems} hands={mine.hands} judgments={mine.judgments}
+          sidelightsLoaded={mine.loaded}
           onCleared={() => { detail.reload(); stepsChanged(runId); }} />
       ) : tab === "changes" ? (
         <RunChanges runId={runId} changes={changes} />
@@ -220,15 +221,16 @@ type T = (key: string, options?: Record<string, unknown>) => string;
 
 /** INB7-c4b: the Hands trace and the judgment ledger, read when 「诊断」 first opens and again when the run stops running. Each read
  *  is a second opinion: one that fails shows nothing of it. */
-function useSidelights(active: boolean, running: boolean): { trace: HandsTraceEntry[]; judgments: JudgmentRow[] } {
-  const [shown, setShown] = useState<{ trace: HandsTraceEntry[]; judgments: JudgmentRow[] }>({ trace: [], judgments: [] });
+type Sidelights = { trace: HandsTraceEntry[]; judgments: JudgmentRow[]; loaded: boolean };
+function useSidelights(active: boolean, running: boolean): Sidelights {
+  const [shown, setShown] = useState<Sidelights>({ trace: [], judgments: [], loaded: false });
   useEffect(() => {
     if (!active) return;
     let alive = true;
     Promise.all([
       getHandsTrace(SIDELIGHT_ROWS).then((r) => r.entries ?? []).catch(() => [] as HandsTraceEntry[]),
       request<{ items: JudgmentRow[] }>(`/judgments?limit=${SIDELIGHT_ROWS}`).then((r) => r.items ?? []).catch(() => [] as JudgmentRow[]),
-    ]).then(([trace, judgments]) => { if (alive) setShown({ trace, judgments }); });
+    ]).then(([trace, judgments]) => { if (alive) setShown({ trace, judgments, loaded: true }); });
     return () => { alive = false; };
   }, [active, running]);
   return shown;
@@ -244,8 +246,8 @@ const JUDGED_AFTER_MS = 120_000;
  * right id and a later time, and runs overlap. An older call with no id falls back to the run's conversation and window, marked
  * matched by time. Judgments carry no run: they match its conversation, from its start to shortly after its end, all by time.
  */
-function sidelightsOf(runId: number, proc: RunProcessOut | null, { trace, judgments }: { trace: HandsTraceEntry[]; judgments: JudgmentRow[] }):
-  { hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[] } {
+function sidelightsOf(runId: number, proc: RunProcessOut | null, { trace, judgments, loaded }: Sidelights):
+  { hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[]; loaded: boolean } {
   const conversation = proc?.conversation_id;
   const start = at(proc?.started_at);
   const end = proc?.ended_at ? at(proc.ended_at) : Date.now();
@@ -253,7 +255,8 @@ function sidelightsOf(runId: number, proc: RunProcessOut | null, { trace, judgme
   const hands = trace.flatMap((entry) => entry.run_id != null
     ? (Number(entry.run_id) === runId ? [{ entry, byTime: false }] : [])
     : (conversation && entry.conversation === conversation && within(entry.at) ? [{ entry, byTime: true }] : []));
-  return { hands, judgments: judgments.filter((r) => conversation && r.conversation_id === conversation && within(r.created_at, JUDGED_AFTER_MS)) };
+  return { hands, loaded,
+    judgments: judgments.filter((r) => conversation && r.conversation_id === conversation && within(r.created_at, JUDGED_AFTER_MS)) };
 }
 const dimLabel = (dim: unknown, t: T) => (typeof dim === "string" && DIMENSION_LABEL_KEYS[dim] ? t(DIMENSION_LABEL_KEYS[dim]) : String(dim ?? ""));
 
@@ -279,9 +282,9 @@ function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t
  * the drawer's two tools that belong here: clearing its debug details (asked first; it cannot be undone) and exporting it as
  * Markdown. The drawer's charts (the fleet radar, the history sparkline) wait on the user's word, behind "Details" (⓪Plan).
  */
-function RunDiagnosis({ detail, usd, problems, hands, judgments, onCleared }: {
+function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoaded, onCleared }: {
   detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void;
-  hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[];
+  hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[]; sidelightsLoaded: boolean;
 }) {
   const { t } = useTranslation();
   const [clearing, setClearing] = useState(false);
@@ -326,8 +329,10 @@ function RunDiagnosis({ detail, usd, problems, hands, judgments, onCleared }: {
               <X className="mt-0.5 h-3 w-3 shrink-0 text-danger" aria-hidden /><span className="min-w-0 break-words">{isolate(problem)}</span>
             </li>))}</ul>}
       </div>
-      {hands.length > 0 && <div data-testid="diag-hands">
+      {/* Once read, each section shows, saying what it looked through when it found nothing (⓪Plan's review of PR 634). */}
+      {sidelightsLoaded && <div data-testid="diag-hands">
         <div className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("hands.activity.title")}</div>
+        {!hands.length && <p className="mt-1 text-muted-foreground">{t("activityPage.noHandsFound")}</p>}
         <ul className="mt-1 space-y-0.5">{hands.map(({ entry, byTime }, i) => {
           const Icon = handsOpIcon(entry.op);
           return (
@@ -336,16 +341,17 @@ function RunDiagnosis({ detail, usd, problems, hands, judgments, onCleared }: {
               <span className="shrink-0 text-foreground">{entry.app ?? "—"}</span>
               <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.op}</span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground">{entry.target ? isolate(entry.target) : ""}</span>
-              {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground">{t("activityPage.matchedByTime")}</span>}
+              {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground" title={t("activityPage.matchedByTimeNote")}>
+                {t("activityPage.matchedByTime")}</span>}
               <span className={`shrink-0 font-mono text-[11px] ${entry.outcome === "ok" ? "text-subtle-foreground" : "text-danger"}`}>{entry.outcome}</span>
             </li>);
         })}</ul>
       </div>}
-      {judgments.length > 0 && <div data-testid="diag-judgments">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("activityPage.judgments")}</span>
-          <span className="text-[10.5px] text-subtle-foreground">{t("activityPage.matchedByTime")}</span>
-        </div>
+      {sidelightsLoaded && <div data-testid="diag-judgments">
+        <div className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("activityPage.judgments")}</div>
+        {judgments.length > 0
+          ? <p className="mt-0.5 text-[10.5px] text-subtle-foreground">{t("activityPage.matchedByTimeNote")}</p>
+          : <p className="mt-1 text-muted-foreground">{t("activityPage.noJudgmentsFound")}</p>}
         <ul className="mt-1 space-y-0.5">{judgments.map((r) => (
           <li key={r.id} data-testid="diag-judgment" data-id={r.id} className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-foreground">{t(POINT_KEY[r.point] ?? r.point)}</span>

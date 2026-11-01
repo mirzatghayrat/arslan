@@ -81,8 +81,8 @@ describe("the run's Hands calls in 「诊断」", () => {
     await openDiag();
     const rows = await within(panel()).findAllByTestId("diag-hands-row");
     expect(rows.map((r) => r.getAttribute("data-target"))).toEqual(["own id, late", "no id, inside"]);
-    expect(rows[0]).not.toHaveTextContent("matched by time");
-    expect(rows[1]).toHaveTextContent("matched by time");
+    expect(rows[0]).not.toHaveTextContent("by time");
+    expect(rows[1]).toHaveTextContent("by time");
   });
 });
 
@@ -92,8 +92,46 @@ describe("the run's judgments in 「诊断」", () => {
     await openDiag();
     const rows = await within(panel()).findAllByTestId("diag-judgment");
     expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["1", "2"]);
-    expect(within(panel()).getByTestId("diag-judgments")).toHaveTextContent("matched by time");
+    expect(within(panel()).getByTestId("diag-judgments")).toHaveTextContent("can also show under a run next to this one");
     expect(rows[0]).toHaveTextContent("Worth remembering");
+  });
+});
+
+describe("what each section looked through when it found nothing (#634 review)", () => {
+  it("says so in both, once read, and says nothing before", async () => {
+    let answer: () => void = () => {};
+    const held = new Promise<void>((resolve) => { answer = resolve; });
+    request.mockImplementation((path: string) => path.startsWith("/hands/trace?days=7&limit=500")
+      ? held.then(() => ({ entries: [] }))                             // the inspector's read waits; the page card's does not
+      : Promise.resolve(path.startsWith("/judgments") ? { items: [] } : { items: [], entries: [] }));
+    render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
+    await openDiag();
+    await within(panel()).findByTestId("diag-facts");
+    expect(within(panel()).queryByTestId("diag-hands")).toBeNull();
+    expect(within(panel()).queryByTestId("diag-judgments")).toBeNull();
+    answer();
+    expect(await within(panel()).findByText(/No Mac app actions found in the last 7 days \(newest 500\)/)).toBeTruthy();
+    expect(within(panel()).getByText(/No judgments found among the newest 500/)).toBeTruthy();
+  });
+});
+
+describe("a running run (#634 review, Y5 and Y7)", () => {
+  it("has a window to now, and its calls and judgments are read again once it stops", async () => {
+    listRuns.mockResolvedValue([{ ...run(11), status: "recording", total_ms: null }]);
+    runProcess.mockResolvedValue({ ...PROCESS, status: "recording", ended_at: null });
+    render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
+    await openDiag();
+    const rows = await within(panel()).findAllByTestId("diag-hands-row");
+    // Y7: while it runs, a call with no id after where it would end is still inside its window (to now).
+    expect(rows.map((r) => r.getAttribute("data-target"))).toContain("no id, after");
+    const trace = reads("/hands/trace");
+    // Y5: it stops; the next read of its steps says so, and the trace and the ledger are read again.
+    runProcess.mockResolvedValue(PROCESS);
+    listRuns.mockResolvedValue([run(11)]);
+    window.dispatchEvent(new Event("arslan:proactive-changed"));
+    await waitFor(() => expect(reads("/hands/trace")).toBeGreaterThan(trace));
+    await waitFor(() => expect(within(panel()).getAllByTestId("diag-hands-row").map((r) => r.getAttribute("data-target")))
+      .not.toContain("no id, after"));
   });
 });
 
@@ -116,7 +154,9 @@ describe("the words", () => {
   it("are in all six", async () => {
     for (const lng of SUPPORTED_LANGUAGES) {
       await i18n.changeLanguage(lng);
-      expect(i18n.exists("activityPage.matchedByTime"), lng).toBe(true);
+      for (const key of ["matchedByTime", "matchedByTimeNote", "noHandsFound", "noJudgmentsFound"]) {
+        expect(i18n.exists(`activityPage.${key}`), `${lng}: ${key}`).toBe(true);
+      }
     }
   });
 });
