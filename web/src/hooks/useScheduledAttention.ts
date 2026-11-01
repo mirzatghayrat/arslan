@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, request } from "../api/client";
 import type { ScheduledTaskDto } from "../api/client.types";
-import { PROACTIVE_CHANGED, proactiveApi, type ProactiveItem } from "../api/proactive";
+import { PROACTIVE_CHANGED, proactiveApi, type ProactiveItem, type ProactiveKind } from "../api/proactive";
 import type { Refusal } from "../components/proactive/NotDoneList";
+import { hasRow, isOpen } from "../lib/proactive";
 
 const POLL_MS = 30_000;
+/** The reminders the page shows under a task or a watch. Q7: asked for one kind at a time, so a busier kind (a conversation's job
+ *  reminders) never pushes these out of the server's newest hundred. */
+const PAGE_KINDS: ProactiveKind[] = ["scheduled_problem", "web_change", "folder_change"];
 /** #605 re-check N2: an answer, an open or a reminder acted on each announce a change; a burst of them reads once, this long after the
  *  last, instead of one request per task each time. */
 const SETTLE_MS = 1_000;
@@ -18,7 +22,7 @@ export const scheduledConversation = (task: Pick<ScheduledTaskDto, "id" | "conve
 export interface TaskAttention {
   /** Its last run failed, or it was paused after failing three times in a row (a pause by hand is no problem). */
   failing: boolean;
-  /** Its open "scheduled_problem" reminders (source `sched:<id>`). */
+  /** Its "scheduled_problem" reminders that keep a row (Q7, lib/proactive.hasRow): open ones first, then the ones set aside or handled. */
   problems: ProactiveItem[];
   /** How many things one of its runs could not do while nobody was there to ask. Two tasks writing into one conversation
    *  share these: the entries do not say which task's run asked. */
@@ -30,6 +34,8 @@ export interface ScheduledAttention {
   /** A watch's open page or folder changes (source `watch:<id>`), by watch id; only watches that still exist (a removed watch's
    *  changes have no row to show them on, so they must not light the sidebar). */
   changes: Record<number, ProactiveItem[]>;
+  /** Each watch's changes that keep a row (Q7): its open ones, and the ones set aside or handled, with their state and no dot. */
+  changeRows: Record<number, ProactiveItem[]>;
   /** The sidebar's dot: a task the server counts as waiting on you (INB5b-3: its one count, `waiting.scheduled`), or a watch's change,
    *  which the server does not count (#605 review F7). */
   any: boolean;
@@ -53,12 +59,13 @@ const bySource = (items: ProactiveItem[], prefix: string, kinds: string[]) => {
  * this keeps what the page shows under a task, and the watches' changes.
  */
 export function useScheduledAttention(waitingTasks: number[] = []): ScheduledAttention {
-  const [state, setState] = useState<Omit<ScheduledAttention, "reload" | "any">>({ tasks: {}, changes: {} });
+  const [state, setState] = useState<Omit<ScheduledAttention, "reload" | "any">>({ tasks: {}, changes: {}, changeRows: {} });
   const latest = useRef(0);
   const load = useCallback(async () => {
     const mine = ++latest.current;
     try {
-      const [tasks, { items }, { watches }] = await Promise.all([api.listScheduledTasks(), proactiveApi.items("open"), proactiveApi.watches()]);
+      const [tasks, { items }, { watches }, ...kinds] = await Promise.all([api.listScheduledTasks(), proactiveApi.items("open"),
+        proactiveApi.watches(), ...PAGE_KINDS.map((kind) => proactiveApi.items("all", { kind }))]);
       // One request per task: the server keeps each conversation's entries apart only when asked for one (#568). One that fails
       // fails the load, which keeps the last state rather than dropping that task's dot.
       const away = await Promise.all(tasks.map((task) => {
@@ -66,15 +73,24 @@ export function useScheduledAttention(waitingTasks: number[] = []): ScheduledAtt
         return request<Refusal[]>(`/approvals/refused?${query}`).then((rows) => rows.filter((row) => row.unattended).length);
       }));
       if (mine !== latest.current) return;
-      const problems = bySource(items, "sched:", ["scheduled_problem"]);
+      // Every open one, and each kind's rows that are kept (Q7), once each: open ones first, then the newest.
+      const now = Date.now();
+      const byId = new Map<number, ProactiveItem>();
+      for (const item of [...items, ...kinds.flatMap((kind) => kind.items)]) if (hasRow(item, now)) byId.set(item.id, item);
+      const rows = [...byId.values()].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || b.id - a.id);
+      const problems = bySource(rows, "sched:", ["scheduled_problem"]);
       const watched = new Set(watches.map((watch) => watch.id));
-      const changes = Object.fromEntries(Object.entries(bySource(items, "watch:", ["web_change", "folder_change"]))
+      const ofWatches = (list: ProactiveItem[]) => Object.fromEntries(Object.entries(bySource(list, "watch:", ["web_change", "folder_change"]))
         .filter(([id]) => watched.has(Number(id))));
+      // A watch's dot reads the same rows as its list: an open change past the newest hundred open reminders, which a busier kind
+      // can fill, keeps its dot (PR 615 review F3).
+      const changes = ofWatches(rows.filter(isOpen));
+      const changeRows = ofWatches(rows);
       const byTask: Record<number, TaskAttention> = {};
       tasks.forEach((task, i) => {
         byTask[task.id] = { failing: task.paused_reason != null || task.last_outcome === "error", problems: problems[task.id] ?? [], away: away[i] };
       });
-      setState({ tasks: byTask, changes });
+      setState({ tasks: byTask, changes, changeRows });
     } catch { /* keep the last state */ }
   }, []);
   useEffect(() => {

@@ -12,6 +12,8 @@ export interface ProactiveItem {
   conversation_id: string | null; job_id: string | null; created_at: string; snooze_until: string | null;
   /** INB3: where it came from: `watch:<id>` for a page or folder, `sched:<id>` for a scheduled task. */
   source_key?: string | null;
+  /** Q7: when it was started or dismissed; null while it is not handled, and absent from an older server. */
+  acted_at?: string | null;
 }
 export interface ProactiveSummary {
   open: number; unread: number; high: number;

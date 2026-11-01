@@ -13,10 +13,15 @@ from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
 from server.orchestrator import untrusted
+from server.services import mcp_pin
 from server.services.secret_state import secret_state
 from server.services.settings_service import mask_secret
 
 logger = logging.getLogger(__name__)
+
+
+class AddRefused(ValueError):
+    """A hand-added server the form must correct: the checks before it is stored (#623 review L-6)."""
 
 
 class MCPStartFailed(RuntimeError):
@@ -105,14 +110,16 @@ def _to_dict(srv: MCPServer, *, mask: bool = True, stored_status: bool = False) 
 async def add_server(label: str, command: str, args: list[str], env: dict,
                      transport: str = "stdio", url: str | None = None) -> dict:
     if transport not in ("stdio", "http"):
-        raise ValueError("transport must be stdio|http")
+        raise AddRefused("transport must be stdio|http")
     if transport == "http" and not (url or "").strip():
-        raise ValueError("http transport requires a url")
+        raise AddRefused("http transport requires a url")
     if transport == "stdio" and not (command or "").strip():
-        raise ValueError("stdio transport requires a command")
+        raise AddRefused("stdio transport requires a command")
     label = untrusted.clean_name(label, 80)                 # UNI1: one cleaner for names, wherever they come in
     if not label:
-        raise ValueError("a label is required")
+        raise AddRefused("a label is required")
+    if transport == "stdio":
+        args = await mcp_pin.pin(command, args or [], env)   # CAP5c: an npx/uvx package is pinned, or refused
     async with db_session.AsyncSessionLocal() as db:
         # Dedup guard: return existing row if (label, url) or (label, command, args) already present
         existing = None
