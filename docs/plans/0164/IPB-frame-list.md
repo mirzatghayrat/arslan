@@ -8,8 +8,9 @@
 ## The short version
 
 - **Names:** the phone's. the phone already decodes every block below under these names, since `8d2638c` (TestFlight build 30
-  and later; BridgeKit `PartBModels.swift`, iOS repo `claude/core-loop` at `afdde75`). Taking them as they are means no phone change and
-  no new build before review. Where the Mac sends more than the phone reads, the extra keys are marked
+  and later; BridgeKit `PartBModels.swift`, iOS repo `claude/core-loop` at `afdde75`). Taking them as they are means no decode change on
+  the phone (①iOS checked every name, type and req mark). The one phone change is wording: Decide 1's network words,
+  phone only and no frame change, in build 31, which is needed before submission anyway. Where the Mac sends more than the phone reads, the extra keys are marked
   *phone ignores*; Swift's decoder skips unknown keys.
 - **Frames:** two existing frames gain optional blocks:
   - `status.snapshot` gains `mac`, `week` and `outcomes`;
@@ -49,7 +50,7 @@ sandboxed, hardened runtime). The Wi-Fi name is the one that would, through Loca
 | `mac.battery.minutes_left` | int | minutes; only on battery, and only once macOS has an estimate (not −1) | opt | `kIOPSTimeToEmptyKey` | |
 | `mac.cpu` | object | | opt | `host_processor_info` tick deltas | sampled every 10 s |
 | `mac.cpu.now` | int | percent of all cores, 0–100, over the last 10 s sample | **req** | | |
-| `mac.cpu.last_hour` | [int] | percent, 5-minute averages, oldest first, at most 12; **Ask ①iOS:** fewer than 12 right after the Bridge starts (only full buckets) | **req** | in-memory ring | |
+| `mac.cpu.last_hour` | [int] | percent, 5-minute averages, oldest first, at most 12; only full buckets, so fewer than 12 (even `[]`) right after the Bridge starts (①iOS: fine; the phone draws only `now` today) | **req** | in-memory ring | |
 | `mac.memory` | object | | opt | `host_statistics64` + sysctl | 60 s |
 | `mac.memory.used_gb` | double | GiB (2^30), one decimal, as Activity Monitor's "Memory Used" (app + wired + compressed) | **req** | `vm_statistics64` | |
 | `mac.memory.total_gb` | double | GiB, one decimal | **req** | `hw.memsize` | |
@@ -73,7 +74,9 @@ Not sent in IPB:
   - `good` when the path is satisfied and neither constrained (Low Data Mode) nor expensive (a phone hotspot);
   - `fair` when it is satisfied but constrained or expensive;
   - `poor` when it is not satisfied.
-- The status sheet should read this as the kind of link, not a measured speed.
+- The status sheet should read this as the kind of link, not a measured speed. ①iOS agrees and changes the phone's
+  words in build 31 (phone only, no frame change): 「已连接」 / 「受限 · 低数据模式或热点」 / 「没有网络」, and on
+  `poor` the advice 「检查 Mac 的网络」 instead of a weak-signal claim.
 - The alternative is a timed round trip on each read. It is more honest about speed, but it adds network traffic
   for one ring, so I don't recommend it.
 
@@ -144,7 +147,8 @@ How it is made:
 - The whole snapshot is written to iCloud on every 60 s heartbeat.
 - Uncapped, a busy week of tasks would be resent every minute. 50 tasks of about 200 bytes each is about 10 KB per
   set at worst; a usual week is a few hundred bytes.
-- **Recommended:** 50 per set, newest first. Past that, the phone's 7-day counts undercount.
+- **Recommended:** 50 per set, newest first. Past that, the phone's 7-day counts undercount. The cap is a named
+  constant pinned by a vector, so a later counts field can replace it cleanly (①iOS).
 - The alternative is to add `done`, `unfinished`, `failed` and `on_its_own` counts beside the list. That's
   correct at any size, but ①iOS would have to read them, which means a phone change, so I don't recommend it for
   1.0.
@@ -192,6 +196,7 @@ Connectors are capped at 30 entries: Hands first, then the ones that are on.
   - That's one new nullable JSON column on `runs`, migration 0086, plus a few lines where the turn ends
     (`server/orchestrator`, a hot file).
 - **The alternative** is to leave `context` out of IPB: the phone hides that one row, and nothing new is stored.
+  ①iOS has no preference, and calls this a clean fallback for 1.0 if the hot-file change or 0086 puts v0.1.64 at risk.
 
 **Decide 4: changed lines.** There are two honest sources, and neither is perfect.
 - **(a) Recommended: the edit and write steps' recorded review**, summed over every run of the conversation.
@@ -201,6 +206,8 @@ Connectors are capped at 30 entries: Hands first, then the ones that are on.
 - **(b) The undo checkpoints:** the saved copy against the file now, per path.
   - Exact for the turns whose checkpoint is still kept, but only those.
   - Costs a diff per path on each history fetch, so it needs a cache.
+- With (a), the protocol spec says that changes made by a shell command aren't counted (①iOS accepts the
+  undercount on that condition).
 - Either way, `files` counts distinct paths, and the Mac does the sum. The phone's own count would be capped by
   `run.result`'s 40 steps and history's 200 messages.
 
@@ -229,7 +236,10 @@ Each vector decodes with `SharedProtocolV1Tests` on the phone:
 - a snapshot with each block absent in turn;
 - a snapshot where `mac` is missing `taken_at`, to show it drops alone and the rest decodes;
 - a desktop Mac with no `battery`;
-- `cpu.last_hour` with fewer than 12 items, if ①iOS accepts that;
+- `cpu.last_hour` with fewer than 12 items, and with `[]`;
+- an unknown `memory.pressure` value: the phone shows the raw word and keeps the block;
+- a `network` of each quality;
+- `outcomes` with a task that has no `spent_usd`, and a set at the task cap;
 - a history result with full `details`, one without it, and one with `connectors: []`.
 
 ## 7. Privacy
@@ -241,6 +251,12 @@ Each vector decodes with `SharedProtocolV1Tests` on the phone:
   - the conversation's folder, shown with `~`;
   - its connectors' names.
   All of it travels the way every frame does: end-to-end sealed, through the user's own iCloud private database.
+- **The folder never carries the absolute home path** (⓪Plan's review of #640). A test checks that `details.folder`
+  has no absolute home prefix. It compares resolved paths (`realpath` of both the folder and the home), so a home
+  reached through a symlink, or written with different case on a case-insensitive volume, still comes out as `~`.
+- **A connector's `name` is its display name only:** never its URL, command or arguments, which can hold a credential
+  (SEC1, #628). A test registers an MCP server whose URL carries `?token=…` and one whose command has a
+  `--token=…` argument, and checks that neither value appears anywhere in `details`.
 - **The privacy page:** `aralem.dev/arslan/privacy` gets one line about the Mac's state reaching the iPhone. It
   goes live with, or before, the first Mac version that sends `mac`, because existing phones show the data with no
   update.
