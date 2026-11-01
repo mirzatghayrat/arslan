@@ -79,10 +79,30 @@ async def test_the_model_may_only_propose_what_it_was_shown(execution_db):
     out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-none",
                                         ask=_ask(), emit=lambda e: None)
     assert out["ok"] is False and "find_capability first" in out["error"]
-    shown("c-gpl", {**CAND, "license": {"spdx": "GPL-3.0", "read_from": "x", "verdict": "reference_only"}})
+
+
+async def test_an_mcp_servers_license_is_judged_at_its_version_and_a_skills_by_the_search(execution_db, monkeypatch):
+    """#569 review F1 (⓪Plan's call, under the user's no-over-defence rule): the search's verdict is GitHub's
+    detection at HEAD, a hint for an MCP server, whose license `prepare` reads at the version before any card. A
+    skill keeps the search's verdict."""
+    head_gpl = {"spdx": "GPL-3.0", "read_from": "x", "verdict": "reference_only"}
+    read_at = []
+
+    async def prepare(c):
+        read_at.append(c["id"])
+        raise capability_flow.capability_install.InstallFailure("license", "not permissive at v1.1.2")
+    monkeypatch.setattr(capability_flow.capability_install, "prepare", prepare)
+    cards = []
+    shown("c-gpl", {**CAND, "license": head_gpl})
     out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-gpl",
-                                        ask=_ask(), emit=lambda e: None)
-    assert out == {"ok": False, "error": "cannot be added: license_not_usable"}
+                                        ask=_ask(seen=cards), emit=lambda e: None)
+    assert out == {"ok": False, "error": "cannot be added: license"} and read_at == [CAND["id"]] and cards == []
+    skill = {"id": "github:acme/skills:s/SKILL.md", "kind": "skill", "name": "s", "repo": "acme/skills",
+             "path": "s/SKILL.md", "source": "github", "license": head_gpl}
+    shown("c-skill", skill)
+    out = await capability_flow.propose({"candidate_id": skill["id"], "why": "x"}, conversation_id="c-skill",
+                                        ask=_ask(seen=cards), emit=lambda e: None)
+    assert out == {"ok": False, "error": "cannot be added: license_not_usable"} and cards == []
 
 
 async def test_the_card_is_built_from_the_search_result_not_the_models_words(execution_db, tmp_path, monkeypatch):
@@ -97,7 +117,8 @@ async def test_the_card_is_built_from_the_search_result_not_the_models_words(exe
                                    "folders": [str(tmp_path / "Downloads"), "/nonexistent", "/"], "name": "evil-name",
                                    "license": "MIT-but-not"}, conversation_id="c-card", ask=_ask(seen=seen), emit=lambda e: None)
     card = seen[0]
-    assert card["name"] == "excel-mcp-server" and card["license"] == {"spdx": "MIT", "read_from": "github:LICENSE"}
+    # CAP4a-3: the license is what the gate read at the source (here fake_capability_prepare's), never the model's.
+    assert card["name"] == "excel-mcp-server" and card["license"] == {"spdx": "MIT", "read_from": "LICENSE"}
     assert card["folders"] == [str((tmp_path / "Downloads").resolve())]
     assert card["network"] is True                            # it asks for a secret key → a service
     assert [k["name"] for k in card["keys"]] == ["EXCEL_TOKEN"] and card["retry"] == "read the formulas"
