@@ -6,8 +6,9 @@ export function conversationToOpen(id: string, threads: { id: string; archived?:
   return thread && !thread.archived ? thread.id : null;
 }
 
-/** What the desktop shell sends when a proactive notice is clicked: not a conversation, Progress (INB5: the Inbox is gone). It cannot
- *  collide with a real id (those are `thread-<uuid>`). */
+/** What the desktop shell sends when a proactive notice is clicked: not a conversation. The window routes it to the Scheduled page
+ *  (useNotificationRoutes.PROGRESS_NOTICE_SECTION), where a watch's change is listed (#605 re-check, N1). It cannot collide with a real
+ *  id (those are `thread-<uuid>`). */
 export const PROGRESS_TARGET = "@progress";
 
 /** Where a clicked desktop notification leads: Progress, a conversation the user has, or nowhere (an id the page does not know is data,

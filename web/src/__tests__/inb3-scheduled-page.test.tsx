@@ -31,6 +31,7 @@ import ScheduledPage from "../components/scheduled/ScheduledPage";
 import Sidebar from "../components/Sidebar";
 import NotDoneList from "../components/proactive/NotDoneList";
 import { useScheduledAttention } from "../hooks/useScheduledAttention";
+import { hasRow } from "../lib/proactive";
 
 const setVisibility = (value: "visible" | "hidden") => Object.defineProperty(document, "visibilityState", { value, configurable: true });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); setVisibility("visible"); });
@@ -147,6 +148,73 @@ describe("the Scheduled page", () => {
   });
 });
 
+describe("set-aside and handled reminders keep their rows, without a dot (Q7)", () => {
+  const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().replace("Z", "");   // the server's naive UTC
+  it("under a task and a watch: open, set aside and lately handled ones; not long-handled or expired ones", async () => {
+    seed();
+    const open = [item(21, "scheduled_problem", "sched:1"), item(22, "web_change", "watch:7")];
+    vi.mocked(proactiveApi.items).mockImplementation((async (scope: string) => ({ items: scope === "open" ? open : [
+      item(21, "scheduled_problem", "sched:1"),
+      { ...item(41, "scheduled_problem", "sched:4"), status: "snoozed", snooze_until: ago(-2), created_at: ago(30) },  // set aside: kept past 14 days
+      { ...item(42, "scheduled_problem", "sched:4"), status: "accepted", created_at: ago(3) },                         // handled lately
+      { ...item(43, "scheduled_problem", "sched:4"), status: "dismissed", created_at: ago(20) },                       // handled past 14 days
+      { ...item(44, "scheduled_problem", "sched:4"), status: "expired", created_at: ago(1) },
+      { ...item(45, "web_change", "watch:8"), status: "dismissed", created_at: ago(1) },                              // a watch's handled change
+    ] })) as never);
+    render(<Page waiting={[1]} />);
+    fireEvent.click(await screen.findByTestId("sched-expand-4"));
+    expect(await screen.findByTestId("proactive-item-41")).toBeInTheDocument();
+    expect(screen.getByTestId("proactive-item-42")).toBeInTheDocument();
+    expect(screen.queryByTestId("proactive-item-43")).toBeNull();
+    expect(screen.queryByTestId("proactive-item-44")).toBeNull();
+    expect(screen.queryByTestId("sched-attention-4")).toBeNull();                      // no dot for what is set aside or handled
+    const watch = screen.getByTestId("proactive-watch-8");
+    expect(within(watch).getByTestId("proactive-item-45")).toBeInTheDocument();
+    expect(within(watch).queryByTestId("watch-attention-8")).toBeNull();
+    expect(within(screen.getByTestId("proactive-watch-7")).getByTestId("watch-attention-7")).toBeInTheDocument();   // the open change keeps its dot
+  });
+
+  it("counts a handled row's days from when it was handled, else from when it was made: 14 for a problem or a change, 7 for a job's", () => {
+    const kept = (kind: string, status: string, made: number, handled?: number) =>
+      hasRow({ kind, status, created_at: ago(made), acted_at: handled == null ? null : ago(handled) } as never);
+    expect(kept("scheduled_problem", "dismissed", 20, 3)).toBe(true);     // made 20 days ago, dismissed 3 days ago (PR 615 review F2)
+    expect(kept("scheduled_problem", "dismissed", 12, 10)).toBe(true);    // handled 10 days ago: a problem keeps its row 14 days
+    expect(kept("web_change", "dismissed", 12, 10)).toBe(true);
+    expect(kept("folder_change", "accepted", 9, 8)).toBe(true);
+    expect(kept("job_followup", "accepted", 9, 8)).toBe(false);           // a job's reminder keeps it 7
+    expect(kept("web_change", "dismissed", 16, 15)).toBe(false);          // handled past 14 days
+    expect(kept("scheduled_problem", "accepted", 10)).toBe(true);         // an older server sends no acted_at: from when it was made
+    expect(kept("scheduled_problem", "accepted", 15)).toBe(false);
+  });
+
+  it("dots a watch from its kind's own rows, and lists a task's open problems first (PR 615 review F3)", async () => {
+    vi.mocked(api.listScheduledTasks).mockResolvedValue([task(4)] as never);
+    vi.mocked(request).mockResolvedValue([] as never);
+    vi.mocked(proactiveApi.watches).mockResolvedValue({ watches: [watch(7, "pricing")] } as never);
+    // The newest hundred open reminders are a busy conversation's: the open change and the open problem come only from their kinds'.
+    vi.mocked(proactiveApi.items).mockImplementation((async (scope: string, query?: { kind?: string }) => ({ items:
+      scope === "open" ? [item(90, "job_followup", "job:1")]
+        : query?.kind === "web_change" ? [item(22, "web_change", "watch:7")]
+        : query?.kind === "scheduled_problem"
+          ? [{ ...item(46, "scheduled_problem", "sched:4"), status: "dismissed", created_at: ago(1) }, item(40, "scheduled_problem", "sched:4")]
+          : [] })) as never);
+    const hook = renderHook(() => useScheduledAttention());
+    await waitFor(() => expect(hook.result.current.tasks[4]).toBeDefined());
+    expect(hook.result.current.changes[7]?.map((change) => change.id)).toEqual([22]);
+    expect(hook.result.current.any).toBe(true);
+    expect(hook.result.current.tasks[4].problems.map((problem) => problem.id)).toEqual([40, 46]);   // the open one first, though older
+  });
+
+  it("asks for each kind's rows apart, so busier kinds never push an open one out of the newest hundred", async () => {
+    seed();
+    render(<Page />);
+    await screen.findByTestId("sched-attention-1");
+    const asked = vi.mocked(proactiveApi.items).mock.calls.map((call) => JSON.stringify(call));
+    expect(asked).toContain(JSON.stringify(["open"]));
+    for (const kind of ["scheduled_problem", "web_change", "folder_change"]) expect(asked).toContain(JSON.stringify(["all", { kind }]));
+  });
+});
+
 describe("the sidebar's Scheduled entry", () => {
   const props = {
     threads: [], activeThreadId: "", activeSection: "arslan" as const, onSelectThread: () => {}, onAddThread: () => {},
@@ -199,7 +267,7 @@ describe("the attention hook", () => {
     first.unmount();
     vi.mocked(proactiveApi.items).mockResolvedValue({ items: [item(24, "web_change", "watch:99")] } as never);
     const second = renderHook(() => useScheduledAttention());
-    await waitFor(() => expect(proactiveApi.items).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(vi.mocked(proactiveApi.items).mock.calls.length).toBe(8));   // two loads: open, and each kind's rows
     await act(async () => { await Promise.resolve(); });
     expect(second.result.current.any).toBe(false);
     expect(second.result.current.changes).toEqual({});

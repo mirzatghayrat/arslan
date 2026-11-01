@@ -195,7 +195,8 @@ pub fn parse_response(raw: &str) -> Option<Status> {
 
 /// A notification's identifier carries the conversation to open on click.
 pub fn notification_id(event: &Event) -> String {
-    // A proactive notice has no conversation; clicking it opens Progress (INB5: the Inbox is gone).
+    // A proactive notice has no conversation; clicking it sends "@progress", which the window routes to the Scheduled page
+    // (web useNotificationRoutes.PROGRESS_NOTICE_SECTION: a watch's change is listed there), not to Progress (#605 re-check, N1).
     // "@progress" cannot collide with a real conversation id (those are `thread-<uuid>`).
     let target = if event.kind == "proactive" {
         "@progress"

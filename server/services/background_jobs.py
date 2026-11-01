@@ -296,8 +296,9 @@ async def _goal_not_reached(job: Job, text: str) -> bool:
     if any(check.get("id") != "answer-delivered" for check in job.acceptance) or not text.strip():
         return False
     from server.services import judgment
+    # The job's own run; None for a job whose run took no step, which never noted one (`_job_sink`).
     verdict = await judgment.judge("job.accomplished", {"goal": job.goal, "answer": text},
-                                   ref=job.job_id, conversation_id=job.conversation_id)
+                                   ref=job.job_id, conversation_id=job.conversation_id, run_id=job.run_id)
     if verdict is None or verdict.answer:
         return False
     # The judge is asked for p = P(yes), but the same model also answers "false, 0.99" meaning

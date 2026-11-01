@@ -5,7 +5,8 @@
 - `POST /hands/stop`       — stop every Hands action now (island, menu bar)
 - `POST /hands/check`      — start Hands if needed and report whether it has Accessibility
 - `POST /hands/permission` — ask Hands to show macOS's Accessibility prompt (D3)
-- `GET  /hands/trace`      — the last seven days of Hands calls (Activity)
+- `GET  /hands/trace`      — the last seven days of Hands calls (Activity), each with its
+                             `conversation`, `job` and (v0.1.64) `run_id`, null when there was none
 
 Loopback + the API token, like every router here.
 """
