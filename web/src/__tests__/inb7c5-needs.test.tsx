@@ -107,6 +107,17 @@ describe("「要你做」 in the inspector while no run is picked", () => {
     expect(inspector()).not.toHaveTextContent("All caught up");
   });
 
+  it("reads the tasks' names again when another task starts to wait (#633 review, 1)", async () => {
+    const props = { threads: THREADS, projects: PROJECTS };
+    const { rerender } = render(<ActivityView waiting={waiting({ conversations: [], projects: [], count: 1 })} {...props} />);
+    await waitFor(() => expect(within(inspector()).getByTestId("needs-row-s-7")).toHaveTextContent("Weekly report"));
+    listScheduledTasks.mockResolvedValue([{ id: 7, name: "Weekly report" }, { id: 8, name: "Backup check" }]);
+    rerender(<ActivityView waiting={waiting({ conversations: [], projects: [], scheduled: [7, 8], count: 2 })} {...props} />);
+    await waitFor(() => expect(within(inspector()).getByTestId("needs-row-s-8")).toHaveTextContent("Backup check"));
+    rerender(<ActivityView waiting={waiting({ conversations: [], projects: [], scheduled: [8, 7], count: 2 })} {...props} />);
+    expect(listScheduledTasks).toHaveBeenCalledTimes(2);                 // the same tasks in another order are no news
+  });
+
   it("gives way to a picked run, and comes back when the run is let go", async () => {
     view();
     await waitFor(() => expect(rows()).toHaveLength(3));

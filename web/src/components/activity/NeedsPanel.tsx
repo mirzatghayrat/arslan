@@ -28,7 +28,7 @@ const UNNAMED = { conversation: "activityPage.needsAConversation", project: "act
  */
 export default function NeedsPanel({ waiting, threads = [], projects = [], onOpenConversation, onOpenProject }: NeedsProps) {
   const { t } = useTranslation();
-  const tasks = useTaskNames(waiting.scheduled.length > 0);
+  const tasks = useTaskNames([...waiting.scheduled].sort((a, b) => a - b).join(","));
   const rows: Row[] = [
     ...waiting.conversations.map((id): Row => ({ key: `c-${id}`, kind: "conversation", name: threads.find((x) => x.id === id)?.title ?? "",
       open: () => onOpenConversation?.(id) })),
@@ -68,15 +68,17 @@ export default function NeedsPanel({ waiting, threads = [], projects = [], onOpe
   );
 }
 
-/** The scheduled tasks' names, read once one waits (the page holds no list of them). A failed read leaves them unnamed. */
-function useTaskNames(wanted: boolean): Record<number, string> {
+/** The scheduled tasks' names, read when the tasks that wait change (the page holds no list of them), keyed on their sorted ids so
+ *  one that starts to wait is named too (#633 review, 1) and the same tasks in another order read nothing. A failed read leaves
+ *  them unnamed. */
+function useTaskNames(waitingIds: string): Record<number, string> {
   const [names, setNames] = useState<Record<number, string>>({});
   useEffect(() => {
-    if (!wanted) return;
+    if (!waitingIds) return;
     let alive = true;
     api.listScheduledTasks().then((all) => { if (alive) setNames(Object.fromEntries(all.map((task) => [task.id, task.name]))); })
       .catch(() => { /* named by what it is */ });
     return () => { alive = false; };
-  }, [wanted]);
+  }, [waitingIds]);
   return names;
 }
