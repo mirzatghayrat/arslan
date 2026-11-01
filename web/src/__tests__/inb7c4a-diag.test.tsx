@@ -8,12 +8,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
-const { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun, redactRun, request, confirmSheet, triggerDownload } = vi.hoisted(() => ({
-  getUsageSummary: vi.fn(), listRuns: vi.fn(), runProcess: vi.fn(), runCounts: vi.fn(), runChanges: vi.fn(), getRun: vi.fn(),
+const { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun, getRunAnomalies, redactRun, request, confirmSheet, triggerDownload } = vi.hoisted(() => ({
+  getUsageSummary: vi.fn(), listRuns: vi.fn(), runProcess: vi.fn(), runCounts: vi.fn(), runChanges: vi.fn(), getRun: vi.fn(), getRunAnomalies: vi.fn(),
   redactRun: vi.fn(), request: vi.fn(), confirmSheet: vi.fn(), triggerDownload: vi.fn() }));
 vi.mock("../api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/client")>()),
-  api: { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun, redactRun }, request,
+  api: { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun, getRunAnomalies, redactRun }, request,
 }));
 vi.mock("../components/kit", async (importOriginal) => ({ ...(await importOriginal<typeof import("../components/kit")>()), confirmSheet }));
 vi.mock("../components/MessageBody", async (importOriginal) => ({
@@ -38,7 +38,7 @@ const RUNS = [run(12), run(11)];
 const PROCESS = { run_id: 11, status: "scored", conversation_id: "chat-a", usage: { usd: 0.0083 }, entries: [
   { kind: "tool", tool: "read_file", ok: true, ms: 10, args_summary: '{"path": "notes.md"}', summary: "ok", at: null },
   { kind: "tool", tool: "run_command", ok: false, ms: 900, args_summary: '{"command": "make test"}', summary: "exit 2", at: null }] };
-const detail = (over: Record<string, unknown> = {}) => ({ artifacts: [], steps: [], evaluations: [], run: {
+const detail = (over: Record<string, unknown> = {}, evaluations: unknown[] = []) => ({ artifacts: [], steps: [], evaluations, run: {
   id: 11, conversation_id: "chat-a", spawn_id: null, spawn_name: "Arslan", user_message: "Run 11", total_ms: 95_000, task_tokens: 21_000,
   status: "scored", overall_score: 8.4, overall_badge: "good", model: "deepseek-v4-flash", provider: "deepseek", tokens_in: 19_000,
   tokens_out: 2_000, tokens_estimated: false, error_kind: null, error_text: null, system_prompt: "s", injected_kb: null, ...over } });
@@ -61,6 +61,7 @@ beforeEach(async () => {
   runChanges.mockReturnValue(new Promise(() => {}));
   runProcess.mockResolvedValue(PROCESS);
   getRun.mockResolvedValue(detail());
+  getRunAnomalies.mockResolvedValue([]);
   redactRun.mockResolvedValue({ ok: true });
   confirmSheet.mockResolvedValue(true);
   request.mockResolvedValue({ items: [], entries: [] });
@@ -137,11 +138,90 @@ describe("the 「诊断」 tab", () => {
   });
 });
 
+describe("the review of PR 631", () => {
+  it("lists what the judge failed, so a run scored low for fabrication is not 'Nothing went wrong' (1)", async () => {
+    runProcess.mockResolvedValue({ ...PROCESS, entries: [PROCESS.entries[0]] });
+    getRun.mockResolvedValue(detail({ overall_score: 2.1, overall_badge: "bad" }, [
+      { dimension: "fabrication", status: "fail", score: 2.1, comment: "cited a page that does not exist" },
+      { dimension: "completeness", status: "warn", score: 6, comment: "left one step out" },
+      { dimension: "relevance", status: "pass", score: 9, comment: "on topic" }]));
+    render(<ActivityView waiting={waiting()} />);
+    await openDiag();
+    const problems = await within(panel()).findAllByTestId("diag-problem");
+    expect(problems.map((p) => p.textContent)).toEqual([expect.stringContaining("cited a page that does not exist")]);
+    expect(panel()).not.toHaveTextContent("Nothing went wrong");
+    expect(within(panel()).getByTestId("diag-facts")).toHaveTextContent("⚠ 1");          // a warning shows on the score row
+  });
+
+  it("says when the judge could not score the run, and lists this run's failing streak", async () => {
+    runProcess.mockResolvedValue({ ...PROCESS, entries: [PROCESS.entries[0]] });
+    getRun.mockResolvedValue(detail({ status: "score_failed", overall_score: null, overall_badge: null }));
+    getRunAnomalies.mockResolvedValue([
+      { severity: "red", kind: "fabrication", spawn_id: 1, spawn_name: "Arslan", title_key: "anomaly.dim_streak.title",
+        detail_key: "anomaly.dim_streak.detail", params: { dim: "fabrication", streak: 3 }, since: null, run_id: 11 },
+      { severity: "red", kind: "fabrication", spawn_id: 1, spawn_name: "Arslan", title_key: "anomaly.dim_streak.title",
+        detail_key: "anomaly.dim_streak.detail", params: { dim: "fabrication", streak: 2 }, since: null, run_id: 99 }]);
+    render(<ActivityView waiting={waiting()} />);
+    await openDiag();
+    const problems = await within(panel()).findAllByTestId("diag-problem");
+    expect(problems.map((p) => p.textContent)).toEqual([expect.stringContaining("The judge couldn't score this run"),
+      expect.stringContaining("3+ runs in a row failed")]);
+  });
+
+  it("reads the steps again after a clear, so the cleared details are gone from the replay too (2)", async () => {
+    runProcess.mockResolvedValue({ ...PROCESS, entries: [{ ...PROCESS.entries[0], raw: { args: "SECRET ARGS", result: "r" },
+      detail: { view: "file", path: "notes.md" } }] });
+    render(<ActivityView waiting={waiting()} />);
+    await openDiag();
+    const reads = runProcess.mock.calls.length;
+    runProcess.mockResolvedValue({ ...PROCESS, entries: [{ ...PROCESS.entries[0], detail: { view: "file", path: "notes.md" } }] });
+    fireEvent.click(await within(panel()).findByRole("button", { name: "Clear this run's debug details" }));
+    await waitFor(() => expect(runProcess.mock.calls.length).toBeGreaterThan(reads));
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Replay/ }));
+    fireEvent.click(await within(inspector()).findByRole("button", { name: /Show details/ }));
+    expect(inspector()).not.toHaveTextContent("SECRET ARGS");
+  });
+
+  it("can't be cleared twice while its question is open", async () => {
+    confirmSheet.mockReturnValue(new Promise(() => {}));
+    render(<ActivityView waiting={waiting()} />);
+    await openDiag();
+    const clear = await within(panel()).findByRole("button", { name: "Clear this run's debug details" });
+    fireEvent.click(clear);
+    await waitFor(() => expect(within(panel()).getByRole("button", { name: /Clear|Clearing/ })).toBeDisabled());
+  });
+
+  it("reads the run's record only once 「诊断」 is opened", async () => {
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    await within(inspector()).findByRole("tab", { name: /Diagnosis/ });
+    expect(getRun).not.toHaveBeenCalled();
+    expect(getRunAnomalies).not.toHaveBeenCalled();
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Diagnosis/ }));
+    await waitFor(() => expect(getRun).toHaveBeenCalledWith(11));
+  });
+
+  it("reads the record again once the picked run ends (W5), and marks estimated tokens even with in and out (W9)", async () => {
+    listRuns.mockResolvedValue([run(12), run(11, "recording")]);
+    runProcess.mockResolvedValue({ ...PROCESS, status: "recording", entries: [] });
+    getRun.mockResolvedValue(detail({ tokens_estimated: true, status: "recording" }));
+    useActivityStore.setState({ range: "7d" });
+    render(<ActivityView waiting={waiting()} />);
+    await openDiag();
+    await waitFor(() => expect(within(panel()).getByTestId("diag-facts")).toHaveTextContent("≈ 21k"));
+    const reads = getRun.mock.calls.length;
+    runProcess.mockResolvedValue(PROCESS);
+    listRuns.mockResolvedValue(RUNS);
+    window.dispatchEvent(new Event("arslan:proactive-changed"));
+    await waitFor(() => expect(getRun.mock.calls.length).toBeGreaterThan(reads));
+  });
+});
+
 describe("the tab speaks every language", () => {
   it("has its words in all six", () => {
     for (const language of SUPPORTED_LANGUAGES) {
       for (const key of ["diagTab", "diagRun", "diagModel", "diagTokens", "diagCost", "diagDuration", "diagScore", "notScored",
-        "problems", "noProblems"]) {
+        "problems", "noProblems", "judgeFailed"]) {
         const value = i18n.getResource(language, "translation", `activityPage.${key}`);
         expect(typeof value === "string" && value.length > 0, `${language} ${key}`).toBe(true);
       }

@@ -13,7 +13,7 @@ const { getUsageSummary, listRuns, runProcess, runCounts, runChanges, request, c
   changeDiff: vi.fn() }));
 vi.mock("../api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/client")>()),
-  api: { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun: () => new Promise(() => {}) }, request,
+  api: { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun: () => new Promise(() => {}), getRunAnomalies: () => new Promise(() => {}) }, request,
 }));
 vi.mock("../api/files", async (importOriginal) => {
   const real = await importOriginal<typeof import("../api/files")>();

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { api } from "../../api/client";
-import { toUiRun } from "../../api/adapters";
-import type { RunChangesOut, RunListItem } from "../../api/client.types";
+import { DIMENSION_LABEL_KEYS, toUiRun } from "../../api/adapters";
+import type { AnomalyDto, RunChangesOut, RunListItem } from "../../api/client.types";
 import { baseName } from "../../lib/fileKinds";
 import type { StepDetail } from "../../lib/process";
 import { fmtMs, fmtTok, fmtUsd } from "../../lib/usageFormat";
@@ -15,7 +15,7 @@ import { triggerDownload } from "../MessageBody";
 import { buildRunMarkdown } from "../RunReplay";
 import { StepDetailView } from "../reply/ProcessList";
 import DiffReader, { opensDiff } from "../workbench/DiffReader";
-import { COLOUR, WORD, at, clockOf, outcomeOf, stepText, useFreshRead, useRunSteps, type Step } from "./RunsLane";
+import { COLOUR, WORD, at, clockOf, outcomeOf, stepText, stepsChanged, useFreshRead, useRunSteps, type Step } from "./RunsLane";
 
 /**
  * INB7-c1, board F's inspector beside 「最近的工作」: the picked run (a row or a bar picks it), its steps in the conversation's
@@ -53,8 +53,11 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ replay: null, changes: null, diag: null });
   const runningNow = (proc?.status ?? run?.status) === "recording";
   const changes = useRunChanges(runId, runningNow);
-  const detail = useRunDetail(runId, runningNow);
-  const problems = problemsOf(detail.run, steps, t);
+  // The run's record is read the first time 「诊断」 opens, not for every pick (⓪Plan's review of PR 631, 3).
+  const [diagSeen, setDiagSeen] = useState(false);
+  useEffect(() => { if (tab === "diag") setDiagSeen(true); }, [tab]);
+  const detail = useRunDetail(diagSeen ? runId : null, runningNow);
+  const problems = problemsOf(detail.run, detail.anomalies, steps, t);
   // WAI-ARIA tabs (⓪Plan's review of PR 629, 3): the arrows, Home and End move the selection and the focus; one tab is in the tab
   // order (roving tabindex).
   const onTabKey = (e: React.KeyboardEvent) => {
@@ -109,7 +112,8 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
       </div>
       <div role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
       {tab === "diag" ? (
-        <RunDiagnosis detail={detail} usd={proc?.usage?.usd ?? null} problems={problems} />
+        <RunDiagnosis detail={detail} usd={proc?.usage?.usd ?? null} problems={problems}
+          onCleared={() => { detail.reload(); stepsChanged(runId); }} />
       ) : tab === "changes" ? (
         <RunChanges runId={runId} changes={changes} />
       ) : (
@@ -183,24 +187,46 @@ function useRunChanges(runId: number, running: boolean): RunChangesView {
   return { ...view, stuck: view.data?.state === "finishing" && finishingReads >= FINISHING_READS };
 }
 
-/** INB7-c4a: the run's own record (GET /runs/{id}), read again when it stops running and after its details are cleared. */
-function useRunDetail(runId: number, running: boolean): { run: UiRun | null; failed: boolean; reload: () => void } {
+type RunDetail = { run: UiRun | null; anomalies: AnomalyDto[]; failed: boolean; reload: () => void };
+
+/** INB7-c4a: the run's own record (GET /runs/{id}) and the fleet's anomalies this run completed (GET /runs/anomalies over the
+ *  page's range), read once asked for (a null id reads nothing), again when it stops running, and after its details are cleared. */
+function useRunDetail(runId: number | null, running: boolean): RunDetail {
   const { t } = useTranslation();
-  const [shown, setShown] = useState<{ run: UiRun | null; failed: boolean }>({ run: null, failed: false });
+  const range = useActivityStore((s) => s.range);
+  const [shown, setShown] = useState<{ run: UiRun | null; anomalies: AnomalyDto[]; failed: boolean }>({ run: null, anomalies: [], failed: false });
   const [version, setVersion] = useState(0);
   useEffect(() => {
+    if (runId == null) return;
     let alive = true;
-    api.getRun(runId).then((dto) => { if (alive) setShown({ run: toUiRun(dto, t), failed: false }); })
-      .catch(() => { if (alive) setShown((prev) => (prev.run ? prev : { run: null, failed: true })); });
+    // The anomalies are a second opinion: a failed read of them leaves the run's own record to speak.
+    const anomalies = api.getRunAnomalies(range).then((all) => all.filter((a) => a.run_id === runId)).catch(() => [] as AnomalyDto[]);
+    Promise.all([api.getRun(runId), anomalies])
+      .then(([dto, mine]) => { if (alive) setShown({ run: toUiRun(dto, t), anomalies: mine, failed: false }); })
+      .catch(() => { if (alive) setShown((prev) => (prev.run ? prev : { run: null, anomalies: [], failed: true })); });
     return () => { alive = false; };
-  }, [runId, running, version, t]);
+  }, [runId, running, version, range, t]);
   return { ...shown, reload: useCallback(() => setVersion((n) => n + 1), []) };
 }
 
-/** What went wrong in a run: its own error, then each step that failed, in the conversation's step words. */
-function problemsOf(run: UiRun | null, steps: Step[], t: (key: string, options?: Record<string, unknown>) => string): string[] {
+type T = (key: string, options?: Record<string, unknown>) => string;
+const dimLabel = (dim: unknown, t: T) => (typeof dim === "string" && DIMENSION_LABEL_KEYS[dim] ? t(DIMENSION_LABEL_KEYS[dim]) : String(dim ?? ""));
+
+/**
+ * What went wrong in a run: its own error; the judge's word when it could not score it, each check it failed (a warning shows on
+ * the score row, not here), and a failing streak this run completed (⓪Plan's review of PR 631, 1); then each step that failed, in
+ * the conversation's step words.
+ */
+function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t: T): string[] {
   const own = run?.errorText ? [[run.errorKind, run.errorText].filter(Boolean).join(": ")] : [];
-  return [...own, ...steps.filter((entry) => !entry.ok).map((entry) => [stepText(entry, t), entry.summary].filter(Boolean).join(" · "))];
+  const judge = run?.status === "score_failed" ? [t("activityPage.judgeFailed")] : [];
+  const failed = (run?.dimensions ?? []).filter((d) => d.status === "fail").map((d) => [d.label, d.comment].filter(Boolean).join(": "));
+  const streaks = anomalies.filter((a) => a.title_key === "anomaly.dim_streak.title").map((a) => {
+    const params = { ...a.params, name: a.spawn_name, dim: dimLabel(a.params.dim, t) };
+    return [t(a.title_key, params), a.detail_key ? t(a.detail_key, params) : ""].filter(Boolean).join(" · ");
+  });
+  return [...own, ...judge, ...failed, ...streaks,
+    ...steps.filter((entry) => !entry.ok).map((entry) => [stepText(entry, t), entry.summary].filter(Boolean).join(" · "))];
 }
 
 /**
@@ -208,13 +234,14 @@ function problemsOf(run: UiRun | null, steps: Step[], t: (key: string, options?:
  * the drawer's two tools that belong here: clearing its debug details (asked first; it cannot be undone) and exporting it as
  * Markdown. The drawer's charts (the fleet radar, the history sparkline) wait on the user's word, behind "Details" (⓪Plan).
  */
-function RunDiagnosis({ detail, usd, problems }: { detail: ReturnType<typeof useRunDetail>; usd: number | null; problems: string[] }) {
+function RunDiagnosis({ detail, usd, problems, onCleared }: { detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void }) {
   const { t } = useTranslation();
   const [clearing, setClearing] = useState(false);
-  const { run, failed, reload } = detail;
+  const { run, failed } = detail;
   if (!run) return <p className="mt-2 text-xs text-muted-foreground">{t(failed ? "activityPage.changesFailed" : "activityPage.changesLoading")}</p>;
   const tokens = run.tokensEstimated || (run.tokensIn == null && run.tokensOut == null)
     ? `≈ ${fmtTok(run.taskTokens)}` : `${run.tokensIn != null ? fmtTok(run.tokensIn) : "—"} / ${run.tokensOut != null ? fmtTok(run.tokensOut) : "—"}`;
+  const warnings = run.dimensions.filter((d) => d.status === "warn").length;
   const facts: [string, string][] = [
     ["activityPage.diagRun", `#${run.id}`],
     ["activityPage.diagModel", [run.model, run.provider].filter(Boolean).join(" · ") || "—"],
@@ -222,12 +249,16 @@ function RunDiagnosis({ detail, usd, problems }: { detail: ReturnType<typeof use
     ["activityPage.diagCost", usd != null ? fmtUsd(usd) : "—"],
     ["activityPage.diagDuration", run.totalMs != null ? fmtMs(run.totalMs) : "—"],
     ["activityPage.diagScore", run.scored && run.overallScore != null
-      ? `${run.overallScore}/10 · ${t(`replay.badge_${run.overallBadge ?? "ok"}`)}` : t("activityPage.notScored")],
+      ? `${run.overallScore}/10 · ${t(`replay.badge_${run.overallBadge ?? "ok"}`)}${warnings ? ` · ⚠ ${warnings}` : ""}` : t("activityPage.notScored")],
   ];
+  // Held from the click, so a second click while the question is open does not ask again (⓪Plan's review of PR 631, 3).
   const clear = async () => {
-    if (!(await confirmSheet({ title: t("confirm.runTitle"), body: t("confirm.runBody"), action: t("confirm.clear") }))) return;
     setClearing(true);
-    try { await api.redactRun(run.id); reload(); } finally { setClearing(false); }
+    try {
+      if (!(await confirmSheet({ title: t("confirm.runTitle"), body: t("confirm.runBody"), action: t("confirm.clear") }))) return;
+      await api.redactRun(run.id);
+      onCleared();
+    } finally { setClearing(false); }
   };
   return (
     <div className="mt-2 space-y-3 text-[12px]">
