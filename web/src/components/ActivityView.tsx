@@ -13,7 +13,6 @@ import UsageCard from "./UsageCard";
 import ScrollBox from "./activity/ScrollBox";
 import RunDrawer from "./activity/RunDrawer";
 import RunInspector from "./activity/RunInspector";
-import type { NeedsProps } from "./activity/NeedsPanel";
 import { COLOUR, outcomeOf, useFreshRead } from "./activity/RunsLane";
 
 /** One page of 最近的工作; the next loads when the box reaches its end. */
@@ -46,7 +45,7 @@ export const ORIGIN_ICON = {
  * stays highlighted; clicking a chart slice or a model narrows 最近的工作; and all of it
  * (range, filter, open run, scroll) survives leaving the page and coming back.
  */
-export default function ActivityView({ waiting, ...where }: { waiting: WaitingView } & Omit<NeedsProps, "waiting">) {
+export default function ActivityView({ waiting }: { waiting: WaitingView }) {
   const { t, i18n } = useTranslation();
   const filter = useActivityStore((s) => s.filter);
   const setFilter = useActivityStore((s) => s.setFilter);
@@ -226,7 +225,7 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
           </ScrollBox>
         )}
       </section>
-      <RunInspector runs={runs ?? []} needs={{ waiting, ...where }} />
+      <RunInspector runs={runs ?? []} />
       </div>
       {/* The full Hands trace (the only audit view of what Hands did on this Mac, calls outside any run included) and the whole
           judgment ledger, folded at the foot and read only when opened, until the user decides whether they stay (⓪Plan, PR 636). */}

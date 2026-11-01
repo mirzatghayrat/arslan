@@ -17,16 +17,16 @@ import { getHandsTrace, handsOpIcon, type HandsTraceEntry } from "../../lib/hand
 import { judgmentIcon, judgmentVerdict, POINT_KEY, type JudgmentRow } from "../../lib/judgments";
 import { StepDetailView } from "../reply/ProcessList";
 import DiffReader, { opensDiff } from "../workbench/DiffReader";
-import NeedsPanel, { type NeedsProps } from "./NeedsPanel";
 import { COLOUR, WORD, at, clockOf, outcomeOf, stepText, stepsChanged, useFreshRead, useRunSteps, type Step } from "./RunsLane";
 
 /**
  * INB7-c1, board F's inspector beside 「最近的工作」: the picked run (a row or a bar picks it), its steps in the conversation's
  * words with their times, following the axis's replay and moving it when a step is clicked, each opening to its detail; and
  * 「改动」, what it changed (INB7-c3). "Details" opens the drawer until INB7-c4 folds what it shows (scores, history) into this aside
- * with 「诊断」; and, while nothing is picked, what waits on you (INB7-c5), which a pick gives way to and letting it go brings back.
+ * with 「诊断」, and what
+ * waits on you, shown when nothing is picked, in INB7-c5.
  */
-export default function RunInspector({ runs, needs }: { runs: RunListItem[]; needs?: NeedsProps }) {
+export default function RunInspector({ runs }: { runs: RunListItem[] }) {
   const { t } = useTranslation();
   const pickedRunId = useActivityStore((s) => s.pickedRunId);
   const pickedRun = useActivityStore((s) => s.pickedRun);
@@ -36,10 +36,7 @@ export default function RunInspector({ runs, needs }: { runs: RunListItem[]; nee
     <aside data-testid="run-inspector" aria-label={t("activityPage.details")}
       className="self-start rounded-lg border border-border bg-surface/40 p-4 lg:sticky lg:top-0">
       {pickedRunId == null
-        ? <div className="space-y-3">
-          {needs && <NeedsPanel {...needs} />}
-          <p className="text-xs text-muted-foreground">{t("activityPage.inspectorHint")}</p>
-        </div>
+        ? <p className="text-xs text-muted-foreground">{t("activityPage.inspectorHint")}</p>
         : <Picked key={pickedRunId} runId={pickedRunId} run={run} />}
     </aside>
   );
