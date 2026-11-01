@@ -230,7 +230,9 @@ async def lock_npm(root: Path, identifier: str, version: str) -> dict:
     packages = json.loads((root / "package-lock.json").read_text()).get("packages") or {}
     _registry_only(packages)
     return {"file": "package-lock.json", "sha256": _sha256(root / "package-lock.json"),
-            "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or "")}
+            # CAP9 (#661 review F1): an alias's folder is not its name; npm writes the real one in the entry.
+            "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or ""),
+                          "registry_name": str(meta.get("name") or path.rsplit("node_modules/", 1)[-1])}
                          for path, meta in sorted(packages.items()) if path and isinstance(meta, dict)]}
 
 

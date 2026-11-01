@@ -354,15 +354,22 @@ class MockAdapter:
 @pytest.fixture
 def fake_capability_prepare(monkeypatch):
     """v0.1.64 CAP4a-2: an MCP install card is prepared first (the license at the source, Arslan's runtime, the
-    lock), which reaches the network. For tests that drive the card for another reason: a prepared lock with no
-    network. The real prepare is tested in test_cap4a2_lock_before_card.py."""
-    from server.services import capability_install
+    lock), which reaches the network, and CAP9 asks OSV.dev about that lock. For tests that drive the card for
+    another reason: a prepared lock, and OSV not checked (the safe answer), with no network. The real prepare is tested in
+    test_cap4a2_lock_before_card.py, the real OSV check in test_cap9_osv_check.py."""
+    from server.services import capability_install, osv_check
 
     async def prepare(c):
         return {"runtime": c.get("runtime"), "license": ("MIT", "LICENSE"), "staging": None,
                 "lock": {"file": "requirements.lock", "sha256": "0" * 64,
                          "packages": [{"name": "excel-mcp-server", "version": "1.1.2"}]}}
     monkeypatch.setattr(capability_install, "prepare", prepare)
+    monkeypatch.setattr(osv_check, "check", _not_checked)
+
+
+async def _not_checked(candidate, prepared):
+    """CAP9's answer when OSV.dev could not be asked (see fake_capability_prepare): never "nothing known"."""
+    return {"state": "not_checked", "why": "osv_did_not_answer"}
 
 
 @pytest_asyncio.fixture
