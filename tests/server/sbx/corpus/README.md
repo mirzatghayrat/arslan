@@ -19,17 +19,20 @@ The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
 the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The `sbx_mac` selection has 349 cases: 71 candidate assertion
-gates, 222 measurement rows, and 56 commands cases. With two compile checks and
-the existing 69 macOS cases, the total is 420. Widening the port sample within
+an availability skip. The `sbx_mac` selection has 362 cases: 71 candidate assertion
+gates, 222 measurement rows, 56 commands cases, 12 service allowlist cases, and
+one Pool diagnosis. With two compile checks and the existing 70 macOS cases,
+the total is 434. Widening the port sample within
 the same two compile cases does not change that count.
 
-SBX-3p adds 56 commands cases, making the macOS selection 420. They strictly
+SBX-3p added 56 commands cases, bringing the selection to 420 at its merge. They strictly
 xfail only for an assertion matching the deliberate missing-adapter message until
 `commands` is registered in the harness's
-`BUILT_BASES` adapter table. A separate Claude CI change must raise `EXPECTED`
-from 364 to 420; the count-mirror guard fails until then. Once SBX-3a registers
-its real commands adapter, these cases must run with zero skips and zero xfails.
+`BUILT_BASES` adapter table. #619 and #620 landed `EXPECTED = 420` and
+`EXPECTED_XFAIL = 56`; #621 subsequently added one unrelated macOS case. This
+gate follow-up adds 13 more (421 -> 434), requiring a companion Claude count PR.
+Once SBX-3a registers its real commands adapter, these cases must run with zero
+skips and zero xfails.
 
 Reference-only reproduction (not product validation): `HOME=/private/tmp/arslan-sbx-check-home .venv/bin/python -m pytest tests/server/sbx/test_sbx3_commands.py -p scripts.dev.sbx3_reference -m macos -q`.
 Add `--sbx-reference-permissive` to run the deliberate failing profile mutation.

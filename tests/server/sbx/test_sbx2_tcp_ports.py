@@ -28,6 +28,7 @@ def test_tcp_port_denies_follow_the_complete_allow_list(mode):
             continue
         text = default_deny_profile(**options, denied_ports=ports)
         lines = [line.strip() for line in text.splitlines()]
+        # MUST_GO_RED below preserves M22/M23 against selector regressions.
         # Ignore quoted path text; select every network or default grant,
         # regardless of filters or leading modifiers.
         # A future Unix-socket grant must explicitly update this reviewed list too.
@@ -48,6 +49,25 @@ def test_tcp_port_denies_follow_the_complete_allow_list(mode):
             for port in sorted(set(ports))
         ], "requested TCP port deny missing or changed"
         assert all(i > allows[-1][0] for i, _ in denies), "TCP denies must follow all network allows"
+
+
+# Keep the review's modifier-first grants executable, not just in PR evidence.
+MUST_GO_RED = [
+    pytest.param('(allow (with report) network-outbound)', id="M22"),
+    pytest.param('(allow (with report) network-outbound (remote tcp "*:*"))', id="M23"),
+]
+
+
+@pytest.mark.parametrize("grant", MUST_GO_RED)
+def test_portable_selector_rejects_named_grant_mutations(grant, monkeypatch):
+    original = default_deny_profile
+
+    def mutated(**options):
+        return original(**options) + grant + "\n"
+
+    monkeypatch.setattr(sys.modules[__name__], "default_deny_profile", mutated)
+    with pytest.raises(AssertionError, match="complete network allow list changed"):
+        test_tcp_port_denies_follow_the_complete_allow_list(NetworkMode.PROXY)
 
 
 @pytest.mark.parametrize("ports", [(22,), (443, 22)])
