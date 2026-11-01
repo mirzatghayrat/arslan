@@ -448,9 +448,9 @@ async def test_dismiss_can_mute_a_whole_kind_and_unmute_undoes_it(execution_db):
 
 async def test_unread_and_high_counts_follow_the_user_reading(execution_db):
     await ingest(found(cand(1, priority="high"), cand(2)), ProactiveConfig(notify=False))
-    assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0}
+    assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0, "waiting": {"count": 0, "conversations": [], "projects": [], "scheduled": []}}
     await svc.mark_seen([i.id for i in await rows(execution_db)])
-    assert await svc.summary() == {"open": 2, "unread": 0, "high": 0, "approvals": 0}
+    assert await svc.summary() == {"open": 2, "unread": 0, "high": 0, "approvals": 0, "waiting": {"count": 0, "conversations": [], "projects": [], "scheduled": []}}
 
 
 async def test_list_puts_the_urgent_first_and_scopes_done_items_apart(execution_db):
