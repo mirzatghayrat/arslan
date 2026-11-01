@@ -30,13 +30,13 @@ def ws(tmp_path, monkeypatch):
     checkpoints._reset_for_tests()
 
 
-async def _run(client, status="recorded", conversation_id="chat-7", wrote=False) -> int:
+async def _run(client, status="recorded", conversation_id="chat-7", wrote=False, kind="host", wrote_ok=True) -> int:
     async with client.db_maker() as db:
-        run = Run(conversation_id=conversation_id, spawn_name="Arslan", user_message="x", status=status, kind="host", task_tokens=0)
+        run = Run(conversation_id=conversation_id, spawn_name="Arslan", user_message="x", status=status, kind=kind, task_tokens=0)
         db.add(run)
         await db.flush()
         if wrote:
-            db.add(RunStep(run_id=run.id, seq=0, kind="tool_call", ref={"tool": "write_file", "ok": True}, detail={}))
+            db.add(RunStep(run_id=run.id, seq=0, kind="tool_call", ref={"tool": "write_file", "ok": wrote_ok}, detail={}))
         await db.commit()
         return run.id
 
@@ -77,6 +77,11 @@ async def test_a_running_run_and_one_still_being_saved(client, ws):
     await checkpoints.ensure(ended, [ws])                       # ended, but finish has not recorded how it left the folder
     (ws / "notes.md").write_text("after")
     assert (await _changes(client, ended))["state"] == "finishing"
+    # The process that held it went (a crash, a quit mid-run): finish will never run, so it was interrupted, not finishing
+    # (⓪Plan's re-check of PR 629).
+    checkpoints._live.discard(ended)
+    checkpoints._locks.pop(ended, None)
+    assert (await _changes(client, ended))["state"] == "interrupted"
 
 
 async def test_none_when_the_run_changed_nothing(client, ws):
@@ -98,6 +103,25 @@ async def test_expired_when_a_run_that_wrote_has_no_copy_left(client, ws):
     assert (await _changes(client, earlier))["state"] == "expired"
 
 
+async def test_none_when_every_write_failed(client):
+    # A failed write_file or edit_file, or a refused command, never saves the folder: nothing was kept, nothing expired.
+    failed = await _run(client, wrote=True, wrote_ok=False)
+    assert (await _changes(client, failed))["state"] == "none"
+
+
+async def test_a_run_with_one_folder_saved_and_one_not_lists_the_saved_one(client, ws, tmp_path, monkeypatch):
+    other = tmp_path / "other"
+    other.mkdir()
+    real_same = checkpoints._same_volume
+    monkeypatch.setattr(checkpoints, "_same_volume", lambda a, b: False if a.resolve() == other.resolve() else real_same(a, b))
+    run_id = await _run(client)
+    await checkpoints.ensure(run_id, [ws, other.resolve()])
+    (ws / "notes.md").write_text("after")
+    await checkpoints.finish(run_id)
+    body = await _changes(client, run_id)
+    assert (body["state"], [p["path"] for p in body["paths"]]) == ("kept", ["notes.md"])
+
+
 async def test_not_saved_when_no_folder_could_be_saved(client, ws, monkeypatch):
     monkeypatch.setattr(checkpoints, "_same_volume", lambda a, b: False)
     run_id = await _run(client)
@@ -106,5 +130,7 @@ async def test_not_saved_when_no_folder_could_be_saved(client, ws, monkeypatch):
     assert (await _changes(client, run_id))["state"] == "not_saved"
 
 
-async def test_an_unknown_run_is_404(client):
+async def test_an_unknown_run_and_a_replay_are_404(client):
     assert (await client.get("/api/v1/runs/999999/changes")).status_code == 404
+    replay = await _run(client, kind="replay")                     # the gate's evidence, never listed
+    assert (await client.get(f"/api/v1/runs/{replay}/changes")).status_code == 404

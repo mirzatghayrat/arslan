@@ -106,7 +106,8 @@ describe("the 「改动」 tab", () => {
   it("says which state the run's changes are in (⓪Plan's review of PR 629)", async () => {
     const cases = [["running", "Its changes show when it ends"], ["finishing", "Saving how it left the files"],
       ["none", "No files changed"], ["expired", "No record kept: changes are kept 7 days"],
-      ["not_saved", "Its folder couldn't be saved, so its changes weren't kept"]] as const;
+      ["not_saved", "Its folder couldn't be saved, so its changes weren't kept"],
+      ["interrupted", "Interrupted: how it left the files wasn't recorded"]] as const;
     for (const [state, words] of cases) {
       runChanges.mockResolvedValue({ state, undone: false, paths: [], conversation_id: "chat-a" });
       render(<ActivityView waiting={waiting()} />);
@@ -147,6 +148,7 @@ describe("the 「改动」 tab", () => {
     expect(reads).toBeLessThanOrEqual(6);                                           // a few reads, not one per beat for ever
     for (let beat = 0; beat < 6; beat += 1) await act(async () => { vi.advanceTimersByTime(30_000); });
     expect(runChanges.mock.calls.length).toBe(reads);                               // it gave up
+    expect(within(inspector()).getByRole("tabpanel")).toHaveTextContent("Not recorded yet");   // and no longer says "Saving…"
   });
 
   it("reads the changes again once the picked run ends", async () => {
@@ -200,7 +202,7 @@ describe("the tab speaks every language", () => {
   it("has its words in all six", () => {
     for (const language of SUPPORTED_LANGUAGES) {
       for (const key of ["changesTab", "noChanges", "changesWhenDone", "changesSaving", "changesExpired", "changesNotSaved",
-        "changesLoading", "changesFailed"]) {
+        "changesLoading", "changesFailed", "changesInterrupted", "changesNotYet"]) {
         const value = i18n.getResource(language, "translation", `activityPage.${key}`);
         expect(typeof value === "string" && value.length > 0, `${language} ${key}`).toBe(true);
       }

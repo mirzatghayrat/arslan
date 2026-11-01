@@ -697,9 +697,10 @@ async def run_changes(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     (⓪Plan's review of PR 629: not a scan of its conversation). `state`:
     - `running`: it has not ended, so nothing is final;
     - `finishing`: it ended, but how it left a saved folder is not recorded yet (checkpoints.finish runs after);
+    - `interrupted`: the same, but no process holds it any more (a crash, a quit mid-run), so it never will be;
     - `kept`: the paths an undo can still take back (the list WB1-3 shows), and whether it was undone;
     - `none`: nothing to list (it never saved a folder, or saved one and changed nothing in it);
-    - `expired`: it called a tool that saves the folder, but its copy is gone (KEEP_S or the quota) or is an earlier run's;
+    - `expired`: a call that saves the folder ran, but its copy is gone (KEEP_S or the quota) or is an earlier run's;
     - `not_saved`: no folder could be saved (too many files, too little disk, another volume).
     Read only."""
     from server.services import checkpoints
@@ -719,13 +720,15 @@ async def run_changes(run_id: int, db: AsyncSession = Depends(get_session)) -> d
         if roots and all(entry.get("skipped") for entry in roots):
             return "not_saved", {}
         if any(entry.get("skipped") is None and entry.get("finished") is None for entry in roots):
-            return "finishing", {}
+            # Being finished only while this process holds it; else finish will never run (⓪Plan's re-check of PR 629).
+            return ("finishing" if checkpoints.holding(run_id) else "interrupted"), {}
         found = checkpoints.changes(run_id, not_before) or {"paths": [], "undone": False}
         return ("kept" if found["paths"] else "none"), found
     state, found = await asyncio.to_thread(read)
     if state == "missing":
         tools = (await db.execute(select(RunStep.ref).where(RunStep.run_id == run_id, RunStep.kind == "tool_call"))).scalars()
-        state = "expired" if any(isinstance(ref, dict) and ref.get("tool") in _SAVING_TOOLS for ref in tools) else "none"
+        # Only a call that ran saves the folder: a failed write_file or edit_file, or a refused command, never does.
+        state = "expired" if any(isinstance(ref, dict) and ref.get("tool") in _SAVING_TOOLS and ref.get("ok") for ref in tools) else "none"
     if state == "kept":
         return {"state": "kept", "undone": found["undone"], "paths": found["paths"], "conversation_id": run.conversation_id}
     return {"state": state, **base}

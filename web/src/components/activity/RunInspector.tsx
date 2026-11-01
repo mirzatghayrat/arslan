@@ -149,7 +149,8 @@ const TAB_WORD: Record<Tab, string> = { replay: "activityPage.replay", changes: 
 /** While a run's changes are still being recorded, they are read again on the badge's beat this many times at most. */
 const FINISHING_READS = 4;
 
-type RunChangesView = { data: RunChangesOut | null; failed: boolean };
+/** `stuck`: it still says "finishing" after FINISHING_READS reads, so the tab stops reading and stops saying "Saving…". */
+type RunChangesView = { data: RunChangesOut | null; failed: boolean; stuck?: boolean };
 
 /** INB7-c3: what one run changed (GET /runs/{id}/changes), read again when it stops running (a checkpoint is recorded as it
  *  ends) and, while it says "finishing", on the badge's beat a few times (⓪Plan's review of PR 629). */
@@ -168,12 +169,13 @@ function useRunChanges(runId: number, running: boolean): RunChangesView {
     setFinishingReads((n) => (data.state === "finishing" ? n + 1 : 0));
   }, []);
   useFreshRead(view.data?.state === "finishing" && finishingReads < FINISHING_READS ? read : null, apply);
-  return view;
+  return { ...view, stuck: view.data?.state === "finishing" && finishingReads >= FINISHING_READS };
 }
 
 const KIND_COLOR = { made: "text-success", edited: "text-muted-foreground", deleted: "text-danger" } as const;
 const STATE_WORD: Record<Exclude<RunChangesOut["state"], "kept">, string> = {
-  running: "activityPage.changesWhenDone", finishing: "activityPage.changesSaving", none: "activityPage.noChanges",
+  running: "activityPage.changesWhenDone", finishing: "activityPage.changesSaving", interrupted: "activityPage.changesInterrupted",
+  none: "activityPage.noChanges",
   expired: "activityPage.changesExpired", not_saved: "activityPage.changesNotSaved",
 };
 
@@ -193,6 +195,7 @@ function RunChanges({ runId, changes }: { runId: number; changes: RunChangesView
     return <div className="mt-2"><DiffReader conversationId={data.conversation_id} runId={runId} folder={open.folder} path={open.path}
       onBack={() => setOpen(null)} /></div>;
   }
+  if (changes.stuck) return note("activityPage.changesNotYet");
   if (data.state !== "kept") return note(STATE_WORD[data.state]);
   return (
     <div className="mt-2">
