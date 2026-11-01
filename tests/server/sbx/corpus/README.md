@@ -25,7 +25,8 @@ total 364, as set by PR #576. Widening the port sample within the same
 two compile cases does not change that count.
 
 SBX-3p adds 56 commands cases, making the macOS selection 420. They strictly
-xfail with `raises=AssertionError` until `commands` is registered in the harness's
+xfail only for an assertion matching the deliberate missing-adapter message until
+`commands` is registered in the harness's
 `BUILT_BASES` adapter table. A separate Claude CI change must raise `EXPECTED`
 from 364 to 420; the count-mirror guard fails until then. Once SBX-3a registers
 its real commands adapter, these cases must run with zero skips and zero xfails.

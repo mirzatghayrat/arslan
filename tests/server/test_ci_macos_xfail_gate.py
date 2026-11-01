@@ -83,9 +83,9 @@ def test_the_macos_run_makes_every_xfail_strict():
 def _misuses_in(source: str, where: str) -> list[str]:
     """Every xfail pins `raises=` (not None) and stays strict, and nothing calls pytest.xfail().
 
-    The step counts an xfail as ran whatever made it fail: a fixture that raises in
-    setup or a NameError in the body is also `<skipped type="pytest.xfail">`. Pinning
-    `raises=` turns those into `<failure>`. An explicit `strict=False` beats
+    The step counts any matched xfail as ran. `raises=` rejects only exceptions
+    outside its type or matcher; a broad AssertionError also absorbs real gate
+    failures. Use a dedicated type or message match. An explicit `strict=False` beats
     `-o xfail_strict=true`, `raises=None` means any exception, and `pytest.xfail()`
     is an xfail with no `raises=` at all. A mark used without a call (`@pytest.mark.xfail`,
     `pytestmark = ...`, `marks=...`) has no `raises=` either.

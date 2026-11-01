@@ -19,7 +19,8 @@ from tests.server.sbx.harness import BUILT_BASES, Harness
 
 pytestmark = [pytest.mark.sbx_mac, pytest.mark.parametrize("sbx", [
     pytest.param("commands", marks=pytest.mark.xfail(
-        "commands" not in BUILT_BASES, strict=True, raises=AssertionError,
+        "commands" not in BUILT_BASES, strict=True,
+        raises=pytest.RaisesExc(AssertionError, match=r"^SBX-3a commands adapter is not built"),
         reason="SBX-3a commands adapter is not built")),
 ], indirect=True)]
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
