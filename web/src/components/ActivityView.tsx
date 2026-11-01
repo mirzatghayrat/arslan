@@ -6,17 +6,27 @@ import type { RunListItem } from "../api/client.types";
 import type { WaitingView } from "../hooks/useWaiting";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import { fmtMs } from "../lib/usageFormat";
-import { useActivityStore } from "../stores/activityStore";
+import { useActivityStore, type RunChip, type UsageRange } from "../stores/activityStore";
 import UsageCard from "./UsageCard";
 import HandsTraceCard from "./HandsTraceCard";
 import JudgmentsCard from "./JudgmentsCard";
 import ScrollBox from "./activity/ScrollBox";
 import RunDrawer from "./activity/RunDrawer";
 import RunInspector from "./activity/RunInspector";
-import { COLOUR, outcomeOf } from "./activity/RunsLane";
+import { COLOUR, outcomeOf, useFreshRead } from "./activity/RunsLane";
 
 /** One page of 最近的工作; the next loads when the box reaches its end. */
 export const RUNS_PAGE = 20;
+
+/** How far back each range reaches (the axis and the tiles use the same spans). */
+const RANGE_SECONDS: Record<UsageRange, number> = { "24h": 86_400, "7d": 7 * 86_400, "30d": 30 * 86_400 };
+/** INB7-c2: what each chip asks GET /runs for, and its words. */
+const CHIPS: Record<RunChip, { outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone" }> = {
+  waiting: { outcome: "waiting" }, failed: { outcome: "failed" }, scheduled: { origin: "scheduled" }, phone: { origin: "phone" },
+};
+const CHIP_WORD: Record<RunChip, string> = {
+  waiting: "activityPage.kpiNeeds", failed: "activityPage.failed", scheduled: "activityPage.chipScheduled", phone: "activityPage.chipPhone",
+};
 
 export const ORIGIN_ICON = {
   chat: MessageSquare, job: Timer, scheduled: CalendarClock, phone: Smartphone, browser: Globe,
@@ -53,24 +63,55 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // INB7-c2: the list shows the page's range, as the axis and the tiles do (board F: 「这个范围里没有」); a picked slice narrows it,
+  // and a chip asks the server for its runs only, so a page and the chip's count agree. The range's start is taken afresh at each
+  // read (⓪Plan's review of PR 627, 4).
+  const range = useActivityStore((s) => s.range);
+  const sinceNow = useCallback(() => filter.since ?? Math.floor(Date.now() / 1000) - RANGE_SECONDS[range], [filter.since, range]);
+  const chipParams = filter.chip ? CHIPS[filter.chip] : {};
+  const readCounts = useCallback(() => api.runCounts({ since: sinceNow(), until: filter.until, model: filter.model }),
+    [sinceNow, filter.until, filter.model]);
+  const [counts, setCounts] = useState<Record<RunChip, number> | null>(null);
+  useFreshRead(readCounts, setCounts);
+  /** The span the loaded pages were read for: the next page asks for the same one. */
+  const listSince = useRef<number | undefined>(undefined);
+  const latest = useRef(0);
+
+  const loadFirst = useCallback(() => {
+    const mine = ++latest.current;
+    listSince.current = sinceNow();
     loading.current = true;
-    api.listRuns({ limit: RUNS_PAGE, since: filter.since, until: filter.until, model: filter.model })
-      .then((r) => { if (!cancelled) { setRuns(r); setMore(r.length === RUNS_PAGE); setFailed(false); } })
-      .catch(() => { if (!cancelled) setFailed(true); })
+    api.listRuns({ limit: RUNS_PAGE, since: listSince.current, until: filter.until, model: filter.model, ...chipParams })
+      .then((r) => { if (mine === latest.current) { setRuns(r); setMore(r.length === RUNS_PAGE); setFailed(false); } })
+      .catch(() => { if (mine === latest.current) setFailed(true); })
       .finally(() => { loading.current = false; });
-    return () => { cancelled = true; };
-  }, [filter.since, filter.until, filter.model]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinceNow, filter.until, filter.model, filter.chip]);
+  useEffect(() => { loadFirst(); return () => { latest.current += 1; }; }, [loadFirst]);
+
+  // When the counts change, something ran or ended: page 1 is read again, unless the reader has paged further back.
+  const countsKey = counts ? JSON.stringify(counts) : "";
+  const seenCounts = useRef("");
+  useEffect(() => {
+    if (!countsKey) return;
+    if (seenCounts.current && seenCounts.current !== countsKey && (runs?.length ?? 0) <= RUNS_PAGE) loadFirst();
+    seenCounts.current = countsKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countsKey]);
 
   const loadMore = useCallback(() => {
     if (!more || loading.current || !runs?.length) return;
     loading.current = true;
-    api.listRuns({ limit: RUNS_PAGE, beforeId: runs[runs.length - 1].id, since: filter.since, until: filter.until, model: filter.model })
-      .then((r) => { setRuns((prev) => [...(prev ?? []), ...r]); setMore(r.length === RUNS_PAGE); })
+    // A next page that page 1 overtook (re-read when the counts changed) would append below rows it no longer follows: dropped
+    // (⓪Plan's re-check of PR 627).
+    const mine = latest.current;
+    api.listRuns({ limit: RUNS_PAGE, beforeId: runs[runs.length - 1].id, since: listSince.current, until: filter.until,
+      model: filter.model, ...chipParams })
+      .then((r) => { if (mine !== latest.current) return; setRuns((prev) => [...(prev ?? []), ...r]); setMore(r.length === RUNS_PAGE); })
       .catch(() => setMore(false))
       .finally(() => { loading.current = false; });
-  }, [more, runs, filter.since, filter.until, filter.model]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [more, runs, filter.until, filter.model, filter.chip]);
 
   const showRun = useActivityStore((s) => s.showRun);
   const step = useCallback((delta: -1 | 1) => {
@@ -109,19 +150,38 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 mb-3">{t("activityPage.recentHint")}</p>
+        {/* INB7-c2, board F's chips: one at a time; a second click clears it. */}
+        <div className="mb-2 flex flex-wrap gap-1.5" data-testid="activity-chips">
+          {(Object.keys(CHIPS) as RunChip[]).map((id) => {
+            const on = filter.chip === id;
+            return (
+              <button key={id} type="button" aria-pressed={on} onClick={() => setFilter({ ...filter, chip: on ? undefined : id })}
+                aria-label={counts ? `${t(CHIP_WORD[id])}, ${counts[id]}` : t(CHIP_WORD[id])}
+                // Board F's word, which the user approved; here it lists runs, so it can differ from the tile (⓪Plan's review of PR 627).
+                title={id === "waiting" ? t("activityPage.chipNeedsTitle") : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] ${
+                  on ? "border-foreground bg-surface text-foreground" : "border-border text-muted-foreground hover:bg-surface/70"}`}>
+                {id === "waiting" && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />}
+                {id === "failed" && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-danger" />}
+                {t(CHIP_WORD[id])}
+                {counts && <span className="font-mono text-[10.5px] text-subtle-foreground">{counts[id]}</span>}
+              </button>
+            );
+          })}
+        </div>
         {filtered && (
           <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="activity-filter">
             {spanLabel && <FilterChip label={t("activityPage.onlySpan", { span: spanLabel })}
-              onClear={() => setFilter({ model: filter.model })} />}
+              onClear={() => setFilter({ ...filter, since: undefined, until: undefined })} />}
             {filter.model && <FilterChip label={t("activityPage.onlyModel", { model: filter.model })}
-              onClear={() => setFilter({ since: filter.since, until: filter.until })} />}
+              onClear={() => setFilter({ ...filter, model: undefined })} />}
           </div>
         )}
         {failed ? (
           <p className="text-xs text-destructive">{t("activityPage.loadFailed")}</p>
         ) : runs == null ? null : runs.length === 0 ? (
           <p className="text-xs text-subtle-foreground" data-testid="activity-empty">
-            {t(filtered ? "activityPage.noneInFilter" : "activityPage.none")}</p>
+            {t(filtered || filter.chip ? "activityPage.noneInFilter" : "activityPage.noneInRange")}</p>
         ) : (
           <ScrollBox scrollKey="runs" onEnd={loadMore} testId="activity-runs-box">
             <ul className="divide-y divide-border">

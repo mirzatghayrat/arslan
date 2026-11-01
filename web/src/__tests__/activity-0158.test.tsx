@@ -11,7 +11,7 @@ vi.mock("react-i18next", () => ({
 const { listRuns, getUsageSummary, runProcess, request } = vi.hoisted(() => ({
   listRuns: vi.fn(), getUsageSummary: vi.fn(), runProcess: vi.fn(), request: vi.fn(),
 }));
-vi.mock("../api/client", () => ({ api: { listRuns, getUsageSummary, runProcess }, request }));
+vi.mock("../api/client", () => ({ api: { listRuns, getUsageSummary, runProcess, runCounts: () => new Promise(() => {}) }, request }));
 vi.mock("../components/ScheduledTasksCard", () => ({ default: () => null }));
 vi.mock("../components/RunReplay", () => ({ default: ({ runId }: { runId: number }) => <div data-testid="replay">run {runId}</div> }));
 
@@ -123,7 +123,9 @@ describe("the usage chart", () => {
       expect.objectContaining({ since: 1_790_003_600, until: 1_790_007_200 })));
     expect(screen.getByTestId("activity-filter")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("activityPage.clearFilter"));
-    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ since: undefined })));
+    // INB7-c2: cleared, the list goes back to the page's range (7 days here), not to all time.
+    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ until: undefined })));
+    expect(Math.abs(listRuns.mock.calls.at(-1)![0].since - (Date.now() / 1000 - 7 * 86_400))).toBeLessThan(60);
   });
 
   it("clicking a model row narrows recent work to that model", async () => {

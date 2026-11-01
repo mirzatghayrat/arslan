@@ -7,7 +7,7 @@ import { PROACTIVE_CHANGED } from "../../api/proactive";
 import { utcIso } from "../../lib/conversationMeta";
 import { stepWords } from "../../lib/process";
 import { fmtMs } from "../../lib/usageFormat";
-import { useActivityStore } from "../../stores/activityStore";
+import { useActivityStore, type RunChip } from "../../stores/activityStore";
 
 /** Board F: a run shorter than this still draws a bar this wide, so it can be seen and hit; packing counts the same width. */
 export const MIN_BAR_MS = 14 * 60_000;
@@ -37,6 +37,11 @@ export function outcomeOf(run: Pick<RunListItem, "status" | "waiting">): Outcome
   if (run.status === "failed") return "failed";
   if (run.status === "cancelled" || run.status === "interrupted") return "stopped";
   return "ok";
+}
+
+/** INB7-c2: whether a run is one a chip lists (the server decides the list; the axis dims by the same rule). */
+export function chipHas(chip: RunChip, run: RunListItem): boolean {
+  return chip === "waiting" ? outcomeOf(run) === "waiting" : chip === "failed" ? run.status === "failed" : run.origin === chip;
 }
 
 /** Each run goes into the first row that is free when it starts, so a row never overlaps; a short run counts as MIN_BAR_MS. When
@@ -161,6 +166,7 @@ export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; n
   const width = t1 - t0;
   const rowCount = placed.rows.size ? Math.max(...placed.rows.values()) + 1 : 1;
   const filteredOut = (run: RunListItem, start: number) => (!!filter.model && run.model !== filter.model)
+    || (!!filter.chip && !chipHas(filter.chip, run))
     || (filter.since != null && filter.until != null && (start < filter.since * 1000 || start >= filter.until * 1000));
 
   return (

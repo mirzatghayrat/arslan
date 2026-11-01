@@ -10,7 +10,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, model_validator
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
@@ -111,14 +112,16 @@ _BROWSER_RUN_NAME = "Browser preview"
 
 async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     """Where each run came from, read from records that already exist (0.1.58 §7):
-    a scheduled fire (Run.kind), a browser preview (its run name), a background job
-    (its result message carries job_outcome), a message sent from the paired iPhone
+    a scheduled fire (Run.kind, or since C1 a host turn its scheduled_task_runs row names), a browser preview (its run name),
+    a background job (its result message carries job_outcome), a message sent from the paired iPhone
     (the user message that started the turn has source="phone"); otherwise chat."""
-    from server.db.models import ArslanMessage
+    from server.db.models import ArslanMessage, ScheduledTaskRun
     out: dict[int, str] = {}
     pending: list[Run] = []
+    fired = set((await db.execute(select(ScheduledTaskRun.run_id).where(
+        ScheduledTaskRun.run_id.in_([r.id for r in runs])))).scalars()) if runs else set()
     for r in runs:
-        if r.kind == "scheduled":
+        if r.kind == "scheduled" or r.id in fired:
             out[r.id] = "scheduled"
         elif r.spawn_name == _BROWSER_RUN_NAME:
             out[r.id] = "browser"
@@ -166,6 +169,77 @@ async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     return out
 
 
+#: INB7-c2: a phone turn is found from its messages, after the query, so the phone chip reads runs in batches this big until a page
+#: is full.
+_PHONE_BATCH = 200
+
+
+def _scoped(since: datetime | None, until: datetime | None, model: str | None):
+    """The runs the list may show (user kinds, newest first) within a span and a model."""
+    # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
+    # surface in the runs list. get_run detail stays unfiltered so the card can link into a
+    # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
+    # already counted them, the list beneath silently did not.
+    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS)).order_by(Run.id.desc())
+    # Stored times are naive UTC; an aware bound is converted, never compared raw.
+    if since is not None:
+        q = q.where(Run.created_at >= _naive_utc(since))
+    if until is not None:
+        q = q.where(Run.created_at < _naive_utc(until))
+    if model:
+        q = q.where(Run.model == model)
+    return q
+
+
+def _asking() -> set[str]:
+    """INB7-b: the conversations with a card open, the same live list progress.waiting_reasons reads."""
+    from server.services import approvals
+    return {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
+
+
+def _phoned():
+    """The conversations a phone message ever reached: the only ones a phone turn can be in."""
+    from server.db.models import ArslanMessage
+    return select(ArslanMessage.conversation_id).where(ArslanMessage.source == "phone").distinct()
+
+
+def _chip(q, outcome: str | None, origin: str | None, asking: set[str]):
+    """INB7-c2, board F's chips: 「失败」 and 「要你做」 (outcome), 「定时」 and 「手机」 (origin). 「手机」 only narrows to the conversations a phone
+    message reached; which of their turns came from the phone is read after the query (run_origins)."""
+    if outcome == "failed":
+        q = q.where(Run.status == "failed")
+    elif outcome == "waiting":
+        q = q.where(Run.status == "recording", Run.conversation_id.in_(asking))
+    if origin == "scheduled":
+        # Since C1 (0.1.63) a fire is a host turn, linked only by scheduled_task_runs.run_id (scheduler.py); older ones kept
+        # kind "scheduled" (⓪Plan's review of PR 627).
+        from server.db.models import ScheduledTaskRun
+        fired = select(ScheduledTaskRun.run_id).where(ScheduledTaskRun.run_id.is_not(None))
+        q = q.where(or_(Run.kind == "scheduled", Run.id.in_(fired)))
+    elif origin == "phone":
+        q = q.where(Run.conversation_id.in_(_phoned()))
+    return q
+
+
+async def _phone_turns(db: AsyncSession, q, limit: int | None) -> tuple[list[Run], dict[int, str]]:
+    """The phone chip's runs: read in batches, newest first, keeping those that came from the phone, until `limit` are found
+    (None: all of them, for the count)."""
+    found: list[Run] = []
+    origins: dict[int, str] = {}
+    cursor: int | None = None
+    while limit is None or len(found) < limit:
+        batch = list((await db.execute((q if cursor is None else q.where(Run.id < cursor)).limit(_PHONE_BATCH))).scalars())
+        if not batch:
+            break
+        seen = await run_origins(db, batch)
+        origins.update(seen)
+        found += [r for r in batch if seen.get(r.id) == "phone"]
+        cursor = batch[-1].id
+        if len(batch) < _PHONE_BATCH:
+            break
+    return (found if limit is None else found[:limit]), origins
+
+
 @router.get("/runs", response_model=list[RunListItemOut])
 async def list_runs(
     spawn_id: int | None = None,
@@ -175,31 +249,23 @@ async def list_runs(
     since: datetime | None = None,
     until: datetime | None = None,
     model: str | None = Query(None, max_length=200),
+    outcome: Literal["failed", "waiting"] | None = None,
+    origin: Literal["scheduled", "phone"] | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
-    # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
-    # surface in the runs list. get_run detail stays unfiltered so the card can link into a
-    # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
-    # already counted them, the list beneath silently did not.
-    q = select(Run).where(Run.kind.in_(USER_RUN_KINDS)).order_by(Run.id.desc()).limit(limit)
+    asking = _asking()
+    q = _chip(_scoped(since, until, model), outcome, origin, asking)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
         q = q.where(Run.conversation_id == conversation_id)
     if before_id is not None:
         q = q.where(Run.id < before_id)
-    # Stored times are naive UTC; an aware bound is converted, never compared raw.
-    if since is not None:
-        q = q.where(Run.created_at >= _naive_utc(since))
-    if until is not None:
-        q = q.where(Run.created_at < _naive_utc(until))
-    if model:
-        q = q.where(Run.model == model)
-    rows = (await db.execute(q)).scalars().all()
-    origins = await run_origins(db, list(rows))
-    from server.services import approvals
-    # INB7-b: the conversations with a card open, the same live list progress.waiting_reasons reads.
-    asking = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
+    if origin == "phone":
+        rows, origins = await _phone_turns(db, q, limit)
+    else:
+        rows = list((await db.execute(q.limit(limit))).scalars().all())
+        origins = await run_origins(db, rows)
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
@@ -212,6 +278,28 @@ async def list_runs(
         )
         for r in rows
     ]
+
+
+# NOTE: must stay registered BEFORE /runs/{run_id} (path-param collision).
+@router.get("/runs/counts")
+async def run_counts(
+    since: datetime | None = None,
+    until: datetime | None = None,
+    model: str | None = Query(None, max_length=200),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, int]:
+    """INB7-c2: how many runs each of board F's chips would list, in the same span and model as the list."""
+    asking = _asking()
+    scope = _scoped(since, until, model)
+
+    async def count(q) -> int:
+        return int((await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar() or 0)
+
+    # Only what run_origins reads, not whole rows: the count may walk every phone turn in the span.
+    lean = _chip(scope, None, "phone", asking).options(load_only(Run.id, Run.kind, Run.spawn_name, Run.conversation_id))
+    phone, _ = await _phone_turns(db, lean, None)
+    return {"waiting": await count(_chip(scope, "waiting", None, asking)), "failed": await count(_chip(scope, "failed", None, asking)),
+            "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone)}
 
 
 def _naive_utc(ts: datetime) -> datetime:
