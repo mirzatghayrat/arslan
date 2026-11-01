@@ -41,8 +41,11 @@ class ServerHostBody(BaseModel):
 
 @router.post("/servers")
 async def add_server(body: AddServerBody):
-    return await mcp_service.add_server(body.label, body.command, body.args, body.env,
-                                        transport=body.transport, url=body.url)
+    try:
+        return await mcp_service.add_server(body.label, body.command, body.args, body.env,
+                                            transport=body.transport, url=body.url)
+    except ValueError as exc:          # CAP5c: the form shows why (a package not pinned, a missing field)
+        raise HTTPException(status_code=400, detail=str(exc)[:500]) from exc
 
 
 @router.get("/servers")

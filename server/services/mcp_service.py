@@ -13,6 +13,7 @@ from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
 from server.orchestrator import untrusted
+from server.services import mcp_pin
 from server.services.secret_state import secret_state
 from server.services.settings_service import mask_secret
 
@@ -113,6 +114,8 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
     label = untrusted.clean_name(label, 80)                 # UNI1: one cleaner for names, wherever they come in
     if not label:
         raise ValueError("a label is required")
+    if transport == "stdio":
+        args = await mcp_pin.pin(command, args or [])        # CAP5c: an npx/uvx package is pinned, or refused
     async with db_session.AsyncSessionLocal() as db:
         # Dedup guard: return existing row if (label, url) or (label, command, args) already present
         existing = None
