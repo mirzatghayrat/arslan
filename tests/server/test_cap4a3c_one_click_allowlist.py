@@ -404,6 +404,17 @@ async def test_nobody_to_ask_asks_github_nothing(card_world, monkeypatch):
 
 # ── #584 re-check: the organization's id kept on the installed source ───────────────────────────────────────
 
+@pytest.mark.parametrize("stored", [True, "1396951", 1396951.0, None])
+def test_only_a_numeric_id_is_pinned(stored):
+    """A pin is a login and an integer id. `True == 1`, so a boolean that slipped into the list would pin the account
+    whose id is 1; a string or a float would never match GitHub's answer."""
+    from server.services import capability_allowlist
+    cand = _cand("io.github.GetSentry/sentry")
+    assert capability_allowlist.account_pin(cand, {"accounts": {"getsentry": stored}}) is None
+    assert capability_allowlist.account_pin(cand, {"accounts": {"getsentry": 1396951}}) == {"login": "getsentry",
+                                                                                           "id": 1396951}
+
+
 async def test_a_card_from_a_listed_organization_keeps_its_id_for_the_install(card_world, monkeypatch):
     installed = []
 
