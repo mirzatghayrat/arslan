@@ -1,57 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bookmark, CircleCheckBig, Flag, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { request } from "../api/client";
+import { judgmentIcon, judgmentVerdict, POINT_KEY, type JudgmentRow } from "../lib/judgments";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import ScrollBox from "./activity/ScrollBox";
 
-/** One row of the judgment ledger (server/services/judgment.py). */
-export interface JudgmentRow {
-  id: number;
-  point: string;
-  mode: string;
-  verdict: boolean | null;
-  probability: number | null;
-  latency_ms: number | null;
-  outcome: string | null;
-  created_at: string;
-  conversation_id?: string | null;
-  /** The run it belongs to (#637); null on a row judged before migration 0085. */
-  run_id?: number | null;
-}
-
-export const POINT_KEY: Record<string, string> = {
-  "memory.worth": "activityPage.pointWorth",
-  "memory.merge": "activityPage.pointMerge",
-  "memory.same": "activityPage.pointSame",
-  "memory.applied": "activityPage.pointApplied",
-  "memory.conflict": "activityPage.pointConflict",
-  "job.accomplished": "activityPage.pointAccomplished",
-  "project.progress": "activityPage.pointProgress",
-  "project.progress.item": "activityPage.pointProgressItem",
-};
-
-/**
- * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked and what it said.
- * Hidden until there is something to show. (The command cards' shadow question, "ask before
- * this command?", was removed in v0.1.63 C4; the server no longer lists its old rows.)
- */
-/** 0.1.58 §7: one small icon per family of question. */
-export function judgmentIcon(point: string): LucideIcon {
-  if (point.startsWith("memory.")) return Bookmark;
-  if (point.startsWith("project.")) return Flag;
-  return CircleCheckBig;
-}
-
 const PAGE = 20;
 
-/** What the judge said, in words: yes or no with how sure, or no answer. */
-export function judgmentVerdict(t: (key: string, options?: Record<string, unknown>) => string, r: JudgmentRow): string {
-  return r.verdict == null || r.probability == null
-    ? t("activityPage.judgeNoAnswer")
-    : t(r.verdict ? "activityPage.judgeYes" : "activityPage.judgeNo", { p: Math.round((r.verdict ? r.probability : 1 - r.probability) * 100) });
-}
-
+/**
+ * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked and what it said, every one of them. Since INB7-c4c a run's
+ * own judgments show in its 「诊断」; this full ledger is kept under "Show all" at the foot of Progress until the user decides
+ * whether it stays (⓪Plan, PR 636).
+ */
 export default function JudgmentsCard() {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<JudgmentRow[] | null>(null);

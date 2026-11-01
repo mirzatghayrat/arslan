@@ -4,7 +4,7 @@ import type { RunListItem } from "../api/client.types";
 export type UsageRange = "24h" | "7d" | "30d";
 
 /** INB7-c2: board F's chips over the list: 「要你做」 (waiting), 「失败」 (failed), 「定时」 (scheduled), 「手机」 (phone). */
-export type RunChip = "waiting" | "failed" | "scheduled" | "phone";
+export type RunChip = "waiting" | "failed" | "scheduled" | "phone" | "apps";
 
 /** What 最近的工作 is narrowed to: a slice of the chart (epoch seconds), one model, and/or one chip. */
 export interface ActivityFilter {

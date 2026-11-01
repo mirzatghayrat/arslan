@@ -1,41 +1,17 @@
 import { useEffect, useState } from "react";
-import { ArrowDownUp, Command, Eye, Keyboard, ListChecks, MousePointerClick, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { request } from "../api/client";
+import { getHandsTrace, handsOpIcon, type HandsTraceEntry } from "../lib/handsTrace";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import ScrollBox from "./activity/ScrollBox";
-
-/** One Hands call as the backend traced it (0.1.53): never typed text, only its length. */
-export interface HandsTraceEntry {
-  at: string;
-  app?: string | null;
-  op: string;
-  outcome: string;
-  target?: string | null;
-  typed_chars?: number;
-  ms?: number;
-  /** The conversation the call was made in, or null. */
-  conversation?: string | null;
-  /** v0.1.64 (#632): the run it was made in; null on older entries and outside a run. */
-  run_id?: number | null;
-}
-
-export const getHandsTrace = (limit = 100) => request<{ entries: HandsTraceEntry[] }>(`/hands/trace?days=7&limit=${limit}`);
-
-/**
- * Arslan Hands in Activity (0.1.53): every look and action in Mac apps from the
- * last 7 days (the trace file is 0600 and pruned after 7 days). Shown only when
- * there is something to show.
- */
-/** 0.1.58 §7: one icon per kind of Hands call; anything that only looks gets the eye. */
-export function handsOpIcon(op: string): LucideIcon {
-  return ({ click: MousePointerClick, set_value: Keyboard, select: ListChecks, scroll: ArrowDownUp, press: Command } as
-    Record<string, LucideIcon>)[op] ?? Eye;
-}
 
 /** The trace is one local file read whole (≤ 500 calls); the box shows 20 more each time it reaches its end. */
 const STEP = 20;
 
+/**
+ * Arslan Hands (0.1.53): every look and action in Mac apps from the last 7 days (the trace file is 0600 and pruned after 7 days),
+ * calls outside any run included. Since INB7-c4c a run's own calls show in its 「诊断」; this full list is the audit view, kept under
+ * "Show all" at the foot of Progress until the user decides whether it stays (⓪Plan, PR 636).
+ */
 export default function HandsTraceCard() {
   const { t, i18n } = useTranslation();
   const [entries, setEntries] = useState<HandsTraceEntry[]>([]);

@@ -108,8 +108,8 @@ describe("what each section looked through when it found nothing (#634 review)",
   it("says so in both, once read, and says nothing before", async () => {
     let answer: () => void = () => {};
     const held = new Promise<void>((resolve) => { answer = resolve; });
-    request.mockImplementation((path: string) => path.startsWith("/hands/trace?days=7&limit=500")
-      ? held.then(() => ({ entries: [] }))                             // the inspector's read waits; the page card's does not
+    request.mockImplementation((path: string) => path.startsWith("/hands/trace")
+      ? held.then(() => ({ entries: [] }))                             // the inspector's read waits
       : Promise.resolve(path.startsWith("/judgments") ? { items: [] } : { items: [], entries: [] }));
     render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
     await openDiag();
@@ -145,8 +145,8 @@ describe("a running run (#634 review, Y5 and Y7)", () => {
 describe("they are read only once 「诊断」 opens", () => {
   it("does not read the trace or the ledger for a pick alone", async () => {
     render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
-    await waitFor(() => expect(reads("/judgments")).toBe(1));                // the page's own cards read them once
-    const trace = reads("/hands/trace"), ledger = reads("/judgments");
+    await screen.findByTestId("activity-run-11");
+    const trace = reads("/hands/trace"), ledger = reads("/judgments");   // none since INB7-c4c dropped the page's cards
     fireEvent.click(await screen.findByTestId("activity-run-11"));
     await within(inspector()).findByRole("tab", { name: /Diagnosis/ });
     expect(reads("/hands/trace")).toBe(trace);
