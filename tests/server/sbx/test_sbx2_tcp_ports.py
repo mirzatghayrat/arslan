@@ -28,10 +28,12 @@ def test_tcp_port_denies_follow_the_complete_allow_list(mode):
             continue
         text = default_deny_profile(**options, denied_ports=ports)
         lines = [line.strip() for line in text.splitlines()]
-        # Select every network grant, regardless of filters or operation spelling.
+        # Ignore quoted path text; select every network or default grant,
+        # regardless of filters or leading modifiers.
         # A future Unix-socket grant must explicitly update this reviewed list too.
         allows = [(i, line) for i, line in enumerate(lines)
-                  if re.match(r"\(allow\b.*\bnetwork", line)]
+                  if re.match(r"\(allow\b.*\b(?:network|default)\b",
+                              re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
         destination = f"localhost:{PROXY_PORT}" if mode == NetworkMode.PROXY else "*:22"
         assert [line for _, line in allows] == [
             '(allow network-outbound (remote tcp "localhost:*"))',
