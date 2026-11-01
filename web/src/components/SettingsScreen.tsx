@@ -141,6 +141,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
         defaultReadEnabled={localSettings.defaultReadEnabled ?? true}
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
+        folderRulesEnabled={localSettings.folderRulesEnabled ?? true}
+        onFolderRulesChange={(v) => saveField({ folderRulesEnabled: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         voiceMode={localSettings.voiceMode ?? 'push_to_talk'}
@@ -254,7 +256,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     abilities: (
       <div className="space-y-6" data-testid="settings-abilities">
         {intro('abilities')}
-        <SettingsGroup title={t('settings.grpFiles')}>{advanced(['defaultRead', 'workspace'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpFiles')}>{advanced(['defaultRead', 'folderRules', 'workspace'])}</SettingsGroup>
         <SettingsGroup title={t('settings.grpTerminal')}>{advanced(['terminal'])}</SettingsGroup>
         <SettingsGroup title={t('settings.grpApps')}>
           <HandsSection />
