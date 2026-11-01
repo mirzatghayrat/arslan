@@ -37,7 +37,7 @@ export const lessonsApi = {
   remove: (id: number) => request(`/lessons/${id}`, { method: "DELETE" }),
   /** L11-2: the "make this a rule?" card: add the lesson to the folder's rules file, "not now", or take it back. */
   rule: (id: number, conversationId: string, action: "add" | "skip" | "remove") =>
-    request<{ state: string; file?: string }>(`/lessons/${id}/rule`, json("POST", { conversation_id: conversationId, action })),
+    request<{ state: string; file?: string; in_file?: boolean }>(`/lessons/${id}/rule`, json("POST", { conversation_id: conversationId, action })),
   /** L11-3a: Overview's Remove, from the rules record (works after the lesson was deleted). `file` is the name the
    *  listing showed; the server finds it again among this conversation's files. `in_file` is false when the line
    *  had changed in the file: it is left there and no longer listed. */

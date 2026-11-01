@@ -176,6 +176,15 @@ describe("Overview's row", () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith("workbench.ruleNotInFile"));
   });
 
+  it("#621 R2: the live card's Remove says when the line had changed in the file", async () => {
+    vi.spyOn(lessonsApi, "rule").mockResolvedValueOnce({ state: "added", file: FILE })
+      .mockResolvedValueOnce({ state: "removed", file: FILE, in_file: false });
+    render(<RuleOfferCard lessonId={7} file={FILE} text="reports" conversationId="c1" />);
+    fireEvent.click(screen.getByTestId("rule-offer-add"));
+    fireEvent.click(await screen.findByTestId("rule-offer-remove"));
+    expect(await screen.findByTestId("rule-offer-kept")).toHaveTextContent("workbench.ruleNotInFile");
+  });
+
   it("#621 F7: Remove posts the file, the lesson and the line to the conversation's endpoint", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ state: "removed", file: FILE, in_file: true }), { status: 200 }));

@@ -102,12 +102,15 @@ EXPECTED_FILES: dict[str, int] = {
     # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
     # readable. Seatbelt is macOS-only.
     "server/sbx/test_sbx1b_sbpl_strings.py": 4,
+    # 0.1.64 L11-3a (#621 re-check, R1): a folder swapped for a link between the read and the write of a rules file
+    # is refused by the write's O_NOFOLLOW_ANY (macOS 11+). Linux follows that swap: L11-3d, R5.
+    "server/test_l11_2_rule_card.py": 1,
 }
 #: 🔴 MIRRORED in .github/workflows/ci.yml ("Assert they RAN, and did not skip").
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 364  # +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 365  # +1 0.1.64 L11-3a: a rules file's write refused by O_NOFOLLOW_ANY; +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function; SBX-1b's protected-folder test has
 # six names under one (+5).

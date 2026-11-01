@@ -283,7 +283,8 @@ def target(folder: Path) -> Path:
 
 
 # macOS: no part of the path may be a link at the open, as in file_tools.py. Elsewhere (Linux CI) O_NOFOLLOW covers
-# the last part and _no_folder_link the folders. Never both flags: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+# only the last part, and _no_folder_link checks the folders before the read: a folder swapped for a link between that
+# check and the write is still followed there (L11-3d, R5). Never both flags: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY.
 _NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 

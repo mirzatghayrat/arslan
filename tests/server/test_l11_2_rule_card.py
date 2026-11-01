@@ -6,6 +6,7 @@ conversation; "Add" (the user's click, never the model's tools) appends exactly 
 found it empty and it holds only the card's lines. Fixture text is synthetic; probes p1–p15 are the review's."""
 import os
 import stat
+import sys
 
 import pytest
 from sqlalchemy import select
@@ -619,20 +620,34 @@ async def test_r621_f1_a_folder_swapped_for_a_link_is_not_written_through(client
     assert (outside / "AGENTS.md").read_text() == "keep this\n- a rule\n"
 
 
-@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW_ANY"), reason="macOS only: the open itself refuses a link in the path")
-def test_r621_f1_on_macos_the_open_itself_refuses_a_folder_link(home, tmp_path, monkeypatch):
-    """The path check runs before the open; a link made in between is still refused by O_NOFOLLOW_ANY."""
+@pytest.mark.macos
+@pytest.mark.skipif(sys.platform != "darwin", reason="O_NOFOLLOW_ANY is macOS 11+")
+def test_r621_f1_on_macos_a_folder_swapped_after_the_read_is_refused_at_the_write(home, tmp_path, monkeypatch):
+    """The path check and the read see a real folder; it becomes a link to outside before the write opens. The write's
+    O_NOFOLLOW_ANY refuses it (#621 re-check, R1). Linux follows such a swap: L11-3d (R5)."""
+    real_read = folder_rules._read_bounded
     outside = tmp_path / "elsewhere2"
     outside.mkdir()
-    (outside / "AGENTS.md").write_text("- a rule\n")
     sub = home / "Projects" / "photo" / "sub2"
-    sub.symlink_to(outside, target_is_directory=True)
-    monkeypatch.setattr(folder_rules, "_no_folder_link", lambda _path: None)
+
+    def read_then_swap(path, limit):
+        data = real_read(path, limit)
+        sub.rename(sub.with_name("sub2-was"))
+        sub.symlink_to(outside, target_is_directory=True)
+        return data
+    monkeypatch.setattr(folder_rules, "_read_bounded", read_then_swap)
     for write in (lambda: folder_rules._append(sub / "AGENTS.md", "x"),
                   lambda: folder_rules._take_out(sub / "AGENTS.md", "a rule", False)):
+        if sub.is_symlink():
+            sub.unlink()
+        if sub.with_name("sub2-was").exists():
+            sub.with_name("sub2-was").rename(sub)
+        sub.mkdir(exist_ok=True)
+        (sub / "AGENTS.md").write_text("- a rule\n")
+        (outside / "AGENTS.md").write_text("keep\n- a rule\n")
         with pytest.raises(folder_rules.RuleRefused):
             write()
-    assert (outside / "AGENTS.md").read_text() == "- a rule\n"
+        assert (outside / "AGENTS.md").read_text() == "keep\n- a rule\n"
 
 
 async def test_r621_f5_a_live_lesson_that_reused_the_id_stays_added(client, execution_db, judge, home):
@@ -654,6 +669,7 @@ async def test_r621_f3_remove_says_when_the_line_was_no_longer_in_the_file(clien
     r = await _remove(client, lesson_id=lid)
     assert (r.status_code, r.json()) == (200, {"state": "removed", "file": PHOTO, "in_file": False})
     assert agents(home).read_bytes() == f"# Mine\r\n- {LINE}\r\n".encode()          # left as it is
+    assert (await _added(client))[PHOTO] == []                                       # and no longer listed (R3)
     agents(home).write_text("# Mine\n")
     async with execution_db() as db:
         await folder_rules.add_rule(db, agents(home), "a rule", 9)
@@ -682,3 +698,14 @@ def test_r621_f1_without_nofollow_any_the_path_check_refuses_a_folder_link(home,
         with pytest.raises(folder_rules.RuleRefused):
             write()
     assert (outside / "AGENTS.md").read_text() == "- a rule\n"
+
+
+async def test_r621_r2_the_live_cards_remove_says_in_file_too(client, execution_db, judge, home):
+    agents(home).write_bytes(b"# Mine\n")
+    lid = await _offered_id(execution_db)
+    await _rule(client, lid, "add")
+    agents(home).write_bytes(agents(home).read_bytes().replace(b"\n", b"\r\n"))
+    r = await _rule(client, lid, "remove")
+    assert (r.status_code, r.json()) == (200, {"state": "removed", "file": PHOTO, "in_file": False})
+    assert agents(home).read_bytes() == f"# Mine\r\n- {LINE}\r\n".encode()
+    assert (await _lesson(execution_db)).evidence["rule_offer"] == "removed"

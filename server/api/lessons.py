@@ -86,7 +86,8 @@ async def lesson_rule(lesson_id: int, body: LessonRule):
       `conversation_changed` from another conversation; `folder_changed` when the conversation's folder no longer
       leads to that file; `lesson_changed` when the lesson changed since the card was offered (a later correction or
       a detour folded in): the offer then goes, so a later correction can bring a new card. Once.
-    - `skip` records "not now"; `remove` takes the card's line back out.
+    - `skip` records "not now"; `remove` takes the card's line back out, with `in_file` false when it had changed in
+      the file (it is then left there).
     - 409 `rules_file_refused` / `rules_file_full` when the file is a link, not writable, or would pass what a turn
       reads."""
     from datetime import datetime
@@ -124,7 +125,7 @@ async def lesson_rule(lesson_id: int, body: LessonRule):
             update = {lessons.RULE_OFFER: "added", "rule_added_at": datetime.utcnow().isoformat()}
         else:
             try:
-                await folder_rules.remove_rule(db, path, lesson_id, record.get("line"))
+                in_file = await folder_rules.remove_rule(db, path, lesson_id, record.get("line"))
             except folder_rules.RuleRefused:
                 raise HTTPException(409, "rules_file_refused") from None
             update = {lessons.RULE_OFFER: "removed"}
@@ -132,7 +133,9 @@ async def lesson_rule(lesson_id: int, body: LessonRule):
         await db.refresh(row)
         row.evidence = {**dict(row.evidence or {}), **update}
         await db.commit()
-    return {"state": update[lessons.RULE_OFFER], "file": folder_rules._shown(path, folder_rules._home())}
+    out = {"state": update[lessons.RULE_OFFER], "file": folder_rules._shown(path, folder_rules._home())}
+    # #621 re-check, R2: as Overview's Remove, say when the line was no longer in the file as Add wrote it.
+    return {**out, "in_file": in_file is not False} if body.action == "remove" else out
 
 
 @router.get("/conversations/{conversation_id}/folder-rules")
