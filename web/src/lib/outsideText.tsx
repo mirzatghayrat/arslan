@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { PRESENTATION_BASES } from "./emojiBases";
 
 /**
  * Text from outside (a SKILL.md, a server's label, a registry entry) as the web shows it (v0.1.64 UNI1,
@@ -25,7 +26,7 @@ const hexOf = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0"
 
 /** UNI1b: what a skill's text may hold that shows nothing at all, as the server's `untrusted.hidden_runs` has it:
  *  Unicode's default-ignorable code points and the blank braille pattern, but ZWNJ, ZWJ, LRM, RLM and ALM (ordinary
- *  text needs them) and the bidi controls (shown with their own marker above). Every table is explicit code point
+ *  text needs them; a joiner where ordinary text does not use one is marked all the same, JOINERS below) and the bidi controls (shown with their own marker above). Every table is explicit code point
  *  ranges, never the Unicode database, so both sides agree whatever Unicode version each ships (#586 review F5);
  *  spec/unicode/hidden-characters.json holds the same tables and the cases both pass. */
 export const HIDDEN: [number, number][] = [
@@ -35,29 +36,67 @@ export const HIDDEN: [number, number][] = [
 /** Runs of these show as one marker with their range: variation selectors, their supplement, and tags. */
 export const RUN_RANGES: [string, number, number][] = [
   ["U+FE00\u2013FE0F", 0xfe00, 0xfe0f], ["U+E0100\u2013E01EF", 0xe0100, 0xe01ef], ["U+E0000\u2013E007F", 0xe0000, 0xe007f]];
-/** #586 review F1: one selector goes uncounted only when it does what ordinary text uses one for: VS15 or VS16 after
- *  a character that can take them (not an ASCII letter, not in NOT_A_BASE), or an ideographic variation selector
- *  after a CJK ideograph. Every other selector is counted. */
+/** #586 review F1, re-check R1 and R2: one selector goes uncounted only when it does what ordinary text uses one
+ *  for: VS15 or VS16 after an emoji or a keycap's base (PRESENTATION_BASES), or an ideographic variation selector
+ *  after a CJK ideograph, at most IVS_UNCOUNTED_MAX of those in a text. Every other selector is counted. */
 export const PRESENTATION_SELECTORS = [0xfe0e, 0xfe0f];
 export const IDEOGRAPHS: [number, number][] = [[0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xf900, 0xfaff], [0x20000, 0x323af]];
-/** White space, controls, the format marks left unmarked, the combining marks' blocks and surrogates. */
-export const NOT_A_BASE: [number, number][] = [
-  [0x0000, 0x0020], [0x007f, 0x00a0], [0x0300, 0x036f], [0x061c, 0x061c], [0x1680, 0x1680], [0x1ab0, 0x1aff],
-  [0x1dc0, 0x1dff], [0x2000, 0x200f], [0x2028, 0x202f], [0x205f, 0x206f], [0x20d0, 0x20ff], [0x3000, 0x3000],
-  [0xd800, 0xdfff], [0xfe20, 0xfe2f]];
+export const IVS_UNCOUNTED_MAX = 8;
 /** The tags of the three RGI subdivision flags (England, Scotland, Wales), after U+1F3F4 and before U+E007F. */
 export const FLAG_TAGS = ["gbeng", "gbsct", "gbwls"];
+/** UNI1b-4 (#608 review J1): a ZWNJ or ZWJ stays unmarked only where ordinary text uses one: alone, after a letter
+ *  or mark of a script that uses joiners (JOINING_SCRIPTS), or, for a ZWJ, after an emoji, a skin tone, VS16 or a
+ *  cancel tag (PRESENTATION_BASES without the keycap bases # * 0-9, and EMOJI_JOINS). Every other joiner is marked
+ *  (the server's `_joiners_marked`). */
+export const JOINERS = [0x200c, 0x200d];
+export const JOINING_SCRIPTS: [number, number][] = [
+  [0x0600, 0x061b], [0x061d, 0x06ff], [0x0700, 0x074f], [0x0750, 0x077f], [0x07c0, 0x07ff], [0x08a0, 0x08ff], [0x0900, 0x0dff],
+  [0x0f00, 0x0fff], [0x1000, 0x109f], [0x1780, 0x17ff], [0x1800, 0x18af], [0xa8e0, 0xa8ff], [0xfb50, 0xfdff],
+  [0xfe70, 0xfefc]];
+export const EMOJI_JOINS: [number, number][] = [[0x1f3fb, 0x1f3ff], [0xfe0f, 0xfe0f], [0xe007f, 0xe007f]];
+/** #608 re-check D1: a direction mark (LRM, RLM, ALM) stays unmarked only when it is alone (no mark, joiner or
+ *  other character that shows nothing next to it) in a text that has a right-to-left letter (RTL_LETTERS). Every
+ *  other one is marked (the server's `_marks_marked`). */
+export const DIRECTION_MARKS = [0x200e, 0x200f, 0x061c];
+export const RTL_LETTERS: [number, number][] = [
+  [0x0590, 0x05ff], [0x0620, 0x064a], [0x066e, 0x06d3], [0x06d5, 0x06d5], [0x06fa, 0x06ff], [0x0700, 0x070d],
+  [0x0710, 0x074f], [0x0750, 0x07bf], [0x07c0, 0x07ff], [0x0800, 0x089f], [0x08a0, 0x08ff], [0xfb1d, 0xfdff],
+  [0xfe70, 0xfefc], [0x10800, 0x10fff], [0x1e800, 0x1efff]];
 
 const within = (cp: number, ranges: [number, number][]) => ranges.some(([lo, hi]) => lo <= cp && cp <= hi);
 const runRange = (cp: number) => RUN_RANGES.find(([, lo, hi]) => lo <= cp && cp <= hi)?.[0] ?? null;
 const isSelector = (cp: number) => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
 
+/** The positions of each direction mark that right-to-left text does not use there (one pass). */
+function marksMarked(cps: number[]): Set<number> {
+  const marked = new Set<number>();
+  if (!cps.some(cp => DIRECTION_MARKS.includes(cp))) return marked;
+  const rtl = cps.some(cp => within(cp, RTL_LETTERS));
+  const near = (cp: number | undefined) => cp !== undefined
+    && (DIRECTION_MARKS.includes(cp) || JOINERS.includes(cp) || within(cp, HIDDEN));
+  cps.forEach((cp, i) => {
+    if (DIRECTION_MARKS.includes(cp) && (!rtl || near(i ? cps[i - 1] : undefined) || near(cps[i + 1]))) marked.add(i);
+  });
+  return marked;
+}
+
+/** The positions of each ZWNJ and ZWJ that ordinary text does not use there (one pass). */
+function joinersMarked(cps: number[]): Set<number> {
+  const marked = new Set<number>();
+  cps.forEach((cp, i) => {
+    if (!JOINERS.includes(cp)) return;
+    const prev = i ? cps[i - 1] : undefined;
+    const alone = !(prev !== undefined && JOINERS.includes(prev)) && !(i + 1 < cps.length && JOINERS.includes(cps[i + 1]));
+    const calm = alone && prev !== undefined && (within(prev, JOINING_SCRIPTS) || (cp === 0x200d && prev > 0x39
+      && (within(prev, EMOJI_JOINS) || within(prev, PRESENTATION_BASES))));
+    if (!calm) marked.add(i);
+  });
+  return marked;
+}
+
 function takesSelector(prev: number | undefined, selector: number): boolean {
   if (prev === undefined) return false;
-  if (PRESENTATION_SELECTORS.includes(selector)) {
-    const asciiLetter = (prev >= 0x41 && prev <= 0x5a) || (prev >= 0x61 && prev <= 0x7a);
-    return !asciiLetter && !within(prev, NOT_A_BASE) && !within(prev, HIDDEN);
-  }
+  if (PRESENTATION_SELECTORS.includes(selector)) return within(prev, PRESENTATION_BASES);
   return selector >= 0xe0100 && selector <= 0xe01ef && within(prev, IDEOGRAPHS);
 }
 
@@ -65,7 +104,8 @@ function takesSelector(prev: number | undefined, selector: number): boolean {
 export type HiddenRun = { start: number; cps: number[] };
 
 /** UNI1b: each run of characters that show nothing, in order. A run is one code point repeated, or characters of
- *  one range. Not counted: one selector that does what ordinary text uses one for, and an RGI flag's tags. */
+ *  one range. Not counted: one selector that does what ordinary text uses one for, and an RGI flag's tags.
+ *  Counted besides the table: a joiner or a direction mark ordinary text does not use there (UNI1b-4). */
 export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
   const cps = [...(text ?? "")].map(ch => ch.codePointAt(0)!);
   const flagged = new Set<number>();
@@ -77,12 +117,19 @@ export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
       for (let j = i + 1; j <= i + 6; j++) flagged.add(j);
     }
   });
+  const stray = new Set([...joinersMarked(cps), ...marksMarked(cps)]);
   const runs: HiddenRun[] = [];
-  let open = false;
+  let open = false, ivsUncounted = 0;
   cps.forEach((cp, i) => {
-    let hidden = !flagged.has(i) && within(cp, HIDDEN);
+    let hidden = !flagged.has(i) && (within(cp, HIDDEN) || stray.has(i));
     if (hidden && isSelector(cp) && !(i + 1 < cps.length && isSelector(cps[i + 1]))
-        && takesSelector(i ? cps[i - 1] : undefined, cp)) hidden = false;
+        && takesSelector(i ? cps[i - 1] : undefined, cp)) {
+      const ivs = cp >= 0xe0100 && cp <= 0xe01ef;
+      if (!ivs || ivsUncounted < IVS_UNCOUNTED_MAX) {        // re-check R1: past the cap, each one counts
+        hidden = false;
+        if (ivs) ivsUncounted += 1;
+      }
+    }
     if (hidden) {
       const last = open ? runs[runs.length - 1]?.cps : undefined;
       const lastCp = last?.[last.length - 1];

@@ -67,6 +67,9 @@ export interface AdvancedSectionProps {
   onLanDiscoveryChange: (value: boolean) => void;
   defaultReadEnabled: boolean;
   onDefaultReadChange: (value: boolean) => void;
+  /** K10-1 / L11-0: read a folder's AGENTS.md (or CLAUDE.md) each turn; default on. */
+  folderRulesEnabled?: boolean;
+  onFolderRulesChange?: (value: boolean) => void;
   voiceInputLocale: string;
   onVoiceInputLocaleChange: (value: string) => void;
   /** How the microphone is used: not at all, held, or always listening. */
@@ -84,7 +87,7 @@ export interface AdvancedSectionProps {
   bare?: boolean;
 }
 
-export type AdvancedBlock = 'telemetry' | 'workspace' | 'defaultRead' | 'voice' | 'lan' | 'ssh' | 'terminal' | 'budget' | 'browser';
+export type AdvancedBlock = 'telemetry' | 'workspace' | 'defaultRead' | 'folderRules' | 'voice' | 'lan' | 'ssh' | 'terminal' | 'budget' | 'browser';
 
 // Moved out of here, deliberately, and the moves are the point of the redesign:
 //   mcpServerEnabled  → AccessTokenSettings (beside the token that guards it)
@@ -109,6 +112,8 @@ export default function AdvancedSection({
   onLanDiscoveryChange,
   defaultReadEnabled,
   onDefaultReadChange,
+  folderRulesEnabled = true,
+  onFolderRulesChange,
   voiceInputLocale,
   onVoiceInputLocaleChange,
   voiceMode,
@@ -187,6 +192,24 @@ export default function AdvancedSection({
             type="checkbox"
             checked={defaultReadEnabled}
             onChange={(e) => onDefaultReadChange(e.target.checked)}
+            className="kit-switch mt-0.5"
+          />
+        </div>
+    </>)],
+    ['folderRules', (<>
+        {/* K10-1 / L11-0 (the user's pick): ON by default, as Claude Code and Codex read these files. Off for a
+            folder the user doesn't trust, such as a cloned repo. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-[13px] font-medium text-foreground">{t('workbench.rulesSetting')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('workbench.rulesSettingDesc')}</p>
+          </div>
+          <input
+            id="settings-folder-rules"
+            data-testid="folder-rules-toggle"
+            type="checkbox"
+            checked={folderRulesEnabled}
+            onChange={(e) => onFolderRulesChange?.(e.target.checked)}
             className="kit-switch mt-0.5"
           />
         </div>
