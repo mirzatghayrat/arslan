@@ -242,12 +242,12 @@ const SIDELIGHT_ROWS = 500;
 const JUDGED_AFTER_MS = 120_000;
 
 /**
- * Which Hands calls and judgments are the run's. A Hands call is by its `run_id` (#632), never by time: a call logged late has the
- * right id and a later time, and runs overlap. An older call with no id falls back to the run's conversation and window, marked
- * matched by time. Judgments carry no run: they match its conversation, from its start to shortly after its end, all by time.
+ * Which Hands calls and judgments are the run's. Each is by its `run_id` (Hands #632, judgments #637), never by time: one logged
+ * late has the right id and a later time, and runs overlap. An older one with no id falls back to the run's conversation and
+ * window (for a judgment, to shortly after its end), marked matched by time.
  */
 function sidelightsOf(runId: number, proc: RunProcessOut | null, { trace, judgments, loaded }: Sidelights):
-  { hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[]; loaded: boolean } {
+  { hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: { row: JudgmentRow; byTime: boolean }[]; loaded: boolean } {
   const conversation = proc?.conversation_id;
   const start = at(proc?.started_at);
   const end = proc?.ended_at ? at(proc.ended_at) : Date.now();
@@ -255,8 +255,9 @@ function sidelightsOf(runId: number, proc: RunProcessOut | null, { trace, judgme
   const hands = trace.flatMap((entry) => entry.run_id != null
     ? (Number(entry.run_id) === runId ? [{ entry, byTime: false }] : [])
     : (conversation && entry.conversation === conversation && within(entry.at) ? [{ entry, byTime: true }] : []));
-  return { hands, loaded,
-    judgments: judgments.filter((r) => conversation && r.conversation_id === conversation && within(r.created_at, JUDGED_AFTER_MS)) };
+  return { hands, loaded, judgments: judgments.flatMap<{ row: JudgmentRow; byTime: boolean }>((row) => row.run_id != null
+    ? (Number(row.run_id) === runId ? [{ row, byTime: false }] : [])
+    : (conversation && row.conversation_id === conversation && within(row.created_at, JUDGED_AFTER_MS) ? [{ row, byTime: true }] : [])) };
 }
 const dimLabel = (dim: unknown, t: T) => (typeof dim === "string" && DIMENSION_LABEL_KEYS[dim] ? t(DIMENSION_LABEL_KEYS[dim]) : String(dim ?? ""));
 
@@ -284,7 +285,7 @@ function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t
  */
 function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoaded, onCleared }: {
   detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void;
-  hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[]; sidelightsLoaded: boolean;
+  hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: { row: JudgmentRow; byTime: boolean }[]; sidelightsLoaded: boolean;
 }) {
   const { t } = useTranslation();
   const [clearing, setClearing] = useState(false);
@@ -349,12 +350,12 @@ function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoade
       </div>}
       {sidelightsLoaded && <div data-testid="diag-judgments">
         <div className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("activityPage.judgments")}</div>
-        {judgments.length > 0
-          ? <p className="mt-0.5 text-[10.5px] text-subtle-foreground">{t("activityPage.matchedByTimeNote")}</p>
-          : <p className="mt-1 text-muted-foreground">{t("activityPage.noJudgmentsFound")}</p>}
-        <ul className="mt-1 space-y-0.5">{judgments.map((r) => (
+        {!judgments.length && <p className="mt-1 text-muted-foreground">{t("activityPage.noJudgmentsFound")}</p>}
+        <ul className="mt-1 space-y-0.5">{judgments.map(({ row: r, byTime }) => (
           <li key={r.id} data-testid="diag-judgment" data-id={r.id} className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-foreground">{t(POINT_KEY[r.point] ?? r.point)}</span>
+            {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground" title={t("activityPage.matchedByTimeNote")}>
+              {t("activityPage.matchedByTime")}</span>}
             <span className="shrink-0 rounded-full bg-fill px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{judgmentVerdict(t, r)}</span>
           </li>))}</ul>
       </div>}

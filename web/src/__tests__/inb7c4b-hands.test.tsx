@@ -1,8 +1,8 @@
 /**
  * INB7-c4b (v0.1.64): the picked run's Hands calls and judgments in 「诊断」. A Hands call belongs to a run by its `run_id` (#632),
  * never by time, since a late entry has the right id but a later time; an older entry with no id falls back to the run's
- * conversation and time window, marked "matched by time". Judgments carry no run, so they match by conversation and window, all
- * marked "matched by time".
+ * conversation and time window, marked "matched by time". Judgments go the same way since #637 gave each its `run_id`: by id,
+ * and a row with none (one judged before migration 0085) by conversation and window, marked "matched by time".
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,8 +48,11 @@ const TRACE = [
   hand("no id, after", { at: iso(END + 600) }),
 ];
 const judged = (id: number, over: Record<string, unknown>) => ({ id, point: "memory.worth", mode: "active", verdict: true,
-  probability: 0.9, latency_ms: 10, outcome: null, conversation_id: "chat-a", created_at: iso(START + 120), state: {}, ...over });
+  probability: 0.9, latency_ms: 10, outcome: null, conversation_id: "chat-a", run_id: null, created_at: iso(START + 120), state: {},
+  ...over });
 const JUDGMENTS = [
+  judged(5, { run_id: 11, created_at: iso(END + 3 * HOUR) }),   // its id says run 11, though judged long after (project evidence)
+  judged(6, { run_id: 12 }),                                    // inside run 11's window and conversation, but its id says run 12
   judged(1, {}),
   judged(2, { point: "job.accomplished", created_at: iso(END + 60) }),       // right after the reply: the after-turn judgments
   judged(3, { conversation_id: "chat-b" }),
@@ -87,13 +90,17 @@ describe("the run's Hands calls in 「诊断」", () => {
 });
 
 describe("the run's judgments in 「诊断」", () => {
-  it("are its conversation's, made during the run or right after it, each marked as matched by time", async () => {
+  it("are the ones with its id, a late one included, never another run's by time; one with no id falls back to its window", async () => {
     render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
     await openDiag();
     const rows = await within(panel()).findAllByTestId("diag-judgment");
-    expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["1", "2"]);
-    expect(within(panel()).getByTestId("diag-judgments")).toHaveTextContent("can also show under a run next to this one");
-    expect(rows[0]).toHaveTextContent("Worth remembering");
+    expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["5", "1", "2"]);
+    expect(rows[0]).not.toHaveTextContent("by time");
+    for (const row of rows.slice(1)) {
+      expect(row).toHaveTextContent("by time");
+      expect(within(row).getByText("by time").getAttribute("title")).toContain("can also show under a run next to this one");
+    }
+    expect(rows[1]).toHaveTextContent("Worth remembering");
   });
 });
 
