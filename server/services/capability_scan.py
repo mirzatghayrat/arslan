@@ -12,7 +12,6 @@ whole dependency tree — HTTP clients there phone home by design and would drow
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -82,30 +81,44 @@ RULES = (
     _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:"),
 )
 
+#: UNI1b-3 (the user's 3A, 2026-11-01): what the scan blocks in a skill's text, and nothing else hidden. Unicode Tag
+#: characters (U+E0000-E007F, text no reader sees: the hidden-text smuggling vector), but those of the three RGI
+#: subdivision flags; and the bidi controls, U+202A-202E (embeddings and overrides) and U+2066-2069
+#: (isolates), which make text read in another order than it is stored (Trojan Source) and which GitHub warns about
+#: as bidirectional text. Every other character that shows nothing (a zero-width space, a soft hyphen, a word
+#: joiner, a run of variation selectors) is counted and marked wherever the skill is shown (UNI1b's
+#: `untrusted.hidden_summary`), never blocked, as GitHub's hidden-character warning does. Explicit code points,
+#: never the Unicode database (#586 review F5).
+_BLOCKED = ((0x202A, 0x202E), (0x2066, 0x2069), (0xE0000, 0xE007F))
+HIDDEN_RULE = "tag_or_bidi_characters"
+
+
 def _invisible(text: str) -> int:
-    """How many format characters (Cf: zero-width, bidi overrides, tags) hide something. Not counted, as they
-    hide nothing where they stand (#526 review 5): the byte-order mark; the direction marks LRM, RLM and ALM;
-    the tags of an RGI subdivision flag; a lone ZWNJ or ZWJ inside a word of a script other than Latin (Persian,
-    the Indic scripts); and a ZWJ inside an emoji sequence. A run of them is counted, each one."""
+    """How many Tag characters (outside an RGI flag) and bidi controls the text holds, each one counted."""
     from server.orchestrator import untrusted
     text = untrusted.TAG_FLAG.sub("", text)
-    count = 0
-    for i, ch in enumerate(text):
-        if unicodedata.category(ch) != "Cf" or ch in "\ufeff\u200e\u200f\u061c":
-            continue
-        if ch in "\u200c\u200d" and 0 < i < len(text) - 1 and _joins(text[i - 1], ch, text[i + 1]):
-            continue
-        count += 1
-    return count
+    return sum(1 for ch in text if any(lo <= ord(ch) <= hi for lo, hi in _BLOCKED))
 
 
-def _joins(before: str, joiner: str, after: str) -> bool:
-    """Whether a ZWNJ or ZWJ sits where a script or an emoji sequence uses it: between two letters or marks
-    of a non-Latin word, or (ZWJ only) between two emoji, the first maybe with VS16 or a skin tone."""
-    b, a = unicodedata.category(before), unicodedata.category(after)
-    if b[0] in "LM" and a[0] in "LM" and max(ord(before), ord(after)) > 0x24F:
-        return True
-    return joiner == "\u200d" and (b in ("So", "Sk") or before == "\ufe0f") and a == "So"
+_SHOWS_NOTHING: re.Pattern | None = None
+
+
+def _keyword_text(text: str) -> str:
+    """#563 review (cross-PR): what the keyword rules read. Every character that shows nothing is taken out first:
+    UNI1b's table (zero-width space, word joiner, soft hyphen, variation selectors, tags, the blank braille
+    pattern...), ZWNJ and ZWJ, the direction marks, the bidi controls, the interlinear annotation characters, the
+    Egyptian hieroglyph format controls, and the control characters and line and paragraph separators but tab and
+    new line (#607 re-check K1b; lines split at new lines only). Until UNI1b-3 a zero-width space that
+    split a keyword (`cu`, U+200B, `rl ... | sh`) was blocked on its own; now it is only counted, so the rules read
+    the word it splits. Only for matching: the text is stored as it is, and what it hides is still counted."""
+    global _SHOWS_NOTHING
+    if _SHOWS_NOTHING is None:
+        from server.orchestrator import untrusted
+        ranges = (*untrusted._HIDDEN, (0x200C, 0x200F), (0x061C, 0x061C), *_BLOCKED[:2], (0xFFF9, 0xFFFB),
+                  (0x13430, 0x1343F), (0x2028, 0x2029), (0x00, 0x08), (0x0B, 0x1F), (0x7F, 0x9F))
+        _SHOWS_NOTHING = re.compile("[" + "".join(f"{re.escape(chr(lo))}-{re.escape(chr(hi))}" for lo, hi in ranges)
+                                    + "]")
+    return _SHOWS_NOTHING.sub("", text)
 
 
 @dataclass
@@ -118,7 +131,9 @@ class Finding:
 
 
 def _lines(text: str):
-    for n, line in enumerate(text.splitlines(), 1):
+    """At new lines only (#607 re-check K1b): splitlines() also splits at a vertical tab, a form feed, NEL and the
+    line and paragraph separators, so one of them inside a keyword split it across two lines."""
+    for n, line in enumerate(text.split("\n"), 1):
         yield n, line
 
 
@@ -126,20 +141,24 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     """`kind`: text (a skill's instructions), skill_code (a skill's script), code (a package
     file), manifest (package.json)."""
     out: list[Finding] = []
+    words = _keyword_text(text)
     for rule in RULES:
         applies = (rule.where == "any" or rule.where == kind
                    or (rule.where == "code" and kind in ("code", "skill_code")))
         if not applies:
             continue
-        for n, line in _lines(text):
+        for n, line in _lines(words):
             if rule.pattern.search(line):
                 out.append(Finding(rule.id, rule.level, name, n, line.strip()[:160]))
                 break                       # one finding per rule per file is enough to show
-    if kind == "text":
+    if kind in ("text", "skill_code"):
+        # #607 review K3 (⓪Plan): a skill's scripts too. Trojan Source in code is what the bidi rule is for, and
+        # GitHub warns about it there. A package's own files are not held to it.
         hidden = _invisible(text)
         if hidden:
-            out.append(Finding("invisible_characters", "high", name, 0, f"{hidden} invisible characters"))
-        if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", text):
+            out.append(Finding(HIDDEN_RULE, "high", name, 0, f"{hidden} tag or bidi control characters"))
+    if kind == "text":
+        if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", words):
             out.append(Finding("long_encoded_blob", "note", name, 0, "a long base64-like block"))
     return out
 

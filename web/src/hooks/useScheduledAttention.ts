@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, request } from "../api/client";
 import type { ScheduledTaskDto } from "../api/client.types";
 import { PROACTIVE_CHANGED, proactiveApi, type ProactiveItem } from "../api/proactive";
-import type { Refusal } from "../components/proactive/InboxRefused";
+import type { Refusal } from "../components/proactive/NotDoneList";
 
 const POLL_MS = 30_000;
 /** The server's longest window (1 to 168 hours): a weekly task's away entries stay until its next run. */

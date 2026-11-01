@@ -285,13 +285,16 @@ describe("fix round 1: the notice lines say what was left undone, and the lede d
   });
 });
 
-// ── 0.1.61 release: the Inbox does not list every refusal yet ───────────────────────────────────────────────────
+// ── 0.1.61 release: not every refusal is listed; INB5 (v0.1.64): those that are sit under their task ──────────────
 
-/** What the lede says now about a scheduled task's refusals: most of them are in the Inbox. A command's is not listed yet (0.1.62). */
-const MOST_ARE_IN_THE_INBOX: Record<Lang, RegExp> = {
-  en: /refused \(most of those are listed in the Inbox\)\./, zh: /其余的会被拒绝（其中大多数会列在收件箱里）。/,
-  ja: /それ以外は拒否されます（その多くは受信箱に並びます）。/, es: /se rechaza \(la mayoría aparece en la Bandeja\)\./,
-  de: /abgelehnt \(die meisten davon stehen im Posteingang\)\./, fr: /refusé \(la plupart de ces refus sont listés dans la Boîte de réception\)\./,
+/** What the lede says now about a scheduled task's refusals: most of them are listed, under the task on the Scheduled page (the Inbox
+ *  that listed them is gone, INB5). A command's was not listed in 0.1.61. */
+const MOST_ARE_UNDER_THEIR_TASK: Record<Lang, RegExp> = {
+  en: /refused \(most of those are listed under the task on the Scheduled page\)\./, zh: /其余的会被拒绝（其中大多数会列在「定时任务」页的这个任务下面）。/,
+  ja: /それ以外は拒否されます（その多くは「定期タスク」ページのそのタスクの下に並びます）。/,
+  es: /se rechaza \(la mayoría aparece bajo la tarea en la página Programadas\)\./,
+  de: /abgelehnt \(die meisten davon stehen auf der Seite „Geplant“ unter der Aufgabe\)\./,
+  fr: /refusé \(la plupart de ces refus sont listés sous la tâche, dans la page Planifiées\)\./,
 };
 /** What it said before: every refusal "listed in the Inbox" — true for an app, a site, a write and a schedule, not yet for a command. */
 const EVERY_ONE_IS_IN_THE_INBOX: Record<Lang, RegExp> = {
@@ -299,10 +302,10 @@ const EVERY_ONE_IS_IN_THE_INBOX: Record<Lang, RegExp> = {
   es: /se rechaza y aparece en la Bandeja/, de: /abgelehnt und im Posteingang aufgelistet/, fr: /refusé et listé dans la Boîte de réception/,
 };
 
-describe("Settings › Desktop does not say every refusal of a scheduled task is listed in the Inbox", () => {
+describe("Settings › Desktop does not say every refusal of a scheduled task is listed", () => {
   it.each(LANGS)("%s: 'most of those are listed', and the rest of the sentence is kept", (lang) => {
     const lede = LOCALES[lang].settings.desktopLede;
-    expect(lede).toMatch(MOST_ARE_IN_THE_INBOX[lang]);
+    expect(lede).toMatch(MOST_ARE_UNDER_THEIR_TASK[lang]);
     expect(lede).not.toMatch(EVERY_ONE_IS_IN_THE_INBOX[lang]);
     expect(lede).toMatch(SCHEDULED_NEVER_WAITS[lang]);
     expect(lede).toMatch(/⌘Q/);
@@ -316,7 +319,7 @@ describe("Settings › Desktop does not say every refusal of a scheduled task is
     };
     for (const lang of LANGS) {
       expect(old[lang], lang).toMatch(EVERY_ONE_IS_IN_THE_INBOX[lang]);
-      expect(old[lang], lang).not.toMatch(MOST_ARE_IN_THE_INBOX[lang]);
+      expect(old[lang], lang).not.toMatch(MOST_ARE_UNDER_THEIR_TASK[lang]);
     }
   });
 });

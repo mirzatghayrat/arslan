@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { request } from "../api/client";
+import { announceProactiveChange } from "../api/proactive";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
 import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
@@ -868,6 +869,7 @@ function makeActions(set: SetState, get: GetState) {
           // never another of its kind. 0.1.61 §A4: one that ran out says "waiting for you".
           const id = frame.call_id;
           set({ ..._withoutCard(state, id), ...(frame.outcome === "expired" && _shows(state, id) ? _ranOut(state, id) : {}) });
+          announceProactiveChange();                 // #605 review F4: a card answered anywhere can clear what waits on you
           break;
         }
         case "propose_workspace_write":
