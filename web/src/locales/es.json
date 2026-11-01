@@ -1446,5 +1446,9 @@
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola"
+  },
+  "whileAway": {
+    "title": "Lo que no se hizo mientras no estabas (esta conversación)",
+    "stopped": "Una tarea que se detuvo aquí"
   }
 }
