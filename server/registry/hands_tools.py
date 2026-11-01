@@ -628,12 +628,15 @@ def _failed(result, *, app: str = "", nothing_sent: bool = False) -> dict:
 
 
 def _trace(op: str, app: dict | str, outcome: str, started: float, **extra) -> None:
-    from server.services import hands_service
+    from server.services import execution_context, hands_service
     conversation_id, job_id = _conversation_and_job()
     name = app.get("name") if isinstance(app, dict) else app
     bundle = app.get("bundle_id") if isinstance(app, dict) else None
     try:
-        hands_service.trace({"conversation": conversation_id, "job": job_id, "app": name, "bundle_id": bundle,
+        # v0.1.64: the run the call was made in (the bound id, never the model's), which holds when runs
+        # overlap; None outside a run. In a background job it is the job's own run.
+        hands_service.trace({"conversation": conversation_id, "job": job_id,
+                             "run_id": execution_context.current_run_id(), "app": name, "bundle_id": bundle,
                              "op": op, "outcome": outcome, "ms": int((time.monotonic() - started) * 1000),
                              **extra})
     except OSError:

@@ -811,9 +811,12 @@ def read_trace(days: int = TRACE_DAYS, limit: int = 500) -> list[dict]:
             continue
         for line in reversed(lines):
             try:
-                out.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            if isinstance(entry, dict):
+                entry.setdefault("run_id", None)   # v0.1.64; older entries have none (pruned within 7 days)
+            out.append(entry)
             if len(out) >= limit:
                 return out
     return out
