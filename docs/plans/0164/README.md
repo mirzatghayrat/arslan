@@ -325,5 +325,6 @@ The next free number is 0086. Ask ②Main before taking it.
 - 安全：每个碰安全面的 PR 都有 effort=max 的审查 + Codex 的审查（结论写明模型），安全相关的结论给云端审计看过。 **Changed (user, 2026-10-28 evening):** every PR on the security surface has an OK from an independent Claude review at effort=max by another session; Codex Astra only for parts that review could not cover (§1.3).
 - 用户验收：回复风格要用户读一批真实回复（中英文）；收件箱改完后用户一天的使用感受。
 - 删除期限：`DELETE-BY: v0.1.64` 的都删掉了，或者用户逐条同意顺延。
+- **SBX-6 (user, 2026-11-01, 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」):** SBX-6's proxy is on main, so any-declared mode no longer holds the mDNSResponder socket. That socket can ask the router to forward a port to this Mac (#645). If SBX-6 isn't on main, the release ships with no name lookup in any-declared mode instead, via a one-line Codex change before the tag. Either way, no v0.1.64 build ships with the socket in any-declared mode.
 
 具体数字和清单在 R64 卡里定，用户批准本计划后 ⓪Plan 再写。

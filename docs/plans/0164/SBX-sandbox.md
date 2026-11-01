@@ -281,6 +281,10 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - **A:** until SBX-6's proxy, any-declared mode keeps the mDNSResponder socket (gate 2's DNS entry). The trade-off is accepted: the socket is the daemon's whole client interface (registration, NAT port mapping, browse), and seatbelt can't filter individual requests. Recorded in SBX-measurement.md with `DELETE-BY: SBX-6`.
   - **Port-22 mode doesn't get the socket.** Product ssh takes only IPv4 literals (`server/services/ssh_exec.py:68-80`), as this card's "ssh: unchanged" says.
   - **B:** the three daemon calls are measured once on the user's Mac, with the user present. Codex writes the opt-in runner, which isn't collected by CI, and only return and callback codes are recorded.
+  - **Measured, then re-confirmed (user, about 15:35 UTC, relayed by ④参谋: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」).** Under any-declared, Register, Browse and NATPortMappingCreate all succeed, as they do unsandboxed. So a sandboxed command can ask the router to forward an internet port to this Mac, which exposes all-interface listeners.
+    - The user accepts this **only for the development window on main.**
+    - **SBX-6, the proxy that closes it, is a hard release condition for v0.1.64** (README §7).
+    - If SBX-6 isn't on main at release, the fallback ships instead: no name lookup in any-declared mode. That's a one-line Codex change before the tag.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
   - allow outbound to `localhost:*`;

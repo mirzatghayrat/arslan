@@ -202,7 +202,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 - Some sessions' classifiers block arming under a rule they only heard by relay (③Hands asked the user to confirm it in its own session). Those PRs stay the user's until then.
 
 **For the user to merge:**
-1. **#645** (Codex, SBX-3a gates 2 and 4), at `2aba2f66` today. **Not yet: it's in a fix round.**
+1. **#645** (Codex, SBX-3a gates 2 and 4), at `09d523b1`: **ready once CI is green.** The fix round and its effort=max delta review are done (OK with notes). Low notes go to a Codex follow-up. The history below is kept.
    - Two reviews, with the verdicts on the PR: ⓪Plan's effort=max review says "changes needed (small)", and Astra says "merge after fixes".
    - The fixes:
      - drop the mDNSResponder socket from port-22 mode, since product ssh takes only IP literals;
@@ -328,6 +328,11 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - Codex works under plan A.
 
 **Decided on 2026-11-01, evening:**
+- **#645 and #650** (relayed by ④参谋, about 15:35 UTC), verbatim: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」.
+  - **#645:** merge as is. The any-declared socket, including the router port-mapping exposure, is accepted only for the development window on main.
+    - **SBX-6 is a hard release condition** (README §7, SBX card).
+    - The fallback, if SBX-6 isn't on main at release: no name lookup in any-declared mode.
+  - **#650:** a folder outside home is shown by its last name only, e.g. `proj`. No volume and no full path leave the Mac.
 - **#645's two questions** (relayed by ④参谋, about 14:50 UTC), verbatim: 「A 放行，B 测」.
   - **A:** any-declared mode keeps the mDNSResponder socket until SBX-6's proxy. The trade-off is recorded with `DELETE-BY: SBX-6`: the socket is the daemon's whole client interface (service registration, NAT port mapping, browse). Port-22 mode drops the socket.
   - **B:** the three daemon calls are measured once on this Mac, with you present.
