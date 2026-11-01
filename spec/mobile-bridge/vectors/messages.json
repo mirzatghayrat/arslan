@@ -261,6 +261,670 @@
         "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
         "seq": 42,
         "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
+          "mascot": "idle",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false,
+          "week": [
+            {
+              "day": "2026-09-27",
+              "counts": [
+                3,
+                0,
+                1
+              ]
+            },
+            {
+              "day": "2026-09-28",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-09-29",
+              "counts": [
+                5,
+                1,
+                2
+              ]
+            },
+            {
+              "day": "2026-09-30",
+              "counts": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-01",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-02",
+              "counts": [
+                1,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-03",
+              "counts": [
+                4,
+                1,
+                1
+              ]
+            }
+          ],
+          "outcomes": {
+            "today": {
+              "tasks": [
+                {
+                  "conversation_id": "task-ab12",
+                  "title": "Q3 report",
+                  "state": "done",
+                  "checks_passed": 2,
+                  "checks_total": 2,
+                  "spent_usd": 0.42,
+                  "needed_you": true
+                }
+              ],
+              "spent_usd": 0.61,
+              "other_spent_usd": 0.19
+            },
+            "week": {
+              "tasks": [
+                {
+                  "conversation_id": "task-ab12",
+                  "title": "Q3 report",
+                  "state": "done",
+                  "checks_passed": 2,
+                  "checks_total": 2,
+                  "spent_usd": 0.42,
+                  "needed_you": true
+                },
+                {
+                  "conversation_id": "task-cd34",
+                  "title": "Turn the invoices in Downloads into one table by month",
+                  "state": "unfinished",
+                  "checks_passed": 0,
+                  "checks_total": 1,
+                  "needed_you": false
+                }
+              ],
+              "spent_usd": 3.05,
+              "other_spent_usd": 2.63,
+              "spent_partial": true
+            }
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
+          "mascot": "idle",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false,
+          "week": [
+            {
+              "day": "2026-09-27",
+              "counts": [
+                3,
+                0,
+                1
+              ]
+            },
+            {
+              "day": "2026-09-28",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-09-29",
+              "counts": [
+                5,
+                1,
+                2
+              ]
+            },
+            {
+              "day": "2026-09-30",
+              "counts": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-01",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-02",
+              "counts": [
+                1,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-03",
+              "counts": [
+                4,
+                1,
+                1
+              ]
+            }
+          ],
+          "outcomes": {
+            "today": {
+              "tasks": [],
+              "spent_usd": 0.0,
+              "other_spent_usd": 0.0
+            },
+            "week": {
+              "tasks": [
+                {
+                  "conversation_id": "task-0000",
+                  "title": "Task 0",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0001",
+                  "title": "Task 1",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0002",
+                  "title": "Task 2",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0003",
+                  "title": "Task 3",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0004",
+                  "title": "Task 4",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0005",
+                  "title": "Task 5",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0006",
+                  "title": "Task 6",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0007",
+                  "title": "Task 7",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0008",
+                  "title": "Task 8",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0009",
+                  "title": "Task 9",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0010",
+                  "title": "Task 10",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0011",
+                  "title": "Task 11",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0012",
+                  "title": "Task 12",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0013",
+                  "title": "Task 13",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0014",
+                  "title": "Task 14",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0015",
+                  "title": "Task 15",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0016",
+                  "title": "Task 16",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0017",
+                  "title": "Task 17",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0018",
+                  "title": "Task 18",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0019",
+                  "title": "Task 19",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0020",
+                  "title": "Task 20",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0021",
+                  "title": "Task 21",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0022",
+                  "title": "Task 22",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0023",
+                  "title": "Task 23",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0024",
+                  "title": "Task 24",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0025",
+                  "title": "Task 25",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0026",
+                  "title": "Task 26",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0027",
+                  "title": "Task 27",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0028",
+                  "title": "Task 28",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0029",
+                  "title": "Task 29",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0030",
+                  "title": "Task 30",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0031",
+                  "title": "Task 31",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0032",
+                  "title": "Task 32",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0033",
+                  "title": "Task 33",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0034",
+                  "title": "Task 34",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0035",
+                  "title": "Task 35",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0036",
+                  "title": "Task 36",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0037",
+                  "title": "Task 37",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0038",
+                  "title": "Task 38",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0039",
+                  "title": "Task 39",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0040",
+                  "title": "Task 40",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0041",
+                  "title": "Task 41",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0042",
+                  "title": "Task 42",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0043",
+                  "title": "Task 43",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0044",
+                  "title": "Task 44",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0045",
+                  "title": "Task 45",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0046",
+                  "title": "Task 46",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0047",
+                  "title": "Task 47",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0048",
+                  "title": "Task 48",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                },
+                {
+                  "conversation_id": "task-0049",
+                  "title": "Task 49",
+                  "state": "done",
+                  "checks_passed": 1,
+                  "checks_total": 1,
+                  "spent_usd": 0.01,
+                  "needed_you": false
+                }
+              ],
+              "spent_usd": 0.5,
+              "other_spent_usd": 0.0
+            }
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
         "from": "iphone-vector",
         "to": "mac-vector",
         "type": "conversations.list",
