@@ -221,23 +221,74 @@ def _chip(q, outcome: str | None, origin: str | None, asking: set[str]):
     return q
 
 
-async def _phone_turns(db: AsyncSession, q, limit: int | None) -> tuple[list[Run], dict[int, str]]:
-    """The phone chip's runs: read in batches, newest first, keeping those that came from the phone, until `limit` are found
-    (None: all of them, for the count)."""
+async def _batched(db: AsyncSession, q, limit: int | None, keep) -> list[Run]:
+    """Runs a chip can only tell after the query: read in batches, newest first, keeping those `keep` keeps, until `limit` are
+    found (None: all of them, for the count)."""
     found: list[Run] = []
-    origins: dict[int, str] = {}
     cursor: int | None = None
     while limit is None or len(found) < limit:
         batch = list((await db.execute((q if cursor is None else q.where(Run.id < cursor)).limit(_PHONE_BATCH))).scalars())
         if not batch:
             break
-        seen = await run_origins(db, batch)
-        origins.update(seen)
-        found += [r for r in batch if seen.get(r.id) == "phone"]
+        found += await keep(batch)
         cursor = batch[-1].id
         if len(batch) < _PHONE_BATCH:
             break
-    return (found if limit is None else found[:limit]), origins
+    return found if limit is None else found[:limit]
+
+
+async def _phone_turns(db: AsyncSession, q, limit: int | None) -> tuple[list[Run], dict[int, str]]:
+    """The phone chip's runs: those whose turn came from the phone."""
+    origins: dict[int, str] = {}
+
+    async def keep(batch: list[Run]) -> list[Run]:
+        seen = await run_origins(db, batch)
+        origins.update(seen)
+        return [r for r in batch if seen.get(r.id) == "phone"]
+    return await _batched(db, q, limit, keep), origins
+
+
+#: INB7-c4c: every Hands call the trace keeps (7 days, one local file a day), not the Activity list's 500.
+_TRACE_ALL = 100_000
+
+
+def _hands_calls() -> tuple[set[int], dict[str, list[datetime]]]:
+    """INB7-c4c: the runs the Hands trace names by id (#632), and, for older calls with no id, each conversation's call times
+    (naive UTC). An entry that can't be read is skipped."""
+    from server.services import hands_service
+    named: set[int] = set()
+    unnamed: dict[str, list[datetime]] = {}
+    for entry in hands_service.read_trace(limit=_TRACE_ALL):
+        if not isinstance(entry, dict):
+            continue
+        run_id = entry.get("run_id")
+        if run_id is not None:
+            if isinstance(run_id, int) and not isinstance(run_id, bool):
+                named.add(run_id)
+            continue
+        conversation, at = entry.get("conversation"), entry.get("at")
+        if not isinstance(conversation, str) or not isinstance(at, str):
+            continue
+        try:
+            unnamed.setdefault(conversation, []).append(_naive_utc(datetime.fromisoformat(at)))
+        except ValueError:
+            continue
+    return named, unnamed
+
+
+def _used_apps(q, named: set[int], unnamed: dict[str, list[datetime]]):
+    """The 「应用」 chip's candidates: a run a call names, or one in a conversation with calls that name none."""
+    return q.where(or_(Run.id.in_(named), Run.conversation_id.in_(list(unnamed))))
+
+
+def _apps_keep(named: set[int], unnamed: dict[str, list[datetime]]):
+    """Which candidates used Mac apps: by the id a call carries, never by time (runs overlap and a call can be logged late); a
+    call with no id counts for a run in its conversation whose window (start to end, to now while it runs) holds it."""
+    async def keep(batch: list[Run]) -> list[Run]:
+        now = datetime.utcnow()
+        return [r for r in batch if r.id in named or any(
+            r.created_at is not None and r.created_at <= at <= (r.ended_at or now) for at in unnamed.get(r.conversation_id or "", ()))]
+    return keep
 
 
 @router.get("/runs", response_model=list[RunListItemOut])
@@ -251,10 +302,14 @@ async def list_runs(
     model: str | None = Query(None, max_length=200),
     outcome: Literal["failed", "waiting"] | None = None,
     origin: Literal["scheduled", "phone"] | None = None,
+    used: Literal["apps"] | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
     asking = _asking()
     q = _chip(_scoped(since, until, model), outcome, origin, asking)
+    if used == "apps":
+        named, unnamed = await asyncio.to_thread(_hands_calls)
+        q = _used_apps(q, named, unnamed)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
@@ -263,6 +318,9 @@ async def list_runs(
         q = q.where(Run.id < before_id)
     if origin == "phone":
         rows, origins = await _phone_turns(db, q, limit)
+    elif used == "apps":
+        rows = await _batched(db, q, limit, _apps_keep(named, unnamed))
+        origins = await run_origins(db, rows)
     else:
         rows = list((await db.execute(q.limit(limit))).scalars().all())
         origins = await run_origins(db, rows)
@@ -298,8 +356,11 @@ async def run_counts(
     # Only what run_origins reads, not whole rows: the count may walk every phone turn in the span.
     lean = _chip(scope, None, "phone", asking).options(load_only(Run.id, Run.kind, Run.spawn_name, Run.conversation_id))
     phone, _ = await _phone_turns(db, lean, None)
+    named, unnamed = await asyncio.to_thread(_hands_calls)
+    apps = await _batched(db, _used_apps(scope, named, unnamed).options(
+        load_only(Run.id, Run.conversation_id, Run.created_at, Run.ended_at)), None, _apps_keep(named, unnamed))
     return {"waiting": await count(_chip(scope, "waiting", None, asking)), "failed": await count(_chip(scope, "failed", None, asking)),
-            "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone)}
+            "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone), "apps": len(apps)}
 
 
 def _naive_utc(ts: datetime) -> datetime:

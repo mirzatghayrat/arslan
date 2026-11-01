@@ -8,8 +8,6 @@ import { formatUiDateTime } from "../lib/localeFormatting";
 import { fmtMs } from "../lib/usageFormat";
 import { useActivityStore, type RunChip, type UsageRange } from "../stores/activityStore";
 import UsageCard from "./UsageCard";
-import HandsTraceCard from "./HandsTraceCard";
-import JudgmentsCard from "./JudgmentsCard";
 import ScrollBox from "./activity/ScrollBox";
 import RunDrawer from "./activity/RunDrawer";
 import RunInspector from "./activity/RunInspector";
@@ -22,11 +20,13 @@ export const RUNS_PAGE = 20;
 /** How far back each range reaches (the axis and the tiles use the same spans). */
 const RANGE_SECONDS: Record<UsageRange, number> = { "24h": 86_400, "7d": 7 * 86_400, "30d": 30 * 86_400 };
 /** INB7-c2: what each chip asks GET /runs for, and its words. */
-const CHIPS: Record<RunChip, { outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone" }> = {
+const CHIPS: Record<RunChip, { outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone"; used?: "apps" }> = {
   waiting: { outcome: "waiting" }, failed: { outcome: "failed" }, scheduled: { origin: "scheduled" }, phone: { origin: "phone" },
+  apps: { used: "apps" },                  // INB7-c4c: the runs that used Mac apps (Hands), told on the server by the trace
 };
 const CHIP_WORD: Record<RunChip, string> = {
   waiting: "activityPage.kpiNeeds", failed: "activityPage.failed", scheduled: "activityPage.chipScheduled", phone: "activityPage.chipPhone",
+  apps: "activityPage.chipApps",
 };
 
 export const ORIGIN_ICON = {
@@ -37,7 +37,8 @@ export const ORIGIN_ICON = {
  * Activity (0.1.48), called Progress since v0.1.64 (INB7-a): what Arslan did, what it cost, and what waits on you.
  *
  * Order (0.1.50, user ruling): usage, scheduled tasks, Hands, recent work, judgments. Since INB7-c1 (board F): usage and the
- * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar), then Hands and judgments until INB7-c4 folds them.
+ * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar). Since INB7-c4c Hands calls and judgments are a
+ * run's, in its 「诊断」, and the 「应用」 chip lists the runs that used Mac apps.
  * 0.1.58 §7: each list sits in its own box that scrolls inside and loads 20 at a time;
  * a run opens in a drawer over the page, so the list keeps its place and the opened row
  * stays highlighted; clicking a chart slice or a model narrows 最近的工作; and all of it
@@ -224,8 +225,6 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
       </section>
       <RunInspector runs={runs ?? []} needs={{ waiting, ...where }} />
       </div>
-      <HandsTraceCard />
-      <JudgmentsCard />
       {openRunId != null && <RunDrawer runId={openRunId} onClose={() => setOpenRun(null)} onStep={step} />}
     </div>
   );

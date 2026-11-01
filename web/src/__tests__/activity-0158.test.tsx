@@ -17,8 +17,6 @@ vi.mock("../components/RunReplay", () => ({ default: ({ runId }: { runId: number
 
 import ActivityView, { RUNS_PAGE } from "../components/ActivityView";
 import UsageCard from "../components/UsageCard";
-import JudgmentsCard from "../components/JudgmentsCard";
-import HandsTraceCard from "../components/HandsTraceCard";
 import { useActivityStore } from "../stores/activityStore";
 import type { WaitingView } from "../hooks/useWaiting";
 
@@ -137,37 +135,3 @@ describe("the usage chart", () => {
   });
 });
 
-describe("判断记录 and Hands", () => {
-  it("gives each family of question its icon and pages back by id", async () => {
-    const rows = Array.from({ length: 20 }, (_, i) => ({ id: 40 - i, point: i % 2 ? "memory.worth" : "project.progress", mode: "active",
-      verdict: true, probability: 0.8, latency_ms: 1, outcome: null, created_at: "2026-10-09T08:00:00Z" }));
-    request.mockResolvedValueOnce({ items: rows }).mockResolvedValueOnce({ items: [] });
-    render(<JudgmentsCard />);
-    await screen.findByTestId("judgment-40");
-    const icons = Array.from(document.querySelectorAll("[data-point-icon]")).slice(0, 2).map((el) => el.getAttribute("class") ?? "");
-    expect(icons[0]).toContain("flag");
-    expect(icons[1]).toContain("bookmark");
-    const box = screen.getByTestId("judgments-box");
-    Object.defineProperty(box, "scrollHeight", { value: 800, configurable: true });
-    Object.defineProperty(box, "clientHeight", { value: 400, configurable: true });
-    box.scrollTop = 400;
-    fireEvent.scroll(box);
-    await waitFor(() => expect(request).toHaveBeenLastCalledWith("/judgments?limit=20&before_id=21"));
-  });
-
-  it("shows Hands calls 20 at a time with an icon per kind of call", async () => {
-    const entries = Array.from({ length: 30 }, (_, i) => ({ at: `2026-10-09T08:${String(i).padStart(2, "0")}:00Z`, app: "Notes",
-      op: i === 0 ? "click" : "look", outcome: "ok" }));
-    request.mockResolvedValue({ entries });
-    render(<HandsTraceCard />);
-    await screen.findAllByTestId("hands-row");
-    expect(screen.getAllByTestId("hands-row")).toHaveLength(20);
-    expect(document.querySelector('[data-op="click"]')?.getAttribute("class")).toContain("mouse-pointer-click");
-    const box = screen.getByTestId("hands-box");
-    Object.defineProperty(box, "scrollHeight", { value: 800, configurable: true });
-    Object.defineProperty(box, "clientHeight", { value: 400, configurable: true });
-    box.scrollTop = 400;
-    act(() => { fireEvent.scroll(box); });
-    expect(screen.getAllByTestId("hands-row")).toHaveLength(30);
-  });
-});
