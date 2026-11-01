@@ -142,3 +142,7 @@ class Harness:
 # HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
 # It must not delegate commands to the candidate. Until then no adapter exists.
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
+
+# SBX-5a adds "cap6b" here in the same commit that builds its protections.
+# The existing outside-floor adapter alone does not claim that feature.
+BUILT_FEATURES = frozenset()

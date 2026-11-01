@@ -1,15 +1,23 @@
-"""CAP6b and cache gates; the already-built outside floor is never xfailed."""
+"""CAP6b/cache gates distinguish built adapters from built protections."""
 import sys
 
 import pytest
 
+from tests.server.sbx import harness
 from tests.server.sbx.harness import BUILT_BASES, Harness
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 BASES = ("commands", "outside-floor", "mcp", "run-python")
 
 
-def pending(base):
+CAP6B_PENDING = "SBX-5a cap6b protection is not built"
+
+
+def pending(base, *, cap6b=False):
+    if base == "outside-floor" and cap6b:
+        return pytest.param(base, marks=pytest.mark.xfail(
+            "cap6b" not in harness.BUILT_FEATURES, strict=True,
+            raises=pytest.RaisesExc(AssertionError, match="^" + CAP6B_PENDING), reason=CAP6B_PENDING))
     message = f"SBX-5a {base} adapter is not built"
     return pytest.param(base, marks=pytest.mark.xfail(
         base not in BUILT_BASES, strict=True,
@@ -20,6 +28,10 @@ def pending(base):
 def cap_sbx(tmp_path, request, record_property):
     base = request.param
     assert base in BUILT_BASES, f"SBX-5a {base} adapter is not built"
+    if any(m.kwargs.get("reason") == CAP6B_PENDING for m in request.node.iter_markers("xfail")):
+        # Only the selected feature cases stop here. Once built, all probe and
+        # fixture errors are ordinary failures, including AssertionError.
+        assert "cap6b" in harness.BUILT_FEATURES, CAP6B_PENDING
     h = Harness(tmp_path, base)
     # Test inputs, not computed policy: wide grants must not cancel exclusions.
     h.plugin_root = h.home / "user-chosen-plugin-folder"
@@ -35,9 +47,6 @@ def cap_sbx(tmp_path, request, record_property):
         yield h
     finally:
         h.record_executions(record_property, request.config.getoption("--sbx-artifacts"))
-
-
-all_bases = pytest.mark.parametrize("cap_sbx", [pending(b) for b in BASES], indirect=True)
 
 
 def target_folder(h, name):
@@ -68,8 +77,9 @@ print('checked')
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@all_bases
-@pytest.mark.parametrize("name", ["skills", "plugin", "data"])
+@pytest.mark.parametrize("name,cap_sbx", [
+    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
+    for base in BASES for name in ("skills", "plugin", "data")], indirect=["cap_sbx"])
 def test_cap6b_write_denied(cap_sbx, name):
     folder = target_folder(cap_sbx, name)
     folder.mkdir(parents=True, exist_ok=True)
@@ -89,8 +99,10 @@ def test_cap6b_write_denied(cap_sbx, name):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("cap_sbx", [pending(b) for b in ("commands", "outside-floor", "run-python")], indirect=True)
-@pytest.mark.parametrize("name", ["skills", "plugin", "data"])
+@pytest.mark.parametrize("name,cap_sbx", [
+    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
+    for base in ("commands", "outside-floor", "run-python")
+    for name in ("skills", "plugin", "data")], indirect=["cap_sbx"])
 def test_cap6b_read_denied(cap_sbx, name):
     folder = target_folder(cap_sbx, name)
     folder.mkdir(parents=True, exist_ok=True)
@@ -102,7 +114,7 @@ def test_cap6b_read_denied(cap_sbx, name):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@all_bases
+@pytest.mark.parametrize("cap_sbx", [pending(b, cap6b=True) for b in BASES], indirect=True)
 @pytest.mark.parametrize("through_alias", [False, True], ids=["real-name", "home-link"])
 def test_cap6b_symlink_root(cap_sbx, through_alias):
     real = cap_sbx.work / "agent-source"
@@ -149,7 +161,7 @@ def test_commands_cache_is_not_visible_to_mcp(cap_sbx):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("cap_sbx,name", [
-    pytest.param(base, name, marks=pending(base).marks)
+    pytest.param(base, name, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
     for base in BASES for name in ("skills", "plugin", "data", "npm")
     if not (base == "outside-floor" and name == "npm")], indirect=["cap_sbx"])
 @pytest.mark.parametrize("kind", ["symlink", "hardlink"])

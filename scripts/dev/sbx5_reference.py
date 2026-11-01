@@ -5,6 +5,7 @@ DELETE-BY: v0.1.64 after SBX-5a's product adapters pass these gates.
 """
 import sys
 from server.services.sandbox_profile import default_deny_profile, subpath
+from tests.server.sbx import harness
 from tests.server.sbx.harness import BUILT_BASES
 
 
@@ -36,5 +37,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    # Advertise the feature even for the permissive mutation: regressions must
+    # fail as real gates instead of being hidden by the missing-feature guard.
+    harness.BUILT_FEATURES = harness.BUILT_FEATURES | {"cap6b"}
     for base in ("commands", "outside-floor", "mcp", "run-python"):
         BUILT_BASES[base] = permissive if config.getoption("--sbx5-permissive") else reference
