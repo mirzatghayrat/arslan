@@ -103,7 +103,7 @@ async def test_a_vulnerability_only_in_a_dependency_is_listed_under_it(osv):
                                                  fixed=["0.28.0"])
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0"), ("httpx", "0.27.0")))
     assert out["own"] == [] and out["highest"] == "MODERATE"
-    assert out["deps"] == [{"name": "httpx", "version": "0.27.0", "more": 0, "advisories": [
+    assert out["deps"] == [{"name": "httpx", "alias": None, "version": "0.27.0", "more": 0, "advisories": [
         {"id": "GHSA-aaaa-bbbb-cccc", "ids": ["GHSA-aaaa-bbbb-cccc"], "severity": "MODERATE", "summary": None,
          "fixed": ["0.28.0"]}]}]
 
@@ -437,3 +437,94 @@ async def test_a_record_of_an_odd_shape_counts_as_unknown_and_never_breaks_the_c
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
     assert out["state"] == "checked" and out["count"] == 1
     assert out["own"][0]["severity"] == "UNKNOWN" and out["own"][0]["fixed"] == []
+
+
+# ── #661 review (effort=max, 1fb00df6) ──
+
+async def test_an_npm_alias_is_asked_by_its_real_name(osv):
+    """F1: npm keeps an alias's real name in its lock entry (`"innocent-name": "npm:event-stream@3.3.6"`); asking by
+    the folder looked up a package nobody installed, and read as nothing known."""
+    osv.hits = [[], ["GHSA-mh6f-8j2x-4483"]]
+    osv.records["GHSA-mh6f-8j2x-4483"] = _record("GHSA-mh6f-8j2x-4483", name="event-stream", ecosystem="npm",
+                                                 severity="CRITICAL", fixed=["4.0.0"])
+    lock = _locked("node", ("@acme/notes-js", "2.0.1"), ("innocent-name", "3.3.6"))
+    lock["lock"]["packages"][1]["registry_name"] = "event-stream"
+    out = await osv_check.check(NPM, lock)
+    assert [q["package"]["name"] for q in osv.batch_sent()["queries"]] == ["@acme/notes-js", "event-stream"]
+    assert out["deps"][0]["name"] == "event-stream" and out["deps"][0]["alias"] == "innocent-name"
+    assert out["deps"][0]["advisories"][0]["fixed"] == ["4.0.0"] and out["highest"] == "CRITICAL"
+
+
+async def test_the_npm_lock_keeps_an_aliass_real_name(monkeypatch, tmp_path):
+    """F1, where the name comes from: `lock_npm` reads each entry's own `name` when npm wrote one."""
+    from server.services import capability_install, capability_runtime
+    reg = "https://registry.npmjs.org/"
+
+    async def ensure(name):
+        return tmp_path / "rt" / name / "bin" / name
+
+    async def run(argv, *, cwd, env):
+        (cwd / "package-lock.json").write_text(json.dumps({"packages": {
+            "": {"name": "arslan-capability"},
+            "node_modules/@acme/notes-js": {"version": "2.0.1", "resolved": reg + "@acme/notes-js/-/notes-js-2.0.1.tgz",
+                                            "integrity": "sha512-" + "A" * 86 + "=="},
+            "node_modules/innocent-name": {"name": "event-stream", "version": "3.3.6",
+                                           "resolved": reg + "event-stream/-/event-stream-3.3.6.tgz",
+                                           "integrity": "sha512-" + "B" * 86 + "=="}}}))
+        return ""
+    monkeypatch.setattr(capability_runtime, "ensure", ensure)
+    monkeypatch.setattr(capability_install, "_run", run)
+    lock = await capability_install.lock_npm(tmp_path, "@acme/notes-js", "2.0.1")
+    assert lock["packages"] == [{"name": "@acme/notes-js", "version": "2.0.1", "registry_name": "@acme/notes-js"},
+                                {"name": "innocent-name", "version": "3.3.6", "registry_name": "event-stream"}]
+    assert capability_install.lock_summary({"lock": lock})["packages"] == [
+        {"name": "@acme/notes-js", "version": "2.0.1"}, {"name": "innocent-name", "version": "3.3.6"}]
+
+
+async def test_json_nested_too_deep_for_the_parser_is_not_checked(osv):
+    """F2: `[[[…]]]` under the size cap raised RecursionError, which is not a ValueError, and broke the card."""
+    deep = b"[" * 100_000 + b"]" * 100_000
+    osv.batch = httpx.Response(200, content=deep)
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out == {"state": "not_checked", "why": "osv_did_not_answer"}
+
+
+async def test_a_record_nested_too_deep_counts_as_unknown(osv):
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    osv.vuln["GHSA-qw6h-vgh9-j6wx"] = httpx.Response(200, content=b"[" * 100_000 + b"]" * 100_000)
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out["state"] == "checked" and out["own"][0]["severity"] == "UNKNOWN"
+
+
+async def test_a_lock_with_no_packages_is_not_checked(osv):
+    """F3: an empty lock read as "checked, nothing known"; nothing was asked, so nothing is known."""
+    out = await osv_check.check(PYPI, _locked("uv"))
+    assert out == {"state": "not_checked", "why": "empty_lock"} and osv.requests == []
+
+
+@pytest.mark.parametrize("odd", ["1.0" + chr(0xB2), chr(0x661) + "." + chr(0x662), "v" + chr(0x2460)])
+async def test_one_odd_fixed_version_drops_nothing(osv, odd):
+    """Nit: a superscript or another script's digit made the version sort raise, which dropped every hit."""
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    osv.records["GHSA-qw6h-vgh9-j6wx"] = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp", severity="HIGH",
+                                                 fixed=["1.10.0", odd, "1.9.0"])
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out["state"] == "checked" and out["own"][0]["severity"] == "HIGH"
+    fixed = out["own"][0]["fixed"]
+    assert [v for v in fixed if v.isascii()] == ["1.9.0", "1.10.0"] and len(fixed) == 3
+
+
+async def test_the_fixed_versions_listed_are_capped(osv):
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    osv.records["GHSA-qw6h-vgh9-j6wx"] = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp", severity="LOW",
+                                                 fixed=[f"1.{i}.0" for i in range(3000)])
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out["own"][0]["fixed"] == [f"1.{i}.0" for i in range(osv_check.FIXED_MAX)]
+
+
+async def test_a_result_with_another_page_is_counted_incomplete(osv):
+    """Nit: `next_page_token` is not followed (a package with more than a page of advisories); it says so."""
+    osv.batch = {"results": [{"vulns": [{"id": "GHSA-qw6h-vgh9-j6wx", "modified": "x"}], "next_page_token": "abc"}]}
+    osv.records["GHSA-qw6h-vgh9-j6wx"] = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp", severity="LOW")
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out["complete"] is False and out["count"] == 1 and len(osv.requests) == 2

@@ -3,9 +3,11 @@ CAP4's slot between the lock and the card, every package in the lock (the one be
 dependencies) is asked about in one OSV.dev batch query, and the card shows what OSV knows.
 
 - **What is sent:** each locked package's name, ecosystem (PyPI or npm) and version, nothing else: nothing about
-  the user or the conversation. One `POST /v1/querybatch` (at most QUERIES_MAX packages), then `GET /v1/vulns/{id}`
+  the user or the conversation. An npm alias (`"innocent-name": "npm:event-stream@3.3.6"`) is asked by its real
+  name, the one its lock entry names (#661 review F1). A lock with no packages is not checked (F3). One `POST /v1/querybatch` (at most QUERIES_MAX packages), then `GET /v1/vulns/{id}`
   for each advisory it names (at most LOOKUPS_MAX, the package itself first), for its severity, summary and fixed
-  versions. All of it within DEADLINE_S.
+  versions (at most FIXED_MAX listed). All of it within DEADLINE_S. A result's `next_page_token` (a package with
+  more than a page of advisories) is not followed: the answer says it is incomplete.
 - **One advisory, several ids:** OSV lists one advisory under its GitHub id and, for PyPI, its PyPA id as well
   (PYSEC-2019-217 aliases GHSA-462w-v97r-4m45). Records of one package that name each other in
   `aliases` count once, under the GitHub id. The severity is GitHub's word (`database_specific.severity`), the
@@ -20,7 +22,8 @@ dependencies) is asked about in one OSV.dev batch query, and the card shows what
   decided this only puts the facts on the card: the buttons stay as they are, and nothing is refused here.
 
 OSV's words are outside text on the card: an id must look like one before it is put in a URL or shown, and
-summaries and versions are cleaned as a card name is (UNI1's `clean_name`).
+summaries and versions are cleaned as a card name is (UNI1's `clean_name`). An id can hold a colon (Red Hat's
+`RHSA-2023:1234`), so the page builds an advisory's link from a fixed osv.dev prefix, never from the id alone.
 """
 from __future__ import annotations
 
@@ -46,6 +49,7 @@ LOOKUPS_MAX = 40
 #: Advisories listed per package, and dependencies listed; `count` covers all of them.
 SHOWN_MAX = 10
 SUMMARY_MAX = 200
+FIXED_MAX = 5
 MAX_BYTES = {"batch": 4 * 1024 * 1024, "vuln": 512 * 1024}
 ECOSYSTEM = {"uv": "PyPI", "node": "npm"}
 SEVERITY = ("UNKNOWN", "LOW", "MODERATE", "HIGH", "CRITICAL")           # worst last
@@ -71,7 +75,10 @@ async def _json(client: httpx.AsyncClient, method: str, url: str, kind: str, bod
             got += chunk
             if len(got) > MAX_BYTES[kind]:
                 raise ResponseTooLarge(f"over {MAX_BYTES[kind]} bytes")
-        return json.loads(bytes(got))
+        try:
+            return json.loads(bytes(got))
+        except RecursionError as exc:           # #661 review F2: `[[[…]]]` under the cap is no answer, not a crash
+            raise ValueError("nested too deep") from exc
 
 
 def _hits(answer, asked: int) -> tuple[list[list[str]], bool]:
@@ -135,8 +142,10 @@ def _fixed(rec: dict | None, ecosystem: str, name: str) -> list[str]:
 
 
 def _versions(found) -> list[str]:
-    """Versions once each, in version order (1.9.0 before 1.10.0)."""
-    return sorted(set(found), key=lambda v: [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in re.split(r"(\d+)", v)])
+    """Versions once each, in version order (1.9.0 before 1.10.0), the first FIXED_MAX. Only decimal digits are
+    read as numbers: a superscript is text (#661 review), so one odd value never drops the advisory."""
+    key = lambda v: [(0, int(p), "") if p.isdecimal() else (1, 0, p) for p in re.split(r"(\d+)", v)]  # noqa: E731
+    return sorted(set(found), key=key)[:FIXED_MAX]
 
 
 def _advisories(ids: list[str], records: dict, ecosystem: str, name: str) -> list[dict]:
@@ -168,8 +177,9 @@ def _advisories(ids: list[str], records: dict, ecosystem: str, name: str) -> lis
 
 async def _check(ecosystem: str, identifier: str, packages: list[dict]) -> dict:
     asked = packages[:QUERIES_MAX]
-    queries = [{"package": {"name": str(p.get("name") or ""), "ecosystem": ecosystem},
+    queries = [{"package": {"name": str(p.get("registry_name") or p.get("name") or ""), "ecosystem": ecosystem},
                 "version": str(p.get("version") or "")} for p in asked]
+    folders = [str(p.get("name") or "") for p in asked]
     async with httpx.AsyncClient(timeout=DEADLINE_S) as client:
         hits, complete = _hits(await _json(client, "POST", f"{OSV}/v1/querybatch", "batch", {"queries": queries}),
                                len(queries))
@@ -183,6 +193,7 @@ async def _check(ecosystem: str, identifier: str, packages: list[dict]) -> dict:
     found = {i: _advisories(hits[i], records, ecosystem, queries[i]["package"]["name"]) for i in order if hits[i]}
     every = [a for advisories in found.values() for a in advisories]
     deps = [{"name": untrusted.clean_name(queries[i]["package"]["name"], 214),
+             "alias": untrusted.clean_name(folders[i], 214) if folders[i] != queries[i]["package"]["name"] else None,
              "version": untrusted.clean_name(queries[i]["version"], 60),
              "more": max(0, len(found[i]) - SHOWN_MAX), "advisories": found[i][:SHOWN_MAX]}
             for i in order if i != own and i in found]
@@ -206,6 +217,8 @@ async def check(candidate: dict, prepared: dict | None) -> dict:
     if not lock or ecosystem is None:
         return {"state": "skipped", "why": "no_lock"}
     identifier = str((candidate.get("package") or {}).get("identifier") or "")
+    if not lock.get("packages"):
+        return {"state": "not_checked", "why": "empty_lock"}
     try:
         return await within(_check(ecosystem, identifier, list(lock.get("packages") or [])), DEADLINE_S)
     except (httpx.HTTPError, ValueError, TimeoutError) as exc:
