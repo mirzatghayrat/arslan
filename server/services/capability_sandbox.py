@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from server.services.sandbox_profile import Profile, literal, real, subpath
+from server.services.code_sandbox import TTY_DEVICES
+from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
@@ -30,29 +31,29 @@ SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/pri
 
 def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -> str:
     """The SBPL text. `root` = the server's own folder (read/write); `folders` = granted by
-    the user (read/write); `read` = extra read-only paths (Arslan's runtimes)."""
+    the user (read/write); `read` = extra read-only paths (Arslan's runtimes).
+
+    SBX-4: SBX-2's shared base (`default_deny_profile`): only the listed system services (no wholesale
+    `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS).
+    DELETE-BY: v0.1.64, with the "SBX-6 MCP proxy" PR, which moves a declared server to proxy mode through
+    `sandbox_proxy` (SBX-6p's mcp-proxy gate); SBX-6 is a release condition for MCP as for commands. The base closes the user's protected paths last, over
+    the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
+    (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
     from server.services import command_sandbox
+    granted = [real(Path(p)) for p in folders]
+    text = default_deny_profile([*granted], command_sandbox.default_protected(),
+                                readable=[*map(real, SYSTEM_READ), *granted],
+                                network=NetworkMode.ANY_DECLARED if network else NetworkMode.NONE)
     rules = Profile("deny")
-    rules.allow("process-exec process-fork")
-    rules.allow("signal", "(target same-sandbox)")
-    rules.allow("sysctl-read")
-    rules.allow("mach-lookup")
-    rules.allow("ipc-posix-shm-read* ipc-posix-shm-write-data")
-    rules.allow("file-read-metadata")
-    rules.allow("file-read*", literal("/"))
-    rules.allow_paths("file-read*", map(real, SYSTEM_READ))
-    rules.allow("file-write*", literal("/dev/null"))
-    if network:
-        rules.allow("network* system-socket")
-    rules.allow_paths("file-read* file-write*", map(real, folders))
-    # Order matters (last match wins): the protected paths close AFTER the user's grants, so a
-    # granted ~ never opens ~/.ssh or Arslan's data; the server's own folder and Arslan's
-    # runtimes (which live inside Arslan's data folder) open AFTER that, and only those.
-    rules.deny("file-read* file-write* network-outbound",
-               *(subpath(real(p)) for p in command_sandbox.default_protected()))
-    rules.allow_paths("file-read*", map(real, read))
-    rules.allow("file-read* file-write*", subpath(real(root)))
-    return rules.text()
+    # #666 review: an MCP server talks over stdio and never had a terminal: the base's tty devices, their
+    # ioctls and pseudo-ttys close again here, after the base, which stays identical across presets.
+    rules.deny("file-write*", *TTY_DEVICES)
+    rules.deny("file-ioctl", *TTY_DEVICES)
+    rules.deny("pseudo-tty")
+    rules.allow("file-read-data", literal("/"))
+    rules.allow_paths("file-read* file-map-executable", map(real, read))
+    rules.allow("file-read* file-write* file-map-executable", subpath(real(root)))
+    return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:

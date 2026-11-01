@@ -30,7 +30,7 @@ import sys
 import tempfile
 from pathlib import Path
 from arslan.aio import within
-from server.services.sandbox_profile import Profile, literal, subpath
+from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +40,6 @@ MAX_OUTPUT_CHARS = 20_000   # stdout and stderr each, tail-truncated
 _MEM_BYTES = 1024 ** 3      # 1 GB address space (pandas/matplotlib need room)
 _FSIZE_BYTES = 50 * 1024 ** 2
 _BATTERIES = ("numpy", "pandas", "matplotlib")
-
-# Legacy command profile: network isolation ONLY. Commands require separate user approval.
-# Python uses computation_profile below; cwd/HOME are never filesystem security boundaries.
-# No product caller reaches it: every one passes its own profile to _seatbelt_wrapper.
-# DELETE-BY: v0.1.64 (SBX-4, with computation_profile's move onto the default-deny base).
-_SEATBELT_PROFILE = "(version 1)\n(allow default)\n(deny network*)\n"
 
 # Module cache: resolved sandbox interpreter + one-line env note. Tests may preset this.
 _env_cache: tuple[str, str] | None = None
@@ -130,8 +124,17 @@ def _child_limits() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (_FSIZE_BYTES, _FSIZE_BYTES))
 
 
+#: What the shared base opens for a terminal: the tty devices (and their ioctls). Presets that run no terminal
+#: (computation, MCP servers) close them again after the base, so the base itself stays identical (#666 review).
+TTY_DEVICES = (literal("/dev/tty"), literal("/dev/ptmx"), '(regex #"^/dev/ttys[0-9]+$")')
+
+
 def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:
     """Default-deny compute policy: runtime reads, workspace writes, no network/host IPC.
+
+    SBX-4: SBX-2's shared base (`default_deny_profile`) with reads narrowed to the runtime and the workspace,
+    no network and no POSIX IPC, then this preset's own rules after it (the last rule wins): only its own
+    interpreter may run, dyld's root read, the few device and zone files it reads, and `references` read-only.
 
     Grant only the interpreter's installation and venv libraries, never their parent
     project or the app-data root. Resolve symlinks before constructing Seatbelt paths.
@@ -144,40 +147,44 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
              Path("/usr/lib"), Path("/usr/share/locale")}
     for prefix in prefixes:
         reads.update({(prefix / "lib").resolve(), (prefix / "bin").resolve()})
+    text = default_deny_profile([workspace.resolve()], readable=[*sorted(reads), workspace.resolve()],
+                                network=NetworkMode.NONE)
     rules = Profile("deny")
-    rules.allow("sysctl-read")
+    # #666 review: the base opens what computation never had; closed again here, after it (the last rule wins),
+    # so the base stays identical across presets. No terminal (tty devices, their ioctls, pseudo-ttys), no file
+    # events, no preference reads, and nothing in the workspace is mapped as code.
+    rules.deny("file-read* file-write*", *TTY_DEVICES)
+    rules.deny("file-ioctl", *TTY_DEVICES)
+    rules.deny("pseudo-tty")
+    rules.deny("mach-lookup", '(global-name "com.apple.FSEvents")')
+    rules.deny("user-preference-read")
+    rules.deny("file-map-executable", subpath(real(workspace)))
     # dyld on macOS 26 reads the root vnode while locating its shared cache.
     # Literal '/', unlike subpath '/', does NOT grant descendants.
     rules.allow("file-read-data", literal("/"))
-    rules.allow("file-read-metadata")
-    rules.allow("process-fork")
-    rules.allow("process-info*", "(target self)")
-    for path in sorted(reads):
-        rules.allow("file-read* file-map-executable", subpath(path))
     for path in ("/dev/null", "/dev/random", "/dev/urandom", "/private/etc/localtime"):
         rules.allow("file-read*", literal(path))
-    # These two loops write in set order, which follows the hash seed: with a linked interpreter
-    # (a venv) the two process-exec lines, and the two pyvenv.cfg lines, swap between processes
-    # (seen in SBX-1's check). Both are allows, so the policy is the same; SBX-1 keeps the bytes,
-    # and SBX-4, which rewrites this profile on the default-deny base, writes them sorted.
-    for path in {executable, resolved}:
+    # The base lets any readable program run; computation runs only its own interpreter. Sorted (SBX-4): in
+    # set order, which follows the hash seed, a linked interpreter's (a venv's) two process-exec lines and
+    # two pyvenv.cfg lines swapped between processes, one policy in several texts.
+    rules.deny("process-exec")
+    for path in sorted({executable, resolved}):
         rules.allow("process-exec", literal(path))
     # Python uses pyvenv.cfg to locate the base stdlib; this does not grant sibling reads.
-    for prefix in prefixes:
+    for prefix in sorted(prefixes):
         rules.allow("file-read*", literal(prefix / "pyvenv.cfg"))
-    rules.allow("file-read* file-write*", subpath(workspace.resolve()))
-    rules.allow("file-write*", literal("/dev/null"))
     if references is not None:
         rules.deny("file-write*", subpath(references.resolve()))
-    return rules.text()
+    return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
 def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
-    """The seatbelt wrapper, when usable. Probed once per process. `profile` overrides the default
-    deny-all-network one (computation_profile for run_python)."""
-    if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").exists():
+    """The seatbelt wrapper for `profile` (computation_profile for run_python), when usable. Without a
+    profile there is none (SBX-4 removed the allow-default legacy text no caller reached), so a caller
+    fails closed."""
+    if profile is None or sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").exists():
         return None
-    return ["/usr/bin/sandbox-exec", "-p", profile or _SEATBELT_PROFILE]
+    return ["/usr/bin/sandbox-exec", "-p", profile]
 
 
 # ── Pluggable sandbox backends ──────────────────────────────────────────────────

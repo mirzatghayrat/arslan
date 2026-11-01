@@ -142,107 +142,147 @@ def test_run_python_and_artifact_checks(T, A):
     assert _shown(text, T) == """\
 (version 1)
 (deny default)
-(allow sysctl-read)
-(allow file-read-data (literal "/"))
-(allow file-read-metadata)
-(allow process-fork)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
 (allow process-info* (target self))
-(allow file-read* file-map-executable (subpath "/System/Library"))
-(allow file-read* file-map-executable (subpath "/System/Volumes/Preboot/Cryptexes/OS"))
-(allow file-read* file-map-executable (subpath "<T>/py/bin"))
-(allow file-read* file-map-executable (subpath "<T>/py/lib"))
-(allow file-read* file-map-executable (subpath "/usr/lib"))
-(allow file-read* file-map-executable (subpath "/usr/share/locale"))
+(allow sysctl-read)
+(allow user-preference-read)
+(allow file-read-metadata)
+(allow file-read* file-map-executable (subpath "/System/Library") (subpath "/System/Volumes/Preboot/Cryptexes/OS") (subpath "<T>/py/bin") (subpath "<T>/py/lib") (subpath "/usr/lib") (subpath "/usr/share/locale") (subpath "<T>/work"))
+(allow file-write* (subpath "<T>/work"))
+(allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
+(allow pseudo-tty)
+(allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(allow mach-lookup (global-name "com.apple.FSEvents"))
+(deny network-bind network-inbound)
+(deny appleevent-send)
+(deny user-preference-write)
+(deny network*)
+(deny file-read* file-write* (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny pseudo-tty)
+(deny mach-lookup (global-name "com.apple.FSEvents"))
+(deny user-preference-read)
+(deny file-map-executable (subpath "<T>/work"))
+(allow file-read-data (literal "/"))
 (allow file-read* (literal "/dev/null"))
 (allow file-read* (literal "/dev/random"))
 (allow file-read* (literal "/dev/urandom"))
 (allow file-read* (literal "/private/etc/localtime"))
+(deny process-exec)
 (allow process-exec (literal "<T>/py/bin/python3"))
 (allow file-read* (literal "<T>/py/pyvenv.cfg"))
-(allow file-read* file-write* (subpath "<T>/work"))
-(allow file-write* (literal "/dev/null"))
 (deny file-write* (subpath "<T>/refs"))
 """
     # The artifact checks pass no references: the same text without the last rule.
     assert code_sandbox.computation_profile(python, A / "work") == text[:text.rindex("(deny file-write*")]
 
 
-def _seed_free(text: str) -> str:
-    """With a linked interpreter, computation_profile writes its process-exec lines and its pyvenv.cfg
-    lines in set order, which follows the hash seed (SBX-1's check found this on main; SBX-4 sorts
-    them). Sort each run of them here."""
-    lines = text.splitlines()
-    for marker in ("(allow process-exec ", "pyvenv.cfg"):
-        at = [i for i, line in enumerate(lines) if marker in line]
-        assert at == list(range(at[0], at[0] + len(at))), (marker, at)
-        lines[at[0]:at[-1] + 1] = sorted(lines[at[0]:at[-1] + 1])
-    return "\n".join(lines) + "\n"
-
-
 def test_run_python_in_a_venv_reached_through_a_link(T, A):
     """The interpreter as given (not resolved) and as resolved are both allowed to run; their
     lib and bin folders are read as resolved."""
     _between_system_and_usr(T)
-    assert _seed_free(_shown(code_sandbox.computation_profile(str(A / "venv/bin/python"), A / "work"), T)) == """\
-(version 1)
-(deny default)
-(allow sysctl-read)
-(allow file-read-data (literal "/"))
-(allow file-read-metadata)
-(allow process-fork)
-(allow process-info* (target self))
-(allow file-read* file-map-executable (subpath "/System/Library"))
-(allow file-read* file-map-executable (subpath "/System/Volumes/Preboot/Cryptexes/OS"))
-(allow file-read* file-map-executable (subpath "<T>/py/bin"))
-(allow file-read* file-map-executable (subpath "<T>/py/lib"))
-(allow file-read* file-map-executable (subpath "<T>/venv/bin"))
-(allow file-read* file-map-executable (subpath "<T>/venv/lib"))
-(allow file-read* file-map-executable (subpath "/usr/lib"))
-(allow file-read* file-map-executable (subpath "/usr/share/locale"))
-(allow file-read* (literal "/dev/null"))
-(allow file-read* (literal "/dev/random"))
-(allow file-read* (literal "/dev/urandom"))
-(allow file-read* (literal "/private/etc/localtime"))
-(allow process-exec (literal "<T>/alias/venv/bin/python"))
-(allow process-exec (literal "<T>/py/bin/python3"))
-(allow file-read* (literal "<T>/alias/venv/pyvenv.cfg"))
-(allow file-read* (literal "<T>/py/pyvenv.cfg"))
-(allow file-read* file-write* (subpath "<T>/work"))
-(allow file-write* (literal "/dev/null"))
-"""
-
-
-_MCP_HEAD = """\
+    assert _shown(code_sandbox.computation_profile(str(A / "venv/bin/python"), A / "work"), T) == """\
 (version 1)
 (deny default)
 (allow process-exec process-fork)
 (allow signal (target same-sandbox))
+(allow process-info* (target self))
 (allow sysctl-read)
-(allow mach-lookup)
-(allow ipc-posix-shm-read* ipc-posix-shm-write-data)
+(allow user-preference-read)
 (allow file-read-metadata)
-(allow file-read* (literal "/"))
-(allow file-read* (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") \
-(subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld"))
-(allow file-write* (literal "/dev/null"))
+(allow file-read* file-map-executable (subpath "/System/Library") (subpath "/System/Volumes/Preboot/Cryptexes/OS") (subpath "<T>/py/bin") (subpath "<T>/py/lib") (subpath "<T>/venv/bin") (subpath "<T>/venv/lib") (subpath "/usr/lib") (subpath "/usr/share/locale") (subpath "<T>/work"))
+(allow file-write* (subpath "<T>/work"))
+(allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
+(allow pseudo-tty)
+(allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(allow mach-lookup (global-name "com.apple.FSEvents"))
+(deny network-bind network-inbound)
+(deny appleevent-send)
+(deny user-preference-write)
+(deny network*)
+(deny file-read* file-write* (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny pseudo-tty)
+(deny mach-lookup (global-name "com.apple.FSEvents"))
+(deny user-preference-read)
+(deny file-map-executable (subpath "<T>/work"))
+(allow file-read-data (literal "/"))
+(allow file-read* (literal "/dev/null"))
+(allow file-read* (literal "/dev/random"))
+(allow file-read* (literal "/dev/urandom"))
+(allow file-read* (literal "/private/etc/localtime"))
+(deny process-exec)
+(allow process-exec (literal "<T>/alias/venv/bin/python"))
+(allow process-exec (literal "<T>/py/bin/python3"))
+(allow file-read* (literal "<T>/alias/venv/pyvenv.cfg"))
+(allow file-read* (literal "<T>/py/pyvenv.cfg"))
 """
 
 
 def test_installed_mcp_server(T, A, monkeypatch):
+    """SBX-4: on the shared base. The protected paths close after the grants (a protected file is a literal
+    now, as in the commands profile; a granted link appears twice), then the runtimes and the server's own
+    folder open again, after them."""
     monkeypatch.setattr(command_sandbox, "default_protected", lambda: [A / "prot", A / "prot.key"])
     text = capability_sandbox.profile(root=A / "mcp", folders=[str(A / "granted"), str(A / "link-granted")],
                                       network=True, read=[str(A / "runtimes")])
-    # A protected file is a subpath here, unlike in the commands profile; a granted link appears twice.
-    assert _shown(text, T) == _MCP_HEAD + """\
-(allow network* system-socket)
-(allow file-read* file-write* (subpath "<T>/granted") (subpath "<T>/granted"))
-(deny file-read* file-write* network-outbound (subpath "<T>/prot") (subpath "<T>/prot.key"))
-(allow file-read* (subpath "<T>/runtimes"))
-(allow file-read* file-write* (subpath "<T>/mcp"))
+    assert _shown(text, T) == """\
+(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow process-info* (target self))
+(allow sysctl-read)
+(allow user-preference-read)
+(allow file-read-metadata)
+(allow file-read* file-map-executable (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld") (subpath "<T>/granted") (subpath "<T>/granted"))
+(allow file-write* (subpath "<T>/granted") (subpath "<T>/granted"))
+(allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
+(allow pseudo-tty)
+(allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(allow mach-lookup (global-name "com.apple.FSEvents"))
+(allow mach-lookup (global-name "com.apple.trustd.agent"))
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+(allow network-outbound (remote tcp "localhost:*"))
+(allow network-outbound (remote tcp "*:*"))
+(deny network-bind network-inbound)
+(deny appleevent-send)
+(deny user-preference-write)
+(deny file-read* file-write* file-map-executable (subpath "<T>/prot") (literal "<T>/prot.key"))
+(deny network-outbound (subpath "<T>/prot") (literal "<T>/prot.key"))
+(deny file-write* (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny pseudo-tty)
+(allow file-read-data (literal "/"))
+(allow file-read* file-map-executable (subpath "<T>/runtimes"))
+(allow file-read* file-write* file-map-executable (subpath "<T>/mcp"))
 """
-    assert _shown(capability_sandbox.profile(root=A / "mcp", folders=[], network=False, read=[]), T) == _MCP_HEAD + """\
-(deny file-read* file-write* network-outbound (subpath "<T>/prot") (subpath "<T>/prot.key"))
-(allow file-read* file-write* (subpath "<T>/mcp"))
+    assert _shown(capability_sandbox.profile(root=A / "mcp", folders=[], network=False, read=[]), T) == """\
+(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow process-info* (target self))
+(allow sysctl-read)
+(allow user-preference-read)
+(allow file-read-metadata)
+(allow file-read* file-map-executable (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld"))
+(allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
+(allow pseudo-tty)
+(allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(allow mach-lookup (global-name "com.apple.FSEvents"))
+(deny network-bind network-inbound)
+(deny appleevent-send)
+(deny user-preference-write)
+(deny network*)
+(deny file-read* file-write* file-map-executable (subpath "<T>/prot") (literal "<T>/prot.key"))
+(deny network-outbound (subpath "<T>/prot") (literal "<T>/prot.key"))
+(deny file-write* (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(deny pseudo-tty)
+(allow file-read-data (literal "/"))
+(allow file-read* file-write* file-map-executable (subpath "<T>/mcp"))
 """
 
 

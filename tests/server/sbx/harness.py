@@ -166,3 +166,36 @@ BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
 BUILT_BASES["commands-proxy"] = _commands_profile
 BUILT_BASES["network-sbx6"] = _sbx6_base_profile
+
+
+# SBX-4a's entries call the real product presets: `code_sandbox.computation_profile` for run_python (with its
+# read-only references) and the artifact checks (without), and `capability_sandbox.profile` for an installed
+# MCP server, whose own folder is this harness's work folder and whose protected paths are the test's.
+def _computation_profile(self, **parameters) -> str:
+    from server.services import code_sandbox
+    references = parameters.pop("references", None)
+    parameters.pop("granted_folders", None)          # computation has no granted folders
+    parameters.pop("protected", None)                # nor protected paths: its reads are the runtime's only
+    if parameters:
+        raise ValueError(f"computation takes no {sorted(parameters)}")
+    return code_sandbox.computation_profile(sys.executable, self.work,
+                                            references if self.base == "run-python" else None)
+
+
+def _mcp_profile(self, **parameters) -> str:
+    from unittest.mock import patch
+    from server.services import capability_sandbox
+    grants = parameters.pop("granted_folders", [])
+    protected = parameters.pop("protected", [self.protected])
+    parameters.pop("references", None)
+    if parameters:
+        raise ValueError(f"MCP takes no {sorted(parameters)}")
+    if self.network not in (NetworkMode.NONE, NetworkMode.ANY_DECLARED):
+        raise ValueError(f"MCP has no {self.network.value} mode yet (SBX-6 MCP proxy)")
+    with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
+        return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
+                                          network=self.network != NetworkMode.NONE,
+                                          read=[sys.prefix, sys.base_prefix])
+
+
+BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
