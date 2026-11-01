@@ -8,7 +8,6 @@ again sooner when a run starts or ends, a task changes or a card is asked.
 """
 from __future__ import annotations
 
-import re
 import time
 import unicodedata
 from datetime import UTC, date, datetime, timedelta
@@ -20,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ApprovalEvent, ArslanMessage, Judgment, Run
 from server.db.task_models import CompanionTask, TaskAttempt, TaskRevision
-from server.services import background_jobs, phone_reads
+from server.services import background_jobs, home_text, phone_reads
 
 DAYS = 7
 #: Finished tasks per set (today, week), newest first. The whole snapshot is written to iCloud on each
@@ -63,13 +62,9 @@ def clean_text(text: str | None) -> str:
 
 
 def _title(goal: str | None) -> str:
-    """The goal as the phone's one-line title (`clean_text`), with the home folder as `~`, as a conversation's
-    folder is shown (§5.10): only a whole path, home followed by `/`, the end or a character no name or path
-    has, never inside another path or another user's name, in any letter case (#651 review N1)."""
-    text, home = clean_text(goal), str(_home()).rstrip("/")
-    if home:
-        text = re.sub(r"(?<![\w./~-])" + re.escape(home) + r"(?![\w.-])", "~", text, flags=re.IGNORECASE)
-    return phone_reads.one_line(text, TITLE_MAX)
+    """The goal as the phone's one-line title (`clean_text`), with the home folder as `~` (`home_text.fold_home`,
+    #651 review N1), as a conversation's folder is shown (§5.10)."""
+    return phone_reads.one_line(home_text.fold_home(clean_text(goal), str(_home())), TITLE_MAX)
 
 
 def _utc(local_day: date) -> datetime:

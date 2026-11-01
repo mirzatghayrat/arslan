@@ -228,3 +228,27 @@ async def test_an_unpriced_item_with_no_tokens_leaves_spent_whole(client):
     await _add(client, [nothing, run(NOON, tokens=(1_000_000, 0))])
     today = (await _blocks(client))["outcomes"]["today"]
     assert today["spent_usd"] == 2.0 and "spent_partial" not in today
+
+
+def test_a_running_jobs_check_descriptions_are_cleaned_too():
+    from server.api.phone import _clean_job
+    lone = chr(0xD800)
+    job = Job("j", "c", "goal", [{"id": "c1", "description": f"One{lone} row each"}], phase="running")
+    assert _clean_job(job.frame())["criteria"][0]["description"] == "One row each"
+
+
+async def test_emptying_a_conversation_builds_again_with_no_newer_message(client):
+    from sqlalchemy import delete
+
+    from server.db.models import ArslanMessage
+    await _add(client, [*task("t", NOON), ArslanMessage(conversation_id="conv-newest", role="user", content="last")])
+    assert _ids((await _blocks(client))["outcomes"]["today"]["tasks"]) == ["conv-t"]
+    async with client.db_maker() as db:                      # the newest message id stays the same
+        await db.execute(delete(ArslanMessage).where(ArslanMessage.conversation_id == "conv-t"))
+        await db.commit()
+    assert (await _blocks(client))["outcomes"]["today"]["tasks"] == [], "the count in the key sees it"
+
+
+def test_the_title_finds_the_home_next_to_chinese_text(monkeypatch):
+    monkeypatch.setattr(phone_stats, "_home", lambda: "/Users/alice")
+    assert phone_stats._title("把/Users/alice/Downloads里的发票整理好") == "把~/Downloads里的发票整理好"
