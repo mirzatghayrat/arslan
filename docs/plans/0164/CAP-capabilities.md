@@ -462,3 +462,13 @@ The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI
 ## Stated limits recorded on 2026-10-31
 
 - **CAP5a (#577): a hand-added MCP server's tool list isn't pinned.** Pinning it would need a column, which this PR doesn't add. Only servers installed through a card are compared with their install test's listing.
+
+## Stated limits recorded on 2026-11-01
+
+- **CAP5c (#623): a hand-added `npx` or `uvx` package is pinned to one exact version, or refused.** What it leaves:
+  - **Re-adding an unpinned line after a new release** makes a second server, since its pinned arguments differ. Mainstream products key servers by name.
+  - **Only the named package is pinned,** not its dependencies.
+  - **Servers added before #623** keep their stored arguments, and keep floating.
+  - **An exact PyPI version can gain files** after it is pinned (a new wheel for the same version). npm never lets a version be published twice.
+  - **Registry settings outside the connection are not read** (`~/.npmrc`, a project's `.npmrc`, `uv.toml`, `pyproject.toml`). A name on such a registry and on the public one is pinned to the public registry's latest version, and the user's registry is then asked for that version. A registry the line or the connection's env names is read, and then only an exact version is accepted.
+  - **Other launchers and wrappers are left as written:** `bunx`, `bun x`, `pnpm dlx`, `npm exec`, `npm x`, `yarn dlx`, `pipx run`, `uv run`, `env npx …`, `docker`, a shell (`sh -c`, `bash -lc`; shell strings are not parsed), and a path to a program. `uv tool run` is read as `uvx`.

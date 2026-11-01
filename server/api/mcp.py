@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from server.auth import require_auth
-from server.services import mcp_service
+from server.services import mcp_pin, mcp_service
 from arslan.aio import within
 
 # PB-4 条件3: the health probe must sit behind require_auth. The MCP router historically
@@ -44,7 +44,7 @@ async def add_server(body: AddServerBody):
     try:
         return await mcp_service.add_server(body.label, body.command, body.args, body.env,
                                             transport=body.transport, url=body.url)
-    except ValueError as exc:          # CAP5c: the form shows why (a package not pinned, a missing field)
+    except (mcp_pin.PinRefused, mcp_service.AddRefused) as exc:     # CAP5c: the form shows why
         raise HTTPException(status_code=400, detail=str(exc)[:500]) from exc
 
 
