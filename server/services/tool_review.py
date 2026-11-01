@@ -35,6 +35,35 @@ def _tail(text: str) -> list[str]:
     return [line[:400] for line in lines]
 
 
+#: A changed middle whose two sides' line counts multiply to more than this is counted as all removed and all
+#: added: difflib without autojunk is quadratic on repeated lines, and this runs on the event loop (#650 delta
+#: reviews: 3.4 s at 20,000 lines, 7.3 s at 4,999). About 500 × 500 lines takes well under a tenth of a second.
+FULL_DIFF_CELLS = 250_000
+
+
+def _line_counts(old: str, new: str) -> tuple[int, int]:
+    """Lines added and removed by one edit: the common first and last lines are set aside, and the changed middle
+    is diffed as the phone's line diff does it (phone_reads.change_lines), so the counts usually match it. A
+    middle too large to diff on the event loop is counted as all removed and all added, which can count more
+    than a diff would."""
+    import difflib
+    a, b = old.splitlines(), new.splitlines()
+    start = 0
+    while start < min(len(a), len(b)) and a[start] == b[start]:
+        start += 1
+    end = 0
+    while end < min(len(a), len(b)) - start and a[len(a) - 1 - end] == b[len(b) - 1 - end]:
+        end += 1
+    a, b = a[start:len(a) - end], b[start:len(b) - end]
+    if len(a) * len(b) > FULL_DIFF_CELLS:
+        return len(b), len(a)
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+        if tag != "equal":
+            added, removed = added + j2 - j1, removed + i2 - i1
+    return added, removed
+
+
 def capture(tool: str, args: dict, result: dict) -> dict | None:
     """The review record for one finished tool call, or None for tools with nothing to show."""
     args = args if isinstance(args, dict) else {}
@@ -42,13 +71,18 @@ def capture(tool: str, args: dict, result: dict) -> dict | None:
     path = str(args.get("path") or "")[:500]
     if tool == "edit_file":
         # K5: old_string / new_string; the output keys stay "old" / "new", so the phone sees nothing new.
+        # IPB (#650 review): the lines added and removed, counted once here on the whole edit, not on each
+        # history fetch from the capped snippet.
+        old, new = (v if isinstance(v, str) else "" for v in (args.get("old_string"), args.get("new_string")))
+        added, removed = _line_counts(old, new)
         return {"kind": "edit", "path": str(result.get("path") or path)[:500],
-                "old": _text(args.get("old_string"), SNIPPET_CHARS),
-                "new": _text(args.get("new_string"), SNIPPET_CHARS)}
+                "old": _text(old, SNIPPET_CHARS), "new": _text(new, SNIPPET_CHARS), "added": added, "removed": removed}
     if tool == "write_file":
         content = args.get("content") if isinstance(args.get("content"), str) else ""
         artifact = result.get("artifact") if isinstance(result.get("artifact"), dict) else {}
+        # IPB: `lines` counts the whole file, so the phone's changed-line total doesn't stop at the head.
         return {"kind": "write", "path": str(result.get("path") or path)[:500], "bytes": len(content.encode("utf-8")),
+                "lines": content.count("\n") + (1 if content and not content.endswith("\n") else 0),
                 "head": _text(content, HEAD_CHARS), "file_id": artifact.get("filename")}
     if tool == "run_command":
         from server.services import terminal_policy

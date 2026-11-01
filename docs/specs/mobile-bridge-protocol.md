@@ -495,6 +495,34 @@ sending `null`.
 `conversation_exists`. A receiver never answers an `error` with an `error`. Codes in
 §4.7 are receiver-side drops and are not sent back (no oracle); the others may travel in `error`.
 
+### 5.10 iPhone 1.0 part B: one conversation's details (added 2026-11-01; optional fields — additive within v1)
+
+The phone's conversation details (docs/plans/0164/IPB-frame-list.md §3, OK'd by the user on 2026-11-01).
+`chat.history.result` gains an optional `details` block, sent with each history result. A result without
+it makes the phone keep its last value; an older phone ignores it. Inside the block every field is required
+unless marked `?`, and the Mac leaves out an optional field it doesn't know rather than sending `null`.
+
+- `folder?`: display only, the folder the conversation's turns run in (its project's, else the workspace),
+  with the home part shown as `~`. Never the absolute home path. A folder outside the home is shown by its
+  last part only (`proj` for `/Volumes/Work/proj`), so no volume or full path leaves the Mac.
+- `model?`: the id of the model the conversation runs on (its own choice, else the default's), as the
+  Mac's model picker shows an id with no display name; at most 200 characters, and only the file name of an
+  id that is a path. `mode?`: the approval mode's name in effect
+  (`careful` / `standard`; the phone may ignore it).
+- `connectors[]` (`[]` when none): each `name` (the connector's display name only, never its URL, command
+  or arguments; anything secret-looking typed into a name is masked, and the home folder shown as `~`), `kind` (`mcp` / `skill` / `hands`) and `on` (on for this conversation's turns: an MCP
+  server enabled and connected, a skill equipped, Hands on). At most 30: Hands first, then the ones that
+  are on.
+- `changes?`: what the conversation's edit and write steps changed over all its runs: `files` (distinct
+  paths), `added` and `removed` (lines), `last_run_id?` (the newest run that changed a file; the phone may
+  ignore it). **Changes made by a shell command aren't counted**, and a very large edit counts only the part
+  the Mac recorded. Absent when no step changed a file.
+- `spent_usd?`: the conversation's total in US dollars at list price; absent when nothing could be priced.
+- The context window (`context`) is not sent in v1 (the user, 2026-11-01); the phone hides that row.
+
+`details` is counted first against the history budget (§5.7), and the messages fit into what is left; the
+Bridge's own last-resort trim drops messages only, never `details`.
+
 ## 6. Mac side (summary; plan in the design doc §6)
 
 `Arslan.app/Contents/Helpers/ArslanBridge.app`, its own bundle id (`com.arslan.desktop.bridge`), a

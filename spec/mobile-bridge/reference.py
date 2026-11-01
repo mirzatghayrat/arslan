@@ -294,7 +294,7 @@ BODY_FIELDS: dict[str, tuple[str, ...]] = {
     "conversations.list": ("limit?", "kind?", "before?"),
     "conversations.result": ("conversations", "has_more?"),
     "chat.history": ("conversation_id", "limit"),
-    "chat.history.result": ("conversation_id", "messages"),
+    "chat.history.result": ("conversation_id", "messages", "truncated?", "details?"),
     "chat.send": ("conversation_id?", "new_conversation_id?", "conversation_kind?", "text", "attachments", "client_msg_id"),
     "conversation.update": ("conversation_id", "kind"),
     "conversation.updated": ("conversation_id", "kind"),
