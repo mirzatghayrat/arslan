@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import bisect
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -140,16 +141,27 @@ async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     phoned = set((await db.execute(
         select(ArslanMessage.conversation_id).where(
             ArslanMessage.conversation_id.in_(convs), ArslanMessage.source == "phone").distinct())).scalars())
-    for run_id, (msg_id, conv) in first_answer.items():
-        if out[run_id] != "chat" or conv not in phoned:
-            continue
-        # The user message that started this turn: the last one before its answer that was not read
-        # mid-turn (K9b tags those with their run).
-        source = (await db.execute(
-            select(ArslanMessage.source).where(
-                ArslanMessage.conversation_id == conv, ArslanMessage.role == "user", ArslanMessage.run_id.is_(None),
-                ArslanMessage.id < msg_id).order_by(ArslanMessage.id.desc()).limit(1))).scalar()
-        if source == "phone":
+    asked = [(run_id, msg_id, conv) for run_id, (msg_id, conv) in first_answer.items()
+             if out[run_id] == "chat" and conv in phoned]
+    if not asked:
+        return out
+    # The user message that started each turn: the last one before its answer that was not read
+    # mid-turn (K9b tags those with their run). Read once for all of them, not once per run: Progress's
+    # axis asks for up to 200 runs every 30 seconds (INB7-b; ⓪Plan's review of PR 622).
+    rows = (await db.execute(
+        select(ArslanMessage.conversation_id, ArslanMessage.id, ArslanMessage.source).where(
+            ArslanMessage.conversation_id.in_({conv for _, _, conv in asked}), ArslanMessage.role == "user",
+            ArslanMessage.run_id.is_(None), ArslanMessage.id < max(msg_id for _, msg_id, _ in asked))
+        .order_by(ArslanMessage.id))).all()
+    asks: dict[str, tuple[list[int], list[str | None]]] = {}
+    for conv, msg_id, source in rows:
+        ids, sources = asks.setdefault(conv, ([], []))
+        ids.append(msg_id)
+        sources.append(source)
+    for run_id, msg_id, conv in asked:
+        ids, sources = asks.get(conv, ([], []))
+        last = bisect.bisect_left(ids, msg_id) - 1
+        if last >= 0 and sources[last] == "phone":
             out[run_id] = "phone"
     return out
 
@@ -185,6 +197,9 @@ async def list_runs(
         q = q.where(Run.model == model)
     rows = (await db.execute(q)).scalars().all()
     origins = await run_origins(db, list(rows))
+    from server.services import approvals
+    # INB7-b: the conversations with a card open, the same live list progress.waiting_reasons reads.
+    asking = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
@@ -192,6 +207,8 @@ async def list_runs(
             total_ms=r.total_ms, user_message=r.user_message,
             created_at=r.created_at.isoformat() if r.created_at else None,
             origin=origins.get(r.id, "chat"), model=r.model, tokens=r.task_tokens or None,
+            waiting=r.status == "recording" and r.conversation_id in asking,
+            ended_at=r.ended_at.isoformat() if r.ended_at else None,
         )
         for r in rows
     ]
@@ -539,7 +556,9 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
     raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
     summary = (await rp.summaries(db, [run_id])).get(run_id, {})
-    return {"run_id": run_id, "status": run.status, **summary, "entries": rp.entries(list(steps), raw=raw)}
+    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span.
+    return {"run_id": run_id, "status": run.status, **summary, "started_at": rp.utc(run.started_at),
+            "ended_at": rp.utc(run.ended_at), "entries": rp.entries(list(steps), raw=raw)}
 
 
 class CheckpointRestoreIn(BaseModel):
