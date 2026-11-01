@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, FolderOpen, Plug, Smartphone } from "lucide-react";
+import { ChevronRight, FolderOpen, Plug, ScrollText, Smartphone } from "lucide-react";
 import type { ConversationChangeTurn, ConversationFile, RepoChanges as Repo } from "../../api/files";
 import { filesApi } from "../../api/files";
 import { ApiError, api } from "../../api/client";
@@ -8,6 +8,7 @@ import type { RunCheckpoint } from "../../api/client.types";
 import UndoTurnSheet from "../reply/UndoTurnSheet";
 import { toast } from "../kit";
 import { listMcpServers, reconnectMcpServer } from "../../api/mcp";
+import { lessonsApi } from "../../api/lessons";
 import type { McpServer, ProviderConfig, ProviderOption } from "../../api/client.types";
 import { formatUiDateTime } from "../../lib/localeFormatting";
 import { baseName } from "../../lib/fileKinds";
@@ -84,6 +85,25 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   }, []);
   useEffect(() => { void loadServers(); }, [loadServers]);
   const { needs, readyCount } = connectorSummary(servers ?? []);
+
+  // L11-0 (the user's pick): the rules files this conversation follows, as one row in Environment.
+  type RuleFile = { file: string; text: string; added?: { lesson_id: number; line: string }[] };
+  const [rules, setRules] = useState<{ id: string; enabled: boolean; files: RuleFile[] } | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [rulesTick, setRulesTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve().then(() => lessonsApi.folderRules(conversationId))
+      .then((r) => { if (alive) setRules({ id: conversationId, enabled: r.enabled, files: r.files }); })
+      .catch(() => { /* no row: rules are context */ });
+    return () => { alive = false; };
+  }, [conversationId, files.length, home, rulesTick]);
+  // L11-2 (#603 review, F3): a line the card added can be taken back out here, after a reload or a switch too.
+  const removeRule = async (lessonId: number) => {
+    try { await lessonsApi.rule(lessonId, conversationId, "remove"); } catch { toast(t("workbench.ruleFailed")); }
+    setRulesTick((n) => n + 1);
+  };
+  const shownRules = rules?.id === conversationId ? rules : null;
 
   // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
   const [changes, setChanges] = useState<ConversationChangeTurn[]>([]);
@@ -167,6 +187,26 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
             <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={home}>{home}</span>
             <button type="button" className={link} onClick={() => void filesApi.reveal(home)} data-testid="overview-reveal">
               {t("workbench.reveal")}</button>
+          </div>}
+          {shownRules && (!shownRules.enabled || shownRules.files.length > 0) && <div data-testid="overview-rules">
+            <div className={row}>
+              <ScrollText size={14} className="shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{shownRules.enabled
+                ? t("workbench.rulesRow", { count: shownRules.files.length }) : t("workbench.rulesOff")}</span>
+              {shownRules.enabled && <button type="button" className={link} aria-expanded={rulesOpen} data-testid="overview-rules-toggle"
+                onClick={() => setRulesOpen(!rulesOpen)}>{t(rulesOpen ? "workbench.rulesHide" : "workbench.rulesShow")}</button>}
+            </div>
+            {shownRules.enabled && rulesOpen && <div className="mb-1 ml-[22px]">
+              <ul className="space-y-0.5">{shownRules.files.map((f) => <li key={f.file} data-testid="overview-rules-file">
+                <button type="button" className="max-w-full truncate text-left font-mono text-[11.5px] hover:underline"
+                  onClick={() => openReader({ kind: "text", name: f.file, text: f.text })}>{isolate(f.file)}</button>
+                {(f.added ?? []).map((a) => <div key={a.lesson_id} className="ml-3 flex min-w-0 items-center gap-2 text-[11.5px]"
+                  data-testid="overview-rules-added">
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{isolate(a.line)}</span>
+                  <button type="button" className={link} onClick={() => void removeRule(a.lesson_id)}>{t("workbench.ruleRemove")}</button>
+                </div>)}</li>)}</ul>
+              <p className="mt-0.5 text-[11px] leading-snug text-subtle-foreground">{t("workbench.rulesNote")}</p>
+            </div>}
           </div>}
           <div className={row}>
             <Smartphone size={14} className="shrink-0 text-muted-foreground" aria-hidden />

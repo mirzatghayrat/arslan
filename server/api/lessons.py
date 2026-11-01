@@ -73,6 +73,76 @@ async def lesson_pin(lesson_id: int, body: LessonPin):
     return await _change(lesson_id, pinned=body.pinned)
 
 
+class LessonRule(BaseModel):
+    conversation_id: str
+    action: Literal["add", "skip", "remove"]
+
+
+@router.post("/lessons/{lesson_id}/rule")
+async def lesson_rule(lesson_id: int, body: LessonRule):
+    """L11-2: the "make this a rule for this folder?" card. The user's click, never the model's tools (HR keeps model
+    writes to these files).
+    - `add` writes exactly the line the card showed into exactly the file it named (the offer's record, #603 F2). 409
+      `conversation_changed` from another conversation; `folder_changed` when the conversation's folder no longer
+      leads to that file; `lesson_changed` when the lesson changed since the card was offered (a later correction or
+      a detour folded in): the offer then goes, so a later correction can bring a new card. Once.
+    - `skip` records "not now"; `remove` takes the card's line back out.
+    - 409 `rules_file_refused` / `rules_file_full` when the file is a link, not writable, or would pass what a turn
+      reads."""
+    from datetime import datetime
+    from pathlib import Path
+    from server.services import folder_rules
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(Lesson, lesson_id)
+        if row is None:
+            raise HTTPException(404, "lesson_not_found")
+        evidence = dict(row.evidence or {})
+        state, record = evidence.get(lessons.RULE_OFFER), evidence.get(lessons.RULE_RECORD) or {}
+        needed = {"add": "offered", "skip": "offered", "remove": "added"}[body.action]
+        if state != needed or not record:
+            raise HTTPException(409, "rule_not_offered" if body.action != "remove" else "rule_not_added")
+        path = Path(record["path"])
+        update: dict = {}
+        if body.action == "skip":
+            update = {lessons.RULE_OFFER: "skipped"}
+        elif body.action == "add":
+            if body.conversation_id != record.get("conversation_id"):
+                raise HTTPException(409, "conversation_changed")
+            if row.updated_at.isoformat() != record.get("updated_at"):
+                evidence.pop(lessons.RULE_OFFER, None)
+                evidence.pop(lessons.RULE_RECORD, None)
+                row.evidence = evidence
+                await db.commit()
+                raise HTTPException(409, "lesson_changed")
+            folder = await folder_rules.chosen_folder(db, body.conversation_id)
+            if folder is None or folder == folder_rules._home() or folder_rules.target(folder) != path:
+                raise HTTPException(409, "folder_changed")
+            try:
+                await folder_rules.add_rule(db, path, record["line"], lesson_id)
+            except folder_rules.RuleRefused as exc:
+                raise HTTPException(409, "rules_file_full" if exc.code == "full" else "rules_file_refused") from None
+            update = {lessons.RULE_OFFER: "added", "rule_added_at": datetime.utcnow().isoformat()}
+        else:
+            try:
+                await folder_rules.remove_rule(db, path, lesson_id)
+            except folder_rules.RuleRefused:
+                raise HTTPException(409, "rules_file_refused") from None
+            update = {lessons.RULE_OFFER: "removed"}
+        # The file work may have taken a moment: what a capture wrote meanwhile stays (#603 F7).
+        await db.refresh(row)
+        row.evidence = {**dict(row.evidence or {}), **update}
+        await db.commit()
+    return {"state": update[lessons.RULE_OFFER], "file": folder_rules._shown(path, folder_rules._home())}
+
+
+@router.get("/conversations/{conversation_id}/folder-rules")
+async def conversation_folder_rules(conversation_id: str):
+    """K10-1 / L11-0: the rules files this conversation follows, for Overview (each with its text), and whether the
+    switch is on. Read only; the same exact-name, no-link reads as the turn's block."""
+    from server.services import folder_rules
+    return await folder_rules.listing(conversation_id)
+
+
 @router.delete("/lessons/{lesson_id}")
 async def delete_lesson(lesson_id: int):
     async with db_session.AsyncSessionLocal() as db:

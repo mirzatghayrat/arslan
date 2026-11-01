@@ -959,7 +959,7 @@
       "orphaned": "Archivos huérfanos"
     },
     "import": {
-      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad; los caracteres invisibles se cuentan.",
+      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad. El análisis bloquea los caracteres de etiqueta ocultos y los controles de dirección del texto; los demás caracteres invisibles se cuentan, sin bloquear.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subruta (opcional)",
       "scan": "Escanear",
@@ -1446,5 +1446,9 @@
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola"
+  },
+  "whileAway": {
+    "title": "Lo que no se hizo mientras no estabas (esta conversación)",
+    "stopped": "Una tarea que se detuvo aquí"
   }
 }
