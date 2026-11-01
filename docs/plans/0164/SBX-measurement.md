@@ -238,3 +238,43 @@ Every two-run cache row on the candidate fails before it uses its cache: offline
 - **SBX-3:** `multiprocessing-none-default-deny`. The hardcoded `/tmp` cost stands (§1a).
 - **Probe fixes** (Codex), for rows that fail on every base: brew-list, brew-info, darwin-user-temp and darwin-user-cache.
 - **The SBX-2 harness's `legacy-commands` adapter** may go now: its DELETE-BY reads "after SBX-M records the historical baseline", and this report records it. It must go before SBX-3 replaces the commands preset.
+
+## Gate 4 follow-up for SBX-8 (Codex, 2026-11-01; Astra decision pending)
+
+`multiprocessing-none-default-deny` is now isolated by
+`test_pool_refusal_is_sem_open_outside_the_run_namespace`. On macOS 26.6.2
+(25G83), arm64, CPython 3.11.15, stock `multiprocessing.get_context('fork').Pool(2)`
+fails at its first `SemLock` allocation. A direct libc call using that same
+fresh test-owned name confirms **`sem_open(O_CREAT | O_EXCL)` returns EPERM**.
+It fails before worker computation, not at process fork or file access.
+
+With the exact same profile, a test-local change generating semaphore names
+inside the existing run namespace lets the Pool map complete (six allocations).
+This is a diagnostic control, not a product adapter or a deployed naming hook.
+The existing IPC confinement gate still passes. A mutation granting the shared
+stock semaphore namespace makes the new refusal test red even though the older
+confinement gate stays green; a blanket namespace mutation makes both red.
+
+**Recommendation: option (b), retain the IPC rule and record the cost.** A shared
+stock semaphore namespace does not separate runs or protect other processes'
+objects. Option (a) needs a reviewed runtime design that gives each supported
+process tree run-specific names, including its child processes and libraries;
+a service allowlist entry or a blanket IPC grant cannot supply that isolation.
+Astra decides whether this compatibility cost is acceptable before SBX-3a moves
+commands onto the base. No IPC product rule changes in this follow-up.
+
+**Cost for SBX-8:** Python tools using a stock multiprocessing Pool cannot start
+that pool inside the sandbox. The measured user-visible result is a
+`PermissionError: [Errno 1] Operation not permitted` traceback and a nonzero
+command exit; the model may offer the existing re-run-outside card. Parallel
+Python work using semaphore-backed locks/queues is also at risk (inferred from
+the shared primitive, not separately measured). Ordinary computation, worker
+threads and tools that do not need those IPC objects are not shown to break.
+
+Verification uses pytest with a pinned scratch HOME, a test-owned namespace,
+full-path backup restoration and SHA-256 checks. The new diagnosis and existing
+IPC gate pass after restoration. This covers the measured fork Pool and syscall,
+not spawn/forkserver, all Python versions, a run-name integration, or the other
+SBX-3a lifecycle gates. macOS CI run id: pending. This entry preserves the
+original report's results; it does not change its historical counts or claim
+that the corpus's multiprocessing row now passes.
