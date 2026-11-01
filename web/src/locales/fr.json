@@ -97,7 +97,7 @@
     "arslan": "Assistant principal",
     "capabilities": "Capacités",
     "brain": "Mémoire",
-    "activity": "Activité",
+    "progress": "Avancement",
     "scheduled": "Planifiées"
   },
   "brain": {
@@ -584,8 +584,8 @@
     "desktopNotificationsDesc": "Fenêtre fermée ou en arrière-plan, macOS vous prévient quand une tâche se termine, qu’une action attend votre confirmation ou qu’une tâche planifiée échoue. Les notifications n’affichent jamais le texte des messages.",
     "labelIsland": "Afficher Arslan dans l’encoche",
     "islandDesc": "Un petit Arslan en haut de l’écran montre ce qu’il fait, quand il a besoin de vous et quand une tâche est terminée. Survolez-le pour en voir plus. Il n’apparaît jamais dans les captures, les enregistrements ni le partage d’écran.",
-    "automationElsewhere": "Les tâches planifiées ont leur propre page ; l'utilisation des tokens et chaque exécution passée sont dans Activité.",
-    "automationOpenActivity": "Ouvrir Activité",
+    "automationElsewhere": "Les tâches planifiées ont leur propre page ; l'utilisation des tokens et chaque exécution passée sont dans Avancement.",
+    "automationOpenActivity": "Ouvrir Avancement",
     "searchPlaceholder": "Rechercher des paramètres…",
     "searchNoHits": "Aucune section ne correspond",
     "modeSystem": "Système",
@@ -713,8 +713,8 @@
     "grpVersion": "Version",
     "grpWhatsNew": "Nouveautés de cette version",
     "watchesOnScheduled": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la page Planifiées.",
-    "openActivity": "L’usage et chaque exécution sont dans Activité ; les tâches planifiées ont leur propre page.",
-    "openActivityBtn": "Ouvrir Activité",
+    "openActivity": "L’usage et chaque exécution sont dans Avancement ; les tâches planifiées ont leur propre page.",
+    "openActivityBtn": "Ouvrir Avancement",
     "whatsNewEmpty": "Pas de notes pour cette version."
   },
   "errors": {
@@ -782,6 +782,8 @@
     "fromPhone": "Lancé depuis l’iPhone",
     "glyph": {
       "waiting": "Attend ton accord",
+      "waiting_reminder": "Un travail arrêté t’a laissé un rappel",
+      "waiting_away": "N’a pas pu te demander pendant ton absence",
       "remote": "Remote · ton iPhone",
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",
@@ -1432,6 +1434,7 @@
     "intro": "Les tâches qui s'exécutent selon un horaire, et les pages et dossiers qu'Arslan surveille pour vous. Un point signale une ligne à regarder.",
     "watches": "Pages et dossiers surveillés",
     "awayTitle": "Pas fait pendant votre absence (cette tâche uniquement)",
+    "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui n’a pas été fait dans sa propre conversation pendant votre absence disparaît quand vous ouvrez cette conversation ; une carte s’y efface seulement une fois que vous y avez répondu.",
     "attention": "À regarder",
     "changed": "Modifié",
     "failing": "Échouée ou mise en pause d'elle-même"

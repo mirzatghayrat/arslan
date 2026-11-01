@@ -13,17 +13,23 @@ export interface ActivityFilter {
  * Activity's place (0.1.58 §7): the range, the filter, the run open in the drawer and
  * where each box was scrolled. The page unmounts when you leave it (App mounts only the
  * active section), so this lives outside it — coming back lands where you were. Memory
- * only: an app restart starts fresh.
+ * only: an app restart starts fresh. Since v0.1.64 (INB7-a) the page is called Progress;
+ * it also keeps whether the cost by model is open, and which chart colour each model has.
  */
 interface ActivityState {
   range: UsageRange;
   filter: ActivityFilter;
   openRunId: number | null;
   scroll: Record<string, number>;
+  byModelOpen: boolean;
+  /** model → its slot in the chart palette (0–2), so a model keeps its colour when the range changes. */
+  modelSlots: Record<string, number>;
   setRange: (range: UsageRange) => void;
   setFilter: (filter: ActivityFilter) => void;
   setOpenRun: (id: number | null) => void;
   saveScroll: (key: string, top: number) => void;
+  setByModelOpen: (open: boolean) => void;
+  rememberSlots: (slots: Record<string, number>) => void;
 }
 
 export const useActivityStore = create<ActivityState>((set) => ({
@@ -31,8 +37,13 @@ export const useActivityStore = create<ActivityState>((set) => ({
   filter: {},
   openRunId: null,
   scroll: {},
+  byModelOpen: false,
+  modelSlots: {},
   setRange: (range) => set({ range }),
   setFilter: (filter) => set((s) => ({ filter, scroll: { ...s.scroll, runs: 0 } })),
   setOpenRun: (openRunId) => set({ openRunId }),
   saveScroll: (key, top) => set((s) => (s.scroll[key] === top ? s : { scroll: { ...s.scroll, [key]: top } })),
+  setByModelOpen: (byModelOpen) => set({ byModelOpen }),
+  rememberSlots: (slots) => set((s) => (Object.entries(slots).every(([model, slot]) => s.modelSlots[model] === slot) ? s
+    : { modelSlots: { ...s.modelSlots, ...slots } })),
 }));

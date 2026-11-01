@@ -97,7 +97,7 @@
     "arslan": "Main assistant",
     "capabilities": "Capabilities",
     "brain": "Memory",
-    "activity": "Activity",
+    "progress": "Progress",
     "scheduled": "Scheduled"
   },
   "brain": {
@@ -584,8 +584,8 @@
     "desktopNotificationsDesc": "When the window is closed or in the background, macOS notifies you when a task finishes, an action needs your confirmation, or a scheduled task fails. Notifications never show message text.",
     "labelIsland": "Show Arslan in the notch",
     "islandDesc": "A small Arslan at the top of the screen shows what it is working on, when something needs you, and when a task is done. Hover to see more. It never appears in screenshots, recordings or screen sharing.",
-    "automationElsewhere": "Scheduled tasks have their own page; token usage and every past run live in Activity.",
-    "automationOpenActivity": "Open Activity",
+    "automationElsewhere": "Scheduled tasks have their own page; token usage and every past run live in Progress.",
+    "automationOpenActivity": "Open Progress",
     "searchPlaceholder": "Search settings…",
     "searchNoHits": "No section matches",
     "modeSystem": "System",
@@ -713,8 +713,8 @@
     "grpVersion": "Version",
     "grpWhatsNew": "What's new",
     "watchesOnScheduled": "Watched pages and folders, and what you muted, are managed on the Scheduled page.",
-    "openActivity": "Usage and every run are in Activity; scheduled tasks have their own page.",
-    "openActivityBtn": "Open Activity",
+    "openActivity": "Usage and every run are in Progress; scheduled tasks have their own page.",
+    "openActivityBtn": "Open Progress",
     "whatsNewEmpty": "No notes for this version."
   },
   "errors": {
@@ -782,6 +782,8 @@
     "fromPhone": "Started from iPhone",
     "glyph": {
       "waiting": "Waiting for your approval",
+      "waiting_reminder": "A stopped job left you a reminder",
+      "waiting_away": "Couldn't ask you while you were away",
       "remote": "Remote · your iPhone",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
@@ -1432,6 +1434,7 @@
     "intro": "Tasks that run on a schedule, and the pages and folders Arslan watches for you. A dot marks a row that needs a look.",
     "watches": "Watched pages and folders",
     "awayTitle": "Not done while you were away (this task only)",
+    "seenNote": "Opening a task marks what its runs could not do as seen. In the task's own conversation, what was not done while you were away clears when you open that conversation, and a card there clears only once it is answered.",
     "attention": "Needs a look",
     "changed": "Changed",
     "failing": "Failed or paused itself"

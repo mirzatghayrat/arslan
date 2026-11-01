@@ -788,7 +788,7 @@ def prune_trace(today: date | None = None) -> None:
 def trace(entry: dict) -> None:
     """Append one Hands call (0600 file, 0700 folder). Never typed text: its length."""
     now = datetime.now(timezone.utc)
-    line = json.dumps({"at": now.isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
+    line = json.dumps({**entry, "at": now.isoformat(timespec="seconds")}, ensure_ascii=False)   # its own time
     path = _trace_dir() / f"{now.date().isoformat()}.jsonl"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a") as f:
@@ -811,9 +811,13 @@ def read_trace(days: int = TRACE_DAYS, limit: int = 500) -> list[dict]:
             continue
         for line in reversed(lines):
             try:
-                out.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            if not isinstance(entry, dict):
+                continue                           # a line that is no entry
+            entry.setdefault("run_id", None)       # v0.1.64; older entries have none (pruned within 7 days)
+            out.append(entry)
             if len(out) >= limit:
                 return out
     return out
