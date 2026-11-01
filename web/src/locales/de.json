@@ -957,7 +957,7 @@
       "orphaned": "Verwaiste Dateien"
     },
     "import": {
-      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, nach Lizenzprüfung und Sicherheitsscan; unsichtbare Zeichen werden gezählt.",
+      "subtitle": "Standard-SKILL.md, wie geschrieben importiert, nach Lizenzprüfung und Sicherheitsscan. Der Scan blockiert versteckte Tag-Zeichen und Steuerzeichen der Textrichtung; andere unsichtbare Zeichen werden gezählt, nicht blockiert.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "Unterpfad (optional)",
       "scan": "Scannen",

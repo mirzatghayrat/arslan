@@ -957,7 +957,7 @@
       "orphaned": "Orphaned files"
     },
     "import": {
-      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan; invisible characters are counted.",
+      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan. The scan blocks hidden tag characters and text-direction controls; other invisible characters are counted, not blocked.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subpath (optional)",
       "scan": "Scan",
