@@ -483,6 +483,34 @@ sending `null`.
     `other_spent_usd`: that minus the listed tasks' `spent_usd`, never below 0; `spent_partial?`: `true`
     when some use in the range had no price, so `spent_usd` is low (the phone may ignore it).
 
+### 5.11 iPhone 1.0 part B: the Mac's own state (added 2026-11-01; optional fields — additive within v1)
+
+The phone's Overview rings (docs/plans/0164/IPB-frame-list.md §1, OK'd by the user on 2026-11-01). An optional
+`mac` block on `status.snapshot`. The Bridge reads it, each reading on its own clock, and it rides the
+snapshots that are already sent: it is not part of what decides a send, so a reading changing never causes one.
+On a sent snapshot the readings are at most about a minute old (disk: five). Inside the block every field is
+required unless marked `?`; a part-B phone drops the whole block when a required field is missing, and the Mac
+leaves out a reading it doesn't have.
+
+- `taken_at`: ISO 8601 UTC, when this set was put together.
+- `battery?` (absent on a Mac without one): `level` (percent, 0–100), `charging`, `minutes_left?` (only on
+  battery, and only once macOS has an estimate).
+- `cpu?`: `now` (percent of all cores over the last 10-second sample) and `last_hour` (5-minute averages,
+  oldest first, at most 12, only full ones that ended in the last hour; fewer, even `[]`, right after the
+  Bridge starts or after it stopped looking with no phone paired).
+- `memory?`: `used_gb` (GiB, one decimal, Activity Monitor's "Memory Used": app, wired and compressed),
+  `total_gb`, `pressure` (`normal` / `warn` / `critical`; a phone shows another word as it is).
+- `disk?`: the startup volume, `free_gb` and `total_gb` (GB, 10^9, one decimal, as Finder shows).
+- `network?` (absent until the first path update): `kind` (`wifi` / `ethernet` / `other`) and `quality`, the
+  link's state, not a measured speed: `good` (up, neither Low Data Mode nor a hotspot), `fair` (up, but one of
+  them), `poor` (down).
+- `sleep?`: `kept_awake`, whether Arslan holds the Mac awake right now (the desktop shell's rule: the
+  keep-awake setting is on and work is running). The only part the backend sends; the Bridge adds the rest.
+- `os_version?`: `macOS 26.1` (major.minor[.patch]).
+
+**Never sent:** the Wi-Fi name, the BSSID, or any IP address. The network reading is the link's kind and
+state only.
+
 ### 5.4 Error codes
 
 `malformed`, `unsupported_version`, `unknown_type`, `not_for_me`, `bad_signature`, `decrypt_failed`,

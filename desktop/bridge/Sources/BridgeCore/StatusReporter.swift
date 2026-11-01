@@ -11,6 +11,8 @@ public final class StatusReporter {
     let backend: BackendReads
     let mailbox: Mailbox
     let deviceName: String
+    /// The Mac's own state (§5.11); nil leaves the backend's body as it is.
+    let mac: MacState?
     var lastSent: Date?
     var lastHeadline = "", lastDetail = ""
     /// Each phone's snapshot it has not acknowledged yet. The next one replaces it (§5.3): a phone
@@ -18,8 +20,8 @@ public final class StatusReporter {
     /// acknowledged on its own, when only the last says anything.
     var unread: [String: String] = [:]
 
-    public init(backend: BackendReads, mailbox: Mailbox, deviceName: String) {
-        (self.backend, self.mailbox, self.deviceName) = (backend, mailbox, deviceName)
+    public init(backend: BackendReads, mailbox: Mailbox, deviceName: String, mac: MacState? = nil) {
+        (self.backend, self.mailbox, self.deviceName, self.mac) = (backend, mailbox, deviceName, mac)
     }
 
     /// One look (about every 2 s): send to every paired phone if it is time to.
@@ -48,6 +50,8 @@ public final class StatusReporter {
         body["jobs"] = (body["jobs"] as? [[String: Any]] ?? []).map { FrameMapper.jobEvent($0, conversationID: "") }
         body["device_name"] = deviceName
         body["last_seen"] = ISO8601DateFormatter().string(from: now)
+        // §5.11: the Mac's readings, with the one part only the backend knows (`sleep`). Not in `signature`.
+        if let mac { body["mac"] = mac.block(now: now, sleep: (body["mac"] as? [String: Any])?["sleep"] as? [String: Any]) }
         return body
     }
 
