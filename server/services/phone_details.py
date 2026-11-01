@@ -4,6 +4,7 @@ sees at most 40 steps of a run and 200 messages, so it would undercount.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import unicodedata
@@ -75,18 +76,23 @@ def _fold_home(text: str) -> str:
     return home_text.fold_home(text, str(_home()))
 
 
-def _names_home(text: str) -> bool:
-    """Whether `text` still names the home folder in any form `fold_home` does not read: percent-encoded,
-    full-width, with JSON-escaped slashes, under `file://localhost` or the Data volume (#650 delta review)."""
-    home = str(_home()).rstrip("/")
+def _decoded(text: str) -> str:
+    """`text` as the home check reads it: NFKC, percent-decoded until it stops changing (`%252F…`), and with
+    JSON-escaped slashes as slashes."""
     flat = unicodedata.normalize("NFKC", text)
-    for _ in range(5):                                  # decoded until it stops changing (%252F…)
+    for _ in range(5):
         decoded = unquote(flat)
         if decoded == flat:
             break
         flat = decoded
-    flat = flat.replace("\\/", "/")
-    return bool(home) and home.casefold() in flat.casefold()
+    return flat.replace("\\/", "/")
+
+
+def _names_home(text: str) -> bool:
+    """Whether `text` still names the home folder in any form `fold_home` does not read: percent-encoded (even
+    twice), full-width, with JSON-escaped slashes, under `file://localhost` or the Data volume (#650 reviews)."""
+    home = str(_home()).rstrip("/")
+    return bool(home) and home.casefold() in _decoded(text).casefold()
 
 
 def _shown_name(text: str, fallback: str) -> str:
@@ -95,7 +101,7 @@ def _shown_name(text: str, fallback: str) -> str:
     and `fallback` instead when it still names the home in another form (fail closed)."""
     from server.services import connection_secrets
     masked = " ".join(connection_secrets.shown(None, text.split(" "))[1])
-    masked = re.sub(r"(?i)(\bauthorization\s*:\s*(?:bearer|basic)\s+)\S+", r"\1●●●●", masked)
+    masked = re.sub(r"(?i)(\b(?:authorization\s*:\s*(?:bearer|basic)\s+|x-api-key\s*:\s*))\S+", r"\1●●●●", masked)
     folded = _fold_home(masked)
     return fallback if not folded or _names_home(folded) else folded
 
@@ -116,7 +122,7 @@ def shown_model(model: str) -> str:
         clean = last
     clean = _fold_home(clean)
     if _names_home(clean):                              # read as the check reads it, then its last part
-        return re.split(r"[/\\]", unquote(unicodedata.normalize("NFKC", clean)).replace("\\/", "/"))[-1]
+        return re.split(r"[/\\]", _decoded(clean))[-1]
     return clean
 
 
@@ -129,8 +135,10 @@ def _connector_name(server) -> str:
     from server import crypto
     fallback = f"MCP {server.id}"
     try:
-        if server.env:
-            crypto.decrypt(server.env)                  # runtime_dict reads an undecryptable env as {}, silently
+        for column in (server.env, getattr(server, "secrets", None)):
+            # runtime_dict reads an undecryptable or malformed column as {}, silently: check both first.
+            if column and not isinstance(json.loads(crypto.decrypt(column)), dict):
+                return fallback
         runtime = discovery.runtime_dict(server)
     except Exception:  # noqa: BLE001 — unreadable: named by its number
         return fallback

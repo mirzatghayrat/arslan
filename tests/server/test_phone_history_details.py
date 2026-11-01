@@ -410,6 +410,7 @@ def test_a_huge_edit_is_counted_fast():
     ("../models/r.gguf", "r.gguf"),
     ("org/x/Users/alice/models/o.gguf", "o.gguf"),
     ("m%2FUsers%2Falice%2Fq.gguf", "q.gguf"),                                 # encoded: fails closed to its last part
+    ("m%252FUsers%252Falice%252Fm.gguf", "m.gguf"),                           # encoded twice
     ("anthropic/claude-sonnet-5-5", "anthropic/claude-sonnet-5-5"),          # a router's id is not a path
     ("claude-sonnet-5-5", "claude-sonnet-5-5"),
 ])
@@ -507,3 +508,28 @@ async def test_a_doubly_encoded_home_falls_back(client, mcp_ready, monkeypatch):
     mcp_ready.add(1)
     await _add(client, [mcp(1, "files %252FUsers%252Falice%252Fmcp")])
     assert [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"] == ["MCP 1"]
+
+
+
+# ------------------------------------------------------------------ #650's third delta review
+
+@pytest.mark.parametrize("column, value", [
+    ("secrets", "not-a-ciphertext"),                     # SEC1's column, unreadable
+    ("env", "LIST"), ("secrets", "LIST"),                # readable, but not a mapping
+])
+async def test_a_server_whose_env_or_secrets_cannot_be_read_as_a_mapping_is_its_number(client, mcp_ready, monkeypatch,
+                                                                                      column, value):
+    from server import crypto
+    monkeypatch.setenv("ARSLAN_ALLOW_INSECURE_SECRETS", "1")
+    mcp_ready.add(1)
+    rows = [mcp(1, "Calendar")]
+    setattr(rows[0], column, crypto.encrypt(json.dumps(["x"])) if value == "LIST" else value)
+    await _add(client, rows)
+    assert [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"] == ["MCP 1"]
+
+
+async def test_an_api_key_header_in_a_label_is_masked(client, mcp_ready):
+    mcp_ready.add(1)
+    await _add(client, [mcp(1, "api X-API-Key: abcdefgh12345678")])
+    names = [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"]
+    assert "abcdefgh12345678" not in names[0] and names[0].startswith("api X-API-Key:")
