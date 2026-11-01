@@ -224,6 +224,15 @@ jobs:
           # The shared protocol vectors from the Mac side (the iOS CI runs the same files).
           swift test --package-path desktop/bridge
 
+      - name: Arslan Bridge under ThreadSanitizer
+        # BRG1 (#657): the Bridge's loops (the store poll, the held progress lines, the status snapshot, the
+        # sweep) and a phone's hello reach shared state from several tasks at once. A data race there repeated a
+        # `seq` the phone then dropped as a replay, or crashed the Bridge. The concurrency tests only prove the
+        # locks under TSan, and halt_on_error makes any race fail the build.
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: swift test --sanitize=thread --package-path desktop/bridge
+
       # ── Rust: the desktop shell, checked at last ─────────────────────────────
       # lib.rs owns the window, the updater, and the sidecar lifecycle — the
       # exact layer every packaged-only defect has lived in — and until this
