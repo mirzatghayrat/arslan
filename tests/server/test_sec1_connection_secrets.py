@@ -10,7 +10,7 @@ from server.services import connection_secrets as cs
 
 URL = "https://mcp.notes.example/sse?token=tok_example_42&view=full"
 KEY = "ak_" + "9f8e7d6c5b4a3210" + "fedcba98"           # fake; built at run time so no scanner reads it as one
-ARGS = ["-y", "@acme/notes-mcp", "--api-key", KEY, "--port", "8080", "MODE=fast"]
+ARGS = ["-y", "@acme/notes-mcp@1.0.0", "--api-key", KEY, "--port", "8080", "MODE=fast"]
 
 
 def test_secret_looking_parts_are_found_and_nothing_else():
@@ -98,7 +98,7 @@ def test_a_move_leaves_a_placeholder_and_fill_puts_the_value_back():
 def test_the_shown_address_and_arguments_never_hold_a_secret():
     shown_url, shown_args = cs.shown("https://me:hunter2pass@mcp.example/x?token=tok_example_42&view=full", ARGS)
     assert "hunter2pass" not in shown_url and "tok_example_42" not in shown_url and "view=full" in shown_url
-    assert KEY not in shown_args and "8080" in shown_args and "@acme/notes-mcp" in shown_args
+    assert KEY not in shown_args and "8080" in shown_args and "@acme/notes-mcp@1.0.0" in shown_args
 
 
 async def test_a_stored_connection_moves_its_secret_and_still_starts_with_it(execution_db):

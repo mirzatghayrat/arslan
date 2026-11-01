@@ -881,6 +881,7 @@ class Judgment(Base):
     error = Column(String(40), nullable=True)
     ref = Column(String(80), nullable=True)              # e.g. the card's call_id
     conversation_id = Column(String(50), nullable=True)
+    run_id = Column(Integer, nullable=True)              # v0.1.64 (0085): the run it belongs to; older rows null
     outcome = Column(String(20), nullable=True)          # approved | declined | timeout | followed | ...
     outcome_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
