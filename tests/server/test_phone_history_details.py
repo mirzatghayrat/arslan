@@ -382,3 +382,83 @@ def test_another_unicode_form_is_the_same_home_even_where_the_disk_cannot_tell()
 def test_a_folder_outside_the_home_is_only_its_last_part(folder, shown):
     """The user, 2026-11-01 (「#650 文件夹选 a」): no volume and no full path leave the Mac."""
     assert phone_details.shown_folder(folder, "/Users/alice") == shown
+
+
+# ------------------------------------------------------------------ #650's delta review
+
+def test_a_huge_edit_is_counted_fast():
+    import time as clock
+    old = "same\n" * 20_000                                      # repeated lines: difflib's quadratic case
+    small = "same\n" * 9_000 + "changed\n" + "same\n" * 10_999
+    started = clock.perf_counter()
+    review = tool_review.capture("edit_file", {"path": "a.py", "old_string": old, "new_string": small}, {"ok": True})
+    assert (review["added"], review["removed"]) == (1, 1)
+    rewritten = "other\n" * 20_000 + "same\n"                     # a middle of 20,000 lines: all removed, all added
+    review = tool_review.capture("edit_file", {"path": "a.py", "old_string": "a\n" + old, "new_string": "a\n" + rewritten},
+                                 {"ok": True})
+    assert (review["added"], review["removed"]) == (20_000, 19_999)
+    assert clock.perf_counter() - started < 1.0, "a quadratic diff on the event loop took seconds"
+
+
+@pytest.mark.parametrize("model, shown", [
+    ("/Users/alice/models/q.gguf", "q.gguf"),
+    ("~/models/a.gguf", "a.gguf"),
+    ("\\\\server\\share\\m.gguf", "m.gguf"),
+    ('"/Users/alice/models/q.gguf"', "q.gguf"),
+    ("C:\\Users\\alice\\models\\w.gguf", "w.gguf"),
+    ("file:///Users/alice/m.gguf", "m.gguf"),
+    ("../models/r.gguf", "r.gguf"),
+    ("org/x/Users/alice/models/o.gguf", "o.gguf"),
+    ("m%2FUsers%2Falice%2Fq.gguf", "q.gguf"),                                 # encoded: fails closed to its last part
+    ("anthropic/claude-sonnet-5-5", "anthropic/claude-sonnet-5-5"),          # a router's id is not a path
+    ("claude-sonnet-5-5", "claude-sonnet-5-5"),
+])
+def test_a_model_id_that_is_a_path_in_any_form_is_its_last_part(model, shown, monkeypatch):
+    monkeypatch.setattr(phone_details, "_home", lambda: "/Users/alice")
+    assert phone_details.shown_model(model) == shown
+
+
+@pytest.mark.parametrize("label", [
+    "files %2FUsers%2Falice%2Fmcp",                       # percent-encoded
+    "files ／Users／alice／mcp",                            # full-width solidus
+    "files \\/Users\\/alice\\/mcp",                       # JSON-escaped slashes
+    "files file://localhost/Users/alice/mcp",
+    "files /System/Volumes/Data/Users/alice/mcp",
+])
+async def test_a_name_that_still_names_the_home_falls_back(client, mcp_ready, monkeypatch, label):
+    monkeypatch.setattr(phone_details, "_home", lambda: "/Users/alice")
+    mcp_ready.add(1)
+    await _add(client, [mcp(1, label)])
+    names = [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"]
+    assert names == ["MCP 1"]
+
+
+async def test_a_skill_name_is_masked_and_never_names_the_home(client, monkeypatch):
+    monkeypatch.setattr(phone_details, "_home", lambda: "/Users/alice")
+    from server.db.models import SkillPack
+    await _add(client, [SkillPack(key="zz-path", name="notes from /Users/alice/x", body="b", status="registered", category="imported", description="d", tier="community"),
+                        SkillPack(key="zz-enc", name="notes %2FUsers%2Falice", body="b", status="registered", category="imported", description="d", tier="community"),
+                        SkillPack(key="zz-tok", name="deploy --token flagtokenbbbb", body="b", status="registered", category="imported", description="d", tier="community")])
+    names = {c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "skill"}
+    assert "notes from ~/x" in names and "zz-enc" in names
+    assert not any("flagtokenbbbb" in n for n in names)
+
+
+async def test_a_server_whose_secrets_cannot_be_read_is_named_by_its_number(client, mcp_ready, monkeypatch):
+    mcp_ready.update({1, 2})
+    rows = [mcp(1, "Files"), mcp(2, "Mail")]
+    rows[0].env = "not-a-ciphertext"                       # the key changed: env reads as {} without raising
+    await _add(client, rows)
+    from server.mcp import discovery
+    real = discovery.runtime_dict
+    monkeypatch.setattr(discovery, "runtime_dict", lambda srv: (_ for _ in ()).throw(RuntimeError("boom"))
+                        if srv.id == 2 else real(srv))
+    names = {c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"}
+    assert names == {"MCP 1", "MCP 2"}
+
+
+async def test_a_bearer_token_in_a_label_is_masked(client, mcp_ready):
+    mcp_ready.add(1)
+    await _add(client, [mcp(1, "api Authorization: Bearer abcdefgh12345678")])
+    names = [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"]
+    assert "abcdefgh12345678" not in names[0]

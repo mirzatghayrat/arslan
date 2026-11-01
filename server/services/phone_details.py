@@ -5,8 +5,10 @@ sees at most 40 steps of a run and 200 messages, so it would undercount.
 from __future__ import annotations
 
 import os
+import re
 import unicodedata
-from pathlib import Path, PurePosixPath
+from pathlib import Path
+from urllib.parse import unquote
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,32 +75,59 @@ def _fold_home(text: str) -> str:
     return home_text.fold_home(text, str(_home()))
 
 
+def _names_home(text: str) -> bool:
+    """Whether `text` still names the home folder in any form `fold_home` does not read: percent-encoded,
+    full-width, with JSON-escaped slashes, under `file://localhost` or the Data volume (#650 delta review)."""
+    home = str(_home()).rstrip("/")
+    flat = unquote(unicodedata.normalize("NFKC", text)).replace("\\/", "/")
+    return bool(home) and home.casefold() in flat.casefold()
+
+
+def _shown_name(text: str, fallback: str) -> str:
+    """A typed name for the phone: anything in it that looks like a secret masked as a server's address and
+    arguments are (`connection_secrets.shown`, and an `Authorization: Bearer …` value), the home folder as `~`,
+    and `fallback` instead when it still names the home in another form (fail closed)."""
+    from server.services import connection_secrets
+    masked = " ".join(connection_secrets.shown(None, text.split(" "))[1])
+    masked = re.sub(r"(?i)\b(bearer|basic)\s+\S+", r"\1 ●●●●", masked)
+    folded = _fold_home(masked)
+    return fallback if not folded or _names_home(folded) else folded
+
+
+#: An id that is a file path, in any of the forms a local server reports or a user pastes (#650 delta review).
+_PATH_ID = re.compile(r"""^(?:[/~\\"']|file:|\.\.?[/\\]|[A-Za-z]:[/\\])|[/\\](?:users|home)[/\\]""", re.I)
+
+
 def shown_model(model: str) -> str:
     """A model id for the phone: one clean line of at most 200 characters (an id has no length limit, and
-    `details` is kept whole in the history envelope), and only the file name of an id that is a path
-    (llama.cpp without `--alias` names a model by its file, which can be under the home folder; #650 review)."""
+    `details` is kept whole in the history envelope), and only the last part of an id that is a path
+    (llama.cpp without `--alias` names a model by its file, which can be under the home folder; #650 review).
+    A router's `vendor/model` id is not a path. Fail closed: an id that still names the home is its last part."""
     from server.orchestrator import untrusted
     clean = untrusted.clean_name(model, 200)
-    if clean.startswith(("/", "~")):
-        clean = PurePosixPath(clean).name or clean
+    last = re.split(r"[/\\]", clean.strip("\"'"))[-1] or clean
+    if _PATH_ID.search(clean):
+        clean = last
+    clean = _fold_home(clean)
+    if _names_home(clean):                              # read as the check reads it, then its last part
+        return re.split(r"[/\\]", unquote(unicodedata.normalize("NFKC", clean)).replace("\\/", "/"))[-1]
     return clean
 
 
 def _connector_name(server) -> str:
-    """An MCP server's display name: its label (any script, at most 80 characters), with whatever in it looks like
-    a secret masked as the server's address and arguments are (`connection_secrets.shown`), its own secret values
-    masked (`supervisor.mask_for`), and the home folder as `~` (#650 review: a label is typed, and a user may
-    paste a URL with a token into it)."""
+    """An MCP server's display name: its label (any script, at most 80 characters), masked and folded
+    (`_shown_name`), with its own secret values masked too (`supervisor.mask_for`). A server whose secrets can't
+    be read is named by its number, never by a label that could not be checked against them."""
     from server.mcp import discovery, supervisor
     from server.orchestrator import untrusted
-    from server.services import connection_secrets
-    name = untrusted.clean_name(server.label, 80)
-    name = " ".join(connection_secrets.shown(None, name.split(" "))[1])
+    fallback = f"MCP {server.id}"
     try:
-        name = supervisor.mask_for(discovery.runtime_dict(server), name)
-    except Exception:  # noqa: BLE001 — an unreadable server is named by its number, never by an unmasked label
-        return f"MCP {server.id}"
-    return _fold_home(name) or f"MCP {server.id}"
+        runtime = discovery.runtime_dict(server)
+    except Exception:  # noqa: BLE001 — unreadable: named by its number
+        return fallback
+    if server.env and not runtime.get("env"):         # runtime_dict reads an undecryptable env as {}
+        return fallback
+    return _shown_name(supervisor.mask_for(runtime, untrusted.clean_name(server.label, 80)), fallback)
 
 
 async def _model(db: AsyncSession, conversation_id: str) -> str | None:
@@ -129,7 +158,9 @@ async def _connectors(db: AsyncSession, conversation_id: str) -> list[dict]:
     others = [{"name": _connector_name(server), "kind": "mcp",
                "on": not quick and bool(server.host_allowed) and supervisor.ready_now(server.id, server.state)}
               for server in (await db.execute(select(MCPServer).order_by(MCPServer.id))).scalars()]
-    others += [{"name": pack.name or pack.key, "kind": "skill", "on": not quick and pack.enabled is not False}
+    from server.orchestrator import untrusted
+    others += [{"name": _shown_name(untrusted.clean_name(pack.name or pack.key, 80), pack.key), "kind": "skill",
+                "on": not quick and pack.enabled is not False}
                for pack in (await db.execute(select(SkillPack).where(
                    SkillPack.status == "registered", SkillPack.body.is_not(None), func.trim(SkillPack.body) != "",
                ).order_by(SkillPack.key))).scalars()]
@@ -148,7 +179,8 @@ async def _changes(db: AsyncSession, conversation_id: str) -> dict | None:
     for run_id, ref, detail in (await db.execute(
             select(RunStep.run_id, RunStep.ref, RunStep.detail).join(Run, RunStep.run_id == Run.id)
             .where(Run.conversation_id == conversation_id, Run.kind != "replay", RunStep.kind == "tool_call",
-                   RunStep.ref["tool"].as_string().in_(CHANGE_TOOLS)))).all():
+                   RunStep.ref["tool"].as_string().in_(CHANGE_TOOLS))
+            .order_by(RunStep.run_id.desc(), RunStep.seq.desc()))).all():
         review = (detail or {}).get("review")
         if not (ref or {}).get("ok") or not isinstance(review, dict):
             continue
