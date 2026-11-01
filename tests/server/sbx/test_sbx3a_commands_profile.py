@@ -71,8 +71,11 @@ def test_the_writable_roots_are_tagged(tmp_path):
     assert [r for r in roots if r.tag == "in_scope"] == [command_sandbox.Root(str(tmp_path.resolve()), "in_scope")]
     tags = {r.path: r.tag for r in roots}
     home = Path.home()
+    from server.services import run_temp
+    # SBX-5 §1c: the one cache a command writes is Arslan's own; the user's are read-only.
     assert {path for path, tag in tags.items() if tag == "shared_cache"} == {
-        str(command_sandbox._real(home / name)) for name in ("Library/Caches", ".cache", ".npm")}
+        str(command_sandbox._real(run_temp.cache("commands")))}
+    assert not {str(command_sandbox._real(home / n)) for n in ("Library/Caches", ".cache", ".npm")} & set(tags)
     assert {r.path for r in roots if r.tag == "device"} == {
         "/dev/null", "/dev/zero", "/dev/tty", "/dev/ptmx", "/dev/fd", r"^/dev/ttys[0-9]+$"}
     assert "/dev" not in tags                                        # no longer all of /dev
@@ -137,16 +140,23 @@ def home(monkeypatch, tmp_path):
 
 
 def _base_for(home, network, **kw):
+    from server.services import run_temp
     roots = command_sandbox.writable_roots(home / "ws")
     return sandbox_profile.default_deny_profile(
-        [Path(r.path) for r in roots if r.tag != "device"], command_sandbox.default_protected(),
-        closed=command_sandbox.app_data(), network=network, **kw)
+        [Path(r.path) for r in roots if r.tag != "device"],
+        [*command_sandbox.default_protected(), *command_sandbox.cap6b_folders()],
+        closed=[*command_sandbox.app_data(), run_temp.cache("mcp")], network=network, **kw)
+
+
+def _shared_caches_read_only() -> str:
+    """SBX-5 §1c: the one rule 3a's preset always adds after the base."""
+    return "(deny file-write* " + " ".join(f'(subpath "{p}")' for p in command_sandbox.shared_caches()) + ")\n"
 
 
 def test_the_commands_profile_starts_with_the_base_text(home):
     for offline, mode in ((True, NetworkMode.NONE), (False, NetworkMode.ANY_DECLARED)):
         text = command_sandbox.commands_profile(home / "ws", offline=offline)
-        assert text == _base_for(home, mode), mode       # nothing to reopen: exactly the base
+        assert text == _base_for(home, mode) + _shared_caches_read_only(), mode   # nothing to reopen
 
 
 def test_online_is_any_declared_and_offline_is_none(home):
@@ -181,12 +191,14 @@ def test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_c
     base = _base_for(home, NetworkMode.ANY_DECLARED)
     assert not text.startswith(base)                        # the closed Desktop is part of the base's text
     shown = text.replace(os.path.realpath(home), "<H>").splitlines()
-    tail = shown[len(shown) - 4:]
+    tail = shown[len(shown) - 5:]
     assert tail[0] == '(allow file-read* file-write* file-map-executable (subpath "<H>/Desktop/ws"))'
     assert tail[1] == '(allow file-read* file-map-executable (subpath "<H>/Desktop/proj"))'
     assert tail[2].startswith("(deny file-read* file-write* file-map-executable ") and '"<H>/.ssh"' in tail[2]
-    assert tail[3] == '(allow file-read* (literal "<H>/Library/Application Support/Arslan/out.txt"))'
-    assert shown[len(shown) - 5].startswith("(deny network-outbound ")   # the base's protected sockets, before
+    assert '"<H>/.agents/skills"' in tail[2]                               # SBX-5: CAP6b closes again too
+    assert tail[3] == '(deny file-write* (subpath "<H>/Library/Caches") (subpath "<H>/.cache") (subpath "<H>/.npm"))'
+    assert tail[4] == '(allow file-read* (literal "<H>/Library/Application Support/Arslan/out.txt"))'
+    assert shown[len(shown) - 6].startswith("(deny network-outbound ")   # the base's protected sockets, before
 
 
 def test_the_sbx_harness_registers_the_product_preset():

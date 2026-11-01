@@ -29,6 +29,15 @@ def T(tmp_path):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _fixed_home_and_caches(T, monkeypatch):
+    """SBX-5: the profiles now name the user's caches and CAP6b folders (under ~) and Arslan's own cache folders
+    (next to the runs' root): fixed under <T>, so the texts don't depend on this machine."""
+    from server.services import run_temp
+    monkeypatch.setattr(Path, "home", lambda: Path(os.path.realpath(T)) / "home")
+    monkeypatch.setattr(run_temp, "cache", lambda preset: Path(os.path.realpath(T)) / f"cache-{preset}")
+
+
 @pytest.fixture
 def A(T):
     """The way in: a link to the test's folder (inside it, so a path not resolved reads <T>/alias/…)."""
@@ -118,6 +127,7 @@ def test_outside_floor(T, A, monkeypatch):
 (deny network*)
 (deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key"))
 (deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key"))
+(deny file-read* file-write* (subpath "<T>/home/.agents/skills"))
 (allow file-read* (literal "<T>/copy.txt"))
 """
     assert _shown(command_sandbox.minimal_profile(), T) == """\
@@ -126,6 +136,7 @@ def test_outside_floor(T, A, monkeypatch):
 (deny appleevent-send)
 (deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key"))
 (deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key"))
+(deny file-read* file-write* (subpath "<T>/home/.agents/skills"))
 """
 
 
@@ -167,9 +178,11 @@ def test_run_python_and_artifact_checks(T, A):
 (allow process-exec (literal "<T>/py/bin/python3"))
 (allow file-read* (literal "<T>/py/pyvenv.cfg"))
 (deny file-write* (subpath "<T>/refs"))
+(deny file-read* file-write* file-map-executable (subpath "<T>/home/.agents/skills"))
 """
-    # The artifact checks pass no references: the same text without the last rule.
-    assert code_sandbox.computation_profile(python, A / "work") == text[:text.rindex("(deny file-write*")]
+    # The artifact checks pass no references: the same text without the references rule.
+    refs = next(line for line in text.splitlines(True) if line.startswith('(deny file-write* (subpath "'))
+    assert code_sandbox.computation_profile(python, A / "work") == text.replace(refs, "")
 
 
 def test_run_python_in_a_venv_reached_through_a_link(T, A):
@@ -205,6 +218,7 @@ def test_run_python_in_a_venv_reached_through_a_link(T, A):
 (allow process-exec (literal "<T>/py/bin/python3"))
 (allow file-read* (literal "<T>/alias/venv/pyvenv.cfg"))
 (allow file-read* (literal "<T>/py/pyvenv.cfg"))
+(deny file-read* file-write* file-map-executable (subpath "<T>/home/.agents/skills"))
 """
 
 
@@ -224,8 +238,8 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (allow sysctl-read)
 (allow user-preference-read)
 (allow file-read-metadata)
-(allow file-read* file-map-executable (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld") (subpath "<T>/granted") (subpath "<T>/granted"))
-(allow file-write* (subpath "<T>/granted") (subpath "<T>/granted"))
+(allow file-read* file-map-executable (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld") (subpath "<T>/granted") (subpath "<T>/granted") (subpath "<T>/cache-mcp"))
+(allow file-write* (subpath "<T>/granted") (subpath "<T>/granted") (subpath "<T>/cache-mcp"))
 (allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
 (allow pseudo-tty)
 (allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
@@ -237,11 +251,15 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (deny network-bind network-inbound)
 (deny appleevent-send)
 (deny user-preference-write)
+(deny file-read* file-write* file-map-executable (subpath "<T>/cache-commands"))
+(deny network-outbound (subpath "<T>/cache-commands"))
 (deny file-read* file-write* file-map-executable (subpath "<T>/prot") (literal "<T>/prot.key"))
 (deny network-outbound (subpath "<T>/prot") (literal "<T>/prot.key"))
 (allow file-read-data (literal "/"))
 (allow file-read* file-map-executable (subpath "<T>/runtimes"))
 (allow file-read* file-write* file-map-executable (subpath "<T>/mcp"))
+(deny file-write* (subpath "<T>/home/.agents/skills"))
+(deny file-write* (subpath "<T>/home/Library/Caches") (subpath "<T>/home/.cache") (subpath "<T>/home/.npm"))
 """
     assert _shown(capability_sandbox.profile(root=A / "mcp", folders=[], network=False, read=[]), T) == """\
 (version 1)
@@ -252,7 +270,8 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (allow sysctl-read)
 (allow user-preference-read)
 (allow file-read-metadata)
-(allow file-read* file-map-executable (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld"))
+(allow file-read* file-map-executable (subpath "/usr") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/private/etc") (subpath "/dev") (subpath "/private/var/db/timezone") (subpath "/private/var/db/dyld") (subpath "<T>/cache-mcp"))
+(allow file-write* (subpath "<T>/cache-mcp"))
 (allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
 (allow pseudo-tty)
 (allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
@@ -261,10 +280,14 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (deny appleevent-send)
 (deny user-preference-write)
 (deny network*)
+(deny file-read* file-write* file-map-executable (subpath "<T>/cache-commands"))
+(deny network-outbound (subpath "<T>/cache-commands"))
 (deny file-read* file-write* file-map-executable (subpath "<T>/prot") (literal "<T>/prot.key"))
 (deny network-outbound (subpath "<T>/prot") (literal "<T>/prot.key"))
 (allow file-read-data (literal "/"))
 (allow file-read* file-write* file-map-executable (subpath "<T>/mcp"))
+(deny file-write* (subpath "<T>/home/.agents/skills"))
+(deny file-write* (subpath "<T>/home/Library/Caches") (subpath "<T>/home/.cache") (subpath "<T>/home/.npm"))
 """
 
 

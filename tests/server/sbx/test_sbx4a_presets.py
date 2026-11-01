@@ -72,7 +72,7 @@ def test_computation_starts_with_the_base_and_keeps_its_narrow_rules(home):
     lines = text.splitlines()
     after = lines[lines.index("(deny process-exec)") + 1:]          # only its own interpreter runs
     assert f'(allow process-exec (literal "{exe}"))' in after
-    assert f'(deny file-write* (subpath "{(work / "refs").resolve()}"))' == lines[-1]
+    assert f'(deny file-write* (subpath "{(work / "refs").resolve()}"))' in after
     assert '(allow file-read-data (literal "/"))' in text
 
 
@@ -84,7 +84,7 @@ def test_mcp_closes_the_protected_paths_after_its_grants_and_reopens_its_own_fol
     lines = text.splitlines()
     protected = lines.index(f'(deny file-read* file-write* file-map-executable (subpath "{data.resolve()}"))')
     assert f'(allow file-read* file-map-executable (subpath "{runtime.resolve()}"))' in lines[protected:]
-    assert lines[-1] == f'(allow file-read* file-write* file-map-executable (subpath "{root.resolve()}"))'
+    assert f'(allow file-read* file-write* file-map-executable (subpath "{root.resolve()}"))' in lines[protected:]
     assert '(allow network-outbound (remote tcp "*:*"))' in text                       # declared: any-declared
     off = capability_sandbox.profile(root=root, folders=[], network=False, read=[])
     assert "(deny network*)" in off and '"*:*"' not in off

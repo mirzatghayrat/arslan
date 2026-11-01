@@ -179,6 +179,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     prefix: list[str] = []
     mode = "off"
     if sandbox:
+        env.update(command_sandbox.cache_environment(run_temp.cache("commands")))   # SBX-5 §1c: its own cache
         prefix = command_sandbox.wrapper(cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
                                          copies=copies) or []
         mode = "workspace" if prefix else "unavailable"

@@ -42,6 +42,15 @@ def root() -> Path:
     return real(tempfile.gettempdir()) / f"arslan-runs-{tag}"
 
 
+def cache(preset: str) -> Path:
+    """SBX-5 §1c: the Arslan-owned cache folder a preset's tools write instead of the user's ~/.npm, ~/.cache and
+    ~/Library/Caches: "commands" or "mcp", never shared (a package a command plants must not reach an MCP server).
+    Next to the runs' root, outside every protected root; named, not made (the caller makes it, 0700)."""
+    if preset not in ("commands", "mcp"):
+        raise ValueError(f"no cache for {preset!r}")
+    return root().parent / f"{root().name.replace('arslan-runs-', 'arslan-cache-')}" / preset
+
+
 def folder(key: int) -> Path:
     """The folder of run `key` (a run id), made on first use: 0700, resolved."""
     path = _folders.get(key)

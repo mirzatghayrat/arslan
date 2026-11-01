@@ -100,7 +100,22 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
 
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
+    if for_write:
+        _refuse_cap6b(resolved, root, user_path)
     return resolved
+
+
+def _refuse_cap6b(path: Path, root: Path, user_path) -> None:
+    """SBX-5 CAP6b: write_file and edit_file never write the skill or plugin folders, nor Arslan's data folder
+    (it holds the MCP config), even when the working folder contains them. A working folder that is itself
+    inside the data folder (an eval's profile) still writes its own files: the path is already inside it."""
+    from server import config
+    from server.services import command_sandbox
+    data = Path(config.data_dir()).resolve()
+    folders = [*command_sandbox.cap6b_folders(), *([] if root == data or data in root.parents else [data])]
+    for folder in folders:
+        if path == folder or folder in path.parents:
+            raise PathEscape(f"refusing to write Arslan's skills, plugins or data: {user_path}")
 
 
 def _contained(path: Path, root: Path) -> bool:

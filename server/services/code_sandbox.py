@@ -161,6 +161,10 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
         rules.allow("file-read*", literal(prefix / "pyvenv.cfg"))
     if references is not None:
         rules.deny("file-write*", subpath(references.resolve()))
+    # SBX-5 CAP6b: run_python can't reach the skill or plugin folders at all, even one a link puts in its workspace.
+    from server.services import command_sandbox
+    rules.deny("file-read* file-write* file-map-executable",
+               *(subpath(p) for p in command_sandbox.cap6b_folders()))
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 

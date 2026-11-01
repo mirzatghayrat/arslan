@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base == "commands":
+        if self.base in {"commands", "outside-floor", "mcp", "run-python", "artifact"}:   # product presets
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -85,7 +85,8 @@ class Harness:
                     [*command_sandbox.default_protected(), self.protected],
                     offline=self.network == NetworkMode.NONE)
         if self.base == "outside-floor":
-            return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE)
+            return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE,
+                                                   plugin_folder=getattr(self, "plugin_root", None))
         raise NotImplementedError(f"no profile adapter for {self.base}")
 
     def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False):
@@ -145,6 +146,9 @@ def _commands_profile(self, **parameters) -> str:
     options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
     if self.network == NetworkMode.PROXY:
         options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+    # SBX-5: a test's own cache roots and plugin folder, when it sets them (SBX-5p), else the product's.
+    options.update(cache=getattr(self, "cache_root", None), peer_cache=getattr(self, "peer_cache", None),
+                   plugin_folder=getattr(self, "plugin_root", None))
     options.update(parameters)
     return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
 
@@ -170,15 +174,23 @@ def _computation_profile(self, **parameters) -> str:
 def _mcp_profile(self, **parameters) -> str:
     from unittest.mock import patch
     from server.services import capability_sandbox
-    grants = parameters.pop("granted_folders", [])
-    protected = parameters.pop("protected", [self.protected])
+    grants = parameters.pop("granted_folders", getattr(self, "granted_folders", []))
+    # The product's protected list always has Arslan's data folder; here that is this harness's (ARSLAN_DATA_DIR).
+    protected = parameters.pop("protected", [self.protected, Path(self.env["ARSLAN_DATA_DIR"])])
     parameters.pop("references", None)
     if parameters:
         raise ValueError(f"MCP takes no {sorted(parameters)}")
     with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
         return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
                                           network=self.network != NetworkMode.NONE,
-                                          read=[sys.prefix, sys.base_prefix])
+                                          read=[sys.prefix, sys.base_prefix],
+                                          cache=getattr(self, "cache_root", None),
+                                          peer_cache=getattr(self, "peer_cache", None),
+                                          plugin_folder=getattr(self, "plugin_root", None))
 
 
 BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
+
+# SBX-5a builds the CAP6b protections (`command_sandbox.cap6b_folders`, the outside floor's closure, MCP's write
+# refusal, `workspace_paths`' refusal), so the feature is claimed in the same commit.
+BUILT_FEATURES = frozenset({"cap6b"})

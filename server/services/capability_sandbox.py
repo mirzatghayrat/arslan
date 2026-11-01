@@ -28,7 +28,8 @@ SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/pri
                "/private/var/db/timezone", "/private/var/db/dyld")
 
 
-def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -> str:
+def profile(*, root: Path, folders: list[str], network: bool, read: list[str], cache: Path | None = None,
+            peer_cache: Path | None = None, plugin_folder: Path | None = None) -> str:
     """The SBPL text. `root` = the server's own folder (read/write); `folders` = granted by
     the user (read/write); `read` = extra read-only paths (Arslan's runtimes).
 
@@ -36,16 +37,23 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -
     `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS;
     SBX-6's proxy mode for MCP is `mcp-proxy`, later). The base closes the user's protected paths last, over
     the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
-    (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
-    from server.services import command_sandbox
+    (read) and its own folder (read and write) open again: both live inside Arslan's data folder.
+
+    SBX-5: its tools write MCP's own cache (`cache`, `run_temp.cache("mcp")`), never the commands' one (closed)
+    nor the user's shared caches; and the CAP6b folders are never written, even inside a granted parent."""
+    from server.services import command_sandbox, run_temp
     granted = [real(Path(p)) for p in folders]
-    text = default_deny_profile([*granted], command_sandbox.default_protected(),
-                                readable=[*map(real, SYSTEM_READ), *granted],
+    own = real(run_temp.cache("mcp") if cache is None else cache)
+    peer = real(run_temp.cache("commands") if peer_cache is None else peer_cache)
+    text = default_deny_profile([*granted, own], command_sandbox.default_protected(),
+                                readable=[*map(real, SYSTEM_READ), *granted, own], closed=[peer],
                                 network=NetworkMode.ANY_DECLARED if network else NetworkMode.NONE)
     rules = Profile("deny")
     rules.allow("file-read-data", literal("/"))
     rules.allow_paths("file-read* file-map-executable", map(real, read))
     rules.allow("file-read* file-write* file-map-executable", subpath(real(root)))
+    rules.deny("file-write*", *(subpath(p) for p in command_sandbox.cap6b_folders(plugin_folder)))
+    rules.deny("file-write*", *(subpath(p) for p in command_sandbox.shared_caches()))
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
@@ -57,5 +65,7 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
         (root / sub).mkdir(parents=True, exist_ok=True)
     text = profile(root=root, folders=list(sandbox.get("folders") or []), network=bool(sandbox.get("network")),
                    read=list(sandbox.get("read") or []))
-    env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp")}
+    from server.services import command_sandbox, run_temp
+    env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
+           **command_sandbox.cache_environment(run_temp.cache("mcp"))}     # SBX-5 §1c: MCP's own cache
     return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")

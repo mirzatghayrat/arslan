@@ -79,17 +79,49 @@ _DEVICES = (Root("/dev/null", DEVICE, "literal"), Root("/dev/zero", DEVICE, "lit
             Root("/dev/fd", DEVICE, "subpath"), Root(r"^/dev/ttys[0-9]+$", DEVICE, "regex"))
 
 
-def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
+def writable_roots(workspace: Path, temp: Path | None = None, cache: Path | None = None) -> list[Root]:
     """Where a command in `workspace` may write, tagged (§1b). Temp is the run's own folder (`run_temp`, §1a),
     in scope like the work folder; no longer the shared per-user /var/folders/… parent (with the cache C),
     /private/tmp or /private/var/tmp. A tool that needs one of those gets a re-run card. SBX-M (#592) names none
     to reopen: a hardcoded /tmp is a cost that stands (§1a), and the Darwin temp and cache rows fail on every
-    base, so they wait for a probe fix (Codex). A tool named later gets only its sub-folder reopened, as a shared
-    cache. The caches stay writable until SBX-5 (§1c)."""
-    home = Path.home()
-    shared = [_real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
+    base, so they wait for a probe fix (Codex). SBX-5 (§1c): the user's shared caches are read-only now
+    (`shared_caches`); the one cache a command writes is Arslan's own for commands (`run_temp.cache`), which its
+    tools are pointed at (`CACHE_ENV`)."""
+    from server.services import run_temp
+    own = _real(run_temp.cache("commands") if cache is None else cache)
     scope = [_real(workspace), *([_real(temp)] if temp is not None else [])]
-    return [*(Root(str(p), IN_SCOPE) for p in scope), *(Root(str(p), SHARED_CACHE) for p in shared), *_DEVICES]
+    return [*(Root(str(p), IN_SCOPE) for p in scope), Root(str(own), SHARED_CACHE), *_DEVICES]
+
+
+# SBX-5 §1c: the user's caches, read-only to every sandboxed preset. A tampered package written there would be
+# installed later by an unsandboxed process (a hand-added MCP server through npx, the user's own terminal).
+_SHARED_CACHES = ("Library/Caches", ".cache", ".npm")
+
+#: The variables that point a tool's cache at a preset's own folder (§1c, ②Main).
+CACHE_ENV = ("npm_config_cache", "PIP_CACHE_DIR", "UV_CACHE_DIR", "XDG_CACHE_HOME", "GOCACHE")
+
+
+def shared_caches() -> list[Path]:
+    return _resolved(Path.home() / name for name in _SHARED_CACHES)
+
+
+def cache_environment(folder: Path) -> dict[str, str]:
+    """The environment that sends a preset's tools to `folder` (made 0700 here) instead of the user's caches."""
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return {name: str(folder / name.lower()) for name in CACHE_ENV}
+
+
+#: CAP6b: the plugin folder, which CAP7 fixes. SBX takes it as a parameter so CAP7 does not edit profiles.
+PLUGIN_FOLDER: Path | None = None
+
+
+def cap6b_folders(plugin_folder: Path | None = None) -> list[Path]:
+    """CAP6b: the skill and plugin folders, never written by the model (and in the commands preset and the outside
+    floor never read: `SKILL.md` goes through `read_skill`, scripts through `run_python`). Resolved, so a
+    `~/.agents` that links into a writable folder is closed by its real path. Arslan's data folder, which holds
+    the MCP config, is already protected."""
+    plugin = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
+    return _resolved([Path.home() / ".agents" / "skills", *([plugin] if plugin is not None else [])])
 
 
 # Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the
@@ -238,7 +270,8 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
 def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
                      readable: list[Path] = (), copies: list[Path] = (), network: NetworkMode | None = None,
                      proxy_port: int | None = None, denied_ports: tuple[int, ...] = (),
-                     ipc_prefix: str | None = None) -> str:
+                     ipc_prefix: str | None = None, cache: Path | None = None, peer_cache: Path | None = None,
+                     plugin_folder: Path | None = None) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -249,10 +282,12 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     `network`, `proxy_port` and `denied_ports` go to the base as given (SBX-3p's harness passes them).
     `ipc_prefix` is None for product runs, which permits no POSIX IPC (gate 4, option b: a stock
     multiprocessing Pool is refused, SBX-measurement.md); the harness passes a per-run one to test the rule."""
-    roots = writable_roots(workspace, temp)
+    roots = writable_roots(workspace, temp, cache)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
-    protected = default_protected()
-    shut = _resolved([*closed, *app_data()])
+    # SBX-5: the CAP6b folders close like a protected path (no read, no write, last), and MCP's cache is closed.
+    from server.services import run_temp
+    protected = [*default_protected(), *cap6b_folders(plugin_folder)]
+    shut = _resolved([*closed, *app_data(), run_temp.cache("mcp") if peer_cache is None else peer_cache])
     if network is None:
         network = NetworkMode.NONE if offline else NetworkMode.ANY_DECLARED
     text = default_deny_profile(writable, protected, closed=shut, network=network, proxy_port=proxy_port,
@@ -268,6 +303,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.allow_paths("file-read* file-map-executable", open_r, file_or_folder)
     if open_rw or open_r:
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
+    # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
+    after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
     after.allow_paths("file-read*", map(_real, copies), literal)
     return text + "".join(after.text().splitlines(True)[2:])        # its rules, without a second header
 
@@ -282,7 +319,7 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
                                                   readable=readable, copies=copies)]
 
 
-def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
+def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None) -> str:
     """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
     the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
     write Arslan's own data, keys and Hands' folder (files and sockets). The user's secrets stay open:
@@ -296,6 +333,8 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
     ours = [file_or_folder(p) for p in arslan_protected()]
     rules.deny("file-read* file-write*", *ours)
     rules.deny("network-outbound", *ours)
+    # SBX-5 CAP6b: the skill and plugin folders are closed outside too (CAP6a); the user's secrets stay open.
+    rules.deny("file-read* file-write*", *(file_or_folder(p) for p in cap6b_folders(plugin_folder)))
     rules.allow_paths("file-read*", map(_real, copies), literal)
     return rules.text()
 
