@@ -21,13 +21,13 @@ PROBE = Path(__file__).parent / "corpus" / "service_probe.py"
 @macos
 @pytest.mark.parametrize("mode", list(NetworkMode))
 def test_dns_corpus_and_resolver_channel_follow_network_mode(sbx, mode):
-    # dns-any-declared-default-deny; port-22 also needs hostname resolution.
+    # dns-any-declared-default-deny; product SSH accepts IPv4 literals only.
     sbx.network = mode
     case = next(case for case in CASES if case.name == "dns")
     control = sbx.run(case.argv, profile="(version 1)(allow default)", probe="dns-control")
     assert control.returncode == 0, control.stderr
     result = sbx.run(case.argv, probe="dns-" + mode.value + "-default-deny")
-    granted = mode in (NetworkMode.ANY_DECLARED, NetworkMode.PORT_22)
+    granted = mode == NetworkMode.ANY_DECLARED
     assert (result.returncode == 0) == granted, result.stderr
     # A cached name result is not evidence that the resolver channel is closed.
     # Connect only, with no protocol bytes; policy must refuse the socket itself.

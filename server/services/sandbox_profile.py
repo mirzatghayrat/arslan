@@ -117,8 +117,8 @@ SYSTEM_MACH_SERVICES = {
     "com.apple.trustd.agent": (NetworkMode.ANY_DECLARED,),
 }
 SYSTEM_UNIX_SOCKETS = {
-    # dns-any-declared-default-deny; SSH's port-22 resolver needs this too.
-    "/private/var/run/mDNSResponder": (NetworkMode.ANY_DECLARED, NetworkMode.PORT_22),
+    # dns-any-declared-default-deny; PORT_22 accepts IPv4 literals, never DNS.
+    "/private/var/run/mDNSResponder": (NetworkMode.ANY_DECLARED,),
 }
 
 

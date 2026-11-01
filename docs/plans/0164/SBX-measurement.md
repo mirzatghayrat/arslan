@@ -339,8 +339,14 @@ Connection timed out during banner exchange
 Connection to <RESOLVED_ADDRESS> port 22 timed out
 ```
 
-This is evidence for the port-22 resolver channel, not a successful SSH login
-or authenticated session. The directory-service grant was a test-only
+**Review correction: not granted in PORT_22.** These retained logs used a
+hostname that the product deliberately refuses: `ssh_exec.is_valid_host`
+accepts only IPv4 literals, and its no-DNS property is load-bearing. Card §1
+keeps SSH unchanged. The review measured that an IPv4 literal reaches connect
+with or without this socket once the test-only user-lookup obstacle is removed.
+The hostname measurement therefore does not justify a product PORT_22 grant;
+that mode now refuses the socket. These logs establish neither a successful
+SSH login nor an authenticated session. The directory-service grant was a test-only
 constant in stages 2 and 3 and **is not in the product allowlist**. The stock
 user-lookup restriction therefore remains. The separate preference-daemon
 case is also unaddressed: the historical preference-read row fails on every
