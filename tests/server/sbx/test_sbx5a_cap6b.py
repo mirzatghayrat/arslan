@@ -40,12 +40,30 @@ def test_the_cap6b_folders_are_resolved_and_take_the_plugin_folder(home, tmp_pat
     assert command_sandbox.cap6b_folders()[-1] == plugin.resolve()
 
 
-def test_the_commands_and_mcp_caches_are_apart_and_outside_the_users():
-    commands, mcp = run_temp.cache("commands"), run_temp.cache("mcp")
-    assert commands != mcp and commands.parent == mcp.parent
+def test_the_commands_cache_is_outside_the_users_and_mcp_has_none_shared():
+    commands = run_temp.cache("commands")
     assert not any(commands.is_relative_to(p) for p in command_sandbox.shared_caches())
-    with pytest.raises(ValueError):
-        run_temp.cache("shared")
+    for preset in ("mcp", "shared"):                  # #5a review: one cache for every MCP server is a channel
+        with pytest.raises(ValueError):
+            run_temp.cache(preset)
+
+
+def test_cache_folders_are_private_and_ours(tmp_path):
+    folder = tmp_path / "parent" / "commands"
+    command_sandbox.cache_environment(folder)
+    for path in (folder, folder.parent):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o700, path
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "linked").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    with pytest.raises(OSError, match="folder of ours"):
+        command_sandbox.cache_environment(tmp_path / "linked" / "commands")   # a link as the parent
+    (tmp_path / "file").write_text("x")
+    with pytest.raises(OSError):
+        command_sandbox.cache_environment(tmp_path / "file" / "commands")          # a file as the parent
+    loose = tmp_path / "loose"
+    loose.mkdir(mode=0o755)
+    command_sandbox.cache_environment(loose / "commands")
+    assert stat.S_IMODE(loose.stat().st_mode) == 0o700                         # tightened, not trusted
 
 
 async def test_a_sandboxed_run_points_its_tools_at_the_commands_cache(monkeypatch, tmp_path):
@@ -58,11 +76,17 @@ async def test_a_sandboxed_run_points_its_tools_at_the_commands_cache(monkeypatc
     assert stat.S_IMODE(own.stat().st_mode) == 0o700
 
 
-def test_an_mcp_server_starts_with_its_own_cache(tmp_path):
-    _, _, env, _ = capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
-                                           {"root": str(tmp_path / "srv"), "folders": [], "network": False})
-    for name in command_sandbox.CACHE_ENV:
-        assert Path(env[name]).parent == run_temp.cache("mcp"), name
+def test_each_mcp_server_starts_with_its_own_cache(tmp_path):
+    envs = []
+    for name in ("a", "b"):
+        _, args, env, _ = capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
+                                                  {"root": str(tmp_path / name), "folders": [], "network": False})
+        for variable in command_sandbox.CACHE_ENV:
+            assert Path(env[variable]).parent == tmp_path / name / "cache", variable
+        envs.append(env)
+        text = args[1]
+        assert f'(subpath "{(tmp_path / ("b" if name == "a" else "a")).resolve()}")' not in text   # never the other's
+    assert envs[0]["npm_config_cache"] != envs[1]["npm_config_cache"]
 
 
 def test_mcp_cant_see_the_commands_cache_even_inside_a_granted_folder(tmp_path):
@@ -89,6 +113,8 @@ def test_the_file_tools_refuse_the_cap6b_folders_and_arslans_data_even_inside_th
         with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data"):
             workspace_paths.resolve_in_workspace(path, home, for_write=True, make_parents=True)
     assert workspace_paths.resolve_in_workspace("notes.md", home, for_write=True) == (home / "notes.md").resolve()
+    with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data"):    # the data folder itself
+        workspace_paths.resolve_in_workspace("mcp.json", data, for_write=True)
     inside = data / "workspace"                    # a working folder inside the data folder writes its own files
     inside.mkdir()
     assert workspace_paths.resolve_in_workspace("brief.md", inside, for_write=True) == (inside / "brief.md").resolve()

@@ -140,12 +140,11 @@ def home(monkeypatch, tmp_path):
 
 
 def _base_for(home, network, **kw):
-    from server.services import run_temp
     roots = command_sandbox.writable_roots(home / "ws")
     return sandbox_profile.default_deny_profile(
         [Path(r.path) for r in roots if r.tag != "device"],
         [*command_sandbox.default_protected(), *command_sandbox.cap6b_folders()],
-        closed=[*command_sandbox.app_data(), run_temp.cache("mcp")], network=network, **kw)
+        closed=command_sandbox.app_data(), network=network, **kw)
 
 
 def _shared_caches_read_only() -> str:
