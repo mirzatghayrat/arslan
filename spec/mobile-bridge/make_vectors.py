@@ -264,6 +264,16 @@ def messages() -> dict:
         envelope(s, m, "chat.history", {"conversation_id": "c1", "limit": 50}),
         envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
             {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}]}),
+        # §5.10: a conversation's details, full (no context in v1), and with no connectors (`[]`, required).
+        envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
+            {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}],
+            "details": {"folder": "~/Arslan/Projects/Trip", "model": "claude-sonnet-5-5", "mode": "standard",
+                        "connectors": [{"name": "Hands", "kind": "hands", "on": True},
+                                       {"name": "Calendar", "kind": "mcp", "on": True},
+                                       {"name": "PDF tools", "kind": "skill", "on": False}],
+                        "changes": {"files": 3, "added": 168, "removed": 2, "last_run_id": 87}, "spent_usd": 0.84}}),
+        envelope(m, s, "chat.history.result", {"conversation_id": "c2", "messages": [],
+                                               "details": {"model": "claude-sonnet-5-5", "connectors": []}}),
         envelope(s, m, "chat.send", {"text": "Find flights", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
         # §5.8 (2026-10-29): a quick question, a new ordinary conversation, the quick list's next page, a quick
         # question turned into a chat, and the two new error codes.

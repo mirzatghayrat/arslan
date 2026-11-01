@@ -28,7 +28,8 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, phone_stats, settings_service
+from server.services import (artifact_store, background_jobs, desktop_status, phone_details, phone_ids, phone_reads,
+                             phone_stats, settings_service)
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -240,9 +241,11 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
          # §5.7: who typed it — the phone ("from iPhone") or a Mac window.
          **({"source": "phone" if m.source == "phone" else "mac"} if m.role == "user" else {})}
         for m in reversed(rows)]
-    # §5.7: one envelope holds it all; the oldest go first, and the phone is told.
-    messages, truncated = phone_reads.fit_history(conversation_id, messages)
-    return {"conversation_id": conversation_id, "messages": messages, **({"truncated": True} if truncated else {})}
+    # §5.7: one envelope holds it all; the oldest go first, and the phone is told. §5.10: `details` first.
+    details = await phone_details.details(db, conversation_id)
+    messages, truncated = phone_reads.fit_history(conversation_id, messages, details)
+    return {"conversation_id": conversation_id, "messages": messages, "details": details,
+            **({"truncated": True} if truncated else {})}
 
 
 @router.get("/phone/runs/{run_id}/files")

@@ -48,7 +48,9 @@ def capture(tool: str, args: dict, result: dict) -> dict | None:
     if tool == "write_file":
         content = args.get("content") if isinstance(args.get("content"), str) else ""
         artifact = result.get("artifact") if isinstance(result.get("artifact"), dict) else {}
+        # IPB: `lines` counts the whole file, so the phone's changed-line total doesn't stop at the head.
         return {"kind": "write", "path": str(result.get("path") or path)[:500], "bytes": len(content.encode("utf-8")),
+                "lines": content.count("\n") + (1 if content and not content.endswith("\n") else 0),
                 "head": _text(content, HEAD_CHARS), "file_id": artifact.get("filename")}
     if tool == "run_command":
         from server.services import terminal_policy
