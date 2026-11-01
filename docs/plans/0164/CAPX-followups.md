@@ -91,3 +91,5 @@
 2. **Raw material.** `mcp_service.py:29-30`, `:74-75`; `oauth_flow.py:51`; `session.py:319`, `:397`. A session can't count existing connections with a secret-looking URL, because the probe rule says never open `~/.arslan`. The user runs a small read-only counting script that the card provides (counts only, no values), or the count is dropped.
 3. **Method.** Tests first: a URL with a token is offered the move; after the move the stored URL has no secret and the connection still starts; display, search, logs and export never show the secret. Mutants.
 4. **External evidence.** A CI run id, and the user's real-Mac smoke: add a connection with a token in its URL, move it, restart, and the connection still works.
+
+**A follow-up, from #623's re-check R-7 (2026-11-01).** SEC1's detection reads an argument that is a URL, so an option written as `--name=value` whose value carries a credential (`--index-url=https://user:token@host/simple`, `--registry=https://host/?token=…`) isn't found. It is neither offered the move nor masked in the display. This predates #623, which masks such values in its own refusals only.

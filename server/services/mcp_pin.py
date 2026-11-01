@@ -17,16 +17,19 @@ floor for the form in Capabilities.
   written as `1.2.3`). None, or a dist-tag (`@latest`, `@next`), is looked up on the public npm registry or PyPI
   and written as the exact version it names. A range (`@^1.2`, `>=1`) is refused with what to write instead
   (⓪Plan's call: the card names only "no version", and the message says what to write).
-- **Another registry** (#623 review L-2): when the line names one (`--registry`, a uv index option) or the
-  connection's env does (`npm_config_registry`, `npm_config_userconfig`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`,
-  `UV_INDEX`, `UV_EXTRA_INDEX_URL`, `UV_CONFIG_FILE`), a version that is not exact is refused: the public answer
-  says nothing about that registry.
+- **Another registry** (#623 review L-2, re-check R-2): when the line names one (`--registry`, a uv index option) or
+  the connection's env does (`npm_config_registry`, a scope's `npm_config_@acme:registry`, `npm_config_userconfig`,
+  `npm_config_globalconfig`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`, `UV_INDEX`, `UV_EXTRA_INDEX_URL`, `UV_FIND_LINKS`,
+  `UV_CONFIG_FILE`; any case), a version that is not exact is refused: the public answer says nothing about that
+  registry.
 - **Refused too:** a spec that is not a registry package (a git or file spec, a URL, a path, an archive).
 
 **Stated limits:**
 - **Other launchers and wrappers are left as written:** `bunx`, `bun x`, `pnpm dlx`, `npm exec`, `npm x`,
   `yarn dlx`, `pipx run`, `uv run`, `env npx …`, `docker`, a shell (`sh -c "npx …"`, `bash -lc "…"`: shell strings
-  are not parsed), and a command that is a path to a program. Their packages are not pinned.
+  are not parsed), and a command that is a path to a program. Their packages are not pinned. `uv tool run` is read
+  only when those are uv's first two arguments (`uv --offline tool run …` is left as written).
+- **A short option written with `=`** (`-p=3.12`) is not split: it is refused as an option Arslan does not read.
 - **Registry settings outside the connection are not read** (`~/.npmrc`, a project's `.npmrc`, `uv.toml`,
   `pyproject.toml`). When the package's name is on such a registry and also on the public one, Arslan writes the
   public registry's latest version, and the user's registry is then asked for that version: it may not have it, or
@@ -66,9 +69,11 @@ _READS = {"npx": "-y, --yes, -q, --quiet, -p, --package, --registry and --cache"
                  "and --quiet"}
 #: The public registries: naming one of them is not naming another.
 _PUBLIC = {"npx": {"https://registry.npmjs.org"}, "uvx": {"https://pypi.org/simple"}}
-#: Env that sends the tool to another registry or index (#623 review L-2), compared upper-cased.
-_REGISTRY_ENV = {"npx": {"NPM_CONFIG_REGISTRY", "NPM_CONFIG_USERCONFIG"},
-                 "uvx": {"UV_INDEX_URL", "UV_DEFAULT_INDEX", "UV_INDEX", "UV_EXTRA_INDEX_URL", "UV_CONFIG_FILE"}}
+#: Env that sends the tool to another registry or index (#623 review L-2, re-check R-2), case-blind: npm's
+#: registry, a scope's registry (`npm_config_@acme:registry`), its user and global config files; uv's index options,
+#: `--find-links` and config file.
+_REGISTRY_ENV = {"npx": re.compile(r"npm_config_((@[^:]+:)?registry|userconfig|globalconfig)", re.I),
+                 "uvx": re.compile(r"uv_(index_url|default_index|index|extra_index_url|find_links|config_file)", re.I)}
 
 _NPM_NAME = re.compile(r"(@[A-Za-z0-9~][A-Za-z0-9._~-]*/)?[A-Za-z0-9~][A-Za-z0-9._~-]*")
 #: SemVer 2.0.0's own pattern (semver.org).
@@ -84,7 +89,7 @@ _PEP440 = re.compile(r"""v?([0-9]+!)?[0-9]+(\.[0-9]+)*
                          (-[0-9]+|[-_.]?(post|rev|r)[-_.]?[0-9]*)?
                          ([-_.]?dev[-_.]?[0-9]*)?
                          (\+[a-z0-9]+([-_.][a-z0-9]+)*)?""", re.X | re.I)
-_ARCHIVE = re.compile(r"\.(tgz|tar|tar\.gz|whl|zip)$", re.I)
+_ARCHIVE = re.compile(r"\.(tgz|tbz|txz|tar|tar\.(gz|bz2|xz|zst)|whl|zip)$", re.I)
 #: The one redirect PyPI's JSON gives, from a name to its canonical form (#623 review L-4).
 _PYPI_JSON = re.compile(r"https://pypi\.org/pypi/[A-Za-z0-9._-]+/json")
 
@@ -102,10 +107,21 @@ _URL_INSIDE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S+")
 
 def _shown(text: str) -> str:
     """An argument as the form may echo it: SEC1's masking (#623 review L-6), so a token in a URL stays out. SEC1
-    reads an argument that is a URL; a URL inside one (`--userconfig=https://…`, `name@https://…`) is masked as an
-    address of its own."""
+    reads an argument that is a URL; a URL inside one (`name@https://…`) is masked as an address of its own."""
     masked = connection_secrets.shown(None, [text])[1][0]
     return _URL_INSIDE.sub(lambda m: connection_secrets.shown(m.group(0), [])[0] or m.group(0), masked)
+
+
+def _spec_shown(spec: str, name_ok: bool) -> str:
+    """A spec as a refusal echoes it (#623 re-check R-1): as typed when it reads as a package name and a version
+    (SEC1's entropy check would hide an ordinary `.whl` name), and masked when it is anything else."""
+    return spec if name_ok and not re.search(r"[:/]", spec.lstrip("@").split("/", 1)[-1]) else _shown(spec)
+
+
+def _option_shown(arg: str) -> str:
+    """An option Arslan does not read, by its name alone (#623 re-check R-1): `--x=…`, never what follows `=`."""
+    name, eq, _ = arg.partition("=")
+    return _shown(name) + ("=…" if eq else "")
 
 
 async def _get_json(client: httpx.AsyncClient, url: str, kind: str):
@@ -157,8 +173,8 @@ async def _exact(kind: str, name: str, tag: str) -> str:
 
 
 def _elsewhere(label: str, spec: str, where: str, example: str) -> PinRefused:
-    return PinRefused(f"{label}: {_shown(spec)} has no exact version, and this connection names its own registry "
-                      f"({where}), so Arslan can't look the version up. Write an exact version, as {example}.")
+    return PinRefused(f"{label}: {_spec_shown(spec, True)} has no exact version, and this connection names its own "
+                      f"registry ({where}), so Arslan can't look the version up. Write an exact version, as {example}.")
 
 
 async def _pin_npm(spec: str, elsewhere: str | None) -> str:
@@ -166,13 +182,13 @@ async def _pin_npm(spec: str, elsewhere: str | None) -> str:
     at = spec.rfind("@")
     name, version = (spec[:at], spec[at + 1:]) if at > 0 else (spec, "")
     if not _NPM_NAME.fullmatch(name) or _ARCHIVE.search(spec) or ":" in version or "/" in version:
-        raise PinRefused(f"npx: {_shown(spec)} is not a package on the npm registry, so it can't be pinned. Write "
-                         f"name@1.2.3.")
+        raise PinRefused(f"npx: {_spec_shown(spec, bool(_NPM_NAME.fullmatch(name)))} is not a package on the npm "
+                         f"registry, so it can't be pinned. Write name@1.2.3.")
     exact = re.fullmatch(r"=?v?(.+)", version)                  # npm reads `=1.2.3` and `v1.2.3` as 1.2.3
     if exact and _SEMVER.fullmatch(exact.group(1)):
         return spec if exact.group(1) == version else f"{name}@{exact.group(1)}"
     if version and not _NPM_TAG.fullmatch(version):
-        raise PinRefused(f"npx: {_shown(spec)} names a range. Write an exact version, as {name}@1.2.3.")
+        raise PinRefused(f"npx: {_spec_shown(spec, True)} names a range. Write an exact version, as {name}@1.2.3.")
     if elsewhere:
         raise _elsewhere("npx", spec, elsewhere, f"{name}@1.2.3")
     return f"{name}@{await _exact('npm', name, version or 'latest')}"
@@ -191,12 +207,13 @@ async def _pin_pypi(spec: str, sep: str, elsewhere: str | None, label: str) -> s
             name, version = re.split(r"\s*[<>=!~]", spec, maxsplit=1)[0], "*"
     name, version = name.strip(), version.strip()
     if not _PYPI_NAME.fullmatch(name) or _ARCHIVE.search(spec) or ":" in version or "/" in version:
-        raise PinRefused(f"{label}: {_shown(spec)} is not a package on PyPI, so it can't be pinned. Write "
-                         f"name{sep}1.2.3.")
+        raise PinRefused(f"{label}: {_spec_shown(spec, bool(_PYPI_NAME.fullmatch(name)))} is not a package on "
+                         f"PyPI, so it can't be pinned. Write name{sep}1.2.3.")
     if version and version != "latest":
         if _PEP440.fullmatch(version):
             return spec
-        raise PinRefused(f"{label}: {_shown(spec)} names a range. Write an exact version, as {name}{sep}1.2.3.")
+        raise PinRefused(f"{label}: {_spec_shown(spec, True)} names a range. Write an exact version, as "
+                         f"{name}{sep}1.2.3.")
     if elsewhere:
         raise _elsewhere(label, spec, elsewhere, f"{name}{sep}1.2.3")
     return f"{name}{sep}{await _exact('pypi', name.split('[', 1)[0], 'latest')}"
@@ -204,7 +221,7 @@ async def _pin_pypi(spec: str, sep: str, elsewhere: str | None, label: str) -> s
 
 async def _pin(tool: str, label: str, args: list[str], env: dict) -> list[str]:
     opts, public = _OPTIONS[tool], _PUBLIC[tool]
-    elsewhere = next((key for key, value in env.items() if str(key).upper() in _REGISTRY_ENV[tool]
+    elsewhere = next((key for key, value in env.items() if _REGISTRY_ENV[tool].fullmatch(str(key))
                       and str(value).strip().rstrip("/") not in public), None)
     out, targets, i = list(args), [], 0          # targets: (where in out, "--flag" when written `--flag=spec`, sep)
     while i < len(out):
@@ -224,7 +241,7 @@ async def _pin(tool: str, label: str, args: list[str], env: dict) -> list[str]:
             i += 1 if eq else 2
             continue
         if arg.startswith("-"):
-            raise PinRefused(f"{label}: {_shown(arg)} comes before the package. Before it, Arslan reads only "
+            raise PinRefused(f"{label}: {_option_shown(arg)} comes before the package. Before it, Arslan reads only "
                              f"{_READS[tool]}, so it can't tell which argument is the package.")
         if not targets:                        # the package itself; with -p or --from, this is the command it runs
             targets.append((i, None, "@"))

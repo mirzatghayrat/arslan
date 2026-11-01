@@ -81,7 +81,7 @@ async def test_a_uvx_range_is_refused(execution_db, registry, spec):
 
 
 @pytest.mark.parametrize("command, args, flag", [
-    ("npx", ["-y", "--node-options=--inspect", "notes-mcp"], "--node-options=--inspect"),
+    ("npx", ["-y", "--node-options=--inspect", "notes-mcp"], "--node-options=\u2026"),
     ("npx", ["--prefix", "/opt/x", "notes-mcp@1.2.3"], "--prefix"),
     ("npx", ["--", "notes-mcp"], "--"),
     ("uvx", ["--with", "extra", "mcp-server-fetch==1.0"], "--with"),
@@ -133,6 +133,11 @@ async def test_an_exact_version_is_kept_whatever_known_options_come_before_it(ex
     ("uvx", ["mcp-server-fetch"], {"UV_INDEX": "corp=https://pypi.internal/simple"}, "UV_INDEX"),
     ("uvx", ["mcp-server-fetch"], {"UV_EXTRA_INDEX_URL": "https://pypi.internal/simple"}, "UV_EXTRA_INDEX_URL"),
     ("uvx", ["mcp-server-fetch"], {"UV_CONFIG_FILE": "/Users/me/uv-work.toml"}, "UV_CONFIG_FILE"),
+    # #623 re-check R-2: a scope's registry, npm's global config, uv's find-links, and any case.
+    ("npx", ["-y", "notes-mcp"], {"npm_config_@acme:registry": "https://npm.acme.example"}, "npm_config_@acme:registry"),
+    ("npx", ["-y", "notes-mcp"], {"NPM_CONFIG_GLOBALCONFIG": "/etc/npmrc-work"}, "NPM_CONFIG_GLOBALCONFIG"),
+    ("uvx", ["mcp-server-fetch"], {"UV_FIND_LINKS": "https://files.internal/wheels"}, "UV_FIND_LINKS"),
+    ("uvx", ["mcp-server-fetch"], {"uv_index_url": "https://pypi.internal/simple"}, "uv_index_url"),
 ])
 async def test_another_registry_needs_an_exact_version(execution_db, registry, command, args, env, where):
     """#623 review L-2: the public registry's latest says nothing about the registry the line names."""
@@ -306,16 +311,38 @@ async def test_only_the_forms_own_refusals_are_a_400(execution_db, registry, mon
 
 @pytest.mark.parametrize("command, args", [
     ("npx", ["https://me:hunter2pass@npm.example/notes.tgz"]),
-    ("npx", ["--userconfig=https://npm.example/?token=tok_example_42abcdef", "notes-mcp"]),
     ("uvx", ["git+https://me:hunter2pass@git.example/notes"]),
     ("npx", ["notes-mcp@https://me:hunter2pass@npm.example/x"]),
+    ("uvx", ["notes @ https://me:hunter2pass@files.example/notes.whl"]),
 ])
-async def test_a_refusal_never_echoes_a_secret_in_the_argument(execution_db, registry, command, args):
-    """#623 review L-6: what the form echoes goes through SEC1's masking."""
+async def test_a_refusal_never_echoes_a_secret_in_a_spec(execution_db, registry, command, args):
+    """#623 review L-6: a spec that is not a package name goes through SEC1's masking, and a URL inside it too."""
     with pytest.raises(mcp_pin.PinRefused) as refused:
         await mcp_service.add_server("x", command, args, {})
     text = str(refused.value)
-    assert "hunter2pass" not in text and "tok_example_42abcdef" not in text and "\u25cf" in text
+    assert "hunter2pass" not in text and "\u25cf" in text
+
+
+@pytest.mark.parametrize("arg, shown", [
+    ("--//registry.npmjs.org/:_authToken=npm_" + "Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6", "--//registry.npmjs.org/:_authToken=\u2026"),
+    ("--userconfig=https://npm.example/?token=tok_example_42abcdef", "--userconfig=\u2026"),
+    ("--prefix", "--prefix"),
+])
+async def test_an_unknown_option_is_echoed_by_its_name_alone(execution_db, registry, arg, shown):
+    """#623 re-check R-1: `--//registry.npmjs.org/:_authToken=npm_…` came back whole."""
+    with pytest.raises(mcp_pin.PinRefused) as refused:
+        await mcp_service.add_server("x", "npx", [arg, "notes-mcp"], {})
+    assert str(refused.value).startswith(f"npx: {shown} comes before the package.")
+    assert "Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6" not in str(refused.value) and "tok_example" not in str(refused.value)
+
+
+@pytest.mark.parametrize("command, spec", [("npx", "notes-mcp-1.0.0.tgz"), ("uvx", "notes_mcp-1.0.0-py3-none-any.whl"),
+                                           ("npx", "notes-mcp@^1.2"), ("uvx", "notes-mcp>=1")])
+async def test_a_spec_that_reads_as_a_package_is_echoed_as_typed(execution_db, registry, command, spec):
+    """#623 re-check R-1: SEC1's entropy check showed an ordinary `.whl` name as \u25cf\u25cf\u25cf\u25cf."""
+    with pytest.raises(mcp_pin.PinRefused) as refused:
+        await mcp_service.add_server("x", command, [spec], {})
+    assert f": {spec} " in str(refused.value) and "\u25cf" not in str(refused.value)
 
 
 # ── #623 review L-5: the reviewer's witness tests, each red under a mutant that survived ──────────────────────
@@ -366,7 +393,10 @@ async def test_npms_own_exact_forms_are_written_plain(execution_db, registry, sp
 
 
 @pytest.mark.parametrize("command, spec", [("npx", "notes-mcp.tgz"), ("npx", "notes-1.0.0.tar.gz"),
-                                           ("uvx", "notes-1.0-py3-none-any.whl"), ("uvx", "notes-1.0.zip")])
+                                           ("uvx", "notes-1.0-py3-none-any.whl"), ("uvx", "notes-1.0.zip"),
+                                           ("npx", "notes-1.0.0.tar.bz2"), ("npx", "notes-1.0.0.tar.xz"),
+                                           ("uvx", "notes-1.0.tar.zst"), ("npx", "notes-1.0.0.tbz"),
+                                           ("npx", "notes-1.0.0.txz")])
 async def test_an_archive_name_is_not_looked_up(execution_db, registry, command, spec):
     with pytest.raises(mcp_pin.PinRefused, match="so it can't be pinned"):
         await mcp_service.add_server("x", command, [spec], {})
@@ -426,6 +456,29 @@ async def test_the_real_lookup_asks_the_registries_for_exactly_that_package(monk
             await mcp_pin._lookup("pypi", name, "latest")
     assert "https://elsewhere.example/pypi/moved/json" not in seen
     assert "https://pypi.org/pypi/twice-final/json" not in seen
+
+
+@pytest.mark.parametrize("args", [["-p=3.12", "mcp-server-fetch==1.0"], ["--python", "3.12", "-p=x", "y"]])
+async def test_a_short_option_with_an_equals_sign_is_not_split(execution_db, registry, args):
+    """#623 re-check R-3, stated: `-p=3.12` is an option Arslan does not read."""
+    with pytest.raises(mcp_pin.PinRefused, match=r"^uvx: -p=\u2026 comes before the package"):
+        await mcp_service.add_server("x", "uvx", args, {})
+
+
+async def test_uv_tool_run_is_read_only_as_uvs_first_two_arguments(execution_db, registry):
+    """#623 re-check R-4, stated."""
+    args = ["--offline", "tool", "run", "mcp-server-fetch"]
+    assert (await mcp_service.add_server("x", "uv", args, {}))["args"] == args and registry.calls == []
+
+
+async def test_a_pypi_answer_past_its_size_cap_is_no_answer(monkeypatch):
+    """#623 re-check R-6."""
+    monkeypatch.setitem(mcp_pin.MAX_BYTES, "pypi", 128)
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, json={"info": {"version": "1.0"}, "pad": "x" * 500}))
+    with pytest.raises(mcp_pin.ResponseTooLarge):
+        await mcp_pin._lookup("pypi", "mcp-server-fetch", "latest")
+    monkeypatch.setitem(mcp_pin.MAX_BYTES, "pypi", 4096)
+    assert await mcp_pin._lookup("pypi", "mcp-server-fetch", "latest") == "1.0"
 
 
 async def test_an_answer_past_the_size_cap_is_no_answer(monkeypatch):
