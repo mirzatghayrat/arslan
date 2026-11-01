@@ -56,3 +56,53 @@ async def test_a_stored_connection_offers_the_option_value_and_still_starts_with
         srv = await db.get(MCPServer, added["id"])
     assert PYPI not in str(list(srv.args)) and srv.args[0] == "--index-url=https://ci:${" + part["name"] + "}@pypi.internal/simple"
     assert runtime_dict(srv)["args"] == args
+
+
+# ── #628 review ─────────────────────────────────────────────────────────────────────────────────────────────
+
+
+def _round_trip(args, part, secret):
+    found = [p for p in cs.find(None, args) if p == part]
+    assert found == [part], cs.find(None, args)
+    shown = cs.shown(None, args)[1]
+    assert all(secret not in a for a in shown)
+    _, moved, values = cs.move(None, args, part, "NOTES_SECRET", {})
+    assert all(secret not in a for a in moved) and values == {"NOTES_SECRET": secret}
+    assert cs.fill(None, moved, values)[1] == args
+
+
+@pytest.mark.parametrize("arg, key", [
+    ("https://mcp.example/oauth/done#access_token=" + TOKEN + "&state=x", "access_token"),
+    ("https://mcp.example/sse?view=full#token=" + TOKEN, "token"),
+])
+def test_a_token_in_a_urls_fragment_is_found_like_one_in_its_query(arg, key):
+    """L-1 (from before this PR): `#token=…` and `#access_token=…` were not read."""
+    _round_trip([arg], {"where": "arg", "index": 0, "at": "fragment", "key": key, "n": 0}, TOKEN)
+    url = "https://mcp.example/sse#token=" + TOKEN
+    assert [p["at"] for p in cs.find(url, [])] == ["fragment"] and TOKEN not in cs.shown(url, [])[0]
+    assert cs.find("https://mcp.example/docs#install", []) == [] and cs.find("https://mcp.example/x#view=full", []) == []
+
+
+@pytest.mark.parametrize("args, index", [
+    (["--index", "corp=https://bot:" + PYPI + "@pypi.internal/simple", "notes==1.0"], 1),     # uv's named index
+    (["--index=corp=https://bot:" + PYPI + "@pypi.internal/simple", "notes==1.0"], 0),
+    (["NOTES_URL=https://bot:" + PYPI + "@notes.example/api"], 0),
+    (["-y", "notes-mcp@https://bot:" + PYPI + "@files.example/notes.tgz"], 1),
+])
+def test_an_address_inside_a_value_is_read_from_its_scheme(args, index):
+    """L-2: a value that holds an address after a name (`corp=https://…`, `NAME=https://…`, `name@https://…`)."""
+    _round_trip(args, {"where": "arg", "index": index, "at": "password"}, PYPI)
+
+
+def test_a_scopes_registry_option_is_read_as_an_address():
+    """L-3: kills the mutant that never reads an npm-style option's value as an address."""
+    _round_trip(["--@acme:registry=https://bot:" + TOKEN + "@npm.pkg.github.com/"],
+                {"where": "arg", "index": 0, "at": "password"}, TOKEN)
+
+
+def test_a_value_after_a_secret_flag_stays_a_secret_even_when_it_looks_like_an_option():
+    """I-1: `--token --9Ab3…==` was read as an option of its own, and shown. (A value that reads as an ordinary
+    option, `--port=8080` after `--api-key`, stays that option: npm and uv would read it so.)"""
+    value = "--9" + TOKEN[4:] + "=="
+    _round_trip(["--token", value], {"where": "arg", "index": 1, "key": "token"}, value)
+    assert cs.find(None, ["--api-key", "--port=8080"]) == []
