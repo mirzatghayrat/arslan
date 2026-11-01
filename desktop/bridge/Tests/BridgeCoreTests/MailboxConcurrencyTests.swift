@@ -123,3 +123,124 @@ final class MailboxConcurrencyTests: XCTestCase {
         XCTAssertLessThanOrEqual(mac.unacknowledged.count, 2, "each new snapshot withdraws the one before it")
     }
 }
+
+/// A control channel safe to call from several tasks (FakeControl records each frame unlocked).
+final class LockedControl: ControlChannel, @unchecked Sendable {
+    private var frames: [[String: Any]] = []
+    private let lock = NSLock()
+    private func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
+    func send(_ frame: [String: Any]) async throws { locked { frames.append(frame) } }
+    func all(_ type: String) -> [[String: Any]] { locked { frames.filter { $0["type"] as? String == type } } }
+}
+
+/// BRG1 follow-up: the poll loop opens pair requests (`PairingHost.open`, `pending`) while Arslan's control
+/// channel makes codes and decides (`pairing.new`, `pairing.decide`), from another task.
+final class RuntimeConcurrencyTests: XCTestCase {
+    func testPairingCodesAndPollsAtOnce() async throws {
+        let store = LockedStore(), control = LockedControl()
+        let bridge = try BridgeRuntime(identities: IdentityStore(secrets: MemorySecrets()), store: store, control: control,
+                                       macName: "Test Mac", containerID: "iCloud.dev.aralem.arslan", version: "0.1.64")
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { for _ in 0..<200 { try? await bridge.handleControl(["type": "pairing.new"]) } }
+            group.addTask { for _ in 0..<300 { _ = try? await bridge.poll() } }
+            group.addTask { for _ in 0..<6000 { _ = bridge.isPairing(); await Task.yield() } }   // the poll pace's read
+        }
+        XCTAssertEqual(control.all("pairing.code").count, 200)
+    }
+
+    func testOneRequestIsDecidedOnceWhateverAsksAtOnce() async throws {
+        let store = LockedStore(), control = LockedControl()
+        let bridge = try BridgeRuntime(identities: IdentityStore(secrets: MemorySecrets()), store: store, control: control,
+                                       macName: "Test Mac", containerID: "iCloud.dev.aralem.arslan", version: "0.1.64")
+        try await bridge.handleControl(["type": "pairing.new"])
+        let uri = try XCTUnwrap(control.all("pairing.code").last?["uri"] as? String)
+        try await store.save(try PairingHostTests().phoneRequest(uri: uri, now: Date(), phoneSigning: .init(),
+                                                                 phoneExchange: .init(), phoneID: "iphone-x"))
+        await withTaskGroup(of: Void.self) { group in               // the poll sees the request again and again…
+            group.addTask { for _ in 0..<200 { _ = try? await bridge.poll() } }
+            group.addTask {                                         // …while the click arrives
+                while control.all("pairing.request").isEmpty { await Task.yield() }
+                let id = control.all("pairing.request")[0]["request_id"] as? String ?? ""
+                for _ in 0..<20 { try? await bridge.handleControl(["type": "pairing.decide", "request_id": id, "accept": true]) }
+            }
+        }
+        XCTAssertEqual(control.all("pairing.request").count, 1, "shown once")
+        XCTAssertTrue(bridge.mailbox.isPaired("iphone-x"))
+    }
+}
+
+/// BRG1's review follow-ups (#657): what the lock and the send's order promise, each pinned on its own.
+final class MailboxOrderTests: XCTestCase {
+    /// A store whose delete takes a moment, as CloudKit's does, and that can refuse saves.
+    final class SlowStore: EnvelopeStore, @unchecked Sendable {
+        let inner = LockedStore()
+        var refuseSaves = false
+        /// Called with each record before it is kept: the counter the Mailbox remembered must be past it.
+        var onSave: ((EnvelopeRecord) -> Void)?
+        func save(_ record: EnvelopeRecord) async throws {
+            if refuseSaves { throw BridgeError.code("cloudkit_down") }
+            onSave?(record)
+            try await inner.save(record)
+        }
+        func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?) { try await inner.changes(since: token) }
+        func delete(ids: [String]) async throws {
+            try await Task.sleep(nanoseconds: 1_000_000)
+            try await inner.delete(ids: ids)
+        }
+        func ages() async throws -> [(id: String, createdAt: Date)] { try await inner.ages() }
+        func recipients(of ids: [String]) async throws -> [String: String] { try await inner.recipients(of: ids) }
+    }
+
+    func mailbox(_ store: EnvelopeStore, memory: MailboxMemoryStore? = nil) -> Mailbox {
+        let mac = Mailbox(deviceID: "mac-1", signing: .init(), exchange: .init(), store: store, memoryStore: memory)
+        let phone = Mailbox(deviceID: "iphone-1", signing: .init(), exchange: .init(), store: store)
+        mac.add(peer: Peer(deviceID: "iphone-1", signing: phone.signing.publicKey, exchange: phone.exchange.publicKey))
+        return mac
+    }
+
+    func testDeletingWhileWithdrawing() async throws {
+        let store = SlowStore()
+        let mac = mailbox(store)
+        var sent: [String] = []
+        for _ in 0..<400 { sent.append(try await mac.send(type: "status.snapshot", body: ["presence": "online"], to: "iphone-1").id) }
+        let ids = sent
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { for id in ids.dropLast() { try? mac.withdraw(id); await Task.yield() } }   // each newer one replaces it
+            group.addTask { for _ in 0..<200 { try? await mac.deleteAcknowledged() } }               // the poll's deletes, slow
+        }
+        for _ in 0..<5 { try await mac.deleteAcknowledged() }
+        XCTAssertEqual(mac.unacknowledged.map(\.id), [sent.last!], "only the newest snapshot still waits")
+        XCTAssertTrue(mac.toDelete.isEmpty, "every withdrawn one was deleted")
+    }
+
+    func testASaveThatFailsLeavesNothingWaitingForAnAck() async throws {
+        let store = SlowStore()
+        let mac = mailbox(store)
+        store.refuseSaves = true
+        do {
+            _ = try await mac.send(type: "chat.event", body: ["text": "hi"], to: "iphone-1")
+            XCTFail("the save failed, so the send must too")
+        } catch {}
+        XCTAssertTrue(mac.unacknowledged.isEmpty, "a record that never reached the store is never re-sent")
+        store.refuseSaves = false
+        let next = try await mac.send(type: "chat.event", body: ["text": "hi"], to: "iphone-1")
+        XCTAssertEqual(mac.unacknowledged.map(\.id), [next.id])
+    }
+
+    func testTheCounterIsRememberedBeforeEachRecordExists() async throws {
+        let store = SlowStore(), memory = InMemoryMemoryStore()
+        let mac = mailbox(store, memory: memory)
+        var behind: [Int64] = []
+        let lock = NSLock()
+        store.onSave = { record in                                   // §4.5: a restart never re-uses a seq the phone saw
+            lock.lock(); defer { lock.unlock() }
+            if (memory.memory?.nextSeq ?? 0) <= record.seq { behind.append(record.seq) }
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<3 {
+                group.addTask { for _ in 0..<50 { _ = try? await mac.send(type: "chat.event", body: [:], to: "iphone-1") } }
+            }
+        }
+        XCTAssertEqual(behind, [], "each saved record's seq is below the remembered counter")
+    }
+}
