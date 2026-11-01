@@ -782,6 +782,8 @@
     "fromPhone": "由 iPhone 发起",
     "glyph": {
       "waiting": "等你批准",
+      "waiting_reminder": "停下的作业给你留了提醒",
+      "waiting_away": "你不在时没能问你",
       "remote": "Remote · 你的 iPhone",
       "working": "进行中",
       "progress": "进行中：{{done}} / {{total}}",
@@ -957,7 +959,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描;看不见的字符会数出来。",
+      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描。扫描会拦下隐藏的标签字符和文字方向控制符;其他看不见的字符只数出来,不拦。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",
@@ -1432,6 +1434,7 @@
     "intro": "按时自动跑的任务，和你让 Arslan 盯着的网页、文件夹。哪一行有点，就是那一行要你看一眼。",
     "watches": "盯着的网页和文件夹",
     "awayTitle": "你不在时没做的（只算这个任务的）",
+    "seenNote": "打开一个任务，就算看过它的运行没做成的事。任务自己的对话里，你不在时没做成的，要打开那个对话才会清掉；那里的卡片要答完才会清掉。",
     "attention": "要你看一眼",
     "changed": "有变化",
     "failing": "没跑成或已自动暂停"

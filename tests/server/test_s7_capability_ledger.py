@@ -17,7 +17,7 @@ from server.db import session as db_session
 from server.services import approvals, capability_flow, capability_search, permission_store, permissions
 
 KEY = "s3cr3t-value-7f"
-CAND = {"id": "registry:io.github.haris-musa/excel-mcp-server@1.1.2", "kind": "mcp", "name": "excel-mcp-server",
+CAND = {"id": "registry:com.example/excel-mcp-server@1.1.2", "kind": "mcp", "name": "excel-mcp-server",
         "summary": "Reads and writes .xlsx", "source": "registry",
         "source_url": "https://github.com/haris-musa/excel-mcp-server",
         "repo": "haris-musa/excel-mcp-server", "version": "1.1.2", "runtime": "uv",
