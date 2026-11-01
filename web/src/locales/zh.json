@@ -98,7 +98,8 @@
     "arslan": "主助手",
     "capabilities": "能力库",
     "brain": "记忆",
-    "activity": "活动"
+    "activity": "活动",
+    "scheduled": "定时任务"
   },
   "brain": {
     "strip_details": "记录范围与限制",
@@ -584,7 +585,7 @@
     "desktopNotificationsDesc": "窗口关着或在后台时，任务完成、有动作需要你确认、定时任务失败，macOS 会通知你。通知里不会显示消息内容。",
     "labelIsland": "在刘海里显示 Arslan",
     "islandDesc": "屏幕顶部的小 Arslan 会显示它正在做什么、什么时候需要你、任务什么时候做完。把鼠标移上去看详情。截图、录屏和屏幕共享里都不会出现它。",
-    "automationElsewhere": "定时任务、用量和每次运行的记录都在「活动」里。",
+    "automationElsewhere": "定时任务有了自己的「定时任务」页；用量和每次运行的记录在「活动」里。",
     "automationOpenActivity": "打开活动",
     "searchPlaceholder": "搜索设置…",
     "searchNoHits": "没有匹配的分区",
@@ -714,7 +715,7 @@
     "grpWhatsNew": "这一版更新了什么",
     "watchesInInbox": "盯着的网页和文件夹、不再提醒的，在收件箱里管理。",
     "openInbox": "打开收件箱",
-    "openActivity": "定时任务、用量和每一次运行，在「动态」里。",
+    "openActivity": "用量和每一次运行在「活动」里；定时任务在「定时任务」页。",
     "openActivityBtn": "打开动态",
     "whatsNewEmpty": "这一版没有更新说明。"
   },
@@ -789,7 +790,8 @@
       "done": "已完成",
       "unfinished": "没做成",
       "failed": "出了问题停下了",
-      "scheduled": "定时任务"
+      "scheduled": "定时任务",
+      "done_unseen": "做完了，你还没看"
     },
     "projects": "项目",
     "allProjects": "全部项目",
@@ -957,7 +959,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,按原文导入(去掉隐藏字符)——许可证把关。",
+      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描;看不见的字符会数出来。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",
@@ -965,7 +967,10 @@
       "imported": "已导入",
       "no_license": "无许可证",
       "none_found": "没有找到 SKILL.md 文件。",
-      "scripts_n": "{{n}} 个脚本"
+      "scripts_n": "{{n}} 个脚本",
+      "hidden": "SKILL.md 里看不见的字符:{{count}} 个",
+      "hiddenRuns": "它的文字里有 {{runs}}。成串的这种字符可以藏住文字。",
+      "hiddenMore": "以及另外 {{count}} 种"
     },
     "filter": {
       "placeholder": "在已有的里面找…",
@@ -1433,5 +1438,13 @@
     "memoryBody": "Arslan 会忘掉它，也不会再从旧对话里学回来。",
     "unsavedTitle": "不保存就离开？",
     "unsavedBody": "这篇笔记的改动会丢失。"
+  },
+  "scheduledPage": {
+    "intro": "按时自动跑的任务，和你让 Arslan 盯着的网页、文件夹。哪一行有点，就是那一行要你看一眼。",
+    "watches": "盯着的网页和文件夹",
+    "awayTitle": "你不在时没做的（只算这个任务的）",
+    "attention": "要你看一眼",
+    "changed": "有变化",
+    "failing": "没跑成或已自动暂停"
   }
 }

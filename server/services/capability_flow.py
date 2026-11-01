@@ -36,8 +36,11 @@ TEST_TIMEOUT_S = 90
 
 
 def installable(c: dict) -> str | None:
-    """Why this candidate cannot be offered for install, or None."""
-    if c.get("license", {}).get("verdict") != "usable":
+    """Why this candidate cannot be offered for install, or None. An MCP server's license is decided by the read at
+    the version being installed (`capability_install.prepare`, before the card; #569 review F1, ⓪Plan's call under
+    the user's no-over-defence rule): the search's verdict is GitHub's detection at the repository's HEAD, so for
+    MCP it is a hint, never a refusal. A skill keeps it, and its own license is read at the pinned commit too."""
+    if c.get("kind") != "mcp" and c.get("license", {}).get("verdict") != "usable":
         return "license_not_usable"
     if c.get("not_here"):
         return c["not_here"]
@@ -136,6 +139,8 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict
     else:
         scan = None
     test = await test_mcp(row.id)
+    # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
+    test = {**((await _source(row.id)).test or {}), **test}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}
@@ -287,7 +292,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             locked = await capability_install.prepare(cand)
         except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
             return {"ok": False, "error": f"cannot be added: {exc.code}"}
-        card.update(lock=capability_install.lock_summary(locked))
+        # CAP4a-3: the license the gate read, at the version being installed (`<file>@<ref>`), not the search's.
+        spdx, read_from = locked["license"]
+        card.update(lock=capability_install.lock_summary(locked), license={"spdx": spdx, "read_from": read_from})
     elif cand["kind"] == "skill":
         # CAP4a-1: fetched whole at one pinned commit, scanned and hashed before the card; a blocked scan gets none.
         # After the "nobody to ask" answer above: a run that cannot install fetches nothing.
@@ -301,7 +308,11 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             rules = ", ".join(f["rule"] for f in scan["findings"] if f["level"] == "high")
             return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); nothing was added"}
         card.update(commit=prepared["commit"], files=prepared["files"], sizes=prepared["sizes"],
-                    skipped=prepared["skipped"], scan=scan)
+                    skipped=prepared["skipped"], scan=scan,
+                    # UNI1b (#586 review F2, F4): under D2 this card is the guard, so it says how many characters of
+                    # the skill's text and its references show nothing, as the import panel does.
+                    hidden=untrusted.hidden_summary("\n".join([prepared["info"]["body"],
+                                                                 *(prepared.get("references") or {}).values()])))
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
     try:

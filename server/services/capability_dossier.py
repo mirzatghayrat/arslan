@@ -79,6 +79,35 @@ async def set_folders(source_id: str, folders: list[str]) -> dict:
     return view(await source(source_id))
 
 
+async def accept_tools(source_id: str, digest: str) -> dict:
+    """CAP5a: the user read a server's tool change (its `test.tools_changed`) and accepts it: those tools become
+    the pin, the hold ends, and the server starts again in the background, so its next listing is compared to
+    them. `digest` names the change the user read: a change recorded since, or none, is refused, and nothing is
+    pinned; so is a change too large to show whole (#577 review F2), which only a removal or a reinstall ends.
+    It runs under the server's listing lock, so a listing's record and this accept never interleave."""
+    from server.mcp import discovery
+    from server.services import mcp_service
+    row = await source(source_id)
+    if row.kind != "mcp" or not row.mcp_server_id:
+        raise DossierError("no_tool_change")
+    async with discovery._write_locks.hold(row.mcp_server_id):
+        async with db_session.AsyncSessionLocal() as db:
+            stored = await db.get(CapabilitySource, source_id)
+            test = dict(stored.test or {})
+            change = test.get("tools_changed") or {}
+            if not change:
+                raise DossierError("no_tool_change")
+            if not isinstance(digest, str) or digest != change.get("digest"):
+                raise DossierError("tool_change_moved")
+            if not change.get("reviewable", True):
+                raise DossierError("too_long_to_review")
+            test.pop("tools_changed")
+            stored.test = {**test, "tools_pin": change["pin"]}
+            await db.commit()
+    await mcp_service.restart_after_edit(row.mcp_server_id)
+    return view(await source(source_id))
+
+
 async def remove(source_id: str) -> None:
     row = await source(source_id)
     if row.kind == "skill":
@@ -170,6 +199,6 @@ async def update(source_id: str) -> dict:
 
 
 async def check_candidate_license(cand: dict) -> dict:
-    spdx, path = await capability_install.source_license(cand.get("repo"))
+    spdx, path = await capability_install.source_license(cand.get("repo"), (cand.get("package") or {}).get("version"))
     return {"spdx": spdx, "read_from": path,
             "verdict": capability_search.license_verdict(spdx, proprietary=bool(path) and spdx is None)}

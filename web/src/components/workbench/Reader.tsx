@@ -35,16 +35,18 @@ const decode = (buf: ArrayBuffer) => new TextDecoder("utf-8", { fatal: false }).
  * tables for csv/xlsx, Word through macOS's textutil, text with line numbers. Read-only.
  */
 /** A file shown as itself; a turn's change (DIFF1) has its own reader, DiffReader. */
-type FileSource = Exclude<ReaderSource, { kind: "diff" }>;
+type FileSource = Exclude<ReaderSource, { kind: "diff" } | { kind: "repo-diff" }>;
 
 export default function Reader({ source, onBack }: { source: FileSource; onBack: () => void }) {
   const { t } = useTranslation();
-  const name = source.kind === "artifact" ? baseName(source.file.title) : baseName(source.path);
+  const name = source.kind === "artifact" ? baseName(source.file.title) : source.kind === "text" ? baseName(source.name)
+    : baseName(source.path);
   const path = source.kind === "path" ? source.path : null;
   const kind = kindOf(name);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [bytes, setBytes] = useState<number | null>(source.kind === "artifact" ? source.file.bytes : null);
+  const [bytes, setBytes] = useState<number | null>(source.kind === "artifact" ? source.file.bytes
+    : source.kind === "text" ? new Blob([source.text]).size : null);
   const [mode, setMode] = useState<"rendered" | "source">("rendered");
   const [wrap, setWrap] = useState(true);
   const [fit, setFit] = useState(true);
@@ -57,6 +59,7 @@ export default function Reader({ source, onBack }: { source: FileSource; onBack:
     let url: string | null = null;
     setLoaded(null); setError(null); setPdfImages(null); setMode("rendered"); setSheet(0);
     void (async () => {
+      if (source.kind === "text") { setLoaded({ kind: "text", text: source.text.slice(0, TEXT_CAP), cut: source.text.length > TEXT_CAP }); return; }
       if (path && kind === "xlsx") { const r = await filesApi.table(path); if (alive) setLoaded({ kind: "table", sheets: r.sheets }); return; }
       if (path && kind === "doc") { const r = await filesApi.html(path); if (alive) setLoaded({ kind: "html", html: r.html }); return; }
       const blob = source.kind === "artifact"
@@ -98,7 +101,7 @@ export default function Reader({ source, onBack }: { source: FileSource; onBack:
   }
 
   const act = "rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground";
-  const shownPath: string | null = path ?? (source.kind === "artifact" ? source.file.title : null);
+  const shownPath: string | null = path ?? (source.kind === "artifact" ? source.file.title : source.kind === "text" ? source.name : null);
   async function download() {
     if (source.kind !== "artifact") return;
     const blob = await api.downloadRunArtifact(source.file.run_id, source.file.filename);

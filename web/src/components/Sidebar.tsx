@@ -1,7 +1,7 @@
 import BrandMark from './BrandMark';
 import React, { useEffect, useState } from "react";
 import type { Section } from "../lib/sections";
-import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Inbox, Activity, PanelLeft } from "lucide-react";
+import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Inbox, Activity, PanelLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
@@ -43,6 +43,8 @@ interface SidebarProps {
   onOpenConversation?: (conversationId: string) => void;
   /** Inbox badge: items not yet looked at, and how many of those need a look. */
   inboxUnread?: number; inboxHigh?: number;
+  /** INB3: something on the Scheduled page needs a look. */
+  scheduledDot?: boolean;
   /** Each conversation's kind and state (GET /conversations), for the glyphs and the Remote trace. */
   meta?: Record<string, ConversationMeta>;
   /** 0.1.58 §4: projects whose conversations live under them instead of in 最近. */
@@ -58,7 +60,7 @@ const DRAG_TYPE = "application/x-arslan-conversation";
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, meta = {},
+    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, scheduledDot = false, meta = {},
     projects = [], onStartInProject, onOpenProject, onMoveToProject, onPinThread } = props;
   const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -165,6 +167,8 @@ export default function Sidebar(props: SidebarProps) {
   function renderProject(project: SidebarProject) {
     const open = openProjects.includes(project.id);
     const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
+    // INB4: the row carries its most urgent conversation: waiting, then working, then done, not seen.
+    const urgent = (["waiting", "working", "done_unseen"] as const).find(state => chats.some(thread => meta[thread.id]?.state === state));
     const takes = (event: React.DragEvent) => Boolean(onMoveToProject) && event.dataTransfer.types.includes(DRAG_TYPE);
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
       <div data-testid={`sidebar-project-drop-${project.id}`} data-drop={dropTarget === project.id || undefined}
@@ -184,6 +188,9 @@ export default function Sidebar(props: SidebarProps) {
           {open ? <ChevronDown size={12} className="shrink-0 text-subtle-foreground" /> : <ChevronRight size={12} className="shrink-0 text-subtle-foreground" />}
           <Folder size={13} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
+          {urgent && <span data-testid={`project-state-${project.id}`} role="img" aria-label={t(`sidebar.glyph.${urgent}`)} className="flex shrink-0">
+            {urgent === "done_unseen" ? <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-info-strong" />
+              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0 }} size={13} />}</span>}
         </button>
         {onStartInProject && <button type="button" onClick={() => onStartInProject(project.id)}
           aria-label={t("sidebar.newInProject", { name: project.name })} title={t("sidebar.newInProject", { name: project.name })}
@@ -228,6 +235,10 @@ export default function Sidebar(props: SidebarProps) {
             className={`min-w-[18px] rounded-full px-1.5 text-center text-[10px] leading-[18px] tabular-nums ${inboxHigh > 0 ? "bg-warning text-background" : "bg-primary text-primary-foreground"}`}>{inboxUnread > 99 ? "99+" : inboxUnread}</span>}</button>
         <button id="nav-btn-projects-deck" onClick={() => onChangeSection("projects")} className={navClass(activeSection === "projects")}>
           <FolderOpen size={15} /><span>{t("companion.projects")}</span></button>
+        <button id="nav-btn-scheduled-deck" onClick={() => onChangeSection("scheduled")} className={navClass(activeSection === "scheduled")}>
+          <Clock size={15} /><span className="flex-1">{t("nav.scheduled")}</span>
+          {scheduledDot && <span role="img" aria-label={t("scheduledPage.attention")} data-testid="scheduled-dot"
+            className="h-2 w-2 rounded-full bg-warning" />}</button>
         <button id="nav-btn-brain-deck" onClick={() => onChangeSection("brain")} className={navClass(activeSection === "brain")}>
           <Network size={15} /><span>{t("companion.memory")}</span></button>
         <button id="nav-btn-capabilities-deck" onClick={() => onChangeSection("capabilities")} className={navClass(activeSection === "capabilities")}>

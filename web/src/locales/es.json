@@ -98,7 +98,8 @@
     "arslan": "Asistente principal",
     "capabilities": "Capacidades",
     "brain": "Memoria",
-    "activity": "Actividad"
+    "activity": "Actividad",
+    "scheduled": "Programadas"
   },
   "brain": {
     "strip_details": "Cobertura y límites",
@@ -584,7 +585,7 @@
     "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
     "labelIsland": "Mostrar Arslan en el notch",
     "islandDesc": "Un pequeño Arslan en la parte superior de la pantalla muestra en qué está trabajando, cuándo te necesita y cuándo termina una tarea. Pasa el puntero por encima para ver más. Nunca aparece en capturas, grabaciones ni al compartir pantalla.",
-    "automationElsewhere": "Las tareas programadas, el uso de tokens y cada ejecución pasada están en Actividad.",
+    "automationElsewhere": "Las tareas programadas tienen su propia página; el uso de tokens y cada ejecución pasada están en Actividad.",
     "automationOpenActivity": "Abrir Actividad",
     "searchPlaceholder": "Buscar ajustes…",
     "searchNoHits": "Ninguna sección coincide",
@@ -714,7 +715,7 @@
     "grpWhatsNew": "Novedades de esta versión",
     "watchesInInbox": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la Bandeja.",
     "openInbox": "Abrir la Bandeja",
-    "openActivity": "Las tareas programadas, el uso y cada ejecución están en Actividad.",
+    "openActivity": "El uso y cada ejecución están en Actividad; las tareas programadas tienen su propia página.",
     "openActivityBtn": "Abrir Actividad",
     "whatsNewEmpty": "No hay notas para esta versión."
   },
@@ -789,7 +790,8 @@
       "done": "Hecho",
       "unfinished": "No se logró",
       "failed": "Detenido por un problema",
-      "scheduled": "Programado"
+      "scheduled": "Programado",
+      "done_unseen": "Hecho, aún sin ver"
     },
     "projects": "Proyectos",
     "allProjects": "Todos los proyectos",
@@ -957,7 +959,7 @@
       "orphaned": "Archivos huérfanos"
     },
     "import": {
-      "subtitle": "SKILL.md estándar, importado tal como está escrito, sin caracteres ocultos — con control de licencia.",
+      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad; los caracteres invisibles se cuentan.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subruta (opcional)",
       "scan": "Escanear",
@@ -965,7 +967,10 @@
       "imported": "Importado",
       "no_license": "SIN LICENCIA",
       "none_found": "No se encontraron archivos SKILL.md.",
-      "scripts_n": "{{n}} scripts"
+      "scripts_n": "{{n}} scripts",
+      "hidden": "Caracteres invisibles en SKILL.md: {{count}}",
+      "hiddenRuns": "Su texto tiene {{runs}}. Una serie así puede ocultar texto.",
+      "hiddenMore": "y {{count}} más"
     },
     "filter": {
       "placeholder": "Filtrar lo que ya tienes…",
@@ -1433,5 +1438,13 @@
     "memoryBody": "Arslan lo olvida y no lo volverá a aprender de conversaciones antiguas.",
     "unsavedTitle": "¿Salir sin guardar?",
     "unsavedBody": "Se perderán los cambios de esta nota."
+  },
+  "scheduledPage": {
+    "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
+    "watches": "Páginas y carpetas vigiladas",
+    "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
+    "attention": "Necesita tu atención",
+    "changed": "Ha cambiado",
+    "failing": "Falló o se pausó sola"
   }
 }

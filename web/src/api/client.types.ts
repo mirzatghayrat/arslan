@@ -381,6 +381,7 @@ export interface AppSettings {
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
+  folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
@@ -591,6 +592,8 @@ export interface CapabilityCard {
   runtime_download: { name: string; size_mb: number } | null; remote_host: string | null; network: boolean;
   folders: string[]; keys: { name: string; secret: boolean; required: boolean; description: string }[];
   why: string; retry: string;
+  /** UNI1b (#586 review F2): a skill's characters that show nothing, in its text and references. */
+  hidden?: { count: number; runs: string[]; more: number };
 }
 /** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
  *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */
@@ -606,7 +609,7 @@ export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: st
 
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
+  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability" | "rule_offer";
   /** kind === "capability" (0.1.57): how an install the user approved ended. */
   capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
@@ -630,6 +633,8 @@ export interface ArslanThreadItem {
   replyMessageId?: number | null;
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
+  /** kind === "rule_offer" (L11-2): "make this a rule for this folder?" for a lesson corrected twice. */
+  ruleOffer?: { lessonId: number; file: string };
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
@@ -730,6 +735,7 @@ export type ArslanServerMessage =
       proposal_id?: number | null; reason?: string | null }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string; not_in_effect?: string | null } }
+  | { type: "rule_offer"; lesson_id: number; text: string; file: string }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
       source?: string | null }

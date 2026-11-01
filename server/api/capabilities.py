@@ -102,6 +102,20 @@ async def set_folders(source_id: str, body: FoldersIn) -> dict:
         raise _dossier_error(exc) from exc
 
 
+class ToolsAcceptIn(BaseModel):
+    digest: str
+
+
+@router.post("/capability-sources/{source_id}/tools/accept")
+async def accept_tools(source_id: str, body: ToolsAcceptIn) -> dict:
+    """CAP5a: accept the tool change the user read (its digest); 409 when there is none or a newer one."""
+    from server.services import capability_dossier
+    try:
+        return await capability_dossier.accept_tools(source_id, body.digest[:64])
+    except capability_dossier.DossierError as exc:
+        raise _dossier_error(exc) from exc
+
+
 @router.delete("/capability-sources/{source_id}")
 async def remove_source(source_id: str) -> dict:
     """Remove: switched off, its folder to the Trash (never deleted outright)."""
