@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from arslan.aio import within
 from server.db import session as db_session
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,9 @@ SETTING_KEY = "capability_allowlist"
 GITHUB = "https://api.github.com"
 ACCOUNT_CACHE_S = 24 * 3600
 TIMEOUT_S = 10.0
+#: One limit for an account check, and the most of GitHub's answer read (#625 review I-2): an account is ~1 KB.
+ACCOUNT_DEADLINE_S = 20.0
+ACCOUNT_MAX_BYTES = 64 * 1024
 
 #: The first version of the list (the user's D). Domains are the vendors' own (their remotes, and their packages
 #: when `packages_from_any_domain` is off); `hosts` names more hosts a vendor's remotes run on; `accounts` are
@@ -203,20 +207,34 @@ def verdict(c: dict, allow: dict) -> str | None:
 _IDS: dict[str, tuple[float, int | None]] = {}
 
 
-async def _account_id(login: str) -> int | None:
-    hit = _IDS.get(login)
+async def _account_id(login: str, *, fresh: bool = False) -> int | None:
+    """The numeric id GitHub gives `login` now, or None for no such account (a 404, cached a day). Anything else is
+    no answer and raises, with nothing cached: a rate limit, an outage, a redirect, or a 200 that names no integer
+    id (#625 review L-1, L-3). `fresh` skips the cache, as an update does (I-1)."""
+    hit = None if fresh else _IDS.get(login)
     if hit and time.time() - hit[0] < ACCOUNT_CACHE_S:
         return hit[1]
-    async with httpx.AsyncClient(timeout=TIMEOUT_S, headers={"Accept": "application/vnd.github+json"}) as client:
-        r = await client.get(f"{GITHUB}/users/{login}")
-    if r.status_code not in (200, 404):
-        r.raise_for_status()                    # a rate limit or an outage is not an answer: nothing is cached
-    body = r.json() if r.status_code == 200 else {}
-    if not isinstance(body, dict):              # #584 review 7: an answer that is no account is no answer
-        raise ValueError("GitHub's answer is not an object")
-    found = body.get("id")
-    _IDS[login] = (time.time(), found if type(found) is int else None)
-    return _IDS[login][1]
+    found = await within(_ask_github(login), ACCOUNT_DEADLINE_S)
+    _IDS[login] = (time.time(), found)
+    return found
+
+
+async def _ask_github(login: str) -> int | None:
+    async with httpx.AsyncClient(timeout=TIMEOUT_S, follow_redirects=False,
+                                 headers={"Accept": "application/vnd.github+json"}) as client:
+        async with client.stream("GET", f"{GITHUB}/users/{login}") as r:
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()                # a rate limit, an outage or a redirect is not an answer
+            body = bytearray()
+            async for chunk in r.aiter_bytes():
+                body += chunk
+                if len(body) > ACCOUNT_MAX_BYTES:
+                    raise ValueError("GitHub's answer is too large")
+    found = json.loads(bytes(body))
+    if not isinstance(found, dict) or type(found.get("id")) is not int:     # #584 review 7, #625 review L-1
+        raise ValueError("GitHub's answer names no account id")
+    return found["id"]
 
 
 async def confirm_account(c: dict, allow: dict) -> str | None:
@@ -235,7 +253,7 @@ async def confirm_account(c: dict, allow: dict) -> str | None:
         return PUBLISHER_NOT_LISTED
     try:
         found = await _account_id(login)
-    except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:      # #584 review 7: no answer
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError, TimeoutError) as exc:   # #584 review 7
         logger.info("capability allowlist: GitHub did not answer for %s (%s)", login, type(exc).__name__)
         return ACCOUNT_NOT_CHECKED
     return None if found == pinned else ACCOUNT_CHANGED_HANDS
@@ -256,14 +274,34 @@ def account_pin(c: dict, allow: dict) -> dict | None:
 
 async def confirm_pin(c: dict, pin: dict) -> str | None:
     """An update of a source installed from a listed organization: the newer version's publisher is the pinned
-    login, and that login still has the pinned id. Another publisher or id, or GitHub not answering, refuses it."""
+    login, and that login still has the pinned id, asked fresh (#625 review I-1). Another publisher or id, or GitHub
+    not answering (an error, a redirect, an answer that names no id, the deadline), refuses it."""
     from server.services import capability_search
     who = capability_search.publisher_of(c)
     if who is None or who["kind"] != "github" or who["value"].lower() != pin.get("login"):
         return ACCOUNT_CHANGED_HANDS
     try:
-        found = await _account_id(pin["login"])
-    except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:
+        found = await _account_id(pin["login"], fresh=True)
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError, TimeoutError) as exc:
         logger.info("capability allowlist: GitHub did not answer for %s (%s)", pin["login"], type(exc).__name__)
         return ACCOUNT_NOT_CHECKED
     return None if type(found) is int and found == pin.get("id") else ACCOUNT_CHANGED_HANDS
+
+
+async def confirm_update(c: dict, pin: dict | None) -> tuple[str | None, dict | None]:
+    """An update's check of a newer version's publisher: (why it is refused, or None; the pin the newer source
+    keeps). #625 review L-2 (⓪Plan's call), for a source installed before pins:
+    - its own pin, when it has one, whatever the list says now;
+    - else, a listed organization: the list's id, checked the same way, and then kept as the pin;
+    - else, a publisher on GitHub while the list can't be read or reads closed: not checked, so the user tries again;
+    - else (a domain publisher, or an account the list doesn't name): the list stays out of updates, as before."""
+    from server.services import capability_search
+    if not isinstance(pin, dict):
+        allow = await current()
+        pin = account_pin(c, allow)
+        who = capability_search.publisher_of(c)
+        if pin is None:
+            closed = allow == CLOSED and who is not None and who["kind"] == "github"
+            return (ACCOUNT_NOT_CHECKED if closed else None), None
+    refused = await confirm_pin(c, pin)
+    return refused, (None if refused else pin)

@@ -4,7 +4,9 @@ Packages from any verified domain, or from a listed GitHub organization while it
 one; remote servers only from a listed vendor domain, on a host under it; everything else is added by hand. The
 list is the user's, stored server side and edited through its own API. No network: GitHub's answer is a fake.
 """
+import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -12,6 +14,9 @@ import pytest
 from server import auth
 from server.services import capability_allowlist as al
 from server.services import capability_flow, capability_search, permission_store
+
+#: The real client, kept before any test replaces it (a test may set GitHub's answers more than once).
+_CLIENT = httpx.AsyncClient
 
 ALLOW = al.validate(al.DEFAULT)
 
@@ -240,31 +245,23 @@ async def _propose(monkeypatch, cand):
 
 
 def _github(monkeypatch, answers: dict):
-    """api.github.com/users/<login> answers from `answers` (an id, a status code, or an exception)."""
+    """api.github.com/users/<login> answers from `answers` (an id, a status code, an httpx.Response, or an
+    exception), through the real client on a mock transport (#625 review L-3)."""
     calls = []
     al._IDS.clear()
 
-    class Client:
-        def __init__(self, **kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def get(self, url):
-            login = url.rsplit("/", 1)[-1]
-            calls.append(login)
-            answer = answers[login]
-            if isinstance(answer, Exception):
-                raise answer
-            request = httpx.Request("GET", url)
-            if isinstance(answer, int) and 400 <= answer < 600:         # a status, not an id
-                return httpx.Response(answer, json={"message": "x"}, request=request)
-            return httpx.Response(200, json={"id": answer, "login": login}, request=request)
-    monkeypatch.setattr(al.httpx, "AsyncClient", Client)
+    def handler(request):
+        login = request.url.path.rsplit("/", 1)[-1]
+        calls.append(login)
+        answer = answers[login]
+        if isinstance(answer, Exception):
+            raise answer
+        if isinstance(answer, httpx.Response):
+            return answer
+        if isinstance(answer, int) and 300 <= answer < 600:         # a status, not an id
+            return httpx.Response(answer, json={"message": "x"})
+        return httpx.Response(200, json={"id": answer, "login": login})
+    monkeypatch.setattr(al.httpx, "AsyncClient", lambda **kw: _CLIENT(transport=httpx.MockTransport(handler), **kw))
     return calls
 
 
@@ -309,28 +306,29 @@ async def test_a_listed_login_that_is_not_the_listed_organization_is_added_by_ha
         assert calls == ["getsentry", "getsentry"]
 
 
-async def test_a_github_answer_that_is_not_an_object_is_no_answer(card_world, monkeypatch):
-    """#584 review 7: not checked, and not cached (the next card asks again)."""
-    calls = []
-
-    class ListAnswer:
-        def __init__(self, **kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def get(self, url):
-            calls.append(url)
-            return httpx.Response(200, json=[1396951], request=httpx.Request("GET", url))
-    al._IDS.clear()
-    monkeypatch.setattr(al.httpx, "AsyncClient", ListAnswer)
+@pytest.mark.parametrize("answer", [
+    httpx.Response(200, json=[1396951]),                                   # #584 review 7: not an object
+    httpx.Response(200, text="<html>rate limited</html>"),                 # #625 review L-3: not JSON
+    httpx.Response(200, json={"login": "getsentry"}),                      # #625 review L-1: no id
+    httpx.Response(200, json={"id": "1396951"}),                           # an id that is not an integer
+    httpx.Response(200, json={"id": True}),
+    httpx.Response(301, headers={"location": "https://api.github.com/user/1396951"}),     # L-3: a redirect
+    httpx.Response(200, json={"id": 1396951, "pad": "x" * 70000}),        # #625 review I-2: past the size cap
+])
+async def test_a_github_answer_that_names_no_account_is_no_answer_and_is_not_cached(card_world, monkeypatch, answer):
+    """Not checked, and not cached (the next card asks again); never a 500."""
+    calls = _github(monkeypatch, {"getsentry": answer})
     sentry = _cand("io.github.getsentry/sentry")
     assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_NOT_CHECKED
     assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_NOT_CHECKED and len(calls) == 2
+    assert "getsentry" not in al._IDS
+
+
+async def test_a_404_is_no_such_account_and_is_cached(card_world, monkeypatch):
+    calls = _github(monkeypatch, {"getsentry": 404})
+    sentry = _cand("io.github.getsentry/sentry")
+    assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_CHANGED_HANDS
+    assert await al.confirm_account(sentry, ALLOW) == al.ACCOUNT_CHANGED_HANDS and calls == ["getsentry"]
 
 
 async def test_github_is_asked_again_after_a_day(card_world, monkeypatch):
@@ -493,6 +491,58 @@ async def test_a_pin_for_another_login_refuses_the_update(card_world, monkeypatc
     with pytest.raises(dossier.DossierError) as refused:
         await dossier.update("pin1")
     assert refused.value.code == al.ACCOUNT_CHANGED_HANDS and installed == [] and calls == []
+
+
+@pytest.mark.parametrize("newer_name, the_list, refusal, asked", [
+    ("io.github.getsentry/sentry", "closed", al.ACCOUNT_NOT_CHECKED, []),       # #625 review L-2: try again later
+    ("io.github.someone/notes", "closed", al.ACCOUNT_NOT_CHECKED, []),
+    ("com.example/notes", "closed", None, []),                                  # a domain publisher: as before
+    ("io.github.someone/notes", "read", None, []),                              # not listed: the list stays out
+    ("io.github.getsentry/sentry", "read", None, ["getsentry"]),                # listed: its id, asked
+])
+async def test_a_source_from_before_pins_is_checked_by_the_list_or_waits(card_world, monkeypatch, newer_name,
+                                                                          the_list, refusal, asked):
+    """#625 review L-2 (⓪Plan's call): with no pin of its own, a listed organization's row is checked by the list's
+    id and keeps it; while the list can't be read or reads closed, a GitHub-published row is not checked."""
+    dossier, installed = await _pinned_source(monkeypatch, None, newer_name=newer_name)
+
+    async def current():
+        return dict(al.CLOSED) if the_list == "closed" else ALLOW
+    monkeypatch.setattr(al, "current", current)
+    calls = _github(monkeypatch, {"getsentry": 1396951})
+    if refusal:
+        with pytest.raises(dossier.DossierError) as refused:
+            await dossier.update("pin1")
+        assert refused.value.code == refusal and installed == []
+    else:
+        await dossier.update("pin1")
+        assert len(installed) == 1
+        assert installed[0].get("account_pin") == ({"login": "getsentry", "id": 1396951} if asked else None)
+    assert calls == asked
+
+
+async def test_an_update_asks_github_fresh_and_a_card_uses_the_day_cache(card_world, monkeypatch):
+    """#625 review I-1: a login that changed hands since the card was checked today is caught at the update."""
+    dossier, installed = await _pinned_source(monkeypatch, {"login": "getsentry", "id": 1396951})
+    calls = _github(monkeypatch, {"getsentry": 99999999})
+    al._IDS["getsentry"] = (time.time(), 1396951)
+    assert await al.confirm_account(_cand("io.github.getsentry/sentry"), ALLOW) is None and calls == []
+    with pytest.raises(dossier.DossierError) as refused:
+        await dossier.update("pin1")
+    assert refused.value.code == al.ACCOUNT_CHANGED_HANDS and calls == ["getsentry"] and installed == []
+
+
+async def test_github_past_the_deadline_is_no_answer(card_world, monkeypatch):
+    """#625 review I-2."""
+    monkeypatch.setattr(al, "ACCOUNT_DEADLINE_S", 0.05)
+
+    async def slow(request):
+        await asyncio.sleep(1)
+        return httpx.Response(200, json={"id": 1396951})
+    al._IDS.clear()
+    monkeypatch.setattr(al.httpx, "AsyncClient", lambda **kw: _CLIENT(transport=httpx.MockTransport(slow), **kw))
+    assert await al.confirm_account(_cand("io.github.getsentry/sentry"), ALLOW) == al.ACCOUNT_NOT_CHECKED
+    assert "getsentry" not in al._IDS
 
 
 async def test_an_update_without_a_pin_takes_one_from_the_list(card_world, monkeypatch):
