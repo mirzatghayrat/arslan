@@ -4,7 +4,7 @@
 |---|---|
 | Grade | Must (user, 2026-11-01, relayed by ④参谋: option (b)). iPhone 1.0 goes to App Store review after v0.1.64, with parts A and B of round 2 complete, as the user decided on 10-26. |
 | Lanes | ②Main: Bridge and server. ①iOS: reviews the frame list and each PR's frames, and builds nothing new on the phone (part B is built and waits for data). |
-| Hard gate | **The user's explicit OK on the frame change list** (step 2 below). No code that touches a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md` starts before it (the user's standing rule; `docs/sessions.md` §2). |
+| Hard gate | **The user's explicit OK on the frame change list** (step 2 below). No code that touches a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md` starts before it (the user's standing rule; `docs/sessions.md` §2). **Met on 2026-11-01** (about 13:45 UTC, relayed by ④参谋): 「帧 OK，1/2/4 按推荐，3 选 b」, for the list in [IPB-frame-list](IPB-frame-list.md) (#640). |
 | Order | After the INB7 chain (#622 → #636), on ②Main's lane. Off the SBX → CLS critical path. |
 | Effort | high for the build and ordinary reviews. effort=max only for the security-surface review of the Bridge PRs (what leaves the Mac, and over which channel). |
 
@@ -54,7 +54,7 @@ For each field: its name, type, unit, whether it's optional, which frame carries
    **Cadence:** state rides its own slower clock (proposal: refresh at most every 5 minutes, or when the phone opens the Overview), not the headline signature.
 2. **Per conversation in `chat.history.result`:**
    - environment: model, the folder's display path, the mode name;
-   - context: used and window tokens, split into system, tools and chat;
+   - context: used and window tokens, split into system, tools and chat (**left out of 1.0**, the user's Decide 3);
    - the conversation's connectors: name, kind, on/off;
    - changed files: net lines added and removed over the whole conversation, plus the last run and step that changed one. The Mac computes this, because a run carries 40 steps and history 200 messages, so the phone would undercount;
    - this conversation's cost.
@@ -96,4 +96,4 @@ The aralem.dev privacy page (`aralem.dev/arslan/privacy`, site repo) gets this l
 
 ## Rollback
 
-Every field is optional. Reverting a PR stops the Mac sending that field, and the phone hides the panel again. No migration is planned. If the per-conversation cost needs one, it takes the next free number, which is 0086 at this writing.
+Every field is optional. Reverting a PR stops the Mac sending that field, and the phone hides the panel again. No migration: the cost comes from the existing usage endpoint, and context is left out of 1.0 (Decide 3).
