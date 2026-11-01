@@ -6,9 +6,9 @@ the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
 written here without changing a byte of what they produce, and SBX-1b changed how a path is spelt
 (below). SBX-2 adds the default-deny base that SBX-3 and SBX-4 move them onto
-(docs/plans/0164/SBX-sandbox.md). Two texts are still written by hand: `command_sandbox.available()`'s
-probe, which SBX-3 replaces with the real commands profile, and `code_sandbox._SEATBELT_PROFILE`,
-which no product caller reaches and SBX-4 deletes.
+(docs/plans/0164/SBX-sandbox.md). One text is still written by hand: `code_sandbox._SEATBELT_PROFILE`,
+which no product caller reaches and SBX-4 deletes. (`command_sandbox.available()` starts the real
+commands profile since SBX-3.)
 
 What every profile relies on:
 
@@ -69,6 +69,14 @@ def literal(path) -> str:
 def file_or_folder(path: Path) -> str:
     """`literal` for an existing file, `subpath` for a folder or a path that does not exist (yet)."""
     return literal(path) if path.is_file() else subpath(path)
+
+
+def regex(pattern: str) -> str:
+    """Paths matching `pattern`, which is one of Arslan's own constants, never a path from outside (an SBPL
+    regex literal has no escape for `"`)."""
+    if '"' in pattern:
+        raise ValueError("an SBPL regex cannot hold a double quote")
+    return f'(regex #"{pattern}")'
 
 
 def remote_tcp(host: str, port: int) -> str:

@@ -12,11 +12,16 @@ from pathlib import Path
 import pytest
 
 from server.services import command_sandbox, task_service, terminal_exec
-from server.orchestrator.recovery_hints import hint_for
+from server.orchestrator.recovery_hints import SANDBOX_APPLE_EVENTS_HINT, hint_for
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
 SANDBOX_REFUSAL = "32:43: execution error: Reminders got an error: Application isn’t running. (-600)"
+# SBX-3: the workspace sandbox is the default-deny base, where osascript fails at the app lookup, before any
+# event (measured 2026-11-02 on macOS 26.6.2). The minimal profile outside it still gives the -600 above.
+BASE_REFUSAL = ("2026-11-02 00:13:57.941 osascript[11829:30397152] Connection Invalid error for service "
+                "com.apple.hiservices-xpcservice.\n"
+                "48:55: execution error: Can’t get application \"Reminders\". (-1728)")
 
 
 # ── piece 3: what a command can never read, in two lists ──────────────────────────────
@@ -58,11 +63,27 @@ def test_a_sandboxed_apple_event_refusal_gets_an_honest_hint():
 
 def test_a_sandboxed_apple_event_refusal_is_a_known_failure_not_an_unknown_outcome():
     args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
-    refused = {"exit_code": 1, "sandbox": "workspace", "stderr": SANDBOX_REFUSAL}
+    refused = {"exit_code": 1, "sandbox": "workspace", "stderr": BASE_REFUSAL}
     assert task_service._apple_events_refused(args, refused)
-    assert task_service._apple_events_refused(args, {**refused, "sandbox": "outside"})   # the minimal profile
-    # -600 with no wrapper at all can mean anything the app did: not judged.
+    outside = {"exit_code": 1, "sandbox": "outside", "stderr": SANDBOX_REFUSAL}
+    assert task_service._apple_events_refused(args, outside)                            # the minimal profile
+    # With no wrapper at all, -600 or -1728 can mean anything the app or the script did: not judged.
     assert not task_service._apple_events_refused(args, {**refused, "sandbox": "off"})
+    assert not task_service._apple_events_refused(args, {**outside, "sandbox": "off"})
+
+
+def test_a_sandboxed_app_lookup_refusal_does_not_pause_the_job():
+    """SBX-3 (#520 review): the -1728 lookup refusal is a known local failure, so a job doesn't stop on
+    "outcome unknown" for a script that reached no app. Only for the script's own app."""
+    args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
+    refused = {"ok": False, "exit_code": 1, "sandbox": "workspace", "stderr": BASE_REFUSAL}
+    assert task_service.known_local_failure("run_command", args, refused)
+    other = BASE_REFUSAL.replace('application \"Reminders\"', 'application \"Finder\"')
+    assert not task_service._apple_events_refused(args, {**refused, "stderr": other})
+    element = BASE_REFUSAL.replace('Can’t get application', 'Can’t get list 3 of application')
+    assert not task_service._apple_events_refused(args, {**refused, "stderr": element})
+    trailing = BASE_REFUSAL + " (and then it ran something else)"         # the match ends the last line
+    assert not task_service._apple_events_refused(args, {**refused, "stderr": trailing})
 
 
 @pytest.mark.macos
@@ -71,8 +92,20 @@ async def test_an_apple_event_from_the_sandbox_reaches_no_app(tmp_path):
     result = await terminal_exec.run("osascript -e 'tell application \"Finder\" to count windows'",
                                      cwd=tmp_path, sandbox=True)
     assert result["sandbox"] == "workspace" and not result["ok"]
-    assert "(-600)" in result["stderr"] and not result.get("sandbox_denied")      # no outside card for this
+    # SBX-3: on the default-deny base osascript can't even look the app up (-1728), before any event (-600).
+    assert "(-1728)" in result["stderr"] and not result.get("sandbox_denied")     # no outside card for this
     assert hint_for("run_command", result).startswith("Apple Events can't be sent")
+
+
+def test_an_app_the_sandbox_cant_look_up_gets_the_apple_events_hint():
+    """SBX-3: inside the default-deny base the app's lookup is refused, so osascript reports -1728 for the
+    app itself. Outside any sandbox that same code is the script's own error and gets no hint."""
+    err = 'execution error: Can\u2019t get application "Finder". (-1728)'
+    assert hint_for("run_command", {"ok": False, "sandbox": "workspace", "stderr": "29:42: " + err}) \
+        == SANDBOX_APPLE_EVENTS_HINT
+    assert hint_for("run_command", {"ok": False, "sandbox": "off", "stderr": "29:42: " + err}) is None
+    other = 'execution error: Can\u2019t get window 3 of application "Finder". (-1728)'
+    assert hint_for("run_command", {"ok": False, "sandbox": "workspace", "stderr": other}) is None
 
 
 # ── piece 5: a copy this conversation was given is readable by a command, file by file ──

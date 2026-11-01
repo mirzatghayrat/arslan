@@ -15,7 +15,7 @@ from arslan.execution_budget import governed
 from server.orchestrator import run_trace
 from contextvars import ContextVar
 
-from server.services import checkpoints, execution_context, run_recorder, run_registry
+from server.services import checkpoints, execution_context, run_recorder, run_registry, run_temp
 
 # K8a: a failure the run's answer did not end with an `error` frame for (a holder per run: a child task
 # writes into the same dict).
@@ -100,6 +100,8 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
             finally:
                 # 0.1.63 S3: how the run left its folder, however it ended, while its id is bound.
                 await checkpoints.finish(recorder.run_id)
+                # SBX-3 §1a: the run's own temp folder goes with it, unless a process it started is left.
+                run_temp.finish(recorder.run_id)
 
     task = asyncio.create_task(run())
     # A background job (announce=False) is not the chat's turn: never replayed on reconnect.

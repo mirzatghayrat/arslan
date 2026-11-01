@@ -130,6 +130,9 @@ _OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege vi
 # S2a-1: under `(deny appleevent-send)` (the workspace sandbox, and the minimal profile outside it) no
 # event leaves the process, so the script's one app answers "isn't running" (-600): nothing happened there.
 _OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
+# SBX-3: the workspace sandbox is the default-deny base, which refuses the app's lookup before any event, so
+# osascript reports the app itself as not found (-1728, measured 2026-11-02). Only for the app, not an element.
+_OSA_SANDBOX_LOOKUP = re.compile(r"execution error: Can[’']t get application \"([^\"]+)\"\. \(-1728\)\Z")
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
                             r"write\s|set\s+eof)", re.I)
@@ -431,7 +434,7 @@ def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> 
         return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
-    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1])) is not None:
+    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1]) or _OSA_SANDBOX_LOOKUP.search(lines[-1])):
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])
     return match is not None and match.group(1).lower() in apps & _PRIVILEGE_ALL_OR_NOTHING
