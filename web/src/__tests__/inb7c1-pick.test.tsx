@@ -190,6 +190,40 @@ describe("the inspector keeps up (⓪Plan's review of PR 624)", () => {
     expect(useActivityStore.getState().replayPlaying).toBe(false);
   });
 
+  it("over 7 days the header takes the ended run's outcome from its steps' read, and the read stops once it has ended", async () => {
+    useActivityStore.setState({ range: "7d" });
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-14"));
+    await waitFor(() => expect(inspector()).toHaveTextContent("Still running"));
+    runProcess.mockImplementation((id: number) => Promise.resolve({ ...PROCESS, run_id: id }));
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(within(inspector()).getByRole("heading").nextElementSibling).toHaveTextContent("Done"));
+    expect(within(inspector()).getByRole("heading").nextElementSibling).toHaveTextContent("30m");
+    const reads = runProcess.mock.calls.length;
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runProcess.mock.calls.length).toBe(reads);                              // ended: no more reads
+  });
+
+  it("clicking the marked step again shows every step, the way back with no axis", async () => {
+    useActivityStore.setState({ range: "7d" });
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    await waitFor(() => expect(steps()).toHaveLength(3));
+    fireEvent.click(within(steps()[0]).getAllByRole("button")[0]);           // the step itself, not its expander
+    expect(steps().map((step) => step.dataset.ahead)).toEqual(["false", "true", "true"]);
+    fireEvent.click(within(steps()[0]).getAllByRole("button")[0]);           // the step itself, not its expander
+    expect(steps().map((step) => step.dataset.ahead)).toEqual(["false", "false", "false"]);
+    expect(useActivityStore.getState().replayStep).toBeNull();
+  });
+
+  it("a link that names only the run opens it with the list's copy", async () => {
+    render(<ActivityView waiting={waiting()} />);
+    await screen.findByTestId("activity-run-12");
+    act(() => { useActivityStore.getState().showRun(12); });
+    expect(within(inspector()).getByRole("heading")).toHaveTextContent("Run 12");
+  });
+
   it("a newly picked run opens with its own steps closed (F)", async () => {
     render(<ActivityView waiting={waiting()} />);
     fireEvent.click(await screen.findByTestId("activity-run-11"));

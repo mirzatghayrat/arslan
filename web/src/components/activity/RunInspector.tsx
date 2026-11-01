@@ -39,11 +39,15 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
   const clock = useMemo(() => clockOf(i18n.language), [i18n.language]);
   const { proc, steps, empty } = useRunSteps(runId, run);
   const [open, setOpen] = useState<number | null>(null);
-  const outcome = run ? outcomeOf(run) : null;
-  const started = at(run?.created_at);
-  const meta = [Number.isFinite(started) ? clock.format(started) : "",
-    run?.total_ms != null && run.status !== "recording" ? fmtMs(run.total_ms) : "", outcome ? t(WORD[outcome]) : ""]
-    .filter(Boolean).join(" · ");
+  // Once its steps' read says it has ended, that read is the fresher word on how and how long, over 7 and 30 days too, where
+  // the list it was picked from is not read again (⓪Plan's re-check of PR 624).
+  const settled = proc && proc.status !== "recording" ? proc : null;
+  const outcome = settled ? outcomeOf({ status: settled.status }) : run ? outcomeOf(run) : null;
+  const took = settled?.started_at && settled.ended_at ? at(settled.ended_at) - at(settled.started_at)
+    : run?.total_ms != null && run.status !== "recording" ? run.total_ms : NaN;
+  const started = at(run?.created_at ?? settled?.started_at);
+  const meta = [Number.isFinite(started) ? clock.format(started) : "", Number.isFinite(took) ? fmtMs(took) : "",
+    outcome ? t(WORD[outcome]) : ""].filter(Boolean).join(" · ");
 
   return (
     <section>
@@ -74,8 +78,9 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
               data-ahead={String(step != null && i > step)}
               className={`rounded-md ${current ? "bg-primary/10" : ""} ${step != null && i > step ? "opacity-40" : ""}`}>
               <div className="flex items-center gap-1">
-                {/* A click moves the axis's replay here and takes over from the player. */}
-                <button type="button" onClick={() => setReplay({ step: i, playing: false })}
+                {/* A click moves the axis's replay here and takes over from the player; on the marked step it shows every step
+                    again, the way back where there is no axis (7 and 30 days). */}
+                <button type="button" onClick={() => setReplay({ step: current ? null : i, playing: false })}
                   className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-[12px]">
                   <span className="w-4 shrink-0 text-right font-mono text-[10.5px] text-subtle-foreground">{i + 1}</span>
                   {entry.ok ? <Check className="h-3 w-3 shrink-0 text-success" aria-hidden /> : <X className="h-3 w-3 shrink-0 text-danger" aria-hidden />}
