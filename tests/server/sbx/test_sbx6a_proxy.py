@@ -257,6 +257,35 @@ async def test_an_idle_tunnel_is_closed(proxy, origin, monkeypatch):
     writer.close()
 
 
+async def test_a_quiet_client_is_not_cut_off_while_the_server_talks(proxy, monkeypatch):
+    """One idle clock for both directions: the client stays quiet past the idle limit while the server
+    streams, and its next bytes still arrive."""
+    got = asyncio.get_running_loop().create_future()
+
+    async def serve(reader, writer):
+        for _ in range(8):
+            writer.write(b".")
+            await writer.drain()
+            await asyncio.sleep(0.05)
+        got.set_result(await reader.read(4))
+        writer.close()
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    _pin_to(monkeypatch, server.sockets[0].getsockname()[1], [])
+    monkeypatch.setattr(sandbox_proxy, "_IDLE_S", 0.2)
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
+        writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+        await writer.drain()
+        await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
+        await asyncio.sleep(0.35)                                   # quiet past the limit, the server not
+        writer.write(b"ping")
+        await writer.drain()
+        assert await asyncio.wait_for(got, 5) == b"ping"
+        writer.close()
+    finally:
+        server.close()
+
+
 async def test_connect_relays_to_the_resolved_public_address(proxy, origin, monkeypatch):
     port, got = origin
     seen = []

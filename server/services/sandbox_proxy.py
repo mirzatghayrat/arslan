@@ -187,8 +187,21 @@ class LocalProxy:
             await upstream.drain()
         return remote, upstream
 
-    async def _copy(self, reader, writer):
-        while block := await asyncio.wait_for(reader.read(65536), _IDLE_S):
+    async def _copy(self, reader, writer, last: list[float]):
+        """One direction. `last` is the connection's one idle clock, shared by both directions: a tunnel
+        is idle only when neither side has sent anything for `_IDLE_S` (6a delta review)."""
+        loop = asyncio.get_running_loop()
+        while True:
+            left = _IDLE_S - (loop.time() - last[0])
+            if left <= 0:
+                raise TimeoutError("idle")
+            try:
+                block = await asyncio.wait_for(reader.read(65536), left)
+            except TimeoutError:
+                continue                                     # the loop's check decides
+            if not block:
+                break
+            last[0] = loop.time()
             writer.write(block)
             await writer.drain()
         with suppress(OSError):
@@ -226,9 +239,16 @@ class LocalProxy:
                     head = "\r\n".join([f"{method} {path} HTTP/1.1", *kept, "Connection: close"]) + "\r\n\r\n"
                     remote, upstream = await self._open(host, port, head.encode("latin-1"))
                 established = True
-            relays = [asyncio.create_task(self._copy(reader, upstream)),
-                      asyncio.create_task(self._copy(remote, writer))]
-            await relays[1]
+            last = [asyncio.get_running_loop().time()]
+            relays = [asyncio.create_task(self._copy(reader, upstream, last)),
+                      asyncio.create_task(self._copy(remote, writer, last))]
+            # The connection ends when the server's side ends, or when either side fails or goes idle; a
+            # client that only half-closes keeps getting the reply.
+            done, _ = await asyncio.wait(relays, return_when=asyncio.FIRST_COMPLETED)
+            if relays[1] not in done and relays[0].exception() is None:
+                done, _ = await asyncio.wait([relays[1]])
+            for finished in done:
+                finished.result()
         except (_Refused, _BlockedHost, ValueError, UnicodeError, OSError, TimeoutError,
                 asyncio.IncompleteReadError, asyncio.LimitOverrunError):
             if not established:
