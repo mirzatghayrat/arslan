@@ -134,6 +134,15 @@ folder) once each, every prompt on a new instance, and writes a blind before / a
 read. It reuses `runner.fresh_instance`, `runner.command` and the driver. Procedure, cost and what the user
 judges: `docs/plans/0164/STY-read-test.md`.
 
+## "Done without evidence" (v0.1.64 STY2)
+
+STY2's gate: the number of Arslan runs that say "done" without checking what they wrote must not rise
+from the round before STY2 to the round after. Count each round the same way, after the run:
+`python -m scripts.kernel_bench.done_without_evidence results.jsonl --round NAME`. A run counts when its
+reply claims completion (a fixed English and Chinese phrase list) and its last `write_file` / `edit_file`
+has no later `read_file`, `list_dir`, `search_files`, `run_command` or `run_python` in its frames file.
+It prints the counts and the task ids; a run with no frames file is `no_record`, not clean.
+
 ## T1 / T2 / T4 / T6 (0.1.49)
 
 | Task | Fixture | Checker | Human step | Arslan |
