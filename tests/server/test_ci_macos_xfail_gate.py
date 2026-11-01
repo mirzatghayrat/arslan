@@ -28,6 +28,11 @@ def _step() -> tuple[str, int]:
     return script, int(re.search(r"^EXPECTED = (\d+)$", script, re.M).group(1))
 
 
+def _expected_xfail() -> int:
+    script, _ = _step()
+    return int(re.search(r"^EXPECTED_XFAIL = (\d+)$", script, re.M).group(1))
+
+
 def _run(tmp_path, cases: list[str]) -> subprocess.CompletedProcess:
     script, _ = _step()
     skipped = sum("<skipped" in c for c in cases)
@@ -49,27 +54,46 @@ SKIP = '<testcase classname="t" name="s"><skipped type="pytest.skip" message="no
 XPASS = '<testcase classname="t" name="x"><failure message="[XPASS(strict)] not built">x</failure></testcase>'
 
 
-def test_every_case_passed_is_green(tmp_path):
+def _expected_mix(missing: int = 0) -> list[str]:
+    """Every case ran: EXPECTED_XFAIL strict xfails and the rest passed, less `missing` passes."""
     _, expected = _step()
-    assert _run(tmp_path, _passed(expected)).returncode == 0
+    xfails = _expected_xfail()
+    return _passed(expected - xfails - missing) + [XFAIL] * xfails
+
+
+def test_the_expected_mix_is_green(tmp_path):
+    result = _run(tmp_path, _expected_mix())
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_a_strict_xfail_counts_as_ran(tmp_path):
-    _, expected = _step()
-    result = _run(tmp_path, _passed(expected - 1) + [XFAIL])
+    result = _run(tmp_path, _expected_mix())
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "xfailed=1" in result.stdout
+    assert f"xfailed={_expected_xfail()}" in result.stdout
 
 
 @pytest.mark.parametrize("bad", [SKIP, XPASS], ids=["a real skip", "a strict xfail that passed"])
 def test_a_skip_or_an_unexpected_pass_is_red(tmp_path, bad):
-    _, expected = _step()
-    assert _run(tmp_path, _passed(expected - 1) + [bad]).returncode != 0
+    assert _run(tmp_path, _expected_mix(missing=1) + [bad]).returncode != 0
 
 
 def test_a_missing_case_is_red(tmp_path):
+    assert _run(tmp_path, _expected_mix(missing=1)).returncode != 0
+
+
+@pytest.mark.parametrize("change", ["one fewer xfail", "one more xfail"])
+def test_the_xfail_count_is_pinned(tmp_path, change):
+    """#620 review: an adapter registered under the wrong key keeps all of a p PR's cases xfailing, and a
+    gate whose failure an xfail absorbs adds one. Either way the total still matches, so only the pinned
+    number of xfails catches it."""
     _, expected = _step()
-    assert _run(tmp_path, _passed(expected - 1)).returncode != 0
+    xfails = _expected_xfail() + (-1 if change == "one fewer xfail" else 1)
+    if xfails < 0:                                   # none expected, so none to take away: "one more" covers it
+        assert _expected_xfail() == 0
+        return
+    result = _run(tmp_path, _passed(expected - xfails) + [XFAIL] * xfails)
+    assert result.returncode != 0
+    assert "strict xfails, expected" in result.stdout + result.stderr
 
 
 def test_the_macos_run_makes_every_xfail_strict():
@@ -77,6 +101,7 @@ def test_the_macos_run_makes_every_xfail_strict():
     text = CI.read_text(encoding="utf-8")
     run = re.search(r"run: (\.venv/bin/pytest tests/ -m macos .*)", text).group(1)
     assert "-o xfail_strict=true" in run
+    assert "x" in re.search(r" -r(\w+)", run).group(1), "the log lists each xfail (-rx)"
 
 
 
