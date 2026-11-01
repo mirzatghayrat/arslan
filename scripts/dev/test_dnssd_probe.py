@@ -1,7 +1,7 @@
 """User-present dns_sd measurement; outside CI's tests/ tree, never a macos gate.
 
 After the user replies "run the dns_sd probe" in the authoring thread:
-HOME=/private/tmp/arslan-sbx-check-home ARSLAN_DNSSD_PROBE=1 .venv/bin/python -m pytest scripts/dev/test_dnssd_probe.py -q -s
+HOME=/private/tmp/arslan-sbx-check-home ARSLAN_SECRET_KEY_FILE= ARSLAN_DNSSD_PROBE=1 .venv/bin/python -m pytest scripts/dev/test_dnssd_probe.py -q -s
 
 May advertise on the LAN, request a router mapping and show a Local Network
 prompt. No operation is attempted at import or collection. A successful API
