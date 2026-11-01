@@ -203,8 +203,39 @@ describe("C: frames drop resource hints and block subresource loads", () => {
   it("if anything unsafe were left after stripping, the frame shows nothing", () => {
     const remove = vi.spyOn(Element.prototype, "remove").mockImplementation(() => {});
     try {
-      expect(withFrameCsp(`<p>x</p>${HINTS}`)).toBe(FRAME_CSP);
+      expect(withFrameCsp(`<p>x</p>${HINTS} unique-1`)).toBe(FRAME_CSP);
     } finally { remove.mockRestore(); }
+  });
+
+  it.each([["META", "a second meta http-equiv"], ["LINK", "a link"]])("if only %s survived stripping (%s), the frame shows nothing", (tag) => {
+    const real = Element.prototype.remove;
+    const remove = vi.spyOn(Element.prototype, "remove").mockImplementation(function (this: Element) {
+      if (this.tagName !== tag) real.call(this);
+    });
+    try {
+      expect(withFrameCsp(`<p>x</p>${HINTS} unique-${tag}`)).toBe(FRAME_CSP);
+    } finally { remove.mockRestore(); }
+  });
+
+  it("the check parses exactly what the frame gets, in standards mode", () => {
+    const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+    try {
+      const out = withFrameCsp(`<p>x</p>${HINTS} unique-2`);
+      const last = parse.mock.calls.at(-1)?.[0];
+      expect(last).toBe(`<!doctype html>${out}`);
+      expect(parse.mock.results.at(-1)?.value.compatMode).toBe("CSS1Compat");
+      expect(parse.mock.calls.every(([text]) => String(text).startsWith("<!doctype html>"))).toBe(true);
+    } finally { parse.mockRestore(); }
+  });
+
+  it("a second frame with the same HTML isn't parsed again", () => {
+    const html = `<p>x</p>${HINTS} unique-3`;
+    const first = withFrameCsp(html);
+    const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+    try {
+      expect(withFrameCsp(html)).toBe(first);
+      expect(parse).not.toHaveBeenCalled();
+    } finally { parse.mockRestore(); }
   });
 
   it("the reader's HTML frame", async () => {
