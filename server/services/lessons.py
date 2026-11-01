@@ -154,10 +154,31 @@ def switched_on(row) -> None:
     row.evidence = {k: v for k, v in (row.evidence or {}).items() if k not in _NOT_IN_EFFECT_KEYS}
 
 
+def rule_state(row) -> dict | None:
+    """L11-3b: where the lesson stands with the folder's rules, for Memory, so an offer outlives the chat's live card.
+    `offered` (Add / Not now) or `added` (Open / Remove), with the file as Overview names it, the conversation the card
+    was offered in, and the line. Memory sends these values to the card's and Overview's endpoints, which check them
+    as before. Nothing for "not now", "removed", no offer, a partial record, or an offer the lesson has outgrown since
+    (Add would refuse it as `lesson_changed`)."""
+    from pathlib import Path
+    evidence = row.evidence if isinstance(row.evidence, dict) else {}
+    state, record = evidence.get(RULE_OFFER), evidence.get(RULE_RECORD)
+    if state not in ("offered", "added") or not isinstance(record, dict):
+        return None
+    line, path, cid = record.get("line"), record.get("path"), record.get("conversation_id")
+    if not all(isinstance(v, str) and v for v in (line, path, cid)):
+        return None
+    if state == "offered" and row.updated_at.isoformat() != record.get("updated_at"):
+        return None
+    from server.services import folder_rules
+    return {"state": state, "file": folder_rules._shown(Path(path), folder_rules._home()), "conversation_id": cid,
+            "line": line}
+
+
 def present(row) -> dict:
     return {"id": row.id, "situation": row.situation, "advice": row.advice, "polarity": row.polarity,
             "source": row.source, "status": row.status, "pinned": bool(row.pinned), "text": render(row),
-            "not_in_effect": not_in_effect(row),
+            "not_in_effect": not_in_effect(row), "rule": rule_state(row),
             "recalled": row.recalled, "followed": row.followed, "succeeded": row.succeeded, "failed": row.failed,
             "evidence": row.evidence or {},
             "last_used_at": row.last_used_at.isoformat() + "Z" if row.last_used_at else None,
