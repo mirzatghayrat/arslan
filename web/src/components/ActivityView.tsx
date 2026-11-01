@@ -12,6 +12,8 @@ import HandsTraceCard from "./HandsTraceCard";
 import JudgmentsCard from "./JudgmentsCard";
 import ScrollBox from "./activity/ScrollBox";
 import RunDrawer from "./activity/RunDrawer";
+import RunInspector from "./activity/RunInspector";
+import { COLOUR, outcomeOf } from "./activity/RunsLane";
 
 /** One page of 最近的工作; the next loads when the box reaches its end. */
 export const RUNS_PAGE = 20;
@@ -23,7 +25,8 @@ export const ORIGIN_ICON = {
 /**
  * Activity (0.1.48), called Progress since v0.1.64 (INB7-a): what Arslan did, what it cost, and what waits on you.
  *
- * Order (0.1.50, user ruling): usage, scheduled tasks, Hands, recent work, judgments.
+ * Order (0.1.50, user ruling): usage, scheduled tasks, Hands, recent work, judgments. Since INB7-c1 (board F): usage and the
+ * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar), then Hands and judgments until INB7-c4 folds them.
  * 0.1.58 §7: each list sits in its own box that scrolls inside and loads 20 at a time;
  * a run opens in a drawer over the page, so the list keeps its place and the opened row
  * stays highlighted; clicking a chart slice or a model narrows 最近的工作; and all of it
@@ -35,6 +38,8 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
   const setFilter = useActivityStore((s) => s.setFilter);
   const openRunId = useActivityStore((s) => s.openRunId);
   const setOpenRun = useActivityStore((s) => s.setOpenRun);
+  const pickedRunId = useActivityStore((s) => s.pickedRunId);
+  const setPickedRun = useActivityStore((s) => s.setPickedRun);
   const pageTop = useActivityStore((s) => s.scroll.page ?? 0);
   const saveScroll = useActivityStore((s) => s.saveScroll);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -67,24 +72,22 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
       .finally(() => { loading.current = false; });
   }, [more, runs, filter.since, filter.until, filter.model]);
 
+  const showRun = useActivityStore((s) => s.showRun);
   const step = useCallback((delta: -1 | 1) => {
     if (!runs?.length || openRunId == null) return;
     const i = runs.findIndex((r) => r.id === openRunId);
     const next = runs[Math.min(runs.length - 1, Math.max(0, (i < 0 ? 0 : i) + delta))];
     if (next) {
-      setOpenRun(next.id);
+      showRun(next.id, next);                      // the pick follows the drawer (⓪Plan's review of PR 624, B)
       document.querySelector(`[data-testid="activity-run-${next.id}"]`)?.scrollIntoView?.({ block: "nearest" });
     }
-  }, [runs, openRunId, setOpenRun]);
+  }, [runs, openRunId, showRun]);
 
   const statusLabel = (s: string) =>
     s === "failed" ? t("activityPage.failed")
       : s === "recording" ? t("activityPage.running")
       : s === "cancelled" ? t("activityPage.cancelled")
       : t("activityPage.done");
-
-  const dot = (s: string) => s === "failed" ? "bg-danger" : s === "recording" ? "bg-primary animate-pulse"
-    : s === "cancelled" || s === "interrupted" ? "bg-subtle-foreground" : "bg-success";
 
   const filtered = filter.since != null || !!filter.model;
   const spanLabel = filter.since != null && filter.until != null
@@ -95,8 +98,8 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
     <div ref={pageRef} className="flex-1 h-full overflow-auto p-6 space-y-8" data-testid="activity-view"
       onScroll={(e) => saveScroll("page", e.currentTarget.scrollTop)}>
       <UsageCard waiting={waiting} />
-      <HandsTraceCard />
-      <section>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+      <section className="min-w-0">
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-medium text-foreground">{t("activityPage.recent")}</h2>
           {runs && runs.length > 0 && (
@@ -125,19 +128,20 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
               {runs.map((r) => {
                 const origin = r.origin ?? "chat";
                 const Icon = ORIGIN_ICON[origin] ?? MessageSquare;
-                const open = r.id === openRunId;
+                const picked = r.id === pickedRunId;
                 return (
                   <li key={r.id}>
+                    {/* INB7-c1: a row picks the run for the inspector (and the axis); picking it again lets it go. */}
                     <button
                       type="button"
                       data-testid={`activity-run-${r.id}`}
-                      aria-current={open ? "true" : undefined}
-                      onClick={() => setOpenRun(r.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 text-left ${open ? "bg-primary/10" : "hover:bg-surface/70"}`}
+                      aria-current={picked ? "true" : undefined}
+                      onClick={() => setPickedRun(picked ? null : r.id, r)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 text-left ${picked ? "bg-primary/10" : "hover:bg-surface/70"}`}
                     >
                       <Icon size={14} aria-label={t(`activityPage.origin_${origin}`)} data-origin={origin}
                         className="shrink-0 text-muted-foreground" />
-                      <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot(r.status)}`} />
+                      <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${COLOUR[outcomeOf(r)]}`} />
                       <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{r.user_message || "—"}</span>
                       {r.total_ms != null && r.status !== "recording" && (
                         <span className="shrink-0 font-mono text-[11px] tabular-nums text-subtle-foreground"
@@ -157,6 +161,9 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
           </ScrollBox>
         )}
       </section>
+      <RunInspector runs={runs ?? []} />
+      </div>
+      <HandsTraceCard />
       <JudgmentsCard />
       {openRunId != null && <RunDrawer runId={openRunId} onClose={() => setOpenRun(null)} onStep={step} />}
     </div>

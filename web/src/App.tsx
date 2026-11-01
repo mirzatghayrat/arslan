@@ -429,7 +429,7 @@ export default function App() {
     const open = (e: Event) => {
       const runId = (e as CustomEvent<number>).detail;
       if (typeof runId !== 'number') return;
-      useActivityStore.getState().setOpenRun(runId);
+      useActivityStore.getState().showRun(runId);   // the drawer, and the pick for the inspector (INB7-c1)
       setActiveSection('progress');
     };
     window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);

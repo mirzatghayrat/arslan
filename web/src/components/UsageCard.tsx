@@ -287,7 +287,7 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
   const t0 = bins[0].start_ts * 1000;
   const t1 = (bins[bins.length - 1].start_ts + binSeconds) * 1000;
   const { runs, now } = useAxisRuns(t0, day);
-  const axisRunId = useActivityStore((s) => s.axisRunId);
+  const pickedRunId = useActivityStore((s) => s.pickedRunId);
   const fmt = useMemo(() => new Intl.DateTimeFormat(locale, range === "24h"
     ? { hour: "2-digit", minute: "2-digit" } : range === "7d"
       ? { weekday: "short", hour: "2-digit" } : { month: "short", day: "numeric" }), [locale, range]);
@@ -301,7 +301,7 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
   return (
     <div className="relative rounded-lg border border-border bg-surface/40 p-3" data-testid="usage-timeline"
       onMouseLeave={() => setHover(null)}>
-      {day && <AxisHead runs={runs} picked={axisRunId != null} />}
+      {day && <AxisHead runs={runs} picked={pickedRunId != null} />}
       <div className="relative">
         {/* 0.1.58 §7: one hit area per column across the slice rows — hover shows one card for
             the slice, a click narrows 最近的工作 to it. Keyboard: Tab to a column, Enter. The runs
@@ -384,8 +384,8 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
         <span className="flex-1 text-center">{fmt.format(new Date(bins[Math.floor(bins.length / 2)].start_ts * 1000))}</span>
         <span className="flex-1 text-right">{t("activityPage.now")}</span>
       </div>
-      {day && axisRunId != null && (
-        <StepLane key={axisRunId} runId={axisRunId} run={runs.find((r) => r.id === axisRunId) ?? null} locale={locale} />
+      {day && pickedRunId != null && (
+        <StepLane key={pickedRunId} runId={pickedRunId} run={runs.find((r) => r.id === pickedRunId) ?? null} locale={locale} />
       )}
       {!day && (
         <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-subtle-foreground">
