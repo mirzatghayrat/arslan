@@ -629,8 +629,13 @@ def test_l11_3d_on_macos_a_path_through_a_system_link_is_refused_and_its_real_pa
     (conversation_folder resolves), so this is the fail-closed case only (L11-3d, which replaced #621's
     O_NOFOLLOW_ANY test)."""
     real = tmp_path.resolve() / "AGENTS.md"
-    assert str(real).startswith("/private/var/")
-    through_link = Path("/var") / real.relative_to("/private/var")
+    # The system's own link in front of tmp_path's real path (#626 review, R5); a TMPDIR under neither gets its own.
+    link = next((Path(short) / real.relative_to(full) for full, short in (("/private/var", "/var"), ("/private/tmp", "/tmp"))
+                 if real.is_relative_to(full)), None)
+    if link is None:
+        (tmp_path / "via").symlink_to(tmp_path.resolve(), target_is_directory=True)
+        link = tmp_path.resolve() / "via" / "AGENTS.md"
+    through_link = link
     real.write_text("- a rule\n")
     for write in (lambda: folder_rules._append(through_link, "x"),
                   lambda: folder_rules._take_out(through_link, "a rule", False)):
@@ -755,7 +760,8 @@ def test_l11_3d_f6_a_file_replaced_during_remove_keeps_the_new_version(home, mon
         os.replace(new, agents(home))
         return real(*args, **kwargs)
     monkeypatch.setattr(folder_rules, "_cut", editor_saves)
-    folder_rules._take_out(agents(home), "a rule", False)
+    with pytest.raises(folder_rules.RuleRefused):                 # #626 review, R2: refused, not reported as done
+        folder_rules._take_out(agents(home), "a rule", False)
     assert agents(home).read_text() == "# Mine, edited\n- a rule\n"
 
 
@@ -787,3 +793,113 @@ def test_l11_3d_r5_a_folder_swapped_during_the_walk_is_not_followed(home, tmp_pa
         with pytest.raises(folder_rules.RuleRefused):
             write()
         assert swapped and (outside / "AGENTS.md").read_text() == "keep\n- a rule\n"
+
+
+# -- #626's effort=max review -------------------------------------------------------------------------------------
+
+async def _record_lines(execution_db, path, lines):
+    """A rules record written by hand, as an older version or a later edit left it."""
+    async with execution_db() as db:
+        await folder_rules._save_user_files(db, {str(path): {"own": False, "lines": lines}})
+        await db.commit()
+
+
+async def _remove_line(execution_db, path, lesson_id, line):
+    async with execution_db() as db:
+        out = await folder_rules.remove_rule(db, path, lesson_id, line)
+        await db.commit()
+        return out
+
+
+async def test_r626_r1_an_edit_above_the_line_leaves_the_separator(execution_db, home):
+    agents(home).write_bytes(b"A")
+    await _add_line(execution_db, agents(home), "r", 1)              # "A\n- r\n", the separator at offset 1
+    agents(home).write_bytes(b"AB\n- r\n")                           # the user typed above it: the offset is stale
+    assert await _remove_line(execution_db, agents(home), 1, "r") is True
+    assert agents(home).read_bytes() == b"AB\n"                      # the line goes; the user's newline stays
+
+
+async def test_r626_r1_other_bytes_at_the_offset_are_not_cut(execution_db, home):
+    agents(home).write_bytes(b"A")
+    await _add_line(execution_db, agents(home), "r", 1)
+    agents(home).write_bytes(b"Z\n- x\n- r\n")                       # other text of the same length sits at the offset
+    assert await _remove_line(execution_db, agents(home), 1, "r") is True
+    assert agents(home).read_bytes() == b"Z\n- x\n"
+
+
+async def test_r626_r1_an_identical_chunk_mid_line_at_the_offset_is_not_cut(execution_db, home):
+    agents(home).write_bytes(b"- r\nAB- r\n")
+    await _record_lines(execution_db, agents(home), [{"lesson_id": 1, "line": "r", "sep": False, "at": 6}])
+    assert await _remove_line(execution_db, agents(home), 1, "r") is True
+    assert agents(home).read_bytes() == b"AB- r\n"                   # the whole line at the start went, not "AB…"'s tail
+
+
+async def test_r626_r1_a_record_from_before_l11_3d_keeps_603s_rule(execution_db, home):
+    agents(home).write_bytes(b"A\n- r\n")
+    await _record_lines(execution_db, agents(home), [{"lesson_id": 1, "line": "r", "sep": True}])
+    assert await _remove_line(execution_db, agents(home), 1, "r") is True
+    assert agents(home).read_bytes() == b"A"                         # the line at the end, and the separator before it
+
+
+async def test_r626_r4_add_into_a_folder_that_went_is_refused(client, execution_db, judge, home):
+    lid = await _offered_id(execution_db)
+    (home / "Projects" / "photo").rmdir()
+    r = await _rule(client, lid, "add")
+    assert (r.status_code, r.json()["detail"]) == (409, "rules_file_refused")
+    assert (await _lesson(execution_db)).evidence["rule_offer"] == "offered"
+
+
+def test_r626_r2_r6_add_into_a_file_an_editor_replaced_meanwhile_is_refused(home, monkeypatch):
+    """Add reads and appends through one descriptor; an editor's save in between leaves that descriptor on the old,
+    unlinked copy, so Add refuses rather than report a line the file doesn't have."""
+    agents(home).write_text("# Mine\n")
+    real = folder_rules._chunk
+
+    def editor_saves(*args, **kwargs):
+        new = agents(home).with_name("AGENTS.md.saving")
+        new.write_text("# Mine, edited\n")
+        os.replace(new, agents(home))
+        return real(*args, **kwargs)
+    monkeypatch.setattr(folder_rules, "_chunk", editor_saves)
+    with pytest.raises(folder_rules.RuleRefused):
+        folder_rules._append(agents(home), "a rule")
+    assert agents(home).read_text() == "# Mine, edited\n"
+
+
+async def test_r626_r2_a_remove_that_lost_to_an_editors_save_keeps_the_record(execution_db, home, monkeypatch):
+    await _add_line(execution_db, agents(home), "a rule", 1)
+    real = folder_rules._cut
+
+    def editor_saves(*args, **kwargs):
+        new = agents(home).with_name("AGENTS.md.saving")
+        new.write_text("# Mine\n- a rule\n")
+        os.replace(new, agents(home))
+        return real(*args, **kwargs)
+    monkeypatch.setattr(folder_rules, "_cut", editor_saves)
+    async with execution_db() as db:
+        with pytest.raises(folder_rules.RuleRefused):
+            await folder_rules.remove_rule(db, agents(home), 1, "a rule")
+    assert agents(home).read_text() == "# Mine\n- a rule\n"
+    async with execution_db() as db:
+        assert (await folder_rules._user_files(db))[str(agents(home))]["lines"][0]["line"] == "a rule"
+
+
+def test_r626_r3_short_reads_and_writes_are_carried_on(monkeypatch):
+    """A network or FUSE folder can return fewer bytes than asked: read until the end or the limit, write it all."""
+    class Short:
+        def __init__(self, data):
+            self.data, self.pos, self.out = data, 0, b""
+
+        def read(self, n):
+            got = self.data[self.pos:self.pos + min(n, 3)]
+            self.pos += len(got)
+            return got
+
+        def write(self, b):
+            self.out += bytes(b[:2])
+            return min(len(b), 2)
+    f = Short(b"0123456789")
+    assert folder_rules._read_upto(f, 7) == b"01234567"               # up to the limit + 1, so "full" can be told
+    assert folder_rules._read_upto(Short(b"0123"), 7) == b"0123"
+    folder_rules._write_all(f, b"abcdefg")
+    assert f.out == b"abcdefg"

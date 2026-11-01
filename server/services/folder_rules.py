@@ -324,20 +324,57 @@ def _only_this_file(fd: int) -> None:
         raise RuleRefused("link")
 
 
+def _read_upto(f, limit: int) -> bytes:
+    """Up to `limit + 1` bytes (one more tells "full"), reading again after a short read, as a network or FUSE folder
+    can give (#626 review, R3)."""
+    data = b""
+    while len(data) <= limit:
+        got = f.read(limit + 1 - len(data))
+        if not got:
+            break
+        data += got
+    return data
+
+
+def _write_all(f, data: bytes) -> None:
+    """All of `data`: an unbuffered write can take fewer bytes than given (#626 review, R3)."""
+    view = memoryview(data)
+    while view:
+        view = view[f.write(view):]
+
+
+def _still_named(fd: int) -> None:
+    """After the write: the file still has its name. An editor that saved meanwhile by renaming a new file into place
+    left this descriptor on the old copy, which no longer has one; the write went nowhere the user sees, so it is
+    refused rather than reported (#626 review, R2)."""
+    if os.fstat(fd).st_nlink == 0:
+        raise RuleRefused("replaced")
+
+
+def _chunk(before: bytes, line: str) -> tuple[bool, bytes]:
+    """(a separator goes first, the bytes to append): a newline first when the file doesn't end with one."""
+    sep = bool(before) and not before.endswith(b"\n")
+    return sep, (b"\n" if sep else b"") + f"- {line}\n".encode()
+
+
 def _append(path: Path, line: str) -> tuple[bool, bytes]:
     """Append `- line` with O_APPEND (no lost edit, the file's mode kept, a read-only file refused), adding a
     separator newline first when the file doesn't end with one. Refused when the result would be past what a turn
-    reads (MAX_BYTES), since the line would never reach Arslan (#603 review, F5). The read and the append go through
-    one descriptor (#621 re-check, R5). Returns (separator added, the file's bytes before)."""
-    fd = _open_in_place(path, os.O_RDWR | os.O_APPEND | os.O_CREAT)
+    reads (MAX_BYTES), since the line would never reach Arslan (#603 review, F5), when the folder is gone (#626
+    review, R4), and when an editor replaced the file meanwhile (R2). The read and the append go through one
+    descriptor (#621 re-check, R5). Returns (separator added, the file's bytes before)."""
+    try:
+        fd = _open_in_place(path, os.O_RDWR | os.O_APPEND | os.O_CREAT)
+    except FileNotFoundError:
+        raise RuleRefused("missing") from None
     with os.fdopen(fd, "r+b", buffering=0) as f:
         _only_this_file(f.fileno())
-        before = f.read(MAX_BYTES + 1) or b""
-        sep = bool(before) and not before.endswith(b"\n")
-        chunk = (b"\n" if sep else b"") + f"- {line}\n".encode()
+        before = _read_upto(f, MAX_BYTES)
+        sep, chunk = _chunk(before, line)
         if len(before) + len(chunk) > MAX_BYTES:
             raise RuleRefused("full")
-        f.write(chunk)
+        _write_all(f, chunk)
+        _still_named(f.fileno())
     return sep, before
 
 
@@ -367,23 +404,25 @@ def _cut(data: bytes, line: str, sep: bool, at: int | None) -> bytes | None:
 def _take_out(path: Path, line: str, sep: bool, at: int | None = None) -> bool:
     """Delete the bytes Add wrote (see `_cut`), in place: the rest of the file stays byte for byte, invalid UTF-8
     included, and so does its mode (#603 review, F4). The read and the rewrite go through one descriptor, so a file
-    an editor replaced in between keeps the editor's version (#621 review, F6). False when the bytes are no longer
-    there: the file is left alone. A crash in the middle of the rewrite can still leave it half written."""
+    an editor replaced in between keeps the editor's version (#621 review, F6), and Remove is refused, keeping the
+    record (#626 review, R2). False when the bytes are no longer there: the file is left alone. A crash in the middle
+    of the rewrite can still leave it half written."""
     try:
         fd = _open_in_place(path, os.O_RDWR)
     except FileNotFoundError:
         return False
     with os.fdopen(fd, "r+b", buffering=0) as f:
         _only_this_file(f.fileno())
-        data = f.read((1 << 20) + 1)
+        data = _read_upto(f, 1 << 20)
         if len(data) > 1 << 20:
             raise RuleRefused("full")
         out = _cut(data, line, sep, at)
         if out is None:
             return False
         f.seek(0)
-        f.write(out)
+        _write_all(f, out)
         f.truncate(len(out))
+        _still_named(f.fileno())
     return True
 
 
@@ -393,7 +432,8 @@ _write_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock
 def _write_lock() -> asyncio.Lock:
     """One Add or Remove at a time, from reading the record to committing it: a double click on Remove would
     otherwise find the same record line twice and take the user's own identical line too (#621 review, F2). One
-    process serves the app, so an in-process lock is enough; one per event loop, as tests run several."""
+    process serves the app, so an in-process lock is enough; one per event loop, as tests run several. asyncio.Lock
+    isn't reentrant: add_rule and remove_rule must never call each other, or anything else that takes it."""
     loop = asyncio.get_running_loop()
     lock = _write_locks.get(loop)
     if lock is None:
