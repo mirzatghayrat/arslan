@@ -2,12 +2,30 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), evening (the twice-a-day update). #622, #624, #643, #644 and #646 have merged since the last update. Codex's SBX-3a gates are PR #645, now in a fix round after two reviews. IPB's first PR (#647) and IMG1 (#648) are up. New process rules (user, 2026-11-01): no stacked PRs, STATUS twice a day, and self-merge after review (below).
+**Updated:** 2026-11-02 (UTC), morning (the twice-a-day update). **Overnight: 18 PRs merged** (list below), main green at 784bc3b5. **SBX chain:** #645 (gates) merged; 3a (#520) reviewed OK, waiting only for your Ready click; 4a (#666) waits on Codex's device gates; 6a, 5a and the MCP proxy are built and reviewed on backup branches and open as PRs once #520 lands. Codex finished 4p, 5p and 6p overnight (Astra: MERGE), waiting for your pushes.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #660 | LOAD: the MCP slow-close test no longer races its two timeouts | `784bc3b5` |
+| #662 | BRG1 follow-up: the pairing state under a lock, and the order tests | `f800df61` |
+| #633 | INB7-c5: what waits on you in the inspector while no run is picked | `9d0005b9` |
+| #634 | INB7-c4b: the picked run's Hands calls and judgments in 「诊断」 | `ab8abbcc` |
+| #663 | CI: the Bridge's tests under ThreadSanitizer (10-minute timeout) | `a4188e67` |
+| #664 | Tests: L11 Overview's rules row doesn't count fetches (main CI flake) | `51a72794` |
+| #657 | BRG1: one lock over the Bridge Mailbox's state | `5c2e9d0b` |
+| #659 | gitleaks: #650's test fixture allowlisted on main, anchored | `32223c20` |
+| #631 | INB7-c4a: the inspector's 「诊断」 tab | `d9223e5e` |
+| #651 | IPB-1a follow-up: #647's security review (F1–F5) | `031fed45` |
+| #656 | L11-3b (not UI): each lesson says where it stands with the folder's rules | `76a29d84` |
+| #655 | IMG1 follow-up: the frame check parses exactly what the frame gets | `f198e0db` |
+| #653 | BRG1 card | `f089fd01` |
+| #648 | IMG1: web images in Markdown are chips; frames load nothing from the web | `0095d523` |
+| #645 | SBX-3a gates 2 and 4 (Codex): measured service grants; multiprocessing decision | `a343a875` |
+| #629 | INB7-c3: the inspector's 「改动」 tab | `7ddce445` |
+| #627 | INB7-c2: board F's chips over Recent work | `d5211959` |
+| #647 | IPB-1a: the week and the task results on status.snapshot | `c1526caf` |
 | #646 | IMG1 decided: A + C now, B later | `52e12282` |
 | #644 | Merge rule: security-surface and product-code PRs may auto-merge after a review at the current head | `5d60c087` |
 | #624 | INB7-c1: one pick on Progress, the inspector beside the list | `68feebbc` |
@@ -194,68 +212,52 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 ## Ready to merge, and who merges
 
-**Who merges (docs/sessions.md, #644):**
-- The author enables auto-merge once another session reviewed the PR, OK'd it at the current head, and all five checks are green (`backend`, `frontend`, `macos`, `secrets`, `language`).
-- The review is at effort=high, or effort=max on the security surface.
-- **Still the user's:** Codex's PRs, and any PR that changes a Bridge frame, `hello`, the shared vectors or the protocol spec.
-- A stacked PR is armed only once its base is `main`.
-- Some sessions' classifiers block arming under a rule they only heard by relay (③Hands asked the user to confirm it in its own session). Those PRs stay the user's until then.
+**Who merges (docs/sessions.md, #644):** the author auto-merges after another session's review OK at the current head and all five checks green (effort=max on the security surface). **Still yours:** Codex's PRs, Bridge-frame PRs, and anything below marked "you".
 
-**For the user to merge:**
-1. **#645** (Codex, SBX-3a gates 2 and 4), at `09d523b1`: **ready once CI is green.** The fix round and its effort=max delta review are done (OK with notes). Low notes go to a Codex follow-up. The history below is kept.
-   - Two reviews, with the verdicts on the PR: ⓪Plan's effort=max review says "changes needed (small)", and Astra says "merge after fixes".
-   - The fixes:
-     - drop the mDNSResponder socket from port-22 mode, since product ssh takes only IP literals;
-     - complete-list pins and a raw-UDP gate;
-     - the keychain gate's live service names;
-     - a trustd control;
-     - the any-declared trade-off written down as accepted (your A);
-     - the dns_sd measurement (your B, Codex's).
-   - After Codex's commits, ⓪Plan updates ci.yml's counts on the branch again.
-2. **#647** (IPB-1a: `week` and `outcomes` on the status snapshot), at `557d4b9d`.
-   - ①iOS's frame verdict is OK and posted. The effort=max security review is running.
-   - It changes a frame, so it's yours.
+**Your morning list, in this order:**
+1. **#520 (SBX-3a, the critical path):** click **Ready for review** (the classifier blocked ③Hands from doing it), let ③Hands apply its prepared PR body, then merge. Reviewed OK at effort=max (flip + osascript fix + docs), head 2badedd4, CI green. Two follow-ups go to Codex after merge (hard-link probe fix, legacy-commands removal; ③Hands explained why neither blocks). This unblocks 6a, 5a and the MCP proxy.
+2. **Codex pushes (plan A), in this order.** Each count is relative to main 433/63; ⓪Plan recounts ci.yml on each branch after its push. Post each Astra comment file (both sections) on its PR. You merge each.
+   1. `codex/sbx-gates-notes` 99301c19 → updates #654 (461/75).
+   2. 6p `codex/sbx6p-network-proxy-deny-tests` a2949791 (498/127), release-critical. Astra: all findings closed.
+   3. 4p `codex/sbx4p-python-mcp-deny-tests` 94a29485 (505/135). Astra: MERGE.
+   4. 5p `codex/sbx5p-cap6b-caches-deny-tests` fbc18ebb (506/132). Astra: MERGE.
+   Then paste ⑦Codex's queued items: 4p kernel gates → 4p mcp-proxy move → 4p device gates → 5p follow-up gates. Astra ran at **high**, matching your #619/#645 choice; say if you want highest.
+3. **#666 (SBX-4a) — you merge**, after Codex's 4p device gates land and CI is green. Claude effort=max reviewed everything except the tty/device reach (a classifier stopped that check twice); Astra (high) covered it and the runtime fixes PASS. Post `666-astra-comment.md`. You can close #531 (superseded).
+4. **Frame PRs — you:** #650 (IPB-1b details, OK at 7c8bb24e) and #652 (IPB-2 mac, OK at f4f6d6da).
+5. **#667 — you, with or before the 0.1.64 release:** the privacy page's IPB paragraph (draft).
+6. **CAP drafts — you:** #661 (CAP9 server half, OK at 022c26b4) and #604 (CAP4a-3d, OK at 66bf3767; its web half waits for the mock below).
+7. **#636 (INB7-c4b-hands, OK at 8ad9e2ba)** — the author merges once you decide the full lists (below).
+8. **#658 (STY2)** — waits for the bench (DeepSeek top-up, below).
 
-**Self-merging once reviewed:**
-- **The INB7 chain:** #627 `61a2d495` is on main and re-checked identical, so ②Main arms it after green CI. Still stacked, for real code reasons: #629 `542843b0` on #627 → #631 `dbced88f`, then #633 `2fd141ec` and #634 `5cbc5fdb` as siblings on #631, then #636 `076066d6` on #634.
-  - Each one was re-checked identical after the restack.
-  - As each parent lands, ②Main retargets the next to main, ⓪Plan re-checks it, and ②Main arms it.
-  - **#636** still waits on your call about the full lists (below).
-- **#648** (IMG1 A + C, ⑥Helper) at `96d521d2`: the effort=max security review is running. ⑥Helper arms it after an OK and green checks.
-
-**Not ready yet:**
-- **#604** (CAP4a-3d) at `be2cf748`: re-checked OK. It waits for the web keep button, whose mock needs your OK first.
-
-**On hold (don't merge these):**
-- **#525** (Q1 #4, retire the pocket): a draft until Q1c ships and you say go.
-- **#520** (SBX-3a, ③Hands) at `de71df02`, a draft. The flip onto the default-deny base waits for #645 on main. The flip, the BUILT_BASES line and EXPECTED_XFAIL → 0 go in one commit, which gets an effort=max review.
-- **#531, #535, #538** (SBX-4a, 5a, 7): drafts. They pick up 3a after the flip.
+**On backup branches, PRs once #520 lands (all reviewed at effort=max):** 6a `claude/0164-sbx6a-proxy` ba7e0ee3; 5a `claude/0164-sbx5a-cap6b` 3e97f568; the SBX-6 MCP proxy `claude/0164-sbx6-mcp-proxy` ba44e1ae. Review trails are saved for each PR.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
-| ②Main | The INB7 chain as parents land; IPB: #647 (1a) is up, 1b (`details` on history) next, each PR off main |
-| ③Hands | Idle until #645 is on main; then the flip commit on #520 |
-| ⑤CAP | Idle: #604 waits on the keep mock |
-| ⑥Helper | #648 (IMG1) under review; the L11-3b mock |
-| Codex (via ⑦Codex) | #645's fix round: the paste is on the clipboard and your phone. The Mac is on a fullscreen Space, so you send it. Then you push. The dns_sd measurement runs once with you at the Mac |
-| ④参谋 | Main CI and the user's return list |
-| ①iOS | Reviews IPB's frames in each Bridge PR; iPhone 1.0's pre-submission list (below) |
-| ⓪Plan | Re-checks as heads move; effort=max reviews of #645, #647 and #648; this page |
+| ②Main | Queue cleared overnight (INB7 7 of 8, BRG1 + BRG1b + CI TSan, flake fixes). #652's `due()` follow-up after #652 lands; MCPF1 (#665) waits for the next CI timeline |
+| ③Hands | 3a done (waits for your Ready click); 6a, 5a and the MCP proxy built and reviewed on backup branches; #666 waits on Codex's device gates |
+| ⑤CAP | #604 and #661 reviewed; web halves wait for mocks |
+| ⑥Helper | IMG1 + follow-up merged; L11-3b non-UI merged; #658 STY2 waits for the bench |
+| Codex (via ⑦Codex) | 4p, 5p, 6p done locally (Astra MERGE); morning queue of four follow-ups ready |
+| ①iOS | Checking #667's wording against the phone; build 31 wording change |
+| ⓪Plan | This page; recounts ci.yml after each Codex push; posts saved review trails when the backup PRs open |
 
 ## Waiting on the user
 
-- **#645's fix round:** send ⑦Codex's fix paste from the phone to Codex's writer thread. When Codex has committed, push `codex/sbx-allowlist-gates`.
-- **The dns_sd measurement (your B):** be at the Mac when Codex runs it once. It briefly advertises a dummy service on your LAN and asks your router for an inbound port, which it releases at once. A Local Network prompt may appear.
+**New decisions (morning):**
+- **trustd in proxy mode (SBX-6a):** (a) grant `com.apple.trustd.agent` in PROXY so URLSession/Swift TLS works in commands, but trustd fetches OCSP/CRL URLs taken from certificates, a daemon egress §2 forbids; (b) don't, and Swift/URLSession TLS fails in commands while curl, Python and git work (they carry their own CA bundles). Recommended: **b** for 1.0, stated on the card.
+- **The LAN through the proxy:** the proxy reaches public addresses only, so a NAS or printer on 192.168.x needs the re-run card. Accept as a cost (recorded for SBX-8), or allow private ranges?
+- **#636's full lists:** (b) keep the Hands trace in Settings › Hands, (a) drop the judgments list. Both recommended.
+- **Mocks:** #604's keep button (CAP5a board v7, https://claude.ai/artifact/9Z9uB3VciwepN6VEStDVQF); L11-3b (https://claude.ai/artifact/CJasVxTSu62DqpPvKprgJS), plus: a Pin/Retire/restore silently ends a pending rule offer; compare the text instead?; CAP9 (v6, now says "Asked OSV.dev about the N public packages in the lock").
+- **STY2 bench:** top up the DeepSeek account (it ran out after 21/27 "before" runs, $1.67 metered). Per-run cap: the K5-era meter used $2.50/run; tonight's $0.45 failed T2 on spend alone. Which?
+- **A second probe-rule slip (⑥Helper, self-reported):** a bare `python -c` import without a scratch HOME read `~/.arslan/secret_key` to compare it; nothing was printed or written. Rotate the key? Your call.
+- **Privacy page §04** ("connects only to") omits the daily MCP Registry recheck (CAP4a-3d) and, once #661 lands, OSV.dev. Add both lines?
+- **Housekeeping:** T1 left three Reminders lists named 「对比测试-arslan-T1-r{1,2,3}-sty2-before-ds-deepseek-v4-pro」 (`python -m scripts.kernel_bench.cleanup_t1 --delete --yes`); an old metering proxy (pid 35347, :8900, since Oct 24, $12.60 spent) is still running.
 
-- **#636's full lists:** (b) keep the Hands trace in Settings › Hands, and (a) drop the judgments list. Both recommended.
 - **The drawer:** drop the radar and the sparkline (recommended).
 - **The 「要你做」 label:** the chip and the tile now share it, with a title. It's kept unless you say otherwise.
-- **CAP9's mock**, sent as a private link.
 
-- **#604's keep button:** the mock (the parked row plus 「keep it」, on CAP5a's board) needs your OK before ⑤CAP builds it.
-- **L11-3b's mock** (Memory's lesson rows show the rule state), once ⑥Helper sends it. The extra, "also remove it from AGENTS.md", is recommended no.
 - **③Hands' session effort:** switch it to high, per the pacing rule (②Main is switched).
 
 - **SEC1 mock** (⑤CAP), sent as a private link.
@@ -326,6 +328,10 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - MCP tool descriptions from an approved server stay unmarked, as a stated limit;
 - the English name is "Quick Chat";
 - Codex works under plan A.
+
+**Decided overnight (2026-11-01/02):**
+- **The loopback proxy (relayed, 「代理端口选 a」):** loopback stays open for dev servers; the profile denies the system proxy's own loopback port(s), read via proxy_resolve. Built in 6a; any-declared is retired for commands.
+- **SBX-6's release gate covers MCP too** (⓪Plan with ③Hands, from #666's review): MCP with network moves to proxy mode in the "SBX-6 MCP proxy" PR. Node: the pinned runtime is 24.21.0, and `NODE_USE_ENV_PROXY` covers fetch and https in the sandbox, so no Node change is needed.
 
 **Decided on 2026-11-01, evening:**
 - **#645 and #650** (relayed by ④参谋, about 15:35 UTC), verbatim: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」.
