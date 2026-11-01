@@ -128,7 +128,7 @@ describe("Overview's row", () => {
     const list = vi.spyOn(lessonsApi, "folderRules").mockImplementation(async () => (removed
       ? { enabled: true, files: [{ file: FILE, text: "", added: [] }] }
       : { enabled: true, files: [{ file: FILE, text: "- 24-hour\n", added: [{ lesson_id: 7, line: `use ${RLO}24-hour` }] }] }));
-    const rule = vi.spyOn(lessonsApi, "rule").mockImplementation(async () => { removed = true; return { state: "removed", file: FILE }; });
+    const rule = vi.spyOn(lessonsApi, "removeFolderRule").mockImplementation(async () => { removed = true; return { state: "removed", file: FILE }; });
     useWorkbench.getState().show("overview");
     mount();
     const row = await screen.findByTestId("overview-rules");
@@ -137,10 +137,24 @@ describe("Overview's row", () => {
     expect(added.textContent).not.toMatch(REORDER);                              // W9: isolated too
     expect(added.textContent).toContain(`${FSI}use 24-hour${PDI}`);
     fireEvent.click(within(added).getByRole("button", { name: "workbench.ruleRemove" }));
-    await waitFor(() => expect(rule).toHaveBeenCalledWith(7, "c1", "remove"));
+    await waitFor(() => expect(rule).toHaveBeenCalledWith("c1", FILE, 7, `use ${RLO}24-hour`));   // L11-3a: the record
     const before = list.mock.calls.length;
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
     await waitFor(() => expect(screen.queryByTestId("overview-rules-added")).toBeNull());
+  });
+
+  it("L11-3a: two lines under one lesson id are both listed, and each Remove names its own line", async () => {
+    vi.spyOn(lessonsApi, "folderRules").mockResolvedValue({ enabled: true, files: [{ file: FILE, text: "- a\n- b\n",
+      added: [{ lesson_id: 7, line: "a" }, { lesson_id: 7, line: "b" }] }] });
+    const remove = vi.spyOn(lessonsApi, "removeFolderRule").mockResolvedValue({ state: "removed", file: FILE });
+    useWorkbench.getState().show("overview");
+    mount();
+    const row = await screen.findByTestId("overview-rules");
+    fireEvent.click(within(row).getByTestId("overview-rules-toggle"));
+    const added = await within(row).findAllByTestId("overview-rules-added");
+    expect(added.map((a) => a.textContent)).toEqual([expect.stringContaining("a"), expect.stringContaining("b")]);
+    fireEvent.click(within(added[1]).getByRole("button", { name: "workbench.ruleRemove" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("c1", FILE, 7, "b"));
   });
 
   it("W9: Overview's file names are isolated", async () => {

@@ -124,7 +124,7 @@ async def lesson_rule(lesson_id: int, body: LessonRule):
             update = {lessons.RULE_OFFER: "added", "rule_added_at": datetime.utcnow().isoformat()}
         else:
             try:
-                await folder_rules.remove_rule(db, path, lesson_id)
+                await folder_rules.remove_rule(db, path, lesson_id, record.get("line"))
             except folder_rules.RuleRefused:
                 raise HTTPException(409, "rules_file_refused") from None
             update = {lessons.RULE_OFFER: "removed"}
@@ -141,6 +141,37 @@ async def conversation_folder_rules(conversation_id: str):
     switch is on. Read only; the same exact-name, no-link reads as the turn's block."""
     from server.services import folder_rules
     return await folder_rules.listing(conversation_id)
+
+
+class FolderRuleRemove(BaseModel):
+    file: str
+    lesson_id: int
+    line: str
+
+
+@router.post("/conversations/{conversation_id}/folder-rules/remove")
+async def conversation_folder_rule_remove(conversation_id: str, body: FolderRuleRemove):
+    """L11-3a: Overview's Remove, from the rules record, so it works after the lesson was deleted in Memory. `file`
+    is a name Overview's listing showed for this conversation (409 `rules_file_not_listed` otherwise); the line must
+    be one the card added there under that lesson (409 `rule_not_added`). A lesson still there is marked removed."""
+    from server.services import folder_rules
+    path = await folder_rules.listed(conversation_id, body.file)
+    if path is None:
+        raise HTTPException(409, "rules_file_not_listed")
+    async with db_session.AsyncSessionLocal() as db:
+        try:
+            removed = await folder_rules.remove_rule(db, path, body.lesson_id, body.line)
+        except folder_rules.RuleRefused:
+            raise HTTPException(409, "rules_file_refused") from None
+        if not removed:
+            raise HTTPException(409, "rule_not_added")
+        row = await db.get(Lesson, body.lesson_id)
+        evidence = dict(row.evidence or {}) if row is not None else {}
+        record = evidence.get(lessons.RULE_RECORD) or {}
+        if evidence.get(lessons.RULE_OFFER) == "added" and (record.get("path"), record.get("line")) == (str(path), body.line):
+            row.evidence = {**evidence, lessons.RULE_OFFER: "removed"}
+        await db.commit()
+    return {"state": "removed", "file": body.file}
 
 
 @router.delete("/lessons/{lesson_id}")

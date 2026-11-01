@@ -370,19 +370,22 @@ async def add_rule(db, path: Path, line: str, lesson_id: int) -> None:
     await _save_user_files(db, files)
 
 
-async def remove_rule(db, path: Path, lesson_id: int) -> None:
-    """Take the line this lesson's card added back out of `path`. It never makes a file the user's: D3 is decided
-    by what the file holds at each turn."""
+async def remove_rule(db, path: Path, lesson_id: int, line: str | None = None) -> bool:
+    """Take the line this lesson's card added back out of `path`; False when the record has no such line. Matched on
+    the line too when given: SQLite can hand a deleted lesson's id to a new one (L11-3a). It never makes a file the
+    user's: D3 is decided by what the file holds at each turn."""
     import asyncio
     files = await _user_files(db)
     entry = files.get(str(path)) or {"own": False, "lines": []}
-    mine = [ln for ln in entry.get("lines", []) if ln.get("lesson_id") == lesson_id]
+    mine = [ln for ln in entry.get("lines", []) if ln.get("lesson_id") == lesson_id
+            and (line is None or ln.get("line") == line)]
     if not mine:
-        return
+        return False
     await asyncio.to_thread(_take_out, path, mine[-1]["line"], bool(mine[-1].get("sep")))
     entry["lines"] = [ln for ln in entry["lines"] if ln is not mine[-1]]
     files[str(path)] = entry
     await _save_user_files(db, files)
+    return True
 
 
 async def chosen_folder(db, conversation_id: str | None) -> Path | None:
@@ -396,6 +399,21 @@ async def chosen_folder(db, conversation_id: str | None) -> Path | None:
             return await conversation_folder(db, conversation_id)
     raw = await settings_service._get_raw(db, "workspace_dir")
     return await conversation_folder(db, conversation_id) if raw and str(raw).strip() else None
+
+
+async def listed(conversation_id: str | None, shown: str) -> Path | None:
+    """The rules file Overview listed for this conversation under `shown`, found again now: a Remove from Overview
+    picks among the files this conversation follows, never a path the client names (L11-3a)."""
+    import asyncio
+    from server.db import session as db_session
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        enabled = await settings_service.folder_rules_enabled(db)
+        folder = await conversation_folder(db, conversation_id)
+    if not enabled or folder is None:
+        return None
+    found, _ = await asyncio.to_thread(_found, folder, _home(), conversation_id)
+    return next((path for name, _, path in found if name == shown), None)
 
 
 async def listing(conversation_id: str | None) -> dict:
