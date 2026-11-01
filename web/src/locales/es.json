@@ -1432,6 +1432,7 @@
     "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
     "watches": "Páginas y carpetas vigiladas",
     "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
+    "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que no se hizo en su propia conversación mientras no estabas se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola"

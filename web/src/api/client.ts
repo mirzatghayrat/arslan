@@ -470,6 +470,8 @@ export const api = {
     request<UsageSummary>(`/usage/summary?range=${range}`),
   // ── S3-M4 scheduled tasks: CRUD + pause/resume/fire-now + history ─────────────
   listScheduledTasks: () => request<ScheduledTaskDto[]>("/scheduled-tasks"),
+  /** INB5: you opened this task, so what its runs could not ask you up to now stops waiting on you (it stays listed until it expires). */
+  markScheduledTaskSeen: (id: number) => request<{ seen_at: string }>(`/scheduled-tasks/${id}/seen`, { method: "POST" }),
   createScheduledTask: (body: ScheduledTaskCreateBody) =>
     request<ScheduledTaskDto>("/scheduled-tasks", { method: "POST", body: JSON.stringify(body) }),
   updateScheduledTask: (id: number, body: ScheduledTaskUpdateBody) =>
