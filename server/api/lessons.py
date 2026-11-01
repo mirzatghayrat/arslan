@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from server.auth import require_auth
@@ -144,26 +144,28 @@ async def conversation_folder_rules(conversation_id: str):
 
 
 class FolderRuleRemove(BaseModel):
-    file: str
+    file: str = Field(max_length=4096)
     lesson_id: int
-    line: str
+    line: str = Field(max_length=lessons.RULE_LINE_MAX)
 
 
 @router.post("/conversations/{conversation_id}/folder-rules/remove")
 async def conversation_folder_rule_remove(conversation_id: str, body: FolderRuleRemove):
     """L11-3a: Overview's Remove, from the rules record, so it works after the lesson was deleted in Memory. `file`
     is a name Overview's listing showed for this conversation (409 `rules_file_not_listed` otherwise); the line must
-    be one the card added there under that lesson (409 `rule_not_added`). A lesson still there is marked removed."""
+    be one the card added there under that lesson (409 `rule_not_added`). A lesson still there is marked removed.
+    `in_file` is false when the line was no longer in the file as Add wrote it (edited, or the file now CRLF): it is
+    dropped from the record and the file is left alone."""
     from server.services import folder_rules
     path = await folder_rules.listed(conversation_id, body.file)
     if path is None:
         raise HTTPException(409, "rules_file_not_listed")
     async with db_session.AsyncSessionLocal() as db:
         try:
-            removed = await folder_rules.remove_rule(db, path, body.lesson_id, body.line)
+            in_file = await folder_rules.remove_rule(db, path, body.lesson_id, body.line)
         except folder_rules.RuleRefused:
             raise HTTPException(409, "rules_file_refused") from None
-        if not removed:
+        if in_file is None:
             raise HTTPException(409, "rule_not_added")
         row = await db.get(Lesson, body.lesson_id)
         evidence = dict(row.evidence or {}) if row is not None else {}
@@ -171,7 +173,7 @@ async def conversation_folder_rule_remove(conversation_id: str, body: FolderRule
         if evidence.get(lessons.RULE_OFFER) == "added" and (record.get("path"), record.get("line")) == (str(path), body.line):
             row.evidence = {**evidence, lessons.RULE_OFFER: "removed"}
         await db.commit()
-    return {"state": "removed", "file": body.file}
+    return {"state": "removed", "file": body.file, "in_file": in_file}
 
 
 @router.delete("/lessons/{lesson_id}")

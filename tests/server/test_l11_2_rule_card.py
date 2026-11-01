@@ -522,7 +522,7 @@ async def test_l11_3a_a_deleted_lessons_line_can_still_be_removed(client, execut
     assert (await client.delete(f"/api/v1/lessons/{lid}")).status_code == 200
     assert (await _added(client))[PHOTO] == [{"lesson_id": lid, "line": LINE}]     # still listed after the delete
     r = await _remove(client, lesson_id=lid)
-    assert (r.status_code, r.json()) == (200, {"state": "removed", "file": PHOTO})
+    assert (r.status_code, r.json()) == (200, {"state": "removed", "file": PHOTO, "in_file": True})
     assert agents(home).read_text() == "# Mine\n"
     assert (await _added(client))[PHOTO] == []
 
@@ -589,3 +589,96 @@ async def test_l11_3a_a_hard_linked_rules_file_is_still_refused(client, executio
     r = await _remove(client, lesson_id=lid)
     assert (r.status_code, r.json()["detail"]) == (409, "rules_file_refused")
     assert outside.read_text() == f"keep\n- {LINE}\n"
+
+
+# -- #621's effort=max review ---------------------------------------------------------------------------------------
+
+async def test_r621_f1_a_folder_swapped_for_a_link_is_not_written_through(client, execution_db, home, tmp_path):
+    """O_NOFOLLOW covers only the last part of the path: a touched subfolder later replaced by a link to a folder
+    outside must not have that outside AGENTS.md edited, by Remove or by Add."""
+    sub = home / "Projects" / "photo" / "sub"
+    sub.mkdir()
+    async with execution_db() as db:
+        await folder_rules.add_rule(db, sub / "AGENTS.md", "a rule", 3)
+        await db.commit()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "AGENTS.md").write_text("keep this\n- a rule\n")
+    (sub / "AGENTS.md").unlink()
+    sub.rmdir()
+    sub.symlink_to(outside, target_is_directory=True)
+    folder_rules._touched.clear()
+    folder_rules.note_touch(CID, sub / "notes.txt")
+    try:
+        r = await _remove(client, file="~/Projects/photo/sub/AGENTS.md", lesson_id=3, line="a rule")
+        assert (r.status_code, r.json()["detail"]) == (409, "rules_file_refused")
+        with pytest.raises(folder_rules.RuleRefused):
+            folder_rules._append(sub / "AGENTS.md", "another rule")
+    finally:
+        folder_rules._touched.clear()
+    assert (outside / "AGENTS.md").read_text() == "keep this\n- a rule\n"
+
+
+@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW_ANY"), reason="macOS only: the open itself refuses a link in the path")
+def test_r621_f1_on_macos_the_open_itself_refuses_a_folder_link(home, tmp_path, monkeypatch):
+    """The path check runs before the open; a link made in between is still refused by O_NOFOLLOW_ANY."""
+    outside = tmp_path / "elsewhere2"
+    outside.mkdir()
+    (outside / "AGENTS.md").write_text("- a rule\n")
+    sub = home / "Projects" / "photo" / "sub2"
+    sub.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(folder_rules, "_no_folder_link", lambda _path: None)
+    for write in (lambda: folder_rules._append(sub / "AGENTS.md", "x"),
+                  lambda: folder_rules._take_out(sub / "AGENTS.md", "a rule", False)):
+        with pytest.raises(folder_rules.RuleRefused):
+            write()
+    assert (outside / "AGENTS.md").read_text() == "- a rule\n"
+
+
+async def test_r621_f5_a_live_lesson_that_reused_the_id_stays_added(client, execution_db, judge, home):
+    lid = await _offered_id(execution_db)
+    await _rule(client, lid, "add")
+    async with execution_db() as db:                             # the deleted lesson's line, under the same id
+        await folder_rules.add_rule(db, agents(home), "an older rule", lid)
+        await db.commit()
+    assert (await _remove(client, lesson_id=lid, line="an older rule")).status_code == 200
+    assert (await _lesson(execution_db)).evidence["rule_offer"] == "added"
+    assert agents(home).read_text() == f"- {LINE}\n"
+
+
+async def test_r621_f3_remove_says_when_the_line_was_no_longer_in_the_file(client, execution_db, judge, home):
+    agents(home).write_bytes(b"# Mine\n")
+    lid = await _offered_id(execution_db)
+    await _rule(client, lid, "add")
+    agents(home).write_bytes(agents(home).read_bytes().replace(b"\n", b"\r\n"))     # an editor switched to CRLF
+    r = await _remove(client, lesson_id=lid)
+    assert (r.status_code, r.json()) == (200, {"state": "removed", "file": PHOTO, "in_file": False})
+    assert agents(home).read_bytes() == f"# Mine\r\n- {LINE}\r\n".encode()          # left as it is
+    agents(home).write_text("# Mine\n")
+    async with execution_db() as db:
+        await folder_rules.add_rule(db, agents(home), "a rule", 9)
+        await db.commit()
+    assert (await _remove(client, lesson_id=9, line="a rule")).json()["in_file"] is True
+
+
+async def test_r621_f9_the_line_and_the_file_name_are_capped(client, execution_db, home):
+    assert (await _remove(client, lesson_id=1, line="x" * (lessons.RULE_LINE_MAX + 1))).status_code == 422
+    assert (await _remove(client, file="~/" + "a" * 4096, lesson_id=1, line="x")).status_code == 422
+    agents(home).write_text("# Mine\n")
+    r = await _remove(client, lesson_id=1, line="x" * lessons.RULE_LINE_MAX)
+    assert (r.status_code, r.json()["detail"]) == (409, "rule_not_added")
+
+
+def test_r621_f1_without_nofollow_any_the_path_check_refuses_a_folder_link(home, tmp_path, monkeypatch):
+    """Where O_NOFOLLOW_ANY is missing (Linux), the realpath check on the folders is what refuses it."""
+    outside = tmp_path / "elsewhere3"
+    outside.mkdir()
+    (outside / "AGENTS.md").write_text("- a rule\n")
+    sub = home / "Projects" / "photo" / "sub3"
+    sub.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(folder_rules, "_NOFOLLOW", os.O_NOFOLLOW)
+    for write in (lambda: folder_rules._append(sub / "AGENTS.md", "x"),
+                  lambda: folder_rules._take_out(sub / "AGENTS.md", "a rule", False)):
+        with pytest.raises(folder_rules.RuleRefused):
+            write()
+    assert (outside / "AGENTS.md").read_text() == "- a rule\n"

@@ -282,10 +282,22 @@ def target(folder: Path) -> Path:
     return folder / ("CLAUDE.md" if "AGENTS.md" not in present and "CLAUDE.md" in present else "AGENTS.md")
 
 
+# macOS: no part of the path may be a link at the open, as in file_tools.py. Elsewhere (Linux CI) O_NOFOLLOW covers
+# the last part and _no_folder_link the folders. Never both flags: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
+
+
+def _no_folder_link(path: Path) -> None:
+    """A folder on the way to the rules file that is now a link would carry the write outside it (#621 review, F1)."""
+    if os.path.realpath(path.parent) != str(path.parent):
+        raise RuleRefused("link")
+
+
 def _read_bounded(path: Path, limit: int) -> bytes | None:
     """The file's bytes, None when absent; RuleRefused("link") for a link or a non-regular file, "full" past `limit`."""
+    _no_folder_link(path)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         return None
     except OSError:
@@ -318,7 +330,7 @@ def _append(path: Path, line: str) -> tuple[bool, bytes]:
     if len(before) + len(chunk) > MAX_BYTES:
         raise RuleRefused("full")
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | _NOFOLLOW | os.O_NONBLOCK, 0o644)
     except PermissionError:
         raise RuleRefused("unwritable") from None
     except OSError:
@@ -329,24 +341,25 @@ def _append(path: Path, line: str) -> tuple[bool, bytes]:
     return sep, before
 
 
-def _take_out(path: Path, line: str, sep: bool) -> None:
+def _take_out(path: Path, line: str, sep: bool) -> bool:
     """Delete exactly the bytes Add wrote (its separator too), the last time they occur at a line start, in place:
-    the rest of the file stays byte for byte, invalid UTF-8 included, and so does its mode (#603 review, F4)."""
+    the rest of the file stays byte for byte, invalid UTF-8 included, and so does its mode (#603 review, F4). False
+    when they are no longer there (the line edited, or the file now CRLF): the file is left alone (#621 review, F3)."""
     data = _read_bounded(path, 1 << 20)
     if data is None:
-        return
+        return False
     chunk = f"- {line}\n".encode()
     at = len(data)
     while True:
         at = data.rfind(chunk, 0, at)
         if at < 0:
-            return
+            return False
         if at == 0 or data[at - 1:at] == b"\n":
             break
     start = at - 1 if sep and at > 0 and at == len(data) - len(chunk) else at
     out = data[:start] + data[at + len(chunk):]
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, os.O_WRONLY | _NOFOLLOW | os.O_NONBLOCK)
     except PermissionError:
         raise RuleRefused("unwritable") from None
     except OSError:
@@ -355,6 +368,7 @@ def _take_out(path: Path, line: str, sep: bool) -> None:
         _only_this_file(f.fileno())
         f.write(out)
         f.truncate(len(out))
+    return True
 
 
 async def add_rule(db, path: Path, line: str, lesson_id: int) -> None:
@@ -370,22 +384,23 @@ async def add_rule(db, path: Path, line: str, lesson_id: int) -> None:
     await _save_user_files(db, files)
 
 
-async def remove_rule(db, path: Path, lesson_id: int, line: str | None = None) -> bool:
-    """Take the line this lesson's card added back out of `path`; False when the record has no such line. Matched on
-    the line too when given: SQLite can hand a deleted lesson's id to a new one (L11-3a). It never makes a file the
-    user's: D3 is decided by what the file holds at each turn."""
+async def remove_rule(db, path: Path, lesson_id: int, line: str | None = None) -> bool | None:
+    """Take the line this lesson's card added back out of `path` and drop it from the record. None when the record
+    has no such line; else whether the bytes were still in the file (#621 review, F3). Matched on the line too when
+    given: SQLite can hand a deleted lesson's id to a new one (L11-3a). It never makes a file the user's: D3 is
+    decided by what the file holds at each turn."""
     import asyncio
     files = await _user_files(db)
     entry = files.get(str(path)) or {"own": False, "lines": []}
     mine = [ln for ln in entry.get("lines", []) if ln.get("lesson_id") == lesson_id
             and (line is None or ln.get("line") == line)]
     if not mine:
-        return False
-    await asyncio.to_thread(_take_out, path, mine[-1]["line"], bool(mine[-1].get("sep")))
+        return None
+    in_file = await asyncio.to_thread(_take_out, path, mine[-1]["line"], bool(mine[-1].get("sep")))
     entry["lines"] = [ln for ln in entry["lines"] if ln is not mine[-1]]
     files[str(path)] = entry
     await _save_user_files(db, files)
-    return True
+    return in_file
 
 
 async def chosen_folder(db, conversation_id: str | None) -> Path | None:

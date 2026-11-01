@@ -101,8 +101,10 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   // L11-2 (#603 review, F3): a line the card added can be taken back out here, after a reload or a switch too.
   // L11-3a: from the rules record, so it still works once the lesson was deleted in Memory.
   const removeRule = async (file: string, added: { lesson_id: number; line: string }) => {
-    try { await lessonsApi.removeFolderRule(conversationId, file, added.lesson_id, added.line); }
-    catch { toast(t("workbench.ruleFailed")); }
+    try {
+      const r = await lessonsApi.removeFolderRule(conversationId, file, added.lesson_id, added.line);
+      if (!r.in_file) toast(t("workbench.ruleNotInFile"));             // #621 review, F3
+    } catch { toast(t("workbench.ruleFailed")); }
     setRulesTick((n) => n + 1);
   };
   const shownRules = rules?.id === conversationId ? rules : null;
