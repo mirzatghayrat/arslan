@@ -34,7 +34,6 @@ SERVICES = {
     "keychain-system": "com.apple.securityd.systemkeychain",
     "keychain-agent": "com.apple.security.agent",
     "notifications": "com.apple.usernotifications.usernotificationservice",
-    "notifications-main": "com.apple.notificationcenterui.main",
     "background-network": "com.apple.nsurlsessiond",
     "background-network-launch": "com.apple.nsurlsessiond-launchondemand",
 }

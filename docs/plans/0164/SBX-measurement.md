@@ -355,11 +355,11 @@ base and does not justify opening that daemon. No new SSH-running test or
 product grant is added by this documentation follow-up. CI run id for the
 gates branch remains pending.
 
-The D2 transition now has 18 commands any-declared denial cases (17 live services
+The D2 transition now has 17 commands any-declared denial cases (16 live services
 and one listener/unsupported-port-exclusion case), alongside NONE and PROXY and
 without PORT_22. Review removed stale aliases from the original 16-case
-addition, then the delta follow-up added five live siblings. DELETE-BY: v0.1.64
-when SBX-6's proxy mode lands: remove those 18 transitional cases. Product online-mode wiring remains SBX-3a's work.
+addition, then the delta follow-up retained four CI-live siblings. DELETE-BY: v0.1.64
+when SBX-6's proxy mode lands: remove those 17 transitional cases. Product online-mode wiring remains SBX-3a's work.
 
 
 ## Gate 2 review: accepted daemon interface (2026-11-01)
@@ -487,16 +487,42 @@ remain unchanged by the subsequent coverage additions below.
 ### Delta-review coverage follow-up
 
 The follow-up to [the Claude delta review](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559978316)
-adds the five named live siblings: `com.apple.siriactionsd.xpc`,
+initially added five siblings live on the user's Mac: `com.apple.siriactionsd.xpc`,
 `com.apple.siri.VoiceShortcuts.xpc`, `com.apple.notificationcenterui.main`,
 `com.apple.nsurlsessiond-launchondemand` and `com.apple.securityd.systemkeychain`.
 Each uses the existing successful live-lookup controls before candidate refusal
 can count. No service RPCs are sent by these gates. The portable Mach pin now
 also selects wildcard operation grants, with a committed regression test.
 
-The service matrix is now 17 names: 68 candidate cases across four modes and
-51 commands cases across three modes. This adds 20 macOS denial cases and
-15 absent-adapter strict xfails: **433 -> 468 macOS cases, 63 -> 78 strict
-xfails**. Claude updates the workflow counts on this branch after the user
-pushes. No product rule changes, and the dns_sd probe is not rerun for these
-notes. New-head macOS CI run id: pending.
+The initial addition produced 17 names and 468 macOS cases with 78 strict
+xfails. **Headless CI correction (2026-11-02):**
+[macOS CI run 41323691687](https://github.com/mirzatghayrat/arslan/actions/runs/41323691687)
+reported 4 failed, 386 passed and 78 xfailed. All four failures were
+`test_service_policy_and_reachability[notifications-main-<mode>-default-deny]`,
+in NONE, PROXY, ANY_DECLARED and PORT_22. The live control returned policy 0,
+lookup 1102: `com.apple.notificationcenterui.main` is live in the user's Mac
+session but is not registered on the headless runner. Its user-session denial
+was measured **locally only**; it is not a CI gate and is removed from SERVICES.
+Notifications remain covered by
+`com.apple.usernotifications.usernotificationservice` (`notifications`).
+No skip, xfail or relaxed live-control assertion is added.
+
+The same CI run confirms both historical lookup controls returned 0 and the
+candidate gate passed for all four retained siblings in all four modes:
+
+| Service | Case id in `test_service_policy_and_reachability` |
+| --- | --- |
+| `com.apple.siriactionsd.xpc` | `shortcuts-actions-<mode>-default-deny` |
+| `com.apple.siri.VoiceShortcuts.xpc` | `shortcuts-voice-<mode>-default-deny` |
+| `com.apple.nsurlsessiond-launchondemand` | `background-network-launch-<mode>-default-deny` |
+| `com.apple.securityd.systemkeychain` | `keychain-system-<mode>-default-deny` |
+
+Here `<mode>` is each of `none`, `proxy`, `any-declared` and `port-22`: 16 passing
+CI cases, with successful live controls, rather than an inference from the
+interactive Mac. These names did not have the UI sibling's absence in that run.
+
+The retained matrix has 16 names: 64 candidate cases across four modes and
+48 commands cases across three modes. Removing the UI sibling changes
+**468 -> 461 macOS cases, 78 -> 75 strict xfails**. Claude updates the workflow
+counts again after the user pushes. No product rule changes, and the dns_sd
+probe is not rerun. New-head macOS CI run id: pending.

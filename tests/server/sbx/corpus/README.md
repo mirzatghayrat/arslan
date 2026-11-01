@@ -22,10 +22,10 @@ The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
 the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The `sbx_mac` selection has 396 cases: 79 candidate assertion
-gates, 222 measurement rows, 78 commands cases, 16 service allowlist/UDP cases, and
+an availability skip. The `sbx_mac` selection has 389 cases: 75 candidate assertion
+gates, 222 measurement rows, 75 commands cases, 16 service allowlist/UDP cases, and
 one Pool diagnosis. With two compile checks and the existing 70 macOS cases,
-the total is 468. Widening the port sample within
+the total is 461. Widening the port sample within
 the same two compile cases does not change that count.
 
 SBX-3p added 56 commands cases, bringing the selection to 420 at its merge. They strictly
@@ -38,9 +38,12 @@ workflow-only commit `2aba2f66` landed those values on this branch. The review
 follow-up adds four UDP cases and removes stale service aliases: 450 -> 433,
 strict xfails 72 -> 63. Those counts landed with #645. The delta follow-up adds
 five live service siblings (20 candidate cases and 15 commands cases), bringing
-the total to 468 and strict xfails to 78. Claude updates EXPECTED and
+the total to 468 and strict xfails to 78. CI run 41323691687 then found the
+Notification Center UI sibling absent on the headless runner. Removing that
+entry leaves 461 cases and 75 strict xfails; the successful live control remains
+mandatory for every retained service. Claude updates EXPECTED and
 EXPECTED_XFAIL in a commit on this same branch after the user pushes; there is
-no companion PR. The remaining 18 any-declared transitional cases are removed
+no companion PR. The remaining 17 any-declared transitional cases are removed
 when SBX-6's proxy mode lands.
 Once SBX-3a registers its real commands adapter, these cases must run with zero
 skips and zero xfails.
