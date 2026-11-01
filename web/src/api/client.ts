@@ -24,6 +24,7 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   RunTimelineDto,
   RecapDto,
   RunDetailDto,
+  RunChangesOut,
   RunListItem,
   RunSummary,
   ScheduledTaskCreateBody,
@@ -455,6 +456,8 @@ export const api = {
     if (o.model) qs.set("model", o.model);
     return request<Record<"waiting" | "failed" | "scheduled" | "phone", number>>(`/runs/counts?${qs.toString()}`);
   },
+  /** INB7-c3: what one run changed in your folders, from its own checkpoint, and in which state (server: GET /runs/{id}/changes). */
+  runChanges: (runId: number) => request<RunChangesOut>(`/runs/${runId}/changes`),
   /** 0.1.58 §1: what a reply did, in plain data (the list under its footer row). */
   runProcess: (runId: number) => request<RunProcessOut>(`/runs/${runId}/process`),
   /** 0.1.63 S3: what undoing this turn would put back and take back. */

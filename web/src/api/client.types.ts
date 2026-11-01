@@ -132,6 +132,15 @@ export interface TurnUndone {
   files?: { later: number[] };
 }
 
+/** INB7-c3: GET /runs/{id}/changes. `state`: running (not ended), finishing (ended, not recorded yet), kept (`paths` an undo can
+ *  still take back), none (nothing to list), expired (its copy is gone) or not_saved (no folder could be saved). */
+export interface RunChangesOut {
+  state: "running" | "finishing" | "kept" | "none" | "expired" | "not_saved";
+  undone: boolean;
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  conversation_id: string;
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
