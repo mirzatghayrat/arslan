@@ -893,6 +893,8 @@ export interface RunListItem {
   tokens?: number | null;
   /** INB7-b: still running with a card open in its conversation, so it waits on you. Older backends omit it. */
   waiting?: boolean;
+  /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
+  ended_at?: string | null;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */

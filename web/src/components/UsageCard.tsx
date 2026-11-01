@@ -280,7 +280,7 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
   const day = range === "24h";
   const t0 = bins[0].start_ts * 1000;
   const t1 = (bins[bins.length - 1].start_ts + binSeconds) * 1000;
-  const runs = useAxisRuns(t0, day);
+  const { runs, now } = useAxisRuns(t0, day);
   const axisRunId = useActivityStore((s) => s.axisRunId);
   const fmt = useMemo(() => new Intl.DateTimeFormat(locale, range === "24h"
     ? { hour: "2-digit", minute: "2-digit" } : range === "7d"
@@ -371,7 +371,7 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
           {onPick && hb.runs > 0 && <div className="mt-0.5 text-primary">{t("activityPage.clickToFilter")}</div>}
         </div>
       )}
-      {day && <RunsLane runs={runs} t0={t0} t1={t1} locale={locale} />}
+      {day && <RunsLane runs={runs} now={now} t0={t0} t1={t1} locale={locale} />}
 
       <div className="mt-2 flex pl-16 font-mono text-[10px] text-subtle-foreground">
         <span className="flex-1">{fmt.format(new Date(bins[0].start_ts * 1000))}</span>

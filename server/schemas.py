@@ -594,6 +594,8 @@ class RunListItemOut(BaseModel):
     tokens: int | None = None
     # INB7-b: still running and its conversation has a card open, so it waits on you (Progress draws its bar amber).
     waiting: bool = False
+    # INB7-b: when it ended (naive UTC, like created_at). A run the boot sweep interrupted has this and no total_ms.
+    ended_at: str | None = None
 
 
 class RunSpawnSummaryOut(BaseModel):

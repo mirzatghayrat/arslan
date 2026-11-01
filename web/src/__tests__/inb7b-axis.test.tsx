@@ -13,6 +13,7 @@ const { getUsageSummary, listRuns, runProcess, request } = vi.hoisted(() => ({
   getUsageSummary: vi.fn(), listRuns: vi.fn(), runProcess: vi.fn(), request: vi.fn() }));
 vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runProcess }, request }));
 
+import { PROACTIVE_CHANGED } from "../api/proactive";
 import UsageCard from "../components/UsageCard";
 import { MAX_ROWS, MIN_BAR_MS, REPLAY_MS, packRows } from "../components/activity/RunsLane";
 import type { WaitingView } from "../hooks/useWaiting";
@@ -70,12 +71,14 @@ describe("runs share rows only when they do not overlap", () => {
       { id: 3, start: min(40), end: min(45) }, { id: 4, start: min(50), end: min(60) },
     ]);
     expect(MIN_BAR_MS).toBe(min(14));
-    expect([1, 2, 3, 4].map((id) => rows.get(id))).toEqual([0, 1, 0, 1]);
+    expect([1, 2, 3, 4].map((id) => rows.rows.get(id))).toEqual([0, 1, 0, 1]);
+    expect(rows.stacked).toBe(0);
   });
 
   it("stacks what does not fit into the last row rather than growing the lane without end", () => {
     const rows = packRows(Array.from({ length: MAX_ROWS + 3 }, (_, i) => ({ id: i, start: 0, end: 60_000 })));
-    expect(Math.max(...rows.values())).toBe(MAX_ROWS - 1);
+    expect(Math.max(...rows.rows.values())).toBe(MAX_ROWS - 1);
+    expect(rows.stacked).toBe(3);
   });
 });
 
@@ -89,8 +92,8 @@ describe("over 24 hours each run is a bar on the token row's axis", () => {
     expect(bar(15).style.width).toBe("0.97%");
     expect([11, 12].map((id) => bar(id).dataset.row)).toEqual(["0", "1"]);
     expect([11, 12, 13, 14, 15].map((id) => bar(id).dataset.outcome)).toEqual(["ok", "failed", "waiting", "running", "stopped"]);
-    // A running bar reaches now and never runs off the axis.
-    expect(parseFloat(bar(14).style.left) + parseFloat(bar(14).style.width)).toBeLessThanOrEqual(100);
+    // A running bar reaches now (here past the axis's last hour, so its end) and never runs off the axis.
+    expect([bar(14).style.left, bar(14).style.width]).toEqual(["91.67%", "8.33%"]);
     expect(bar(13).getAttribute("aria-label")).toContain("Waiting for you");
     // Board F has no heatmap over a day: the bars carry duration and outcome.
     expect(screen.queryByTestId("usage-heatmap")).toBeNull();
@@ -117,6 +120,55 @@ describe("over 24 hours each run is a bar on the token row's axis", () => {
     await waitFor(() => expect(bar(12)).toBeTruthy());
     expect(bar(12).style.opacity).toBe("1");
     expect(bar(11).style.opacity).toBe("0.28");
+  });
+
+  it("dims the runs a picked slice of the token row leaves out", async () => {
+    useActivityStore.setState({ filter: { since: T0 + 2 * HOUR, until: T0 + 3 * HOUR } });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(15)).toBeTruthy());
+    expect([11, 12, 15].map((id) => bar(id).style.opacity)).toEqual(["1", "1", "0.28"]);
+  });
+
+  it("keeps a 14-minute bar at the right edge, and ends a stopped run where it stopped, not now (⓪Plan's review of PR 622)", async () => {
+    listRuns.mockResolvedValue([
+      run(21, "recording", T0 + 24 * HOUR - 120, null),                          // two minutes old
+      run(22, "recorded", T0 + 24 * HOUR + 300, 60_000),                         // newer than the axis's last hour
+      run(23, "interrupted", T0 + 5 * HOUR, null, { ended_at: naive(T0 + 5 * HOUR + 30 * 60) }),   // the boot sweep: no total
+      run(24, "interrupted", T0 + 8 * HOUR, null),                               // no total, no end
+      run(25, "recorded", T0 + 8 * HOUR + 15 * 60, 60_000),                      // after 24's shortest bar: its row is free
+      run(26, "recorded", T0 + 24 * HOUR - 30 * 60, 20 * 60_000),                // ends 10 minutes before the axis does
+    ]);
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(21)).toBeTruthy());
+    expect([21, 22].map((id) => [bar(id).style.left, bar(id).style.width])).toEqual([["99.03%", "0.97%"], ["99.03%", "0.97%"]]);
+    expect([bar(23).dataset.outcome, bar(23).style.width]).toEqual(["stopped", "2.08%"]);
+    expect([bar(24).dataset.outcome, bar(24).style.width]).toEqual(["stopped", "0.97%"]);
+    expect([24, 25].map((id) => bar(id).dataset.row)).toEqual(["0", "0"]);
+    // 21 started after 26 ended, but its bar reaches back 14 minutes, over 26's: rows are packed on what is drawn.
+    expect(bar(21).dataset.row).not.toBe(bar(26).dataset.row);
+  });
+
+  it("says how many runs it stacked when more overlap than the lane has rows", async () => {
+    listRuns.mockResolvedValue(Array.from({ length: MAX_ROWS + 2 }, (_, i) => run(30 + i, "recorded", T0 + 4 * HOUR + i * 60, 3_600_000)));
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(30)).toBeTruthy());
+    expect(screen.getByTestId("axis-overflow")).toHaveTextContent("+2");
+    expect(screen.getByTestId("axis-overflow").getAttribute("aria-label")).toBe("2 more at the same time");
+  });
+
+  it("reads the runs again every 30 seconds and when a card or reminder changes, so an answered card's bar stops waiting", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(13).dataset.outcome).toBe("waiting"));
+    expect(listRuns).toHaveBeenCalledTimes(1);
+    listRuns.mockResolvedValue(RUNS.map((r) => (r.id === 13 ? { ...r, status: "recorded", total_ms: 600_000, waiting: false } : r)));
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(bar(13).dataset.outcome).toBe("ok"));
+    expect(listRuns).toHaveBeenCalledTimes(2);
+    await act(async () => { vi.advanceTimersByTime(1_500); });                 // read again once the server has applied it
+    expect(listRuns).toHaveBeenCalledTimes(3);
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(listRuns).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -168,6 +220,31 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
     expect(screen.getByTestId("axis-position")).toHaveTextContent("1 / 3 steps");
   });
 
+  it("says why a run has no steps yet: still running, waiting for your answer, or interrupted before they were saved", async () => {
+    // RunSteps are written when a run ends (run_recorder.finalize), and a run the boot sweep interrupted never ends.
+    const cases = [[14, "recording", "Still running: its steps show when it ends"],
+      [13, "recording", "Waiting for your answer in its conversation: its steps show when it ends"],
+      [15, "interrupted", "Interrupted: its steps weren't saved"]] as const;
+    for (const [id, status, words] of cases) {
+      runProcess.mockResolvedValue({ ...PROCESS, run_id: id, status, entries: [] });
+      useActivityStore.setState({ axisRunId: id });
+      render(<UsageCard waiting={waiting()} />);
+      await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent(words));
+      cleanup();
+    }
+  });
+
+  it("reads the steps again when the picked run ends", async () => {
+    runProcess.mockResolvedValue({ ...PROCESS, run_id: 14, status: "recording", entries: [] });
+    useActivityStore.setState({ axisRunId: 14 });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("Still running"));
+    runProcess.mockResolvedValue({ ...PROCESS, run_id: 14 });
+    listRuns.mockResolvedValue(RUNS.map((r) => (r.id === 14 ? { ...r, status: "recorded", total_ms: 600_000 } : r)));
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("3 / 3 steps"));
+  });
+
   it("says so when the run only replied, and opens the run's details on request", async () => {
     runProcess.mockResolvedValue({ ...PROCESS, entries: [] });
     useActivityStore.setState({ axisRunId: 11 });
@@ -183,7 +260,8 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
 
 describe("the axis speaks every language", () => {
   it("has its words in all six, and reads in Chinese as board F does", async () => {
-    const keys = ["axisHint", "waitingRun", "chartSteps", "replay", "pause", "restart", "stepOf", "noSteps", "openRun", "allRuns"];
+    const keys = ["axisHint", "waitingRun", "chartSteps", "replay", "pause", "restart", "stepOf", "noSteps", "openRun", "allRuns",
+      "stepsWhenDone", "stepsAfterAnswer", "stepsNotSaved", "overlapMore"];
     for (const language of SUPPORTED_LANGUAGES) {
       for (const key of keys) {
         const value = i18n.getResource(language, "translation", `activityPage.${key}`);
