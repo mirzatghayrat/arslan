@@ -20,14 +20,20 @@ vi.mock("../api/client", () => ({
 }));
 import UsageCard from "../components/UsageCard";
 import { api } from "../api/client";
+import { useActivityStore } from "../stores/activityStore";
+
+/** INB7-a: the by-model table opens from the cost tile. */
+const openByModel = async () => fireEvent.click(await screen.findByTestId("usage-cost"));
 
 describe("UsageCard (Diagnostics 用量卡, S3-M3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useActivityStore.setState({ byModelOpen: false, modelSlots: {} });
   });
 
   it("renders provider×model rows: ≈ on estimated rows, no $ figure for unknown usd", async () => {
     render(<UsageCard />);
+    await openByModel();
     expect(await screen.findByText("gpt-4o-mini")).toBeTruthy();
     const rows = screen.getAllByTestId("usage-row");
     expect(rows).toHaveLength(2);
@@ -40,12 +46,13 @@ describe("UsageCard (Diagnostics 用量卡, S3-M3)", () => {
 
   it("renders the daily tokens sparkline", async () => {
     render(<UsageCard />);
-    await screen.findByText("gpt-4o-mini");
+    await screen.findByTestId("usage-cost-seg");
     expect(screen.getByTestId("usage-daily-spark")).toBeTruthy();
   });
 
   it("renders the not_covered footnote list", async () => {
     render(<UsageCard />);
+    await openByModel();
     await screen.findByText("gpt-4o-mini");
     const fn = screen.getByTestId("usage-notcovered");
     expect(fn.textContent).toContain("optimizer");
@@ -54,7 +61,7 @@ describe("UsageCard (Diagnostics 用量卡, S3-M3)", () => {
 
   it("range switch refetches with the new range", async () => {
     render(<UsageCard />);
-    await screen.findByText("gpt-4o-mini");
+    await screen.findByTestId("usage-cost-seg");
     expect(api.getUsageSummary).toHaveBeenCalledWith("7d");
     fireEvent.click(screen.getByTestId("usage-range-30d"));
     await waitFor(() => expect(api.getUsageSummary).toHaveBeenCalledWith("30d"));
