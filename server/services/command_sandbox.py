@@ -95,7 +95,8 @@ def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
 # Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the
 # historical baseline (tests/server/sbx/harness.py), and `profile()` with no devices and nothing in
 # `deny_write_after_roots` writes main's text byte for byte. No product path calls them
-# (test_sbx3a_commands_profile.py pins that). DELETE-BY: v0.1.64, together with that adapter, before this PR leaves draft.
+# (test_sbx3a_commands_profile.py pins that). DELETE-BY: v0.1.64, together with that adapter, in Codex's follow-up to
+# SBX-3a that removes it (card, "SBX-2 harness retention"); SBX-6a's PR must not merge before it.
 # SBX-M has recorded the baseline (#592), so the adapter may go now; the harness is Codex's
 # (docs/plans/0164/SBX-sandbox.md, "SBX-2 harness retention").
 _CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
