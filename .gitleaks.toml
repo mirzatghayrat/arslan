@@ -51,4 +51,9 @@ regexes = [
   '''QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=''',
   '''YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=''',
   '''A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=''',
+  # IPB-1b (#650) test fixture, tests/server/test_phone_history_details.py:533 at 04fcc721: the value typed after
+  # "X-API-Key:" in a made-up MCP label, to check it is masked. Sequential letters and digits, never a
+  # credential. Anchored, so it can't allowlist a longer secret that contains it. On main ahead of #650,
+  # because CI's gitleaks scans every branch with main's config.
+  '''^abcdefgh12345678$''',
 ]
