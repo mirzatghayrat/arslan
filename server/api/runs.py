@@ -185,6 +185,9 @@ async def list_runs(
         q = q.where(Run.model == model)
     rows = (await db.execute(q)).scalars().all()
     origins = await run_origins(db, list(rows))
+    from server.services import approvals
+    # INB7-b: the conversations with a card open, the same live list progress.waiting_reasons reads.
+    asking = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
@@ -192,6 +195,7 @@ async def list_runs(
             total_ms=r.total_ms, user_message=r.user_message,
             created_at=r.created_at.isoformat() if r.created_at else None,
             origin=origins.get(r.id, "chat"), model=r.model, tokens=r.task_tokens or None,
+            waiting=r.status == "recording" and r.conversation_id in asking,
         )
         for r in rows
     ]
@@ -539,7 +543,9 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
     raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
     summary = (await rp.summaries(db, [run_id])).get(run_id, {})
-    return {"run_id": run_id, "status": run.status, **summary, "entries": rp.entries(list(steps), raw=raw)}
+    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span.
+    return {"run_id": run_id, "status": run.status, **summary, "started_at": rp.utc(run.started_at),
+            "ended_at": rp.utc(run.ended_at), "entries": rp.entries(list(steps), raw=raw)}
 
 
 class CheckpointRestoreIn(BaseModel):

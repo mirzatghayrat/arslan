@@ -6,6 +6,7 @@ import type { UsageBin, UsageSummary, UsageSummaryRow } from "../api/client.type
 import type { WaitingView } from "../hooks/useWaiting";
 import { fmtMs, fmtTok, fmtUsd } from "../lib/usageFormat";
 import { useActivityStore, type UsageRange } from "../stores/activityStore";
+import { AxisHead, RunsLane, StepLane, useAxisRuns } from "./activity/RunsLane";
 
 type RangeKey = UsageRange;
 const RANGES: RangeKey[] = ["24h", "7d", "30d"];
@@ -269,12 +270,18 @@ function Kpi({ label, value, sub, tone, subTone }: { label: string; value: strin
   );
 }
 
-/** Three rows on one time axis: tokens, duration heatmap, outcome. */
+/** Rows on one time axis: tokens, then over 7 and 30 days the duration heatmap and outcome; over 24 hours (INB7-b, board F) one bar
+ *  per run instead, and the picked run's steps with their replay. The user: 「热力图只在 7 天和 30 天显示」. */
 function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
   { bins: UsageBin[]; bands: string[]; binSeconds: number; range: RangeKey; locale: string;
     selected?: number; onPick?: (b: UsageBin) => void }) {
   const { t } = useTranslation();
   const [hover, setHover] = useState<number | null>(null);
+  const day = range === "24h";
+  const t0 = bins[0].start_ts * 1000;
+  const t1 = (bins[bins.length - 1].start_ts + binSeconds) * 1000;
+  const runs = useAxisRuns(t0, day);
+  const axisRunId = useActivityStore((s) => s.axisRunId);
   const fmt = useMemo(() => new Intl.DateTimeFormat(locale, range === "24h"
     ? { hour: "2-digit", minute: "2-digit" } : range === "7d"
       ? { weekday: "short", hour: "2-digit" } : { month: "short", day: "numeric" }), [locale, range]);
@@ -288,18 +295,67 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
   return (
     <div className="relative rounded-lg border border-border bg-surface/40 p-3" data-testid="usage-timeline"
       onMouseLeave={() => setHover(null)}>
-      {/* 0.1.58 §7: one hit area per column across all three rows — hover shows one card for
-          the slice, a click narrows 最近的工作 to it. Keyboard: Tab to a column, Enter. */}
-      <div className="absolute bottom-9 left-[76px] right-3 top-3 z-10 grid gap-[3px]" style={cols} data-testid="usage-columns">
-        {bins.map((b, i) => (
-          <button key={b.start_ts} type="button" data-testid={`usage-col-${i}`}
-            aria-label={`${span(b)} · ${t("activityPage.sliceRuns", { n: b.runs, failed: b.failed })}`}
-            aria-pressed={selected === b.start_ts}
-            onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
-            onClick={() => onPick?.(b)}
-            className={`rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
-              selected === b.start_ts ? "bg-primary/15" : hover === i ? "bg-foreground/5" : ""}`} />
-        ))}
+      {day && <AxisHead runs={runs} picked={axisRunId != null} />}
+      <div className="relative">
+        {/* 0.1.58 §7: one hit area per column across the slice rows — hover shows one card for
+            the slice, a click narrows 最近的工作 to it. Keyboard: Tab to a column, Enter. The runs
+            lane (24 hours) sits below, outside them, so each bar takes its own click. */}
+        <div className="absolute inset-y-0 left-16 right-0 z-10 grid gap-[3px]" style={cols} data-testid="usage-columns">
+          {bins.map((b, i) => (
+            <button key={b.start_ts} type="button" data-testid={`usage-col-${i}`}
+              aria-label={`${span(b)} · ${t("activityPage.sliceRuns", { n: b.runs, failed: b.failed })}`}
+              aria-pressed={selected === b.start_ts}
+              onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+              onClick={() => onPick?.(b)}
+              className={`rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                selected === b.start_ts ? "bg-primary/15" : hover === i ? "bg-foreground/5" : ""}`} />
+          ))}
+        </div>
+        {/* Tokens per slice (the daily spark's successor). */}
+        <div className="flex items-end" data-testid="usage-daily-spark">
+          <span className={`${label} self-center`}>{t("activityPage.chartTokens")}</span>
+          <div className="grid h-12 flex-1 items-end gap-[3px]" style={cols}>
+            {bins.map((b) => (
+              <span key={b.start_ts} title={`${span(b)} · ${fmtTok(b.tokens_total)}`}
+                className="block w-full rounded-sm" style={{
+                  height: b.tokens_total ? `${Math.max(8, (b.tokens_total / maxTokens) * 100)}%` : "2px",
+                  background: b.tokens_total ? tint(85) : "var(--border)" }} />
+            ))}
+          </div>
+        </div>
+        {!day && (
+          <>
+            {/* How long finished work took: longest band on top, like a latency heatmap. */}
+            <div className="mt-3 space-y-[3px]" data-testid="usage-heatmap">
+              {bands.map((band, i) => ({ band, i })).reverse().map(({ band, i }) => (
+                <div key={band} className="flex items-center">
+                  <span className={label}>{band}</span>
+                  <div className="grid flex-1 gap-[3px]" style={cols}>
+                    {bins.map((b) => {
+                      const n = b.durations[i] ?? 0;
+                      return <span key={b.start_ts} title={`${span(b)} · ${band} · ${n}`}
+                        className="block h-3.5 rounded-[3px]"
+                        style={{ background: n ? tint(25 + (n / maxCell) * 75) : "color-mix(in srgb, var(--border) 55%, transparent)" }} />;
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* How each slice ended. */}
+            <div className="mt-3 flex items-center" data-testid="usage-outcomes">
+              <span className={label}>{t("activityPage.chartOutcome")}</span>
+              <div className="grid flex-1 gap-[3px]" style={cols}>
+                {bins.map((b) => (
+                  <span key={b.start_ts}
+                    title={`${span(b)} · ${t("activityPage.sliceRuns", { n: b.runs, failed: b.failed })}`}
+                    className={`block h-3.5 rounded-[3px] ${b.failed ? "bg-danger" : b.runs ? "bg-success" : ""}`}
+                    style={b.runs ? undefined : { background: "color-mix(in srgb, var(--border) 55%, transparent)" }} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
       {hb && (
         <div role="tooltip" data-testid="usage-hovercard"
@@ -315,61 +371,25 @@ function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
           {onPick && hb.runs > 0 && <div className="mt-0.5 text-primary">{t("activityPage.clickToFilter")}</div>}
         </div>
       )}
-      {/* Tokens per slice (the daily spark's successor). */}
-      <div className="flex items-end" data-testid="usage-daily-spark">
-        <span className={`${label} self-center`}>{t("activityPage.chartTokens")}</span>
-        <div className="grid h-12 flex-1 items-end gap-[3px]" style={cols}>
-          {bins.map((b) => (
-            <span key={b.start_ts} title={`${span(b)} · ${fmtTok(b.tokens_total)}`}
-              className="block w-full rounded-sm" style={{
-                height: b.tokens_total ? `${Math.max(8, (b.tokens_total / maxTokens) * 100)}%` : "2px",
-                background: b.tokens_total ? tint(85) : "var(--border)" }} />
-          ))}
-        </div>
-      </div>
-
-      {/* How long finished work took: longest band on top, like a latency heatmap. */}
-      <div className="mt-3 space-y-[3px]" data-testid="usage-heatmap">
-        {bands.map((band, i) => ({ band, i })).reverse().map(({ band, i }) => (
-          <div key={band} className="flex items-center">
-            <span className={label}>{band}</span>
-            <div className="grid flex-1 gap-[3px]" style={cols}>
-              {bins.map((b) => {
-                const n = b.durations[i] ?? 0;
-                return <span key={b.start_ts} title={`${span(b)} · ${band} · ${n}`}
-                  className="block h-3.5 rounded-[3px]"
-                  style={{ background: n ? tint(25 + (n / maxCell) * 75) : "color-mix(in srgb, var(--border) 55%, transparent)" }} />;
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* How each slice ended. */}
-      <div className="mt-3 flex items-center" data-testid="usage-outcomes">
-        <span className={label}>{t("activityPage.chartOutcome")}</span>
-        <div className="grid flex-1 gap-[3px]" style={cols}>
-          {bins.map((b) => (
-            <span key={b.start_ts}
-              title={`${span(b)} · ${t("activityPage.sliceRuns", { n: b.runs, failed: b.failed })}`}
-              className={`block h-3.5 rounded-[3px] ${b.failed ? "bg-danger" : b.runs ? "bg-success" : ""}`}
-              style={b.runs ? undefined : { background: "color-mix(in srgb, var(--border) 55%, transparent)" }} />
-          ))}
-        </div>
-      </div>
+      {day && <RunsLane runs={runs} t0={t0} t1={t1} locale={locale} />}
 
       <div className="mt-2 flex pl-16 font-mono text-[10px] text-subtle-foreground">
         <span className="flex-1">{fmt.format(new Date(bins[0].start_ts * 1000))}</span>
         <span className="flex-1 text-center">{fmt.format(new Date(bins[Math.floor(bins.length / 2)].start_ts * 1000))}</span>
         <span className="flex-1 text-right">{t("activityPage.now")}</span>
       </div>
-      <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-subtle-foreground">
-        <span>{t("activityPage.chartTime")}</span>
-        <span className="flex gap-[2px]" aria-hidden>
-          {[25, 45, 65, 85, 100].map((p) => <span key={p} className="h-2 w-3 rounded-[2px]" style={{ background: tint(p) }} />)}
-        </span>
-        <span>{t("activityPage.more")}</span>
-      </div>
+      {day && axisRunId != null && (
+        <StepLane key={axisRunId} runId={axisRunId} run={runs.find((r) => r.id === axisRunId) ?? null} locale={locale} />
+      )}
+      {!day && (
+        <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-subtle-foreground">
+          <span>{t("activityPage.chartTime")}</span>
+          <span className="flex gap-[2px]" aria-hidden>
+            {[25, 45, 65, 85, 100].map((p) => <span key={p} className="h-2 w-3 rounded-[2px]" style={{ background: tint(p) }} />)}
+          </span>
+          <span>{t("activityPage.more")}</span>
+        </div>
+      )}
     </div>
   );
 }

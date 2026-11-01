@@ -592,6 +592,8 @@ class RunListItemOut(BaseModel):
     origin: str = "chat"
     model: str | None = None
     tokens: int | None = None
+    # INB7-b: still running and its conversation has a card open, so it waits on you (Progress draws its bar amber).
+    waiting: bool = False
 
 
 class RunSpawnSummaryOut(BaseModel):
