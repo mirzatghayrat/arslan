@@ -2,8 +2,11 @@
 
 The candidate is an **unused preset**, not a claim that the product is already
 sandboxed this way. SBX-M measures it before SBX-3 connects any entry point.
-The initial Mach-service and Unix-socket allowlists are empty. No service has
-measurement evidence yet; additions require a named corpus result and Astra review.
+The measured allowlist grants FSEvents in every mode, and the trust agent and
+mDNSResponder socket only in ANY_DECLARED. The latter is the daemon's whole
+client interface, accepted by the user until SBX-6, not a DNS-only grant. See
+`docs/plans/0164/SBX-measurement.md` for the decision and measured controls.
+Further additions require a named corpus result and Astra review.
 Preference reads are an allowed operation, but no cfprefsd lookup is granted.
 
 Run on macOS CI first. After its results have been reviewed, the SBX-M operator
@@ -11,7 +14,7 @@ runs on the user's Mac from the repository root:
 
 ```sh
 sbx_output="$(mktemp -d "${TMPDIR:-/tmp}/arslan-sbx-evidence.XXXXXX")"
-.venv/bin/pytest tests/server/sbx -m sbx_mac -q -rfEs \
+HOME=/private/tmp/arslan-sbx-check-home .venv/bin/pytest tests/server/sbx -m sbx_mac -q -rfEs \
   --junitxml="$sbx_output/results.xml" --sbx-artifacts="$sbx_output/profiles"
 ```
 
@@ -19,10 +22,10 @@ The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
 the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The `sbx_mac` selection has 378 cases: 71 candidate assertion
-gates, 222 measurement rows, 72 commands cases, 12 service allowlist cases, and
+an availability skip. The `sbx_mac` selection has 361 cases: 59 candidate assertion
+gates, 222 measurement rows, 63 commands cases, 16 service allowlist/UDP cases, and
 one Pool diagnosis. With two compile checks and the existing 70 macOS cases,
-the total is 450. Widening the port sample within
+the total is 433. Widening the port sample within
 the same two compile cases does not change that count.
 
 SBX-3p added 56 commands cases, bringing the selection to 420 at its merge. They strictly
@@ -30,9 +33,13 @@ xfail only for an assertion matching the deliberate missing-adapter message unti
 `commands` is registered in the harness's
 `BUILT_BASES` adapter table. #619 and #620 landed `EXPECTED = 420` and
 `EXPECTED_XFAIL = 56`; #621 subsequently added one unrelated macOS case. This
-gate follow-up adds 13 cases and D2 adds 16 commands any-declared cases
-(421 -> 450, strict xfails 56 -> 72), requiring a companion Claude count PR.
-The 16 transitional cases are removed when SBX-6's proxy mode lands.
+original gate follow-up brought the count to 450 with 72 strict xfails. Claude's
+workflow-only commit `2aba2f66` landed those values on this branch. The review
+follow-up adds four UDP cases and removes stale service aliases: 450 -> 433,
+strict xfails 72 -> 63. Claude updates EXPECTED and EXPECTED_XFAIL in another
+commit on this same branch after the user pushes; there is no companion PR.
+The remaining 13 any-declared transitional cases are removed when SBX-6's proxy
+mode lands.
 Once SBX-3a registers its real commands adapter, these cases must run with zero
 skips and zero xfails.
 
@@ -115,7 +122,7 @@ those surfaces or resolve the postponed localhost-server decision.
   variables. Each subprocess group is killed and reaped on completion or timeout.
 - Service probes query the kernel policy and request/release a send right. They
   send no service messages. A failed lookup alone cannot prove a denial: the
-  test also requires a kernel deny and an allowed-policy historical control.
+  test also requires a kernel deny and a successful live historical lookup control.
   Pasteboard and screen probes never read content or capture a screen.
 - Only the candidate attempts launch-job and preference writes. Unique probe
   domains/labels are removed in `finally`, including after a timeout. The job

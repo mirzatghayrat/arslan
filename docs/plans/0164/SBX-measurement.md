@@ -239,7 +239,7 @@ Every two-run cache row on the candidate fails before it uses its cache: offline
 - **Probe fixes** (Codex), for rows that fail on every base: brew-list, brew-info, darwin-user-temp and darwin-user-cache.
 - **The SBX-2 harness's `legacy-commands` adapter** may go now: its DELETE-BY reads "after SBX-M records the historical baseline", and this report records it. It must go before SBX-3 replaces the commands preset.
 
-## Gate 4 follow-up for SBX-8 (Codex, 2026-11-01; Astra decision pending)
+## Gate 4 follow-up for SBX-8 (Codex, 2026-11-01; Astra chose option b)
 
 `multiprocessing-none-default-deny` is now isolated by
 `test_pool_refusal_is_sem_open_outside_the_run_namespace`. On macOS 26.6.2
@@ -260,8 +260,9 @@ stock semaphore namespace does not separate runs or protect other processes'
 objects. Option (a) needs a reviewed runtime design that gives each supported
 process tree run-specific names, including its child processes and libraries;
 a service allowlist entry or a blanket IPC grant cannot supply that isolation.
-Astra decides whether this compatibility cost is acceptable before SBX-3a moves
-commands onto the base. No IPC product rule changes in this follow-up.
+[The independent Astra review](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559505333)
+chose option (b): keep the refusal and record this cost for SBX-8. No IPC product
+rule changes in this follow-up.
 
 **Cost for SBX-8:** Python tools using a stock multiprocessing Pool cannot start
 that pool inside the sandbox. The measured user-visible result is a
@@ -354,7 +355,66 @@ base and does not justify opening that daemon. No new SSH-running test or
 product grant is added by this documentation follow-up. CI run id for the
 gates branch remains pending.
 
-The D2 transition adds 16 commands any-declared denial cases (15 services and
-one listener/unsupported-port-exclusion case), alongside NONE and PROXY and
-without PORT_22. DELETE-BY: v0.1.64 when SBX-6's proxy mode lands: remove those
-16 transitional cases. Product online-mode wiring remains SBX-3a's work.
+The D2 transition now has 13 commands any-declared denial cases (12 live services
+and one listener/unsupported-port-exclusion case), alongside NONE and PROXY and
+without PORT_22. Review removed stale service aliases from the original 16-case
+addition. DELETE-BY: v0.1.64 when SBX-6's proxy mode lands: remove those
+13 transitional cases. Product online-mode wiring remains SBX-3a's work.
+
+
+## Gate 2 review: accepted daemon interface (2026-11-01)
+
+**DELETE-BY: SBX-6.** ANY_DECLARED keeps the exact Unix socket
+`/private/var/run/mDNSResponder` until the proxy replaces this transitional
+network mode for commands. This is the daemon's **whole client interface**,
+including service registration, NAT port mapping and browsing, not a DNS-only
+capability. Seatbelt filters the socket path at connect(); it does not constrain
+which daemon operation the client requests after connecting. Direct bind/listen
+refusal does not prevent the daemon from acting on the client's behalf.
+
+The user accepted this broader ANY_DECLARED interface on 2026-11-01, about
+14:50 UTC, [recorded on #645](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559502552).
+The [follow-up correction](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559518365)
+assigns the opt-in measurement to Codex. PORT_22 loses the socket; NONE and
+PROXY also refuse it. The product SSH path accepts IPv4 literals, so the earlier
+hostname measurement does not justify granting the interface to PORT_22.
+
+Raw IPv4 and IPv6 UDP sends are refused in all four modes, with successful
+allow-default controls against test-owned loopback receivers. The mDNSResponder
+interface is the only UDP-capable path identified in this measured allowlist;
+its daemon-mediated traffic is the accepted exception to direct UDP refusal.
+This is not a proof that every RPC on every granted daemon is harmless.
+In particular, the trust agent remains a daemon interface, not a certificate-only
+sandbox primitive. Complete network and Mach allow-list pins prevent an extra
+entry from silently joining the measured policy.
+
+The existing DNS row succeeds only in ANY_DECLARED. FSEvents still restores
+Node watch in every mode and withholding it restores failure. With DNS held
+constant, Swift HTTPS succeeds with `com.apple.trustd.agent`, fails when only
+that entry is withheld, and succeeds again when it is restored. The directory,
+logging and preference daemons remain ungranted.
+
+### Live refusal controls and counts
+
+On macOS 26.6.2 (25G83), the two live keychain endpoints are
+`com.apple.SecurityServer` and `com.apple.securityd.xpc`. Their historical
+controls must return lookup 0 before candidate refusal can count. The same
+requirement applies to every retained service case. The absent
+`com.apple.securityd` name is replaced with those two endpoints; the absent
+launchd, Shortcuts-events, notifications-agent and background-session-system
+aliases are removed. Actual launch submission remains a separate refusal gate;
+its commands policy check uses an explicitly synthetic name, not a claim of
+service reachability. No control sends service RPCs or reads credentials.
+
+The resulting matrix has 12 live services: 48 candidate cases across four modes,
+and 36 commands cases across NONE, ANY_DECLARED and PROXY. Review changes the
+macOS total from 450 to 433 (+4 raw UDP cases, -12 candidate service cases,
+-9 commands cases); strict xfails change from 72 to 63. No xfail became a real
+pass. The unchanged commands adapter is still absent. Historical SBX-M results
+above retain their original counts and outcomes.
+
+The opt-in dns_sd operation measurement has **not run**. Registration, immediate
+NAT-request release and browsing require the user present at the Mac and their
+explicit go-ahead in the authoring thread. No operation result is inferred from
+the accepted policy decision. A later separate commit will record only return
+and callback error codes and callback-fired booleans from that run.
