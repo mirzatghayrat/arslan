@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
 import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
 import ShellPolicySwitchNotice from "./components/ShellPolicySwitchNotice";
-import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -54,6 +53,7 @@ import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
+import ConversationStage from './components/conversation/ConversationStage';
 import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
 import { useScheduledAttention } from './hooks/useScheduledAttention';
@@ -737,9 +737,13 @@ export default function App() {
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* 0.1.55: every pending ask in ONE slot, queued "‹ 1 / 3 ›" (they used to
                 render into the same absolute spot and overlap). Same frames, same answers. */}
-            {activeSection === 'arslan' && <AskSlot send={wsSend} />}
-
+            {/* INB5b: the slot and the conversation in one answer guard, with what waited on top and the stopped jobs after the
+                messages (ConversationStage; a temporary conversation has neither). */}
             {activeSection === 'arslan' && (
+              <ConversationStage send={wsSend} conversationId={activeThreadId} temporary={activeThread?.temporary === true}
+                onOpenConversation={openInboxConversation}
+                onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }}>
+              {({ header, footer }) => (
               <div className="flex h-full min-h-0 flex-col">
               <OrchestratorChat
                 key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
@@ -763,10 +767,14 @@ export default function App() {
                   setPanelView('default');
                 }}
                 conversationId={activeThreadId}
+                header={header}
+                footer={footer}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
               />
               </div>
+              )}
+              </ConversationStage>
             )}
 
             {activeSection === 'capabilities' && (

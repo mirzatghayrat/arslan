@@ -1446,5 +1446,9 @@
     "attention": "À regarder",
     "changed": "Modifié",
     "failing": "Échouée ou mise en pause d'elle-même"
+  },
+  "whileAway": {
+    "title": "Pas fait pendant votre absence (cette conversation)",
+    "stopped": "Une tâche arrêtée ici"
   }
 }
