@@ -210,7 +210,7 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 | Lane | Work |
 |---|---|
 | ②Main | Retargets the INB7 chain as each parent lands; #634's by-run_id switch after #637 |
-| ③Hands | Writes SBX-3a gates 1 and 3 into #520's body as options with a recommendation; otherwise idle until the gates are decided |
+| ③Hands | Idle until D1, D2 and Codex's gates 2 and 4 are settled (#637's merge aside) |
 | ⑤CAP | Idle: #623, #625 and #628 are OK'd; #604 waits on the keep mock |
 | ⑥Helper | #626's retarget after #621; the L11-3b mock |
 | Codex (via ⑦Codex) | Queued: SBX-3a gates 2 and 4; #619's two Astra P3s |
@@ -219,8 +219,14 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 
 ## Waiting on the user
 
-- **SBX-3a gate 1, listening:** your 10-30 decision denies all listening, and `SBX-sandbox.md:257` says how it comes back must be decided before SBX-3 wires the base into commands. ③Hands is writing the options, with a recommendation, into #520's body.
-- **SBX-3a gate 3, online-mode commands between SBX-3 and SBX-6:** the proxy comes with SBX-6, and any-declared can't take `denied_ports` (#570). So until then, online mode can't refuse Arslan's own ports. The options are going into #520's body too.
+SBX-3a's two decisions are in #520's body, under ["Decisions for the user, before the flip"](https://github.com/mirzatghayrat/arslan/pull/520#decisions-for-the-user-before-the-flip). Each has its options and a recommendation:
+- **[D1, listening](https://github.com/mirzatghayrat/arslan/pull/520#d1-how-a-local-dev-server-can-listen-again):** your 10-30 decision denies all listening, and `SBX-sandbox.md:257` says how it comes back must be decided before SBX-3 wires the base into commands.
+  - There are five options: the card's four, plus "flip with listening still denied, decide in NET".
+  - **Recommended: flip with it still denied.** That keeps your decision and adds no code, and Codex's `allow_local_binding` and sandbox-runtime's `allowLocalBinding` are both off by default.
+  - In NET you choose between a per-run listen card, which is cheap but opens every interface for that run, and a Network Extension filter, which is a per-process boundary in the kernel but heavy.
+- **[D2, online-mode commands between SBX-3 and SBX-6](https://github.com/mirzatghayrat/arslan/pull/520#d2-what-online-commands-get-between-sbx-3-and-sbx-6):** the proxy comes with SBX-6, and any-declared can't take `denied_ports` (#570).
+  - There are three options: any-declared until SBX-6, offline until SBX-6, or flip only together with SBX-6.
+  - **Recommended: offline until Codex's DNS entry (gate 2) exists, then any-declared until SBX-6.** Outbound TCP stays as in v0.1.63, and UDP goes. The gap it keeps, Arslan's ports over loopback, is v0.1.63's, and SBX-6 closes it. If you pick this, #619's commands mode list also needs any-declared (Codex).
 - **#636's full lists:** (b) keep the Hands trace in Settings › Hands, and (a) drop the judgments list. Both recommended.
 - **The drawer:** drop the radar and the sparkline (recommended).
 - **The 「要你做」 label:** the chip and the tile now share it, with a title. It's kept unless you say otherwise.
