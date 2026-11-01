@@ -782,6 +782,8 @@
     "fromPhone": "iPhone から開始",
     "glyph": {
       "waiting": "承認待ち",
+      "waiting_reminder": "止まった作業からリマインダーがあります",
+      "waiting_away": "不在中に確認できなかったことがあります",
       "remote": "Remote · あなたの iPhone",
       "working": "進行中",
       "progress": "進行中：{{done}} / {{total}}",

@@ -1,6 +1,6 @@
-import { Check, Clock, MessageSquare, RadioTower, X } from "lucide-react";
+import { Bell, Check, Clock, MessageSquare, RadioTower, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { ConversationMeta } from "../lib/conversationMeta";
+import { waitingLabel, type ConversationMeta } from "../lib/conversationMeta";
 
 /** One glyph per conversation: what it is and how it stands, the same language as the iPhone's
  *  task list — a progress ring while a task runs, amber "!" when it waits for you, green check when
@@ -12,8 +12,16 @@ export default function ConversationGlyph({ meta, size = 15 }: { meta?: Conversa
   if (!meta || (meta.kind === "chat" && meta.state === "idle")) {
     return <MessageSquare size={size - 1} className="shrink-0" aria-hidden />;
   }
+  // INB5b-3: a stopped job's reminder is an offer, not a decision: a bell in the amber ring, so it does not read as a card (the "!").
+  if (meta.state === "waiting" && meta.waitingOn === "reminder") {
+    return <span role="img" aria-label={label("waiting_reminder")} title={label("waiting_reminder")}
+      className="flex shrink-0 items-center justify-center rounded-full border-2 border-warning text-warning"
+      style={{ width: size, height: size }}><Bell size={Math.max(7, size - 7)} strokeWidth={3} aria-hidden /></span>;
+  }
+  // A card, or one that went unanswered while you were away: the same "!", each with its own label (⓪Plan's review of PR 614, N2).
   if (meta.state === "waiting") {
-    return <span role="img" aria-label={label("waiting")} title={label("waiting")}
+    const key = waitingLabel(meta.waitingOn);
+    return <span role="img" aria-label={label(key)} title={label(key)}
       className="flex shrink-0 items-center justify-center rounded-full border-2 border-warning text-[9px] font-extrabold leading-none text-warning"
       style={{ width: size, height: size }}>!</span>;
   }

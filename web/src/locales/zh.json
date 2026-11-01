@@ -782,6 +782,8 @@
     "fromPhone": "由 iPhone 发起",
     "glyph": {
       "waiting": "等你批准",
+      "waiting_reminder": "停下的作业给你留了提醒",
+      "waiting_away": "你不在时没能问你",
       "remote": "Remote · 你的 iPhone",
       "working": "进行中",
       "progress": "进行中：{{done}} / {{total}}",
