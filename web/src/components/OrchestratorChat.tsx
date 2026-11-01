@@ -14,6 +14,7 @@ import RememberedLine from './RememberedLine';
 import CapabilityResultLine from './capabilities/CapabilityResultLine';
 import PlanProposalCard from './projects/PlanProposalCard';
 import LearnedLine from "./LearnedLine";
+import RuleOfferCard from "./RuleOfferCard";
 
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
@@ -532,6 +533,8 @@ export default function OrchestratorChat({
             if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
             if (msg.capabilityResult) return <CapabilityResultLine key={msg.id} result={msg.capabilityResult} />;
             if (msg.planProposal) return <PlanProposalCard key={msg.id} projectId={msg.planProposal.projectId} proposal={msg.planProposal} />;
+            if (msg.ruleOffer) return <RuleOfferCard key={msg.id} lessonId={msg.ruleOffer.lessonId} file={msg.ruleOffer.file}
+              text={msg.text} conversationId={conversationId ?? ""} />;
             if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status}
               notInEffect={msg.learned.notInEffect} />;
             if (msg.remembered) return <RememberedLine key={msg.id} facts={msg.remembered} />;
