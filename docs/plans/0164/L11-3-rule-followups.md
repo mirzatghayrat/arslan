@@ -60,6 +60,16 @@
 
 The steps #603 listed are added to `SMOKE.md` in this PR, under "K10 + L11".
 
+## L11-3d: from #621's effort=max review (#603's code)
+
+#621's review found three issues in #603's write path. The new Remove reaches them too. They're all Low; each needs a failing test first, from the reviewer's probes:
+
+- **F2, no lock.** The rules record is read, the file edited, and the record saved, with nothing held across those steps. A double click on Remove (two requests at once) can find the same record line twice, and the second removal takes the user's own identical line. Fix: one `asyncio.Lock` around `add_rule` / `remove_rule`. One process serves the app, so no file lock is needed.
+- **F4, the separator comes off the wrong copy.** When Add put a separator newline before its line (the file had no final newline) and the same line appears twice, Remove takes out the last copy plus a newline. That can strand the first copy without its newline, or take the final newline off the user's copy. Fix: record where Add wrote (the file's length before), and take the separator only when the line still sits at that spot.
+- **F6, two opens and a rewrite in place.** `_take_out` reads with one open and writes with another. A file replaced in between (an editor's save) loses that edit, and a crash in the middle of the write leaves it half-written. Fix: read and write through one descriptor (`O_RDWR`, then `fstat` to check it's the same file), so an edit made in between is never written over. The write stays in place, as #603's F5 decided, so the file's mode, owner and other attributes stay as they are.
+
+Size: about +40 server lines. Security surface: an effort=max review, and the user merges.
+
 ## Not here
 
 - **Showing the live card again after a reload,** by saving it as a thread item. 3b's Memory row covers the same need without a new kind of saved message.
