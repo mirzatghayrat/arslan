@@ -11,7 +11,7 @@ const { getUsageSummary, listRuns, runProcess, getRun, request } = vi.hoisted(()
   getUsageSummary: vi.fn(), listRuns: vi.fn(), runProcess: vi.fn(), getRun: vi.fn(), request: vi.fn() }));
 vi.mock("../api/client", () => ({
   api: { getUsageSummary, listRuns, runProcess, getRun, getRunsSummary: () => new Promise(() => {}), getRuns: () => new Promise(() => {}),
-    runCounts: () => new Promise(() => {}) },
+    runCounts: () => new Promise(() => {}), runChanges: () => new Promise(() => {}) },
   request,
 }));
 
