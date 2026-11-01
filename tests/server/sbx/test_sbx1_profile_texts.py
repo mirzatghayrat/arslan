@@ -111,21 +111,23 @@ def test_outside_floor(T, A, monkeypatch):
     # arslan_protected() returns resolved paths; the floor writes them as given.
     ours = [Path(os.path.realpath(T / "data")), Path(os.path.realpath(T / "updater.key"))]
     monkeypatch.setattr(command_sandbox, "arslan_protected", lambda: ours)
+    # SBX-5 (CAP6b): the skill and plugin folders close here too, to reads and writes.
+    monkeypatch.setattr(command_sandbox, "capability_folders", lambda: [Path(os.path.realpath(T)) / "skills"])
     assert _shown(command_sandbox.minimal_profile(offline=True, copies=[A / "copy.txt"]), T) == """\
 (version 1)
 (allow default)
 (deny appleevent-send)
 (deny network*)
-(deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key"))
-(deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key"))
+(deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key") (subpath "<T>/skills"))
+(deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key") (subpath "<T>/skills"))
 (allow file-read* (literal "<T>/copy.txt"))
 """
     assert _shown(command_sandbox.minimal_profile(), T) == """\
 (version 1)
 (allow default)
 (deny appleevent-send)
-(deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key"))
-(deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key"))
+(deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key") (subpath "<T>/skills"))
+(deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key") (subpath "<T>/skills"))
 """
 
 

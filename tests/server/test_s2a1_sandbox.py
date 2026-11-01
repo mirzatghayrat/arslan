@@ -36,7 +36,8 @@ def test_protected_paths_are_arslans_own_plus_the_users_secrets():
                  "Library/Application Support/Arc", "Library/Safari", "Library/Cookies"):
         assert real(home / name) in secrets, name
     assert not set(ours) & set(secrets)
-    assert command_sandbox.default_protected() == [*ours, *secrets]       # existing callers unchanged
+    # existing callers unchanged; SBX-5 (CAP6b) adds the skill and plugin folders at the end
+    assert command_sandbox.default_protected() == [*ours, *secrets, *command_sandbox.capability_folders()]
 
 
 # ── piece 1: no Apple Events from the sandbox, and an honest word about it ────────────

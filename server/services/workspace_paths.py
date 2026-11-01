@@ -36,6 +36,11 @@ class SecretFile(Exception):
     """The path names a credential-shaped file; refused by policy."""
 
 
+class NeverWritten(PathEscape):
+    """CAP6b (SBX-5): a write into Arslan's own folders or the skill and plugin folders, refused even inside the
+    working folder and whatever the user says. A PathEscape, so every file tool already refuses it."""
+
+
 # Names that carry credentials often enough that reading one by accident is
 # worse than the friction of refusing. Matched on the FILENAME, case-folded.
 _SECRET_GLOBS = (
@@ -98,9 +103,20 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
         if not _contained(resolved, root):
             raise PathEscape(f"path is outside the workspace: {user_path}")
 
+    if for_write and _never_written(resolved):
+        raise NeverWritten(f"Arslan's own folders and the skill and plugin folders are never written by a tool, "
+                           f"even inside the working folder: {user_path}")
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
     return resolved
+
+
+def _never_written(path: Path) -> bool:
+    """CAP6b (SBX-5): inside Arslan's own folders (its data, keys, Hands' folder) or the skill and plugin folders.
+    `path` and the folders are resolved, so a link is judged by where it points."""
+    from server.services import command_sandbox
+    folders = [*command_sandbox.arslan_protected(), *command_sandbox.capability_folders()]
+    return any(path == folder or folder in path.parents for folder in folders)
 
 
 def _contained(path: Path, root: Path) -> bool:
