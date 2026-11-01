@@ -166,6 +166,28 @@ describe("the review of PR 627", () => {
     expect(screen.getByTestId("activity-run-50")).toBeTruthy();
   });
 
+  it("drops a next page that was in flight when page 1 was read again, so no row goes missing", async () => {
+    let late: (rows: unknown) => void = () => {};
+    const page1 = Array.from({ length: 20 }, (_, i) => run(100 - i, "recorded", "chat"));
+    listRuns.mockImplementation((o: { limit?: number; beforeId?: number }) => (o.limit === 200 ? Promise.resolve(RUNS)
+      : o.beforeId ? new Promise((resolve) => { late = resolve; }) : Promise.resolve(page1)));
+    render(<ActivityView waiting={waiting()} />);
+    const box = await screen.findByTestId("activity-runs-box");
+    await waitFor(() => expect(runCounts).toHaveBeenCalled());
+    Object.defineProperty(box, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(box, "clientHeight", { value: 200, configurable: true });
+    box.scrollTop = 800;
+    fireEvent.scroll(box);                                                          // page 2 asked for, not back yet
+    await waitFor(() => expect(listCalls().some((o) => o.beforeId)).toBe(true));
+    const fresh = [run(101, "recorded", "chat"), ...page1.slice(0, 19)];           // one ran meanwhile: 81 moved to page 2
+    listRuns.mockImplementation((o: { limit?: number; beforeId?: number }) => Promise.resolve(o.limit === 200 ? RUNS : fresh));
+    runCounts.mockResolvedValue({ waiting: 0, failed: 1, scheduled: 1, phone: 1 });
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await screen.findByTestId("activity-run-101");
+    await act(async () => { late([run(80, "recorded", "chat")]); });               // the old page 2, below 81
+    expect(screen.queryByTestId("activity-run-80")).toBeNull();
+  });
+
   it("clearing the slice keeps the chip on (7)", async () => {
     useActivityStore.setState({ filter: { since: T0 + 2 * HOUR, until: T0 + 3 * HOUR, chip: "failed" } });
     render(<ActivityView waiting={waiting()} />);

@@ -102,9 +102,12 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
   const loadMore = useCallback(() => {
     if (!more || loading.current || !runs?.length) return;
     loading.current = true;
+    // A next page that page 1 overtook (re-read when the counts changed) would append below rows it no longer follows: dropped
+    // (⓪Plan's re-check of PR 627).
+    const mine = latest.current;
     api.listRuns({ limit: RUNS_PAGE, beforeId: runs[runs.length - 1].id, since: listSince.current, until: filter.until,
       model: filter.model, ...chipParams })
-      .then((r) => { setRuns((prev) => [...(prev ?? []), ...r]); setMore(r.length === RUNS_PAGE); })
+      .then((r) => { if (mine !== latest.current) return; setRuns((prev) => [...(prev ?? []), ...r]); setMore(r.length === RUNS_PAGE); })
       .catch(() => setMore(false))
       .finally(() => { loading.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
