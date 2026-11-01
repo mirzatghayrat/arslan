@@ -98,3 +98,26 @@ async def test_the_trace_is_read_again_only_when_its_files_change(client, monkey
         f.write(json.dumps({"at": _at(7), "conversation": "d", "run_id": ids["other"], "op": "look", "outcome": "ok"}) + "\n")
     assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 2
     assert len(reads) == 2
+
+
+async def test_every_run_says_whether_it_used_apps_by_the_same_rule(client, monkeypatch):
+    """The axis reads the unfiltered list and dims what the chip leaves out, so each run carries `used_apps` (⓪Plan's review of PR
+    636, 1)."""
+    await _seed(client, monkeypatch)
+    rows = (await client.get("/api/v1/runs", params={"limit": 50})).json()
+    assert {row["user_message"]: row["used_apps"] for row in rows} == {
+        "a": True, "b": False, "other": True, "old": True, "none": False, "live": True}
+
+
+async def test_a_call_with_no_id_counts_only_for_the_run_whose_window_holds_it(client, monkeypatch):
+    """Z2 (⓪Plan's review of PR 636): two runs in one conversation, a call with no id inside only one of their windows."""
+    monkeypatch.setattr(approvals, "all_pending", lambda: [])
+    async with client.db_maker() as db:
+        first, second = _run("first", "g", 100, 110), _run("second", "g", 120, 130)
+        db.add_all([first, second])
+        await db.commit()
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: [
+        {"at": _at(105), "conversation": "g", "run_id": None, "op": "look", "outcome": "ok"}])
+    assert await _listed(client, used="apps") == ["first"]
+    rows = (await client.get("/api/v1/runs", params={"limit": 50})).json()
+    assert {row["user_message"]: row["used_apps"] for row in rows} == {"first": True, "second": False}

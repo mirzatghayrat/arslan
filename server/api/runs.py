@@ -308,13 +308,19 @@ def _used_apps(q, named: set[int], unnamed: dict[str, list[datetime]]):
     return q.where(or_(Run.id.in_(named), Run.conversation_id.in_(list(unnamed))))
 
 
+def _used_apps_by(named: set[int], unnamed: dict[str, list[datetime]]):
+    """Whether a run used Mac apps: by the id a call carries, never by time (runs overlap and a call can be logged late); a call
+    with no id counts for a run in its conversation whose window (start to end, to now while it runs) holds it."""
+    now = datetime.utcnow()
+    return lambda r: r.id in named or any(
+        r.created_at is not None and r.created_at <= at <= (r.ended_at or now) for at in unnamed.get(r.conversation_id or "", ()))
+
+
 def _apps_keep(named: set[int], unnamed: dict[str, list[datetime]]):
-    """Which candidates used Mac apps: by the id a call carries, never by time (runs overlap and a call can be logged late); a
-    call with no id counts for a run in its conversation whose window (start to end, to now while it runs) holds it."""
+    """The 「应用」 chip's keep: the candidates that used Mac apps."""
     async def keep(batch: list[Run]) -> list[Run]:
-        now = datetime.utcnow()
-        return [r for r in batch if r.id in named or any(
-            r.created_at is not None and r.created_at <= at <= (r.ended_at or now) for at in unnamed.get(r.conversation_id or "", ()))]
+        used = _used_apps_by(named, unnamed)
+        return [r for r in batch if used(r)]
     return keep
 
 
@@ -334,8 +340,10 @@ async def list_runs(
 ) -> list[RunListItemOut]:
     asking = _asking()
     q = _chip(_scoped(since, until, model), outcome, origin, asking)
+    # Every row says whether it used Mac apps (the axis dims what the chip leaves out), so the trace is read for every list; it is
+    # read again only when it changed.
+    named, unnamed = await asyncio.to_thread(_hands_calls_now)
     if used == "apps":
-        named, unnamed = await asyncio.to_thread(_hands_calls_now)
         q = _used_apps(q, named, unnamed)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
@@ -351,6 +359,7 @@ async def list_runs(
     else:
         rows = list((await db.execute(q.limit(limit))).scalars().all())
         origins = await run_origins(db, rows)
+    used_apps = _used_apps_by(named, unnamed)
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
@@ -360,6 +369,7 @@ async def list_runs(
             origin=origins.get(r.id, "chat"), model=r.model, tokens=r.task_tokens or None,
             waiting=r.status == "recording" and r.conversation_id in asking,
             ended_at=r.ended_at.isoformat() if r.ended_at else None,
+            used_apps=used_apps(r),
         )
         for r in rows
     ]

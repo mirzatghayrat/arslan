@@ -907,6 +907,8 @@ export interface RunListItem {
   waiting?: boolean;
   /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
   ended_at?: string | null;
+  /** INB7-c4c: it used Mac apps (Hands), by the 「应用」 chip's rule. Older backends omit it. */
+  used_apps?: boolean;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */

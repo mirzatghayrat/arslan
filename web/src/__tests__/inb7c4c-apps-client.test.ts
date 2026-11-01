@@ -13,3 +13,15 @@ describe("listRuns with the apps chip", () => {
     expect(new URL(String(fetchMock.mock.calls[1][0]), "http://x").searchParams.has("used")).toBe(false);
   });
 });
+
+describe("the axis's 「应用」 chip", () => {
+  it("keeps a run that used Mac apps and dims one that did not (⓪Plan's review of PR 636, 1)", async () => {
+    const { chipHas } = await import("../components/activity/RunsLane");
+    const run = (used_apps: boolean) => ({ id: 1, spawn_id: null, spawn_name: "Arslan", status: "recorded", overall_score: null,
+      overall_badge: null, total_ms: 1, user_message: "x", created_at: "2026-11-01T09:00:00", origin: "chat" as const, model: "m", tokens: 1,
+      used_apps });
+    expect(chipHas("apps", run(true))).toBe(true);
+    expect(chipHas("apps", run(false))).toBe(false);
+    expect(chipHas("phone", run(true))).toBe(false);
+  });
+});
