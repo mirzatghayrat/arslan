@@ -462,3 +462,16 @@ The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI
 ## Stated limits recorded on 2026-10-31
 
 - **CAP5a (#577): a hand-added MCP server's tool list isn't pinned.** Pinning it would need a column, which this PR doesn't add. Only servers installed through a card are compared with their install test's listing.
+
+## Decided on 2026-11-01 (user, relayed by ④参谋)
+
+The user's words: 「1A，2 已知限制，3 去掉，额度按你的建议」.
+
+- **CAP4a-3d (#604), KEEP_FOR: removed.** When the user keeps a server that the Registry shows as withdrawn, the keep holds until the Registry entry changes again. There is no 30-day re-park.
+- **CAP4a-3d (#604), F3: a stated limit** (below).
+- **UNI1a's "download and run" scan (#563): a known limit** (below).
+
+## Stated limits recorded on 2026-11-01
+
+- **CAP4a-3c/3d (#584, #604): cross-host redirects for remote MCP servers aren't checked.** The allowlist and the start-time re-check look at the server's declared URL. The SDK follows a redirect to another host, and that host isn't checked again. This matches mainstream MCP clients. Neither PR claims the other covers it.
+- **UNI1a (#563): two parts of the scan weren't reviewed:** the 40-character window and the interpreter pattern. Classifier blocks stopped that part of the review. The scan is a heuristic, a first line before the lock and the sandbox, so the gap is accepted without an outside review.

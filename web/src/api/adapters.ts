@@ -334,6 +334,11 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         planProposal: item.planProposal };
     }
 
+    if (item.kind === "rule_offer" && item.ruleOffer) {
+      return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
+        ruleOffer: item.ruleOffer };
+    }
+
     if (item.kind === "lesson" && item.lesson) {
       return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
         learned: item.lesson };
