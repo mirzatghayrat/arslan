@@ -453,6 +453,8 @@ The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI
 - **CAP4a-3, the allowlist: option D** (⑤CAP's Registry walk, #563 comment 6527457019: 2,583 one-click). Packages from any verified domain are one-click. The lock, the scan and the sandbox still apply. Remote servers are one-click only from B's list of about 40 vendors' own domains and GitHub orgs.
 - **CAP4a-3, Q2:** a remote server whose publisher has no verified domain (`io.github.<account>`) is manual-only, as the card says.
 - **CAP4a-3, Q3:** the start-time Registry re-check runs once a day per server, and on the first start after an update.
+  - **No answer decides nothing** (#604 review F1, mainstream): a 404, an error, or a body that is not the entry asked for records nothing, and the server starts on its last record (a park stays a park), as installed npm and PyPI packages keep running while their registry is down. Only the entry itself, marked deleted or naming something else, parks a server.
+  - **A keep** holds until the entry changes again, with no expiry (the user, 2026-11-01), and a clean answer ends it (#604 review F4).
 - **CAP4a-2, the runtimes:** fetched on first need against the SHA-256 pinned in the repository, not shipped in the app.
 - **UNI1b:** option B of ⑤CAP's mock. A notice only, never blocking (D3).
 - **Skills from before CAP4's checks (D2's remaining half):** left as they are, with no one-time rescan (the user, 2026-10-31 about 14:45 UTC, 「都按推荐」). This is what Claude Code and Codex do: they don't rescan installed skills. The skills keep their origin mark in Capabilities and stay deletable.
