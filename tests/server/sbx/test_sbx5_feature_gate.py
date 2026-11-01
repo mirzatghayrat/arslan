@@ -51,7 +51,7 @@ def test_exactly_ten_outside_floor_cases_use_the_cap6b_gate():
                    "SBX-5a cap6b protection is not built" for m in marks):
                 assert arguments["cap_sbx"] == "outside-floor"
                 selected.add((name, arguments.get("name"), arguments.get("kind"), arguments.get("through_alias")))
-    assert total == 69
+    assert total == 73
     expected = {
         (name, target, None, None)
         for name in ("test_cap6b_write_denied", "test_cap6b_read_denied")

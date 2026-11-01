@@ -18,7 +18,10 @@ def reference(h, **parameters):
     elif h.base == "run-python":
         text = computation_profile(sys.executable, h.work)
     else:
-        text = default_deny_profile([h.work, h.home, h.cache_root], closed=[h.peer_cache],
+        # Commands grant the workspace, not all HOME. MCP also gets the supplied
+        # folder grants; the ancestor test deliberately makes HOME the workspace.
+        grants = h.granted_folders if h.base == "mcp" else []
+        text = default_deny_profile([h.work, *grants, h.cache_root], closed=[h.peer_cache],
                                     ipc_prefix=h.ipc_prefix)
     for path in cap:
         text += f'(deny file-read* file-write* {subpath(path.resolve())})\n'

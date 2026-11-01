@@ -146,6 +146,24 @@ def test_shared_cache_is_not_writable(cap_sbx, name):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
+@pytest.mark.parametrize("cap_sbx", [pending("commands")], indirect=True)
+@pytest.mark.parametrize("name", ["plugin", "npm", "cache", "Library-Caches"])
+def test_commands_exclusions_override_a_writable_ancestor(cap_sbx, name):
+    # Choosing scratch HOME as the workspace puts each excluded root inside an
+    # ordinary write grant. Confinement outside the workspace cannot pass this.
+    cap_sbx.work = cap_sbx.home
+    folder = target_folder(cap_sbx, name)
+    assert folder.is_relative_to(cap_sbx.work) and folder != cap_sbx.work
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "sentinel"
+    target.write_text("original")
+    # refuse also writes an ordinary sibling in this same workspace first.
+    refuse(cap_sbx, target, "write")
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
 @pytest.mark.parametrize("cap_sbx", [pending("mcp")], indirect=True)
 def test_commands_cache_is_not_visible_to_mcp(cap_sbx):
     assert cap_sbx.peer_cache.resolve() != cap_sbx.cache_root.resolve()
