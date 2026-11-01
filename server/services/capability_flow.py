@@ -26,7 +26,8 @@ from datetime import datetime
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
-from server.services import capability_install, capability_runtime, capability_scan, capability_search
+from server.services import (capability_allowlist, capability_install, capability_runtime, capability_scan,
+                             capability_search)
 from arslan.aio import within
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,11 @@ TEST_TIMEOUT_S = 90
 
 
 def installable(c: dict) -> str | None:
-    """Why this candidate cannot be offered for install, or None."""
-    if c.get("license", {}).get("verdict") != "usable":
+    """Why this candidate cannot be offered for install, or None. An MCP server's license is decided by the read at
+    the version being installed (`capability_install.prepare`, before the card; #569 review F1, ⓪Plan's call under
+    the user's no-over-defence rule): the search's verdict is GitHub's detection at the repository's HEAD, so for
+    MCP it is a hint, never a refusal. A skill keeps it, and its own license is read at the pinned commit too."""
+    if c.get("kind") != "mcp" and c.get("license", {}).get("verdict") != "usable":
         return "license_not_usable"
     if c.get("not_here"):
         return c["not_here"]
@@ -273,6 +277,14 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                         "can add it by asking for it in a conversation."}
     prepared = scan = locked = None
     if cand["kind"] == "mcp":
+        # CAP4a-3c: the user's one-click list as it is now (it may have changed since the search), and a listed GitHub
+        # organization still the one the list names. Off the list, only the user adds it, by hand.
+        allow = await capability_allowlist.current()
+        by_hand = capability_allowlist.verdict(cand, allow) or await capability_allowlist.confirm_account(cand, allow)
+        if by_hand:
+            return {"ok": False, "error": "cannot be added: add_by_hand", "by_hand": by_hand,
+                    "note": "The user's one-click list does not cover this one, so only the user can add it: by hand, "
+                            "in Capabilities (Connections, add by hand). Say so; do not propose it again."}
         # CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock before the card,
         # so the card shows the locked versions and a yes installs exactly them. After the "nobody to ask" answer
         # above: a run that cannot install resolves nothing.
@@ -280,7 +292,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             locked = await capability_install.prepare(cand)
         except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
             return {"ok": False, "error": f"cannot be added: {exc.code}"}
-        card.update(lock=capability_install.lock_summary(locked))
+        # CAP4a-3: the license the gate read, at the version being installed (`<file>@<ref>`), not the search's.
+        spdx, read_from = locked["license"]
+        card.update(lock=capability_install.lock_summary(locked), license={"spdx": spdx, "read_from": read_from})
     elif cand["kind"] == "skill":
         # CAP4a-1: fetched whole at one pinned commit, scanned and hashed before the card; a blocked scan gets none.
         # After the "nobody to ask" answer above: a run that cannot install fetches nothing.

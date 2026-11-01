@@ -1,5 +1,5 @@
 {
- "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ, ZWNJ, LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character that is not an ASCII letter (and is not white space, a control, a combining mark or a hidden character), or U+E0100-E01EF after a CJK ideograph (#586 review F1). Every other selector is marked.",
+ "about": "UNI1b (v0.1.64): the characters a skill's text may hold that show nothing, as both the server (server/orchestrator/untrusted.py hidden_runs) and the web (web/src/lib/outsideText.tsx hiddenRuns) mark them. `rule` holds the tables both sides use, from explicit code point ranges only, never a Unicode database, so they agree whatever Unicode version each side ships (#586 review F5, F6); each side's tests assert its tables equal these. Each case: the text, how many characters are marked, and each run's label in order. Not marked: ZWJ, ZWNJ, LRM, RLM, ALM, the bidi controls (UNI1a shows those with their own marker), a valid RGI subdivision flag's tags, and one variation selector doing what ordinary text uses one for: U+FE0E or U+FE0F after a character in `presentation_bases` (Extended_Pictographic, Unicode 17.0, plus # * 0-9), or U+E0100-E01EF after a CJK ideograph, at most `ivs_uncounted_max` of those per text (#586 review F1, re-check R1, R2). Every other selector is marked.",
  "rule": {
   "hidden": [
    [
@@ -110,69 +110,650 @@
     205743
    ]
   ],
-  "not_a_base": [
-   [
-    0,
-    32
-   ],
-   [
-    127,
-    160
-   ],
-   [
-    768,
-    879
-   ],
-   [
-    1564,
-    1564
-   ],
-   [
-    5760,
-    5760
-   ],
-   [
-    6832,
-    6911
-   ],
-   [
-    7616,
-    7679
-   ],
-   [
-    8192,
-    8207
-   ],
-   [
-    8232,
-    8239
-   ],
-   [
-    8287,
-    8303
-   ],
-   [
-    8400,
-    8447
-   ],
-   [
-    12288,
-    12288
-   ],
-   [
-    55296,
-    57343
-   ],
-   [
-    65056,
-    65071
-   ]
-  ],
   "flags": [
    "gbeng",
    "gbsct",
    "gbwls"
-  ]
+  ],
+  "presentation_bases": [
+   [
+    35,
+    35
+   ],
+   [
+    42,
+    42
+   ],
+   [
+    48,
+    57
+   ],
+   [
+    169,
+    169
+   ],
+   [
+    174,
+    174
+   ],
+   [
+    8252,
+    8252
+   ],
+   [
+    8265,
+    8265
+   ],
+   [
+    8482,
+    8482
+   ],
+   [
+    8505,
+    8505
+   ],
+   [
+    8596,
+    8601
+   ],
+   [
+    8617,
+    8618
+   ],
+   [
+    8986,
+    8987
+   ],
+   [
+    9000,
+    9000
+   ],
+   [
+    9167,
+    9167
+   ],
+   [
+    9193,
+    9203
+   ],
+   [
+    9208,
+    9210
+   ],
+   [
+    9410,
+    9410
+   ],
+   [
+    9642,
+    9643
+   ],
+   [
+    9654,
+    9654
+   ],
+   [
+    9664,
+    9664
+   ],
+   [
+    9723,
+    9726
+   ],
+   [
+    9728,
+    9732
+   ],
+   [
+    9742,
+    9742
+   ],
+   [
+    9745,
+    9745
+   ],
+   [
+    9748,
+    9749
+   ],
+   [
+    9752,
+    9752
+   ],
+   [
+    9757,
+    9757
+   ],
+   [
+    9760,
+    9760
+   ],
+   [
+    9762,
+    9763
+   ],
+   [
+    9766,
+    9766
+   ],
+   [
+    9770,
+    9770
+   ],
+   [
+    9774,
+    9775
+   ],
+   [
+    9784,
+    9786
+   ],
+   [
+    9792,
+    9792
+   ],
+   [
+    9794,
+    9794
+   ],
+   [
+    9800,
+    9811
+   ],
+   [
+    9823,
+    9824
+   ],
+   [
+    9827,
+    9827
+   ],
+   [
+    9829,
+    9830
+   ],
+   [
+    9832,
+    9832
+   ],
+   [
+    9851,
+    9851
+   ],
+   [
+    9854,
+    9855
+   ],
+   [
+    9874,
+    9879
+   ],
+   [
+    9881,
+    9881
+   ],
+   [
+    9883,
+    9884
+   ],
+   [
+    9888,
+    9889
+   ],
+   [
+    9895,
+    9895
+   ],
+   [
+    9898,
+    9899
+   ],
+   [
+    9904,
+    9905
+   ],
+   [
+    9917,
+    9918
+   ],
+   [
+    9924,
+    9925
+   ],
+   [
+    9928,
+    9928
+   ],
+   [
+    9934,
+    9935
+   ],
+   [
+    9937,
+    9937
+   ],
+   [
+    9939,
+    9940
+   ],
+   [
+    9961,
+    9962
+   ],
+   [
+    9968,
+    9973
+   ],
+   [
+    9975,
+    9978
+   ],
+   [
+    9981,
+    9981
+   ],
+   [
+    9986,
+    9986
+   ],
+   [
+    9989,
+    9989
+   ],
+   [
+    9992,
+    9997
+   ],
+   [
+    9999,
+    9999
+   ],
+   [
+    10002,
+    10002
+   ],
+   [
+    10004,
+    10004
+   ],
+   [
+    10006,
+    10006
+   ],
+   [
+    10013,
+    10013
+   ],
+   [
+    10017,
+    10017
+   ],
+   [
+    10024,
+    10024
+   ],
+   [
+    10035,
+    10036
+   ],
+   [
+    10052,
+    10052
+   ],
+   [
+    10055,
+    10055
+   ],
+   [
+    10060,
+    10060
+   ],
+   [
+    10062,
+    10062
+   ],
+   [
+    10067,
+    10069
+   ],
+   [
+    10071,
+    10071
+   ],
+   [
+    10083,
+    10084
+   ],
+   [
+    10133,
+    10135
+   ],
+   [
+    10145,
+    10145
+   ],
+   [
+    10160,
+    10160
+   ],
+   [
+    10175,
+    10175
+   ],
+   [
+    10548,
+    10549
+   ],
+   [
+    11013,
+    11015
+   ],
+   [
+    11035,
+    11036
+   ],
+   [
+    11088,
+    11088
+   ],
+   [
+    11093,
+    11093
+   ],
+   [
+    12336,
+    12336
+   ],
+   [
+    12349,
+    12349
+   ],
+   [
+    12951,
+    12951
+   ],
+   [
+    12953,
+    12953
+   ],
+   [
+    126980,
+    126980
+   ],
+   [
+    127020,
+    127023
+   ],
+   [
+    127124,
+    127135
+   ],
+   [
+    127151,
+    127152
+   ],
+   [
+    127168,
+    127168
+   ],
+   [
+    127183,
+    127184
+   ],
+   [
+    127222,
+    127231
+   ],
+   [
+    127344,
+    127345
+   ],
+   [
+    127358,
+    127359
+   ],
+   [
+    127374,
+    127374
+   ],
+   [
+    127377,
+    127386
+   ],
+   [
+    127406,
+    127461
+   ],
+   [
+    127489,
+    127503
+   ],
+   [
+    127514,
+    127514
+   ],
+   [
+    127535,
+    127535
+   ],
+   [
+    127538,
+    127546
+   ],
+   [
+    127548,
+    127551
+   ],
+   [
+    127561,
+    127583
+   ],
+   [
+    127590,
+    127777
+   ],
+   [
+    127780,
+    127891
+   ],
+   [
+    127894,
+    127895
+   ],
+   [
+    127897,
+    127899
+   ],
+   [
+    127902,
+    127984
+   ],
+   [
+    127987,
+    127989
+   ],
+   [
+    127991,
+    127994
+   ],
+   [
+    128000,
+    128253
+   ],
+   [
+    128255,
+    128317
+   ],
+   [
+    128329,
+    128334
+   ],
+   [
+    128336,
+    128359
+   ],
+   [
+    128367,
+    128368
+   ],
+   [
+    128371,
+    128378
+   ],
+   [
+    128391,
+    128391
+   ],
+   [
+    128394,
+    128397
+   ],
+   [
+    128400,
+    128400
+   ],
+   [
+    128405,
+    128406
+   ],
+   [
+    128420,
+    128421
+   ],
+   [
+    128424,
+    128424
+   ],
+   [
+    128433,
+    128434
+   ],
+   [
+    128444,
+    128444
+   ],
+   [
+    128450,
+    128452
+   ],
+   [
+    128465,
+    128467
+   ],
+   [
+    128476,
+    128478
+   ],
+   [
+    128481,
+    128481
+   ],
+   [
+    128483,
+    128483
+   ],
+   [
+    128488,
+    128488
+   ],
+   [
+    128495,
+    128495
+   ],
+   [
+    128499,
+    128499
+   ],
+   [
+    128506,
+    128591
+   ],
+   [
+    128640,
+    128709
+   ],
+   [
+    128715,
+    128722
+   ],
+   [
+    128725,
+    128741
+   ],
+   [
+    128745,
+    128745
+   ],
+   [
+    128747,
+    128752
+   ],
+   [
+    128755,
+    128767
+   ],
+   [
+    128986,
+    129023
+   ],
+   [
+    129036,
+    129039
+   ],
+   [
+    129096,
+    129103
+   ],
+   [
+    129114,
+    129119
+   ],
+   [
+    129160,
+    129167
+   ],
+   [
+    129198,
+    129199
+   ],
+   [
+    129212,
+    129215
+   ],
+   [
+    129218,
+    129231
+   ],
+   [
+    129241,
+    129279
+   ],
+   [
+    129292,
+    129338
+   ],
+   [
+    129340,
+    129349
+   ],
+   [
+    129351,
+    129535
+   ],
+   [
+    129624,
+    129631
+   ],
+   [
+    129646,
+    129791
+   ],
+   [
+    130048,
+    131069
+   ]
+  ],
+  "ivs_uncounted_max": 8
  },
  "cases": [
   {
@@ -504,6 +1085,154 @@
    "count": 1,
    "runs": [
     "U+1D173"
+   ]
+  },
+  {
+   "name": "calm: red heart on fire",
+   "text": "\u2764\ufe0f\u200d\ud83d\udd25",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: keycaps # * 0 9",
+   "text": "#\ufe0f\u20e3*\ufe0f\u20e30\ufe0f\u20e39\ufe0f\u20e3",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: copyright, registered, trademark",
+   "text": "\u00a9\ufe0f\u00ae\ufe0f\u2122\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: double exclamation and interrobang",
+   "text": "\u203c\ufe0f\u2049\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a smiley in text style",
+   "text": "\u263a\ufe0e",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a rainbow flag",
+   "text": "\ud83c\udff3\ufe0f\u200d\ud83c\udf08",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a pirate flag",
+   "text": "\ud83c\udff4\u200d\u2620\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: an eye in a speech bubble",
+   "text": "\ud83d\udc41\ufe0f\u200d\ud83d\udde8\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a kiss with skin tones",
+   "text": "\ud83d\udc69\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c\udfff",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a health worker",
+   "text": "\ud83e\uddd1\u200d\u2695\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a man running",
+   "text": "\ud83c\udfc3\u200d\u2642\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: a detective",
+   "text": "\ud83d\udd75\ufe0f\u200d\u2640\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: regional indicator flags",
+   "text": "\ud83c\udde8\ud83c\uddf3\ud83c\uddef\ud83c\uddf5",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: three Japanese IVS",
+   "text": "\u845b\udb40\udd00\u57ce\u8fbb\udb40\udd01\u9089\udb40\udd02",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: IVS after extension A, B and a compatibility ideograph",
+   "text": "\u3400\udb40\udd00\ud840\udc00\udb40\udd00\uf900\udb40\udd00",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: Hindi ZWJ and ZWNJ",
+   "text": "\u0915\u094d\u200d\u0937 \u0915\u094d\u200c\u0937",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "calm: Arabic with ALM",
+   "text": "\u0627\u0644\u0631\u0642\u0645 \u061c12",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "VS16 after a non-ASCII letter",
+   "text": "\u00e9\ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "VS16 after punctuation",
+   "text": ".\ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
+   ]
+  },
+  {
+   "name": "VS16 after a digit (a keycap's base)",
+   "text": "5\ufe0f",
+   "count": 0,
+   "runs": []
+  },
+  {
+   "name": "an ideograph followed by U+FE01",
+   "text": "\u845b\ufe01",
+   "count": 1,
+   "runs": [
+    "U+FE01"
+   ]
+  },
+  {
+   "name": "nine IVS after nine ideographs: the ninth counts",
+   "text": "\u4e00\udb40\udd00\u4e01\udb40\udd00\u4e02\udb40\udd00\u4e03\udb40\udd00\u4e04\udb40\udd00\u4e05\udb40\udd00\u4e06\udb40\udd00\u4e07\udb40\udd00\u4e08\udb40\udd00",
+   "count": 1,
+   "runs": [
+    "U+E0100"
+   ]
+  },
+  {
+   "name": "VS16 after an ideograph",
+   "text": "\u845b\ufe0f",
+   "count": 1,
+   "runs": [
+    "U+FE0F"
    ]
   }
  ]

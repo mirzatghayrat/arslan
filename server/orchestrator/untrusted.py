@@ -196,16 +196,14 @@ _HIDDEN = ((0x00AD, 0x00AD), (0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5
 #: Runs of these show as one marker with their range: variation selectors, their supplement, and tags.
 _RUN_RANGES = (("U+FE00\u2013FE0F", 0xFE00, 0xFE0F), ("U+E0100\u2013E01EF", 0xE0100, 0xE01EF),
                ("U+E0000\u2013E007F", 0xE0000, 0xE007F))
-#: #586 review F1: one selector goes uncounted only when it does what ordinary text uses one for. VS15 and VS16
-#: (text or emoji presentation) after a character that can take them: not an ASCII letter, and not one of
-#: `_NOT_A_BASE`; an ideographic variation selector after a CJK ideograph. Every other selector is counted, so
-#: one selector after each letter (a byte per letter) is.
+#: #586 review F1, re-check R1 and R2: one selector goes uncounted only when it does what ordinary text uses one
+#: for. VS15 and VS16 (text or emoji presentation) after a character that takes them: an emoji or a keycap's base
+#: (`emoji_bases.PRESENTATION_BASES`); an ideographic variation selector after a CJK ideograph, at most
+#: `_IVS_UNCOUNTED_MAX` of those in a text (an IVS after each ideograph would carry a byte per ideograph). Every
+#: other selector is counted, so one selector after each letter is.
 _PRESENTATION_SELECTORS = (0xFE0E, 0xFE0F)
 _IDEOGRAPHS = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0x323AF))
-#: White space, controls, the format marks left unmarked, the combining marks' blocks and surrogates.
-_NOT_A_BASE = ((0x0000, 0x0020), (0x007F, 0x00A0), (0x0300, 0x036F), (0x061C, 0x061C), (0x1680, 0x1680),
-               (0x1AB0, 0x1AFF), (0x1DC0, 0x1DFF), (0x2000, 0x200F), (0x2028, 0x202F), (0x205F, 0x206F),
-               (0x20D0, 0x20FF), (0x3000, 0x3000), (0xD800, 0xDFFF), (0xFE20, 0xFE2F))
+_IVS_UNCOUNTED_MAX = 8
 #: The RGI subdivision flags' tag letters (England, Scotland, Wales), between U+1F3F4 and U+E007F.
 _FLAG_TAGS = ("gbeng", "gbsct", "gbwls")
 
@@ -223,12 +221,12 @@ def _is_selector(cp: int) -> bool:
 
 
 def _takes_selector(prev: int | None, selector: int) -> bool:
-    """Whether one selector after `prev` does what ordinary text uses one for (#586 review F1)."""
+    """Whether one selector after `prev` does what ordinary text uses one for (#586 review F1, re-check R2)."""
+    from server.orchestrator.emoji_bases import PRESENTATION_BASES
     if prev is None:
         return False
     if selector in _PRESENTATION_SELECTORS:
-        ascii_letter = 0x41 <= prev <= 0x5A or 0x61 <= prev <= 0x7A
-        return not ascii_letter and not _in(prev, _NOT_A_BASE) and not _in(prev, _HIDDEN)
+        return _in(prev, PRESENTATION_BASES)
     return 0xE0100 <= selector <= 0xE01EF and _in(prev, _IDEOGRAPHS)
 
 
@@ -250,12 +248,15 @@ def hidden_runs(text) -> list[tuple[int, list[int]]]:
     cps = [ord(ch) for ch in str(text or "")]
     flagged = _flag_tags(cps)
     runs: list[tuple[int, list[int]]] = []
-    open_run = False
+    open_run, ivs_uncounted = False, 0
     for i, cp in enumerate(cps):
         hidden = i not in flagged and _in(cp, _HIDDEN)
         if (hidden and _is_selector(cp) and not (i + 1 < len(cps) and _is_selector(cps[i + 1]))
                 and _takes_selector(cps[i - 1] if i else None, cp)):
-            hidden = False
+            ivs = 0xE0100 <= cp <= 0xE01EF
+            if not ivs or ivs_uncounted < _IVS_UNCOUNTED_MAX:     # re-check R1: past the cap, each one counts
+                hidden = False
+                ivs_uncounted += ivs
         if hidden:
             last = runs[-1][1] if runs and open_run else None
             if last and (last[-1] == cp or (_run_range(cp) is not None and _run_range(cp) == _run_range(last[-1]))):
