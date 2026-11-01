@@ -51,6 +51,7 @@ def listeners():
                                     ("browser-connect", socket.AF_INET, "127.0.0.1"),
                                     ("extra-startup", socket.AF_INET, "127.0.0.1"),
                                     ("system", socket.AF_INET, "127.0.0.1"),
+                                    ("system-socks", socket.AF_INET, "127.0.0.1"),
                                     ("system-v6", socket.AF_INET6, "::1")):
             listener = stack.enter_context(socket.socket(family))
             if family == socket.AF_INET6:
@@ -184,6 +185,53 @@ def test_system_proxy_ports_are_closed_but_other_loopback_survives(net_sbx, list
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
+@pytest.mark.parametrize("net_sbx,mode", [
+    pytest.param(base, mode, marks=pending(base)) for base, mode in (
+        ("commands-proxy", NetworkMode.PROXY), ("mcp-proxy", NetworkMode.PROXY),
+        ("network-sbx6", NetworkMode.PROXY), ("network-sbx6", NetworkMode.PORT_22))], indirect=["net_sbx"])
+def test_system_proxy_collision_is_refused_before_building(net_sbx, listeners, mode):
+    net_sbx.network = mode
+    settings = options(listeners)
+    # IPv4 and IPv6 listeners CAN share a numeric port. A port-only deny cannot
+    # separate them from the load-bearing proxy allow: reject the configuration.
+    with socket.socket(socket.AF_INET6) as sibling:
+        sibling.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        sibling.bind(("::1", listeners["proxy"]))
+        sibling.listen(4)
+        for host in ("127.0.0.1", "::1"):
+            connect(net_sbx, host, listeners["proxy"], profile="(version 1)(allow default)",
+                    allowed=True, probe="same-port-live-control")
+        settings["system_proxies"] = [f"socks5://[::1]:{listeners['proxy']}"]
+        with pytest.raises(ValueError, match="proxy port.*system proxy"):
+            net_sbx.profile(**settings)
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@pytest.mark.parametrize("net_sbx,mode", [
+    pytest.param(base, mode, marks=pending(base)) for base, mode in (
+        ("commands-proxy", NetworkMode.PROXY), ("mcp-proxy", NetworkMode.PROXY),
+        ("network-sbx6", NetworkMode.PROXY), ("network-sbx6", NetworkMode.PORT_22))], indirect=["net_sbx"])
+def test_all_configured_system_proxies_are_refused(net_sbx, listeners, mode):
+    net_sbx.network = mode
+    settings = options(listeners)
+    endpoints = (("http", "127.0.0.1", "system"),
+                 ("socks5", "127.0.0.1", "system-socks"),
+                 ("https", "::1", "system-v6"))
+    settings["system_proxies"] = [
+        f"{scheme}://{'[::1]' if host == '::1' else host}:{listeners[role]}"
+        for scheme, host, role in endpoints]
+    text = net_sbx.profile(**settings)
+    for role in ("proxy", "dev"):
+        connect(net_sbx, "127.0.0.1", listeners[role], profile=text, allowed=True, probe=role)
+    for _, host, role in endpoints:
+        connect(net_sbx, host, listeners[role], profile=text, allowed=False, probe=role)
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
 @bases(("network-sbx6",))
 @pytest.mark.parametrize("mode", list(NetworkMode))
 @pytest.mark.parametrize("service", gates.SERVICES.values(), ids=gates.SERVICES.keys())
@@ -237,11 +285,23 @@ def test_complete_network_allow_list(tmp_path, base):
     assert grants == expected, "complete network allow list changed"
 
 
-@pytest.mark.xfail("commands-proxy" not in BUILT_BASES, strict=True,
-                   raises=pytest.RaisesExc(AssertionError, match=r"^SBX-6a commands-proxy adapter is not built"),
-                   reason="SBX-6a commands-proxy adapter is not built")
-def test_commands_retires_any_declared(tmp_path):
+@pending("commands-proxy")
+@pytest.mark.parametrize("selection", ["explicit-any-declared", "default-online"])
+def test_commands_retires_any_declared(tmp_path, selection):
     assert "commands-proxy" in BUILT_BASES, "SBX-6a commands-proxy adapter is not built"
-    h = Harness(tmp_path, "commands-proxy", NetworkMode.ANY_DECLARED)
-    with pytest.raises(ValueError, match="any-declared"):
-        h.profile()
+    # The SBX-6 adapter must also exercise the actual commands preset. None means
+    # no explicit network override: pass offline=False to its online selection.
+    assert "commands" in BUILT_BASES, "SBX-6a must register the actual commands preset"
+    h = Harness(tmp_path, "commands", NetworkMode.ANY_DECLARED if selection == "explicit-any-declared" else None)
+    if selection == "explicit-any-declared":
+        with pytest.raises(ValueError, match="any-declared"):
+            h.profile()
+    else:
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            text = h.profile(offline=False, proxy_port=port, bound_ports=[], system_proxies=[])
+        grants = [line.strip() for line in text.splitlines() if re.match(
+            r"\s*\(allow\b.*\b(?:network|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+        assert grants == ['(allow network-outbound (remote tcp "localhost:*"))',
+                          f'(allow network-outbound (remote tcp "localhost:{port}"))']

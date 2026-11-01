@@ -11,8 +11,10 @@ from tests.server.sbx.harness import BUILT_BASES
 
 
 def reference(h, **parameters):
-    if h.base == "commands-proxy" and h.network == NetworkMode.ANY_DECLARED:
+    if h.base in {"commands", "commands-proxy"} and h.network == NetworkMode.ANY_DECLARED:
         raise ValueError("commands no longer accept any-declared")
+    offline = parameters.pop("offline", False)
+    mode = h.network if h.network is not None else NetworkMode.NONE if offline else NetworkMode.PROXY
     if h.base == "run-python":
         from server.services.code_sandbox import computation_profile
         return computation_profile(sys.executable, h.work)
@@ -20,10 +22,12 @@ def reference(h, **parameters):
     ports = list(parameters.pop("bound_ports", []))
     for setting in parameters.pop("system_proxies", []):
         proxy = urlsplit(setting)
+        if proxy.port == proxy_port:
+            raise ValueError("proxy port collides with a configured system proxy")
         if proxy.hostname in {"localhost", "127.0.0.1", "::1"}:
             ports.append(proxy.port)
-    return default_deny_profile([h.work, h.temp], [h.protected], network=h.network,
-        proxy_port=proxy_port if h.network == NetworkMode.PROXY else None,
+    return default_deny_profile([h.work, h.temp], [h.protected], network=mode,
+        proxy_port=proxy_port if mode == NetworkMode.PROXY else None,
         denied_ports=ports, ipc_prefix=h.ipc_prefix, **parameters)
 
 
@@ -37,7 +41,7 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     adapter = permissive if config.getoption("--sbx6-permissive") else reference
-    for base in ("commands-proxy", "mcp-proxy", "run-python", "network-sbx6"):
+    for base in ("commands", "commands-proxy", "mcp-proxy", "run-python", "network-sbx6"):
         BUILT_BASES[base] = adapter
     if adapter is permissive:
         from server.services import ssh_exec
