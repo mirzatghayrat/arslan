@@ -776,7 +776,9 @@ export default function App() {
             {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openCardConversation}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
-            {activeSection === 'progress' && <ActivityView waiting={waiting} />}
+            {activeSection === 'progress' && <ActivityView waiting={waiting} threads={threads} projects={sidebarProjects}
+              onOpenConversation={selectConversation}
+              onOpenProject={(projectId) => { setOpenProjectId(projectId); setActiveSection('projects'); }} />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
