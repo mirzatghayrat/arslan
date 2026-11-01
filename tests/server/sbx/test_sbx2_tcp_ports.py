@@ -35,7 +35,9 @@ def test_tcp_port_denies_follow_the_complete_allow_list(mode):
                   if re.match(r"\(allow\b.*\b(?:network|default)\b",
                               re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
         destination = f"localhost:{PROXY_PORT}" if mode == NetworkMode.PROXY else "*:22"
-        assert [line for _, line in allows] == [
+        # The measured DNS socket is the only additional network grant in port-22.
+        sockets = ['(allow network-outbound (literal "/private/var/run/mDNSResponder"))'] if mode == NetworkMode.PORT_22 else []
+        assert [line for _, line in allows] == sockets + [
             '(allow network-outbound (remote tcp "localhost:*"))',
             f'(allow network-outbound (remote tcp "{destination}"))',
         ], "complete network allow list changed"
