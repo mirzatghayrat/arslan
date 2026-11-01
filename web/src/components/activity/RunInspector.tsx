@@ -1,17 +1,22 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import type { RunListItem } from "../../api/client.types";
+import { filesApi, type ConversationChangeTurn } from "../../api/files";
+import { baseName } from "../../lib/fileKinds";
 import type { StepDetail } from "../../lib/process";
 import { fmtMs } from "../../lib/usageFormat";
 import { useActivityStore } from "../../stores/activityStore";
+import { isolate } from "../CapabilitySwitches";
 import { StepDetailView } from "../reply/ProcessList";
+import DiffReader, { opensDiff } from "../workbench/DiffReader";
 import { COLOUR, WORD, at, clockOf, outcomeOf, stepText, useRunSteps } from "./RunsLane";
 
 /**
  * INB7-c1, board F's inspector beside 「最近的工作」: the picked run (a row or a bar picks it), its steps in the conversation's
- * words with their times, following the axis's replay and moving it when a step is clicked, each opening to its detail. "Details"
- * opens the drawer until INB7-c4 folds what it shows (scores, history) into this aside; 「改动」 and 「诊断」 come in INB7-c3/c4, and what
+ * words with their times, following the axis's replay and moving it when a step is clicked, each opening to its detail; and
+ * 「改动」, what it changed (INB7-c3). "Details" opens the drawer until INB7-c4 folds what it shows (scores, history) into this aside
+ * with 「诊断」, and what
  * waits on you, shown when nothing is picked, in INB7-c5.
  */
 export default function RunInspector({ runs }: { runs: RunListItem[] }) {
@@ -39,6 +44,19 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
   const clock = useMemo(() => clockOf(i18n.language), [i18n.language]);
   const { proc, steps, empty } = useRunSteps(runId, run);
   const [open, setOpen] = useState<number | null>(null);
+  const [tab, setTab] = useState<"replay" | "changes">("replay");
+  // INB7-c3: what this run changed, from its own conversation's changes (read once it is known, and again when the run ends:
+  // a checkpoint is written at the end). undefined while reading, null when it changed nothing.
+  const conversationId = proc?.conversation_id ?? null;
+  const [turn, setTurn] = useState<ConversationChangeTurn | null | undefined>(undefined);
+  useEffect(() => {
+    if (!conversationId) return;
+    let alive = true;
+    filesApi.changes(conversationId)
+      .then((found) => { if (alive) setTurn(found.turns.find((x) => x.run_id === runId) ?? null); })
+      .catch(() => { if (alive) setTurn(null); });
+    return () => { alive = false; };
+  }, [conversationId, runId, proc?.status]);
   // Once its steps' read says it has ended, that read is the fresher word on how and how long, over 7 and 30 days too, where
   // the list it was picked from is not read again (⓪Plan's re-check of PR 624).
   const settled = proc && proc.status !== "recording" ? proc : null;
@@ -65,9 +83,21 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
         </button>
       </div>
 
-      <div className="mt-4 text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">
-        {t("activityPage.replay")}{steps.length ? ` · ${steps.length}` : ""}
+      {/* Board F's tabs over the picked run: 「回放」 first, 「改动」 (INB7-c3); 「诊断」 comes in INB7-c4. */}
+      <div role="tablist" aria-label={t("activityPage.details")} className="mt-4 flex gap-1 border-b border-border">
+        {([["replay", "activityPage.replay", steps.length], ["changes", "activityPage.changesTab", turn?.paths.length ?? 0]] as const)
+          .map(([id, word, count]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+              className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-2 py-1 text-[11.5px] ${
+                tab === id ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              {t(word)}{count > 0 && <span className="font-mono text-[10.5px] text-subtle-foreground">{count}</span>}
+            </button>
+          ))}
       </div>
+      {tab === "changes" ? (
+        <RunChanges conversationId={proc?.conversation_id ?? null} runId={runId} turn={turn} />
+      ) : (
+      <>
       {proc && !steps.length && <p className="mt-2 text-xs text-muted-foreground">{t(empty)}</p>}
       <ol className="mt-2 space-y-0.5">
         {steps.map((entry, i) => {
@@ -101,6 +131,52 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
           );
         })}
       </ol>
+      </>
+      )}
     </section>
+  );
+}
+
+const KIND_COLOR = { made: "text-success", edited: "text-muted-foreground", deleted: "text-danger" } as const;
+
+/**
+ * INB7-c3, board F's 「改动」: what the picked run changed in your folders, as the Overview's Changes lists it (one turn of its
+ * conversation's GET /conversations/{id}/changes), each text path opening the DIFF1 side-by-side reader in place. A turn that was
+ * undone, or a path with no line diff (an image, say), is listed without opening.
+ */
+function RunChanges({ conversationId, runId, turn }: { conversationId: string | null; runId: number; turn: ConversationChangeTurn | null | undefined }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState<{ folder: string; path: string } | null>(null);
+  if (open && conversationId) {
+    return <div className="mt-2"><DiffReader conversationId={conversationId} runId={runId} folder={open.folder} path={open.path}
+      onBack={() => setOpen(null)} /></div>;
+  }
+  if (turn === undefined) return null;
+  if (!turn || !turn.paths.length) return <p className="mt-2 text-xs text-muted-foreground">{t("activityPage.noChanges")}</p>;
+  return (
+    <div className="mt-2">
+      {turn.undone && <span className="rounded bg-fill px-1.5 text-[10.5px] text-muted-foreground">{t("workbench.undone")}</span>}
+      <ul className="mt-1 space-y-0.5">
+        {turn.paths.map((p) => {
+          const name = baseName(p.path);
+          const dir = p.path.slice(0, Math.max(0, p.path.length - name.length - 1));
+          const parts = <>
+            <span className={`min-w-12 shrink-0 text-[11px] ${KIND_COLOR[p.kind]}`}>{t(`workbench.${p.kind}`)}</span>
+            <span className="min-w-0 truncate">{isolate(name)}</span>
+            {dir && <span className="min-w-0 flex-1 truncate text-[11px] text-subtle-foreground" dir="rtl">{isolate(dir)}</span>}
+          </>;
+          const line = "flex w-full min-w-0 items-center gap-2 px-1.5 py-1 text-[12px]";
+          return (
+            <li key={`${p.folder}/${p.path}`} data-testid="inspector-change" title={isolate(`${p.folder}/${p.path}`)}>
+              {!turn.undone && opensDiff(p.path)
+                ? <button type="button" onClick={() => setOpen({ folder: p.folder, path: p.path })}
+                  className={`${line} rounded-md text-left hover:bg-foreground/[0.04]`}>
+                  {parts}<ChevronRight className="ml-auto h-3 w-3 shrink-0 text-subtle-foreground" aria-hidden /></button>
+                : <div className={line}>{parts}</div>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

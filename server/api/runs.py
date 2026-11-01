@@ -644,8 +644,10 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
     raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
     summary = (await rp.summaries(db, [run_id])).get(run_id, {})
-    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span.
-    return {"run_id": run_id, "status": run.status, **summary, "started_at": rp.utc(run.started_at),
+    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span. INB7-c3: its
+    # conversation, whose changes (GET /conversations/{id}/changes) the inspector's 「改动」 reads.
+    return {"run_id": run_id, "status": run.status, "conversation_id": run.conversation_id, **summary,
+            "started_at": rp.utc(run.started_at),
             "ended_at": rp.utc(run.ended_at), "entries": rp.entries(list(steps), raw=raw)}
 
 

@@ -138,6 +138,8 @@ export interface RunProcessOut extends Partial<ProcessSummary> {
   /** INB7-b: when the run started and ended (UTC, "Z"); ended_at is null while it runs. Older backends omit both. */
   started_at?: string | null;
   ended_at?: string | null;
+  /** INB7-c3: the run's conversation, whose changes the inspector reads. Older backends omit it. */
+  conversation_id?: string;
   entries: {
     kind: "note" | "tool";
     text?: string;
