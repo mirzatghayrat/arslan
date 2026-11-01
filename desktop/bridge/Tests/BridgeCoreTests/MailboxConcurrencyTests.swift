@@ -140,12 +140,25 @@ final class RuntimeConcurrencyTests: XCTestCase {
         let store = LockedStore(), control = LockedControl()
         let bridge = try BridgeRuntime(identities: IdentityStore(secrets: MemorySecrets()), store: store, control: control,
                                        macName: "Test Mac", containerID: "iCloud.dev.aralem.arslan", version: "0.1.64")
+        for k in 0..<40 {                                           // phones waiting on codes made before
+            try await bridge.handleControl(["type": "pairing.new"])
+            let uri = try XCTUnwrap(control.all("pairing.code").last?["uri"] as? String)
+            try await store.save(try PairingHostTests().phoneRequest(uri: uri, now: Date(), phoneSigning: .init(),
+                                                                     phoneExchange: .init(), phoneID: "iphone-\(k)"))
+        }
+        // The two sides share nothing but the Bridge: no store or control lock orders a code against an open.
         await withTaskGroup(of: Void.self) { group in
             group.addTask { for _ in 0..<200 { try? await bridge.handleControl(["type": "pairing.new"]) } }
-            group.addTask { for _ in 0..<300 { _ = try? await bridge.poll() } }
+            group.addTask {
+                for _ in 0..<20 {                                    // reads every request again (PairingHost.open)
+                    bridge.mailbox.token = nil
+                    _ = try? await bridge.poll()
+                }
+            }
             group.addTask { for _ in 0..<6000 { _ = bridge.isPairing(); await Task.yield() } }   // the poll pace's read
         }
-        XCTAssertEqual(control.all("pairing.code").count, 200)
+        XCTAssertEqual(control.all("pairing.code").count, 240)
+        XCTAssertEqual(control.all("pairing.request").count, 40, "each shown once")
     }
 
     func testOneRequestIsDecidedOnceWhateverAsksAtOnce() async throws {
@@ -233,8 +246,9 @@ final class MailboxOrderTests: XCTestCase {
         var behind: [Int64] = []
         let lock = NSLock()
         store.onSave = { record in                                   // §4.5: a restart never re-uses a seq the phone saw
+            let remembered = mac.locked { memory.memory?.nextSeq ?? 0 }   // written under the Mailbox's lock
             lock.lock(); defer { lock.unlock() }
-            if (memory.memory?.nextSeq ?? 0) <= record.seq { behind.append(record.seq) }
+            if remembered <= record.seq { behind.append(record.seq) }
         }
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<3 {
