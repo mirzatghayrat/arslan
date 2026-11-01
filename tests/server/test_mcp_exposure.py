@@ -548,24 +548,32 @@ async def test_the_managers_own_drop_finishes_and_restarts_even_past_the_bound(d
 
 
 async def test_a_slow_close_never_costs_the_answer_or_last_error(db, own_supervisor, monkeypatch):
-    """N-2, scaled down (bound 0.2 s, backstop 0.7 s, close 1 s): the stuck session's close is not
-    awaited, so the answer and last_error land inside the bound→backstop margin."""
+    """N-2, scaled down (bound 0.2 s, backstop 5 s): the stuck session's close is not awaited, so the
+    answer and last_error land inside the bound→backstop margin. The close never ends until the test
+    lets it: awaited, it would hold the call to the backstop, whose own answer fails the asserts. The
+    margin is wide on purpose: at 0.7 s a loaded CI runner's slow SQLite write in the bound's failure
+    path let the backstop answer first (run 41320395594)."""
     own_supervisor.start(run_loops=False)
     own_supervisor._sem = asyncio.Semaphore(0)
     monkeypatch.setattr(executor, "CALL_BOUND_S", 0.2)
-    monkeypatch.setattr(executor.MCPProxyExecutor, "timeout_s", 0.7)
+    monkeypatch.setattr(executor.MCPProxyExecutor, "timeout_s", 5.0)
+    released = asyncio.Event()
 
-    async def slow_close():
-        await asyncio.sleep(1.0)
-    _live_session(monkeypatch, 1, _Stuck(), aclose=slow_close)
+    async def stuck_close():
+        await released.wait()
+    _live_session(monkeypatch, 1, _Stuck(), aclose=stuck_close)
     plans = _record_plans(monkeypatch, own_supervisor)
-    result = await tool_loop._dispatch_tool(
-        "mcp_1__t", {}, "{}", resolve_tools=arslan._callable_tools, emit=lambda e: None,
-        tool_timeout_s=0.1, tool_trace=[], convo=[])
-    assert "timed out after 0.2 s" in str(result.get("error"))
-    assert "timed out after 0.2 s" in ((await _row(db, 1)).last_error or "")
-    assert plans == [(1, "refresh")] and session.manager.cached(1) is None
-    await asyncio.sleep(1.1)                          # the close ends behind the answer
+    try:
+        result = await tool_loop._dispatch_tool(
+            "mcp_1__t", {}, "{}", resolve_tools=arslan._callable_tools, emit=lambda e: None,
+            tool_timeout_s=0.1, tool_trace=[], convo=[])
+        assert "timed out after 0.2 s" in str(result.get("error"))
+        assert "timed out after 0.2 s" in ((await _row(db, 1)).last_error or "")
+        assert plans == [(1, "refresh")] and session.manager.cached(1) is None
+        assert not released.is_set(), "the answer came while the close was still stuck"
+    finally:
+        released.set()                                # the close ends behind the answer
+        await asyncio.gather(*executor._CLOSING, return_exceptions=True)
 
 
 async def test_a_timeout_error_from_inside_the_call_is_an_ordinary_failure(db, own_supervisor, monkeypatch):
