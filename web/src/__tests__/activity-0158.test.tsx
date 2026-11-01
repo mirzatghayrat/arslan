@@ -11,7 +11,7 @@ vi.mock("react-i18next", () => ({
 const { listRuns, getUsageSummary, runProcess, request } = vi.hoisted(() => ({
   listRuns: vi.fn(), getUsageSummary: vi.fn(), runProcess: vi.fn(), request: vi.fn(),
 }));
-vi.mock("../api/client", () => ({ api: { listRuns, getUsageSummary, runProcess, runCounts: () => new Promise(() => {}) }, request }));
+vi.mock("../api/client", () => ({ api: { listRuns, getUsageSummary, runProcess, runCounts: () => new Promise(() => {}), runChanges: () => new Promise(() => {}), getRun: () => new Promise(() => {}), getRunAnomalies: () => new Promise(() => {}) }, request }));
 vi.mock("../components/ScheduledTasksCard", () => ({ default: () => null }));
 vi.mock("../components/RunReplay", () => ({ default: ({ runId }: { runId: number }) => <div data-testid="replay">run {runId}</div> }));
 

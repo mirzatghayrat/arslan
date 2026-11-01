@@ -132,12 +132,24 @@ export interface TurnUndone {
   files?: { later: number[] };
 }
 
+/** INB7-c3: GET /runs/{id}/changes. `state`: running (not ended), finishing (ended, not recorded yet), kept (`paths` an undo can
+ *  still take back), none (nothing to list), expired (its copy is gone), not_saved (no folder could be saved) or interrupted (ended
+ *  while no process held it, so it will never be recorded). */
+export interface RunChangesOut {
+  state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
+  undone: boolean;
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  conversation_id: string;
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
   /** INB7-b: when the run started and ended (UTC, "Z"); ended_at is null while it runs. Older backends omit both. */
   started_at?: string | null;
   ended_at?: string | null;
+  /** INB7-c3: the run's conversation, whose changes the inspector reads. Older backends omit it. */
+  conversation_id?: string;
   entries: {
     kind: "note" | "tool";
     text?: string;

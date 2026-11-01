@@ -14,6 +14,7 @@ import asyncio
 import base64
 import binascii
 import hashlib
+import logging
 import re
 import time
 from datetime import datetime
@@ -34,6 +35,7 @@ from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+logger = logging.getLogger(__name__)
 
 #: The island's search tools (`SEARCH_TOOLS` in web/src/island/islandMachine.ts, plus any
 #: browser_* tool). A test reads that file, so the two cannot drift apart.
@@ -282,9 +284,30 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     `high_risk_mac_only` stays false until that switch exists (§6.1)."""
     feed = desktop_status.island_feed()
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
-            "jobs": [job.frame() for job in background_jobs.active()],
+            "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
-            "activity": await phone_reads.activity(db), **await phone_stats.blocks(db)}
+            "activity": await phone_reads.activity(db), **await _stats(db)}
+
+
+def _clean_job(frame: dict) -> dict:
+    """A running job's free text as `outcomes` titles have it (`phone_stats.clean_text`): a lone surrogate in a
+    goal failed the whole snapshot (#651 review)."""
+    frame["goal"] = phone_stats.clean_text(frame.get("goal"))
+    if frame.get("step"):
+        frame["step"] = phone_stats.clean_text(frame["step"])
+    for criterion in frame.get("criteria") or ():
+        criterion["description"] = phone_stats.clean_text(criterion.get("description"))
+    return frame
+
+
+async def _stats(db: AsyncSession) -> dict:
+    """`week` and `outcomes` (§5.9), or neither: they are optional, and a failure in them must not fail the
+    snapshot, which the phone would read as the Mac being offline (#647 review F2)."""
+    try:
+        return await phone_stats.blocks(db)
+    except Exception as exc:  # noqa: BLE001 — logged, and the snapshot goes out without them
+        logger.warning("phone snapshot: week and outcomes left out: %s", type(exc).__name__)
+        return {}
 
 
 @router.get("/phone/runs/{run_id}")

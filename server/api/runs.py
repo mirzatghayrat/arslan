@@ -644,8 +644,10 @@ async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
     raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
     summary = (await rp.summaries(db, [run_id])).get(run_id, {})
-    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span.
-    return {"run_id": run_id, "status": run.status, **summary, "started_at": rp.utc(run.started_at),
+    # INB7-b: when the run ran, so Progress's replay can place each step (entries carry `at`) on its own span. INB7-c3: its
+    # conversation, whose changes (GET /conversations/{id}/changes) the inspector's 「改动」 reads.
+    return {"run_id": run_id, "status": run.status, "conversation_id": run.conversation_id, **summary,
+            "started_at": rp.utc(run.started_at),
             "ended_at": rp.utc(run.ended_at), "entries": rp.entries(list(steps), raw=raw)}
 
 
@@ -683,6 +685,53 @@ async def run_checkpoint(run_id: int, db: AsyncSession = Depends(get_session)) -
     if run is None:
         raise HTTPException(404, detail={"code": "run_not_found"})
     return {**checkpoints.summary(run_id, _started(run)), **await turn_undo.preview(run_id)}
+
+
+#: INB7-c3: the tools whose first call in a run saves its folder (checkpoints: write_file, edit_file, run_command).
+_SAVING_TOOLS = ("write_file", "edit_file", "run_command")
+
+
+@router.get("/runs/{run_id}/changes")
+async def run_changes(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """INB7-c3: what this one run changed in the user's folders, for Progress's 「改动」, from its own checkpoint manifest only
+    (⓪Plan's review of PR 629: not a scan of its conversation). `state`:
+    - `running`: it has not ended, so nothing is final;
+    - `finishing`: it ended, but how it left a saved folder is not recorded yet (checkpoints.finish runs after);
+    - `interrupted`: the same, but no process holds it any more (a crash, a quit mid-run), so it never will be;
+    - `kept`: the paths an undo can still take back (the list WB1-3 shows), and whether it was undone;
+    - `none`: nothing to list (it never saved a folder, or saved one and changed nothing in it);
+    - `expired`: a call that saves the folder ran, but its copy is gone (KEEP_S or the quota) or is an earlier run's;
+    - `not_saved`: no folder could be saved (too many files, too little disk, another volume).
+    Read only."""
+    from server.services import checkpoints
+    run = await db.get(Run, run_id)
+    if run is None or run.kind not in USER_RUN_KINDS:
+        raise HTTPException(404, detail={"code": "run_not_found"})
+    base = {"undone": False, "paths": [], "conversation_id": run.conversation_id}
+    if run.status == "recording":
+        return {"state": "running", **base}
+    not_before = _started(run)
+
+    def read() -> tuple[str, dict]:
+        data = checkpoints.manifest(run_id)
+        if data is None or data["created_at"] < not_before:
+            return "missing", {}
+        roots = data.get("roots") or []
+        if roots and all(entry.get("skipped") for entry in roots):
+            return "not_saved", {}
+        if any(entry.get("skipped") is None and entry.get("finished") is None for entry in roots):
+            # Being finished only while this process holds it; else finish will never run (⓪Plan's re-check of PR 629).
+            return ("finishing" if checkpoints.holding(run_id) else "interrupted"), {}
+        found = checkpoints.changes(run_id, not_before) or {"paths": [], "undone": False}
+        return ("kept" if found["paths"] else "none"), found
+    state, found = await asyncio.to_thread(read)
+    if state == "missing":
+        tools = (await db.execute(select(RunStep.ref).where(RunStep.run_id == run_id, RunStep.kind == "tool_call"))).scalars()
+        # Only a call that ran saves the folder: a failed write_file or edit_file, or a refused command, never does.
+        state = "expired" if any(isinstance(ref, dict) and ref.get("tool") in _SAVING_TOOLS and ref.get("ok") for ref in tools) else "none"
+    if state == "kept":
+        return {"state": "kept", "undone": found["undone"], "paths": found["paths"], "conversation_id": run.conversation_id}
+    return {"state": state, **base}
 
 
 @router.get("/conversations/{conversation_id}/changes")

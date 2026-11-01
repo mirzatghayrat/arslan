@@ -9,7 +9,7 @@ import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
 const { getUsageSummary, listRuns, runCounts, runProcess, request } = vi.hoisted(() => ({
   getUsageSummary: vi.fn(), listRuns: vi.fn(), runCounts: vi.fn(), runProcess: vi.fn(), request: vi.fn() }));
-vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts, runProcess }, request }));
+vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts, runProcess, runChanges: () => new Promise(() => {}), getRun: () => new Promise(() => {}), getRunAnomalies: () => new Promise(() => {}) }, request }));
 
 import { PROACTIVE_CHANGED } from "../api/proactive";
 import ActivityView from "../components/ActivityView";
