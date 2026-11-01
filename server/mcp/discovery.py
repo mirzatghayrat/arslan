@@ -12,12 +12,14 @@ import httpx
 import hashlib
 import json
 import logging
+import unicodedata
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from server.db import session as db_session
-from server.db.models import MCPServer, Tool, Toolset
+from server.db.models import CapabilitySource, MCPServer, Tool, Toolset
 from server.mcp.session import CONTROL_CHARS, LoopLocks, NotStarted, manager
 
 logger = logging.getLogger(__name__)
@@ -138,6 +140,145 @@ class ServerGone(ValueError):
     """The MCP server row does not exist (any more)."""
 
 
+#: CAP5a: the parked line for a server whose tools changed (Arslan's own words, in the supervisor's safe reasons).
+TOOLS_CHANGED_LINE = "its tools changed since it was installed — review the change in Capabilities"
+#: Parks only the user's own review ends (the supervisor's fix line says so, never "press Reconnect").
+HELD_REASONS = (TOOLS_CHANGED_LINE,)
+#: CAP5a (#577 review F2): a review shows whole every tool the accept would pin. A change too large to read in
+#: full (more tools, or a longer tool, than this) is recorded without an accept: remove or reinstall instead.
+REVIEW_TOOLS_MAX, REVIEW_TOOL_CHARS_MAX = 100, 20_000
+
+
+class ToolsChanged(Exception):
+    """CAP5a: a server Arslan installed listed tools that differ from the ones pinned at its first test.
+    Nothing of the new listing was written; the supervisor parks the server (TOOLS_CHANGED_LINE)."""
+
+    def __init__(self, server_id: int, changes: dict):
+        super().__init__(TOOLS_CHANGED_LINE)
+        self.server_id, self.changes = server_id, changes
+
+
+def _fingerprint(tool) -> str:
+    """CAP5a: the SHA-256 of what the model and the approvals read of one tool: its name, title, description,
+    input schema and declared hints, as canonical JSON (sorted keys), so a reordered schema is not a change."""
+    return hashlib.sha256(json.dumps(_reviewed(tool), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _reviewed(tool) -> dict:
+    """Exactly what the fingerprint covers of one tool, as the review shows it: nothing cut, nothing cleaned."""
+    return {"name": tool.name, "title": getattr(tool, "title", None), "description": tool.description or tool.name,
+            "inputSchema": getattr(tool, "inputSchema", None) or {}, "hints": tool_hints(tool)}
+
+
+def tools_pin(tools: list) -> dict:
+    """CAP5a: {tool name: fingerprint} of one listing."""
+    return {t.name: _fingerprint(t) for t in tools}
+
+
+def pin_digest(pin: dict) -> str:
+    """CAP5a: one digest of a whole pin; a review's accept names it, so it pins exactly what the user read."""
+    return hashlib.sha256(json.dumps(pin, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _hidden(value) -> int:
+    """How many characters of a tool's text show nothing (#577 review F2), in every string it holds (its schema's
+    included): the review keeps them as they are, so the page shows them as markers and says how many."""
+    from server.orchestrator import untrusted
+    if isinstance(value, dict):
+        return sum(_hidden(k) + _hidden(v) for k, v in value.items())
+    if isinstance(value, list):
+        return sum(_hidden(v) for v in value)
+    if not isinstance(value, str):
+        return 0
+    return sum(1 for ch in value if (unicodedata.category(ch).startswith("C") and ch not in "\n\t")
+               or untrusted._NAME_INVISIBLE.fullmatch(ch))
+
+
+def _loosens(old_hints: dict | None, new_hints: dict | None) -> list[str]:
+    """What a change does to the approval of a call (S1, #577 review F2): a tool now read-only runs with no card,
+    and one that no longer says it may destroy something loses that card's warning."""
+    out = []
+    if read_only(new_hints) and not read_only(old_hints):
+        out.append("read_only_added")
+    if destructive(old_hints) and not destructive(new_hints):
+        out.append("destructive_dropped")
+    return out
+
+
+def _changes(pinned: dict, listed: dict, *, complete: bool) -> dict | None:
+    """Added, removed and changed tool names, or None when the listing matches the pin. A listing cut at
+    MAX_PAGES cannot show a removal, so only a complete one counts what it did not name."""
+    added = sorted(set(listed) - set(pinned))
+    changed = sorted(n for n in set(listed) & set(pinned) if listed[n] != pinned[n])
+    removed = sorted(set(pinned) - set(listed)) if complete else []
+    return {"added": added, "removed": removed, "changed": changed} if added or changed or removed else None
+
+
+async def _source_of(db, server_id: int):
+    """The capability source of a server Arslan installed: installed, or kept after a failed test, never removed
+    (#577 review F3: a failed test kept the server row, and a switch could turn it on unpinned). The server must
+    have existed when the source was installed, as capability_list._installed_servers asks (re-check G2): a
+    number can be reused by a server added by hand later, which is not this source's."""
+    return (await db.execute(select(CapabilitySource).join(MCPServer, MCPServer.id == CapabilitySource.mcp_server_id)
+                             .where(CapabilitySource.mcp_server_id == server_id, CapabilitySource.kind == "mcp",
+                                    CapabilitySource.state != "removed",
+                                    MCPServer.created_at <= CapabilitySource.installed_at)
+                             .order_by(CapabilitySource.created_at.desc()))).scalars().first()
+
+
+async def held(server_id: int) -> dict | None:
+    """CAP5a (#577 review F1): the change still waiting for the user's review, if any. While there is one the
+    server is not started at all: no probe, boot, tick or tools/list_changed start opens its process; only the
+    user's accept lifts it."""
+    async with db_session.AsyncSessionLocal() as db:
+        source = await _source_of(db, server_id)
+    return (source.test or {}).get("tools_changed") if source is not None else None
+
+
+async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, complete: bool) -> None:
+    """CAP5a (rug pull): a server Arslan installed is pinned to the tools its first test listed (the pin lives in
+    its capability source's `test`). Every later listing, on each connect and each tools/list_changed, is
+    compared first: any difference records the change for review and raises ToolsChanged before a row is
+    written. The record stays until the user accepts it (#577 review F5: a server that reverts is still the
+    signal). Hand-added servers have no capability source and are not pinned (a stated limit). An empty
+    listing is not compared: it never wipes the rows either."""
+    from server.orchestrator import untrusted
+    if not tools:
+        return
+    source = await _source_of(db, server_id)
+    if source is None:
+        return
+    listed = tools_pin(tools)
+    pinned = (source.test or {}).get("tools_pin")
+    if pinned is None:                          # the first listing: its install test (or, once, after an upgrade)
+        source.test = {**(source.test or {}), "tools_pin": listed}
+        return
+    changes = _changes(pinned, listed, complete=complete)
+    if changes is None:
+        return
+    by_name = {t.name: t for t in tools}
+    review, reviewable = [], len(changes["changed"]) + len(changes["added"]) <= REVIEW_TOOLS_MAX
+    for n in (changes["changed"] + changes["added"])[:REVIEW_TOOLS_MAX]:
+        now, row = _reviewed(by_name[n]), rows_by_name.get(n)
+        text = json.dumps(now, ensure_ascii=False)
+        entry = {"name": n, "loosens": _loosens(row.annotations if row else None, now["hints"]),
+                 "hidden": _hidden(now)}
+        if len(text) > REVIEW_TOOL_CHARS_MAX:
+            entry["too_long"], reviewable = True, False
+        else:
+            entry["now"] = now
+            entry["was"] = ({"description": row.description, "inputSchema": row.input_schema or {},
+                             "hints": row.annotations} if row else None)
+        review.append(entry)
+    names = changes["added"] + changes["removed"] + changes["changed"]
+    record = {**changes, "shown": {n: untrusted.clean_name(n, 128) for n in names}, "tools": review,
+              "reviewable": reviewable, "pin": listed, "digest": pin_digest(listed),
+              "at": datetime.utcnow().isoformat() + "Z"}
+    source.test = {**(source.test or {}), "tools_changed": record}
+    await db.commit()
+    raise ToolsChanged(server_id, record)
+
+
 def read_only(hints: dict | None) -> bool:
     """S1: the server says this tool only reads (MCP `readOnlyHint`), and does not also say it may
     destroy something. Self-reported: trusted as far as the user trusts a server they turned on (card
@@ -234,6 +375,8 @@ async def _write_once(server_id: int, tools: list, *, complete: bool) -> list[di
                            tier="orchestrator", status="registered", backend_note=f"MCP: {srv.command}"))
         rows = (await db.execute(select(Tool).where(Tool.toolset_key == ts_key))).scalars().all()
         by_key = {row.key: row for row in rows}
+        await _check_pin(db, server_id, tools, {row.external_name: row for row in rows if row.external_name},
+                         complete=complete)
         for t in tools:
             key = mcp_tool_key(server_id, t.name)
             schema = getattr(t, "inputSchema", None) or {}
@@ -275,8 +418,17 @@ async def connect_and_discover(server_id: int, *, start_budget_s: float | None =
         server = await _runtime(server_id)
         if start_budget_s is not None:
             server["start_budget_s"] = start_budget_s
+        pending = await held(server_id)
+        if pending is not None:                 # #577 review F1: held until reviewed; no process is opened
+            raise ToolsChanged(server_id, pending)
         tools, complete = await _list_all(server)
-        return await _write(server_id, tools, complete=complete)
+        try:
+            return await _write(server_id, tools, complete=complete)
+        except ToolsChanged:
+            # #577 review F1: the process that listed the changed tools goes now, with its folders, keys and
+            # network; nothing starts it again before the user's review.
+            await manager.drop(server_id)
+            raise
 
 
 async def relist(server_id: int) -> list[dict] | None:
@@ -294,4 +446,10 @@ async def relist(server_id: int) -> list[dict] | None:
             tools, complete = await _list_all(server)
         except NotStarted:
             return None
-        return await _write(server_id, tools, complete=complete)
+        try:
+            return await _write(server_id, tools, complete=complete)
+        except ToolsChanged:
+            # CAP5a: the live session serves the changed tools, so it goes now; the supervisor's restart lists
+            # again and parks the server (the drop is what makes it restart, as for a failed re-list).
+            await manager.drop(server_id)
+            raise

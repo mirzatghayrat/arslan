@@ -11,6 +11,8 @@ export type ScannedSkill = {
   name?: string;
   description?: string;
   body_bytes?: number;
+  /** UNI1b: how many characters of its text show nothing, and the first runs' labels (shown, never blocking). */
+  hidden?: { count: number; runs: string[]; more?: number };
   scripts: string[];
   importable: boolean;
   reason: string | null;

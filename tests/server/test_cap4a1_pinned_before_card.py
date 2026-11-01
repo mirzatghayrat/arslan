@@ -97,6 +97,25 @@ async def test_a_skill_card_shows_what_was_fetched_scanned_and_hashed_at_one_com
     assert (source.commit_sha, source.files) == (SHA, card["files"]) and source.scan["level"] == "clean"
 
 
+async def test_a_skill_card_says_how_many_characters_its_text_and_references_hide(monkeypatch, tmp_path):
+    """UNI1b (#586 review F2, F4): under D2 this card is the guard, so it counts what shows nothing in the skill's
+    text and its references, as the import panel does; never blocking."""
+    md = MD.replace("When asked.", "When asked.\u2764" + "".join(chr(0xE0100 + i) for i in range(18)))
+    notes = "Read this." + "\u2800" * 16 + "\n"
+    tree = [*TREE, "skills/weekly/references/notes.md"]
+    _github(monkeypatch, GOOD, tree=tree, md=md, extra={"skills/weekly/references/notes.md": notes})
+    out, cards = await _propose(monkeypatch, approve=False)
+    [card] = cards
+    assert card["hidden"] == {"count": 34, "runs": ["18 \u00d7 U+E0100\u2013E01EF", "16 \u00d7 U+2800"], "more": 0}
+    assert card["scan"]["level"] != "blocked"                    # counted, not blocked
+
+
+async def test_a_plain_skill_card_counts_nothing(monkeypatch, tmp_path):
+    _github(monkeypatch, GOOD)
+    out, cards = await _propose(monkeypatch, approve=False)
+    assert cards[0]["hidden"] == {"count": 0, "runs": [], "more": 0}
+
+
 async def test_a_skill_the_scan_blocks_gets_no_card_and_nothing_is_written(monkeypatch, tmp_path):
     _github(monkeypatch, BAD)
     out, cards = await _propose(monkeypatch, approve=True)
