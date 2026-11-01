@@ -4,6 +4,10 @@
 > English restatement, and checked against the Mac's code on main at `d98a411c`. **No frame, `hello`, vector or
 > protocol-spec code starts until the user OKs this list.** Four choices are marked **Decide**; each has a
 > recommendation.
+>
+> **OK'd by the user on 2026-11-01, about 13:45 UTC, relayed by ④参谋:** 「帧 OK，1/2/4 按推荐，3 选 b」. The frames stand as listed
+> below. Decides 1, 2 and 4 go as recommended (4 is option (a)). Decide 3 takes the alternative: `details.context`
+> is left out of 1.0, so nothing new is recorded and there is no migration 0086 for it. The phone hides that row.
 
 ## The short version
 
@@ -69,7 +73,7 @@ Not sent in IPB:
 - `sleep_in_min`: macOS has no cheap, honest answer, and the field is optional on the phone.
 - Any Wi-Fi name, BSSID or IP address. A test asserts that none of them is anywhere in the snapshot body.
 
-**Decide 1: network quality.** macOS reports link state, not speed.
+**Decide 1: network quality.** macOS reports link state, not speed. **Decided: as recommended.**
 - **Recommended:**
   - `good` when the path is satisfied and neither constrained (Low Data Mode) nor expensive (a phone hotspot);
   - `fair` when it is satisfied but constrained or expensive;
@@ -143,7 +147,7 @@ How it is made:
   - A task's cost is the sum over its run, which needs a run filter added to `fetch_usage_items`.
   - Nothing new is stored, so no migration.
 
-**Decide 2: the task cap.**
+**Decide 2: the task cap.** **Decided: as recommended (50).**
 - The whole snapshot is written to iCloud on every 60 s heartbeat.
 - Uncapped, a busy week of tasks would be resent every minute. 50 tasks of about 200 bytes each is about 10 KB per
   set at worst; a usual week is a few hundred bytes.
@@ -174,7 +178,7 @@ turn. A result without `details` makes the phone keep its last value.
 | `details.connectors[].name` | string | the connector's display name | **req** |
 | `details.connectors[].kind` | string | `mcp` / `skill` / `hands` | **req** |
 | `details.connectors[].on` | bool | on for this conversation's turns: enabled and connected (MCP), equipped (skill), Hands on | **req** |
-| `details.context` | object | see **Decide 3** | opt |
+| `details.context` | object | see **Decide 3**: **not sent in 1.0** | opt |
 | `details.context.used_tokens` | int | tokens in the last model call's prompt | **req** |
 | `details.context.window_tokens` | int | that model's context window | **req** |
 | `details.context.system_tokens`, `tools_tokens`, `chat_tokens` | int | *phone ignores*: the split of `used_tokens` | opt |
@@ -186,7 +190,7 @@ turn. A result without `details` makes the phone keep its last value.
 
 Connectors are capped at 30 entries: Hands first, then the ones that are on.
 
-**Decide 3: context (the only item that needs new recording).**
+**Decide 3: context (the only item that needs new recording).** **Decided: the alternative, `context` is left out of 1.0.**
 - The Mac doesn't keep the size of a turn's last prompt today. `runs.tokens_in` is the run's total over all its
   model calls, and is often empty for streamed turns.
 - **Recommended:**
@@ -198,7 +202,7 @@ Connectors are capped at 30 entries: Hands first, then the ones that are on.
 - **The alternative** is to leave `context` out of IPB: the phone hides that one row, and nothing new is stored.
   ①iOS has no preference, and calls this a clean fallback for 1.0 if the hot-file change or 0086 puts v0.1.64 at risk.
 
-**Decide 4: changed lines.** There are two honest sources, and neither is perfect.
+**Decide 4: changed lines.** There are two honest sources, and neither is perfect. **Decided: (a), as recommended.**
 - **(a) Recommended: the edit and write steps' recorded review**, summed over every run of the conversation.
   - Cheap, and kept as long as the runs are.
   - Doesn't count changes made by a shell command.
