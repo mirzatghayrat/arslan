@@ -348,7 +348,8 @@ jobs:
           # 0.1.64 SBX-2 (#507): +293, the default-deny base, its macOS corpus and three localhost measurements.
           # 0.1.64 SBX-2 follow-up (#574): +2, compile checks that the TCP port denies on a fixed port list survive in the proxy and port-22 modes.
           # 0.1.64 SBX-3p (#619): +56, the commands base's denial cases, strict xfails until SBX-3a's product adapter exists.
-          EXPECTED = 420
+          # 0.1.64 L11-3a/3d (#621): +1, a rules file's path through macOS's /var link refused, its real path written.
+          EXPECTED = 421
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;

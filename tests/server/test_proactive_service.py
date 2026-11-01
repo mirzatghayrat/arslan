@@ -403,7 +403,35 @@ async def test_snooze_hides_it_and_maintain_wakes_it(execution_db, monkeypatch):
     assert (await rows(execution_db))[0].status == "snoozed"
     await svc.maintain(NOON + timedelta(days=4))
     [item] = await rows(execution_db)
-    assert item.status == "new" and item.snooze_until is None
+    assert item.status == "new"
+    assert (await svc.list_items("open"))[0]["snooze_until"] is None      # no longer set aside (the server keeps when it came back)
+
+
+async def test_a_set_aside_item_is_not_expired_before_it_comes_back_and_counts_its_days_again_from_then(execution_db, monkeypatch):
+    # PR 615 review F1: a job's reminder made 5 days ago and set aside for 7 read "expired" at the first scan past its kind's 7 days,
+    # days before the date its row showed; and the scan that woke it would have expired it at once.
+    monkeypatch.setattr(svc, "utc_now", lambda: NOON)
+    await ingest(found(cand(1, kind="job_followup", source_key="job:1")), ProactiveConfig(notify=False), now=NOON - timedelta(days=5))
+    [item] = await rows(execution_db)
+    await svc.snooze(item.id, 7)                                       # until NOON + 7 days, day 12 of its life
+    await svc.maintain(NOON + timedelta(days=3))                       # day 8: past its kind's 7 days, before that date
+    assert (await rows(execution_db))[0].status == "snoozed"
+    await svc.maintain(NOON + timedelta(days=7, hours=1))              # back on its date, with its kind's days ahead of it
+    assert (await rows(execution_db))[0].status == "new"
+    await svc.maintain(NOON + timedelta(days=13))                      # six days after it came back
+    assert (await rows(execution_db))[0].status == "new"
+    await svc.maintain(NOON + timedelta(days=14, hours=2))             # its kind's 7 days after it came back
+    assert (await rows(execution_db))[0].status == "expired"
+
+
+async def test_a_handled_item_says_when_it_was_handled(execution_db, monkeypatch):
+    # PR 615 review F2: a handled row keeps its days from when it was handled, so the window is told when.
+    item_id = await one_item(execution_db)                             # made at NOON
+    assert (await svc.list_items("open"))[0]["acted_at"] is None
+    monkeypatch.setattr(svc, "utc_now", lambda: NOON + timedelta(days=2))
+    await svc.dismiss(item_id)
+    [done] = await svc.list_items("done")
+    assert (done["created_at"], done["acted_at"]) == ("2026-09-30T12:00:00Z", "2026-10-02T12:00:00Z")
 
 
 async def test_only_the_offered_snooze_lengths_are_accepted(execution_db):
