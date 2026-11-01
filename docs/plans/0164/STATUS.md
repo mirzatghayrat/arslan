@@ -2,12 +2,15 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), late evening. #639, #640 and #641 have merged since the last update, and Codex's SBX-3a gates branch is ready to push. The user chose to keep iPhone 1.0's part B in v0.1.64, as the new card IPB. The list below is for the user's return.
+**Updated:** 2026-11-01 (UTC), late evening. #625, #626 and #642 have merged since the last update. The user OK'd IPB's frames, so ②Main builds IPB after the INB7 chain. Codex's SBX-3a gates branch is ready to push once the addendum is in. The list below is for the user's return.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #642 | STATUS after #639, #640 and #641; Codex's SBX-3a gates branch | `c6adf955` |
+| #626 | L11-3d: one Add or Remove at a time, the recorded copy, folder-by-folder opens | `31ae56c2` |
+| #625 | CAP4a-3c follow-up: a listed organization's install keeps its id | `1c9507e9` |
 | #641 | LOAD6: DIFF2's signed commit is built with git plumbing, so setup runs no signer (the flake that turned #639's backend red) | `983c8e48` |
 | #639 | IPB card for iPhone 1.0's part B; STATUS after the evening merges | `c08ca213` |
 | #640 | IPB's frame change list (②Main, reviewed by ①iOS), for the user's OK before any frame code | `f853a811` |
@@ -188,9 +191,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 Every PR below is OK'd at the head shown, with the verdict posted on the PR. A PR stacked on another is retargeted to main by its lane once the one below it lands, then re-checked at the new head. A draft needs **Ready for review** clicked first, whenever the lane's own ready step was blocked.
 
-1. **#625** at `f738cb37`: CAP4a-3c follow-up, a listed organization's install keeps its id. main is merged in after #623, and the re-check found the diff identical. CI is green.
-2. **#626** at `37a5348d` (L11-3d): retargeted to main after #621, re-checked identical, with the macOS count still 421/56. backend, frontend, secrets and language are green; macOS was still running at this update. It's a draft, so click Ready.
-3. **The INB7 chain, in this order:** #622 `8f496450` → #624 `a69094f0` → #627 `3d7ab9a4` → #629 `07ce3a98` → #631 `2b21e843` → #633 `02da15c4` → #634 `3a3ee0f6` → #636 `b209174e`.
+1. **The INB7 chain, in this order:** #622 `8f496450` → #624 `a69094f0` → #627 `3d7ab9a4` → #629 `07ce3a98` → #631 `2b21e843` → #633 `02da15c4` → #634 `3a3ee0f6` → #636 `b209174e`.
    - #622 is on main, with green CI. Each of the others is stacked on the one before it, and its diff was re-checked identical at the head shown.
    - As each lands, ②Main retargets the next one to main and merges main in. ⓪Plan re-checks it, and then it needs CI.
    - **#634** now finds a run's judgments by `run_id` (#637), and falls back to time only for rows judged before 0085. Delta-checked OK at `3a3ee0f6`. **#636** carries it at `b209174e`, delta-checked OK.
@@ -218,18 +219,17 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 
 | Lane | Work |
 |---|---|
-| ②Main | Retargets the INB7 chain as each parent lands. IPB's frame list (#640) is merged; no frame code before your OK |
+| ②Main | Retargets the INB7 chain as each parent lands; then builds IPB to the OK'd frame list, with ①iOS reviewing each PR's frames |
 | ③Hands | Idle until Codex's gates branch is on main; then the flip commit on #520, and its effort=max review |
-| ⑤CAP | Idle: #625 is re-checked; #604 waits on the keep mock |
-| ⑥Helper | The L11-3b mock (#626 is re-checked); LOAD6 (#641) merged |
+| ⑤CAP | Idle: #625 merged; #604 waits on the keep mock |
+| ⑥Helper | The L11-3b mock; #626 and LOAD6 (#641) merged |
 | Codex (via ⑦Codex) | Gates 2 and 4 done on the local branch (above). The addendum (+16 ANY_DECLARED strict xfails) is on the Mac's clipboard for you to send to Codex's writer thread from the phone, since the Mac is on a fullscreen Space. Then you push the branch and open its PR (plan A); a Claude lane stacks the ci.yml count PR on it |
 | ④参谋 | Main CI and the user's return list |
-| ①iOS | Reviewed IPB's frame list; iPhone 1.0's pre-submission list (below) |
+| ①iOS | Reviews IPB's frames in each Bridge PR; iPhone 1.0's pre-submission list (below) |
 | ⓪Plan | Re-checks as heads move; this page |
 
 ## Waiting on the user
 
-- **IPB's frame OK:** the frame change list is merged as [IPB-frame-list](IPB-frame-list.md) (#640): each field, its shape, which frame carries it, how often it's sent, and what an older phone does with it. ④参谋 brings it to you. It has four Decides; ①iOS agrees with 1, 2 and 4 and has no preference on 3 (context needs migration 0086, or leave it out). Nothing that touches a frame starts before your OK. The card is [IPB](IPB-iphone-part-b.md).
 - **Codex's addendum, then the gates push:** send the addendum from the phone to Codex's writer thread; when Codex has committed it, push `codex/sbx-allowlist-gates` and open its PR (plan A).
 
 - **#636's full lists:** (b) keep the Hands trace in Settings › Hands, and (a) drop the judgments list. Both recommended.
@@ -310,6 +310,13 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - MCP tool descriptions from an approved server stay unmarked, as a stated limit;
 - the English name is "Quick Chat";
 - Codex works under plan A.
+
+**Decided on 2026-11-01, about 13:45 UTC (user, relayed by ④参谋): IPB's frames are OK**, 「帧 OK，1/2/4 按推荐，3 选 b」.
+- The frames are as listed in [IPB-frame-list](IPB-frame-list.md) (#640): `status.snapshot` gains the optional `mac`, `week` and `outcomes`, and `chat.history.result` gains `details`. No new frame types and no `hello` flag.
+- The privacy rules stand: no Wi-Fi name, BSSID or IP; the folder starts with `~`; connector names carry no URL or arguments; the aralem.dev privacy line goes live with or before the Mac version that sends them.
+- Decide 1: network is link state only (connected, limited, none). Decide 2: at most 50 tasks per set in `outcomes`. Decide 4: changed lines are the sum of the recorded edit and write steps, and the spec says shell changes and very large edits are undercounted.
+- **Decide 3: option b, `context` is left out of 1.0.** No migration 0086 for it; the phone hides that row.
+- ②Main builds after the INB7 chain; ①iOS reviews each PR's frames. effort=max only for the security review of the Bridge PRs.
 
 **Decided on 2026-11-01, evening (user, relayed by ④参谋): iPhone 1.0's part B stays in v0.1.64 (option b).** iPhone 1.0 is submitted after v0.1.64, with parts A and B complete, as decided on 10-26. The new card is [IPB](IPB-iphone-part-b.md): ②Main builds it after the INB7 chain, off the SBX path, and ①iOS reviews. **What else 1.0 needs before submission (①iOS, checked at `claude/core-loop` `afdde75`):**
 - Q1c end to end on a real Mac with #479, #486 and #490, on build 31. bde7b9f and afdde75 aren't in a build yet. Build 31 uploads on your nod, and pairing needs you present.
