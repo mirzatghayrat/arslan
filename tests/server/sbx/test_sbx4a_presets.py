@@ -43,7 +43,8 @@ def _presets(home):
         "run-python": code_sandbox.computation_profile(sys.executable, work, work / "refs"),
         "artifact": code_sandbox.computation_profile(sys.executable, work),
         "mcp": capability_sandbox.profile(root=home / "srv", folders=[str(home / "grant")], network=False, read=[]),
-        "mcp-online": capability_sandbox.profile(root=home / "srv", folders=[], network=True, read=[]),
+        "mcp-online": capability_sandbox.profile(root=home / "srv", folders=[], network=True, read=[],
+                                                 proxy_port=41000, bound_ports=[], system_proxies=[]),
     }
 
 
@@ -63,9 +64,10 @@ def test_the_bases_parameterised_lines_match_too(home):
     """#666 review: the device, ioctl, service and network lines the base writes for a preset's mode appear in
     the preset exactly and in the base's order (a preset closes what it doesn't need after them)."""
     modes = {"run-python": NetworkMode.NONE, "artifact": NetworkMode.NONE, "mcp": NetworkMode.NONE,
-             "mcp-online": NetworkMode.ANY_DECLARED}
+             "mcp-online": NetworkMode.PROXY}
     for name, text in _presets(home).items():
-        base = [line for line in default_deny_profile(network=modes[name]).splitlines()
+        kw = {"proxy_port": 41000} if modes[name] == NetworkMode.PROXY else {}
+        base = [line for line in default_deny_profile(network=modes[name], **kw).splitlines()
                 if line.startswith(_PARAMETERISED)]
         assert base and [line for line in text.splitlines() if line in base] == base, name
 
@@ -105,12 +107,16 @@ def test_mcp_closes_the_protected_paths_after_its_grants_and_reopens_its_own_fol
     data = home / "data"
     monkeypatch.setattr(command_sandbox, "default_protected", lambda: [data])
     root, grant, runtime = data / "caps" / "x", home / "grant", data / "runtimes" / "py"
-    text = capability_sandbox.profile(root=root, folders=[str(grant)], network=True, read=[str(runtime)])
+    text = capability_sandbox.profile(root=root, folders=[str(grant)], network=True, read=[str(runtime)],
+                                      proxy_port=41000, bound_ports=[8741], system_proxies=[])
     lines = text.splitlines()
     protected = lines.index(f'(deny file-read* file-write* file-map-executable (subpath "{data.resolve()}"))')
     assert f'(allow file-read* file-map-executable (subpath "{runtime.resolve()}"))' in lines[protected:]
     assert lines[-1] == f'(allow file-read* file-write* file-map-executable (subpath "{root.resolve()}"))'
-    assert '(allow network-outbound (remote tcp "*:*"))' in text                       # declared: any-declared
+    assert '(allow network-outbound (remote tcp "localhost:41000"))' in text            # declared: the proxy (SBX-6)
+    assert '(deny network-outbound (remote tcp "localhost:8741"))' in text and '"*:*"' not in text
+    no_proxy = capability_sandbox.profile(root=root, folders=[], network=True, read=[])   # no proxy running: offline
+    assert "(deny network*)" in no_proxy
     off = capability_sandbox.profile(root=root, folders=[], network=False, read=[])
     assert "(deny network*)" in off and '"*:*"' not in off
 
@@ -121,9 +127,9 @@ def test_the_sbx_harness_registers_the_three_presets():
         assert BUILT_BASES[base] is not Harness._measurement_profile, base
 
 
-@pytest.mark.parametrize("mode", [NetworkMode.PROXY, NetworkMode.PORT_22])
+@pytest.mark.parametrize("mode", [NetworkMode.ANY_DECLARED, NetworkMode.PORT_22])
 def test_the_harness_refuses_an_mcp_mode_the_product_lacks(tmp_path, mode):
-    """MCP has none and any-declared only, until the SBX-6 MCP proxy PR: no quiet mapping to any-declared."""
+    """MCP has none and proxy only (SBX-6 MCP proxy): no quiet mapping to another mode."""
     from tests.server.sbx.harness import Harness
     with pytest.raises(ValueError, match="SBX-6 MCP proxy"):
         Harness(tmp_path, "mcp", mode).profile()

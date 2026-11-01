@@ -140,8 +140,8 @@ def test_the_product_reads_arslans_ports_and_the_system_proxies_itself(home, mon
 
 def test_the_sbx_harness_registers_the_proxy_bases():
     from tests.server.sbx.harness import BUILT_BASES
-    assert {"commands-proxy", "network-sbx6"} <= set(BUILT_BASES)
-    assert not {"mcp-proxy", "run-python"} & set(BUILT_BASES)          # SBX-4a's surfaces, still pending
+    # SBX-6 MCP proxy, on SBX-4a: all four of SBX-6p's bases are built.
+    assert {"commands-proxy", "network-sbx6", "mcp-proxy", "run-python"} <= set(BUILT_BASES)
 
 
 # ── the run: its environment points at the proxy ─────────────────────────────
@@ -401,3 +401,34 @@ async def test_a_sandboxed_command_reaches_the_proxy_and_nothing_local_through_i
         await sandbox_proxy.shutdown()
     assert result["sandbox"] == "workspace" and result["ok"], result
     assert "403 Forbidden" in result["stdout"]
+
+
+# ── SBX-6 MCP proxy: a declared MCP server reaches the network only through the proxy too ──
+
+def test_a_declared_mcp_server_is_offline_without_a_proxy_or_with_arslans_ports_unknown(monkeypatch, tmp_path):
+    from server.services import capability_sandbox
+    monkeypatch.setattr(sandbox_proxy, "listening_ports", lambda: None)
+    unknown = capability_sandbox.profile(root=tmp_path / "srv", folders=[], network=True, read=[], proxy_port=41000)
+    assert "(deny network*)" in unknown and "localhost:41000" not in unknown
+    monkeypatch.setattr(sandbox_proxy, "listening_ports", lambda: [8741])
+    monkeypatch.setattr(sandbox_proxy, "system_proxies", lambda: ["socks5://127.0.0.1:7891"])
+    known = capability_sandbox.profile(root=tmp_path / "srv", folders=[], network=True, read=[], proxy_port=41000)
+    for port in (8741, 7891):
+        assert f'(deny network-outbound (remote tcp "localhost:{port}"))' in known
+
+
+def test_a_declared_mcp_server_starts_with_the_proxy_in_its_environment(monkeypatch, tmp_path):
+    from server.services import capability_sandbox
+    monkeypatch.setattr(sandbox_proxy, "listening_ports", lambda: [])
+    monkeypatch.setattr(sandbox_proxy, "system_proxies", lambda: [])
+    _, args, env, _ = capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
+                                              {"root": str(tmp_path / "srv"), "folders": [], "network": True,
+                                               "proxy_port": 41000})
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        assert env[name] == "http://127.0.0.1:41000", name
+    assert env["NODE_USE_ENV_PROXY"] == "1" and env["NO_PROXY"] == "localhost,127.0.0.1,::1"
+    assert '(allow network-outbound (remote tcp "localhost:41000"))' in args[1]
+    _, _, quiet, _ = capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
+                                             {"root": str(tmp_path / "srv2"), "folders": [], "network": False,
+                                              "proxy_port": 41000})
+    assert "HTTPS_PROXY" not in quiet                  # an undeclared server is told of no proxy, even if one runs

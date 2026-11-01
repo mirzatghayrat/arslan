@@ -353,8 +353,13 @@ class MCPSessionManager:
                     # 0.1.57 §5.3: an installed capability runs under its own profile, in its own home.
                     from server.services import capability_sandbox
 
+                    sandbox = dict(server["sandbox"])
+                    if sandbox.get("network"):
+                        # SBX-6 MCP proxy: a declared server reaches the network only through the local proxy.
+                        from server.services import sandbox_proxy
+                        sandbox["proxy_port"] = await sandbox_proxy.port()
                     command, args, env, cwd = await asyncio.to_thread(
-                        capability_sandbox.wrap, command, args, env, server["sandbox"])
+                        capability_sandbox.wrap, command, args, env, sandbox)
                 else:
                     cwd = str(server_dir(sid))
                 params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)

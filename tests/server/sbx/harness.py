@@ -188,14 +188,20 @@ def _mcp_profile(self, **parameters) -> str:
     grants = parameters.pop("granted_folders", [])
     protected = parameters.pop("protected", [self.protected])
     parameters.pop("references", None)
+    # SBX-6p passes the proxy's port, stand-ins for Arslan's bound ports and the system proxies.
+    parameters_proxy = {k: parameters.pop(k) for k in ("proxy_port", "bound_ports", "system_proxies") if k in parameters}
     if parameters:
         raise ValueError(f"MCP takes no {sorted(parameters)}")
-    if self.network not in (NetworkMode.NONE, NetworkMode.ANY_DECLARED):
-        raise ValueError(f"MCP has no {self.network.value} mode yet (SBX-6 MCP proxy)")
+    if self.network not in (NetworkMode.NONE, NetworkMode.PROXY):
+        raise ValueError(f"MCP has no {self.network.value} mode (SBX-6 MCP proxy: none or proxy)")
+    proxy_port = parameters_proxy.get("proxy_port", getattr(self, "proxy_port", None) or 49151)
     with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
         return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
                                           network=self.network != NetworkMode.NONE,
-                                          read=[sys.prefix, sys.base_prefix])
+                                          read=[sys.prefix, sys.base_prefix], proxy_port=proxy_port,
+                                          bound_ports=parameters_proxy.get("bound_ports", []),
+                                          system_proxies=parameters_proxy.get("system_proxies", []))
 
 
-BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
+BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile,
+                    "mcp-proxy": _mcp_profile})   # SBX-6 MCP proxy: the same preset, in proxy mode

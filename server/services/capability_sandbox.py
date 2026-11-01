@@ -29,21 +29,29 @@ SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/pri
                "/private/var/db/timezone", "/private/var/db/dyld")
 
 
-def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -> str:
+def profile(*, root: Path, folders: list[str], network: bool, read: list[str], proxy_port: int | None = None,
+            bound_ports: list[int] | None = None, system_proxies: list[str] | None = None) -> str:
     """The SBPL text. `root` = the server's own folder (read/write); `folders` = granted by
     the user (read/write); `read` = extra read-only paths (Arslan's runtimes).
 
     SBX-4: SBX-2's shared base (`default_deny_profile`): only the listed system services (no wholesale
-    `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS).
-    DELETE-BY: v0.1.64, with the "SBX-6 MCP proxy" PR, which moves a declared server to proxy mode through
-    `sandbox_proxy` (SBX-6p's mcp-proxy gate); SBX-6 is a release condition for MCP as for commands. The base closes the user's protected paths last, over
+    `mach-lookup`), no POSIX IPC, the network only when declared. SBX-6 MCP proxy: declared network is proxy mode,
+    as for commands: TCP only to `sandbox_proxy`'s port (`proxy_port`) and to loopback, minus every port Arslan
+    listens on and the system proxies' loopback ports (`sandbox_proxy.excluded_ports`), and no DNS inside.
+    Without a proxy port, or with Arslan's own ports unknown, it is offline. Any-declared is gone. The base closes the user's protected paths last, over
     the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
     (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
-    from server.services import command_sandbox
+    from server.services import command_sandbox, sandbox_proxy
     granted = [real(Path(p)) for p in folders]
+    mode, denied = NetworkMode.NONE, ()
+    if network and proxy_port is not None:
+        bound = sandbox_proxy.listening_ports() if bound_ports is None else list(bound_ports)
+        if bound is not None:
+            system = sandbox_proxy.system_proxies() if system_proxies is None else list(system_proxies)
+            mode, denied = NetworkMode.PROXY, sandbox_proxy.excluded_ports(bound, system, proxy_port=proxy_port)
     text = default_deny_profile([*granted], command_sandbox.default_protected(),
-                                readable=[*map(real, SYSTEM_READ), *granted],
-                                network=NetworkMode.ANY_DECLARED if network else NetworkMode.NONE)
+                                readable=[*map(real, SYSTEM_READ), *granted], network=mode,
+                                proxy_port=proxy_port if mode == NetworkMode.PROXY else None, denied_ports=denied)
     rules = Profile("deny")
     # #666 review: an MCP server talks over stdio and never had a terminal: the base's tty devices, their
     # ioctls and pseudo-ttys close again here, after the base, which stays identical across presets.
@@ -62,7 +70,15 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
+    proxy_port = sandbox.get("proxy_port")          # SBX-6 MCP proxy: the session passes the running proxy's port
     text = profile(root=root, folders=list(sandbox.get("folders") or []), network=bool(sandbox.get("network")),
-                   read=list(sandbox.get("read") or []))
+                   read=list(sandbox.get("read") or []), proxy_port=proxy_port)
     env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp")}
+    if sandbox.get("network") and proxy_port is not None:
+        via = f"http://127.0.0.1:{proxy_port}"
+        env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                                           "http_proxy", "https_proxy", "all_proxy")})
+        # Node's fetch and http use these only when asked (Node 24+); older Nodes ignore it.
+        env.update({"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
+                    "NODE_USE_ENV_PROXY": "1"})
     return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")

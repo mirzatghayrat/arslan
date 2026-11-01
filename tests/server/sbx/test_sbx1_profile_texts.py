@@ -226,7 +226,8 @@ def test_installed_mcp_server(T, A, monkeypatch):
     folder open again, after them."""
     monkeypatch.setattr(command_sandbox, "default_protected", lambda: [A / "prot", A / "prot.key"])
     text = capability_sandbox.profile(root=A / "mcp", folders=[str(A / "granted"), str(A / "link-granted")],
-                                      network=True, read=[str(A / "runtimes")])
+                                      network=True, read=[str(A / "runtimes")], proxy_port=41000, bound_ports=[8741],
+                                      system_proxies=[])
     assert _shown(text, T) == """\
 (version 1)
 (deny default)
@@ -242,10 +243,9 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (allow pseudo-tty)
 (allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
 (allow mach-lookup (global-name "com.apple.FSEvents"))
-(allow mach-lookup (global-name "com.apple.trustd.agent"))
-(allow network-outbound (literal "/private/var/run/mDNSResponder"))
 (allow network-outbound (remote tcp "localhost:*"))
-(allow network-outbound (remote tcp "*:*"))
+(allow network-outbound (remote tcp "localhost:41000"))
+(deny network-outbound (remote tcp "localhost:8741"))
 (deny network-bind network-inbound)
 (deny appleevent-send)
 (deny user-preference-write)
