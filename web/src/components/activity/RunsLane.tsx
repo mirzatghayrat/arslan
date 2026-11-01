@@ -106,7 +106,13 @@ export function useFreshRead<T>(read: (() => Promise<T>) | null, apply: (value: 
 export function useAxisRuns(t0: number, on: boolean): { runs: RunListItem[]; now: number } {
   const [shown, setShown] = useState<{ runs: RunListItem[]; now: number }>({ runs: [], now: 0 });
   const read = useCallback(() => api.listRuns({ since: Math.floor(t0 / 1000), limit: RUNS_LIMIT }), [t0]);
-  const apply = useCallback((runs: RunListItem[]) => setShown({ runs, now: Date.now() }), []);
+  const apply = useCallback((runs: RunListItem[]) => {
+    setShown({ runs, now: Date.now() });
+    // The inspector's header reads the picked run from the store: keep its copy as fresh as the axis's.
+    const { pickedRunId, pickedRun } = useActivityStore.getState();
+    const fresh = runs.find((run) => run.id === pickedRunId);
+    if (fresh && fresh !== pickedRun) useActivityStore.setState({ pickedRun: fresh });
+  }, []);
   useFreshRead(on ? read : null, apply);
   return shown;
 }
@@ -215,11 +221,15 @@ function readSteps(runId: number): Promise<RunProcessOut> {
 export function useRunSteps(runId: number, run: RunListItem | null): { proc: RunProcessOut | null; steps: Step[]; empty: string } {
   const [proc, setProc] = useState<RunProcessOut | null>(null);
   const running = run?.status === "recording";
+  const read = useCallback(() => readSteps(runId), [runId]);
   useEffect(() => {
     let cancelled = false;
-    readSteps(runId).then((p) => { if (!cancelled) setProc(p); }).catch(() => { /* nothing to show */ });
+    read().then((p) => { if (!cancelled) setProc(p); }).catch(() => { /* nothing to show */ });
     return () => { cancelled = true; };
-  }, [runId, running]);
+  }, [read, running]);
+  // While the run itself says it runs, its steps are read again on the badge's beat, so they show once it ends whether or not
+  // the list it was picked from is read again (⓪Plan's review of PR 624, A: over 7 and 30 days nothing else is).
+  useFreshRead(proc?.status === "recording" ? read : null, setProc);
   const steps = useMemo(() => (proc?.entries ?? []).filter((entry) => entry.kind === "tool"), [proc]);
   const ended = proc?.status;
   const empty = ended === "recording" ? (run?.waiting ? "activityPage.stepsAfterAnswer" : "activityPage.stepsWhenDone")
@@ -253,11 +263,13 @@ export function StepLane({ runId, run, locale }: { runId: number; run: RunListIt
   useEffect(() => {
     if (!live) return;
     const timer = setInterval(() => {
-      const now = useActivityStore.getState().replayStep;
-      setReplay({ step: Math.min(total - 1, (now ?? -1) + 1) });
+      const next = Math.min(total - 1, (useActivityStore.getState().replayStep ?? -1) + 1);
+      setReplay({ step: next, playing: next < total - 1 });    // the last step stops it (⓪Plan's review of PR 624, C)
     }, REPLAY_MS);
     return () => clearInterval(timer);
   }, [live, total, setReplay]);
+  // A lane that goes (the pick or the range changed) stops its replay: nothing is left playing unseen.
+  useEffect(() => () => setReplay({ playing: false }), [setReplay]);
   const toggle = () => {
     if (live) { setReplay({ playing: false }); return; }
     setReplay({ step: step == null || step >= total - 1 ? 0 : step, playing: true });

@@ -72,15 +72,16 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
       .finally(() => { loading.current = false; });
   }, [more, runs, filter.since, filter.until, filter.model]);
 
+  const showRun = useActivityStore((s) => s.showRun);
   const step = useCallback((delta: -1 | 1) => {
     if (!runs?.length || openRunId == null) return;
     const i = runs.findIndex((r) => r.id === openRunId);
     const next = runs[Math.min(runs.length - 1, Math.max(0, (i < 0 ? 0 : i) + delta))];
     if (next) {
-      setOpenRun(next.id);
+      showRun(next.id, next);                      // the pick follows the drawer (⓪Plan's review of PR 624, B)
       document.querySelector(`[data-testid="activity-run-${next.id}"]`)?.scrollIntoView?.({ block: "nearest" });
     }
-  }, [runs, openRunId, setOpenRun]);
+  }, [runs, openRunId, showRun]);
 
   const statusLabel = (s: string) =>
     s === "failed" ? t("activityPage.failed")

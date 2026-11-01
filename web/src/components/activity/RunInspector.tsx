@@ -18,10 +18,10 @@ export default function RunInspector({ runs }: { runs: RunListItem[] }) {
   const { t } = useTranslation();
   const pickedRunId = useActivityStore((s) => s.pickedRunId);
   const pickedRun = useActivityStore((s) => s.pickedRun);
-  // The freshest copy: the loaded list's (it is read again), else the one picked from the axis.
-  const run = runs.find((r) => r.id === pickedRunId) ?? (pickedRun?.id === pickedRunId ? pickedRun : null);
+  // The store's copy, which the axis keeps fresh over a day (it reads the runs every 30 s); else the loaded list's.
+  const run = (pickedRun?.id === pickedRunId ? pickedRun : null) ?? runs.find((r) => r.id === pickedRunId) ?? null;
   return (
-    <aside data-testid="run-inspector" aria-label={t("activityPage.inspectorHint")}
+    <aside data-testid="run-inspector" aria-label={t("activityPage.details")}
       className="self-start rounded-lg border border-border bg-surface/40 p-4 lg:sticky lg:top-0">
       {pickedRunId == null
         ? <p className="text-xs text-muted-foreground">{t("activityPage.inspectorHint")}</p>
@@ -84,7 +84,7 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
                 </button>
                 {entry.detail && (
                   <button type="button" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i}
-                    aria-label={t("activityPage.showDetail")} className="shrink-0 rounded p-1 text-subtle-foreground hover:bg-foreground/5">
+                    aria-label={`${t("activityPage.showDetail")}: ${stepText(entry, t)}`} className="shrink-0 rounded p-1 text-subtle-foreground hover:bg-foreground/5">
                     {open === i ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
                   </button>
                 )}

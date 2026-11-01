@@ -38,6 +38,8 @@ interface ActivityState {
   setFilter: (filter: ActivityFilter) => void;
   setOpenRun: (id: number | null) => void;
   setPickedRun: (id: number | null, run?: RunListItem | null) => void;
+  /** Opens a run in the drawer and picks it, so the list, the axis and the inspector follow (a reply's link, the drawer's arrows). */
+  showRun: (id: number, run?: RunListItem | null) => void;
   setReplay: (replay: { step?: number | null; playing?: boolean }) => void;
   saveScroll: (key: string, top: number) => void;
   setByModelOpen: (open: boolean) => void;
@@ -55,11 +57,13 @@ export const useActivityStore = create<ActivityState>((set) => ({
   scroll: {},
   byModelOpen: false,
   modelSlots: {},
-  setRange: (range) => set({ range }),
+  // A new range has a new axis: its replay starts over (⓪Plan's review of PR 624, C).
+  setRange: (range) => set({ range, replayStep: null, replayPlaying: false }),
   setFilter: (filter) => set((s) => ({ filter, scroll: { ...s.scroll, runs: 0 } })),
   setOpenRun: (openRunId) => set({ openRunId }),
   setPickedRun: (pickedRunId, run = null) => set({ pickedRunId, pickedRun: pickedRunId == null ? null : run, replayStep: null,
     replayPlaying: false }),
+  showRun: (id, run = null) => set({ openRunId: id, pickedRunId: id, pickedRun: run, replayStep: null, replayPlaying: false }),
   setReplay: ({ step, playing }) => set((s) => ({ replayStep: step === undefined ? s.replayStep : step,
     replayPlaying: playing ?? s.replayPlaying })),
   saveScroll: (key, top) => set((s) => (s.scroll[key] === top ? s : { scroll: { ...s.scroll, [key]: top } })),

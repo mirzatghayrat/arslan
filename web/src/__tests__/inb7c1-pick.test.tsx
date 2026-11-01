@@ -3,7 +3,7 @@
  * inspector beside the list opens it, with its steps in the conversation's words, following the axis's replay and moving it when a
  * step is clicked. The drawer is one click away ("Details") until INB7-c4 folds what it shows into the inspector.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
@@ -14,7 +14,9 @@ vi.mock("../api/client", () => ({
   request,
 }));
 
+import { PROACTIVE_CHANGED } from "../api/proactive";
 import ActivityView from "../components/ActivityView";
+import { REPLAY_MS } from "../components/activity/RunsLane";
 import { useActivityStore } from "../stores/activityStore";
 
 const T0 = 1_790_000_000;
@@ -42,6 +44,9 @@ const PROCESS = {
     { kind: "tool", tool: "list_dir", ok: true, ms: 10, args_summary: '{"path": "Reports"}', summary: "3 entries", at: at(25) },
   ],
 };
+const TWELVE = { ...PROCESS, run_id: 12, status: "failed", entries: [
+  { kind: "tool", tool: "read_file", ok: true, ms: 40, args_summary: '{"path": "other.md"}', summary: "3 lines", at: at(70),
+    detail: { view: "file", path: "other.md", chars: 90 } }] };
 const waiting = () => ({ count: 0, conversations: [], projects: [], scheduled: [], loaded: true });
 const inspector = () => screen.getByTestId("run-inspector");
 const steps = () => within(inspector()).getAllByTestId(/^inspector-step-/);
@@ -52,7 +57,8 @@ beforeEach(async () => {
     replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue(RUNS);
-  runProcess.mockImplementation((id: number) => Promise.resolve(id === 11 ? PROCESS : { ...PROCESS, run_id: id, status: "recording", entries: [] }));
+  runProcess.mockImplementation((id: number) => Promise.resolve(id === 11 ? PROCESS : id === 12 ? TWELVE
+    : { ...PROCESS, run_id: id, status: "recording", entries: [] }));
   getRun.mockReturnValue(new Promise(() => {}));
   request.mockResolvedValue({ items: [], entries: [] });
 });
@@ -132,7 +138,7 @@ describe("the inspector shows the picked run's steps and follows the replay", ()
     render(<ActivityView waiting={waiting()} />);
     fireEvent.click(await screen.findByTestId("activity-run-11"));
     await waitFor(() => expect(steps()).toHaveLength(3));
-    const toggle = within(steps()[0]).getByRole("button", { name: /Show details/ });
+    const toggle = within(steps()[0]).getByRole("button", { name: "Show details: Read notes.md" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
@@ -154,7 +160,74 @@ describe("the inspector shows the picked run's steps and follows the replay", ()
   });
 });
 
+describe("the inspector keeps up (⓪Plan's review of PR 624)", () => {
+  it("lists a picked run's steps once it ends, over 7 days too, where no axis reads the runs again (A)", async () => {
+    useActivityStore.setState({ range: "7d" });
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-14"));
+    await waitFor(() => expect(inspector()).toHaveTextContent("Still running"));
+    runProcess.mockImplementation((id: number) => Promise.resolve({ ...PROCESS, run_id: id }));       // it ended
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(steps()).toHaveLength(3));
+  });
+
+  it("over a day the header follows the axis's fresh read: a run that ended says so", async () => {
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-14"));
+    await waitFor(() => expect(within(inspector()).getByRole("heading").nextElementSibling).toHaveTextContent("Running"));
+    listRuns.mockResolvedValue(RUNS.map((r) => (r.id === 14 ? { ...r, status: "recorded", total_ms: 600_000 } : r)));
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(within(inspector()).getByRole("heading").nextElementSibling).toHaveTextContent("Done"));
+  });
+
+  it("leaving the page stops a replay, so it is not still playing on return", async () => {
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("3 / 3 steps"));
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    expect(useActivityStore.getState().replayPlaying).toBe(true);
+    cleanup();
+    expect(useActivityStore.getState().replayPlaying).toBe(false);
+  });
+
+  it("a newly picked run opens with its own steps closed (F)", async () => {
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    await waitFor(() => expect(steps()).toHaveLength(3));
+    fireEvent.click(within(steps()[0]).getByRole("button", { name: /Show details/ }));
+    fireEvent.click(screen.getByTestId("activity-run-12"));
+    await waitFor(() => expect(steps()).toHaveLength(1));
+    expect(within(inspector()).queryByText("other.md")).toBeNull();
+  });
+
+  it("a replay that reaches its last step stops, and a new range starts it over (C)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("3 / 3 steps"));
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await act(async () => { vi.advanceTimersByTime(REPLAY_MS * 4); });
+    expect([useActivityStore.getState().replayStep, useActivityStore.getState().replayPlaying]).toEqual([2, false]);
+    act(() => { useActivityStore.getState().setRange("7d"); });
+    expect([useActivityStore.getState().replayStep, useActivityStore.getState().replayPlaying]).toEqual([null, false]);
+  });
+});
+
 describe("the drawer is one click away", () => {
+  it("a link from a reply opens the run in the drawer and picks it (B)", () => {
+    act(() => { useActivityStore.getState().showRun(12); });
+    expect([useActivityStore.getState().openRunId, useActivityStore.getState().pickedRunId]).toEqual([12, 12]);
+  });
+
+  it("the drawer's arrows move the pick with it (B)", async () => {
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    fireEvent.click(within(inspector()).getByRole("button", { name: "Details" }));
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect([useActivityStore.getState().openRunId, useActivityStore.getState().pickedRunId]).toEqual([14, 14]);
+    expect(screen.getByTestId("activity-run-14").getAttribute("aria-current")).toBe("true");
+  });
+
   it("Details opens the drawer on the picked run; × lets the run go", async () => {
     render(<ActivityView waiting={waiting()} />);
     fireEvent.click(await screen.findByTestId("activity-run-11"));
