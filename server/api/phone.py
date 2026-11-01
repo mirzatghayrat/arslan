@@ -281,9 +281,20 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     `high_risk_mac_only` stays false until that switch exists (§6.1)."""
     feed = desktop_status.island_feed()
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
-            "jobs": [job.frame() for job in background_jobs.active()],
+            "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
             "activity": await phone_reads.activity(db), **await _stats(db)}
+
+
+def _clean_job(frame: dict) -> dict:
+    """A running job's free text as `outcomes` titles have it (`phone_stats.clean_text`): a lone surrogate in a
+    goal failed the whole snapshot (#651 review)."""
+    frame["goal"] = phone_stats.clean_text(frame.get("goal"))
+    if frame.get("step"):
+        frame["step"] = phone_stats.clean_text(frame["step"])
+    for criterion in frame.get("criteria") or ():
+        criterion["description"] = phone_stats.clean_text(criterion.get("description"))
+    return frame
 
 
 async def _stats(db: AsyncSession) -> dict:

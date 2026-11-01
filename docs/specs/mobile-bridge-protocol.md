@@ -478,9 +478,10 @@ sending `null`.
     that did not apply counts as passed), `checks_total` (the task's own checks, without the built-in
     "answer delivered"), `spent_usd?` (US dollars at list price; absent when nothing in it could be
     priced) and `needed_you` (it put at least one card in front of you). "done" is the Mac's verdict,
-    its last "was the goal reached" check included; the phone never recounts checks. A task whose
-    conversation was deleted is never listed, and a title carries no control, format or surrogate
-    character, with the home folder shown as `~`.
+    its last "was the goal reached" check included; the phone never recounts checks. A task is listed
+    only while its conversation holds a message, so a deleted conversation's tasks are never sent (nor a
+    job stopped in a thread nothing was written to). A title carries no control, format (but the zero-width
+    joiners) or surrogate character, and shows the home folder as `~` when it is a whole path.
   - `spent_usd`: everything spent in the range that could be priced, as Progress counts it;
     `other_spent_usd`: that minus the listed tasks' `spent_usd`, never below 0; `spent_partial?`: `true`
     when some use in the range had no price, so `spent_usd` is low (the phone may ignore it).

@@ -8,6 +8,7 @@ again sooner when a run starts or ends, a task changes or a card is asked.
 """
 from __future__ import annotations
 
+import re
 import time
 import unicodedata
 from datetime import UTC, date, datetime, timedelta
@@ -48,13 +49,27 @@ def _home() -> Path:
     return Path.home()
 
 
+#: Format characters a title keeps: the joiners inside emoji sequences and some scripts (#651 review N5).
+JOINERS = {"\u200c", "\u200d"}
+
+
+def clean_text(text: str | None) -> str:
+    """Free text for the phone on one line, with no surrogate, control or format character but the joiners: a
+    lone surrogate can't be encoded, so it failed the whole snapshot, and a bidi override reorders what the
+    phone shows (#647 review F2)."""
+    flat = " ".join((text or "").split())
+    return " ".join("".join(ch for ch in flat if ch in JOINERS
+                            or unicodedata.category(ch) not in ("Cs", "Cc", "Cf")).split())
+
+
 def _title(goal: str | None) -> str:
-    """The goal as the phone's one-line title: no surrogate, control or format character (a lone surrogate
-    can't be encoded, so it failed the whole snapshot; a bidi override reorders what the phone shows; #647
-    review F2), and the home folder as `~`, as a conversation's folder is shown (§5.10)."""
-    flat = " ".join((goal or "").split())
-    clean = "".join(ch for ch in flat if unicodedata.category(ch) not in ("Cs", "Cc", "Cf"))
-    return phone_reads.one_line(" ".join(clean.replace(str(_home()), "~").split()), TITLE_MAX)
+    """The goal as the phone's one-line title (`clean_text`), with the home folder as `~`, as a conversation's
+    folder is shown (§5.10): only a whole path, home followed by `/`, the end or a character no name or path
+    has, never inside another path or another user's name, in any letter case (#651 review N1)."""
+    text, home = clean_text(goal), str(_home()).rstrip("/")
+    if home:
+        text = re.sub(r"(?<![\w./~-])" + re.escape(home) + r"(?![\w.-])", "~", text, flags=re.IGNORECASE)
+    return phone_reads.one_line(text, TITLE_MAX)
 
 
 def _utc(local_day: date) -> datetime:
@@ -73,7 +88,9 @@ async def blocks(db: AsyncSession, now: float | None = None) -> dict:
     key = (date.fromtimestamp(now), tuple(sorted(job.job_id for job in background_jobs.active())), *(await db.execute(select(
         select(func.max(Run.id)).scalar_subquery(), select(func.max(Run.ended_at)).scalar_subquery(),
         select(func.max(CompanionTask.updated_at)).scalar_subquery(),
-        select(func.max(ApprovalEvent.id)).scalar_subquery()))).one())
+        select(func.max(ApprovalEvent.id)).scalar_subquery(),
+        # A conversation emptied or deleted drops its tasks at once (#651 review N2).
+        select(func.max(ArslanMessage.id)).scalar_subquery(), select(func.count(ArslanMessage.id)).scalar_subquery()))).one())
     hit = _cache.get("entry")
     if hit is not None and hit[0] == key and now - hit[1] < CACHE_SECONDS:
         return hit[2]
@@ -108,7 +125,9 @@ async def _build(db: AsyncSession, now: float) -> dict:
     running = {job.job_id for job in background_jobs.active()}
     rows = [row for row in (await db.execute(
         # A conversation that was deleted keeps its task rows but not its messages: its goals are never sent
-        # again, the conversation list's rule (#647 review F1). DELETE-BY: never; undo (turn_undo) follows.
+        # again, the conversation list's rule (#647 review F1). A task whose conversation never had a message
+        # is not listed either: an Inbox "Do it" job that was stopped in a thread nothing was written to
+        # (#651 review N2; the spec says so). Undo (turn_undo) follows.
         select(CompanionTask).where(background, CompanionTask.updated_at >= since, CompanionTask.phase.not_in(NOT_FINISHED),
                                     exists().where(ArslanMessage.conversation_id == CompanionTask.conversation_id))
         .order_by(CompanionTask.updated_at.desc(), CompanionTask.id))).scalars() if row.id not in running][:TASK_CAP]
