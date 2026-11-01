@@ -28,7 +28,7 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, settings_service
+from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, phone_stats, settings_service
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -281,7 +281,7 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
             "jobs": [job.frame() for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
-            "activity": await phone_reads.activity(db)}
+            "activity": await phone_reads.activity(db), **await phone_stats.blocks(db)}
 
 
 @router.get("/phone/runs/{run_id}")
