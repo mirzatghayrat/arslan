@@ -42,9 +42,42 @@ def test_presets_have_no_wholesale_grants(tmp_path, base):
         assert base in BUILT_BASES, f"{stage} {base} adapter is not built"
         text = Harness(tmp_path, base).profile()
     # Read complete top-level forms, including multiline/modifier-first grants.
-    # String contents and comments are data, not operation names or parentheses.
-    code = re.sub(r'"(?:\\.|[^"\\])*"', '""', text)
-    code = re.sub(r";[^\n]*", "", code)
+    # Lex comments and strings together: a quote inside a comment must never
+    # consume a later rule. Comment delimiters inside strings are data too.
+    parts = []
+    i = 0
+    while i < len(text):
+        if text[i] == ";":
+            end = text.find("\n", i)
+            i = len(text) if end == -1 else end
+            parts.append(" ")
+        elif text.startswith("#|", i):
+            block_depth = 1
+            i += 2
+            while block_depth:
+                assert i < len(text), "unclosed policy block comment"
+                if text.startswith("#|", i):
+                    block_depth += 1
+                    i += 2
+                elif text.startswith("|#", i):
+                    block_depth -= 1
+                    i += 2
+                else:
+                    i += 1
+            parts.append(" ")
+        elif text[i] == '"':
+            i += 1
+            while i < len(text) and text[i] != '"':
+                # sbpl_string escapes quotes/backslashes and writes controls as
+                # \xHH. Skip the escaped character; hex digits remain data.
+                i += 2 if text[i] == "\\" else 1
+            assert i < len(text), "unclosed policy string"
+            i += 1
+            parts.append('""')
+        else:
+            parts.append(text[i])
+            i += 1
+    code = "".join(parts)
     forms = []
     depth = 0
     for token in re.finditer(r"[()]", code):
