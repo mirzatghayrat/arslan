@@ -28,6 +28,7 @@ class DossierError(Exception):
 # ── dossiers ─────────────────────────────────────────────────────────────────
 
 def view(row: CapabilitySource) -> dict:
+    from server.services import capability_recheck
     return {"id": row.id, "kind": row.kind, "name": row.name, "candidate_id": row.candidate_id,
             "source_url": row.source_url, "repo": row.repo, "version": row.version, "commit_sha": row.commit_sha,
             "artifact_sha256": row.artifact_sha256, "lock_sha256": row.lock_sha256,
@@ -36,6 +37,7 @@ def view(row: CapabilitySource) -> dict:
             "checked_at": row.checked_at.isoformat() + "Z" if row.checked_at else None,
             "runtime": row.runtime, "needs": row.needs or {}, "grants": row.grants or {}, "scan": row.scan,
             "test": row.test, "files": row.files, "state": row.state, "error": row.error,
+            "registry_parked": capability_recheck.parked(row),             # CAP4a-3d: the row and its keep
             "mcp_server_id": row.mcp_server_id, "skill_key": row.skill_key,
             "installed_at": row.installed_at.isoformat() + "Z" if row.installed_at else None}
 

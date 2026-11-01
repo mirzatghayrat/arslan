@@ -152,6 +152,27 @@ def _kept(check: dict) -> bool:
     return isinstance(keep, dict) and isinstance(seen, str) and bool(seen) and keep.get("seen") == seen
 
 
+def parked(source: CapabilitySource) -> dict | None:
+    """What the source view shows of a server this check parked, so the page's row and its keep button need no
+    rule of their own (#604 review F6): why, when the Registry was asked, what was installed, what the entry names
+    now (None for a withdrawn one), and `seen`, the digest a keep sends (`accept_source`). None when nothing is
+    parked, or when the user kept this very answer."""
+    check = (source.test or {}).get("registry_check") or {}
+    if not check.get("problem") or _kept(check):
+        return None
+    return {"why": check["problem"], "seen": check.get("seen"), "checked_at": check.get("at"),
+            "installed": _shown(_installed(source.candidate or {})), "now": _shown(check.get("names"))}
+
+
+def _shown(names) -> dict | None:
+    """The Registry wrote these values, so they are cleaned as the card cleans a name (UNI1): no bidi override or
+    zero-width character reaches the page, where it could make one name read as another."""
+    from server.orchestrator import untrusted
+    if not isinstance(names, dict):
+        return None
+    return {key: untrusted.clean_name(value, 512) if isinstance(value, str) else None for key, value in names.items()}
+
+
 async def before_start(server_id: int) -> None:
     """Raise SourceChanged when this server's Registry entry was withdrawn or changed and the user has not kept
     it. Asks the Registry only when a check is due."""

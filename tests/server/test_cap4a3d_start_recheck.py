@@ -449,3 +449,116 @@ async def test_a_start_is_stopped_before_any_listing_and_parked_in_arslans_words
     for reason in rc.LINES.values():                             # only the user ends it, never Reconnect
         fix = supervisor_mod.fix_for("parked", has_headers=False, reason=reason)
         assert "reviews it in Capabilities" in fix and "Reconnect does not start it" in fix
+
+
+# ── #604's web half, server side: the source view says what parked a server and what a keep sends ──
+# The page's row and its keep button read `registry_parked` and need no rule of their own (#604 review F6).
+
+_CLIENT = httpx.AsyncClient                  # the real client: `world` patches httpx's own AsyncClient
+
+
+def _no_restart(monkeypatch):
+    from server.services import mcp_service
+    restarted = []
+
+    async def restart(server_id):
+        restarted.append(server_id)
+    monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
+    return restarted
+
+
+async def _view(world):
+    return capability_dossier.view(await capability_dossier.source("src1"))
+
+
+async def _parked_by(world, answer, cand=PKG):
+    await _install(world, cand)
+    world.answers.append(answer)
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    return await _check(world)
+
+
+async def test_the_view_shows_a_withdrawn_entry_and_the_digest_a_keep_sends(world):
+    check = await _parked_by(world, WITHDRAWN)
+    assert (await _view(world))["registry_parked"] == {
+        "why": "withdrawn", "seen": check["seen"], "checked_at": check["at"],
+        "installed": {"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}, "now": None}
+
+
+async def test_the_view_shows_what_a_changed_entry_names_now(world):
+    check = await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": "notes-mcp-next",
+                                                      "version": "1.2.0"}]))
+    parked = (await _view(world))["registry_parked"]
+    assert parked["why"] == "changed" and parked["seen"] == check["seen"]
+    assert parked["installed"] == {"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}
+    assert parked["now"] == {"registry_type": "pypi", "identifier": "notes-mcp-next", "version": "1.2.0"}
+
+
+async def test_a_changed_remote_shows_both_urls(world):
+    await _parked_by(world, _cloud(ELSEWHERE), cand=REMOTE)
+    parked = (await _view(world))["registry_parked"]
+    assert parked["installed"] == {"url": URL["url"]} and parked["now"] == {"url": ELSEWHERE["url"]}
+
+
+@pytest.mark.parametrize("state", ["the same entry", "kept", "never asked", "no answer"])
+async def test_nothing_parked_shows_nothing(world, monkeypatch, state):
+    _no_restart(monkeypatch)
+    await _install(world)
+    if state == "the same entry":
+        world.answers.append(SAME)
+        await rc.before_start(1)
+    elif state == "kept":
+        world.answers.append(WITHDRAWN)
+        with pytest.raises(rc.SourceChanged):
+            await rc.before_start(1)
+        await capability_dossier.accept_source("src1", (await _check(world))["seen"])
+    elif state == "no answer":
+        world.answers.append(503)
+        await rc.before_start(1)
+    assert (await _view(world))["registry_parked"] is None
+
+
+async def test_a_kept_answer_then_another_shows_the_new_one(world, monkeypatch):
+    _no_restart(monkeypatch)
+    kept = (await _parked_by(world, WITHDRAWN))["seen"]
+    await capability_dossier.accept_source("src1", kept)
+    await _age(world)
+    world.answers.append(_entry(packages=[{"registryType": "pypi", "identifier": "other", "version": "9"}]))
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    parked = (await _view(world))["registry_parked"]
+    assert parked["why"] == "changed" and parked["seen"] == (await _check(world))["seen"] != kept
+
+
+async def test_values_the_registry_sent_are_shown_cleaned(world):
+    """The row shows what the Registry wrote, so it is cleaned as the card cleans a name (UNI1): a bidi override
+    or a zero-width character never reaches the page, where it could make one name read as another."""
+    hidden = "notes" + chr(0x202E) + "-mcp" + chr(0x200B) + "-next"
+    cand = {**PKG, "package": {**PKG["package"], "identifier": "notes-" + chr(0x2066) + "mcp"}}
+    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": hidden, "version": "1.2.0"}]),
+                     cand=cand)
+    parked = (await _view(world))["registry_parked"]
+    assert parked["now"]["identifier"] == "notes-mcp-next" and parked["installed"]["identifier"] == "notes-mcp"
+
+
+async def test_the_route_shows_it_and_a_keep_with_that_digest_clears_it(world, monkeypatch):
+    from fastapi import FastAPI
+    from server import auth
+    from server.api.capabilities import router
+    restarted = _no_restart(monkeypatch)
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-capabilities-token")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    await _parked_by(world, WITHDRAWN)
+    async with _CLIENT(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                       headers={"Authorization": "Bearer synthetic-capabilities-token"}) as client:
+        listed = (await client.get("/api/v1/capability-sources")).json()
+        parked = (await client.get("/api/v1/capability-sources/src1")).json()["registry_parked"]
+        assert [row["registry_parked"] for row in listed] == [parked] and parked["why"] == "withdrawn"
+        moved = await client.post("/api/v1/capability-sources/src1/source/accept", json={"seen": "0" * 64})
+        assert moved.status_code == 409 and moved.json()["detail"] == {"code": "source_answer_moved"}
+        kept = await client.post("/api/v1/capability-sources/src1/source/accept", json={"seen": parked["seen"]})
+        assert kept.status_code == 200 and kept.json()["registry_parked"] is None
+        assert (await client.get("/api/v1/capability-sources/src1")).json()["registry_parked"] is None
+    assert restarted == [1]
