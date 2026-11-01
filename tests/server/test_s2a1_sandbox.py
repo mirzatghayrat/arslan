@@ -82,6 +82,8 @@ def test_a_sandboxed_app_lookup_refusal_does_not_pause_the_job():
     assert not task_service._apple_events_refused(args, {**refused, "stderr": other})
     element = BASE_REFUSAL.replace('Can’t get application', 'Can’t get list 3 of application')
     assert not task_service._apple_events_refused(args, {**refused, "stderr": element})
+    trailing = BASE_REFUSAL + " (and then it ran something else)"         # the match ends the last line
+    assert not task_service._apple_events_refused(args, {**refused, "stderr": trailing})
 
 
 @pytest.mark.macos
