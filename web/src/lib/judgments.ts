@@ -12,6 +12,8 @@ export interface JudgmentRow {
   outcome: string | null;
   created_at: string;
   conversation_id?: string | null;
+  /** The run it belongs to (#637); null on a row judged before migration 0085. */
+  run_id?: number | null;
 }
 
 export const POINT_KEY: Record<string, string> = {
