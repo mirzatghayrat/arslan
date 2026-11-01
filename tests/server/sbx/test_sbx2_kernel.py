@@ -23,15 +23,20 @@ SERVICES = {
     "launchservices": "com.apple.coreservices.launchservicesd",
     "launchservices-map": "com.apple.lsd.mapdb",
     "shortcuts": "com.apple.WorkflowKit.ShortcutsViewService",
+    "shortcuts-actions": "com.apple.siriactionsd.xpc",
+    "shortcuts-voice": "com.apple.siri.VoiceShortcuts.xpc",
     "pasteboard": "com.apple.pasteboard.1",
     "windowserver": "com.apple.windowserver.active",
     "tcc": "com.apple.tccd",
     "tcc-system": "com.apple.tccd.system",
     "keychain": "com.apple.SecurityServer",
     "keychain-xpc": "com.apple.securityd.xpc",
+    "keychain-system": "com.apple.securityd.systemkeychain",
     "keychain-agent": "com.apple.security.agent",
     "notifications": "com.apple.usernotifications.usernotificationservice",
+    "notifications-main": "com.apple.notificationcenterui.main",
     "background-network": "com.apple.nsurlsessiond",
+    "background-network-launch": "com.apple.nsurlsessiond-launchondemand",
 }
 
 

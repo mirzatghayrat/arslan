@@ -355,11 +355,11 @@ base and does not justify opening that daemon. No new SSH-running test or
 product grant is added by this documentation follow-up. CI run id for the
 gates branch remains pending.
 
-The D2 transition now has 13 commands any-declared denial cases (12 live services
+The D2 transition now has 18 commands any-declared denial cases (17 live services
 and one listener/unsupported-port-exclusion case), alongside NONE and PROXY and
-without PORT_22. Review removed stale service aliases from the original 16-case
-addition. DELETE-BY: v0.1.64 when SBX-6's proxy mode lands: remove those
-13 transitional cases. Product online-mode wiring remains SBX-3a's work.
+without PORT_22. Review removed stale aliases from the original 16-case
+addition, then the delta follow-up added five live siblings. DELETE-BY: v0.1.64
+when SBX-6's proxy mode lands: remove those 18 transitional cases. Product online-mode wiring remains SBX-3a's work.
 
 
 ## Gate 2 review: accepted daemon interface (2026-11-01)
@@ -406,14 +406,28 @@ aliases are removed. Actual launch submission remains a separate refusal gate;
 its commands policy check uses an explicitly synthetic name, not a claim of
 service reachability. No control sends service RPCs or reads credentials.
 
-The resulting matrix has 12 live services: 48 candidate cases across four modes,
-and 36 commands cases across NONE, ANY_DECLARED and PROXY. Review changes the
+At that review, the matrix had 12 live services: 48 candidate cases across
+four modes and 36 commands cases across NONE, ANY_DECLARED and PROXY. Review changes the
 macOS total from 450 to 433 (+4 raw UDP cases, -12 candidate service cases,
 -9 commands cases); strict xfails change from 72 to 63. No xfail became a real
 pass. The unchanged commands adapter is still absent. Historical SBX-M results
 above retain their original counts and outcomes.
 
 ### dns_sd client operations under any-declared
+
+**Development-window acceptance only (user decision, 2026-11-01).** An
+ANY_DECLARED command can ask the router to forward an internet port to **any
+port on this Mac**. If the router honors that request, it can expose listeners
+bound to all interfaces; the command need not create its own listener. A service
+registration can advertise to the **whole LAN**, not just this process or Mac.
+These are consequences of opening the daemon's whole client interface, not a
+claim that this measurement demonstrated external reachability.
+
+**SBX-6's proxy is a hard release condition for v0.1.64.** This socket acceptance
+covers development only. If SBX-6 is not on main at release, the fallback is a
+one-line change before the tag: remove the ANY_DECLARED mDNSResponder socket
+grant, leaving **no name lookup in any-declared mode**. Do not release the
+transitional daemon interface as an implicit extension of this acceptance.
 
 Measured on 2026-11-01 after the user replied "run the dns_sd probe" in the
 authoring thread, on macOS 26.6.2 (25G83), arm64. The opt-in pytest used scratch
@@ -453,8 +467,10 @@ The candidate and baseline have identical recorded results. Registration and
 browse returned success and delivered success callbacks under the candidate;
 they are therefore not refused by this profile. The NAT API accepted the
 request, but its reference was released immediately without processing
-callbacks. **No completed router mapping is established.** No peer-side
-advertisement visibility, router state, discovered service identity or Local
+callbacks. **"NAT callback fired: false" reflects how the probe was built, not
+a refusal. Holding the NAT request open was not measured. No completed router
+mapping is established.** No peer-side advertisement visibility, router state,
+discovered service identity or Local
 Network prompt outcome was recorded. Callback multiplicity does not establish
 a count of distinct services. These limits leave the user's broader-interface
 acceptance and `DELETE-BY: SBX-6` unchanged.
@@ -464,4 +480,23 @@ and fails the no-operation startup check. Its full-path-keyed backup was copied
 back and SHA-256 verified, then the restored startup check passed (two local
 verification tests passed). The operation measurement was not repeated for
 mutation testing. No product rule, adapter, workflow or CI selection changed:
-**433 macOS cases, 63 strict xfails**. New-head macOS CI run id remains pending.
+**433 macOS cases, 63 strict xfails** at that measurement head. Its results
+remain unchanged by the subsequent coverage additions below.
+
+
+### Delta-review coverage follow-up
+
+The follow-up to [the Claude delta review](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559978316)
+adds the five named live siblings: `com.apple.siriactionsd.xpc`,
+`com.apple.siri.VoiceShortcuts.xpc`, `com.apple.notificationcenterui.main`,
+`com.apple.nsurlsessiond-launchondemand` and `com.apple.securityd.systemkeychain`.
+Each uses the existing successful live-lookup controls before candidate refusal
+can count. No service RPCs are sent by these gates. The portable Mach pin now
+also selects wildcard operation grants, with a committed regression test.
+
+The service matrix is now 17 names: 68 candidate cases across four modes and
+51 commands cases across three modes. This adds 20 macOS denial cases and
+15 absent-adapter strict xfails: **433 -> 468 macOS cases, 63 -> 78 strict
+xfails**. Claude updates the workflow counts on this branch after the user
+pushes. No product rule changes, and the dns_sd probe is not rerun for these
+notes. New-head macOS CI run id: pending.

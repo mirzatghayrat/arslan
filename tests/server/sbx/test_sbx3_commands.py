@@ -33,7 +33,7 @@ APP_DATA = (
 
 @pytest.mark.macos
 @macos
-# DELETE-BY: v0.1.64 when SBX-6 proxy mode lands: remove the 13 any-declared
+# DELETE-BY: v0.1.64 when SBX-6 proxy mode lands: remove the 18 any-declared
 # cases from this service list and the listener list below (D2 transition).
 @pytest.mark.parametrize("mode", [NetworkMode.NONE, NetworkMode.ANY_DECLARED, NetworkMode.PROXY])
 @pytest.mark.parametrize("service", gates.SERVICES.values(), ids=gates.SERVICES.keys())
