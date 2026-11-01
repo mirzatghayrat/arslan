@@ -132,15 +132,32 @@ export interface TurnUndone {
   files?: { later: number[] };
 }
 
+/** INB7-c3: GET /runs/{id}/changes. `state`: running (not ended), finishing (ended, not recorded yet), kept (`paths` an undo can
+ *  still take back), none (nothing to list), expired (its copy is gone), not_saved (no folder could be saved) or interrupted (ended
+ *  while no process held it, so it will never be recorded). */
+export interface RunChangesOut {
+  state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
+  undone: boolean;
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  conversation_id: string;
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
+  /** INB7-b: when the run started and ended (UTC, "Z"); ended_at is null while it runs. Older backends omit both. */
+  started_at?: string | null;
+  ended_at?: string | null;
+  /** INB7-c3: the run's conversation, whose changes the inspector reads. Older backends omit it. */
+  conversation_id?: string;
   entries: {
     kind: "note" | "tool";
     text?: string;
     tool?: string;
     ok?: boolean;
     ms?: number | null;
+    /** INB7-b: when the step started (UTC, "Z"); null for a step recorded before steps kept their time. */
+    at?: string | null;
     args_summary?: string;
     summary?: string;
     detail?: { view: string; error?: string | null; [key: string]: unknown };
@@ -889,6 +906,10 @@ export interface RunListItem {
   origin?: "chat" | "job" | "scheduled" | "phone" | "browser";
   model?: string | null;
   tokens?: number | null;
+  /** INB7-b: still running with a card open in its conversation, so it waits on you. Older backends omit it. */
+  waiting?: boolean;
+  /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
+  ended_at?: string | null;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */

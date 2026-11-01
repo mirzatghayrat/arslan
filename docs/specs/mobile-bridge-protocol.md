@@ -454,6 +454,35 @@ New error codes (may travel in `error`, with `related_id` = the request): `bad_r
 - **Remote.** A phone that said `quick` may delete the pocket (`conversation.delete`, §5.7). An older
   phone keeps sending to it as before.
 
+### 5.9 iPhone 1.0 part B: the week and the task results (added 2026-11-01; optional fields — additive within v1)
+
+The phone's Overview (docs/plans/0164/IPB-frame-list.md §2, OK'd by the user on 2026-11-01). Two optional
+blocks on `status.snapshot`, built by the Mac from stored records only, so a restart never resets them.
+They ride the snapshots that are already sent (a headline change, a hello, the 60 s heartbeat) and change
+nothing about when one is sent. An older phone ignores them; a phone that decodes them drops a malformed
+block on its own; an older Mac sends neither, and the phone hides their panels. Inside each block every
+field is required unless marked `?`, and the Mac leaves out an optional field it doesn't know rather than
+sending `null`.
+
+- **`week`**: 7 items, oldest first, the last one today. Each is `day` (`yyyy-MM-dd`, the Mac's time
+  zone) and `counts` `[replies, tasks, approvals asked]`, in `activity.hours`' order: that day's runs that
+  were not a task's (replays never count), the runs a task took, and the cards a person had in front of
+  them (answered, or expired unanswered). Today's item can differ from `activity` right after a restart,
+  since `activity` also counts running jobs and island events from memory.
+- **`outcomes`**: `today` (since local midnight) and `week` (the same 7 days), each
+  `{tasks[], spent_usd, other_spent_usd, spent_partial?}`:
+  - `tasks[]`: **finished** tasks only, newest first, at most **50** per set (past that, the phone's
+    counts undercount; a later counts field can replace the cap). Each is `conversation_id`, `title` (the
+    goal, one line, at most 80 characters), `state` (`done` / `unfinished` / `failed`, the words of
+    `conversations.result`, §5.5; a restart that cut it short is `unfinished`), `checks_passed` (a check
+    that did not apply counts as passed), `checks_total` (the task's own checks, without the built-in
+    "answer delivered"), `spent_usd?` (US dollars at list price; absent when nothing in it could be
+    priced) and `needed_you` (it put at least one card in front of you). "done" is the Mac's verdict,
+    its last "was the goal reached" check included; the phone never recounts checks.
+  - `spent_usd`: everything spent in the range that could be priced, as Progress counts it;
+    `other_spent_usd`: that minus the listed tasks' `spent_usd`, never below 0; `spent_partial?`: `true`
+    when some use in the range had no price, so `spent_usd` is low (the phone may ignore it).
+
 ### 5.4 Error codes
 
 `malformed`, `unsupported_version`, `unknown_type`, `not_for_me`, `bad_signature`, `decrypt_failed`,

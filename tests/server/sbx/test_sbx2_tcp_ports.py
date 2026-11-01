@@ -28,6 +28,7 @@ def test_tcp_port_denies_follow_the_complete_allow_list(mode):
             continue
         text = default_deny_profile(**options, denied_ports=ports)
         lines = [line.strip() for line in text.splitlines()]
+        # MUST_GO_RED below preserves M22/M23 against selector regressions.
         # Ignore quoted path text; select every network or default grant,
         # regardless of filters or leading modifiers.
         # A future Unix-socket grant must explicitly update this reviewed list too.
@@ -46,6 +47,25 @@ def test_tcp_port_denies_follow_the_complete_allow_list(mode):
             for port in sorted(set(ports))
         ], "requested TCP port deny missing or changed"
         assert all(i > allows[-1][0] for i, _ in denies), "TCP denies must follow all network allows"
+
+
+# Keep the review's modifier-first grants executable, not just in PR evidence.
+MUST_GO_RED = [
+    pytest.param('(allow (with report) network-outbound)', id="M22"),
+    pytest.param('(allow (with report) network-outbound (remote tcp "*:*"))', id="M23"),
+]
+
+
+@pytest.mark.parametrize("grant", MUST_GO_RED)
+def test_portable_selector_rejects_named_grant_mutations(grant, monkeypatch):
+    original = default_deny_profile
+
+    def mutated(**options):
+        return original(**options) + grant + "\n"
+
+    monkeypatch.setattr(sys.modules[__name__], "default_deny_profile", mutated)
+    with pytest.raises(AssertionError, match="complete network allow list changed"):
+        test_tcp_port_denies_follow_the_complete_allow_list(NetworkMode.PROXY)
 
 
 @pytest.mark.parametrize("ports", [(22,), (443, 22)])
@@ -95,3 +115,28 @@ def test_tcp_port_denies_survive_compilation(mode):
     for port in ports:
         denied = _compile_profile(default_deny_profile(**options, denied_ports=[port]))
         assert denied != baseline, f"{mode.value} compiler dropped deny for port {port}"
+
+
+@pytest.mark.parametrize("mode", list(NetworkMode))
+def test_complete_network_and_mach_allow_lists(mode):
+    text = default_deny_profile(network=mode, proxy_port=PROXY_PORT if mode == NetworkMode.PROXY else None)
+    lines = [line.strip() for line in text.splitlines()]
+    network = [line for line in lines if re.match(
+        r"\(allow\b.*\b(?:network|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+    mach = [line for line in lines if re.match(
+        r"\(allow\b.*\b(?:mach-lookup|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+    expected_network = {
+        NetworkMode.NONE: [],
+        NetworkMode.PROXY: ['(allow network-outbound (remote tcp "localhost:*"))',
+                            f'(allow network-outbound (remote tcp "localhost:{PROXY_PORT}"))'],
+        NetworkMode.PORT_22: ['(allow network-outbound (remote tcp "localhost:*"))',
+                              '(allow network-outbound (remote tcp "*:22"))'],
+        NetworkMode.ANY_DECLARED: ['(allow network-outbound (literal "/private/var/run/mDNSResponder"))',
+                                   '(allow network-outbound (remote tcp "localhost:*"))',
+                                   '(allow network-outbound (remote tcp "*:*"))'],
+    }
+    expected_mach = ['(allow mach-lookup (global-name "com.apple.FSEvents"))']
+    if mode == NetworkMode.ANY_DECLARED:
+        expected_mach += ['(allow mach-lookup (global-name "com.apple.trustd.agent"))']
+    assert network == expected_network[mode], "complete network allow list changed"
+    assert mach == expected_mach, "complete mach-lookup allow list changed"

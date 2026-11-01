@@ -285,6 +285,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             return {"ok": False, "error": "cannot be added: add_by_hand", "by_hand": by_hand,
                     "note": "The user's one-click list does not cover this one, so only the user can add it: by hand, "
                             "in Capabilities (Connections, add by hand). Say so; do not propose it again."}
+        pin = capability_allowlist.account_pin(cand, allow)     # #584 re-check: kept on the installed source
+        if pin:
+            cand = {**cand, "account_pin": pin}
         # CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock before the card,
         # so the card shows the locked versions and a yes installs exactly them. After the "nobody to ask" answer
         # above: a run that cannot install resolves nothing.

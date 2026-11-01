@@ -98,7 +98,10 @@ def present(item: ProactiveItem) -> dict:
             # INB3: the Scheduled page puts a change under its watch (watch:<id>), a problem under its task (sched:<id>).
             "source_key": item.source_key,
             "created_at": item.created_at.isoformat() + "Z",
-            "snooze_until": item.snooze_until.isoformat() + "Z" if item.snooze_until else None}
+            # Q7: a handled row keeps its days from when it was handled (PR 615 review F2).
+            "acted_at": item.acted_at.isoformat() + "Z" if item.acted_at else None,
+            # Only while it is set aside: once back, the server keeps the date as when it came back (maintain).
+            "snooze_until": item.snooze_until.isoformat() + "Z" if item.status == "snoozed" and item.snooze_until else None}
 
 
 def _evidence_json(candidate: Candidate) -> list[dict]:
@@ -237,13 +240,17 @@ async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | No
 
 
 async def maintain(now_utc: datetime) -> None:
-    """Wake due snoozes, expire stale items, trim to the caps."""
+    """Wake due snoozes, expire stale items, trim to the caps.
+
+    An item's days count from when it was made or, once set aside, from when it comes back (PR 615 review F1): one set aside is
+    never expired before the date its row shows, and one that came back gets its kind's days again. `snooze_until` stays set when it
+    wakes, as when it came back; `present` sends it only while the item is set aside."""
     async with db_session.AsyncSessionLocal() as db:
         for item in (await db.execute(select(ProactiveItem).where(ProactiveItem.status == "snoozed",
                      ProactiveItem.snooze_until <= now_utc))).scalars():
-            item.status, item.snooze_until = "new", None
+            item.status = "new"
         for item in (await db.execute(select(ProactiveItem).where(ProactiveItem.status.in_(ACTIONABLE)))).scalars():
-            if policy.is_stale(item.kind, item.created_at, now_utc):
+            if policy.is_stale(item.kind, max(item.created_at, item.snooze_until or item.created_at), now_utc):
                 item.status = "expired"
         await db.commit()
     await prune(now_utc)

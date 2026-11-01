@@ -19,10 +19,12 @@ never sees them (D1).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import stat
+import weakref
 from collections import OrderedDict
 from pathlib import Path
 
@@ -282,21 +284,36 @@ def target(folder: Path) -> Path:
     return folder / ("CLAUDE.md" if "AGENTS.md" not in present and "CLAUDE.md" in present else "AGENTS.md")
 
 
-def _read_bounded(path: Path, limit: int) -> bytes | None:
-    """The file's bytes, None when absent; RuleRefused("link") for a link or a non-regular file, "full" past `limit`."""
+def _open_in_place(path: Path, flags: int) -> int:
+    """Open `path` from the root one folder at a time, each with O_NOFOLLOW, then the file itself with O_NOFOLLOW:
+    no part of the path may be a link, on Linux as on macOS, and a folder swapped for one after a step can't redirect
+    the rest (#621 re-check, R5; this replaces the realpath check and O_NOFOLLOW_ANY of #621). FileNotFoundError when
+    the file (or a folder) is absent; RuleRefused "link" for a link, "unwritable" when it can't be opened to write."""
+    if not path.is_absolute():
+        raise RuleRefused("link")
+    fd = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except FileNotFoundError:
-        return None
-    except OSError:
-        raise RuleRefused("link") from None
-    with os.fdopen(fd, "rb") as f:
-        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-            raise RuleRefused("link")
-        data = f.read(limit + 1)
-    if len(data) > limit:
-        raise RuleRefused("full")
-    return data
+        for name in path.parts[1:-1]:
+            try:
+                step = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except FileNotFoundError:
+                raise
+            except PermissionError:
+                raise RuleRefused("unwritable") from None
+            except OSError:
+                raise RuleRefused("link") from None
+            os.close(fd)
+            fd = step
+        try:
+            return os.open(path.name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=fd)
+        except FileNotFoundError:
+            raise
+        except PermissionError:
+            raise RuleRefused("unwritable") from None
+        except OSError:
+            raise RuleRefused("link") from None
+    finally:
+        os.close(fd)
 
 
 def _only_this_file(fd: int) -> None:
@@ -307,82 +324,157 @@ def _only_this_file(fd: int) -> None:
         raise RuleRefused("link")
 
 
+def _read_upto(f, limit: int) -> bytes:
+    """Up to `limit + 1` bytes (one more tells "full"), reading again after a short read, as a network or FUSE folder
+    can give (#626 review, R3)."""
+    data = b""
+    while len(data) <= limit:
+        got = f.read(limit + 1 - len(data))
+        if not got:
+            break
+        data += got
+    return data
+
+
+def _write_all(f, data: bytes) -> None:
+    """All of `data`: an unbuffered write can take fewer bytes than given (#626 review, R3)."""
+    view = memoryview(data)
+    while view:
+        view = view[f.write(view):]
+
+
+def _still_named(fd: int) -> None:
+    """After the write: the file still has its name. An editor that saved meanwhile by renaming a new file into place
+    left this descriptor on the old copy, which no longer has one; the write went nowhere the user sees, so it is
+    refused rather than reported (#626 review, R2)."""
+    if os.fstat(fd).st_nlink == 0:
+        raise RuleRefused("replaced")
+
+
+def _chunk(before: bytes, line: str) -> tuple[bool, bytes]:
+    """(a separator goes first, the bytes to append): a newline first when the file doesn't end with one."""
+    sep = bool(before) and not before.endswith(b"\n")
+    return sep, (b"\n" if sep else b"") + f"- {line}\n".encode()
+
+
 def _append(path: Path, line: str) -> tuple[bool, bytes]:
     """Append `- line` with O_APPEND (no lost edit, the file's mode kept, a read-only file refused), adding a
     separator newline first when the file doesn't end with one. Refused when the result would be past what a turn
-    reads (MAX_BYTES), since the line would never reach Arslan (#603 review, F5). Returns (separator added, the
-    file's bytes before)."""
-    before = _read_bounded(path, MAX_BYTES) or b""
-    sep = bool(before) and not before.endswith(b"\n")
-    chunk = (b"\n" if sep else b"") + f"- {line}\n".encode()
-    if len(before) + len(chunk) > MAX_BYTES:
-        raise RuleRefused("full")
+    reads (MAX_BYTES), since the line would never reach Arslan (#603 review, F5), when the folder is gone (#626
+    review, R4), and when an editor replaced the file meanwhile (R2). The read and the append go through one
+    descriptor (#621 re-check, R5). Returns (separator added, the file's bytes before)."""
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
-    except PermissionError:
-        raise RuleRefused("unwritable") from None
-    except OSError:
-        raise RuleRefused("link") from None
-    with os.fdopen(fd, "wb") as f:
+        fd = _open_in_place(path, os.O_RDWR | os.O_APPEND | os.O_CREAT)
+    except FileNotFoundError:
+        raise RuleRefused("missing") from None
+    with os.fdopen(fd, "r+b", buffering=0) as f:
         _only_this_file(f.fileno())
-        f.write(chunk)
+        before = _read_upto(f, MAX_BYTES)
+        sep, chunk = _chunk(before, line)
+        if len(before) + len(chunk) > MAX_BYTES:
+            raise RuleRefused("full")
+        _write_all(f, chunk)
+        _still_named(f.fileno())
     return sep, before
 
 
-def _take_out(path: Path, line: str, sep: bool) -> None:
-    """Delete exactly the bytes Add wrote (its separator too), the last time they occur at a line start, in place:
-    the rest of the file stays byte for byte, invalid UTF-8 included, and so does its mode (#603 review, F4)."""
-    data = _read_bounded(path, 1 << 20)
-    if data is None:
-        return
+def _cut(data: bytes, line: str, sep: bool, at: int | None) -> bytes | None:
+    """`data` without the bytes Add wrote, or None when they are no longer there as Add wrote them (the line edited,
+    or the file now CRLF; #621 review, F3). The copy at the recorded offset `at` goes when it is still there; else the
+    last whole-line copy. The separator newline Add put in front goes only with that recorded copy, and only when
+    nothing follows it, so a user's identical copy never loses its line break (#621 review, F4). A record from before
+    L11-3d has no offset: the last whole-line copy, and its separator when it ends the file, as #603 did."""
     chunk = f"- {line}\n".encode()
-    at = len(data)
+    if at is not None:
+        off = at + (1 if sep else 0)
+        if data[off:off + len(chunk)] == chunk and (off == 0 or data[off - 1:off] == b"\n"):
+            start = at if sep and off + len(chunk) == len(data) else off
+            return data[:start] + data[off + len(chunk):]
+    end = len(data)
     while True:
-        at = data.rfind(chunk, 0, at)
-        if at < 0:
-            return
-        if at == 0 or data[at - 1:at] == b"\n":
+        end = data.rfind(chunk, 0, end)
+        if end < 0:
+            return None
+        if end == 0 or data[end - 1:end] == b"\n":
             break
-    start = at - 1 if sep and at > 0 and at == len(data) - len(chunk) else at
-    out = data[:start] + data[at + len(chunk):]
+    start = end - 1 if at is None and sep and end > 0 and end == len(data) - len(chunk) else end
+    return data[:start] + data[end + len(chunk):]
+
+
+def _take_out(path: Path, line: str, sep: bool, at: int | None = None) -> bool:
+    """Delete the bytes Add wrote (see `_cut`), in place: the rest of the file stays byte for byte, invalid UTF-8
+    included, and so does its mode (#603 review, F4). The read and the rewrite go through one descriptor, so a file
+    an editor replaced in between keeps the editor's version (#621 review, F6), and Remove is refused, keeping the
+    record (#626 review, R2). False when the bytes are no longer there: the file is left alone. A crash in the middle
+    of the rewrite can still leave it half written."""
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except PermissionError:
-        raise RuleRefused("unwritable") from None
-    except OSError:
-        raise RuleRefused("link") from None
-    with os.fdopen(fd, "wb") as f:
+        fd = _open_in_place(path, os.O_RDWR)
+    except FileNotFoundError:
+        return False
+    with os.fdopen(fd, "r+b", buffering=0) as f:
         _only_this_file(f.fileno())
-        f.write(out)
+        data = _read_upto(f, 1 << 20)
+        if len(data) > 1 << 20:
+            raise RuleRefused("full")
+        out = _cut(data, line, sep, at)
+        if out is None:
+            return False
+        f.seek(0)
+        _write_all(f, out)
         f.truncate(len(out))
+        _still_named(f.fileno())
+    return True
+
+
+_write_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+
+def _write_lock() -> asyncio.Lock:
+    """One Add or Remove at a time, from reading the record to committing it: a double click on Remove would
+    otherwise find the same record line twice and take the user's own identical line too (#621 review, F2). One
+    process serves the app, so an in-process lock is enough; one per event loop, as tests run several. asyncio.Lock
+    isn't reentrant: add_rule and remove_rule must never call each other, or anything else that takes it."""
+    loop = asyncio.get_running_loop()
+    lock = _write_locks.get(loop)
+    if lock is None:
+        lock = _write_locks[loop] = asyncio.Lock()
+    return lock
 
 
 async def add_rule(db, path: Path, line: str, lesson_id: int) -> None:
-    """Append `- line` to `path` (the user's click; never the model's tools: HR keeps those) and record it. The file
-    counts as the user's (D3) only when it was empty or absent, or exactly the user's, before. Raises RuleRefused."""
-    import asyncio
-    sep, before = await asyncio.to_thread(_append, path, line)
-    files = await _user_files(db)
-    entry = files.get(str(path)) or {"own": True, "lines": []}
-    entry["own"] = (not before) or _users(entry, before)
-    entry["lines"] = [*entry.get("lines", []), {"lesson_id": lesson_id, "line": line, "sep": sep}]
-    files[str(path)] = entry
-    await _save_user_files(db, files)
+    """Append `- line` to `path` (the user's click; never the model's tools: HR keeps those) and record it, with
+    where it went (F4), committed under the write lock (F2). The file counts as the user's (D3) only when it was
+    empty or absent, or exactly the user's, before. Raises RuleRefused."""
+    async with _write_lock():
+        sep, before = await asyncio.to_thread(_append, path, line)
+        files = await _user_files(db)
+        entry = files.get(str(path)) or {"own": True, "lines": []}
+        entry["own"] = (not before) or _users(entry, before)
+        entry["lines"] = [*entry.get("lines", []), {"lesson_id": lesson_id, "line": line, "sep": sep, "at": len(before)}]
+        files[str(path)] = entry
+        await _save_user_files(db, files)
+        await db.commit()
 
 
-async def remove_rule(db, path: Path, lesson_id: int) -> None:
-    """Take the line this lesson's card added back out of `path`. It never makes a file the user's: D3 is decided
-    by what the file holds at each turn."""
-    import asyncio
-    files = await _user_files(db)
-    entry = files.get(str(path)) or {"own": False, "lines": []}
-    mine = [ln for ln in entry.get("lines", []) if ln.get("lesson_id") == lesson_id]
-    if not mine:
-        return
-    await asyncio.to_thread(_take_out, path, mine[-1]["line"], bool(mine[-1].get("sep")))
-    entry["lines"] = [ln for ln in entry["lines"] if ln is not mine[-1]]
-    files[str(path)] = entry
-    await _save_user_files(db, files)
+async def remove_rule(db, path: Path, lesson_id: int, line: str | None = None) -> bool | None:
+    """Take the line this lesson's card added back out of `path` and drop it from the record, committed under the
+    write lock (F2). None when the record has no such line; else whether the bytes were still in the file (#621
+    review, F3). Matched on the line too when given: SQLite can hand a deleted lesson's id to a new one (L11-3a). It
+    never makes a file the user's: D3 is decided by what the file holds at each turn."""
+    async with _write_lock():
+        files = await _user_files(db)
+        entry = files.get(str(path)) or {"own": False, "lines": []}
+        mine = [ln for ln in entry.get("lines", []) if ln.get("lesson_id") == lesson_id
+                and (line is None or ln.get("line") == line)]
+        if not mine:
+            return None
+        last = mine[-1]
+        in_file = await asyncio.to_thread(_take_out, path, last["line"], bool(last.get("sep")), last.get("at"))
+        entry["lines"] = [ln for ln in entry["lines"] if ln is not last]
+        files[str(path)] = entry
+        await _save_user_files(db, files)
+        await db.commit()
+        return in_file
 
 
 async def chosen_folder(db, conversation_id: str | None) -> Path | None:
@@ -396,6 +488,21 @@ async def chosen_folder(db, conversation_id: str | None) -> Path | None:
             return await conversation_folder(db, conversation_id)
     raw = await settings_service._get_raw(db, "workspace_dir")
     return await conversation_folder(db, conversation_id) if raw and str(raw).strip() else None
+
+
+async def listed(conversation_id: str | None, shown: str) -> Path | None:
+    """The rules file Overview listed for this conversation under `shown`, found again now: a Remove from Overview
+    picks among the files this conversation follows, never a path the client names (L11-3a)."""
+    import asyncio
+    from server.db import session as db_session
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        enabled = await settings_service.folder_rules_enabled(db)
+        folder = await conversation_folder(db, conversation_id)
+    if not enabled or folder is None:
+        return None
+    found, _ = await asyncio.to_thread(_found, folder, _home(), conversation_id)
+    return next((path for name, _, path in found if name == shown), None)
 
 
 async def listing(conversation_id: str | None) -> dict:

@@ -8,10 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k), i18n: { language: "en" } }),
 }));
-const { listRuns, getUsageSummary, request } = vi.hoisted(() => ({
-  listRuns: vi.fn(), getUsageSummary: vi.fn(), request: vi.fn(),
+const { listRuns, getUsageSummary, runProcess, request } = vi.hoisted(() => ({
+  listRuns: vi.fn(), getUsageSummary: vi.fn(), runProcess: vi.fn(), request: vi.fn(),
 }));
-vi.mock("../api/client", () => ({ api: { listRuns, getUsageSummary }, request }));
+vi.mock("../api/client", () => ({ api: { listRuns, getUsageSummary, runProcess, runCounts: () => new Promise(() => {}), runChanges: () => new Promise(() => {}) }, request }));
 vi.mock("../components/ScheduledTasksCard", () => ({ default: () => null }));
 vi.mock("../components/RunReplay", () => ({ default: ({ runId }: { runId: number }) => <div data-testid="replay">run {runId}</div> }));
 
@@ -40,7 +40,9 @@ const summary = {
 };
 
 beforeEach(() => {
-  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, scroll: {}, byModelOpen: false, modelSlots: {} });
+  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+    replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
+  runProcess.mockResolvedValue({ run_id: 0, status: "recorded", entries: [] });
   getUsageSummary.mockResolvedValue(summary);
   request.mockResolvedValue({ items: [], entries: [] });
 });
@@ -58,13 +60,17 @@ describe("最近的工作", () => {
   it("opens a run in a drawer while the list stays, and Esc / arrows work", async () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
     render(<ActivityView waiting={WAITING} />);
+    // INB7-c1: a row picks the run for the inspector; its "Details" opens the drawer (until INB7-c4).
     fireEvent.click(await screen.findByTestId("activity-run-2"));
+    expect(screen.queryByTestId("run-drawer")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "activityPage.details" }));
     expect(screen.getByTestId("run-drawer")).toHaveTextContent("run 2");
-    // the list is still there, with the opened row marked
+    // the list is still there, with the picked row marked
     expect(screen.getByTestId("activity-run-2")).toHaveAttribute("aria-current", "true");
     expect(screen.getByTestId("activity-run-3")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "ArrowDown" });
     expect(screen.getByTestId("run-drawer")).toHaveTextContent("run 1");
+    expect(screen.getByTestId("activity-run-1")).toHaveAttribute("aria-current", "true");    // the pick follows the drawer
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByTestId("run-drawer")).toBeNull();
   });
@@ -85,12 +91,16 @@ describe("最近的工作", () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
     const first = render(<ActivityView waiting={WAITING} />);
     fireEvent.click(await screen.findByTestId("activity-run-2"));
+    fireEvent.click(screen.getByRole("button", { name: "activityPage.details" }));
     const box = screen.getByTestId("activity-runs-box");
     box.scrollTop = 120;
     fireEvent.scroll(box);
     first.unmount();                               // App unmounts the page on leaving it
     render(<ActivityView waiting={WAITING} />);
     expect(await screen.findByTestId("run-drawer")).toHaveTextContent("run 2");
+    // INB7-c1: the pick survives too, so the inspector opens on the same run.
+    expect(await screen.findByTestId("activity-run-2")).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("run-inspector")).toHaveTextContent("task 2");
     expect((await screen.findByTestId("activity-runs-box")).scrollTop).toBe(120);
   });
 });
@@ -113,7 +123,9 @@ describe("the usage chart", () => {
       expect.objectContaining({ since: 1_790_003_600, until: 1_790_007_200 })));
     expect(screen.getByTestId("activity-filter")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("activityPage.clearFilter"));
-    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ since: undefined })));
+    // INB7-c2: cleared, the list goes back to the page's range (7 days here), not to all time.
+    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ until: undefined })));
+    expect(Math.abs(listRuns.mock.calls.at(-1)![0].since - (Date.now() / 1000 - 7 * 86_400))).toBeLessThan(60);
   });
 
   it("clicking a model row narrows recent work to that model", async () => {

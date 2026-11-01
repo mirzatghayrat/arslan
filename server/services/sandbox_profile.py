@@ -118,12 +118,16 @@ class NetworkMode(str, Enum):
     PORT_22 = "port-22"
 
 
-# No service has measurement evidence yet. SBX-M may add exact names, each with
-# its corpus id, in a reviewed follow-up. In particular, preference reads do not
-# imply permission to contact cfprefsd. Never import a system profile: its grants
-# can change independently of this policy.
-SYSTEM_MACH_SERVICES: tuple[str, ...] = ()
-SYSTEM_UNIX_SOCKETS: tuple[str, ...] = ()
+# Exact names only, justified by corpus rows; never import a system profile.
+SYSTEM_MACH_SERVICES = {
+    "com.apple.FSEvents": tuple(NetworkMode),  # node-watch-none-default-deny
+    # DNS alone does not restore swift-certificate-any-declared-default-deny.
+    "com.apple.trustd.agent": (NetworkMode.ANY_DECLARED,),
+}
+SYSTEM_UNIX_SOCKETS = {
+    # dns-any-declared-default-deny; PORT_22 accepts IPv4 literals, never DNS.
+    "/private/var/run/mDNSResponder": (NetworkMode.ANY_DECLARED,),
+}
 
 
 def default_deny_profile(
@@ -193,10 +197,12 @@ def default_deny_profile(
     if ipc_prefix is not None:
         rules.allow("ipc-posix-shm* ipc-posix-sem*",
                     f"(ipc-posix-name-prefix {sbpl_string(ipc_prefix)})")
-    if SYSTEM_MACH_SERVICES:
-        rules.allow("mach-lookup", *(f"(global-name {sbpl_string(n)})" for n in SYSTEM_MACH_SERVICES))
+    for name, modes in SYSTEM_MACH_SERVICES.items():
+        if network in modes:
+            rules.allow("mach-lookup", f"(global-name {sbpl_string(name)})")
     if network != NetworkMode.NONE:
-        rules.allow_paths("network-outbound", map(real, SYSTEM_UNIX_SOCKETS), literal)
+        sockets = [real(path) for path, modes in SYSTEM_UNIX_SOCKETS.items() if network in modes]
+        rules.allow_paths("network-outbound", sockets, literal)
         rules.allow("network-outbound", '(remote tcp "localhost:*")')
         if network == NetworkMode.PROXY:
             # Load-bearing with localhost:*: removing this can drop TCP denies.
