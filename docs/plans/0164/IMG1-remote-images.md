@@ -1,6 +1,6 @@
 # IMG1: Markdown images from the web load on their own
 
-⑥Helper, 2026-11-01. Found while carding #603's follow-up ("the reader's Markdown renders `<img>` for any URL"). That follow-up is wider than the reader: **chat replies render the same way.** This is the security surface, so the card comes first and **the user picks the scope** (below). Nothing is built before that.
+⑥Helper, 2026-11-01. Found while carding #603's follow-up ("the reader's Markdown renders `<img>` for any URL"). That follow-up is wider than the reader: **chat replies render the same way.** This is the security surface, so the card came first and the user picked the scope: **A + C now, B later** (Decided, below).
 
 | | |
 |---|---|
