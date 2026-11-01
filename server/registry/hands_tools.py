@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
 import re
 import time
 import uuid
@@ -34,6 +35,8 @@ from urllib.parse import urlsplit
 
 from arslan.aio import within
 from server.services import approvals
+
+logger = logging.getLogger(__name__)
 
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
 _OUTPUT_LIMIT = 8_000
@@ -632,15 +635,18 @@ def _trace(op: str, app: dict | str, outcome: str, started: float, **extra) -> N
     conversation_id, job_id = _conversation_and_job()
     name = app.get("name") if isinstance(app, dict) else app
     bundle = app.get("bundle_id") if isinstance(app, dict) else None
+    # v0.1.64: the run the call was made in (the bound id, never the model's), which holds when runs
+    # overlap; None outside a run. In a background job it is the job's own run (`Job.run_id`).
+    run_id = execution_context.current_run_id()
     try:
-        # v0.1.64: the run the call was made in (the bound id, never the model's), which holds when runs
-        # overlap; None outside a run. In a background job it is the job's own run.
-        hands_service.trace({"conversation": conversation_id, "job": job_id,
-                             "run_id": execution_context.current_run_id(), "app": name, "bundle_id": bundle,
-                             "op": op, "outcome": outcome, "ms": int((time.monotonic() - started) * 1000),
-                             **extra})
-    except OSError:
-        pass
+        # The fields set here come after the caller's extras, so no extra stands in for one of them.
+        hands_service.trace({**extra, "conversation": conversation_id, "job": job_id,
+                             "run_id": run_id if type(run_id) is int else None, "app": name, "bundle_id": bundle,
+                             "op": op, "outcome": outcome, "ms": int((time.monotonic() - started) * 1000)})
+    except (OSError, TypeError, ValueError) as exc:
+        # The call stands without its entry: a full disk, a value JSON can't hold, or text UTF-8 can't
+        # (a lone surrogate in a raw app name is a UnicodeEncodeError, a ValueError).
+        logger.warning("Hands trace entry for %s not written: %s", op, type(exc).__name__)
 
 
 async def _resolve_app(name: str, job_id: str | None):
@@ -1204,7 +1210,12 @@ class _DesktopAct:
         if session:
             shown = await _label_verb(self.op)
             await _hands("session_label", {"session": session, "label": f"Arslan · {shown} {label}"[:80]})
-        result = await self.run(args, app)
+        try:
+            result = await self.run(args, app)
+        except asyncio.CancelledError:
+            # The run was cancelled with the request out, which may have reached the app: on the record too.
+            _trace(self.op, app, "cancelled", started, target=label, **self.trace_extra(args))
+            raise
         _trace(self.op, app, "ok" if result.ok else (result.code or "error"), started, target=label,
                mode_used=(result.reply or {}).get("mode_used") if isinstance(result.reply, dict) else None,
                **self.trace_extra(args))
