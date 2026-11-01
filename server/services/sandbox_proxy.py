@@ -10,7 +10,17 @@ It speaks CONNECT, to any port, and plain-http forwarding (absolute-form request
 resolved once and every answer must be public (`net_pin`, as the browser's tunnel does), so a command can't
 reach Arslan's own ports, a LAN host or a link-local service through it; a LAN host needs the re-run card.
 With a system HTTP proxy set it chains through it by name, with a CONNECT for plain http too, as
-`browser_proxy` does: the system proxy then resolves, and the public-address check is delegated to it.
+`browser_proxy` does: Arslan's check still runs first, but the system proxy then resolves the name and
+picks the real destination, so the public-address check is delegated to it.
+
+Known limits (SBX-6a review):
+- The denied loopback ports are a snapshot when a command starts. A listener Arslan opens later (a browser
+  tunnel, an OAuth callback) is reachable from a command already running; both are bounded (the tunnel takes
+  public destinations only, the callback needs its state and PKCE).
+- A local proxy this Mac doesn't announce (in the environment or `scutil`), such as Tor's SOCKS port or
+  `ssh -D`, is reachable through loopback like any dev server.
+- The proxy takes no client credentials, like `browser_proxy`: anything on this Mac that can reach its port
+  can use it, which is no more than that thing could do itself.
 """
 from __future__ import annotations
 
@@ -31,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 _HEADER_LIMIT = 65536
 _PICKS = 4           # free ports tried when one collides with a system proxy's number
+_CONNECTIONS = 64    # open connections at once; more are refused
+_IDLE_S = 300        # a relay with nothing to read for this long is closed
 _DEFAULT_PORTS = {"http": 80, "https": 443, "socks": 1080, "socks4": 1080, "socks4a": 1080, "socks5": 1080,
                   "socks5h": 1080}
 _PROXY_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
@@ -106,7 +118,7 @@ def excluded_ports(bound, system, *, proxy_port: int) -> tuple[int, ...]:
     listener from an IPv6 one on the same number (SBX-6p review), so allowing ours would allow theirs."""
     theirs = system_loopback_ports(system)
     if proxy_port in theirs:
-        raise ValueError(f"a system proxy listens on the sandbox proxy's port {proxy_port}")
+        raise ValueError(f"the sandbox proxy port {proxy_port} is also a system proxy's port")
     return tuple(sorted(p for p in {*bound, *theirs} if p != proxy_port and 1 <= p <= 65535))
 
 
@@ -176,7 +188,7 @@ class LocalProxy:
         return remote, upstream
 
     async def _copy(self, reader, writer):
-        while block := await reader.read(65536):
+        while block := await asyncio.wait_for(reader.read(65536), _IDLE_S):
             writer.write(block)
             await writer.drain()
         with suppress(OSError):
@@ -189,6 +201,8 @@ class LocalProxy:
         relays = []
         established = False
         try:
+            if len(self.tasks) > _CONNECTIONS:
+                raise _Refused("too many connections")
             async with asyncio.timeout(30):
                 raw = await reader.readuntil(b"\r\n\r\n")
                 line, _, headers = raw.decode("latin-1").partition("\r\n")

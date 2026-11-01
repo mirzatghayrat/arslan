@@ -35,7 +35,7 @@ def test_the_system_proxies_loopback_ports_and_arslans_own_are_excluded_but_not_
 
 def test_a_system_proxy_on_the_proxys_own_port_is_refused():
     """SBX-6p review: an IPv4 and an IPv6 listener can share a port number, and a port rule allows both."""
-    with pytest.raises(ValueError, match="sandbox proxy's port"):
+    with pytest.raises(ValueError, match="proxy port.*system proxy"):
         sandbox_proxy.excluded_ports([], ["http://127.0.0.1:7890", "socks5://[::1]:40000"], proxy_port=40000)
 
 
@@ -225,6 +225,36 @@ async def _ask(proxy_port, request: bytes) -> bytes:
         data += await asyncio.wait_for(reader.read(65536), 5)
     writer.close()
     return data
+
+
+async def test_the_proxy_listens_on_loopback_only(proxy):
+    assert proxy.server.sockets and all(s.getsockname()[0] == "127.0.0.1" for s in proxy.server.sockets)
+
+
+@pytest.mark.parametrize("target", [b"10.0.0.1:443", b"169.254.169.254:80", b"[::1]:8741", b"localhost:22"])
+async def test_net_pins_own_judgement_refuses_a_non_public_target(proxy, target):
+    """Unmocked: the resolver itself refuses private, link-local and loopback destinations."""
+    reply = await _ask(proxy.port, b"CONNECT " + target + b" HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert reply.startswith(b"HTTP/1.1 403 Forbidden"), reply
+
+
+async def test_too_many_connections_are_refused(proxy, origin, monkeypatch):
+    _pin_to(monkeypatch, origin[0], [])                           # uncapped, this tunnel would open
+    monkeypatch.setattr(sandbox_proxy, "_CONNECTIONS", 0)
+    reply = await _ask(proxy.port, b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert reply.startswith(b"HTTP/1.1 403 Forbidden"), reply
+
+
+async def test_an_idle_tunnel_is_closed(proxy, origin, monkeypatch):
+    port, _ = origin
+    _pin_to(monkeypatch, port, [])
+    monkeypatch.setattr(sandbox_proxy, "_IDLE_S", 0.2)
+    reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
+    writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+    await writer.drain()
+    assert (await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)).startswith(b"HTTP/1.1 200")
+    assert await asyncio.wait_for(reader.read(), 5) == b""        # closed without a byte from either side
+    writer.close()
 
 
 async def test_connect_relays_to_the_resolved_public_address(proxy, origin, monkeypatch):
