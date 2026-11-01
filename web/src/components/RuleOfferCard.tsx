@@ -5,7 +5,7 @@ import { lessonsApi } from "../api/lessons";
 import { useWorkbench } from "../stores/workbenchStore";
 import { isolate } from "./CapabilitySwitches";
 
-type State = "offered" | "added" | "skipped" | "removed" | "failed" | "full" | "changed";
+type State = "offered" | "added" | "skipped" | "removed" | "kept" | "failed" | "full" | "changed";
 
 /**
  * L11-2 (the user's L11-0 picks, 2026-10-31): after the same correction twice, "Make this a rule for this folder?".
@@ -23,7 +23,7 @@ export default function RuleOfferCard({ lessonId, file, text, conversationId }: 
     setBusy(true);
     try {
       const r = await lessonsApi.rule(lessonId, conversationId, action);
-      setState(r.state as State);
+      setState(r.in_file === false ? "kept" : r.state as State);     // #621 re-check, R2
     } catch (err) {
       const code = err instanceof ApiError ? (err.detail as { detail?: string } | string | undefined) : undefined;
       const text = typeof code === "string" ? code : code?.detail ?? (err instanceof Error ? err.message : "");
@@ -42,8 +42,9 @@ export default function RuleOfferCard({ lessonId, file, text, conversationId }: 
         {t("workbench.ruleRemove")}</button>
     </p>;
   }
-  if (state === "skipped" || state === "removed") {
-    return <p className={line} data-testid={`rule-offer-${state}`}>{t(state === "skipped" ? "workbench.ruleSkipped" : "workbench.ruleRemoved")}</p>;
+  if (state === "skipped" || state === "removed" || state === "kept") {
+    return <p className={line} data-testid={`rule-offer-${state}`}>{t(state === "skipped" ? "workbench.ruleSkipped"
+      : state === "kept" ? "workbench.ruleNotInFile" : "workbench.ruleRemoved")}</p>;
   }
   return (
     <div role="group" aria-label={t("workbench.ruleTitle")} data-testid="rule-offer"
