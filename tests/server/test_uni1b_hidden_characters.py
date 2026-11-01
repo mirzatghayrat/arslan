@@ -34,7 +34,9 @@ def test_the_tables_are_the_shared_ones():
     assert [list(r) for r in untrusted._RUN_RANGES] == RULE["run_ranges"]
     assert list(untrusted._PRESENTATION_SELECTORS) == RULE["presentation_selectors"]
     assert [list(r) for r in untrusted._IDEOGRAPHS] == RULE["ideographs"]
-    assert [list(r) for r in untrusted._NOT_A_BASE] == RULE["not_a_base"]
+    from server.orchestrator.emoji_bases import PRESENTATION_BASES
+    assert [list(r) for r in PRESENTATION_BASES] == RULE["presentation_bases"]
+    assert untrusted._IVS_UNCOUNTED_MAX == RULE["ivs_uncounted_max"]
     assert list(untrusted._FLAG_TAGS) == RULE["flags"]
 
 
