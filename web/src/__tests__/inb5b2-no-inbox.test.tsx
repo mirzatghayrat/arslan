@@ -1,6 +1,6 @@
 /** INB5b-2 (v0.1.64): the Inbox is gone (the INB5 board, approved 2026-10-31). What is waiting on you is one number on Progress in the
  *  sidebar, counted by the server (progress.waiting_on_user: conversations, projects and scheduled tasks, never rows); a clicked
- *  notice opens Progress; and no "@inbox" route is left anywhere. */
+ *  notice goes where its section says (the Scheduled page, useNotificationRoutes); and no "@inbox" route is left anywhere. */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
