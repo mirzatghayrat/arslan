@@ -82,6 +82,16 @@
     - migrations that drop data.
 
     Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
+  - **Security-surface PRs the author may auto-merge (user, 2026-11-01, in ⓪Plan's chat, verbatim: 「以后碰安全面的 PR，只要另一个会话用 effort=max 审过、在当前 head 上 OK、五项检查全绿，作者就可以开 auto-merge 自己合。Codex 的 PR 和改 Bridge 帧的 PR 还是我来合。」):**
+    - Conditions, all three:
+      - another session reviewed it at effort=max;
+      - that session posted its OK **at the current head**;
+      - all five checks are green on that head: `backend`, `frontend`, `macos`, `secrets` and `language`.
+    - Then the authoring session enables auto-merge with `ccd_pr` `set_auto_merge`, with the same timing and push rules as above.
+    - **Still the user's:**
+      - Codex's PRs, including any Claude commit added on a Codex branch;
+      - any PR that changes a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md`.
+    - Ordinary product code off the security surface is unchanged: the user merges it.
   - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
   - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
