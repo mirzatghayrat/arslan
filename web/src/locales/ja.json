@@ -97,7 +97,7 @@
     "arslan": "メインアシスタント",
     "capabilities": "ケイパビリティ",
     "brain": "記憶",
-    "activity": "アクティビティ",
+    "progress": "進捗",
     "scheduled": "定期タスク"
   },
   "brain": {
@@ -584,8 +584,8 @@
     "desktopNotificationsDesc": "ウィンドウが閉じているか背面にあるとき、タスクの完了、確認が必要な操作、スケジュールタスクの失敗を macOS が通知します。通知にメッセージ本文は表示されません。",
     "labelIsland": "ノッチに Arslan を表示",
     "islandDesc": "画面上部の小さな Arslan が、作業中の内容、あなたの対応が必要なとき、タスクが終わったときを知らせます。ポインタを乗せると詳細が見られます。スクリーンショット、画面収録、画面共有には映りません。",
-    "automationElsewhere": "定期タスクは専用のページに移りました。トークン使用量と過去の実行は「アクティビティ」にあります。",
-    "automationOpenActivity": "アクティビティを開く",
+    "automationElsewhere": "定期タスクは専用のページに移りました。トークン使用量と過去の実行は「進捗」にあります。",
+    "automationOpenActivity": "進捗を開く",
     "searchPlaceholder": "設定を検索…",
     "searchNoHits": "一致するセクションはありません",
     "modeSystem": "システム",
@@ -713,8 +713,8 @@
     "grpVersion": "バージョン",
     "grpWhatsNew": "このバージョンの変更点",
     "watchesOnScheduled": "見守るページやフォルダー、通知しない項目は「定期タスク」ページで管理します。",
-    "openActivity": "使用量とすべての実行は「アクティビティ」にあります。定期タスクは専用のページです。",
-    "openActivityBtn": "アクティビティを開く",
+    "openActivity": "使用量とすべての実行は「進捗」にあります。定期タスクは専用のページです。",
+    "openActivityBtn": "進捗を開く",
     "whatsNewEmpty": "このバージョンの説明はありません。"
   },
   "errors": {

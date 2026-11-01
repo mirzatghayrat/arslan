@@ -430,7 +430,7 @@ export default function App() {
       const runId = (e as CustomEvent<number>).detail;
       if (typeof runId !== 'number') return;
       useActivityStore.getState().setOpenRun(runId);
-      setActiveSection('activity');
+      setActiveSection('progress');
     };
     window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
     return () => window.removeEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
@@ -776,12 +776,12 @@ export default function App() {
             {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openCardConversation}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
-            {activeSection === 'activity' && <ActivityView />}
+            {activeSection === 'progress' && <ActivityView waiting={waiting} />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
                 initialSection={settingsInitialSection}
-                onOpenActivity={() => setActiveSection('activity')}
+                onOpenActivity={() => setActiveSection('progress')}
                 settings={settings}
                 setSettings={setSettings}
                 llmProviders={llmProviders}

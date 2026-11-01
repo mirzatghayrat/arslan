@@ -97,7 +97,7 @@
     "arslan": "主助手",
     "capabilities": "能力库",
     "brain": "记忆",
-    "activity": "活动",
+    "progress": "进展",
     "scheduled": "定时任务"
   },
   "brain": {
@@ -584,8 +584,8 @@
     "desktopNotificationsDesc": "窗口关着或在后台时，任务完成、有动作需要你确认、定时任务失败，macOS 会通知你。通知里不会显示消息内容。",
     "labelIsland": "在刘海里显示 Arslan",
     "islandDesc": "屏幕顶部的小 Arslan 会显示它正在做什么、什么时候需要你、任务什么时候做完。把鼠标移上去看详情。截图、录屏和屏幕共享里都不会出现它。",
-    "automationElsewhere": "定时任务有了自己的「定时任务」页；用量和每次运行的记录在「活动」里。",
-    "automationOpenActivity": "打开活动",
+    "automationElsewhere": "定时任务有了自己的「定时任务」页；用量和每次运行的记录在「进展」里。",
+    "automationOpenActivity": "打开进展",
     "searchPlaceholder": "搜索设置…",
     "searchNoHits": "没有匹配的分区",
     "modeSystem": "跟随系统",
@@ -713,8 +713,8 @@
     "grpVersion": "版本",
     "grpWhatsNew": "这一版更新了什么",
     "watchesOnScheduled": "盯着的网页和文件夹、不再提醒的，在「定时任务」页管理。",
-    "openActivity": "用量和每一次运行在「活动」里；定时任务在「定时任务」页。",
-    "openActivityBtn": "打开动态",
+    "openActivity": "用量和每一次运行在「进展」里；定时任务在「定时任务」页。",
+    "openActivityBtn": "打开进展",
     "whatsNewEmpty": "这一版没有更新说明。"
   },
   "errors": {

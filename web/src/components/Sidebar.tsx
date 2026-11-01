@@ -294,10 +294,10 @@ export default function Sidebar(props: SidebarProps) {
     <footer className="shrink-0 space-y-1 border-t border-border/60 p-3">
       <button id="nav-btn-settings-footer" onClick={() => onChangeSection("settings")} className={navClass(activeSection === "settings")}>
         <Settings2 size={15} /><span>{t("nav.settings")}</span></button>
-      {/* 0.1.50 (user ruling): Activity takes the old "Local service · Online" slot. A
+      {/* 0.1.50 (user ruling): Activity, called Progress since v0.1.64 (INB7-a), takes the old "Local service · Online" slot. A
           permanent "Online" said nothing; the connection only shows when it is NOT fine. */}
-      <button id="nav-btn-activity-footer" onClick={() => onChangeSection("activity")} className={navClass(activeSection === "activity")}>
-        <Activity size={15} /><span className="flex-1">{t("nav.activity")}</span>
+      <button id="nav-btn-progress-footer" onClick={() => onChangeSection("progress")} className={navClass(activeSection === "progress")}>
+        <Activity size={15} /><span className="flex-1">{t("nav.progress")}</span>
         {waiting > 0 && <span data-testid="progress-badge" aria-label={t("waiting.count", { count: waiting })}
           className="min-w-[18px] rounded-full bg-warning px-1.5 text-center text-[10px] leading-[18px] tabular-nums text-background">{waiting > 99 ? "99+" : waiting}</span>}
         {backendStatus !== "online" && <span data-testid="backend-status"
