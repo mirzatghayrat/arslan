@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from server.services import command_sandbox, task_service, terminal_exec
-from server.orchestrator.recovery_hints import hint_for
+from server.orchestrator.recovery_hints import SANDBOX_APPLE_EVENTS_HINT, hint_for
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
@@ -71,8 +71,20 @@ async def test_an_apple_event_from_the_sandbox_reaches_no_app(tmp_path):
     result = await terminal_exec.run("osascript -e 'tell application \"Finder\" to count windows'",
                                      cwd=tmp_path, sandbox=True)
     assert result["sandbox"] == "workspace" and not result["ok"]
-    assert "(-600)" in result["stderr"] and not result.get("sandbox_denied")      # no outside card for this
+    # SBX-3: on the default-deny base osascript can't even look the app up (-1728), before any event (-600).
+    assert "(-1728)" in result["stderr"] and not result.get("sandbox_denied")     # no outside card for this
     assert hint_for("run_command", result).startswith("Apple Events can't be sent")
+
+
+def test_an_app_the_sandbox_cant_look_up_gets_the_apple_events_hint():
+    """SBX-3: inside the default-deny base the app's lookup is refused, so osascript reports -1728 for the
+    app itself. Outside any sandbox that same code is the script's own error and gets no hint."""
+    err = 'execution error: Can\u2019t get application "Finder". (-1728)'
+    assert hint_for("run_command", {"ok": False, "sandbox": "workspace", "stderr": "29:42: " + err}) \
+        == SANDBOX_APPLE_EVENTS_HINT
+    assert hint_for("run_command", {"ok": False, "sandbox": "off", "stderr": "29:42: " + err}) is None
+    other = 'execution error: Can\u2019t get window 3 of application "Finder". (-1728)'
+    assert hint_for("run_command", {"ok": False, "sandbox": "workspace", "stderr": other}) is None
 
 
 # ── piece 5: a copy this conversation was given is readable by a command, file by file ──

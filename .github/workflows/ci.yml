@@ -354,7 +354,8 @@ jobs:
           # 0.1.64 SBX-3a gates review round (#645, Codex): −17. The keychain gate's list drops four services that don't exist on macOS and swaps securityd for the live SecurityServer and securityd.xpc (−3 per mode: −12 in the SBX-2 kernel tests, −9 strict xfails in the commands tests); complete-list pins and the raw-UDP gate add +4.
           # 0.1.64 SBX-3a: +1, the work folder, the narrowed devices and a pty still work.
           # 0.1.64 SBX-3a §1a: +1, a sandboxed command writes its own run's TMPDIR.
-          EXPECTED = 435
+          # 0.1.64 SBX-3a flip: +1, a work folder inside a closed folder and a saved copy still work on the default-deny base.
+          EXPECTED = 436
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
@@ -362,7 +363,8 @@ jobs:
           # 0.1.64 SBX-3p (#619): 56, all in tests/server/sbx/test_sbx3_commands.py; SBX-3a takes it to 0.
           # 0.1.64 SBX-3a gates (#645, Codex): 72, the 56 plus 16 any-declared cases in the commands tests.
           # 0.1.64 SBX-3a gates review round (#645): 63, after the keychain gate's list shrank by 3 services in each of the 3 commands modes.
-          EXPECTED_XFAIL = 63
+          # 0.1.64 SBX-3a flip: 0. The commands adapter is registered, and all 63 pass on the product preset.
+          EXPECTED_XFAIL = 0
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is

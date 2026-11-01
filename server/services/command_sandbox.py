@@ -1,11 +1,11 @@
-"""The sandbox run_command runs in (0.1.51 P3).
+"""The sandbox run_command runs in (0.1.51 P3; SBX-3 v0.1.64).
 
-macOS seatbelt, Codex `workspace-write` shaped: everything is as usual except that
-a command may write only to the working folder, temp and tool caches, and can
-neither read nor write the user's SSH keys, the keychain files and Arslan's own
-data and keys. Reading elsewhere, running programs and the network stay open:
-Arslan reads the web with curl, and seatbelt cannot hold a connection to one
-host anyway, so nothing is promised about the network.
+macOS seatbelt. Since SBX-3 a command runs on SBX-2's default-deny base (`sandbox_profile.default_deny_profile`):
+it may write only to the working folder, its run's temp and the tool caches; it reaches only the listed system
+services, sockets and devices; it can't listen (the user's D1, 2026-11-01); and it can neither read nor write
+the user's credentials, other apps' data and Arslan's own data and keys. Reading elsewhere and running programs
+stay open. Online, outbound TCP goes to any host with DNS until SBX-6's proxy (the user's D2); offline, no network.
+`profile()` below is the pre-SBX-3 allow-default text, kept only for the harness's historical baseline.
 
 Seatbelt applies the LAST matching rule (measured 2026-10-03): the protected
 paths come last, so they stay closed even inside a writable folder. It matches
@@ -39,7 +39,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from server.services.sandbox_profile import Profile, file_or_folder, literal, real as _real, regex, subpath
+from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_profile, file_or_folder, literal,
+                                             real as _real, regex, subpath)
 
 _SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 _available: bool | None = None
@@ -234,13 +235,40 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
 
 
 def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
-                     readable: list[Path] = (), copies: list[Path] = ()) -> str:
+                     readable: list[Path] = (), copies: list[Path] = (), network: NetworkMode | None = None,
+                     proxy_port: int | None = None, denied_ports: tuple[int, ...] = (),
+                     ipc_prefix: str | None = None) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
-    starts (SBX-3)."""
+    starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
+    devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
+
+    Network (the user's D2, 2026-11-01): offline is NONE; online is ANY_DECLARED, outbound TCP to any host plus
+    DNS, with no `denied_ports` (that mode can't hold them), so loopback to Arslan's own ports stays open as on
+    v0.1.63. DELETE-BY: v0.1.64, when SBX-6's proxy lands: online is then PROXY with Arslan's ports denied.
+    `network`, `proxy_port` and `denied_ports` go to the base as given (SBX-3p's harness passes them).
+    `ipc_prefix` is None for product runs, which permits no POSIX IPC (gate 4, option b: a stock
+    multiprocessing Pool is refused, SBX-measurement.md); the harness passes a per-run one to test the rule."""
     roots = writable_roots(workspace, temp)
-    return profile([Path(r.path) for r in roots if r.tag != DEVICE], default_protected(), offline=offline,
-                   closed=[*closed, *app_data()], readable=readable, copies=copies,
-                   devices=tuple(r.filter() for r in roots if r.tag == DEVICE))
+    writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
+    protected = default_protected()
+    shut = _resolved([*closed, *app_data()])
+    if network is None:
+        network = NetworkMode.NONE if offline else NetworkMode.ANY_DECLARED
+    text = default_deny_profile(writable, protected, closed=shut, network=network, proxy_port=proxy_port,
+                                denied_ports=denied_ports, ipc_prefix=ipc_prefix)
+    # The base closes `closed` and then `protected` last, over every grant. Reopen what lives inside a closed
+    # folder (0.1.59: the work folder read and write, project folders read only), close the protected paths
+    # again so a reopened folder can't uncover them, then let the saved copies be read (S2a-1 piece 5).
+    # Sockets stay closed under all of them: the base allows only its listed sockets.
+    after = Profile("deny")
+    open_rw = [p for p in map(_real, writable) if _inside(p, shut)]
+    open_r = [p for p in map(_real, readable) if _inside(p, shut) and p not in open_rw]
+    after.allow_paths("file-read* file-write* file-map-executable", open_rw, file_or_folder)
+    after.allow_paths("file-read* file-map-executable", open_r, file_or_folder)
+    if open_rw or open_r:
+        after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
+    after.allow_paths("file-read*", map(_real, copies), literal)
+    return text + "".join(after.text().splitlines(True)[2:])        # its rules, without a second header
 
 
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
