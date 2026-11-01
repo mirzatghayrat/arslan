@@ -10,6 +10,7 @@
 Whether what should be denied is denied under real seatbelt is SBX-6p's (Codex).
 """
 import asyncio
+from contextlib import suppress
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -282,6 +283,40 @@ async def test_a_quiet_client_is_not_cut_off_while_the_server_talks(proxy, monke
         await writer.drain()
         assert await asyncio.wait_for(got, 5) == b"ping"
         writer.close()
+    finally:
+        server.close()
+
+
+async def _settles(proxy, seconds: float) -> bool:
+    for _ in range(int(seconds / 0.05)):
+        if not proxy.tasks:
+            return True
+        await asyncio.sleep(0.05)
+    return not proxy.tasks
+
+
+@pytest.mark.parametrize("client_sends", [False, True], ids=["half-closed-client", "neither-side-reads"])
+async def test_a_peer_that_stops_reading_loses_its_slot(proxy, monkeypatch, client_sends):
+    """A client that half-closes and never reads a large reply, or two sides that both stop reading, can't
+    hold a slot past the idle limit: drain() is bounded too."""
+    async def serve(reader, writer):
+        writer.write(b"x" * (16 << 20))                     # far more than the socket buffers hold
+        with suppress(Exception):
+            await writer.drain()
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    _pin_to(monkeypatch, server.sockets[0].getsockname()[1], [])
+    monkeypatch.setattr(sandbox_proxy, "_IDLE_S", 0.3)
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
+        writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+        await writer.drain()
+        await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
+        if client_sends:
+            writer.write(b"y" * (16 << 20))                 # the server never reads it
+        else:
+            writer.write_eof()
+        assert await _settles(proxy, 3.0), "the slot is still held"
+        writer.transport.abort()
     finally:
         server.close()
 

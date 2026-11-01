@@ -203,7 +203,9 @@ class LocalProxy:
                 break
             last[0] = loop.time()
             writer.write(block)
-            await writer.drain()
+            # A peer that stops reading would hold drain() forever, and with it a slot (6a delta review):
+            # it gets the same idle time to take the block.
+            await asyncio.wait_for(writer.drain(), _IDLE_S)
         with suppress(OSError):
             writer.write_eof()
 
