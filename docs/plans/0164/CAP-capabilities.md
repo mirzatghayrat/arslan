@@ -475,3 +475,10 @@ The user's words: 「1A，2 已知限制，3 去掉，额度按你的建议」.
 
 - **CAP4a-3c/3d (#584, #604): cross-host redirects for remote MCP servers aren't checked.** The allowlist and the start-time re-check look at the server's declared URL. The SDK follows a redirect to another host, and that host isn't checked again. This matches mainstream MCP clients. Neither PR claims the other covers it.
 - **UNI1a (#563): two parts of the scan weren't reviewed:** the 40-character window and the interpreter pattern. Classifier blocks stopped that part of the review. The scan is a heuristic, a first line before the lock and the sandbox, so the gap is accepted without an outside review.
+- **CAP5c (#623): a hand-added `npx` or `uvx` package is pinned to one exact version, or refused.** What it leaves:
+  - **Re-adding an unpinned line after a new release** makes a second server, since its pinned arguments differ. Mainstream products key servers by name.
+  - **Only the named package is pinned,** not its dependencies.
+  - **Servers added before #623** keep their stored arguments, and keep floating.
+  - **An exact PyPI version can gain files** after it is pinned (a new wheel for the same version). npm never lets a version be published twice.
+  - **Registry settings outside the connection are not read** (`~/.npmrc`, a project's `.npmrc`, `uv.toml`, `pyproject.toml`). A name on such a registry and on the public one is pinned to the public registry's latest version, and the user's registry is then asked for that version. A registry the line or the connection's env names is noticed, and then only an exact version is accepted.
+  - **Other launchers and wrappers are left as written:** `bunx`, `bun x`, `pnpm dlx`, `npm exec`, `npm x`, `yarn dlx`, `pipx run`, `uv run`, `env npx …`, `docker`, a shell (`sh -c`, `bash -lc`; shell strings are not parsed), and a path to a program. `uv tool run` is read as `uvx` when those are uv's first two arguments.
