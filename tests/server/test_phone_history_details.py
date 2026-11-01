@@ -325,12 +325,13 @@ async def test_a_connector_name_is_its_label_with_secrets_and_the_home_path_mask
     monkeypatch.setenv("ARSLAN_ALLOW_INSECURE_SECRETS", "1")
     home = "/Users/probeuser"
     monkeypatch.setattr(phone_details, "_home", lambda: home)
-    mcp_ready.update({1, 2, 3, 4, 5})
+    mcp_ready.update({1, 2, 3, 4, 5, 6})
     labels = {1: "https://mcp.example.dev/sse?token=sklivetokenvalueabc",
               2: "files --token flagtokenaaaa",
               3: f"{home}/mcp/server.py",
               4: "日历",
-              5: "Files envsecretvalue1234"}
+              5: "Files envsecretvalue1234",
+              6: f"日历{home}/cal"}                                 # a home path right against Chinese text
     rows = [mcp(k, v) for k, v in labels.items()]
     rows[4].env = crypto.encrypt(json.dumps({"API_KEY": "envsecretvalue1234"}))
     await _add(client, rows)
@@ -339,6 +340,7 @@ async def test_a_connector_name_is_its_label_with_secrets_and_the_home_path_mask
     for secret in ("sklivetokenvalueabc", "flagtokenaaaa", "envsecretvalue1234", home):
         assert secret not in text, secret
     assert "~/mcp/server.py" in names and "日历" in names, "the label is the display name, in any script"
+    assert "日历~/cal" in names
     assert all(len(name) <= 80 for name in names)
 
 

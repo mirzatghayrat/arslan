@@ -5,7 +5,6 @@ sees at most 40 steps of a run and 200 messages, so it would undercount.
 from __future__ import annotations
 
 import os
-import re
 import unicodedata
 from pathlib import Path, PurePosixPath
 
@@ -69,12 +68,9 @@ def shown_folder(folder: Path | str, home: Path | str) -> str:
 
 
 def _fold_home(text: str) -> str:
-    """The home folder in free text as `~`: only as a whole path, never inside another path or another user's
-    name, in any letter case."""
-    home = str(_home()).rstrip("/")
-    if not home:
-        return text
-    return re.sub(r"(?<![\w./~-])" + re.escape(home) + r"(?![\w.-])", "~", text, flags=re.IGNORECASE)
+    """The home folder in free text as `~` (`home_text.fold_home`: only a whole path, next to any script)."""
+    from server.services import home_text
+    return home_text.fold_home(text, str(_home()))
 
 
 def shown_model(model: str) -> str:
