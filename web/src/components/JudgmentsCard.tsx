@@ -15,9 +15,12 @@ export interface JudgmentRow {
   latency_ms: number | null;
   outcome: string | null;
   created_at: string;
+  conversation_id?: string | null;
+  /** The run it belongs to (#637); null on a row judged before migration 0085. */
+  run_id?: number | null;
 }
 
-const POINT_KEY: Record<string, string> = {
+export const POINT_KEY: Record<string, string> = {
   "memory.worth": "activityPage.pointWorth",
   "memory.merge": "activityPage.pointMerge",
   "memory.same": "activityPage.pointSame",
@@ -41,6 +44,13 @@ export function judgmentIcon(point: string): LucideIcon {
 }
 
 const PAGE = 20;
+
+/** What the judge said, in words: yes or no with how sure, or no answer. */
+export function judgmentVerdict(t: (key: string, options?: Record<string, unknown>) => string, r: JudgmentRow): string {
+  return r.verdict == null || r.probability == null
+    ? t("activityPage.judgeNoAnswer")
+    : t(r.verdict ? "activityPage.judgeYes" : "activityPage.judgeNo", { p: Math.round((r.verdict ? r.probability : 1 - r.probability) * 100) });
+}
 
 export default function JudgmentsCard() {
   const { t, i18n } = useTranslation();
@@ -66,10 +76,7 @@ export default function JudgmentsCard() {
   }, [more, rows]);
 
   if (!rows || rows.length === 0) return null;
-  const verdict = (r: JudgmentRow) => r.verdict == null || r.probability == null
-    ? t("activityPage.judgeNoAnswer")
-    : t(r.verdict ? "activityPage.judgeYes" : "activityPage.judgeNo",
-        { p: Math.round((r.verdict ? r.probability : 1 - r.probability) * 100) });
+  const verdict = (r: JudgmentRow) => judgmentVerdict(t, r);
   return (
     <section data-testid="judgments-card">
       <div className="flex items-baseline gap-2">
