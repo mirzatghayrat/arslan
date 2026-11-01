@@ -352,7 +352,8 @@ jobs:
           # 0.1.64 SBX-3a gates (#645, Codex): +13, the measured service allowlist (+12) and the multiprocessing diagnosis (+1).
           # 0.1.64 SBX-3a gates (#645, Codex): +16, any-declared mode added to #619's two commands tests, strict xfails.
           # 0.1.64 SBX-3a gates review round (#645, Codex): −17. The keychain gate's list drops four services that don't exist on macOS and swaps securityd for the live SecurityServer and securityd.xpc (−3 per mode: −12 in the SBX-2 kernel tests, −9 strict xfails in the commands tests); complete-list pins and the raw-UDP gate add +4.
-          EXPECTED = 433
+          # 0.1.64 SBX-3a gates notes (#654, Codex): +35, five live services added to the keychain gate's list (+20 SBX-2 kernel cases over 4 modes, +15 strict xfails over the 3 commands modes).
+          EXPECTED = 468
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
@@ -360,7 +361,8 @@ jobs:
           # 0.1.64 SBX-3p (#619): 56, all in tests/server/sbx/test_sbx3_commands.py; SBX-3a takes it to 0.
           # 0.1.64 SBX-3a gates (#645, Codex): 72, the 56 plus 16 any-declared cases in the commands tests.
           # 0.1.64 SBX-3a gates review round (#645): 63, after the keychain gate's list shrank by 3 services in each of the 3 commands modes.
-          EXPECTED_XFAIL = 63
+          # 0.1.64 SBX-3a gates notes (#654): 78, the 63 plus 5 services in each of the 3 commands modes.
+          EXPECTED_XFAIL = 78
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is
