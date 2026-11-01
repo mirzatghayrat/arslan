@@ -3,7 +3,7 @@
  * (GET /runs outcome= / origin=) and counts (GET /runs/counts), so a paged list and its counts agree. The list shows the page's
  * range, as the axis and the tiles do (board F: 「这个范围里没有」), and a chip also dims the bars it leaves out.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
@@ -11,6 +11,7 @@ const { getUsageSummary, listRuns, runCounts, runProcess, request } = vi.hoisted
   getUsageSummary: vi.fn(), listRuns: vi.fn(), runCounts: vi.fn(), runProcess: vi.fn(), request: vi.fn() }));
 vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts, runProcess }, request }));
 
+import { PROACTIVE_CHANGED } from "../api/proactive";
 import ActivityView from "../components/ActivityView";
 import { useActivityStore } from "../stores/activityStore";
 
@@ -44,7 +45,7 @@ beforeEach(async () => {
   runProcess.mockReturnValue(new Promise(() => {}));
   request.mockResolvedValue({ items: [], entries: [] });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
 
 describe("the list shows the page's range", () => {
   it("asks for the range's runs, and for a picked slice only", async () => {
@@ -122,10 +123,62 @@ describe("each chip lists its runs, counted by the server in the same range", ()
   });
 });
 
+describe("the review of PR 627", () => {
+  it("names each chip with its count, and says what 「要你做」 lists here (5, 2)", async () => {
+    runCounts.mockResolvedValue({ waiting: 2, failed: 5, scheduled: 0, phone: 7 });
+    render(<ActivityView waiting={waiting()} />);
+    await waitFor(() => expect(within(chips()).getByRole("button", { name: "Failed, 5" })).toBeTruthy());
+    expect(within(chips()).getByRole("button", { name: "Needs you, 2" }).getAttribute("title"))
+      .toBe("Runs waiting for your answer in their conversation");
+  });
+
+  it("reads the counts with a fresh start each time, and page 1 again when they change (4)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<ActivityView waiting={waiting()} />);
+    await screen.findByTestId("activity-run-3");
+    await waitFor(() => expect(runCounts).toHaveBeenCalled());
+    const firstSince = runCounts.mock.calls[0][0].since;
+    const lists = listCalls().length;
+    vi.setSystemTime(Date.now() + HOUR * 1000);
+    runCounts.mockResolvedValue({ waiting: 1, failed: 2, scheduled: 1, phone: 1 });                // a run failed meanwhile
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(lists));
+    expect(runCounts.mock.calls.at(-1)![0].since - firstSince).toBeGreaterThanOrEqual(HOUR - 5);
+  });
+
+  it("leaves the list alone when the counts change after the reader paged further back", async () => {
+    listRuns.mockImplementation((o: { limit?: number; beforeId?: number }) => Promise.resolve(o.limit === 200 ? RUNS
+      : o.beforeId ? [run(50, "recorded", "chat")] : Array.from({ length: 20 }, (_, i) => run(100 - i, "recorded", "chat"))));
+    render(<ActivityView waiting={waiting()} />);
+    const box = await screen.findByTestId("activity-runs-box");
+    await waitFor(() => expect(runCounts).toHaveBeenCalled());
+    Object.defineProperty(box, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(box, "clientHeight", { value: 200, configurable: true });
+    box.scrollTop = 800;
+    fireEvent.scroll(box);
+    await screen.findByTestId("activity-run-50");                                  // page 2 is in
+    const lists = listCalls().length;
+    runCounts.mockResolvedValue({ waiting: 0, failed: 9, scheduled: 1, phone: 1 });
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await waitFor(() => expect(runCounts.mock.calls.length).toBeGreaterThan(1));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(listCalls().length).toBe(lists);
+    expect(screen.getByTestId("activity-run-50")).toBeTruthy();
+  });
+
+  it("clearing the slice keeps the chip on (7)", async () => {
+    useActivityStore.setState({ filter: { since: T0 + 2 * HOUR, until: T0 + 3 * HOUR, chip: "failed" } });
+    render(<ActivityView waiting={waiting()} />);
+    fireEvent.click(await screen.findByLabelText("Clear filter"));
+    expect(useActivityStore.getState().filter.chip).toBe("failed");
+    await waitFor(() => expect(listCalls().at(-1)).toMatchObject({ outcome: "failed", until: undefined }));
+  });
+});
+
 describe("the chips speak every language", () => {
   it("has their words in all six, and reads in Chinese as board F does", async () => {
     for (const language of SUPPORTED_LANGUAGES) {
-      for (const key of ["chipScheduled", "chipPhone", "noneInRange"]) {
+      for (const key of ["chipScheduled", "chipPhone", "noneInRange", "chipNeedsTitle"]) {
         const value = i18n.getResource(language, "translation", `activityPage.${key}`);
         expect(typeof value === "string" && value.length > 0, `${language} ${key}`).toBe(true);
       }

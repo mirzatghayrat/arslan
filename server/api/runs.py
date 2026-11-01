@@ -10,7 +10,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, model_validator
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
@@ -111,14 +112,16 @@ _BROWSER_RUN_NAME = "Browser preview"
 
 async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
     """Where each run came from, read from records that already exist (0.1.58 §7):
-    a scheduled fire (Run.kind), a browser preview (its run name), a background job
-    (its result message carries job_outcome), a message sent from the paired iPhone
+    a scheduled fire (Run.kind, or since C1 a host turn its scheduled_task_runs row names), a browser preview (its run name),
+    a background job (its result message carries job_outcome), a message sent from the paired iPhone
     (the user message that started the turn has source="phone"); otherwise chat."""
-    from server.db.models import ArslanMessage
+    from server.db.models import ArslanMessage, ScheduledTaskRun
     out: dict[int, str] = {}
     pending: list[Run] = []
+    fired = set((await db.execute(select(ScheduledTaskRun.run_id).where(
+        ScheduledTaskRun.run_id.in_([r.id for r in runs])))).scalars()) if runs else set()
     for r in runs:
-        if r.kind == "scheduled":
+        if r.kind == "scheduled" or r.id in fired:
             out[r.id] = "scheduled"
         elif r.spawn_name == _BROWSER_RUN_NAME:
             out[r.id] = "browser"
@@ -208,7 +211,11 @@ def _chip(q, outcome: str | None, origin: str | None, asking: set[str]):
     elif outcome == "waiting":
         q = q.where(Run.status == "recording", Run.conversation_id.in_(asking))
     if origin == "scheduled":
-        q = q.where(Run.kind == "scheduled")
+        # Since C1 (0.1.63) a fire is a host turn, linked only by scheduled_task_runs.run_id (scheduler.py); older ones kept
+        # kind "scheduled" (⓪Plan's review of PR 627).
+        from server.db.models import ScheduledTaskRun
+        fired = select(ScheduledTaskRun.run_id).where(ScheduledTaskRun.run_id.is_not(None))
+        q = q.where(or_(Run.kind == "scheduled", Run.id.in_(fired)))
     elif origin == "phone":
         q = q.where(Run.conversation_id.in_(_phoned()))
     return q
@@ -288,7 +295,9 @@ async def run_counts(
     async def count(q) -> int:
         return int((await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar() or 0)
 
-    phone, _ = await _phone_turns(db, _chip(scope, None, "phone", asking), None)
+    # Only what run_origins reads, not whole rows: the count may walk every phone turn in the span.
+    lean = _chip(scope, None, "phone", asking).options(load_only(Run.id, Run.kind, Run.spawn_name, Run.conversation_id))
+    phone, _ = await _phone_turns(db, lean, None)
     return {"waiting": await count(_chip(scope, "waiting", None, asking)), "failed": await count(_chip(scope, "failed", None, asking)),
             "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone)}
 

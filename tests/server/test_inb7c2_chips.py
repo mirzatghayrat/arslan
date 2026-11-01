@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from server.db.models import ArslanMessage, Run
+from server.db.models import ArslanMessage, Run, ScheduledTask, ScheduledTaskRun
 from server.services import approvals
 
 
@@ -22,8 +22,16 @@ async def _seed(client) -> dict[str, int]:
                  "asking": _run("asking", "recording", user_message="asking"),
                  "busy": _run("c", "recording", user_message="busy"),            # running, no card: not waiting on you
                  "asked": _run("asking", user_message="asked")}                   # ended, in the asking conversation
+        # Since C1 (0.1.63) a fire is a host turn in the task's conversation, linked only by scheduled_task_runs.run_id
+        # (⓪Plan's review of PR 627).
+        named["c1fire"] = _run("scheduled-5", user_message="c1fire")
         db.add_all(named.values())
         await db.flush()
+        task = ScheduledTask(name="digest", prompt="sum up", schedule_kind="interval", interval_s=86_400)
+        db.add(task)
+        await db.flush()
+        db.add_all([ScheduledTaskRun(task_id=task.id, run_id=named["c1fire"].id, outcome="ok"),
+                    ScheduledTaskRun(task_id=task.id, run_id=None, outcome="skipped_overlap")])
         for i in range(5):
             run = _run("p", user_message=f"p{i}")
             db.add(run)
@@ -45,10 +53,17 @@ async def test_each_chip_lists_only_its_runs(client, monkeypatch):
     await _seed(client)
     assert await _listed(client, outcome="failed") == ["failed"]
     assert await _listed(client, outcome="waiting") == ["asking"]
-    assert await _listed(client, origin="scheduled") == ["fire"]
+    assert await _listed(client, origin="scheduled") == ["c1fire", "fire"]
     assert await _listed(client, origin="phone") == ["p4", "p2", "p0"]                  # newest first, typed turns left out
     assert await _listed(client, origin="phone", limit=1) == ["p4"]                     # a page holds no more than asked
     assert (await client.get("/api/v1/runs", params={"outcome": "later"})).status_code == 422
+
+
+async def test_a_c1_fire_is_listed_as_scheduled(client, monkeypatch):
+    monkeypatch.setattr(approvals, "all_pending", lambda: [])
+    await _seed(client)
+    origin = {row["user_message"]: row["origin"] for row in (await client.get("/api/v1/runs", params={"limit": 50})).json()}
+    assert (origin["c1fire"], origin["fire"], origin["typed"]) == ("scheduled", "scheduled", "chat")
 
 
 async def test_the_phone_chip_pages_back_like_the_rest(client, monkeypatch):
@@ -67,7 +82,7 @@ async def test_the_phone_chip_pages_back_like_the_rest(client, monkeypatch):
 async def test_the_counts_follow_the_same_scope(client, monkeypatch):
     monkeypatch.setattr(approvals, "all_pending", lambda: [{"call_id": "c1", "conversation_id": "asking"}])
     await _seed(client)
-    assert (await client.get("/api/v1/runs/counts")).json() == {"waiting": 1, "failed": 1, "scheduled": 1, "phone": 3}
+    assert (await client.get("/api/v1/runs/counts")).json() == {"waiting": 1, "failed": 1, "scheduled": 2, "phone": 3}
     later = (datetime.utcnow() + timedelta(minutes=5)).isoformat()
     assert (await client.get("/api/v1/runs/counts", params={"since": later})).json() == {
         "waiting": 0, "failed": 0, "scheduled": 0, "phone": 0}

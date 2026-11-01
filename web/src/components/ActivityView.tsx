@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarClock, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
 import { api } from "../api/client";
@@ -64,36 +64,51 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
   }, []);
 
   // INB7-c2: the list shows the page's range, as the axis and the tiles do (board F: 「这个范围里没有」); a picked slice narrows it,
-  // and a chip asks the server for its runs only, so a page and the chip's count agree.
+  // and a chip asks the server for its runs only, so a page and the chip's count agree. The range's start is taken afresh at each
+  // read (⓪Plan's review of PR 627, 4).
   const range = useActivityStore((s) => s.range);
-  const rangeStart = useMemo(() => Math.floor(Date.now() / 1000) - RANGE_SECONDS[range], [range]);
-  const since = filter.since ?? rangeStart;
+  const sinceNow = useCallback(() => filter.since ?? Math.floor(Date.now() / 1000) - RANGE_SECONDS[range], [filter.since, range]);
   const chipParams = filter.chip ? CHIPS[filter.chip] : {};
-  const scope = { since, until: filter.until, model: filter.model };
-  const readCounts = useCallback(() => api.runCounts({ since, until: filter.until, model: filter.model }), [since, filter.until, filter.model]);
+  const readCounts = useCallback(() => api.runCounts({ since: sinceNow(), until: filter.until, model: filter.model }),
+    [sinceNow, filter.until, filter.model]);
   const [counts, setCounts] = useState<Record<RunChip, number> | null>(null);
   useFreshRead(readCounts, setCounts);
+  /** The span the loaded pages were read for: the next page asks for the same one. */
+  const listSince = useRef<number | undefined>(undefined);
+  const latest = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadFirst = useCallback(() => {
+    const mine = ++latest.current;
+    listSince.current = sinceNow();
     loading.current = true;
-    api.listRuns({ limit: RUNS_PAGE, ...scope, ...chipParams })
-      .then((r) => { if (!cancelled) { setRuns(r); setMore(r.length === RUNS_PAGE); setFailed(false); } })
-      .catch(() => { if (!cancelled) setFailed(true); })
+    api.listRuns({ limit: RUNS_PAGE, since: listSince.current, until: filter.until, model: filter.model, ...chipParams })
+      .then((r) => { if (mine === latest.current) { setRuns(r); setMore(r.length === RUNS_PAGE); setFailed(false); } })
+      .catch(() => { if (mine === latest.current) setFailed(true); })
       .finally(() => { loading.current = false; });
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [since, filter.until, filter.model, filter.chip]);
+  }, [sinceNow, filter.until, filter.model, filter.chip]);
+  useEffect(() => { loadFirst(); return () => { latest.current += 1; }; }, [loadFirst]);
+
+  // When the counts change, something ran or ended: page 1 is read again, unless the reader has paged further back.
+  const countsKey = counts ? JSON.stringify(counts) : "";
+  const seenCounts = useRef("");
+  useEffect(() => {
+    if (!countsKey) return;
+    if (seenCounts.current && seenCounts.current !== countsKey && (runs?.length ?? 0) <= RUNS_PAGE) loadFirst();
+    seenCounts.current = countsKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countsKey]);
 
   const loadMore = useCallback(() => {
     if (!more || loading.current || !runs?.length) return;
     loading.current = true;
-    api.listRuns({ limit: RUNS_PAGE, beforeId: runs[runs.length - 1].id, ...scope, ...chipParams })
+    api.listRuns({ limit: RUNS_PAGE, beforeId: runs[runs.length - 1].id, since: listSince.current, until: filter.until,
+      model: filter.model, ...chipParams })
       .then((r) => { setRuns((prev) => [...(prev ?? []), ...r]); setMore(r.length === RUNS_PAGE); })
       .catch(() => setMore(false))
       .finally(() => { loading.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [more, runs, since, filter.until, filter.model, filter.chip]);
+  }, [more, runs, filter.until, filter.model, filter.chip]);
 
   const showRun = useActivityStore((s) => s.showRun);
   const step = useCallback((delta: -1 | 1) => {
@@ -138,6 +153,9 @@ export default function ActivityView({ waiting }: { waiting: WaitingView }) {
             const on = filter.chip === id;
             return (
               <button key={id} type="button" aria-pressed={on} onClick={() => setFilter({ ...filter, chip: on ? undefined : id })}
+                aria-label={counts ? `${t(CHIP_WORD[id])}, ${counts[id]}` : t(CHIP_WORD[id])}
+                // Board F's word, which the user approved; here it lists runs, so it can differ from the tile (⓪Plan's review of PR 627).
+                title={id === "waiting" ? t("activityPage.chipNeedsTitle") : undefined}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] ${
                   on ? "border-foreground bg-surface text-foreground" : "border-border text-muted-foreground hover:bg-surface/70"}`}>
                 {id === "waiting" && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />}
