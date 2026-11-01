@@ -77,7 +77,7 @@ export default function App() {
   const backendStatus = useBackendStatus();
   // INB5: what is waiting on you, counted once by the server, for the badge on Progress (the Inbox and its badge are gone).
   const waiting = useWaiting();
-  const scheduledAttention = useScheduledAttention();
+  const scheduledAttention = useScheduledAttention(waiting.scheduled);
   const [legacyExperts, setLegacyExperts] = useState(0);
   useEffect(() => {
     request<{ experts: { converted: boolean }[] }>('/experts/legacy')
@@ -773,7 +773,7 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject}
               openProjectId={openProjectId} onOpenedProject={() => setOpenProjectId(null)} />}
-            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openCardConversation}
+            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} waitingTasks={waiting.scheduled} onOpenConversation={openCardConversation}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'progress' && <ActivityView waiting={waiting} threads={threads} projects={sidebarProjects}

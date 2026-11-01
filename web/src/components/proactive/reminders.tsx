@@ -8,7 +8,7 @@ import { evidenceLines, groupEvidence, proactiveErrorText, titleOf } from "../..
 import { buttonClass, primaryClass } from "../companion/CompanionDialog";
 import { useDismissable } from "../../hooks/useDismissable";
 import { Escaped, isolate } from "../../lib/outsideText";
-import { useAnswerGuard } from "../kit/guard";
+import { useAnswerGuard, useAnswerHeld } from "../kit/guard";
 
 // INB3: a reminder's card and what its buttons do, moved here from ProactiveInbox (the INB card: extract, then delete) so the
 // Scheduled page shows a task's problem and a watch's change the same way. The Inbox uses them too until INB5 removes it.
@@ -18,6 +18,8 @@ const ICONS: Record<ProactiveKind, typeof Globe> = {
 };
 const ACTIONABLE = new Set(["new", "seen", "snoozed"]);
 const menuItem = "block w-full rounded px-3 py-1.5 text-left text-xs hover:bg-foreground/5";
+/** How a door looks while a hold ignores it (the away entries' buttons look the same). */
+const HELD_LOOK = "aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
 
 /** A small drop-down. Closes on a choice, an outside click or Escape (the shared useDismissable),
  * which a native <details> does not do: it stayed open over the next card. */
@@ -40,6 +42,7 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
   // guard: the second click of a double-click aimed at the slot never starts, sets aside or dismisses it. Outside a scope (the
   // Scheduled page, the Inbox) the guard never holds.
   const held = useAnswerGuard();
+  const heldNow = useAnswerHeld();                       // INB5b-3: a click a hold ignores is not silent; the button looks held
   const Icon = ICONS[item.kind] ?? Inbox;
   const groups = groupEvidence(evidenceLines(t, language, item.evidence));
   const actionable = ACTIONABLE.has(item.status);
@@ -70,8 +73,8 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
     </div>}
     {actionable ? <div className="mt-4 flex flex-wrap items-center gap-2">
       {readOnly
-        ? <button className={primaryClass} disabled={busy} onClick={() => { if (!held()) onDismiss(); }}><Check size={14} />{t("proactive.item.gotIt")}</button>
-        : <button className={primaryClass} disabled={busy} onClick={() => { if (!held()) onDo(); }}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
+        ? <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDismiss(); }}><Check size={14} />{t("proactive.item.gotIt")}</button>
+        : <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDo(); }}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
       <Menu label={t("proactive.item.snooze")} icon={<Clock size={14} />}>{(close) => <>
         {([1, 3, 7] as const).map((days) => <button key={days} role="menuitem" className={menuItem} disabled={busy}
           onClick={() => { close(); if (!held()) onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
