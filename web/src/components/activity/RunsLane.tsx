@@ -203,7 +203,7 @@ export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; n
   );
 }
 
-type Step = RunProcessOut["entries"][number];
+export type Step = RunProcessOut["entries"][number];
 
 /** A read of one run's steps shared by everyone who asks while it is in flight (the axis's lane and the inspector open together),
  *  then forgotten: a run's steps are written when it ends, so a later read must reach the server. */

@@ -13,7 +13,7 @@ const { getUsageSummary, listRuns, runProcess, runCounts, runChanges, request, c
   changeDiff: vi.fn() }));
 vi.mock("../api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/client")>()),
-  api: { getUsageSummary, listRuns, runProcess, runCounts, runChanges }, request,
+  api: { getUsageSummary, listRuns, runProcess, runCounts, runChanges, getRun: () => new Promise(() => {}) }, request,
 }));
 vi.mock("../api/files", async (importOriginal) => {
   const real = await importOriginal<typeof import("../api/files")>();
@@ -178,23 +178,25 @@ describe("the tabs follow the WAI-ARIA tabs pattern (⓪Plan's review of PR 629,
   it("ties each tab to its panel, keeps one tab in the tab order, and moves with the arrows, Home and End", async () => {
     render(<ActivityView waiting={waiting()} />);
     fireEvent.click(await screen.findByTestId("activity-run-11"));
-    const [replay, changes] = within(inspector()).getAllByRole("tab");
+    const [replay, changes, diag] = within(inspector()).getAllByRole("tab");      // 「回放」, 「改动」, 「诊断」 (INB7-c4a)
     const panel = within(inspector()).getByRole("tabpanel");
     expect(replay.getAttribute("aria-controls")).toBe(panel.id);
     expect(panel.getAttribute("aria-labelledby")).toBe(replay.id);
-    expect([replay.tabIndex, changes.tabIndex]).toEqual([0, -1]);
+    expect([replay.tabIndex, changes.tabIndex, diag.tabIndex]).toEqual([0, -1, -1]);
     fireEvent.keyDown(replay, { key: "ArrowRight" });
     expect(changes.getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(changes);
-    expect([replay.tabIndex, changes.tabIndex]).toEqual([-1, 0]);
-    fireEvent.keyDown(changes, { key: "ArrowRight" });                             // wraps round
+    expect([replay.tabIndex, changes.tabIndex, diag.tabIndex]).toEqual([-1, 0, -1]);
+    fireEvent.keyDown(changes, { key: "ArrowRight" });
+    expect(diag.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(diag, { key: "ArrowRight" });                                // wraps round
     expect(replay.getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(replay, { key: "End" });
-    expect(changes.getAttribute("aria-selected")).toBe("true");
-    fireEvent.keyDown(changes, { key: "Home" });
+    expect(diag.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(diag, { key: "Home" });
     expect(replay.getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(replay, { key: "ArrowLeft" });
-    expect(changes.getAttribute("aria-selected")).toBe("true");
+    expect(diag.getAttribute("aria-selected")).toBe("true");
   });
 });
 
