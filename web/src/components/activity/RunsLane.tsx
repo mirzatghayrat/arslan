@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pause, Play, SkipBack, X } from "lucide-react";
+import { Pause, Play, SkipBack } from "lucide-react";
 import { api } from "../../api/client";
 import type { RunListItem, RunProcessOut } from "../../api/client.types";
 import { PROACTIVE_CHANGED } from "../../api/proactive";
@@ -22,11 +22,11 @@ const LABEL = "w-16 shrink-0 pr-2 text-right text-[10px] text-subtle-foreground"
 
 export type Outcome = "ok" | "failed" | "waiting" | "running" | "stopped";
 // A running bar pulses, as the list's running dot does, so it reads apart from the amber of one that waits (close in light themes).
-const COLOUR: Record<Outcome, string> = {
+export const COLOUR: Record<Outcome, string> = {
   ok: "bg-success", failed: "bg-danger", waiting: "bg-warning", running: "bg-primary motion-safe:animate-pulse",
   stopped: "bg-subtle-foreground",
 };
-const WORD: Record<Outcome, string> = {
+export const WORD: Record<Outcome, string> = {
   ok: "activityPage.done", failed: "activityPage.failed", waiting: "activityPage.waitingRun", running: "activityPage.running",
   stopped: "activityPage.cancelled",
 };
@@ -55,9 +55,10 @@ export function packRows(runs: { id: number; start: number; end: number }[]): { 
   return { rows, stacked };
 }
 
-const at = (time: string | null | undefined) => (time ? Date.parse(utcIso(time)) : NaN);
+/** A server time (naive UTC, or with "Z") in epoch ms; NaN for none. */
+export const at = (time: string | null | undefined) => (time ? Date.parse(utcIso(time)) : NaN);
 const pct = (n: number) => `${n.toFixed(2)}%`;
-const clockOf = (locale: string) => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+export const clockOf = (locale: string) => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
 
 /** A run's span: to now only while it runs. A run the boot sweep interrupted has an end and no total (run_reaper), and one with
  *  neither draws its shortest bar rather than running on to now (⓪Plan's review of PR 622, 3). */
@@ -137,8 +138,8 @@ export function AxisHead({ runs, picked }: { runs: RunListItem[]; picked: boolea
 export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; now: number; t0: number; t1: number; locale: string }) {
   const { t } = useTranslation();
   const filter = useActivityStore((s) => s.filter);
-  const axisRunId = useActivityStore((s) => s.axisRunId);
-  const setAxisRun = useActivityStore((s) => s.setAxisRun);
+  const pickedRunId = useActivityStore((s) => s.pickedRunId);
+  const setPickedRun = useActivityStore((s) => s.setPickedRun);
   const clock = useMemo(() => clockOf(locale), [locale]);
   const placed = useMemo(() => {
     const spans = runs.flatMap((run) => {
@@ -170,15 +171,15 @@ export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; n
       <div className="relative flex-1 rounded-[3px] bg-border/25" style={{ height: 8 + rowCount * ROW_PX }}>
         {placed.spans.map(({ run, start, from, to }) => {
           const outcome = outcomeOf(run);
-          const picked = run.id === axisRunId;
-          const dim = (axisRunId != null && !picked) || filteredOut(run, start);
+          const picked = run.id === pickedRunId;
+          const dim = (pickedRunId != null && !picked) || filteredOut(run, start);
           const took = outcome === "running" || outcome === "waiting" || run.total_ms == null ? "" : fmtMs(run.total_ms);
           return (
             <button key={run.id} type="button" data-testid={`axis-run-${run.id}`} data-row={placed.rows.get(run.id)}
               data-outcome={outcome} aria-pressed={picked}
               aria-label={[run.user_message || t("activityPage.run", { id: run.id }), clock.format(start), took, t(WORD[outcome])]
                 .filter(Boolean).join(" · ")}
-              onClick={() => setAxisRun(picked ? null : run.id)}
+              onClick={() => setPickedRun(picked ? null : run.id, run)}
               className={`absolute h-3.5 rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${COLOUR[outcome]} ${
                 picked ? "ring-2 ring-foreground ring-offset-1 ring-offset-background" : ""}`}
               style={{ left: pct(((from - t0) / width) * 100), width: pct((Math.max(0, to - from) / width) * 100),
@@ -190,61 +191,90 @@ export function RunsLane({ runs, now, t0, t1, locale }: { runs: RunListItem[]; n
   );
 }
 
+type Step = RunProcessOut["entries"][number];
+
+/** A read of one run's steps shared by everyone who asks while it is in flight (the axis's lane and the inspector open together),
+ *  then forgotten: a run's steps are written when it ends, so a later read must reach the server. */
+const inflight = new Map<number, Promise<RunProcessOut>>();
+function readSteps(runId: number): Promise<RunProcessOut> {
+  let read = inflight.get(runId);
+  if (!read) {
+    read = api.runProcess(runId);
+    inflight.set(runId, read);
+    void read.finally(() => inflight.delete(runId)).catch(() => {});
+  }
+  return read;
+}
+
 /**
- * INB7-b: the picked run's steps on a lane of their own, each where it started within the run, and a replay that walks through
- * them one at a time (REPLAY_MS each) and stops at the last. A step recorded before steps kept their time keeps its place in the
- * order. Keyed by the run, so picking another starts it fresh. The details still open in the drawer until INB7-c's inspector.
+ * The picked run's steps (GET /runs/{id}/process), read again once the list says it stopped running: a run's steps are written
+ * when it ends (run_recorder.finalize). With none, `empty` says why: not written yet while it runs (⓪Plan's review of PR 622, 1);
+ * never written for a run the boot sweep interrupted, which has no total; a run that ended otherwise without a tool step stopped
+ * before any (re-check, C); or it only replied.
  */
-export function StepLane({ runId, run, locale }: { runId: number; run: RunListItem | null; locale: string }) {
-  const { t } = useTranslation();
-  const setAxisRun = useActivityStore((s) => s.setAxisRun);
-  const setOpenRun = useActivityStore((s) => s.setOpenRun);
-  const clock = useMemo(() => clockOf(locale), [locale]);
+export function useRunSteps(runId: number, run: RunListItem | null): { proc: RunProcessOut | null; steps: Step[]; empty: string } {
   const [proc, setProc] = useState<RunProcessOut | null>(null);
-  const [step, setStep] = useState<number | null>(null);
-  const [playing, setPlaying] = useState(false);
-  // A run's steps are written when it ends (run_recorder.finalize), so they are read again once the list says it stopped running.
   const running = run?.status === "recording";
   useEffect(() => {
     let cancelled = false;
-    api.runProcess(runId).then((p) => { if (!cancelled) setProc(p); }).catch(() => { /* the lane stays hidden */ });
+    readSteps(runId).then((p) => { if (!cancelled) setProc(p); }).catch(() => { /* nothing to show */ });
     return () => { cancelled = true; };
   }, [runId, running]);
   const steps = useMemo(() => (proc?.entries ?? []).filter((entry) => entry.kind === "tool"), [proc]);
-  const total = steps.length;
-  // Playing until the last step shows; then it stops by itself and the button offers the replay again.
-  const live = playing && (step == null || step < total - 1);
-  useEffect(() => {
-    if (!live) return;
-    const timer = setInterval(() => setStep((s) => Math.min(total - 1, (s ?? -1) + 1)), REPLAY_MS);
-    return () => clearInterval(timer);
-  }, [live, total]);
-  const toggle = () => {
-    if (live) { setPlaying(false); return; }
-    setStep((s) => (s == null || s >= total - 1 ? 0 : s));
-    setPlaying(true);
-  };
-  const restart = () => { setPlaying(false); setStep(0); };
-
-  const start = at(proc?.started_at ?? run?.created_at);
-  const listedEnd = run && run.status !== "recording" && run.total_ms != null ? start + run.total_ms : NaN;
-  const end = Math.max(proc?.ended_at ? at(proc.ended_at) : Number.isFinite(listedEnd) ? listedEnd : Date.now(), start + 1000);
-  const place = (entry: (typeof steps)[number], i: number) => {
-    const when = at(entry.at);
-    const share = Number.isFinite(when) && Number.isFinite(start) ? (when - start) / (end - start) : (i + 0.5) / total;
-    return Math.max(1.5, Math.min(97, share * 100));
-  };
-  const shown = step == null ? total : step + 1;
-  const words = (entry: (typeof steps)[number]) => stepWords(
-    { tool: entry.tool, argsSummary: entry.args_summary, status: entry.ok ? "ok" : "error", summary: entry.summary }, t);
-  const current = step != null ? steps[step] : null;
-  // No steps: not written yet while it runs (⓪Plan's review of PR 622, 1); never written for a run the boot sweep interrupted,
-  // which has no total; a run that ended otherwise without a tool step stopped before any (re-check, C); or it only replied.
   const ended = proc?.status;
   const empty = ended === "recording" ? (run?.waiting ? "activityPage.stepsAfterAnswer" : "activityPage.stepsWhenDone")
     : ended === "interrupted" && run?.total_ms == null ? "activityPage.stepsNotSaved"
       : ended === "interrupted" || ended === "cancelled" || ended === "failed" ? "activityPage.stoppedNoSteps"
         : "activityPage.noSteps";
+  return { proc, steps, empty };
+}
+
+/** A step in the words of the conversation's step list (lib/process.stepWords). */
+export function stepText(entry: Step, t: (key: string, options?: Record<string, unknown>) => string): string {
+  return stepWords({ tool: entry.tool, argsSummary: entry.args_summary, status: entry.ok ? "ok" : "error", summary: entry.summary }, t);
+}
+
+/**
+ * INB7-b: the picked run's steps on a lane of their own, each where it started within the run, and a replay that walks through
+ * them one at a time (REPLAY_MS each) and stops at the last. A step recorded before steps kept their time keeps its place in the
+ * order. The replay's place lives in the store (INB7-c1), so the inspector's step list follows it and can move it; the run's
+ * name, its details and letting it go are the inspector's (board F: one of each).
+ */
+export function StepLane({ runId, run, locale }: { runId: number; run: RunListItem | null; locale: string }) {
+  const { t } = useTranslation();
+  const step = useActivityStore((s) => s.replayStep);
+  const playing = useActivityStore((s) => s.replayPlaying);
+  const setReplay = useActivityStore((s) => s.setReplay);
+  const clock = useMemo(() => clockOf(locale), [locale]);
+  const { proc, steps, empty } = useRunSteps(runId, run);
+  const total = steps.length;
+  // Playing until the last step shows; then it stops by itself and the button offers the replay again.
+  const live = playing && (step == null || step < total - 1);
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => {
+      const now = useActivityStore.getState().replayStep;
+      setReplay({ step: Math.min(total - 1, (now ?? -1) + 1) });
+    }, REPLAY_MS);
+    return () => clearInterval(timer);
+  }, [live, total, setReplay]);
+  const toggle = () => {
+    if (live) { setReplay({ playing: false }); return; }
+    setReplay({ step: step == null || step >= total - 1 ? 0 : step, playing: true });
+  };
+  const restart = () => setReplay({ step: 0, playing: false });
+
+  const start = at(proc?.started_at ?? run?.created_at);
+  const listedEnd = run && run.status !== "recording" && run.total_ms != null ? start + run.total_ms : NaN;
+  const end = Math.max(proc?.ended_at ? at(proc.ended_at) : Number.isFinite(listedEnd) ? listedEnd : Date.now(), start + 1000);
+  const place = (entry: Step, i: number) => {
+    const when = at(entry.at);
+    const share = Number.isFinite(when) && Number.isFinite(start) ? (when - start) / (end - start) : (i + 0.5) / total;
+    return Math.max(1.5, Math.min(97, share * 100));
+  };
+  const shown = step == null ? total : Math.min(step, total - 1) + 1;
+  const words = (entry: Step) => stepText(entry, t);
+  const current = step != null ? steps[step] ?? null : null;
 
   return (
     <div className="mt-3 border-t border-border pt-2">
@@ -267,15 +297,6 @@ export function StepLane({ runId, run, locale }: { runId: number; run: RunListIt
             {total ? t("activityPage.stepOf", { n: shown, total }) : t(empty)}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-          {run?.user_message || t("activityPage.run", { id: runId })}
-        </span>
-        <button type="button" onClick={() => setOpenRun(runId)}
-          className="rounded-md px-2 py-0.5 text-primary hover:bg-primary/10">{t("activityPage.openRun")}</button>
-        <button type="button" onClick={() => setAxisRun(null)} aria-label={t("activityPage.allRuns")} title={t("activityPage.allRuns")}
-          className="rounded p-1 text-muted-foreground hover:bg-foreground/5">
-          <X size={12} aria-hidden />
-        </button>
       </div>
       {proc && total > 0 && (
         <>

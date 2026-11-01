@@ -56,7 +56,7 @@ const bar = (id: number) => screen.getByTestId(`axis-run-${id}`);
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, axisRunId: null, scroll: {}, byModelOpen: false, modelSlots: {} });
+  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, replayStep: null, replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue(RUNS);
   runProcess.mockResolvedValue(PROCESS);
@@ -227,7 +227,7 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
     render(<UsageCard waiting={waiting()} />);
     await waitFor(() => expect(bar(11)).toBeTruthy());
     fireEvent.click(bar(11));
-    expect(useActivityStore.getState().axisRunId).toBe(11);
+    expect(useActivityStore.getState().pickedRunId).toBe(11);
     expect(bar(11).getAttribute("aria-pressed")).toBe("true");
     expect(bar(12).style.opacity).toBe("0.28");
     await waitFor(() => expect(screen.getByTestId("axis-steps")).toBeTruthy());
@@ -239,12 +239,12 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
     expect(screen.getByTestId("axis-position")).toHaveTextContent("3 / 3 steps");
     expect(screen.queryByText("Each bar is one run: length is the time it took, colour is how it ended")).toBeNull();
     fireEvent.click(bar(11));
-    expect(useActivityStore.getState().axisRunId).toBeNull();
+    expect(useActivityStore.getState().pickedRunId).toBeNull();
     expect(screen.queryByTestId("axis-steps")).toBeNull();
   });
 
   it("the replay shows one step at a time, stops at the last, and goes back to the start", async () => {
-    useActivityStore.setState({ axisRunId: 11 });
+    useActivityStore.setState({ pickedRunId: 11 });
     render(<UsageCard waiting={waiting()} />);
     await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("3 / 3 steps"));
     vi.useFakeTimers();
@@ -280,7 +280,7 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
       [12, "failed", "Ended before any step"]] as const;
     for (const [id, status, words] of cases) {
       runProcess.mockResolvedValue({ ...PROCESS, run_id: id, status, entries: [] });
-      useActivityStore.setState({ axisRunId: id });
+      useActivityStore.setState({ pickedRunId: id });
       render(<UsageCard waiting={waiting()} />);
       await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent(words));
       cleanup();
@@ -289,7 +289,7 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
 
   it("reads the steps again when the picked run ends", async () => {
     runProcess.mockResolvedValue({ ...PROCESS, run_id: 14, status: "recording", entries: [] });
-    useActivityStore.setState({ axisRunId: 14 });
+    useActivityStore.setState({ pickedRunId: 14 });
     render(<UsageCard waiting={waiting()} />);
     await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("Still running"));
     runProcess.mockResolvedValue({ ...PROCESS, run_id: 14 });
@@ -298,22 +298,20 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
     await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("3 / 3 steps"));
   });
 
-  it("says so when the run only replied, and opens the run's details on request", async () => {
+  it("says so when the run only replied; the run's name, its details and letting it go are the inspector's (INB7-c1)", async () => {
     runProcess.mockResolvedValue({ ...PROCESS, entries: [] });
-    useActivityStore.setState({ axisRunId: 11 });
+    useActivityStore.setState({ pickedRunId: 11 });
     render(<UsageCard waiting={waiting()} />);
     await waitFor(() => expect(screen.getByTestId("axis-position")).toHaveTextContent("Only a reply, no steps"));
     expect(screen.queryByRole("button", { name: "Replay" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(useActivityStore.getState().openRunId).toBe(11);
-    fireEvent.click(screen.getByRole("button", { name: "Back to all runs" }));
-    expect(useActivityStore.getState().axisRunId).toBeNull();
+    expect(screen.queryByRole("button", { name: "Details" })).toBeNull();          // board F: one of each, in the inspector
+    expect(screen.queryByRole("button", { name: "Back to all runs" })).toBeNull();
   });
 });
 
 describe("the axis speaks every language", () => {
   it("has its words in all six, and reads in Chinese as board F does", async () => {
-    const keys = ["axisHint", "waitingRun", "chartSteps", "replay", "pause", "restart", "stepOf", "noSteps", "openRun", "allRuns",
+    const keys = ["axisHint", "waitingRun", "chartSteps", "replay", "pause", "restart", "stepOf", "noSteps", "allRuns",
       "stepsWhenDone", "stepsAfterAnswer", "stepsNotSaved", "overlapMore", "stoppedNoSteps"];
     for (const language of SUPPORTED_LANGUAGES) {
       for (const key of keys) {
