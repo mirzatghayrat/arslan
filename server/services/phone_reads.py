@@ -271,6 +271,7 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
             kind = "scheduled"
         else:
             kind = "chat"
+        outcome = None
         if cid in waiting:
             state = "waiting"
         elif running_job or run_registry.active_for(cid) or turn_journal.active(cid):
@@ -289,6 +290,9 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         clean_reply = kind == "chat" and state == "idle" and last is not None and last.role == "arslan" and last.run_id not in failed
         if (clean_reply or state == "done") and last_ids.get(cid, 0) > seen.get(cid, 0):
             state = "done_unseen"
+        # INB7: a restart cut the job short (`outcome` is set only when nothing runs or waits there). Phones keep idle (phone_state).
+        if outcome == "interrupted":
+            state = "unfinished"
         if cid in asking:                    # INB5: the badge counts it, so its row says so (#590 review F3a)
             state = "waiting"
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
