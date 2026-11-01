@@ -17,6 +17,11 @@ from server.orchestrator.recovery_hints import SANDBOX_APPLE_EVENTS_HINT, hint_f
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
 SANDBOX_REFUSAL = "32:43: execution error: Reminders got an error: Application isn’t running. (-600)"
+# SBX-3: the workspace sandbox is the default-deny base, where osascript fails at the app lookup, before any
+# event (measured 2026-11-02 on macOS 26.6.2). The minimal profile outside it still gives the -600 above.
+BASE_REFUSAL = ("2026-11-02 00:13:57.941 osascript[11829:30397152] Connection Invalid error for service "
+                "com.apple.hiservices-xpcservice.\n"
+                "48:55: execution error: Can’t get application \"Reminders\". (-1728)")
 
 
 # ── piece 3: what a command can never read, in two lists ──────────────────────────────
@@ -58,11 +63,25 @@ def test_a_sandboxed_apple_event_refusal_gets_an_honest_hint():
 
 def test_a_sandboxed_apple_event_refusal_is_a_known_failure_not_an_unknown_outcome():
     args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
-    refused = {"exit_code": 1, "sandbox": "workspace", "stderr": SANDBOX_REFUSAL}
+    refused = {"exit_code": 1, "sandbox": "workspace", "stderr": BASE_REFUSAL}
     assert task_service._apple_events_refused(args, refused)
-    assert task_service._apple_events_refused(args, {**refused, "sandbox": "outside"})   # the minimal profile
-    # -600 with no wrapper at all can mean anything the app did: not judged.
+    outside = {"exit_code": 1, "sandbox": "outside", "stderr": SANDBOX_REFUSAL}
+    assert task_service._apple_events_refused(args, outside)                            # the minimal profile
+    # With no wrapper at all, -600 or -1728 can mean anything the app or the script did: not judged.
     assert not task_service._apple_events_refused(args, {**refused, "sandbox": "off"})
+    assert not task_service._apple_events_refused(args, {**outside, "sandbox": "off"})
+
+
+def test_a_sandboxed_app_lookup_refusal_does_not_pause_the_job():
+    """SBX-3 (#520 review): the -1728 lookup refusal is a known local failure, so a job doesn't stop on
+    "outcome unknown" for a script that reached no app. Only for the script's own app."""
+    args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
+    refused = {"ok": False, "exit_code": 1, "sandbox": "workspace", "stderr": BASE_REFUSAL}
+    assert task_service.known_local_failure("run_command", args, refused)
+    other = BASE_REFUSAL.replace('application \"Reminders\"', 'application \"Finder\"')
+    assert not task_service._apple_events_refused(args, {**refused, "stderr": other})
+    element = BASE_REFUSAL.replace('Can’t get application', 'Can’t get list 3 of application')
+    assert not task_service._apple_events_refused(args, {**refused, "stderr": element})
 
 
 @pytest.mark.macos

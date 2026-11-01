@@ -235,8 +235,10 @@ async def test_a_tool_that_brings_its_own_sandbox_is_seen_as_stopped(tmp_path):
 async def test_a_socket_in_a_protected_folder_cannot_be_reached(monkeypatch):
     """Measured 2026-10-03: the file rule alone lets connect() through; the
     network-outbound rule is what closes Arslan Hands' socket to commands. Since SBX-3's
-    default-deny base every socket that isn't listed is closed too (SBX-3p tests that), so
-    the control that shows the probe works runs outside the sandbox."""
+    default-deny base the first refusal is the base's socket allowlist: every socket that
+    isn't listed is closed (SBX-3p tests that). The protected-path rule stays as a second
+    lock, for a socket the allowlist might ever name. So the control that shows the probe
+    works runs outside the sandbox."""
     import os
     import tempfile
     import threading
