@@ -13,11 +13,15 @@ from anywhere (a moved route answers 404 too), an error, a body that is not JSON
 another name or version is no answer. **No answer decides nothing:** a server that passed its last check starts, a
 parked one stays parked, and the next start asks again, as installed npm and PyPI packages keep running while their
 registry is down. **The user can keep a parked server** (`capability_dossier.accept_source`): that answer is
-remembered for `KEEP_FOR`, so the same answer does not park it again; another answer does, and a clean answer ends
-the keep (F4). The install's own start records the check the card just made, with this Arslan version (F5). Hand-
+remembered until the entry changes again, with no expiry (the user, 2026-11-01), so the same answer does not park it
+again; another answer does, and a clean answer ends the keep (F4). The install's own start records the check the card just made, with this Arslan version (F5). Hand-
 added servers have no Registry entry and are not checked. A newer version is not asked about here: the dossier's
 update (the user's click in Capabilities, with no card) installs it beside the old one, and its own starts are
 checked like any other.
+
+**A stated limit** (the user, 2026-11-01; #604 review F3): a remote server is checked by the URL its Registry
+entry writes, not by the host the SDK's redirects lead to, as mainstream MCP clients do. Neither this check nor the
+card (#584) follows redirects.
 
 The state lives in the capability source's `test` JSON (`registry_check`), like CAP5a's tool pin.
 """
@@ -38,8 +42,6 @@ from server.mcp import discovery
 logger = logging.getLogger(__name__)
 
 RECHECK = timedelta(days=1)
-#: How long the user's keep of one answer holds (#604 review F4); then the same answer parks the server again.
-KEEP_FOR = timedelta(days=30)
 TIMEOUT_S = 10.0
 #: What `_ask` returns for anything that is not the entry asked for (#604 review F1).
 NO_ANSWER = object()
@@ -143,11 +145,11 @@ def _just_installed(source: CapabilitySource, now: datetime) -> bool:
     return source.checked_at is not None and source.checked_at <= now and now - source.checked_at < RECHECK
 
 
-def _kept(check: dict, now: datetime) -> bool:
-    """The user kept this very answer (its digest), within `KEEP_FOR`."""
-    keep = check.get("accepted")
-    at = _when(keep.get("at")) if isinstance(keep, dict) else None
-    return (at is not None and keep.get("seen") == check.get("seen") and at <= now and now - at < KEEP_FOR)
+def _kept(check: dict) -> bool:
+    """The user kept this very answer (its digest). It holds until the entry changes again (no expiry, the user
+    2026-11-01); a clean answer ends it (F4)."""
+    keep, seen = check.get("accepted"), check.get("seen")
+    return isinstance(keep, dict) and isinstance(seen, str) and bool(seen) and keep.get("seen") == seen
 
 
 async def before_start(server_id: int) -> None:
@@ -190,5 +192,5 @@ async def before_start(server_id: int) -> None:
                          "names": names, "accepted": check.get("accepted") if problem else None}    # F4
                 source.test = {**(source.test or {}), "registry_check": check}
                 await db.commit()
-    if check.get("problem") and not _kept(check, now):
+    if check.get("problem") and not _kept(check):
         raise SourceChanged(server_id, check["problem"])

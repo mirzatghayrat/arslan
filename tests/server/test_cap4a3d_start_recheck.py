@@ -368,46 +368,57 @@ async def test_a_clean_answer_ends_a_keep_so_a_later_withdrawal_parks_again(worl
         await rc.before_start(1)
 
 
-async def test_a_keep_expires(world, monkeypatch):
-    """#604 review F4: a keep holds for KEEP_FOR; then the same answer parks the server again."""
+async def test_a_keep_holds_until_the_entry_changes_however_old(world, monkeypatch):
+    """The user, 2026-11-01: no expiry (KEEP_FOR removed). A keep dated long ago, in the shape an earlier draft
+    stored, still holds while the Registry gives the same answer."""
     from server.services import mcp_service
 
     async def restart(server_id):
         return None
     monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
     await _install(world)
-    world.answers.append(WITHDRAWN)
+    world.answers += [WITHDRAWN, WITHDRAWN]
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
     await capability_dossier.accept_source("src1", (await _check(world))["seen"])
-    await rc.before_start(1)
     check = await _check(world)
-    stale = (datetime.utcnow() - rc.KEEP_FOR - timedelta(minutes=1)).isoformat() + "Z"
+    assert check["accepted"] == {"seen": check["seen"]}
     async with world.maker() as s:
         row = await s.get(CapabilitySource, "src1")
-        row.test = {**row.test, "registry_check": {**check, "accepted": {**check["accepted"], "at": stale}}}
+        row.test = {**row.test, "registry_check": {**check, "accepted": {**check["accepted"],
+                                                                         "at": "2020-01-01T00:00:00Z"}}}
+        await s.commit()
+    await rc.before_start(1)
+    await _age(world)
+    await rc.before_start(1)                                     # asked again, withdrawn again: still kept
+    assert len(world.calls) == 2
+
+
+@pytest.mark.parametrize("keep", [None, "yes", {}, {"seen": None}, {"seen": ""}, {"seen": "0" * 64}])
+async def test_only_a_keep_of_that_very_answer_holds(world, keep):
+    await _install(world)
+    world.answers.append(WITHDRAWN)
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    check = await _check(world)
+    async with world.maker() as s:
+        row = await s.get(CapabilitySource, "src1")
+        row.test = {**row.test, "registry_check": {**check, "accepted": keep}}
         await s.commit()
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
 
 
-async def test_a_keep_dated_in_the_future_does_not_hold(world, monkeypatch):
-    """#604 re-check R12: a keep whose time is ahead of the clock (set back since) is no keep."""
-    from server.services import mcp_service
-
-    async def restart(server_id):
-        return None
-    monkeypatch.setattr(mcp_service, "restart_after_edit", restart)
+async def test_a_check_with_no_digest_is_never_kept(world):
+    """A stored check whose digest is missing matches no keep, not even one with no digest either."""
     await _install(world)
     world.answers.append(WITHDRAWN)
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
-    await capability_dossier.accept_source("src1", (await _check(world))["seen"])
     check = await _check(world)
-    ahead = (datetime.utcnow() + timedelta(days=2)).isoformat() + "Z"
     async with world.maker() as s:
         row = await s.get(CapabilitySource, "src1")
-        row.test = {**row.test, "registry_check": {**check, "accepted": {**check["accepted"], "at": ahead}}}
+        row.test = {**row.test, "registry_check": {**check, "seen": None, "accepted": {"seen": None}}}
         await s.commit()
     with pytest.raises(rc.SourceChanged):
         await rc.before_start(1)
