@@ -1,0 +1,122 @@
+/**
+ * INB7-c4b (v0.1.64): the picked run's Hands calls and judgments in 「诊断」. A Hands call belongs to a run by its `run_id` (#632),
+ * never by time, since a late entry has the right id but a later time; an older entry with no id falls back to the run's
+ * conversation and time window, marked "matched by time". Judgments carry no run, so they match by conversation and window, all
+ * marked "matched by time".
+ */
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
+
+const { getUsageSummary, listRuns, runProcess, request } = vi.hoisted(() => ({
+  getUsageSummary: vi.fn(), listRuns: vi.fn(), runProcess: vi.fn(), request: vi.fn() }));
+vi.mock("../api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/client")>()),
+  api: { getUsageSummary, listRuns, runProcess, runCounts: () => new Promise(() => {}), runChanges: () => new Promise(() => {}),
+    getRun: () => Promise.resolve({ artifacts: [], steps: [], evaluations: [], run: { id: 11, conversation_id: "chat-a", spawn_id: null,
+      spawn_name: "Arslan", user_message: "Run 11", total_ms: 600_000, task_tokens: 1, status: "recorded", overall_score: null,
+      overall_badge: null, model: "m", provider: "p", tokens_in: 1, tokens_out: 1, tokens_estimated: false, error_kind: null,
+      error_text: null, system_prompt: "s", injected_kb: null } }), getRunAnomalies: () => Promise.resolve([]) }, request,
+}));
+
+import ActivityView from "../components/ActivityView";
+import { useActivityStore } from "../stores/activityStore";
+
+const T0 = 1_790_000_000;
+const HOUR = 3600;
+const iso = (sec: number) => new Date(sec * 1000).toISOString();
+const naive = (sec: number) => iso(sec).replace("Z", "");
+const START = T0 + 11 * HOUR;                     // run 11 runs from START for 10 minutes, in conversation chat-a
+const END = START + 600;
+const summary = (range: string) => ({
+  range, daily: [], not_covered: [], rows: [], estimated_any: false, tokens_total: 0, usd_total: 0,
+  runs: { total: 1, done: 1, failed: 0, stopped: 0, running: 0, p50_ms: 1, p95_ms: 1 },
+  bin_seconds: HOUR, duration_bands: ["<10s"],
+  bins: Array.from({ length: 24 }, (_, i) => ({ start_ts: T0 + i * HOUR, runs: 0, failed: 0, tokens_total: 0, durations: [0] })),
+});
+const run = (id: number) => ({
+  id, spawn_id: null, spawn_name: "Arslan", status: "recorded", overall_score: null, overall_badge: null, total_ms: 600_000,
+  user_message: `Run ${id}`, created_at: naive(T0 + id * HOUR), origin: "chat", model: "m", tokens: 1 });
+const PROCESS = { run_id: 11, status: "scored", conversation_id: "chat-a", started_at: iso(START), ended_at: iso(END), entries: [] };
+const hand = (target: string, over: Record<string, unknown>) => ({ at: iso(START + 60), app: "Notes", op: "click", outcome: "ok",
+  target, conversation: "chat-a", job: null, run_id: null, ...over });
+const TRACE = [
+  hand("own id, late", { run_id: 11, at: iso(END + 300) }),       // its id says run 11 though it is logged after the run ended
+  hand("other run's id, inside", { run_id: 12 }),                  // inside run 11's window, but its id says run 12
+  hand("no id, inside", {}),
+  hand("no id, other conversation", { conversation: "chat-b" }),
+  hand("no id, after", { at: iso(END + 600) }),
+];
+const judged = (id: number, over: Record<string, unknown>) => ({ id, point: "memory.worth", mode: "active", verdict: true,
+  probability: 0.9, latency_ms: 10, outcome: null, conversation_id: "chat-a", created_at: iso(START + 120), state: {}, ...over });
+const JUDGMENTS = [
+  judged(1, {}),
+  judged(2, { point: "job.accomplished", created_at: iso(END + 60) }),       // right after the reply: the after-turn judgments
+  judged(3, { conversation_id: "chat-b" }),
+  judged(4, { created_at: iso(END + 3600) }),
+];
+const inspector = () => screen.getByTestId("run-inspector");
+const panel = () => within(inspector()).getByRole("tabpanel");
+const openDiag = async () => {
+  fireEvent.click(await screen.findByTestId("activity-run-11"));
+  fireEvent.click(await within(inspector()).findByRole("tab", { name: /Diagnosis/ }));
+};
+const reads = (path: string) => request.mock.calls.filter(([p]) => String(p).startsWith(path)).length;
+
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
+  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+    replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
+  getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
+  listRuns.mockResolvedValue([run(11)]);
+  runProcess.mockResolvedValue(PROCESS);
+  request.mockImplementation((path: string) => Promise.resolve(
+    path.startsWith("/hands/trace") ? { entries: TRACE } : path.startsWith("/judgments") ? { items: JUDGMENTS } : { items: [], entries: [] }));
+});
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+describe("the run's Hands calls in 「诊断」", () => {
+  it("are the calls with its id, a late one included, never another run's by time; an older one with no id falls back to its window", async () => {
+    render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
+    await openDiag();
+    const rows = await within(panel()).findAllByTestId("diag-hands-row");
+    expect(rows.map((r) => r.getAttribute("data-target"))).toEqual(["own id, late", "no id, inside"]);
+    expect(rows[0]).not.toHaveTextContent("matched by time");
+    expect(rows[1]).toHaveTextContent("matched by time");
+  });
+});
+
+describe("the run's judgments in 「诊断」", () => {
+  it("are its conversation's, made during the run or right after it, each marked as matched by time", async () => {
+    render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
+    await openDiag();
+    const rows = await within(panel()).findAllByTestId("diag-judgment");
+    expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["1", "2"]);
+    expect(within(panel()).getByTestId("diag-judgments")).toHaveTextContent("matched by time");
+    expect(rows[0]).toHaveTextContent("Worth remembering");
+  });
+});
+
+describe("they are read only once 「诊断」 opens", () => {
+  it("does not read the trace or the ledger for a pick alone", async () => {
+    render(<ActivityView waiting={{ count: 0, conversations: [], projects: [], scheduled: [], loaded: true }} />);
+    await waitFor(() => expect(reads("/judgments")).toBe(1));                // the page's own cards read them once
+    const trace = reads("/hands/trace"), ledger = reads("/judgments");
+    fireEvent.click(await screen.findByTestId("activity-run-11"));
+    await within(inspector()).findByRole("tab", { name: /Diagnosis/ });
+    expect(reads("/hands/trace")).toBe(trace);
+    expect(reads("/judgments")).toBe(ledger);
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Diagnosis/ }));
+    await waitFor(() => expect(reads("/hands/trace")).toBe(trace + 1));
+    expect(reads("/judgments")).toBe(ledger + 1);
+  });
+});
+
+describe("the words", () => {
+  it("are in all six", async () => {
+    for (const lng of SUPPORTED_LANGUAGES) {
+      await i18n.changeLanguage(lng);
+      expect(i18n.exists("activityPage.matchedByTime"), lng).toBe(true);
+    }
+  });
+});

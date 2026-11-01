@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
-import { api } from "../../api/client";
+import { api, request } from "../../api/client";
 import { DIMENSION_LABEL_KEYS, toUiRun } from "../../api/adapters";
-import type { AnomalyDto, RunChangesOut, RunListItem } from "../../api/client.types";
+import type { AnomalyDto, RunChangesOut, RunListItem, RunProcessOut } from "../../api/client.types";
 import { baseName } from "../../lib/fileKinds";
 import type { StepDetail } from "../../lib/process";
 import { fmtMs, fmtTok, fmtUsd } from "../../lib/usageFormat";
@@ -13,6 +13,8 @@ import { isolate } from "../CapabilitySwitches";
 import { confirmSheet } from "../kit";
 import { triggerDownload } from "../MessageBody";
 import { buildRunMarkdown } from "../RunReplay";
+import { getHandsTrace, handsOpIcon, type HandsTraceEntry } from "../HandsTraceCard";
+import { judgmentVerdict, POINT_KEY, type JudgmentRow } from "../JudgmentsCard";
 import { StepDetailView } from "../reply/ProcessList";
 import DiffReader, { opensDiff } from "../workbench/DiffReader";
 import NeedsPanel, { type NeedsProps } from "./NeedsPanel";
@@ -61,6 +63,8 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
   useEffect(() => { if (tab === "diag") setDiagSeen(true); }, [tab]);
   const detail = useRunDetail(diagSeen ? runId : null, runningNow);
   const problems = problemsOf(detail.run, detail.anomalies, steps, t);
+  const sidelights = useSidelights(diagSeen, runningNow);
+  const mine = useMemo(() => sidelightsOf(runId, proc, sidelights), [runId, proc, sidelights]);
   // WAI-ARIA tabs (⓪Plan's review of PR 629, 3): the arrows, Home and End move the selection and the focus; one tab is in the tab
   // order (roving tabindex).
   const onTabKey = (e: React.KeyboardEvent) => {
@@ -115,7 +119,7 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
       </div>
       <div role="tabpanel" id={`inspector-panel-${tab}`} aria-labelledby={`inspector-tab-${tab}`}>
       {tab === "diag" ? (
-        <RunDiagnosis detail={detail} usd={proc?.usage?.usd ?? null} problems={problems}
+        <RunDiagnosis detail={detail} usd={proc?.usage?.usd ?? null} problems={problems} hands={mine.hands} judgments={mine.judgments}
           onCleared={() => { detail.reload(); stepsChanged(runId); }} />
       ) : tab === "changes" ? (
         <RunChanges runId={runId} changes={changes} />
@@ -213,6 +217,44 @@ function useRunDetail(runId: number | null, running: boolean): RunDetail {
 }
 
 type T = (key: string, options?: Record<string, unknown>) => string;
+
+/** INB7-c4b: the Hands trace and the judgment ledger, read when 「诊断」 first opens and again when the run stops running. Each read
+ *  is a second opinion: one that fails shows nothing of it. */
+function useSidelights(active: boolean, running: boolean): { trace: HandsTraceEntry[]; judgments: JudgmentRow[] } {
+  const [shown, setShown] = useState<{ trace: HandsTraceEntry[]; judgments: JudgmentRow[] }>({ trace: [], judgments: [] });
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    Promise.all([
+      getHandsTrace(SIDELIGHT_ROWS).then((r) => r.entries ?? []).catch(() => [] as HandsTraceEntry[]),
+      request<{ items: JudgmentRow[] }>(`/judgments?limit=${SIDELIGHT_ROWS}`).then((r) => r.items ?? []).catch(() => [] as JudgmentRow[]),
+    ]).then(([trace, judgments]) => { if (alive) setShown({ trace, judgments }); });
+    return () => { alive = false; };
+  }, [active, running]);
+  return shown;
+}
+
+/** The most either read returns (the server's own cap): a run older than the last 500 Hands calls or judgments shows none of them. */
+const SIDELIGHT_ROWS = 500;
+/** Judgments made right after the reply (whether to remember, whether the job was done) still belong to its run. */
+const JUDGED_AFTER_MS = 120_000;
+
+/**
+ * Which Hands calls and judgments are the run's. A Hands call is by its `run_id` (#632), never by time: a call logged late has the
+ * right id and a later time, and runs overlap. An older call with no id falls back to the run's conversation and window, marked
+ * matched by time. Judgments carry no run: they match its conversation, from its start to shortly after its end, all by time.
+ */
+function sidelightsOf(runId: number, proc: RunProcessOut | null, { trace, judgments }: { trace: HandsTraceEntry[]; judgments: JudgmentRow[] }):
+  { hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[] } {
+  const conversation = proc?.conversation_id;
+  const start = at(proc?.started_at);
+  const end = proc?.ended_at ? at(proc.ended_at) : Date.now();
+  const within = (time: string, after = 0) => Number.isFinite(start) && at(time) >= start && at(time) <= end + after;
+  const hands = trace.flatMap((entry) => entry.run_id != null
+    ? (Number(entry.run_id) === runId ? [{ entry, byTime: false }] : [])
+    : (conversation && entry.conversation === conversation && within(entry.at) ? [{ entry, byTime: true }] : []));
+  return { hands, judgments: judgments.filter((r) => conversation && r.conversation_id === conversation && within(r.created_at, JUDGED_AFTER_MS)) };
+}
 const dimLabel = (dim: unknown, t: T) => (typeof dim === "string" && DIMENSION_LABEL_KEYS[dim] ? t(DIMENSION_LABEL_KEYS[dim]) : String(dim ?? ""));
 
 /**
@@ -237,7 +279,10 @@ function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t
  * the drawer's two tools that belong here: clearing its debug details (asked first; it cannot be undone) and exporting it as
  * Markdown. The drawer's charts (the fleet radar, the history sparkline) wait on the user's word, behind "Details" (⓪Plan).
  */
-function RunDiagnosis({ detail, usd, problems, onCleared }: { detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void }) {
+function RunDiagnosis({ detail, usd, problems, hands, judgments, onCleared }: {
+  detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void;
+  hands: { entry: HandsTraceEntry; byTime: boolean }[]; judgments: JudgmentRow[];
+}) {
   const { t } = useTranslation();
   const [clearing, setClearing] = useState(false);
   const { run, failed } = detail;
@@ -281,6 +326,32 @@ function RunDiagnosis({ detail, usd, problems, onCleared }: { detail: RunDetail;
               <X className="mt-0.5 h-3 w-3 shrink-0 text-danger" aria-hidden /><span className="min-w-0 break-words">{isolate(problem)}</span>
             </li>))}</ul>}
       </div>
+      {hands.length > 0 && <div data-testid="diag-hands">
+        <div className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("hands.activity.title")}</div>
+        <ul className="mt-1 space-y-0.5">{hands.map(({ entry, byTime }, i) => {
+          const Icon = handsOpIcon(entry.op);
+          return (
+            <li key={`${entry.at}-${i}`} data-testid="diag-hands-row" data-target={entry.target ?? ""} className="flex items-center gap-1.5">
+              <Icon size={12} aria-hidden className="shrink-0 text-muted-foreground" />
+              <span className="shrink-0 text-foreground">{entry.app ?? "—"}</span>
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.op}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{entry.target ? isolate(entry.target) : ""}</span>
+              {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground">{t("activityPage.matchedByTime")}</span>}
+              <span className={`shrink-0 font-mono text-[11px] ${entry.outcome === "ok" ? "text-subtle-foreground" : "text-danger"}`}>{entry.outcome}</span>
+            </li>);
+        })}</ul>
+      </div>}
+      {judgments.length > 0 && <div data-testid="diag-judgments">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("activityPage.judgments")}</span>
+          <span className="text-[10.5px] text-subtle-foreground">{t("activityPage.matchedByTime")}</span>
+        </div>
+        <ul className="mt-1 space-y-0.5">{judgments.map((r) => (
+          <li key={r.id} data-testid="diag-judgment" data-id={r.id} className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-foreground">{t(POINT_KEY[r.point] ?? r.point)}</span>
+            <span className="shrink-0 rounded-full bg-fill px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{judgmentVerdict(t, r)}</span>
+          </li>))}</ul>
+      </div>}
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => void clear()} disabled={clearing}
           className="rounded-md border border-border px-2 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/5">
