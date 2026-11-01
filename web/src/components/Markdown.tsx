@@ -6,11 +6,11 @@
  */
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import MarkdownLink from './MarkdownLink';
 import PathChip, { isLocalPath } from './PathChip';
-import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame } from 'lucide-react';
+import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame, Image as ImageIcon } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
 // remark-gfm 4.x does NOT parse GitHub-style alerts ([!NOTE] etc.) natively.
@@ -539,21 +539,45 @@ const components: import('react-markdown').Components = {
     }} />
   ),
 
-  // Images
-  img: ({ src, alt }) => (
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      style={{
-        maxWidth: '100%',
-        borderRadius: '8px',
-        display: 'block',
-        margin: '0.8em 0',
-      }}
-    />
-  ),
+  // Images: only data:image/ and blob: load; anything else is a chip (IMG1)
+  img: ({ src, alt }) => <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
 };
+
+// ─── Images (IMG1, 0.1.64) ────────────────────────────────────────────────────
+// A reply is the model's text, and outside content can steer the model, so an image from the web
+// would send its URL (and whatever the reply put in it) to that server the moment it renders,
+// with no click. Only images that need no request load: data:image/ and blob:. A web image is a
+// chip that opens in the browser on click, through the same native gate as links; anything else
+// (a relative path would hit Arslan's own server) is a chip that isn't a link.
+const INLINE_IMAGE = /^(data:image\/|blob:)/i;
+const WEB_IMAGE = /^(https?:)?\/\//i;
+
+/** react-markdown drops data: and blob: everywhere; keep them for an image's src only. */
+const urlTransform: UrlTransform = (url, key) =>
+  key === 'src' && INLINE_IMAGE.test(url) ? url : defaultUrlTransform(url);
+
+function hostOf(url: string): string {
+  try { return new URL(url, 'https://invalid.invalid').hostname; } catch { return url; }
+}
+
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useTranslation();
+  if (src && INLINE_IMAGE.test(src)) {
+    return <img src={src} alt={alt} loading="lazy"
+      style={{ maxWidth: '100%', borderRadius: '8px', display: 'block', margin: '0.8em 0' }} />;
+  }
+  const web = !!src && WEB_IMAGE.test(src);
+  const chip = (
+    <span data-testid="md-image-chip" title={src || undefined}
+      className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-fill px-1.5 py-0.5 align-middle text-[0.85em]">
+      <ImageIcon size={13} className="shrink-0" aria-hidden />
+      {alt && <span className="truncate text-foreground">{alt}</span>}
+      <span className="truncate text-subtle-foreground">
+        {web ? t('workbench.imageFrom', { host: hostOf(src!) }) : t('workbench.imageNotShown')}</span>
+    </span>
+  );
+  return web ? <MarkdownLink href={src}>{chip}</MarkdownLink> : chip;
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -577,6 +601,7 @@ export default function Markdown({ children, className = '' }: MarkdownProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={components}
+        urlTransform={urlTransform}
       >
         {children}
       </ReactMarkdown>
