@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /** 0.1.61 §A4: how long after the card on top of an AskQueue changes — the one before it was answered, resolved elsewhere, ran out
  *  or was paged away, or none was there — nothing can answer the one that comes up. A double-click, or a second ⌘⏎, aimed at the card
@@ -81,6 +81,39 @@ export function useQueueGuard(build: () => AnswerGuardState = makeAnswerGuard): 
   const own = useRef<AnswerGuardState | null>(null);
   if (above) return above;
   return (own.current ??= build());
+}
+
+/** The guard of the scope above, or null outside one. */
+export const useScopeGuard = (): AnswerGuardState | null => useContext(GuardContext);
+
+/** Two guards as one: held while either holds, and telling whoever listens when either starts or ends a hold. A hold asked of it goes to
+ *  the first, the scope's, so a list that changes still holds the slot's card; the second is a list's own (a scroll, below). */
+export function eitherGuard(scope: AnswerGuardState, own: AnswerGuardState): AnswerGuardState {
+  return {
+    shown: scope.shown,
+    hold: scope.hold,
+    held: () => scope.held() || own.held(),
+    subscribe(listener) {
+      const fromScope = scope.subscribe(listener);
+      const fromOwn = own.subscribe(listener);
+      return () => { fromScope(); fromOwn(); };
+    },
+  };
+}
+
+/** INB5b: a list in the conversation (the away entries on top, a stopped job's card at the end) moves under a still pointer when the
+ *  conversation scrolls, as when a reply streams in while it is stuck to the bottom. That holds the list's own answers for the guard
+ *  time, on `own`: a guard of the list's, not the scope's, since the slot's card floats and does not move. A scroll of the list, or of
+ *  anything around it, counts. */
+export function useScrollHold(ref: { current: HTMLElement | null }, own: AnswerGuardState): void {
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      const list = ref.current;
+      if (list && e.target instanceof Node && (e.target.contains(list) || list.contains(e.target))) own.hold();
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => document.removeEventListener("scroll", onScroll, true);
+  }, [ref, own]);
 }
 
 /** For a card's doors: whether an answer (a click on Allow, No or a scope, ⌘⏎, Esc, a note) must be ignored right now. Outside a queue it never is. */

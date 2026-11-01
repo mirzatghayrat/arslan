@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, request } from "../../api/client";
 import { announceProactiveChange } from "../../api/proactive";
 import { formatUiDateTime } from "../../lib/localeFormatting";
 import { Escaped, isolate } from "../../lib/outsideText";
-import { ANSWER_GUARD_MS, useQueueGuard } from "../kit/guard";
+import { eitherGuard, useAnswerGuardState, useQueueGuard, useScrollHold } from "../kit/guard";
 
 /** It changes only when something goes undone for want of someone to ask: twice a minute is enough. */
 const POLL_MS = 30_000;
@@ -80,23 +80,16 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
   // The guard of the scope above when there is one: in the window, the one App shares with the ask slot (INB5b), so a card leaving the
   // slot holds these rows and a change here holds the slot. Held on every change of this list, its first appearance included (it
   // pushes down what was there).
-  const guard = useQueueGuard();
+  // #602 review: in a conversation this list sits on top of the messages, and the conversation's scroll (a reply streaming in while it
+  // is stuck to the bottom) moves these rows under a pointer that did not move. That holds this list's own clicks (useScrollHold, on a
+  // guard of its own): not the shared guard, since the slot's card floats and does not move. INB5b-3: the buttons look held meanwhile.
+  const scope = useQueueGuard();
+  const own = useAnswerGuardState();
+  const guard = useMemo(() => eitherGuard(scope, own), [scope, own]);
   const held = useSyncExternalStore(guard.subscribe, guard.held, guard.held);
   const mounted = useRef(false);
-  // #602 review: in a conversation this list sits on top of the messages, and the conversation's scroll (a reply streaming in while it
-  // is stuck to the bottom) moves these rows under a pointer that did not move. That holds this list's own clicks for the guard time;
-  // not the shared guard, since the slot's card floats and does not move with the conversation.
   const listRef = useRef<HTMLElement>(null);
-  const movedAt = useRef(-Infinity);
-  useEffect(() => {
-    const onScroll = (e: Event) => {
-      const list = listRef.current;
-      if (list && e.target instanceof Node && (e.target.contains(list) || list.contains(e.target))) movedAt.current = performance.now();
-    };
-    document.addEventListener("scroll", onScroll, true);
-    return () => document.removeEventListener("scroll", onScroll, true);
-  }, []);
-  const stopped = () => guard.held() || performance.now() - movedAt.current < ANSWER_GUARD_MS;
+  useScrollHold(listRef, own);
 
   const load = useCallback(async () => {
     try {
@@ -122,7 +115,7 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
   };
 
   async function allowAlways(r: Refusal) {
-    if (stopped()) return;
+    if (guard.held()) return;
     setBusy(r.id);
     try {
       // Only the entry's id: the server stores what its card would have offered, never a kind or a target from here.
@@ -147,7 +140,7 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
 
   /** Delete exactly the rules the click created. A rule that is gone already counts as undone; any other failure keeps Undo for a retry. */
   async function undo(r: Refusal) {
-    if (stopped()) return;
+    if (guard.held()) return;
     const made = allowed.get(r.id);
     if (!made) return;
     setBusy(r.id);
