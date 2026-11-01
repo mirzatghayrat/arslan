@@ -51,4 +51,8 @@ regexes = [
   '''QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=''',
   '''YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=''',
   '''A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=''',
+  # IPB-1b (#650) test fixture in tests/server/test_phone_history_details.py: the value typed after
+  # "X-API-Key:" / "Bearer" in a made-up MCP label, to check it is masked. Sequential letters and digits,
+  # never a credential; verified at 04fcc721.
+  '''abcdefgh12345678''',
 ]
