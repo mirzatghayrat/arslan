@@ -238,15 +238,19 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
 def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
                      readable: list[Path] = (), copies: list[Path] = (), network: NetworkMode | None = None,
                      proxy_port: int | None = None, denied_ports: tuple[int, ...] = (),
-                     ipc_prefix: str | None = None) -> str:
+                     ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
+                     system_proxies: list[str] | None = None) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
 
-    Network (the user's D2, 2026-11-01): offline is NONE; online is ANY_DECLARED, outbound TCP to any host plus
-    DNS, with no `denied_ports` (that mode can't hold them), so loopback to Arslan's own ports stays open as on
-    v0.1.63. DELETE-BY: v0.1.64, when SBX-6's proxy lands: online is then PROXY with Arslan's ports denied.
-    `network`, `proxy_port` and `denied_ports` go to the base as given (SBX-3p's harness passes them).
+    Network (SBX-6, the user's N-a): offline is NONE; online is PROXY, TCP only to `proxy_port` (the running
+    `sandbox_proxy`) and to loopback for dev servers, with no DNS inside. Loopback excludes every port Arslan
+    listens on (`bound_ports`, read now when not given) and the system proxies' loopback ports
+    (`system_proxies`, likewise), so neither is a way out round the proxy. Online with no proxy port, or with
+    Arslan's own ports unknown, is offline: closed, not open. Any-declared is retired for commands (D2's
+    interim until SBX-6). `network` and `proxy_port` go to the base as given, and `denied_ports` adds to the
+    excluded ports (SBX-3p's and SBX-6p's harness pass them).
     `ipc_prefix` is None for product runs, which permits no POSIX IPC (gate 4, option b: a stock
     multiprocessing Pool is refused, SBX-measurement.md); the harness passes a per-run one to test the rule."""
     roots = writable_roots(workspace, temp)
@@ -254,7 +258,21 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     protected = default_protected()
     shut = _resolved([*closed, *app_data()])
     if network is None:
-        network = NetworkMode.NONE if offline else NetworkMode.ANY_DECLARED
+        network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
+    network = NetworkMode(network)
+    if network == NetworkMode.ANY_DECLARED:
+        raise ValueError("commands no longer accept any-declared: online is the proxy (SBX-6)")
+    if network in (NetworkMode.PROXY, NetworkMode.PORT_22):
+        from server.services import sandbox_proxy
+        bound = sandbox_proxy.listening_ports() if bound_ports is None else list(bound_ports)
+        if bound is None:
+            network, proxy_port, denied_ports = NetworkMode.NONE, None, ()
+        else:
+            system = sandbox_proxy.system_proxies() if system_proxies is None else list(system_proxies)
+            denied_ports = tuple(sorted({*sandbox_proxy.excluded_ports(bound, system, proxy_port=proxy_port or 0),
+                                         *denied_ports}))
+    if network != NetworkMode.PROXY:
+        proxy_port = None
     text = default_deny_profile(writable, protected, closed=shut, network=network, proxy_port=proxy_port,
                                 denied_ports=denied_ports, ipc_prefix=ipc_prefix)
     # The base closes `closed` and then `protected` last, over every grant. Reopen what lives inside a closed
@@ -273,13 +291,13 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
 
 
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
-            readable: list[Path] = (), copies: list[Path] = ()) -> list[str] | None:
+            readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
     return [_SANDBOX_EXEC, "-p", commands_profile(workspace, temp=temp, offline=offline, closed=closed,
-                                                  readable=readable, copies=copies)]
+                                                  readable=readable, copies=copies, proxy_port=proxy_port)]
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:

@@ -175,12 +175,20 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
-    from server.services import command_sandbox, run_temp
+    from server.services import command_sandbox, run_temp, sandbox_proxy
     prefix: list[str] = []
     mode = "off"
     if sandbox:
+        # SBX-6: online, the sandbox lets TCP out only to Arslan's local proxy, and the child is told to use
+        # it; dev servers on loopback are reached directly. No proxy means the profile is offline.
+        proxy_port = None if offline else await sandbox_proxy.port()
+        if proxy_port is not None:
+            via = f"http://127.0.0.1:{proxy_port}"
+            env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                                               "http_proxy", "https_proxy", "all_proxy")})
+            env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
         prefix = command_sandbox.wrapper(cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
-                                         copies=copies) or []
+                                         copies=copies, proxy_port=proxy_port) or []
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
         prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies) or []

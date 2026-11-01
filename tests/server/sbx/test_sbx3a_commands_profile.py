@@ -144,20 +144,19 @@ def _base_for(home, network, **kw):
 
 
 def test_the_commands_profile_starts_with_the_base_text(home):
-    for offline, mode in ((True, NetworkMode.NONE), (False, NetworkMode.ANY_DECLARED)):
-        text = command_sandbox.commands_profile(home / "ws", offline=offline)
-        assert text == _base_for(home, mode), mode       # nothing to reopen: exactly the base
+    assert command_sandbox.commands_profile(home / "ws", offline=True) == _base_for(home, NetworkMode.NONE)
+    online = command_sandbox.commands_profile(home / "ws", proxy_port=41000, bound_ports=[], system_proxies=[])
+    assert online == _base_for(home, NetworkMode.PROXY, proxy_port=41000)    # nothing to reopen: exactly the base
 
 
-def test_online_is_any_declared_and_offline_is_none(home):
-    online = command_sandbox.commands_profile(home / "ws")
+def test_online_is_the_proxy_and_offline_is_none(home):
+    online = command_sandbox.commands_profile(home / "ws", proxy_port=41000, bound_ports=[], system_proxies=[])
     offline = command_sandbox.commands_profile(home / "ws", offline=True)
-    assert '(allow network-outbound (remote tcp "*:*"))' in online           # D2: any-declared until SBX-6
-    assert '(literal "/private/var/run/mDNSResponder")' in online
+    assert '(allow network-outbound (remote tcp "localhost:41000"))' in online   # SBX-6 retires D2's any-declared
+    assert '"*:*"' not in online and "mDNSResponder" not in online
     assert "(deny network*)" in offline and '"*:*"' not in offline
     for text in (online, offline):
         assert "(deny network-bind network-inbound)" in text                 # D1: listening stays denied
-        assert '(remote tcp "localhost:' not in text.replace('(remote tcp "localhost:*")', "")  # no port denies
 
 
 def test_the_writable_devices_are_the_bases_and_other_apps_data_is_closed(home):

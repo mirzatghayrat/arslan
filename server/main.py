@@ -526,6 +526,8 @@ async def _shutdown_services(app: FastAPI) -> None:
 
     from server.api import browser as _browser_api
     await _browser_api.shutdown()
+    from server.services import sandbox_proxy as _sandbox_proxy
+    await _sandbox_proxy.shutdown()          # SBX-6: the commands' local proxy
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()
     await engine.dispose()

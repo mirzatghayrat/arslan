@@ -355,7 +355,9 @@ jobs:
           # 0.1.64 SBX-3a: +1, the work folder, the narrowed devices and a pty still work.
           # 0.1.64 SBX-3a §1a: +1, a sandboxed command writes its own run's TMPDIR.
           # 0.1.64 SBX-3a flip: +1, a work folder inside a closed folder and a saved copy still work on the default-deny base.
-          EXPECTED = 436
+          # 0.1.64 SBX-6a: -13, commands have no any-declared mode (the 12 service lookups and the listener case);
+          # +1, a sandboxed command reaches the local proxy, which refuses a loopback destination.
+          EXPECTED = 424
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
