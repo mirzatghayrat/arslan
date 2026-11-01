@@ -59,6 +59,12 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
               onClick={() => setFolders(folders.filter(x => x !== f))}><X size={11} /></button></span>)}
         </span>}
       </Row>
+      {/* UNI1b (#586 review F2): under D2 this card is the guard, so it says what the skill's text hides. */}
+      {card.kind === "skill" && (card.hidden?.count ?? 0) > 0 && <Row label={t("discover.card_hidden")} testId="capability-card-hidden">
+        <span className="text-ask">{t("discover.card_hiddenText", { count: card.hidden!.count,
+          runs: [card.hidden!.runs.join(", "), card.hidden!.more ? t("capabilities.import.hiddenMore", { count: card.hidden!.more }) : ""]
+            .filter(Boolean).join(" ") })}</span>
+      </Row>}
       {/* A skill gets the scan, never a test run: under the user's D2 this card is the check (#519 recheck). */}
       <Row label={t("discover.card_checks")}>{t(card.kind === "skill" ? "discover.card_checksSkill" : "discover.card_checksText")}</Row>
       {card.keys.length > 0 && <Row label={t("discover.card_needs")}>

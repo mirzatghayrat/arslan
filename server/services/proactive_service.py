@@ -95,6 +95,8 @@ def present(item: ProactiveItem) -> dict:
     return {"id": item.id, "kind": item.kind, "title_key": item.title_key, "params": item.params or {},
             "evidence": item.evidence or [], "goal": item.goal, "priority": item.priority, "status": item.status,
             "diagnosis": item.diagnosis, "conversation_id": item.conversation_id, "job_id": item.job_id,
+            # INB3: the Scheduled page puts a change under its watch (watch:<id>), a problem under its task (sched:<id>).
+            "source_key": item.source_key,
             "created_at": item.created_at.isoformat() + "Z",
             "snooze_until": item.snooze_until.isoformat() + "Z" if item.snooze_until else None}
 

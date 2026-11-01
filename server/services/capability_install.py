@@ -87,18 +87,38 @@ def _base_env(extra: dict | None = None) -> dict:
 
 # ── license at the source ────────────────────────────────────────────────────
 
-async def source_license(repo: str | None) -> tuple[str | None, str | None]:
-    """(SPDX, the file it was read from) for a repository: its LICENSE file at HEAD, read
-    from raw.githubusercontent.com (not the API, which allows 60 calls an hour without a
-    token) and recognised by its wording (skill_import.detect_license) — never metadata."""
+async def source_license(repo: str | None, version: str | None = None) -> tuple[str | None, str | None]:
+    """(SPDX, where it was read: `<file>@<ref>`) for a repository: its LICENSE file, read from
+    raw.githubusercontent.com (not the API, which allows 60 calls an hour without a token) and recognised by its
+    wording (skill_import.detect_license), never metadata.
+
+    v0.1.64 CAP4a-3: at the version being installed, not at HEAD. Every license file name is tried at the
+    repository's tag for it (`v<version>`, then `<version>`) before any at the next ref; a repository with neither
+    tag is read at HEAD, and `@HEAD` says so. Only a 404 moves on to the next name or ref: any other answer (a
+    rate limit, an outage) refuses with `license_unreadable`, never falling through to HEAD (#569 review F3a).
+    The ref read goes in the card's payload and the dossier; the card's face shows only that the file was read
+    (CAP4b's mock adds the ref).
+
+    What this binds, and what it does not (#569 review F4): the license file in the repository the Registry entry
+    declares, at a git tag named after the version. The repository is the publisher's own word, a tag can be
+    moved, and the file is not cross-checked against the artifact the lock pins (npm's gitHead and provenance, and
+    PyPI's attestations, exist but are not always present). `_VERSION` checks characters only, so a moving tag such
+    as `v1` is read as it is. The code's own boundary is the lock, the scan and the sandbox; this is the license
+    gate."""
+    from urllib.parse import quote
+
     from server.services import skill_import
     if not repo or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         return None, None
+    refs = [f"v{version}", str(version)] if version and _VERSION.fullmatch(str(version)) else []
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        for name in skill_import._LICENSE_NAMES:
-            r = await client.get(f"https://raw.githubusercontent.com/{repo}/HEAD/{name}")
-            if r.status_code == 200:
-                return skill_import.detect_license(r.text), name
+        for ref in [*refs, "HEAD"]:
+            for name in skill_import._LICENSE_NAMES:
+                r = await client.get(f"https://raw.githubusercontent.com/{repo}/{quote(ref, safe='')}/{name}")
+                if r.status_code == 200:
+                    return skill_import.detect_license(r.text), f"{name}@{ref}"
+                if r.status_code != 404:
+                    raise InstallFailure("license_unreadable", f"HTTP {r.status_code} for {name}@{ref}")
     return None, None
 
 
@@ -335,7 +355,7 @@ async def prepare(candidate: dict) -> dict:
     or run here. `discard` removes the staging folder when the card is not a yes."""
     _check_candidate(candidate)
     runtime = candidate["runtime"]
-    spdx, license_path = await source_license(candidate.get("repo"))
+    spdx, license_path = await source_license(candidate.get("repo"), (candidate.get("package") or {}).get("version"))
     from server.services.skill_import import _license_gate
     if runtime != "remote" and _license_gate(spdx):
         raise InstallFailure("license", _license_gate(spdx) or "")

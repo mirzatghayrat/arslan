@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { AuthoredSkillCard } from "../../api/client.types";
-import { AskCard, type AskQueuePosition } from "../kit";
-import { Escaped, isolate } from "../../lib/outsideText";
+import { AskCard, Notice, type AskQueuePosition } from "../kit";
+import { Escaped, hiddenCount, isolate } from "../../lib/outsideText";
 import { Row } from "./CapabilityProposeCard";
 
 /**
@@ -16,6 +16,7 @@ export default function SkillSaveCard({ card, callId, expiresAt, queue, onConfir
   onCancel: (callId: string) => void;
 }) {
   const { t } = useTranslation();
+  const hidden = hiddenCount(card.body);
   const detail = (
     <div className="flex flex-col" data-testid="skill-save-rows">
       <Row label={t("discover.save_purpose")}><Escaped text={card.description} /></Row>
@@ -28,6 +29,9 @@ export default function SkillSaveCard({ card, callId, expiresAt, queue, onConfir
           {/* UNI1: the text as stored; a bidi control shows as a marker, never reorders what is read. */}
           <Escaped text={card.body} block />
         </pre>
+        {/* UNI1b (the user's option B): the count, never blocking; each run is a marker in the text above. */}
+        {hidden > 0 && <Notice tone="warn" testId="skill-save-hidden" className="mt-1.5">
+          {t("discover.save_hidden", { count: hidden })}</Notice>}
         {/* #472 review F5: how much there is, so a long text is read to its end. */}
         <span data-testid="skill-save-lines" className="mt-1 block text-[11px] text-subtle-foreground">
           {t("discover.save_lines", { count: card.body.replace(/\n$/, "").split("\n").length })}

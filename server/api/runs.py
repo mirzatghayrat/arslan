@@ -633,6 +633,73 @@ async def conversation_change_diff(conversation_id: str, run_id: int, folder: st
         return {"reason": exc.code, "kind": None, "added": 0, "removed": 0, "since": False, "lines": []}
 
 
+async def _repo_of(db: AsyncSession, conversation_id: str):
+    """DIFF2: the conversation's folder (its project's, else the workspace, as /files/home) and the repo it is in."""
+    from pathlib import Path
+    from server.db.companion_models import ConversationContext, Project
+    from server.services import git_changes, settings_service
+    folder = None
+    ctx = await db.get(ConversationContext, conversation_id)
+    if ctx is not None and ctx.project_id:
+        project = await db.get(Project, ctx.project_id)
+        raw = (project.workspace_ref or "").strip() if project is not None else ""
+        if raw and Path(raw).expanduser().is_dir():
+            folder = Path(raw).expanduser().resolve()
+    if folder is None:
+        ws = await settings_service.workspace_dir(db)
+        folder = ws.resolve() if ws else None
+    root = git_changes.repo_root(folder, Path.home().resolve()) if folder else None
+    return root, folder
+
+
+@router.get("/conversations/{conversation_id}/repo-changes")
+async def conversation_repo_changes(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """DIFF2-1: when the conversation's folder is in a git repo, the branch against its base, its commits, the files
+    changed since the branch left the base (committed or not) and the branch's PRs (`signed_in` False without a
+    signed-in `gh`); `{"repo": None}` otherwise, and Overview keeps DIFF1's per-turn list. Read only."""
+    from server.services import git_changes
+    root, folder = await _repo_of(db, conversation_id)
+    if root is None:
+        return {"repo": None}
+    try:
+        data = await asyncio.to_thread(git_changes.summary, root, folder)
+        slug = await asyncio.to_thread(git_changes.github_repo, root)
+    except git_changes.GitError as exc:   # no git (or macOS's shim), or a repo git refuses (safe.directory)
+        return {"repo": {"error": "no_git" if str(exc) == "no git" else "unreadable"}}
+    if slug is None:
+        pulls = {"signed_in": None, "prs": [], "github": None}
+    elif data["branch"] is None:
+        pulls = {"signed_in": None, "prs": [], "github": slug}
+    else:
+        found = await asyncio.to_thread(git_changes.prs, slug, data["branch"])
+        # gh's own error is `prs_error`, apart from `error` (git missing or refusing the repo).
+        pulls = {"signed_in": found["signed_in"], "prs": found["prs"], "github": slug,
+                 **({"prs_error": found["error"]} if "error" in found else {})}
+    return {"repo": {**data, **pulls}}
+
+
+@router.get("/conversations/{conversation_id}/repo-changes/diff")
+async def conversation_repo_diff(conversation_id: str, path: str = Query(..., max_length=4096),
+                                 db: AsyncSession = Depends(get_session)) -> dict:
+    """DIFF2-1: one changed path of the repo as DIFF1's lines (the merge base's blob against the file now). 404
+    `not_listed` for a path not among the changed ones; 403 `hidden` for a secret-shaped name; 200 with `reason`
+    (`too_big`, `not_text`, `lfs`) and no lines when there is no diff to show. Read only."""
+    from server.services import checkpoints, git_changes
+    root, folder = await _repo_of(db, conversation_id)
+    if root is None:
+        raise HTTPException(404, detail={"code": "not_listed"})
+    try:
+        return {"reason": None, **await asyncio.to_thread(git_changes.file_diff, root, folder, path)}
+    except git_changes.GitError:
+        raise HTTPException(404, detail={"code": "not_listed"}) from None
+    except checkpoints.NoDiff as exc:
+        if exc.code == "not_listed":
+            raise HTTPException(404, detail={"code": "not_listed"}) from None
+        if exc.code == "hidden":
+            raise HTTPException(403, detail={"code": "hidden"}) from None
+        return {"reason": exc.code, "kind": None, "added": 0, "removed": 0, "since": False, "lines": []}
+
+
 async def _with_history(undone: dict) -> dict:
     """The conversation as it is now, in the rows the window's socket sends, so the window shows it at once."""
     from server.ws.arslan import _history
