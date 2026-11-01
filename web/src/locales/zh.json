@@ -959,7 +959,7 @@
       "orphaned": "游离文件"
     },
     "import": {
-      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描;看不见的字符会数出来。",
+      "subtitle": "标准 SKILL.md,按原文导入,先过许可证检查和安全扫描。扫描会拦下隐藏的标签字符和文字方向控制符;其他看不见的字符只数出来,不拦。",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "子路径(可选)",
       "scan": "扫描",
