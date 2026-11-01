@@ -36,7 +36,9 @@ def view(row: CapabilitySource) -> dict:
             "stars": row.stars, "pushed_days": row.pushed_days,
             "checked_at": row.checked_at.isoformat() + "Z" if row.checked_at else None,
             "runtime": row.runtime, "needs": row.needs or {}, "grants": row.grants or {}, "scan": row.scan,
-            "test": row.test, "files": row.files, "state": row.state, "error": row.error,
+            # #604 review L2: the Registry's answer goes out only as the cleaned `registry_parked`, never raw.
+            "test": {k: v for k, v in row.test.items() if k != "registry_check"} if isinstance(row.test, dict)
+            else row.test, "files": row.files, "state": row.state, "error": row.error,
             "registry_parked": capability_recheck.parked(row),             # CAP4a-3d: the row and its keep
             "mcp_server_id": row.mcp_server_id, "skill_key": row.skill_key,
             "installed_at": row.installed_at.isoformat() + "Z" if row.installed_at else None}

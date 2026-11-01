@@ -83,9 +83,10 @@ def _now_names(entry: dict, installed: dict) -> dict:
             "version": pkg.get("version") or srv.get("version")}
 
 
-def _seen(problem: str | None, names: dict | None) -> str:
-    """One digest of the Registry's answer, so a kept answer is recognised and another one is not."""
-    return hashlib.sha256(json.dumps([problem, names], sort_keys=True).encode()).hexdigest()
+def _seen(entry_ref: tuple[str, str], problem: str | None, names: dict | None) -> str:
+    """One digest of the Registry's answer to the entry asked (name@version: #604 review of 7dcba02a), so a kept
+    answer is recognised and another one, or the same answer about another entry, is not."""
+    return hashlib.sha256(json.dumps([list(entry_ref), problem, names], sort_keys=True).encode()).hexdigest()
 
 
 async def _ask(name: str, version: str):
@@ -155,13 +156,17 @@ def _kept(check: dict) -> bool:
 def parked(source: CapabilitySource) -> dict | None:
     """What the source view shows of a server this check parked, so the page's row and its keep button need no
     rule of their own (#604 review F6): why, when the Registry was asked, what was installed, what the entry names
-    now (None for a withdrawn one), and `seen`, the digest a keep sends (`accept_source`). None when nothing is
-    parked, or when the user kept this very answer."""
+    now (None for a withdrawn one), `hidden`, how many characters that show nothing each side held before it was
+    cleaned (#604 review L1: a name that differs only by one is a change, though both read the same), and `seen`,
+    the digest a keep sends (`accept_source`). None when nothing is parked, or when the user kept this very
+    answer."""
     check = (source.test or {}).get("registry_check") or {}
     if not check.get("problem") or _kept(check):
         return None
+    installed = _installed(source.candidate or {})
     return {"why": check["problem"], "seen": check.get("seen"), "checked_at": check.get("at"),
-            "installed": _shown(_installed(source.candidate or {})), "now": _shown(check.get("names"))}
+            "installed": _shown(installed), "now": _shown(check.get("names")),
+            "hidden": {"installed": discovery._hidden(installed), "now": discovery._hidden(check.get("names"))}}
 
 
 def _shown(names) -> dict | None:
@@ -189,7 +194,7 @@ async def before_start(server_id: int) -> None:
         installed = _installed(source.candidate)
         if not check and _just_installed(source, now):
             check = {"at": source.checked_at.isoformat() + "Z", "arslan": version, "problem": None,
-                     "seen": _seen(None, installed), "names": installed, "accepted": None}
+                     "seen": _seen(entry_ref, None, installed), "names": installed, "accepted": None}
             source.test = {**(source.test or {}), "registry_check": check}
             await db.commit()
         elif _due(check, now, version):
@@ -208,7 +213,7 @@ async def before_start(server_id: int) -> None:
                 logger.info("mcp %s: the Registry did not answer the start check (%s)", server_id, type(exc).__name__)
                 entry = NO_ANSWER
             if entry is not NO_ANSWER:
-                seen = _seen(problem, names)
+                seen = _seen(entry_ref, problem, names)
                 check = {"at": now.isoformat() + "Z", "arslan": version, "problem": problem, "seen": seen,
                          "names": names, "accepted": check.get("accepted") if problem else None}    # F4
                 source.test = {**(source.test or {}), "registry_check": check}

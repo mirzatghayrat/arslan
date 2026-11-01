@@ -483,7 +483,8 @@ async def test_the_view_shows_a_withdrawn_entry_and_the_digest_a_keep_sends(worl
     check = await _parked_by(world, WITHDRAWN)
     assert (await _view(world))["registry_parked"] == {
         "why": "withdrawn", "seen": check["seen"], "checked_at": check["at"],
-        "installed": {"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}, "now": None}
+        "installed": {"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}, "now": None,
+        "hidden": {"installed": 0, "now": 0}}
 
 
 async def test_the_view_shows_what_a_changed_entry_names_now(world):
@@ -531,15 +532,65 @@ async def test_a_kept_answer_then_another_shows_the_new_one(world, monkeypatch):
     assert parked["why"] == "changed" and parked["seen"] == (await _check(world))["seen"] != kept
 
 
-async def test_values_the_registry_sent_are_shown_cleaned(world):
+async def test_values_the_registry_sent_are_shown_cleaned(world, monkeypatch):
     """The row shows what the Registry wrote, so it is cleaned as the card cleans a name (UNI1): a bidi override
-    or a zero-width character never reaches the page, where it could make one name read as another."""
+    or a zero-width character never reaches the page, where it could make one name read as another. The digest a
+    keep sends is the stored answer's, never one of the cleaned names (#604 review of 7dcba02a)."""
+    _no_restart(monkeypatch)
     hidden = "notes" + chr(0x202E) + "-mcp" + chr(0x200B) + "-next"
     cand = {**PKG, "package": {**PKG["package"], "identifier": "notes-" + chr(0x2066) + "mcp"}}
-    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": hidden, "version": "1.2.0"}]),
-                     cand=cand)
+    check = await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": hidden,
+                                                      "version": "1.2.0"}]), cand=cand)
     parked = (await _view(world))["registry_parked"]
     assert parked["now"]["identifier"] == "notes-mcp-next" and parked["installed"]["identifier"] == "notes-mcp"
+    assert parked["seen"] == check["seen"]
+    await capability_dossier.accept_source("src1", parked["seen"])
+    assert (await _view(world))["registry_parked"] is None
+
+
+async def test_hidden_characters_are_counted_so_a_lookalike_change_shows_as_one(world):
+    """#604 review L1: a name that differs only by a character that shows nothing is a change, though both read
+    the same once cleaned. The row says how many such characters each side held, as CAP5a's review does."""
+    lookalike = "notes" + chr(0x200B) + "-mcp"
+    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": lookalike, "version": "1.2.0"}]))
+    parked = (await _view(world))["registry_parked"]
+    assert parked["why"] == "changed" and parked["now"] == parked["installed"]
+    assert parked["hidden"] == {"installed": 0, "now": 1}
+
+
+async def test_a_withdrawn_entry_hides_nothing(world):
+    await _parked_by(world, WITHDRAWN)
+    assert (await _view(world))["registry_parked"]["hidden"] == {"installed": 0, "now": 0}
+
+
+async def test_the_view_never_carries_the_raw_check(world):
+    """#604 review L2: the view's `test` shipped `registry_check` as the Registry wrote it; only the cleaned
+    `registry_parked` goes to the page. Everything else in `test` is kept."""
+    await _install(world, test={"tools_pin": {"read": "f" * 64}})
+    world.answers.append(_entry(packages=[{"registryType": "pypi", "identifier": "x" + chr(0x202E), "version": "9"}]))
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    view = await _view(world)
+    assert view["test"] == {"tools_pin": {"read": "f" * 64}} and view["registry_parked"]["why"] == "changed"
+
+
+async def test_a_keep_moved_to_another_entry_does_not_hold(world, monkeypatch):
+    """#604 review (optional): the digest names the entry asked (name@version), so a withdrawn answer kept for one
+    entry is not that of another, though both read "withdrawn"."""
+    _no_restart(monkeypatch)
+    kept = (await _parked_by(world, WITHDRAWN))["seen"]
+    await capability_dossier.accept_source("src1", kept)
+    async with world.maker() as s:
+        row = await s.get(CapabilitySource, "src1")
+        row.candidate = {**PKG, "id": "registry:com.example/notes@1.3.0",
+                         "package": {**PKG["package"], "version": "1.3.0"}}
+        await s.commit()
+    await _age(world)
+    world.answers.append(_entry(packages=[{"registryType": "pypi", "identifier": "notes-mcp", "version": "1.3.0"}],
+                                status="deleted", version="1.3.0"))
+    with pytest.raises(rc.SourceChanged):
+        await rc.before_start(1)
+    assert (await _check(world))["seen"] != kept
 
 
 async def test_the_route_shows_it_and_a_keep_with_that_digest_clears_it(world, monkeypatch):
