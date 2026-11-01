@@ -2,12 +2,21 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), afternoon: the user's morning batch merged (17 PRs); the user is out, and the list below is for their return.
+**Updated:** 2026-11-01 (UTC), midday. Nine more PRs have merged since the morning batch. Main CI 41292077511 succeeded at `a1cffee9` (all five jobs, macOS included). The user is out, and the list below is for their return.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #614 | INB5b-3: every waiting thing has a row that says why | `a1cffee9` (main CI 41292077511 success, covering the six below it too) |
+| #612 | INB5b-3: the Scheduled page reads the server's count, and opening a task marks it seen | `9e1811bd` |
+| #611 | INB5b-3: a stopped job's card waits out a scroll, and a held button looks held | `ac1ebcc2` |
+| #610 | INB7-a: Progress leads with what waits on you, and the cost opens by model | `4372a98b` |
+| #608 | UNI1b-4: a ZWNJ or ZWJ between two ASCII letters joins nothing, so it is marked | `35301b62` |
+| #619 | SBX-3p (Codex): the commands' denial gates, 56 strict xfails (macOS count 420). Astra: merge, two non-blocking P3s queued for Codex | `a3d6abb8` |
+| #605 | INB5b-2: the Inbox is gone; what waits on you is one number on Progress | `826b8920` |
+| #617 | IMG1 card: Markdown images from the web | `cba1a243` |
+| #616 | STATUS: morning list additions and the user's 11-01 decisions | `e94f338b` |
 | #607 | UNI1b-3: the import scan blocks only Tag characters and bidi controls; whatever else shows nothing is counted | `11940e65` |
 | #602 | INB5b-1: what waited in the Inbox comes back to its conversation | `ca10c0db` |
 | #601 | INB7-1: a job a restart cut short says so when it happens | `431b1cc1` |
@@ -167,27 +176,32 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 Every PR below is OK'd at the head shown, with the verdict posted on the PR. A PR stacked on another is retargeted to main by its lane once the one below it lands, then re-checked at the new head. A draft needs **Ready for review** clicked first, whenever the lane's own ready step was blocked.
 
-1. **#616** at `0ccc7b22` or later, and **#617** (docs): STATUS and the IMG1 card. Both are OK'd. They show "clean", so auto-merge can't be armed after the checks finish, and they're the user's click. #617 needs main merged in first (⑥Helper).
-2. **#621** at `03d140d1`: L11-3a, Overview's Remove works from the rules record. Security surface: effort=max reviewed twice, then ⓪Plan's delta check. It moves the macOS count from 364 to 365.
-3. **#605** at `9be4ed0a`: INB5b-2, the Inbox removed. Re-checked at the main merge; the diff is identical (2881 lines).
-4. **Then, after #605, as ②Main retargets each:**
-   - **#610** INB7-a (the tiles), **#611** (held cards), **#612** (Scheduled from the count), **#614** (why each thing waits);
-   - **#615** after #612 (set-aside reminders);
-   - **#622** after #610: INB7-b, the time axis. Re-checked OK at `666cd4f3`; the "+N" overflow chip is in.
-   Each needs ⓪Plan's normalized re-check at its new head, then CI.
-5. **#608** (UNI1b-4, joiners): ⑤CAP retargets it to main now that #607 is in. A draft, so click Ready.
+1. **#621** at `ac6d6cfc`: L11-3a, Overview's Remove works from the rules record. Security surface: two effort=max reviews, then ⓪Plan's delta check. It has main with #619 merged in, so the macOS count goes from 420 to 421. CI is green. ⓪Plan's re-check found only the count changed.
+2. **#632** at `532f794c` (Hands trace entries name their run) and **#637** at `db1667d8` (judgments name their run, migration 0085). Security surface: reviewed at effort=max, then delta-checked. CI is green on both.
+3. **The drafts, CI green, each OK'd at the head shown. Click Ready first:**
+   - **#623** at `7f07488f`: CAP5c, a hand-added npx/uvx package pinned or refused;
+   - **#625** at `48b3a30d`: CAP4a-3c follow-up, a listed organization's install keeps its id;
+   - **#628** at `00873a42`: SEC1 follow-up, a credential in a `--name=value` option.
+4. **#630** at `783f7b4a` (INB follow-ups from the #611 and #605 reviews) and **#615** at `f8bf4a8f` (set-aside reminders). Both are on main now, and the re-check found their diffs identical. #630 is green; #615's macOS job was still running at this update.
+5. **#626** at `ece75a1f` (L11-3d), after #621. ⑥Helper retargets it to main, and then it needs CI. It's a draft, so click Ready.
+6. **The INB7 chain, in this order:** #622 `8f496450` → #624 `a69094f0` → #627 `3d7ab9a4` → #629 `07ce3a98` → #631 `2b21e843` → #633 `02da15c4` → #634 `15767a0e` → #636 `91c9304b`.
+   - #622 is on main, with green CI. Each of the others is stacked on the one before it, and its diff was re-checked identical at the head shown.
+   - As each lands, ②Main retargets the next one to main and merges main in. ⓪Plan re-checks it, and then it needs CI.
+   - **#634:** after #637 lands, ②Main switches the 「诊断」 judgments from by-time to by-run_id. ⓪Plan delta-checks that change.
+   - **#636** waits on your call about the full lists (see below).
 
 **Not ready yet:**
-- **#619** (SBX-3p, Codex) at `0632d234`, with #620 merged into it. The Claude effort=max re-check of Codex's fixes is running, and so is CI 41263204658. Astra (⑦Codex) comes after. If #621 lands first, the count becomes 421 here (⓪Plan).
-- **#623** (CAP5c, a hand-added npx/uvx package pinned or refused) at `91086149`: the fix round for the effort=max review is in, and the same reviewer is re-checking it. A draft.
-- **#604** (CAP4a-3d) at `be2cf748`: re-checked OK, with KEEP_FOR gone and F3 a stated limit. It waits for the web keep button, whose mock needs the user's OK first.
+- **#604** (CAP4a-3d) at `be2cf748`: re-checked OK, with KEEP_FOR gone and F3 a stated limit. It waits for the web keep button, whose mock needs your OK first.
+- **#635** (docs: migration 0085's README row): OK'd by ④参谋 and auto-merge armed. A timing flake in `test_mcp_exposure.py:166` (0.545 s against a 0.5 s limit) made backend red, so the job is being rerun.
 
 **Under review or on hold (don't merge these):**
 
 - **#525** (Q1 #4, retire the pocket): a draft until Q1c ships and you say go. It now conflicts with main; ②Main merges main in when it's time.
-- **#520, #531, #535, #538** (SBX-3a, 4a, 5a, 7, ③Hands): drafts on main `e40cae3a`. They wait for #619.
-  - 3a's to-dos from #619's review are in #520's body.
-  - At 3a: EXPECTED goes 420 + 2 = 422, and EXPECTED_XFAIL goes 56 → 0.
+- **#520** (SBX-3a, ③Hands) at `de71df02`, a draft: main is merged in, and #619's file keeps its path while 3a's is renamed. The counts are 422 and EXPECTED_XFAIL 56 (423 if #621 lands first).
+  - **The flip onto the default-deny base is blocked.** ③Hands measured it on macOS 26.6.2: the current preset passes 20 of #619's 56 cases.
+  - Four gates are open. 1 and 3 are yours (see below). 2, the mach allowlist (`SYSTEM_MACH_SERVICES = ()` at `server/services/sandbox_profile.py:117`), and 4, multiprocessing's `/mp-` names, are queued for Codex.
+  - The flip, the BUILT_BASES line and EXPECTED_XFAIL → 0 go in one commit, and the effort=max review waits for that commit.
+- **#531, #535, #538** (SBX-4a, 5a, 7): drafts. They pick up 3a after the flip, so the carry happens once.
 
 **Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
 
@@ -195,15 +209,22 @@ Every PR below is OK'd at the head shown, with the verdict posted on the PR. A P
 
 | Lane | Work |
 |---|---|
-| ②Main | Retargets the INB chain as each parent lands; INB7-c1 (one pick, the inspector) on top of #622, at high |
-| ③Hands | Idle until #619 lands; then 3a's merge with the counts and the to-dos |
-| ⑤CAP | #608's retarget; #623's re-check |
-| ⑥Helper | #617's main merge; L11-3d and the L11-3b mock |
-| Codex (via ⑦Codex) | #619's Astra review on the combined head |
+| ②Main | Retargets the INB7 chain as each parent lands; #634's by-run_id switch after #637 |
+| ③Hands | Writes SBX-3a gates 1 and 3 into #520's body as options with a recommendation; otherwise idle until the gates are decided |
+| ⑤CAP | Idle: #623, #625 and #628 are OK'd; #604 waits on the keep mock |
+| ⑥Helper | #626's retarget after #621; the L11-3b mock |
+| Codex (via ⑦Codex) | Queued: SBX-3a gates 2 and 4; #619's two Astra P3s |
 | ④参谋 | Main CI and the user's return list |
 | ⓪Plan | Re-checks as heads move; this page |
 
 ## Waiting on the user
+
+- **SBX-3a gate 1, listening:** your 10-30 decision denies all listening, and `SBX-sandbox.md:257` says how it comes back must be decided before SBX-3 wires the base into commands. ③Hands is writing the options, with a recommendation, into #520's body.
+- **SBX-3a gate 3, online-mode commands between SBX-3 and SBX-6:** the proxy comes with SBX-6, and any-declared can't take `denied_ports` (#570). So until then, online mode can't refuse Arslan's own ports. The options are going into #520's body too.
+- **#636's full lists:** (b) keep the Hands trace in Settings › Hands, and (a) drop the judgments list. Both recommended.
+- **The drawer:** drop the radar and the sparkline (recommended).
+- **The 「要你做」 label:** the chip and the tile now share it, with a title. It's kept unless you say otherwise.
+- **CAP9's mock**, sent as a private link.
 
 - **IMG1's scope** (#617): A, web images as a chip that opens in the browser (recommended); B, a CSP on the main window; C, a CSP in the reader's HTML and Word frames. Recommended: A + C now, B after A is on a real Mac.
 - **#604's keep button:** the mock (the parked row plus 「keep it」, on CAP5a's board) needs your OK before ⑤CAP builds it.
