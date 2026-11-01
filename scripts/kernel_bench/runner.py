@@ -567,6 +567,9 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               # v0.1.63: the command policy Arslan's instance ran under (ask_risky unless the run asked for
               # ask_all), so the final M1's ask_all reference run is labelled; None for other entrants.
               "shell_policy": driver_out(who, run).get("shell_policy"),
+              # SBX-7: Arslan's cards to run outside the sandbox (the stand-in user declines them); None elsewhere.
+              "sandbox_cards": {**{k: driver_out(who, run).get(f"{k}_cards") for k in ("outside", "retry")},
+                                "run_commands": driver_out(who, run).get("run_commands")},
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = judge(verdict, end, who)

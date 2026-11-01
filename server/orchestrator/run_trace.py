@@ -10,6 +10,10 @@ from contextvars import ContextVar
 from server.services.run_recorder import RUN_RAW_CAP
 
 _trace: ContextVar[list[dict] | None] = ContextVar("run_trace", default=None)
+# SBX-7: a sandbox denial of the command being run, waiting for that call's entry. A dict, so a note made in a
+# task the call awaits (asyncio.wait_for copies the context) still reaches it.
+_denial: ContextVar[dict | None] = ContextVar("run_denial", default=None)
+DENIAL_CODES = frozenset({"eperm"})        # what SBX-3 detects so far. SBX-M (#592) didn't measure tagged deny reports
 _prompt: ContextVar[dict | None] = ContextVar("run_prompt", default=None)
 # v0.1.64 INB2: whether the run's turns took in anything off the "about you" allowlist (untrusted.known_local,
 # #475 F2); None until a turn of the run ends.
@@ -43,7 +47,20 @@ def record(*, tool: str, args, result, ok: bool, error: str | None, ms: int | No
         paths = list(dict.fromkeys(path for path in found if path))
         if paths:
             entry["paths"] = paths
+    held = _denial.get()
+    denial = held.pop("code", None) if held is not None else None
+    if denial and tool == "run_command":
+        entry["denial"] = denial                     # SBX-7: kept whole however long the output result_raw cuts
     buf.append(entry)
+
+
+def note_denial(code: str) -> None:
+    """SBX-7: the sandbox stopped the command being run. The code goes on that call's entry, and from there on
+    the run step's `ref`. It never goes on the result, which the model and every other payload read (card
+    §"The two numbers"). Kept when an approved re-run outside replaces the result."""
+    held = _denial.get()
+    if held is not None and code in DENIAL_CODES:
+        held["code"] = code
 
 
 def snapshot() -> list[dict]:
@@ -94,9 +111,11 @@ def collecting():
     token = _trace.set(buf)
     ptoken = _prompt.set(prompt_bucket)
     otoken = _outside.set({"seen": None})
+    dtoken = _denial.set({})
     try:
         yield buf
     finally:
         _trace.reset(token)
         _prompt.reset(ptoken)
         _outside.reset(otoken)
+        _denial.reset(dtoken)

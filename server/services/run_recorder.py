@@ -472,4 +472,6 @@ class RunRecorder:
                             "result_raw": entry["result_raw"], "error": entry.get("error")}
             if entry.get("paths"):
                 s["detail"]["paths"] = entry["paths"]      # INB6: run_trace.record
-            s["ref"] = {**s["ref"], "ok": entry["ok"]}
+            # SBX-7: steps and entries pair by order, so the denial code only lands on a step of the same tool.
+            denial = entry.get("denial") if entry.get("tool") == s["ref"].get("tool") else None
+            s["ref"] = {**s["ref"], "ok": entry["ok"], **({"denial": denial} if denial else {})}
