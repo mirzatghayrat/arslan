@@ -64,7 +64,7 @@
 - **合并顺序**由依赖图决定，不是先到先得。顺序表在当轮 README。
 - **Who merges (user, 2026-10-28; relayed by ④参谋 and confirmed by the user in ⓪Plan's chat; replaces U9 for merging):**
   - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session's OK **at the current head**, and **every** check on that head green (not only the required ones; the `language` job, for example, is not required yet). The authoring session enables auto-merge with `ccd_pr` `set_auto_merge`; GitHub merges when the required checks pass. **Timing (found 2026-10-29):** GitHub refuses to enable auto-merge on a PR that is already mergeable ("clean status"), so enable it once the OK is in and every check that is *not* required has passed (today `language`; the ruleset requires `backend`, `frontend`, `macos`, `secrets`), while a required one is still running. If all checks are already green, a session cannot merge it (a plain `gh pr merge` is blocked); name it to the user, who merges.
-  - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping) unless the user says otherwise. The security surface here means:
+  - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping), except where the 2026-11-01 rules below let the author auto-merge. The security surface here means:
     - the outside-content mark;
     - the sandbox;
     - the classifier;
@@ -91,7 +91,10 @@
     - **Still the user's:**
       - Codex's PRs, including any Claude commit added on a Codex branch;
       - any PR that changes a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md`.
-    - Ordinary product code off the security surface is unchanged: the user merges it.
+    - **Ordinary product code too (user, 2026-11-01, in ⓪Plan's chat, verbatim: 「普通产品代码也一样：另一个会话审过、在当前 head 上 OK、五项检查全绿，作者就可以开 auto-merge。」):**
+      the author may enable auto-merge once another session reviewed it (effort=high, unless it is on the security surface, where the effort=max rule above applies), that session OK'd it at the current head, and all five checks are green.
+      The two exceptions above (Codex's PRs; Bridge frames) stay the user's.
+    - **Stacked PRs:** enable auto-merge only once the PR's base is `main`. Auto-merge on a stacked PR merges it into its parent's branch, not main.
   - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
   - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
