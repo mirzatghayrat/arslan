@@ -41,12 +41,6 @@ _MEM_BYTES = 1024 ** 3      # 1 GB address space (pandas/matplotlib need room)
 _FSIZE_BYTES = 50 * 1024 ** 2
 _BATTERIES = ("numpy", "pandas", "matplotlib")
 
-# Legacy command profile: network isolation ONLY. Commands require separate user approval.
-# Python uses computation_profile below; cwd/HOME are never filesystem security boundaries.
-# No product caller reaches it: every one passes its own profile to _seatbelt_wrapper.
-# DELETE-BY: v0.1.64 (SBX-4, with computation_profile's move onto the default-deny base).
-_SEATBELT_PROFILE = "(version 1)\n(allow default)\n(deny network*)\n"
-
 # Module cache: resolved sandbox interpreter + one-line env note. Tests may preset this.
 _env_cache: tuple[str, str] | None = None
 
@@ -156,14 +150,12 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
         rules.allow("file-read* file-map-executable", subpath(path))
     for path in ("/dev/null", "/dev/random", "/dev/urandom", "/private/etc/localtime"):
         rules.allow("file-read*", literal(path))
-    # These two loops write in set order, which follows the hash seed: with a linked interpreter
-    # (a venv) the two process-exec lines, and the two pyvenv.cfg lines, swap between processes
-    # (seen in SBX-1's check). Both are allows, so the policy is the same; SBX-1 keeps the bytes,
-    # and SBX-4, which rewrites this profile on the default-deny base, writes them sorted.
-    for path in {executable, resolved}:
+    # Sorted (SBX-4): in set order, which follows the hash seed, a linked interpreter's (a venv's) two
+    # process-exec lines and two pyvenv.cfg lines swapped between processes, one policy in several texts.
+    for path in sorted({executable, resolved}):
         rules.allow("process-exec", literal(path))
     # Python uses pyvenv.cfg to locate the base stdlib; this does not grant sibling reads.
-    for prefix in prefixes:
+    for prefix in sorted(prefixes):
         rules.allow("file-read*", literal(prefix / "pyvenv.cfg"))
     rules.allow("file-read* file-write*", subpath(workspace.resolve()))
     rules.allow("file-write*", literal("/dev/null"))
@@ -173,11 +165,12 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
 
 
 def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
-    """The seatbelt wrapper, when usable. Probed once per process. `profile` overrides the default
-    deny-all-network one (computation_profile for run_python)."""
-    if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").exists():
+    """The seatbelt wrapper for `profile` (computation_profile for run_python), when usable. Without a
+    profile there is none (SBX-4 removed the allow-default legacy text no caller reached), so a caller
+    fails closed."""
+    if profile is None or sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").exists():
         return None
-    return ["/usr/bin/sandbox-exec", "-p", profile or _SEATBELT_PROFILE]
+    return ["/usr/bin/sandbox-exec", "-p", profile]
 
 
 # ── Pluggable sandbox backends ──────────────────────────────────────────────────

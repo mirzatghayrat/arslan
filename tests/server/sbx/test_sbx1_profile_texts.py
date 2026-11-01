@@ -167,23 +167,11 @@ def test_run_python_and_artifact_checks(T, A):
     assert code_sandbox.computation_profile(python, A / "work") == text[:text.rindex("(deny file-write*")]
 
 
-def _seed_free(text: str) -> str:
-    """With a linked interpreter, computation_profile writes its process-exec lines and its pyvenv.cfg
-    lines in set order, which follows the hash seed (SBX-1's check found this on main; SBX-4 sorts
-    them). Sort each run of them here."""
-    lines = text.splitlines()
-    for marker in ("(allow process-exec ", "pyvenv.cfg"):
-        at = [i for i, line in enumerate(lines) if marker in line]
-        assert at == list(range(at[0], at[0] + len(at))), (marker, at)
-        lines[at[0]:at[-1] + 1] = sorted(lines[at[0]:at[-1] + 1])
-    return "\n".join(lines) + "\n"
-
-
 def test_run_python_in_a_venv_reached_through_a_link(T, A):
     """The interpreter as given (not resolved) and as resolved are both allowed to run; their
     lib and bin folders are read as resolved."""
     _between_system_and_usr(T)
-    assert _seed_free(_shown(code_sandbox.computation_profile(str(A / "venv/bin/python"), A / "work"), T)) == """\
+    assert _shown(code_sandbox.computation_profile(str(A / "venv/bin/python"), A / "work"), T) == """\
 (version 1)
 (deny default)
 (allow sysctl-read)
