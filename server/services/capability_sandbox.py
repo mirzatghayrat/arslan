@@ -39,11 +39,12 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], c
     the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
     (read) and its own folder (read and write) open again: both live inside Arslan's data folder.
 
-    SBX-5: its tools write MCP's own cache (`cache`, `run_temp.cache("mcp")`), never the commands' one (closed)
-    nor the user's shared caches; and the CAP6b folders are never written, even inside a granted parent."""
+    SBX-5: its tools write this server's own cache (`cache`, under its folder: never shared with another server,
+    #5a review), never the commands' one (closed) nor the user's shared caches; and the CAP6b folders are never
+    written, even inside a granted parent."""
     from server.services import command_sandbox, run_temp
     granted = [real(Path(p)) for p in folders]
-    own = real(run_temp.cache("mcp") if cache is None else cache)
+    own = real(root) / "cache" if cache is None else real(cache)
     peer = real(run_temp.cache("commands") if peer_cache is None else peer_cache)
     text = default_deny_profile([*granted, own], command_sandbox.default_protected(),
                                 readable=[*map(real, SYSTEM_READ), *granted, own], closed=[peer],
@@ -65,7 +66,7 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
         (root / sub).mkdir(parents=True, exist_ok=True)
     text = profile(root=root, folders=list(sandbox.get("folders") or []), network=bool(sandbox.get("network")),
                    read=list(sandbox.get("read") or []))
-    from server.services import command_sandbox, run_temp
+    from server.services import command_sandbox
     env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
-           **command_sandbox.cache_environment(run_temp.cache("mcp"))}     # SBX-5 §1c: MCP's own cache
+           **command_sandbox.cache_environment(root / "cache")}     # SBX-5 §1c: this server's own cache
     return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")

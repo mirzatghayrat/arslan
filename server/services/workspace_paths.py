@@ -112,7 +112,9 @@ def _refuse_cap6b(path: Path, root: Path, user_path) -> None:
     from server import config
     from server.services import command_sandbox
     data = Path(config.data_dir()).resolve()
-    folders = [*command_sandbox.cap6b_folders(), *([] if root == data or data in root.parents else [data])]
+    # Only a working folder strictly inside the data folder is exempt (an eval's profile); the data folder itself,
+    # its runtimes or a capability's folder as the working folder can't rewrite them (#5a review).
+    folders = [*command_sandbox.cap6b_folders(), *([] if data in root.parents else [data])]
     for folder in folders:
         if path == folder or folder in path.parents:
             raise PathEscape(f"refusing to write Arslan's skills, plugins or data: {user_path}")

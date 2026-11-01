@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -105,9 +106,25 @@ def shared_caches() -> list[Path]:
     return _resolved(Path.home() / name for name in _SHARED_CACHES)
 
 
+def _private_folder(path: Path) -> None:
+    """Make `path` a 0700 folder of ours, or refuse one that is already there and isn't (a link, a file, or a
+    folder someone else owns): a cache another account prepared could hand a tool its packages (#5a review)."""
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise OSError(f"refusing a cache folder that isn't a folder of ours: {path}")
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        os.chmod(path, 0o700)
+
+
 def cache_environment(folder: Path) -> dict[str, str]:
-    """The environment that sends a preset's tools to `folder` (made 0700 here) instead of the user's caches."""
-    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    """The environment that sends a preset's tools to `folder` instead of the user's caches. `folder` and its
+    parent are made 0700 and must be ours (`_private_folder`); OSError otherwise."""
+    _private_folder(folder.parent)
+    _private_folder(folder)
     return {name: str(folder / name.lower()) for name in CACHE_ENV}
 
 
@@ -284,10 +301,10 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     multiprocessing Pool is refused, SBX-measurement.md); the harness passes a per-run one to test the rule."""
     roots = writable_roots(workspace, temp, cache)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
-    # SBX-5: the CAP6b folders close like a protected path (no read, no write, last), and MCP's cache is closed.
-    from server.services import run_temp
+    # SBX-5: the CAP6b folders close like a protected path (no read, no write, last).
     protected = [*default_protected(), *cap6b_folders(plugin_folder)]
-    shut = _resolved([*closed, *app_data(), run_temp.cache("mcp") if peer_cache is None else peer_cache])
+    # An MCP server's cache is under its folder, in Arslan's data folder, which is protected here already.
+    shut = _resolved([*closed, *app_data(), *([peer_cache] if peer_cache is not None else [])])
     if network is None:
         network = NetworkMode.NONE if offline else NetworkMode.ANY_DECLARED
     text = default_deny_profile(writable, protected, closed=shut, network=network, proxy_port=proxy_port,
