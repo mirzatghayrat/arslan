@@ -8,7 +8,7 @@ import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { REMOTE_ID, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { REMOTE_ID, mostUrgent, remoteFirst, waitingLabel, type ConversationMeta } from "../lib/conversationMeta";
 import { groupByDay, newestFirst } from "../lib/sidebarOrder";
 import { useRecency } from "../stores/recencyStore";
 import { useSidebar } from "../stores/sidebarStore";
@@ -95,9 +95,12 @@ export default function Sidebar(props: SidebarProps) {
   // then the ones without any by when they changed; the top few form the group.
   const rank = new Map<string, number>();
   live.forEach((thread, i) => { const p = projectOf(thread); if (p && !rank.has(p)) rank.set(p, i); });
-  const shownProjects = [...projects].sort((a, b) =>
-    (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
-    .slice(0, SIDEBAR_PROJECTS);
+  const ranked = [...projects].sort((a, b) =>
+    (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+  // INB5b-3 ("Not covered" in PR 590): a project with a conversation waiting on you is listed even past the most recent few, so what
+  // the badge on Progress counts always has a row to open.
+  const waitingProjects = new Set(live.filter(thread => meta[thread.id]?.state === "waiting").map(projectOf));
+  const shownProjects = [...ranked.slice(0, SIDEBAR_PROJECTS), ...ranked.slice(SIDEBAR_PROJECTS).filter(p => waitingProjects.has(p.id))];
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
   // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
@@ -172,6 +175,10 @@ export default function Sidebar(props: SidebarProps) {
     const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
     // INB4: the row carries its most urgent conversation: waiting, then working, then done, not seen.
     const urgent = (["waiting", "working", "done_unseen"] as const).find(state => chats.some(thread => meta[thread.id]?.state === state));
+    // INB5b-3: and what it waits on, rolled up the same way: the bell only when every waiting conversation under it waits on a
+    // reminder (⓪Plan's review of PR 614, N1).
+    const waitingOn = urgent === "waiting"
+      ? mostUrgent(chats.filter(thread => meta[thread.id]?.state === "waiting").map(thread => meta[thread.id]?.waitingOn)) : undefined;
     const takes = (event: React.DragEvent) => Boolean(onMoveToProject) && event.dataTransfer.types.includes(DRAG_TYPE);
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
       <div data-testid={`sidebar-project-drop-${project.id}`} data-drop={dropTarget === project.id || undefined}
@@ -191,9 +198,10 @@ export default function Sidebar(props: SidebarProps) {
           {open ? <ChevronDown size={12} className="shrink-0 text-subtle-foreground" /> : <ChevronRight size={12} className="shrink-0 text-subtle-foreground" />}
           <Folder size={13} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-          {urgent && <span data-testid={`project-state-${project.id}`} role="img" aria-label={t(`sidebar.glyph.${urgent}`)} className="flex shrink-0">
+          {urgent && <span data-testid={`project-state-${project.id}`} role="img"
+            aria-label={t(`sidebar.glyph.${waitingOn ? waitingLabel(waitingOn) : urgent}`)} className="flex shrink-0">
             {urgent === "done_unseen" ? <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-info-strong" />
-              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0 }} size={13} />}</span>}
+              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0, waitingOn }} size={13} />}</span>}
         </button>
         {onStartInProject && <button type="button" onClick={() => onStartInProject(project.id)}
           aria-label={t("sidebar.newInProject", { name: project.name })} title={t("sidebar.newInProject", { name: project.name })}
@@ -294,10 +302,10 @@ export default function Sidebar(props: SidebarProps) {
     <footer className="shrink-0 space-y-1 border-t border-border/60 p-3">
       <button id="nav-btn-settings-footer" onClick={() => onChangeSection("settings")} className={navClass(activeSection === "settings")}>
         <Settings2 size={15} /><span>{t("nav.settings")}</span></button>
-      {/* 0.1.50 (user ruling): Activity takes the old "Local service · Online" slot. A
+      {/* 0.1.50 (user ruling): Activity, called Progress since v0.1.64 (INB7-a), takes the old "Local service · Online" slot. A
           permanent "Online" said nothing; the connection only shows when it is NOT fine. */}
-      <button id="nav-btn-activity-footer" onClick={() => onChangeSection("activity")} className={navClass(activeSection === "activity")}>
-        <Activity size={15} /><span className="flex-1">{t("nav.activity")}</span>
+      <button id="nav-btn-progress-footer" onClick={() => onChangeSection("progress")} className={navClass(activeSection === "progress")}>
+        <Activity size={15} /><span className="flex-1">{t("nav.progress")}</span>
         {waiting > 0 && <span data-testid="progress-badge" aria-label={t("waiting.count", { count: waiting })}
           className="min-w-[18px] rounded-full bg-warning px-1.5 text-center text-[10px] leading-[18px] tabular-nums text-background">{waiting > 99 ? "99+" : waiting}</span>}
         {backendStatus !== "online" && <span data-testid="backend-status"

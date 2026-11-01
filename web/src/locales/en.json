@@ -97,7 +97,7 @@
     "arslan": "Main assistant",
     "capabilities": "Capabilities",
     "brain": "Memory",
-    "activity": "Activity",
+    "progress": "Progress",
     "scheduled": "Scheduled"
   },
   "brain": {
@@ -584,8 +584,8 @@
     "desktopNotificationsDesc": "When the window is closed or in the background, macOS notifies you when a task finishes, an action needs your confirmation, or a scheduled task fails. Notifications never show message text.",
     "labelIsland": "Show Arslan in the notch",
     "islandDesc": "A small Arslan at the top of the screen shows what it is working on, when something needs you, and when a task is done. Hover to see more. It never appears in screenshots, recordings or screen sharing.",
-    "automationElsewhere": "Scheduled tasks have their own page; token usage and every past run live in Activity.",
-    "automationOpenActivity": "Open Activity",
+    "automationElsewhere": "Scheduled tasks have their own page; token usage and every past run live in Progress.",
+    "automationOpenActivity": "Open Progress",
     "searchPlaceholder": "Search settings…",
     "searchNoHits": "No section matches",
     "modeSystem": "System",
@@ -713,8 +713,8 @@
     "grpVersion": "Version",
     "grpWhatsNew": "What's new",
     "watchesOnScheduled": "Watched pages and folders, and what you muted, are managed on the Scheduled page.",
-    "openActivity": "Usage and every run are in Activity; scheduled tasks have their own page.",
-    "openActivityBtn": "Open Activity",
+    "openActivity": "Usage and every run are in Progress; scheduled tasks have their own page.",
+    "openActivityBtn": "Open Progress",
     "whatsNewEmpty": "No notes for this version."
   },
   "errors": {
@@ -782,6 +782,8 @@
     "fromPhone": "Started from iPhone",
     "glyph": {
       "waiting": "Waiting for your approval",
+      "waiting_reminder": "A stopped job left you a reminder",
+      "waiting_away": "Couldn't ask you while you were away",
       "remote": "Remote · your iPhone",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
@@ -957,7 +959,7 @@
       "orphaned": "Orphaned files"
     },
     "import": {
-      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan; invisible characters are counted.",
+      "subtitle": "Standard SKILL.md files, imported as written, after a license check and the safety scan. The scan blocks hidden tag characters and text-direction controls; other invisible characters are counted, not blocked.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subpath (optional)",
       "scan": "Scan",

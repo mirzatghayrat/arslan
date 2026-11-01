@@ -16,10 +16,40 @@ pytestmark = pytest.mark.skipif(subprocess.run(["git", "--version"], capture_out
                                 reason="needs git")
 
 
+GIT_ENV = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+
 def git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True,
-                          env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}).stdout
+                          env={**os.environ, **GIT_ENV}).stdout
+
+
+def script(path: Path, text: str) -> None:
+    """An executable, written, synced and closed before anything runs it (LOAD5)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o755)
+    try:
+        os.write(fd, text.encode())
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    path.chmod(0o755)
+
+
+def signed_commit(root: Path, signer: Path, tries: int = 5) -> None:
+    """LOAD5: on Linux, exec of a file that some process still holds open for writing fails with ETXTBSY. A fork
+    elsewhere in the xdist worker can hold the signer's write fd until it execs, so git's run of the signer can fail
+    once (#604's run 41229345300, exit 128). Retry only that; any other failure ends the setup with git's stderr."""
+    for _ in range(tries):
+        done = subprocess.run(["git", "-c", f"gpg.program={signer}", "-c", "user.signingkey=synthetic",
+                               "commit", "-qS", "-m", "signed"], cwd=root, capture_output=True, text=True,
+                              env={**os.environ, **GIT_ENV})
+        if done.returncode == 0:
+            return
+        if "text file busy" not in done.stderr.lower():
+            break
+        time.sleep(0.2)
+    pytest.fail(f"the signed commit failed in setup (exit {done.returncode}): {done.stderr.strip()}")
 
 
 def write(root: Path, rel: str, text: str) -> None:
@@ -109,33 +139,53 @@ def test_programs_named_in_the_repos_config_never_run(repo):
     marks.mkdir()
     # A signed commit on the branch, so `log` would verify it if it were allowed to (gpg.program below marks).
     signer = repo.parent / "signer"
-    signer.write_text("#!/bin/sh\necho '[GNUPG:] SIG_CREATED D 1 8 00 1 X' >&2\n"
-                      "printf -- '-----BEGIN PGP SIGNATURE-----\\nc3lu\\n-----END PGP SIGNATURE-----\\n'\n")
-    signer.chmod(0o755)
+    script(signer, "#!/bin/sh\necho '[GNUPG:] SIG_CREATED D 1 8 00 1 X' >&2\n"
+                   "printf -- '-----BEGIN PGP SIGNATURE-----\\nc3lu\\n-----END PGP SIGNATURE-----\\n'\n")
     write(repo, "signed.md", "signed\n")
     git(repo, "add", "-A")
-    git(repo, "-c", f"gpg.program={signer}", "-c", "user.signingkey=synthetic", "commit", "-qS", "-m", "signed")
+    signed_commit(repo, signer)
     for key, name in (("filter.evil.clean", "clean"), ("filter.evil.smudge", "smudge"), ("filter.evil.process", "process"),
                       ("core.fsmonitor", "fsmonitor"), ("diff.evil.textconv", "textconv"), ("diff.evil.command", "extdiff"),
                       ("diff.external", "external"), ("core.pager", "pager")):
         git(repo, "config", key, f"sh -c 'touch {marks / name}; cat'")
     verifier = repo.parent / "verifier"             # git runs gpg.program as a program, not through a shell
-    verifier.write_text(f"#!/bin/sh\ntouch {marks / 'gpg'}\n")
-    verifier.chmod(0o755)
+    script(verifier, f"#!/bin/sh\ntouch {marks / 'gpg'}\n")
     git(repo, "config", "gpg.program", str(verifier))
     git(repo, "config", "log.showSignature", "true")
     (repo / ".git" / "info").mkdir(exist_ok=True)
     (repo / ".git" / "info" / "attributes").write_text("* filter=evil diff=evil\n")
     hooks = repo / ".git" / "hooks"
     for hook in ("post-checkout", "pre-commit", "reference-transaction"):
-        (hooks / hook).write_text(f"#!/bin/sh\ntouch {marks / hook}\n")
-        (hooks / hook).chmod(0o755)
+        script(hooks / hook, f"#!/bin/sh\ntouch {marks / hook}\n")
     time.sleep(1.1)                                               # every file's mtime differs from the index's
     write(repo, "a.md", "one\nTWO\nthree\nfour\n")
     s = git_changes.summary(repo, repo)
     git_changes.file_diff(repo, repo, "a.md")
     assert by_path(s)["a.md"]["uncommitted"] is True
     assert sorted(p.name for p in marks.iterdir()) == []
+
+
+def test_load5_a_busy_signer_is_retried(repo, monkeypatch):
+    """LOAD5: ETXTBSY can't be forced on macOS, so git's answer is replayed: busy once, then signed."""
+    real, answers = subprocess.run, ["error: cannot run signer: Text file busy\n", ""]
+
+    def run(args, **kw):
+        if "commit" not in args:
+            return real(args, **kw)
+        err = answers.pop(0)
+        return subprocess.CompletedProcess(args, 128 if err else 0, "", err)
+    monkeypatch.setattr(subprocess, "run", run)
+    signed_commit(repo, repo.parent / "signer")
+    assert answers == []
+
+
+def test_load5_any_other_signing_failure_shows_gits_stderr(repo):
+    signer = repo.parent / "signer"
+    script(signer, "#!/bin/sh\nexit 1\n")
+    write(repo, "signed.md", "signed\n")
+    git(repo, "add", "-A")
+    with pytest.raises(pytest.fail.Exception, match=r"exit 128\).*gpg failed to sign"):
+        signed_commit(repo, signer)
 
 
 def test_the_working_file_is_hashed_once_until_it_changes(repo, monkeypatch):

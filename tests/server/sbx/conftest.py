@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from tests.server.sbx.harness import Harness
+from tests.server.sbx.harness import BUILT_BASES, Harness
 from server.services.sandbox_profile import NetworkMode
 
 
@@ -36,6 +36,11 @@ def sbx(tmp_path, request, record_property):
     if request.node.get_closest_marker("macos") is None:
         pytest.fail("tests using sbx must carry the macos marker and their own platform skip")
     base = getattr(request, "param", "default-deny")
+    if base == "commands":
+        record_property("base", base)
+        # The one deliberate expected failure, before any smoke/probe runs.
+        # Once registered, fixture or probe failures are ordinary test failures.
+        assert base in BUILT_BASES, "SBX-3a commands adapter is not built"
     parameters = getattr(getattr(request.node, "callspec", None), "params", {})
     harness = Harness(tmp_path, base, parameters.get("mode", NetworkMode.NONE))
     try:

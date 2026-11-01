@@ -17,7 +17,7 @@ export const SECTIONS = [
   "scheduled",
   "capabilities",
   "brain",
-  "activity",
+  "progress",
   "settings",
 ] as const;
 

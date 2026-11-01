@@ -87,18 +87,38 @@ def _base_env(extra: dict | None = None) -> dict:
 
 # ── license at the source ────────────────────────────────────────────────────
 
-async def source_license(repo: str | None) -> tuple[str | None, str | None]:
-    """(SPDX, the file it was read from) for a repository: its LICENSE file at HEAD, read
-    from raw.githubusercontent.com (not the API, which allows 60 calls an hour without a
-    token) and recognised by its wording (skill_import.detect_license) — never metadata."""
+async def source_license(repo: str | None, version: str | None = None) -> tuple[str | None, str | None]:
+    """(SPDX, where it was read: `<file>@<ref>`) for a repository: its LICENSE file, read from
+    raw.githubusercontent.com (not the API, which allows 60 calls an hour without a token) and recognised by its
+    wording (skill_import.detect_license), never metadata.
+
+    v0.1.64 CAP4a-3: at the version being installed, not at HEAD. Every license file name is tried at the
+    repository's tag for it (`v<version>`, then `<version>`) before any at the next ref; a repository with neither
+    tag is read at HEAD, and `@HEAD` says so. Only a 404 moves on to the next name or ref: any other answer (a
+    rate limit, an outage) refuses with `license_unreadable`, never falling through to HEAD (#569 review F3a).
+    The ref read goes in the card's payload and the dossier; the card's face shows only that the file was read
+    (CAP4b's mock adds the ref).
+
+    What this binds, and what it does not (#569 review F4): the license file in the repository the Registry entry
+    declares, at a git tag named after the version. The repository is the publisher's own word, a tag can be
+    moved, and the file is not cross-checked against the artifact the lock pins (npm's gitHead and provenance, and
+    PyPI's attestations, exist but are not always present). `_VERSION` checks characters only, so a moving tag such
+    as `v1` is read as it is. The code's own boundary is the lock, the scan and the sandbox; this is the license
+    gate."""
+    from urllib.parse import quote
+
     from server.services import skill_import
     if not repo or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         return None, None
+    refs = [f"v{version}", str(version)] if version and _VERSION.fullmatch(str(version)) else []
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        for name in skill_import._LICENSE_NAMES:
-            r = await client.get(f"https://raw.githubusercontent.com/{repo}/HEAD/{name}")
-            if r.status_code == 200:
-                return skill_import.detect_license(r.text), name
+        for ref in [*refs, "HEAD"]:
+            for name in skill_import._LICENSE_NAMES:
+                r = await client.get(f"https://raw.githubusercontent.com/{repo}/{quote(ref, safe='')}/{name}")
+                if r.status_code == 200:
+                    return skill_import.detect_license(r.text), f"{name}@{ref}"
+                if r.status_code != 404:
+                    raise InstallFailure("license_unreadable", f"HTTP {r.status_code} for {name}@{ref}")
     return None, None
 
 
@@ -128,20 +148,46 @@ def _console_script(venv: Path, identifier: str) -> str:
     raise InstallFailure("no_command", f"{identifier}: console scripts {scripts or 'none'}")
 
 
-def _uv_env() -> dict:
+#: CAP5 (the card's "own cache"): uv and npm download into a cache inside the install's own folder, never one every
+#: install shares, so no install is built from a file that another install, or anything else, left in a cache. The
+#: lock step fills it in the staging folder, which moves in whole; the install removes it (`_drop_cache`).
+CACHE = ".cache"
+
+
+def _drop_cache(root: Path) -> None:
+    """The install's own cache, once its packages are in: nothing runs uv or npm in this folder again, and the
+    server then runs with its folder writable. A link there goes itself, never what it points at."""
+    cache = root / CACHE
+    if cache.is_symlink():
+        cache.unlink()
+    else:
+        shutil.rmtree(cache, ignore_errors=True)
+
+
+def _tmp(root: Path) -> str:
+    """#606 review F1: the steps' temporary folder, inside the install's own cache, so nothing they write goes to
+    the shared /tmp (Node keeps its compile cache under os.tmpdir() when TMPDIR is unset)."""
+    tmp = root / CACHE / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    return str(tmp)
+
+
+def _uv_env(root: Path) -> dict:
     rt = capability_runtime.root()
-    return _base_env({"UV_CACHE_DIR": str(rt / "uv-cache"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
-                      "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed"})
+    return _base_env({"UV_CACHE_DIR": str(root / CACHE / "uv"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
+                      "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed", "TMPDIR": _tmp(root)})
 
 
 def _npm_env(node: Path, root: Path) -> dict:
-    rt = capability_runtime.root()
     # #561 review: no git (a dependency from a git host would be cloned, and its tree installed, before the card)
     # and only the public registry; `_registry_only` then refuses any lock entry from elsewhere.
-    return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(rt / "npm-cache"),
+    return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(root / CACHE / "npm"),
                       "npm_config_ignore_scripts": "true", "npm_config_audit": "false", "npm_config_fund": "false",
                       "npm_config_update_notifier": "false", "npm_config_git": "/usr/bin/false",
-                      "npm_config_registry": NPM_REGISTRY, "HOME": str(root)})
+                      "npm_config_registry": NPM_REGISTRY, "HOME": str(root), "TMPDIR": _tmp(root),
+                      # #606 review F1: npm turns on Node's compile cache, shared by every Node process of the user
+                      # under /tmp, which a sandboxed command can write; the lock step runs npm before the card.
+                      "NODE_DISABLE_COMPILE_CACHE": "1"})
 
 
 #: A locked requirement line: `name==version \` (uv pip compile --generate-hashes).
@@ -153,7 +199,7 @@ async def lock_pypi(root: Path, identifier: str, version: str) -> dict:
     uv = await capability_runtime.ensure("uv")
     (root / "requirements.in").write_text(f"{identifier}=={version}\n")
     await _run([str(uv), "pip", "compile", "requirements.in", "--generate-hashes", "--only-binary", ":all:",
-                "--python-version", PYTHON_VERSION, "-o", "requirements.lock", "--quiet"], cwd=root, env=_uv_env())
+                "--python-version", PYTHON_VERSION, "-o", "requirements.lock", "--quiet"], cwd=root, env=_uv_env(root))
     text = (root / "requirements.lock").read_text()
     return {"file": "requirements.lock", "sha256": _sha256(root / "requirements.lock"),
             "packages": [{"name": n, "version": v} for n, v in _PYPI_LOCKED.findall(text)]}
@@ -198,7 +244,7 @@ def _check_lock(root: Path, lock: dict) -> None:
 async def install_pypi(root: Path, identifier: str, lock: dict) -> dict:
     """Install exactly the prepared lock (`--require-hashes`)."""
     uv = await capability_runtime.ensure("uv")
-    env = _uv_env()
+    env = _uv_env(root)
     _check_lock(root, lock)
     await _run([str(uv), "venv", "venv", "--python", PYTHON_VERSION, "--quiet"], cwd=root, env=env)
     await _run([str(uv), "pip", "install", "--python", str(root / "venv" / "bin" / "python"), "--require-hashes",
@@ -335,7 +381,7 @@ async def prepare(candidate: dict) -> dict:
     or run here. `discard` removes the staging folder when the card is not a yes."""
     _check_candidate(candidate)
     runtime = candidate["runtime"]
-    spdx, license_path = await source_license(candidate.get("repo"))
+    spdx, license_path = await source_license(candidate.get("repo"), (candidate.get("package") or {}).get("version"))
     from server.services.skill_import import _license_gate
     if runtime != "remote" and _license_gate(spdx):
         raise InstallFailure("license", _license_gate(spdx) or "")
@@ -380,6 +426,27 @@ def _sweep_prepared() -> None:
                     shutil.rmtree(leftover, ignore_errors=True)
         except OSError:
             continue
+
+
+#: CAP5b (#606 review F5): the caches every one-click install shared before CAP5b, unused since. They go at boot
+#: (`sweep_leftover_caches`). DELETE-BY: v0.1.66, this cleanup with them, once every Mac that ran v0.1.64 has run it.
+_OLD_SHARED_CACHES = ("uv-cache", "npm-cache")
+
+
+def sweep_leftover_caches() -> None:
+    """At boot (#606 review F2, F5). No install runs yet, so an install folder's `.cache` is one that a stop, a crash
+    or an unexpected error left after the move (a finished install drops its own); and the old shared caches go. A
+    link goes itself, never what it points at."""
+    root = capabilities_root()
+    for folder in (root.iterdir() if root.is_dir() and not root.is_symlink() else ()):
+        if not folder.name.startswith(".") and folder.is_dir() and not folder.is_symlink():
+            _drop_cache(folder)
+    for name in _OLD_SHARED_CACHES:
+        old = capability_runtime.root() / name
+        if old.is_symlink():
+            old.unlink()
+        elif old.is_dir():
+            shutil.rmtree(old, ignore_errors=True)
 
 
 def discard(prepared: dict | None) -> None:
@@ -441,6 +508,7 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
                 spec = await install_npm(root, pkg["identifier"], prepared["lock"])
             else:
                 spec = await install_mcpb(root, pkg["identifier"], prepared["lock"]["sha256"])
+            _drop_cache(root)
             spec["args"] = [*spec.get("args", []), *argv]
             spec["transport"] = "stdio"
         row.lock_sha256 = spec.get("lock_sha256")
