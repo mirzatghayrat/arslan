@@ -84,9 +84,13 @@ def test_nothing_reopens_the_terminal_after_the_closures(home):
     for name, text in _presets(home).items():
         lines = text.splitlines()
         start = lines.index("(deny pseudo-tty)")
-        closures = lines[start - 2:start + 1]
-        assert closures[0].startswith(("(deny file-read* file-write* ", "(deny file-write* ")), name
-        assert closures[1] == f"(deny file-ioctl {' '.join(TTY_DEVICES)})", name
+        closures = lines[start - 3:start + 1]
+        filters = " ".join(TTY_DEVICES)
+        assert closures[0] == f"(deny file-read* file-write* {filters})", name
+        # Astra (#666, P1): the base's explicit file-write-data grant survives a wildcard deny; the exact
+        # operations are denied by name (measured: bytes reached another terminal's master before this).
+        assert closures[1] == f"(deny file-read-data file-write-data {filters})", name
+        assert closures[2] == f"(deny file-ioctl {filters})", name
         for line in lines[start + 1:]:
             assert not (line.startswith("(allow") and (any(f in line for f in TTY_DEVICES) or "pseudo-tty" in line
                                                        or "file-ioctl" in line)), (name, line)
@@ -97,8 +101,9 @@ def test_computation_and_mcp_close_the_terminal_the_base_opens(home):
         tail = text.split("(deny user-preference-write)", 1)[1]
         assert "(deny pseudo-tty)" in tail, name
         assert '(literal "/dev/tty") (literal "/dev/ptmx")' in tail.split("(deny file-ioctl", 1)[1], name
+    for name, text in _presets(home).items():                  # MCP too (Astra, #666, P2)
+        assert '(deny mach-lookup (global-name "com.apple.FSEvents"))' in text, name
     python = _presets(home)["run-python"]
-    assert '(deny mach-lookup (global-name "com.apple.FSEvents"))' in python
     assert "(deny user-preference-read)" in python and "(deny file-map-executable (subpath " in python
 
 

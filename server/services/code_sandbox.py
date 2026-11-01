@@ -150,6 +150,9 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
     # so the base stays identical across presets. No terminal (tty devices, their ioctls, pseudo-ttys), no file
     # events, no preference reads, and nothing in the workspace is mapped as code.
     rules.deny("file-read* file-write*", *TTY_DEVICES)
+    # Astra (#666, P1): the base's explicit `file-read* file-write-data` grant on these devices survives a later
+    # wildcard deny, so the exact operations are denied too: no writing to, or reading from, another terminal.
+    rules.deny("file-read-data file-write-data", *TTY_DEVICES)
     rules.deny("file-ioctl", *TTY_DEVICES)
     rules.deny("pseudo-tty")
     rules.deny("mach-lookup", '(global-name "com.apple.FSEvents")')
