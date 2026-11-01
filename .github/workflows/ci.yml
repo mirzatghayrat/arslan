@@ -349,13 +349,16 @@ jobs:
           # 0.1.64 SBX-2 follow-up (#574): +2, compile checks that the TCP port denies on a fixed port list survive in the proxy and port-22 modes.
           # 0.1.64 SBX-3p (#619): +56, the commands base's denial cases, strict xfails until SBX-3a's product adapter exists.
           # 0.1.64 L11-3a/3d (#621): +1, a rules file's path through macOS's /var link refused, its real path written.
-          EXPECTED = 421
+          # 0.1.64 SBX-3a gates (#645, Codex): +13, the measured service allowlist (+12) and the multiprocessing diagnosis (+1).
+          # 0.1.64 SBX-3a gates (#645, Codex): +16, any-declared mode added to #619's two commands tests, strict xfails.
+          EXPECTED = 450
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
           # a new p PR moves it up.
           # 0.1.64 SBX-3p (#619): 56, all in tests/server/sbx/test_sbx3_commands.py; SBX-3a takes it to 0.
-          EXPECTED_XFAIL = 56
+          # 0.1.64 SBX-3a gates (#645, Codex): 72, the 56 plus 16 any-declared cases in the commands tests.
+          EXPECTED_XFAIL = 72
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is
