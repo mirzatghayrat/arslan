@@ -104,7 +104,9 @@ export function eitherGuard(scope: AnswerGuardState, own: AnswerGuardState): Ans
 /** INB5b: a list in the conversation (the away entries on top, a stopped job's card at the end) moves under a still pointer when the
  *  conversation scrolls, as when a reply streams in while it is stuck to the bottom. That holds the list's own answers for the guard
  *  time, on `own`: a guard of the list's, not the scope's, since the slot's card floats and does not move. A scroll of the list, or of
- *  anything around it, counts. */
+ *  anything around it, counts. So does a change in the size of the content the list sits in (its parent, the conversation's
+ *  messages): a reply growing above the card moves it with no scroll at all, in a conversation too short to scroll or one scrolled
+ *  up (#611 review, 1). */
 export function useScrollHold(ref: { current: HTMLElement | null }, own: AnswerGuardState): void {
   useEffect(() => {
     const onScroll = (e: Event) => {
@@ -114,6 +116,20 @@ export function useScrollHold(ref: { current: HTMLElement | null }, own: AnswerG
     document.addEventListener("scroll", onScroll, true);
     return () => document.removeEventListener("scroll", onScroll, true);
   }, [ref, own]);
+  // The list may render after the hook first runs (it waits for its rows), so the content is (re)watched after each render once
+  // the list is there, and whenever the list moves to other content.
+  const watched = useRef<{ content: Element | null; observer: ResizeObserver | null }>({ content: null, observer: null });
+  useEffect(() => {
+    const content = ref.current?.parentElement ?? null;
+    if (content === watched.current.content) return;
+    watched.current.observer?.disconnect();
+    let first = true;                                  // an observer reports once on observe: that is not a move
+    const observer = content && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => { if (first) first = false; else own.hold(); }) : null;
+    if (content) observer?.observe(content);
+    watched.current = { content, observer };
+  });
+  useEffect(() => () => { watched.current.observer?.disconnect(); }, []);
 }
 
 /** For a card's doors: whether an answer (a click on Allow, No or a scope, ⌘⏎, Esc, a note) must be ignored right now. Outside a queue it never is. */
