@@ -135,8 +135,8 @@ def test_the_folder_shows_the_home_part_as_a_tilde(tmp_path):
     swapped = str(home).swapcase() + "/Projects/Trip"                 # the same folder on a case-insensitive volume
     assert shown(swapped, home) == "~/Projects/Trip"
     assert shown(home, home) == "~"
-    assert shown(outside, home) == str(outside.resolve()), "outside the home it is shown as it is"
-    assert shown(tmp_path / "Home2", home) == str((tmp_path / "Home2").resolve()), "a sibling is not inside the home"
+    assert shown(outside, home) == "work", "outside the home, only its last part (the user, 2026-11-01)"
+    assert shown(tmp_path / "Home2", home) == "Home2", "a sibling is not inside the home"
 
 
 async def test_the_details_never_carry_the_absolute_home_path(client, tmp_path, monkeypatch):
@@ -274,3 +274,109 @@ async def test_the_details_have_the_vectors_shape(client, mcp_ready, monkeypatch
     assert set(got["changes"]) == set(full["changes"])
     assert {tuple(sorted(c)) for c in got["connectors"]} == {tuple(sorted(c)) for c in full["connectors"]} == {("kind", "name", "on")}
     assert {c["kind"] for c in got["connectors"]} <= {"mcp", "skill", "hands"}
+
+
+# ------------------------------------------------------------------ #650's effort=max review
+
+import json  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+import unicodedata  # noqa: E402
+
+mac_only = pytest.mark.skipif(sys.platform != "darwin" or not os.path.isdir("/System/Volumes/Data"),
+                              reason="APFS firmlinks and normalization-insensitive names")
+
+
+@mac_only
+def test_a_home_reached_through_the_data_volume_firmlink_is_a_tilde(tmp_path):
+    home = (tmp_path / "Home").resolve()
+    (home / "Code").mkdir(parents=True)
+    assert phone_details.shown_folder("/System/Volumes/Data" + str(home / "Code"), home) == "~/Code"
+
+
+@mac_only
+def test_a_home_written_in_another_unicode_form_is_a_tilde(tmp_path):
+    nfc = unicodedata.normalize("NFC", "Jos" + chr(0xE9))
+    (tmp_path / nfc / "Code").mkdir(parents=True)
+    folder = tmp_path / unicodedata.normalize("NFD", nfc) / "Code"
+    assert phone_details.shown_folder(folder, tmp_path / nfc) == "~/Code"
+
+
+async def test_a_model_id_that_is_a_path_is_sent_as_its_file_name(client, tmp_path, monkeypatch):
+    from server.db.models import ConversationModel, ProviderConfig
+    home = tmp_path / "Home"
+    monkeypatch.setattr(phone_details, "_home", lambda: home)
+    gguf = str(home / "models" / "qwen3-8b.Q4_K_M.gguf")           # llama.cpp without --alias names a model by its file
+    await _add(client, [ProviderConfig(id=1, label="Local", provider="custom", model="local", api_key="x", is_primary=True),
+                        ConversationModel(conversation_id="local", config_id=1, model=gguf),
+                        ConversationModel(conversation_id="tilde", config_id=1, model="~/models/a.gguf"),
+                        ConversationModel(conversation_id="huge", config_id=1, model="m" * 600_000)])
+    got = await _details(client, "local")
+    assert got["model"] == "qwen3-8b.Q4_K_M.gguf" and str(home) not in json.dumps(got)
+    assert (await _details(client, "tilde"))["model"] == "a.gguf"
+    huge = await _details(client, "huge")
+    assert len(huge["model"]) <= 200, "an unbounded id would make every history too large to send"
+    fitted, _ = phone_reads.fit_history("huge", [{"id": "1", "role": "user", "text": "hi", "ts": "t", "attachments": []}], huge)
+    assert fitted
+
+
+async def test_a_connector_name_is_its_label_with_secrets_and_the_home_path_masked(client, mcp_ready, monkeypatch, tmp_path):
+    from server import crypto
+    monkeypatch.setenv("ARSLAN_ALLOW_INSECURE_SECRETS", "1")
+    home = "/Users/probeuser"
+    monkeypatch.setattr(phone_details, "_home", lambda: home)
+    mcp_ready.update({1, 2, 3, 4, 5})
+    labels = {1: "https://mcp.example.dev/sse?token=sklivetokenvalueabc",
+              2: "files --token flagtokenaaaa",
+              3: f"{home}/mcp/server.py",
+              4: "日历",
+              5: "Files envsecretvalue1234"}
+    rows = [mcp(k, v) for k, v in labels.items()]
+    rows[4].env = crypto.encrypt(json.dumps({"API_KEY": "envsecretvalue1234"}))
+    await _add(client, rows)
+    names = {c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"}
+    text = json.dumps(sorted(names), ensure_ascii=False)
+    for secret in ("sklivetokenvalueabc", "flagtokenaaaa", "envsecretvalue1234", home):
+        assert secret not in text, secret
+    assert "~/mcp/server.py" in names and "日历" in names, "the label is the display name, in any script"
+    assert all(len(name) <= 80 for name in names)
+
+
+async def test_the_newest_changing_run_wins_whatever_order_the_rows_come_in(client):
+    older, newer = run(), run()
+    await _add(client, [older, newer, step(newer, 0, "edit_file", edit("b.py", "", "1")),
+                        step(older, 0, "edit_file", edit("a.py", "", "1"))])
+    assert (await _details(client))["changes"]["last_run_id"] == newer.id
+
+
+def test_an_edit_records_its_line_counts_from_the_whole_text():
+    old = "".join(f"line {k}\n" for k in range(2000))
+    new = old.replace("line 5\n", "line five\nline 5b\n")
+    review = tool_review.capture("edit_file", {"path": "a.py", "old_string": old, "new_string": new}, {"ok": True})
+    assert (review["added"], review["removed"]) == (2, 1), "counted on the whole edit, not the recorded snippet"
+
+
+async def test_recorded_counts_are_summed_without_diffing_again(client, monkeypatch):
+    changed = run()
+    await _add(client, [changed, step(changed, 0, "edit_file", {"kind": "edit", "path": "a.py", "old": "x", "new": "y",
+                                                                 "added": 7, "removed": 3}),
+                        step(changed, 1, "edit_file", edit("b.py", "a\nb", "a"))])           # recorded before the counts
+    monkeypatch.setattr(phone_reads, "change_lines", lambda old, new: ([], 0, len(old.splitlines()) - len(new.splitlines())))
+    assert (await _details(client))["changes"] == {"files": 2, "added": 7, "removed": 4, "last_run_id": changed.id}
+
+
+def test_another_unicode_form_is_the_same_home_even_where_the_disk_cannot_tell():
+    nfc = unicodedata.normalize("NFC", "Jos" + chr(0xE9))
+    root = "/arslan-test-no-such-volume"                         # not on disk: only the names can say it
+    assert phone_details.shown_folder(f"{root}/{unicodedata.normalize('NFD', nfc)}/Code", f"{root}/{nfc}") == "~/Code"
+
+
+@pytest.mark.parametrize("folder, shown", [
+    ("/Volumes/Work/proj", "proj"),
+    ("/Users/Shared/x", "x"),
+    ("/Volumes/Clone/Users/alice/p", "p"),              # a clone of the home on another disk is not the home
+    ("/", "/"),
+])
+def test_a_folder_outside_the_home_is_only_its_last_part(folder, shown):
+    """The user, 2026-11-01 (「#650 文件夹选 a」): no volume and no full path leave the Mac."""
+    assert phone_details.shown_folder(folder, "/Users/alice") == shown

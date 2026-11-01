@@ -35,6 +35,16 @@ def _tail(text: str) -> list[str]:
     return [line[:400] for line in lines]
 
 
+def _line_counts(old: str, new: str) -> tuple[int, int]:
+    """Lines added and removed by one edit, as the phone's line diff counts them (phone_reads.change_lines)."""
+    import difflib
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=old.splitlines(), b=new.splitlines(), autojunk=False).get_opcodes():
+        if tag != "equal":
+            added, removed = added + j2 - j1, removed + i2 - i1
+    return added, removed
+
+
 def capture(tool: str, args: dict, result: dict) -> dict | None:
     """The review record for one finished tool call, or None for tools with nothing to show."""
     args = args if isinstance(args, dict) else {}
@@ -42,9 +52,12 @@ def capture(tool: str, args: dict, result: dict) -> dict | None:
     path = str(args.get("path") or "")[:500]
     if tool == "edit_file":
         # K5: old_string / new_string; the output keys stay "old" / "new", so the phone sees nothing new.
+        # IPB (#650 review): the lines added and removed, counted once here on the whole edit, not on each
+        # history fetch from the capped snippet.
+        old, new = (v if isinstance(v, str) else "" for v in (args.get("old_string"), args.get("new_string")))
+        added, removed = _line_counts(old, new)
         return {"kind": "edit", "path": str(result.get("path") or path)[:500],
-                "old": _text(args.get("old_string"), SNIPPET_CHARS),
-                "new": _text(args.get("new_string"), SNIPPET_CHARS)}
+                "old": _text(old, SNIPPET_CHARS), "new": _text(new, SNIPPET_CHARS), "added": added, "removed": removed}
     if tool == "write_file":
         content = args.get("content") if isinstance(args.get("content"), str) else ""
         artifact = result.get("artifact") if isinstance(result.get("artifact"), dict) else {}

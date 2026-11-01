@@ -500,12 +500,14 @@ it makes the phone keep its last value; an older phone ignores it. Inside the bl
 unless marked `?`, and the Mac leaves out an optional field it doesn't know rather than sending `null`.
 
 - `folder?`: display only, the folder the conversation's turns run in (its project's, else the workspace),
-  with the home part shown as `~`. Never the absolute home path.
+  with the home part shown as `~`. Never the absolute home path. A folder outside the home is shown by its
+  last part only (`proj` for `/Volumes/Work/proj`), so no volume or full path leaves the Mac.
 - `model?`: the id of the model the conversation runs on (its own choice, else the default's), as the
-  Mac's model picker shows an id with no display name. `mode?`: the approval mode's name in effect
+  Mac's model picker shows an id with no display name; at most 200 characters, and only the file name of an
+  id that is a path. `mode?`: the approval mode's name in effect
   (`careful` / `standard`; the phone may ignore it).
 - `connectors[]` (`[]` when none): each `name` (the connector's display name only, never its URL, command
-  or arguments), `kind` (`mcp` / `skill` / `hands`) and `on` (on for this conversation's turns: an MCP
+  or arguments; anything secret-looking typed into a name is masked, and the home folder shown as `~`), `kind` (`mcp` / `skill` / `hands`) and `on` (on for this conversation's turns: an MCP
   server enabled and connected, a skill equipped, Hands on). At most 30: Hands first, then the ones that
   are on.
 - `changes?`: what the conversation's edit and write steps changed over all its runs: `files` (distinct
