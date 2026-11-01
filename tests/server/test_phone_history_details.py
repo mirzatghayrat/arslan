@@ -462,3 +462,48 @@ async def test_a_bearer_token_in_a_label_is_masked(client, mcp_ready):
     await _add(client, [mcp(1, "api Authorization: Bearer abcdefgh12345678")])
     names = [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"]
     assert "abcdefgh12345678" not in names[0]
+
+
+
+# ------------------------------------------------------------------ #650's second delta review
+
+async def test_a_server_with_an_encrypted_empty_env_keeps_its_name(client, mcp_ready, monkeypatch):
+    from server import crypto
+    monkeypatch.setenv("ARSLAN_ALLOW_INSECURE_SECRETS", "1")
+    mcp_ready.add(1)
+    rows = [mcp(1, "Calendar")]
+    rows[0].env = crypto.encrypt("{}")                     # what an add with no env stores (mcp_service)
+    await _add(client, rows)
+    assert [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"] == ["Calendar"]
+
+
+async def test_only_an_authorization_value_is_masked(client, mcp_ready):
+    mcp_ready.update({1, 2})
+    await _add(client, [mcp(1, "Basic Excel formulas"), mcp(2, "api Authorization: Basic dXNlcjpwYXNzd29yZA")])
+    names = {c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"}
+    assert "Basic Excel formulas" in names
+    assert not any("dXNlcjpwYXNzd29yZA" in n for n in names)
+
+
+def test_a_repeated_middle_at_the_cap_is_counted_fast():
+    import time as clock
+
+    def edit(n: int) -> tuple[int, int]:
+        # A middle the first/last-line trim can't shrink: n repeated lines between two lines that differ.
+        old, new = "a\n" + "same\n" * n + "p\n" + "z\n", "a\n" + "q\n" + "same\n" * (n - 1) + "r\n" + "z\n"
+        review = tool_review.capture("edit_file", {"path": "a.py", "old_string": old, "new_string": new}, {"ok": True})
+        return review["added"], review["removed"]
+
+    side = int(tool_review.FULL_DIFF_CELLS ** 0.5) - 1      # middles of side + 1 lines: exactly the cap, still diffed
+    started = clock.perf_counter()
+    assert edit(side) == (2, 2)
+    assert edit(side + 1) == (side + 2, side + 2), "just over: all removed, all added"
+    assert edit(2_000) == (2_001, 2_001)                    # the review's case, smaller: far past the cap, not diffed
+    assert clock.perf_counter() - started < 0.5
+
+
+async def test_a_doubly_encoded_home_falls_back(client, mcp_ready, monkeypatch):
+    monkeypatch.setattr(phone_details, "_home", lambda: "/Users/alice")
+    mcp_ready.add(1)
+    await _add(client, [mcp(1, "files %252FUsers%252Falice%252Fmcp")])
+    assert [c["name"] for c in (await _details(client))["connectors"] if c["kind"] == "mcp"] == ["MCP 1"]

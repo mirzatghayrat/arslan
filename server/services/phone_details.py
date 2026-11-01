@@ -79,7 +79,13 @@ def _names_home(text: str) -> bool:
     """Whether `text` still names the home folder in any form `fold_home` does not read: percent-encoded,
     full-width, with JSON-escaped slashes, under `file://localhost` or the Data volume (#650 delta review)."""
     home = str(_home()).rstrip("/")
-    flat = unquote(unicodedata.normalize("NFKC", text)).replace("\\/", "/")
+    flat = unicodedata.normalize("NFKC", text)
+    for _ in range(5):                                  # decoded until it stops changing (%252F…)
+        decoded = unquote(flat)
+        if decoded == flat:
+            break
+        flat = decoded
+    flat = flat.replace("\\/", "/")
     return bool(home) and home.casefold() in flat.casefold()
 
 
@@ -89,7 +95,7 @@ def _shown_name(text: str, fallback: str) -> str:
     and `fallback` instead when it still names the home in another form (fail closed)."""
     from server.services import connection_secrets
     masked = " ".join(connection_secrets.shown(None, text.split(" "))[1])
-    masked = re.sub(r"(?i)\b(bearer|basic)\s+\S+", r"\1 ●●●●", masked)
+    masked = re.sub(r"(?i)(\bauthorization\s*:\s*(?:bearer|basic)\s+)\S+", r"\1●●●●", masked)
     folded = _fold_home(masked)
     return fallback if not folded or _names_home(folded) else folded
 
@@ -120,12 +126,13 @@ def _connector_name(server) -> str:
     be read is named by its number, never by a label that could not be checked against them."""
     from server.mcp import discovery, supervisor
     from server.orchestrator import untrusted
+    from server import crypto
     fallback = f"MCP {server.id}"
     try:
+        if server.env:
+            crypto.decrypt(server.env)                  # runtime_dict reads an undecryptable env as {}, silently
         runtime = discovery.runtime_dict(server)
     except Exception:  # noqa: BLE001 — unreadable: named by its number
-        return fallback
-    if server.env and not runtime.get("env"):         # runtime_dict reads an undecryptable env as {}
         return fallback
     return _shown_name(supervisor.mask_for(runtime, untrusted.clean_name(server.label, 80)), fallback)
 

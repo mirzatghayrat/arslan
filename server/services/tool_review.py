@@ -35,14 +35,17 @@ def _tail(text: str) -> list[str]:
     return [line[:400] for line in lines]
 
 
-#: A changed middle longer than this is counted as all removed and all added: difflib without autojunk is
-#: quadratic on repeated lines, and this runs on the event loop (#650 delta review: 3.4 s at 20,000 lines).
-FULL_DIFF_LINES = 5000
+#: A changed middle whose two sides' line counts multiply to more than this is counted as all removed and all
+#: added: difflib without autojunk is quadratic on repeated lines, and this runs on the event loop (#650 delta
+#: reviews: 3.4 s at 20,000 lines, 7.3 s at 4,999). About 500 × 500 lines takes well under a tenth of a second.
+FULL_DIFF_CELLS = 250_000
 
 
 def _line_counts(old: str, new: str) -> tuple[int, int]:
-    """Lines added and removed by one edit, as the phone's line diff counts them (phone_reads.change_lines):
-    the common first and last lines are set aside first, and only the changed middle is diffed."""
+    """Lines added and removed by one edit: the common first and last lines are set aside, and the changed middle
+    is diffed as the phone's line diff does it (phone_reads.change_lines), so the counts usually match it. A
+    middle too large to diff on the event loop is counted as all removed and all added, which can count more
+    than a diff would."""
     import difflib
     a, b = old.splitlines(), new.splitlines()
     start = 0
@@ -52,7 +55,7 @@ def _line_counts(old: str, new: str) -> tuple[int, int]:
     while end < min(len(a), len(b)) - start and a[len(a) - 1 - end] == b[len(b) - 1 - end]:
         end += 1
     a, b = a[start:len(a) - end], b[start:len(b) - end]
-    if max(len(a), len(b)) > FULL_DIFF_LINES:
+    if len(a) * len(b) > FULL_DIFF_CELLS:
         return len(b), len(a)
     added = removed = 0
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
