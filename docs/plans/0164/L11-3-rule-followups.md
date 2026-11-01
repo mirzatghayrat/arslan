@@ -71,7 +71,13 @@ The steps #603 listed are added to `SMOKE.md` in this PR, under "K10 + L11".
 - **R5, a folder swap between the read and the write, on Linux (#621 re-check).** #621 checks the folders with a realpath before the read, and on macOS the write's `O_NOFOLLOW_ANY` refuses a link anywhere in the path. On Linux, a folder swapped for a link after that check is still followed by the write. Fix: with F6's single descriptor, cover `_append` too. Open the folder first with `O_DIRECTORY | O_NOFOLLOW` at each step, then the file relative to it (`dir_fd`), so no later swap can redirect it. Arslan ships for macOS, so this is CI's platform and the server's, not the user's.
 - **R6, the read side follows folder links (#621 re-check).** K10-1's `_read` opens each folder with `O_DIRECTORY` and no `O_NOFOLLOW`, so a folder link in the path is read through. It's a read, not a write, and the text counts as outside content unless D3 trusts it. Fix: `O_NOFOLLOW` on the folder opens too, plus a check that the walked folder is its own realpath. A refused folder adds a note, as a refused file does.
 
-**Fails closed since #621 (R4):** a record path that gains a folder link after Add, such as a project folder moved and linked back, is refused by Add and Remove (409 `rules_file_refused`) instead of being followed. The user can still edit the file by hand. Overview keeps listing the line until the folder is real again, or the record is cleared.
+**Fails closed since #621 (R4), as corrected by #626's review (R9):**
+- **A touched subfolder that becomes a folder link after Add.** Add and Remove refuse it (409 `rules_file_refused`) instead of following it. The user can still edit the file by hand, and Overview keeps listing the line.
+- **A project folder moved, with a link left at the old place.** The conversation's folder resolves to the new real path, so this isn't a link refusal:
+  - Add answers `folder_changed`.
+  - Overview lists the file under its new path, where the record has no line, so it shows no Remove.
+  - The line stays in the file, and the record keeps the old path.
+- **The offered → added check** in `/lessons/{id}/rule` runs outside the write lock. Two Adds at once from the same card could both pass it. The second append is then a duplicate line, recorded twice. Overview lists both, and its Remove takes each one out.
 
 Size: about +60 server lines. Security surface: an effort=max review, and the user merges.
 
