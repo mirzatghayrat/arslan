@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CalendarClock, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 import type { WaitingView } from "../hooks/useWaiting";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import { fmtMs } from "../lib/usageFormat";
 import { useActivityStore, type RunChip, type UsageRange } from "../stores/activityStore";
+import HandsTraceCard from "./HandsTraceCard";
+import JudgmentsCard from "./JudgmentsCard";
 import UsageCard from "./UsageCard";
 import ScrollBox from "./activity/ScrollBox";
 import RunDrawer from "./activity/RunDrawer";
@@ -37,8 +39,8 @@ export const ORIGIN_ICON = {
  * Activity (0.1.48), called Progress since v0.1.64 (INB7-a): what Arslan did, what it cost, and what waits on you.
  *
  * Order (0.1.50, user ruling): usage, scheduled tasks, Hands, recent work, judgments. Since INB7-c1 (board F): usage and the
- * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar). Since INB7-c4c Hands calls and judgments are a
- * run's, in its 「诊断」, and the 「应用」 chip lists the runs that used Mac apps.
+ * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar). Since INB7-c4c a run's Hands calls and judgments
+ * are in its 「诊断」, the 「应用」 chip lists the runs that used Mac apps, and the full lists are folded at the foot.
  * 0.1.58 §7: each list sits in its own box that scrolls inside and loads 20 at a time;
  * a run opens in a drawer over the page, so the list keeps its place and the opened row
  * stays highlighted; clicking a chart slice or a model narrows 最近的工作; and all of it
@@ -58,6 +60,7 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
   const [runs, setRuns] = useState<RunListItem[] | null>(null);
   const [more, setMore] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [allLists, setAllLists] = useState(false);
   const loading = useRef(false);
 
   useLayoutEffect(() => {
@@ -225,6 +228,15 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
       </section>
       <RunInspector runs={runs ?? []} needs={{ waiting, ...where }} />
       </div>
+      {/* The full Hands trace (the only audit view of what Hands did on this Mac, calls outside any run included) and the whole
+          judgment ledger, folded at the foot and read only when opened, until the user decides whether they stay (⓪Plan, PR 636). */}
+      <section>
+        <button type="button" aria-expanded={allLists} onClick={() => setAllLists((v) => !v)} data-testid="activity-all-lists"
+          className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
+          {allLists ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}{t("activityPage.allLists")}
+        </button>
+        {allLists && <div className="mt-4 space-y-8"><HandsTraceCard /><JudgmentsCard /></div>}
+      </section>
       {openRunId != null && <RunDrawer runId={openRunId} onClose={() => setOpenRun(null)} onStep={step} />}
     </div>
   );

@@ -276,6 +276,33 @@ def _hands_calls() -> tuple[set[int], dict[str, list[datetime]]]:
     return named, unnamed
 
 
+#: The last read of the trace and what it was read from (⓪Plan, PR 636): the counts are read on the badge's beat, every 30 s.
+_hands_read: dict = {"key": None, "calls": (set(), {})}
+
+
+def _trace_files() -> tuple:
+    """What the trace was read from: today (a day's turn drops its oldest file) and each file's name, change time and size. Empty
+    when there is no trace, which is never cached."""
+    from datetime import date
+    from server.services import hands_service
+    folder = hands_service._dir() / "trace"                 # read-only: the folder hands_service.read_trace reads
+    try:
+        files = tuple(sorted((path.name, path.stat().st_mtime_ns, path.stat().st_size) for path in folder.glob("*.jsonl")))
+    except OSError:
+        return ()
+    return (date.today().isoformat(), files) if files else ()
+
+
+def _hands_calls_now() -> tuple[set[int], dict[str, list[datetime]]]:
+    """The trace's calls, read again only when a file of it changed."""
+    key = _trace_files()
+    if key and key == _hands_read["key"]:
+        return _hands_read["calls"]
+    calls = _hands_calls()
+    _hands_read.update(key=key or None, calls=calls)
+    return calls
+
+
 def _used_apps(q, named: set[int], unnamed: dict[str, list[datetime]]):
     """The 「应用」 chip's candidates: a run a call names, or one in a conversation with calls that name none."""
     return q.where(or_(Run.id.in_(named), Run.conversation_id.in_(list(unnamed))))
@@ -308,7 +335,7 @@ async def list_runs(
     asking = _asking()
     q = _chip(_scoped(since, until, model), outcome, origin, asking)
     if used == "apps":
-        named, unnamed = await asyncio.to_thread(_hands_calls)
+        named, unnamed = await asyncio.to_thread(_hands_calls_now)
         q = _used_apps(q, named, unnamed)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
@@ -356,7 +383,7 @@ async def run_counts(
     # Only what run_origins reads, not whole rows: the count may walk every phone turn in the span.
     lean = _chip(scope, None, "phone", asking).options(load_only(Run.id, Run.kind, Run.spawn_name, Run.conversation_id))
     phone, _ = await _phone_turns(db, lean, None)
-    named, unnamed = await asyncio.to_thread(_hands_calls)
+    named, unnamed = await asyncio.to_thread(_hands_calls_now)
     apps = await _batched(db, _used_apps(scope, named, unnamed).options(
         load_only(Run.id, Run.conversation_id, Run.created_at, Run.ended_at)), None, _apps_keep(named, unnamed))
     return {"waiting": await count(_chip(scope, "waiting", None, asking)), "failed": await count(_chip(scope, "failed", None, asking)),

@@ -11,6 +11,7 @@ vi.mock("../api/client", () => ({ request: (...args: unknown[]) => request(...ar
 
 import ActionApprovalCard from "../components/ActionApprovalCard";
 import HandsSection from "../components/settings/HandsSection";
+import HandsTraceCard from "../components/HandsTraceCard";
 import { usingHands } from "../island/IslandApp";
 import { stopHands } from "../island/feed";
 import { handsMessages } from "../locales/hands";
@@ -79,6 +80,21 @@ describe("settings", () => {
     render(<HandsSection />);
     expect(await screen.findByTestId("hands-unavailable")).toBeInTheDocument();
     expect(screen.queryByTestId("hands-enabled-toggle")).toBeNull();
+  });
+});
+
+describe("activity", () => {
+  it("lists recent Hands calls, with typed text as a length only, and nothing when empty", async () => {
+    request.mockResolvedValue({ entries: [{ at: "2026-10-03T10:00:00+00:00", app: "Notes", op: "set_value",
+      outcome: "ok", target: "Body", typed_chars: 9 }] });
+    render(<HandsTraceCard />);
+    expect(await screen.findByTestId("hands-trace")).toHaveTextContent("Notes");
+    expect(screen.getByTestId("hands-trace")).toHaveTextContent("Body (9)");
+    cleanup();
+    request.mockResolvedValue({ entries: [] });
+    const { container } = render(<HandsTraceCard />);
+    await act(async () => { await Promise.resolve(); });
+    expect(container).toBeEmptyDOMElement();
   });
 });
 

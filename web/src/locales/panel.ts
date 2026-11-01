@@ -30,6 +30,7 @@ export const panelMessages = {
 export const activityMessages = {
   "en": {
     "judgments": "Judgments",
+    "judgmentsHint": "Small decisions Arslan's fast model was asked about. Shadow ones only record what it would say; your real answer is shown beside it.",
     "judgeShadow": "shadow",
     "judgeNoAnswer": "no answer",
     "judgeYes": "yes {{p}}%",
@@ -137,6 +138,7 @@ export const activityMessages = {
     "chipScheduled": "Scheduled",
     "chipPhone": "iPhone",
     "chipApps": "Apps",
+    "allLists": "Show all Mac app actions and judgments",
     "chipNeedsTitle": "Runs waiting for your answer in their conversation",
     "noneInRange": "Nothing ran in this range.",
     "onlySpan": "Only {{span}}",
@@ -154,6 +156,7 @@ export const activityMessages = {
   },
   "zh": {
     "judgments": "判断记录",
+    "judgmentsHint": "Arslan 的快模型被问过的小判断。影子模式只记录它会怎么答，旁边是你实际的选择。",
     "judgeShadow": "影子",
     "judgeNoAnswer": "没答",
     "judgeYes": "是 {{p}}%",
@@ -258,6 +261,7 @@ export const activityMessages = {
     "chipScheduled": "定时",
     "chipPhone": "手机",
     "chipApps": "应用",
+    "allLists": "显示全部 Mac 应用操作和判断记录",
     "chipNeedsTitle": "在对话里等你回答的运行",
     "noneInRange": "这个范围里没有运行。",
     "onlySpan": "只看 {{span}}",
@@ -275,6 +279,7 @@ export const activityMessages = {
   },
   "ja": {
     "judgments": "判断記録",
+    "judgmentsHint": "Arslan の高速モデルに尋ねた小さな判断です。シャドウは答えを記録するだけで、隣にあなたの実際の選択を表示します。",
     "judgeShadow": "シャドウ",
     "judgeNoAnswer": "回答なし",
     "judgeYes": "はい {{p}}%",
@@ -379,6 +384,7 @@ export const activityMessages = {
     "chipScheduled": "定期",
     "chipPhone": "iPhone",
     "chipApps": "アプリ",
+    "allLists": "Mac アプリの操作と判断をすべて表示",
     "chipNeedsTitle": "会話であなたの返事を待っている実行",
     "noneInRange": "この期間に実行はありません。",
     "onlySpan": "{{span}} のみ",
@@ -396,6 +402,7 @@ export const activityMessages = {
   },
   "es": {
     "judgments": "Juicios",
+    "judgmentsHint": "Pequeñas decisiones que se preguntaron al modelo rápido de Arslan. Las de sombra solo registran lo que diría; al lado, tu respuesta real.",
     "judgeShadow": "sombra",
     "judgeNoAnswer": "sin respuesta",
     "judgeYes": "sí {{p}}%",
@@ -503,6 +510,7 @@ export const activityMessages = {
     "chipScheduled": "Programadas",
     "chipPhone": "iPhone",
     "chipApps": "Apps",
+    "allLists": "Mostrar todas las acciones en apps del Mac y los juicios",
     "chipNeedsTitle": "Ejecuciones que esperan tu respuesta en su conversación",
     "noneInRange": "Nada se ejecutó en este periodo.",
     "onlySpan": "Solo {{span}}",
@@ -520,6 +528,7 @@ export const activityMessages = {
   },
   "de": {
     "judgments": "Urteile",
+    "judgmentsHint": "Kleine Entscheidungen, nach denen Arslans schnelles Modell gefragt wurde. Schatten-Urteile zeichnen nur auf, was es sagen würde; daneben deine echte Antwort.",
     "judgeShadow": "Schatten",
     "judgeNoAnswer": "keine Antwort",
     "judgeYes": "ja {{p}} %",
@@ -627,6 +636,7 @@ export const activityMessages = {
     "chipScheduled": "Geplant",
     "chipPhone": "iPhone",
     "chipApps": "Apps",
+    "allLists": "Alle Mac-App-Aktionen und Urteile anzeigen",
     "chipNeedsTitle": "Läufe, die in ihrem Gespräch auf deine Antwort warten",
     "noneInRange": "In diesem Zeitraum lief nichts.",
     "onlySpan": "Nur {{span}}",
@@ -644,6 +654,7 @@ export const activityMessages = {
   },
   "fr": {
     "judgments": "Jugements",
+    "judgmentsHint": "Petites décisions demandées au modèle rapide d’Arslan. Celles en mode ombre n’enregistrent que sa réponse ; à côté, votre vrai choix.",
     "judgeShadow": "ombre",
     "judgeNoAnswer": "pas de réponse",
     "judgeYes": "oui {{p}} %",
@@ -751,6 +762,7 @@ export const activityMessages = {
     "chipScheduled": "Planifiées",
     "chipPhone": "iPhone",
     "chipApps": "Apps",
+    "allLists": "Afficher toutes les actions dans les apps du Mac et les jugements",
     "chipNeedsTitle": "Exécutions qui attendent ta réponse dans leur conversation",
     "noneInRange": "Rien n’a tourné sur cette période.",
     "onlySpan": "Seulement {{span}}",

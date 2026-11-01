@@ -74,3 +74,27 @@ async def test_an_unreadable_entry_is_skipped_not_fatal(client, monkeypatch):
         "not a dict", {"run_id": "7"}, {"run_id": None, "conversation": "e", "at": "yesterday"},
         {"run_id": ids["other"], "at": _at(7)}])
     assert await _listed(client, used="apps") == ["other"]
+
+
+async def test_the_trace_is_read_again_only_when_its_files_change(client, monkeypatch, tmp_path):
+    """The counts are read on the badge's beat (every 30 s), and the trace can hold 7 days of calls: it is read again only when a
+    file of it changed (⓪Plan, PR 636)."""
+    from datetime import date
+    import json
+    real = hands_service.read_trace                          # the real trace reader, over a folder of this test's own
+    ids = await _seed(client, monkeypatch)
+    monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
+    folder = tmp_path / "hands" / "trace"
+    folder.mkdir(parents=True)
+    day = folder / f"{date.today().isoformat()}.jsonl"
+    day.write_text(json.dumps({"at": _at(25), "conversation": "c", "run_id": ids["a"], "op": "click", "outcome": "ok"}) + "\n")
+    reads: list[int] = []
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: reads.append(1) or real(*a, **k))
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 1
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 1
+    assert await _listed(client, used="apps") == ["a"]
+    assert len(reads) == 1
+    with day.open("a") as f:                                 # a new call: the file changed
+        f.write(json.dumps({"at": _at(7), "conversation": "d", "run_id": ids["other"], "op": "look", "outcome": "ok"}) + "\n")
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 2
+    assert len(reads) == 2
