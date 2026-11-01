@@ -4,7 +4,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import DesktopSection from "../components/settings/DesktopSection";
-import { conversationToOpen, INBOX_TARGET, notificationTarget } from "../lib/openConversation";
+import { conversationToOpen, PROGRESS_TARGET, notificationTarget } from "../lib/openConversation";
 import { subscribeOpenConversation } from "../lib/shell";
 import { FIELD_HOMES } from "../components/settings/sectionRegistry";
 
@@ -55,13 +55,13 @@ describe("opening a conversation from a notification", () => {
     expect(conversationToOpen("", threads)).toBeNull();
   });
 
-  it("a proactive notice opens the Inbox; anything else only a known conversation (0.1.47)", () => {
-    // "@inbox" is what resident.rs puts in a proactive notification's id.
-    expect(INBOX_TARGET).toBe("@inbox");
-    expect(notificationTarget("@inbox", threads)).toEqual({ kind: "inbox" });
+  it("a proactive notice opens Progress; anything else only a known conversation (0.1.47; INB5: the Inbox is gone)", () => {
+    // "@progress" is what resident.rs puts in a proactive notification's id.
+    expect(PROGRESS_TARGET).toBe("@progress");
+    expect(notificationTarget("@progress", threads)).toEqual({ kind: "progress" });
     expect(notificationTarget("t3", threads)).toEqual({ kind: "conversation", id: "t3" });
     expect(notificationTarget("t2", threads)).toBeNull();
-    expect(notificationTarget("@inboxx", threads)).toBeNull();
+    expect(notificationTarget("@progresss", threads)).toBeNull();
   });
 
   it("is a no-op in a plain browser", () => {

@@ -1,167 +1,226 @@
-"""SBX-3 (v0.1.64), the commands' build half (3a), first part: what does not wait for SBX-2's base.
+"""Commands denial contract. SBX-3a registers the product adapter, never a fallback.
 
-- `available()` starts the real commands profile, not `(allow default)`. A profile this macOS cannot start
-  then reads as "unavailable" (today's card path) instead of failing every command.
-- The writable roots come tagged (§1b): `in_scope` (the work folder), `shared_cache` (temp and the caches),
-  `device` (the narrowed /dev entries). Temp is the run's own folder (test_sbx3_run_temp.py), in scope.
-  `in_scope()` judges a path where it resolves.
-- `deny_write_after_roots` (§e) is HR's parameter. It is written after the writable roots and before the
-  protected paths, so the last rule wins.
-- /dev is narrowed (§1) to the null and zero devices, the terminal, the descriptors and ptys.
-- Mail, Messages and Photos data are closed (§1, the user's Q3), like Desktop/Documents/Downloads while that
-  setting is off. Safari's data is already a protected path.
-
-Whether what should be denied is denied is not tested here. Those are Codex's real-seatbelt tests (SBX-3p).
+Only the off-platform skip applies on Linux. On macOS the absent adapter is a
+strict expected assertion; registered adapters must run every gate without it.
 """
+import errno
+import json
 import os
-import sys
 from pathlib import Path
-from types import SimpleNamespace
+import socket
+import sys
+import tempfile
 
 import pytest
 
-from server.services import command_sandbox, terminal_exec
+from server.services.sandbox_profile import NetworkMode
+from tests.server.sbx import test_sbx2_kernel as gates
+from tests.server.sbx.harness import BUILT_BASES, Harness
 
-macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
-                           reason="seatbelt is macOS-only")
+pytestmark = [pytest.mark.sbx_mac, pytest.mark.parametrize("sbx", [
+    pytest.param("commands", marks=pytest.mark.xfail(
+        "commands" not in BUILT_BASES, strict=True,
+        raises=pytest.RaisesExc(AssertionError, match=r"^SBX-3a commands adapter is not built"),
+        reason="SBX-3a commands adapter is not built")),
+], indirect=True)]
+macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
+APP_DATA = (
+    "Library/Mail", "Library/Containers/com.apple.mail", "Library/Messages",
+    "Library/Containers/com.apple.MobileSMS", "Library/Safari", "Library/Photos",
+    "Library/Containers/com.apple.Photos", "Pictures/Photos Library.photoslibrary",
+)
 
-
-# ── available() starts what commands run under ───────────────────────────────
-
-def test_available_starts_the_real_commands_profile(monkeypatch, tmp_path):
-    exe = tmp_path / "sandbox-exec"
-    exe.write_text("")
-    texts, calls = [], []
-    written = command_sandbox.commands_profile
-
-    def recorded(workspace, **kw):
-        assert Path(workspace).is_dir()            # a real scratch folder while it starts
-        texts.append(written(workspace, **kw))
-        return texts[-1]
-
-    monkeypatch.setattr(command_sandbox, "_SANDBOX_EXEC", str(exe))
-    monkeypatch.setattr(command_sandbox.sys, "platform", "darwin")
-    monkeypatch.setattr(command_sandbox, "commands_profile", recorded)
-    monkeypatch.setattr(command_sandbox.subprocess, "run",
-                        lambda argv, **kw: calls.append(argv) or SimpleNamespace(returncode=0))
-    command_sandbox._reset_for_tests()
-    try:
-        assert command_sandbox.available() is True
-    finally:
-        command_sandbox._reset_for_tests()
-    assert calls == [[str(exe), "-p", texts[0], "/usr/bin/true"]]
-    assert '(deny file-write* (subpath "/"))' in texts[0]         # the commands profile, not a one-liner
-
-
-def test_a_command_starts_under_the_same_profile(monkeypatch, tmp_path):
-    monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    assert command_sandbox.wrapper(tmp_path) == [command_sandbox._SANDBOX_EXEC, "-p",
-                                                 command_sandbox.commands_profile(tmp_path)]
-
-
-# ── §1b: tagged roots and the classifier's scope ─────────────────────────────
-
-def test_the_writable_roots_are_tagged(tmp_path):
-    roots = command_sandbox.writable_roots(tmp_path)
-    assert [r for r in roots if r.tag == "in_scope"] == [command_sandbox.Root(str(tmp_path.resolve()), "in_scope")]
-    tags = {r.path: r.tag for r in roots}
-    home = Path.home()
-    assert {path for path, tag in tags.items() if tag == "shared_cache"} == {
-        str(command_sandbox._real(home / name)) for name in ("Library/Caches", ".cache", ".npm")}
-    assert {r.path for r in roots if r.tag == "device"} == {
-        "/dev/null", "/dev/zero", "/dev/tty", "/dev/ptmx", "/dev/fd", r"^/dev/ttys[0-9]+$"}
-    assert "/dev" not in tags                                        # no longer all of /dev
-
-
-@pytest.fixture
-def work(tmp_path):
-    """A work folder under <tmp>/private/var, with <tmp>/var linked to <tmp>/private/var as on macOS, and
-    links out of it to a shared root and to the home folder."""
-    ws = tmp_path / "private/var/ws"
-    ws.mkdir(parents=True)
-    (tmp_path / "var").symlink_to(tmp_path / "private/var")
-    roots = command_sandbox.writable_roots(ws)
-    (ws / "to-shared").symlink_to(next(r.path for r in roots if r.tag == "shared_cache"))
-    (ws / "to-home").symlink_to(Path.home())
-    return tmp_path, ws, roots
-
-
-def test_in_scope_judges_a_path_where_it_resolves(work):
-    T, ws, roots = work
-    assert command_sandbox.in_scope(ws / "a.txt", roots)
-    assert command_sandbox.in_scope(T / "var/ws/a.txt", roots)              # /var vs /private/var
-    assert command_sandbox.in_scope(ws / "new/dir/file.txt", roots)         # a missing tail
-    assert command_sandbox.in_scope(ws / "sub/../a.txt", roots)
-    assert not command_sandbox.in_scope(ws / "../outside.txt", roots)       # `..` out of it
-    assert not command_sandbox.in_scope(ws / "to-shared/pkg.tgz", roots)    # a link to a shared root
-    assert not command_sandbox.in_scope(ws / "to-home/.zshrc", roots)       # a link to ~
-    assert not command_sandbox.in_scope(Path(next(r.path for r in roots if r.tag == "shared_cache")) / "x", roots)
-
-
-# ── §e: HR's parameter, and the order of the rules ───────────────────────────
-
-def test_hrs_denies_come_after_the_writable_roots_and_before_the_protected_paths(tmp_path):
-    for folder in ("ws", "closed/ws", "prot"):
-        (tmp_path / folder).mkdir(parents=True)
-    text = command_sandbox.profile(
-        [tmp_path / "ws", tmp_path / "closed/ws"], [tmp_path / "prot"], closed=[tmp_path / "closed"],
-        devices=('(literal "/dev/null")',), deny_write_after_roots=[tmp_path / "ws/placeholder"])
-    assert text.replace(os.path.realpath(tmp_path), "<T>") == """\
-(version 1)
-(allow default)
-(deny appleevent-send)
-(deny file-write* (subpath "/"))
-(allow file-write* (subpath "<T>/ws") (subpath "<T>/closed/ws"))
-(allow file-write* (literal "/dev/null"))
-(deny file-read* file-write* (subpath "<T>/closed"))
-(allow file-read* file-write* (subpath "<T>/closed/ws"))
-(deny file-write* (subpath "<T>/ws/placeholder"))
-(deny file-read* file-write* (subpath "<T>/prot"))
-(deny network-outbound (subpath "<T>/prot"))
-"""
-
-
-# ── §1: the narrowed /dev and the closed app data, in the commands profile ───
-
-def test_the_commands_profile_writes_only_the_listed_devices_and_closes_other_apps_data(monkeypatch, tmp_path):
-    home = tmp_path / "home"
-    (home / "ws").mkdir(parents=True)
-    monkeypatch.setattr(Path, "home", lambda: home)
-    text = command_sandbox.commands_profile(home / "ws")
-    assert ('(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") '
-            '(literal "/dev/ptmx") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))') in text
-    assert '(subpath "/dev")' not in text
-    lines = text.splitlines()
-    denies = [i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write*")]
-    closed, protected = lines[denies[0]], lines[denies[-1]]
-    for name in ("Library/Mail", "Library/Containers/com.apple.mail", "Library/Messages",
-                 "Library/Containers/com.apple.MobileSMS", "Pictures/Photos Library.photoslibrary",
-                 "Library/Photos", "Library/Containers/com.apple.Photos"):
-        assert f'(subpath "{command_sandbox._real(home / name)}")' in closed, name
-    assert f'(subpath "{command_sandbox._real(home / ".ssh")}")' in protected     # closed first, protected last
-    assert len(denies) == 2 and denies[0] < denies[1]
-
-
-# ── what should run does run (macOS) ─────────────────────────────────────────
 
 @pytest.mark.macos
 @macos
-async def test_the_work_folder_the_devices_and_a_pty_still_work(tmp_path):
-    result = await terminal_exec.run(
-        "echo hi > made.txt && echo x > /dev/null && head -c 4 /dev/zero | wc -c && "
-        "python3 -c 'import os, pty; m, s = pty.openpty(); os.write(s, b\"ok\"); print(os.read(m, 2).decode())'",
-        cwd=tmp_path, sandbox=True)
-    assert result["sandbox"] == "workspace" and result["ok"], result
-    assert (tmp_path / "made.txt").read_text() == "hi\n"
-    assert result["stdout"].split() == ["4", "ok"]
+@pytest.mark.parametrize("mode", [NetworkMode.NONE, NetworkMode.PROXY])
+@pytest.mark.parametrize("service", gates.SERVICES.values(), ids=gates.SERVICES.keys())
+def test_commands_services(sbx, mode, service, record_property):
+    gates.test_service_policy_and_reachability(sbx, mode, service, record_property)
 
 
-def test_only_sbx2s_harness_calls_the_baseline_helpers():
-    """`default_writable` and `temp_roots` stay only for the harness's historical baseline (DELETE-BY in
-    command_sandbox.py); no product path writes a profile from them."""
-    import re
-    root = Path(__file__).resolve().parents[3]
-    callers = sorted(str(p.relative_to(root)) for folder in ("server", "arslan", "scripts", "tests")
-                     for p in (root / folder).rglob("*.py")
-                     if re.search(r"\b(default_writable|temp_roots)\(", p.read_text(encoding="utf-8")))
-    assert callers == ["server/services/command_sandbox.py", "tests/server/sbx/harness.py"]
+@pytest.mark.macos
+@macos
+def test_commands_preference_writes(sbx):
+    gates.test_preference_policy_distinguishes_reads_from_writes(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_launch_submission(sbx):
+    # Seatbelt can reject submission even under allow-default. Also require the
+    # profile's explicit service boundary, so that ambient refusal cannot pass.
+    check = sbx.run([sys.executable, "-I", gates.PROBE, "mach-lookup", gates.SERVICES["launchd"]],
+                    probe="commands-launch-policy")
+    assert check.returncode == 0, check.stderr
+    assert json.loads(check.stdout)["policy"] == 1
+    gates.test_launch_submission_is_refused(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_unlisted_unix_socket(sbx):
+    gates.test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_filesystem_boundaries(sbx):
+    gates.test_read_write_and_protected_paths(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_signal_boundary_and_pty(sbx):
+    gates.test_same_sandbox_signals_and_pty(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_ipc_namespace(sbx):
+    # This tests confinement, not the Pool compatibility row that SBX-M failed.
+    gates.test_posix_ipc_is_confined_to_the_run_prefix(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_apple_events(sbx):
+    gates.test_apple_events_refused_without_contacting_an_app(sbx)
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("mode", [NetworkMode.PROXY])
+def test_commands_listener_and_arslan_port(sbx, mode):
+    gates.test_listener_refusal_and_arslan_port_exclusion(sbx, mode)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_devices(sbx):
+    gates.test_device_writes_are_narrow(sbx)
+
+
+@pytest.mark.macos
+@macos
+def test_commands_offline_closes_loopback(sbx):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(4)
+        source = """
+import socket, sys
+with socket.socket() as sock:
+    try:
+        sock.connect(('127.0.0.1', int(sys.argv[1])))
+    except OSError as exc:
+        print(exc.errno)
+    else:
+        print(0)
+"""
+        port = listener.getsockname()[1]
+        control = sbx.python(source, port, profile="(version 1)(allow default)",
+                             probe="commands-offline-control")
+        assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
+        denied = sbx.python(source, port, probe="commands-offline-loopback")
+        assert denied.returncode == 0, denied.stderr
+        assert int(denied.stdout) in (errno.EPERM, errno.EACCES), denied.stdout
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("relative", APP_DATA)
+def test_commands_closed_app_data(sbx, relative):
+    folder = sbx.home / relative
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "sbx-sentinel"
+    target.write_text("original")
+    alias = sbx.work / "app-data-alias"
+    alias.symlink_to(folder, target_is_directory=True)
+    source = """
+import errno, pathlib, sys
+for name in sys.argv[1:]:
+    path = pathlib.Path(name)
+    for action in ('read', 'write'):
+        try:
+            path.read_text() if action == 'read' else path.write_text('changed')
+        except OSError as exc:
+            assert exc.errno in (errno.EPERM, errno.EACCES), exc
+        else:
+            raise AssertionError('app data boundary allowed: ' + action)
+print('checked')
+"""
+    # Host-owned scratch data avoids TCC or file absence masquerading as denial.
+    assert target.read_text() == (alias / target.name).read_text() == "original"
+    result = sbx.python(source, target, alias / target.name, probe="commands-app-data")
+    assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
+    assert target.read_text() == "original"
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("location", ["tmp", "var-tmp", "darwin-T", "darwin-C", "darwin-parent", "other-run"])
+def test_commands_private_temp_boundary(sbx, location):
+    darwin_temp = Path(os.confstr(65537)).resolve()
+    other = Harness(sbx.root / "second-run", sbx.base, executions=sbx.executions)
+    assert other.temp != sbx.temp
+    parents = {"tmp": Path("/private/tmp"), "var-tmp": Path("/private/var/tmp"),
+               "darwin-T": darwin_temp, "darwin-C": darwin_temp.parent / "C",
+               "darwin-parent": darwin_temp.parent, "other-run": other.temp}
+    with tempfile.TemporaryDirectory(prefix="sbx3-other-", dir=parents[location]) as folder:
+        target = Path(folder) / "sentinel"
+        target.write_text("original")
+        assert not target.is_relative_to(sbx.work) and not target.is_relative_to(sbx.temp)
+        result = sbx.python("""
+import errno, os, pathlib, sys
+private = pathlib.Path(os.environ['TMPDIR'])
+(private / 'own').write_text('ok')
+try:
+    pathlib.Path(sys.argv[1]).write_text('changed')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    raise AssertionError('shared or another run temp writable')
+print('checked')
+""", target, probe="commands-temp-" + location)
+        assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
+        assert target.read_text() == "original"
+        assert (sbx.temp / "own").read_text() == "ok"
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("protected", [False, True], ids=["outside-roots", "protected"])
+def test_commands_hardlink_boundary(sbx, protected):
+    target = (sbx.protected if protected else sbx.root) / "hardlink-sentinel"
+    target.write_text("original")
+    assert target.stat().st_dev == sbx.work.stat().st_dev, "hard-link control requires one volume"
+    result = sbx.python("""
+import errno, os, pathlib, sys
+# A blanket link ban must fail: ordinary links inside the workspace still work.
+pathlib.Path('local-source').write_text('local')
+os.link('local-source', 'local-alias')
+assert pathlib.Path('local-alias').read_text() == 'local'
+target = pathlib.Path(sys.argv[1])
+try:
+    target.write_text('direct')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    raise AssertionError('target is directly writable; not a boundary')
+try:
+    os.link(target, 'outside-alias')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    # The optional protected-set contract requires link creation itself refused.
+    assert sys.argv[2] == 'False', 'protected file link allowed'
+    try:
+        pathlib.Path('outside-alias').write_text('changed')
+    except OSError as exc:
+        assert exc.errno in (errno.EPERM, errno.EACCES), exc
+    else:
+        raise AssertionError('hard-link write allowed')
+print('checked')
+""", target, protected, probe="commands-hardlink")
+    assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
+    assert target.read_text() == "original"

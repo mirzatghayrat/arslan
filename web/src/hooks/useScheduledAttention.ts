@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, request } from "../api/client";
 import type { ScheduledTaskDto } from "../api/client.types";
 import { PROACTIVE_CHANGED, proactiveApi, type ProactiveItem } from "../api/proactive";
-import type { Refusal } from "../components/proactive/InboxRefused";
+import type { Refusal } from "../components/proactive/NotDoneList";
 
 const POLL_MS = 30_000;
+/** #605 re-check N2: an answer, an open or a reminder acted on each announce a change; a burst of them reads once, this long after the
+ *  last, instead of one request per task each time. */
+const SETTLE_MS = 1_000;
 /** The server's longest window (1 to 168 hours): a weekly task's away entries stay until its next run. */
 export const AWAY_HOURS = 168;
 
@@ -27,7 +30,8 @@ export interface ScheduledAttention {
   /** A watch's open page or folder changes (source `watch:<id>`), by watch id; only watches that still exist (a removed watch's
    *  changes have no row to show them on, so they must not light the sidebar). */
   changes: Record<number, ProactiveItem[]>;
-  /** Anything above: the sidebar's dot. */
+  /** The sidebar's dot: a task the server counts as waiting on you (INB5b-3: its one count, `waiting.scheduled`), or a watch's change,
+   *  which the server does not count (#605 review F7). */
   any: boolean;
   reload: () => Promise<void>;
 }
@@ -43,11 +47,13 @@ const bySource = (items: ProactiveItem[], prefix: string, kinds: string[]) => {
 
 /**
  * INB3: what on the Scheduled page needs a look (the INB card's dots). Polls every 30 s while the window is visible, at once when
- * it shows again or something changes a reminder. A failed poll keeps the last state, so a restarting service does not make the
- * dots flicker; a load that a newer one overtook is dropped. INB5 replaces this with the server's one count of what waits for you.
+ * it shows again, and a moment after something changes a reminder or a card. A failed poll keeps the last state, so a restarting
+ * service does not make the dots flicker; a load that a newer one overtook is dropped. INB5b-3: whether a task waits on you is the
+ * server's one count (`waitingTasks`, progress.waiting_on_user), which knows a card in the task's own conversation and what was seen;
+ * this keeps what the page shows under a task, and the watches' changes.
  */
-export function useScheduledAttention(): ScheduledAttention {
-  const [state, setState] = useState<Omit<ScheduledAttention, "reload">>({ tasks: {}, changes: {}, any: false });
+export function useScheduledAttention(waitingTasks: number[] = []): ScheduledAttention {
+  const [state, setState] = useState<Omit<ScheduledAttention, "reload" | "any">>({ tasks: {}, changes: {} });
   const latest = useRef(0);
   const load = useCallback(async () => {
     const mine = ++latest.current;
@@ -68,18 +74,21 @@ export function useScheduledAttention(): ScheduledAttention {
       tasks.forEach((task, i) => {
         byTask[task.id] = { failing: task.paused_reason != null || task.last_outcome === "error", problems: problems[task.id] ?? [], away: away[i] };
       });
-      const any = Object.values(byTask).some((a) => a.failing || a.problems.length > 0 || a.away > 0) || Object.keys(changes).length > 0;
-      setState({ tasks: byTask, changes, any });
+      setState({ tasks: byTask, changes });
     } catch { /* keep the last state */ }
   }, []);
   useEffect(() => {
     void load();
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, POLL_MS);
-    const onChange = () => void load();
+    let soon: ReturnType<typeof setTimeout> | undefined;
+    const onChange = () => { clearTimeout(soon); soon = setTimeout(() => void load(), SETTLE_MS); };
     const onVisible = () => { if (document.visibilityState === "visible") void load(); };
     window.addEventListener(PROACTIVE_CHANGED, onChange);
     document.addEventListener("visibilitychange", onVisible);
-    return () => { clearInterval(timer); window.removeEventListener(PROACTIVE_CHANGED, onChange); document.removeEventListener("visibilitychange", onVisible); };
+    return () => {
+      clearInterval(timer); clearTimeout(soon);
+      window.removeEventListener(PROACTIVE_CHANGED, onChange); document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
-  return { ...state, reload: load };
+  return { ...state, any: waitingTasks.length > 0 || Object.keys(state.changes).length > 0, reload: load };
 }

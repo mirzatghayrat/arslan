@@ -155,6 +155,7 @@ async def ingest(found: list[detectors.Found], *, now_utc: datetime, now_local: 
 
 
 # ── the morning brief ───────────────────────────────────────────────────────
+# Retired (the user's Q9, #605 review F2): the scan no longer calls these. DELETE-BY: INB7-e (v0.1.64), with the brief kind.
 
 async def build_brief(now_utc: datetime, now_local: datetime, locale: str) -> detectors.Found | None:
     """Today at a glance, from data already in hand. No model. Nothing to say means
@@ -222,19 +223,9 @@ async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | No
         except Exception as exc:  # noqa: BLE001 — isolated on purpose
             logger.warning("proactive detector %s failed: %s %s", name, type(exc).__name__, exc)
     result = await ingest(found, now_utc=now_utc, now_local=now_local, config=config)
-    # The brief is built AFTER this pass's findings are stored, so "what is open today"
-    # includes what was just noticed instead of trailing it by one pass.
-    if policy.brief_due(now_local, config, await _last_brief_day()):
-        try:
-            brief = await build_brief(now_utc, now_local, locale)
-            if brief is not None:
-                extra = await ingest([brief], now_utc=now_utc, now_local=now_local, config=config)
-                result["created"] += extra["created"]
-                result["notified"] += extra["notified"]
-                for reason, count in extra["rejected"].items():
-                    result["rejected"][reason] = result["rejected"].get(reason, 0) + count
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("proactive brief failed: %s", type(exc).__name__)
+    # The morning brief is retired (the user's Q9, #605 review F2): since the Inbox went (INB5) nothing shows a brief, so the scan
+    # makes none, and no notice leads nowhere, whatever brief_enabled says. DELETE-BY: INB7-e (v0.1.64), which removes build_brief,
+    # policy.brief_due, the brief kind and the config's brief fields.
     if config.diagnosis_daily_usd > 0 and result["created"]:
         from server.services import proactive_diagnosis
         for item_id in result["created"][:2]:
@@ -283,29 +274,38 @@ async def _get(db, item_id: int) -> ProactiveItem:
     return item
 
 
-async def list_items(scope: str = "open", limit: int = 100) -> list[dict]:
+async def list_items(scope: str = "open", limit: int = 100, conversation_id: str | None = None,
+                     kind: str | None = None) -> list[dict]:
+    """INB5b: `conversation_id` and `kind` narrow the list, so a conversation reads only its own stopped-job reminders."""
     statuses = {"open": OPEN, "done": FINISHED, "snoozed": ("snoozed",)}.get(scope)
     async with db_session.AsyncSessionLocal() as db:
         query = select(ProactiveItem)
         if statuses:
             query = query.where(ProactiveItem.status.in_(statuses))
+        if conversation_id is not None:
+            query = query.where(ProactiveItem.conversation_id == conversation_id)
+        if kind is not None:
+            query = query.where(ProactiveItem.kind == kind)
         rows = (await db.execute(query.order_by(ProactiveItem.id.desc()).limit(max(1, min(limit, 200))))).scalars().all()
     return [present(r) for r in policy.order(rows)]
 
 
 async def summary() -> dict:
+    from server.services import approvals, progress
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(ProactiveItem.status, ProactiveItem.priority, func.count())
                                  .where(ProactiveItem.status.in_(OPEN))
                                  .group_by(ProactiveItem.status, ProactiveItem.priority))).all()
-    from server.services import approvals
+        waiting = await progress.waiting_on_user(db)
     return {"open": sum(n for _, _, n in rows),
             "unread": sum(n for status, _, n in rows if status == "new"),
             "high": sum(n for status, p, n in rows if status == "new" and p == "high"),
             # 0.1.55 §12: the Inbox is everything waiting for the user's decision — cards to
             # approve (any conversation or job). INB1/INB2 (v0.1.64): memory no longer waits for an
             # OK; what did not take effect is in Memory's "To sort" list, never in the badge.
-            "approvals": len(approvals.all_pending())}
+            "approvals": len(approvals.all_pending()),
+            # INB5: how many conversations, projects and scheduled tasks wait on you, and which: the badge from INB5 on.
+            "waiting": waiting.as_dict()}
 
 
 async def mark_seen(ids: list[int]) -> None:

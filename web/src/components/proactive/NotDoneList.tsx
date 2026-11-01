@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, request } from "../../api/client";
+import { announceProactiveChange } from "../../api/proactive";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { useQueueGuard } from "../kit/guard";
+import { Escaped, isolate } from "../../lib/outsideText";
+import { eitherGuard, useAnswerGuardState, useQueueGuard, useScrollHold } from "../kit/guard";
 
 /** It changes only when something goes undone for want of someone to ask: twice a minute is enough. */
 const POLL_MS = 30_000;
@@ -47,12 +49,17 @@ interface Allowed { row: Refusal; at: number; rules: number[] }
  * clipped — and offers the click only when the card would have offered "Always". The click is held for
  * 500 ms after the list changes (a row that shifts under the pointer is not clicked), and can be undone
  * for ten seconds. Nothing here says declined or refused: an away entry is an expiry, nobody said no.
- * Fails quietly: an older server has no such list, and the rest of the Inbox must still work.
+ * Fails quietly: an older server has no such list, and the page around it must still work. INB5: it was the Inbox's "InboxRefused";
+ * the Inbox is gone, and a conversation (WhileAway) and the Scheduled page show it. Its test ids and `inbox.*` keys keep their names.
  * INB3: `conversationId` lists one conversation's entries (the server filters before it groups, #568) over `hours` (1 to 168);
  * `unattended` keeps only a scheduled run's own, since a task may write into an ordinary conversation.
  */
-export default function InboxRefused({ onCount, conversationId, hours = 24, unattended = false, title }: {
-  onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean; title?: string;
+export default function NotDoneList({ onCount, conversationId, hours = 24, unattended = false, awayOnly = false, title, className = "" }: {
+  onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean;
+  /** INB5b: only a card that went unanswered (`away`), as a conversation shows; a scheduled run's entries are its task's. */
+  awayOnly?: boolean; title?: string;
+  /** INB5b: how it sits where it is shown (a conversation shows it as a card). */
+  className?: string;
 }) {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<Refusal[]>([]);
@@ -70,22 +77,31 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
   }, []);
 
   // One gesture, one change: when the list changes (a new entry on top, one gone) the rows move, and for 500 ms no "Always allow" is taken.
-  // The Inbox's guard (ProactiveInbox), shared with the waiting cards above: when that section changes these rows move, and when they
-  // change the content under them does. Held on every change of this list, its first appearance included (it pushes down what was there).
-  const guard = useQueueGuard();
+  // The guard of the scope above when there is one: in the window, the one App shares with the ask slot (INB5b), so a card leaving the
+  // slot holds these rows and a change here holds the slot. Held on every change of this list, its first appearance included (it
+  // pushes down what was there).
+  // #602 review: in a conversation this list sits on top of the messages, and the conversation's scroll (a reply streaming in while it
+  // is stuck to the bottom) moves these rows under a pointer that did not move. That holds this list's own clicks (useScrollHold, on a
+  // guard of its own): not the shared guard, since the slot's card floats and does not move. INB5b-3: the buttons look held meanwhile.
+  const scope = useQueueGuard();
+  const own = useAnswerGuardState();
+  const guard = useMemo(() => eitherGuard(scope, own), [scope, own]);
   const held = useSyncExternalStore(guard.subscribe, guard.held, guard.held);
   const mounted = useRef(false);
+  const listRef = useRef<HTMLElement>(null);
+  useScrollHold(listRef, own);
 
   const load = useCallback(async () => {
     try {
-      const query = new URLSearchParams({ hours: String(hours), ...(conversationId ? { conversation_id: conversationId } : {}) });
+      // An empty id is sent, not dropped: the server refuses it, rather than listing every conversation's entries (#602 review).
+      const query = new URLSearchParams({ hours: String(hours), ...(conversationId !== undefined ? { conversation_id: conversationId } : {}) });
       const body = await request<Refusal[]>(`/approvals/refused?${query}`);
       if (!alive.current) return;
-      const list = (Array.isArray(body) ? body : []).filter((row) => !unattended || row.unattended);
+      const list = (Array.isArray(body) ? body : []).filter((row) => (!unattended || row.unattended) && (!awayOnly || !row.unattended));
       setRows(list);
       onCount?.(list.length);
-    } catch { /* the rest of the Inbox still works */ }
-  }, [onCount, conversationId, hours, unattended]);
+    } catch { /* the page around it still works */ }
+  }, [onCount, conversationId, hours, unattended, awayOnly]);
   useEffect(() => {
     void load();
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, POLL_MS);
@@ -108,6 +124,7 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
       const rules = Array.isArray(made?.rules) ? made.rules.map((rule) => rule.id) : typeof made?.id === "number" ? [made.id] : [];
       setAllowed((m) => new Map(m).set(r.id, { row: r, at: Math.max(0, rows.findIndex((x) => x.id === r.id)), rules }));
       guard.hold();                                                     // Undo comes up where "Always allow" was: not for the second click
+      announceProactiveChange();                                        // #605 review F4: the count on Progress follows at once
       if (rules.length) {
         setUndoable((s) => new Set(s).add(r.id));
         timers.current.set(r.id, setTimeout(() => closeUndo(r.id), UNDO_MS));
@@ -138,6 +155,7 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
     closeUndo(r.id);
     setAllowed((m) => { const n = new Map(m); n.delete(r.id); return n; });
     guard.hold();                                                       // "Always allow" comes back where Undo was: not for the second click
+    announceProactiveChange();
     void load();                                                        // the server lists it again
   }
 
@@ -155,12 +173,12 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
   }, [guard, shownKey]);
   if (!shown.length) return null;
   return (
-    <section data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className="flex flex-col gap-2">
+    <section ref={listRef} data-testid="inbox-refused" aria-label={title ?? t("inbox.refusedTitle")} className={`flex flex-col gap-2 ${className}`}>
       <h2 className="flex items-center gap-2 text-[13px] font-semibold">
         <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-subtle-foreground" />{title ?? t("inbox.refusedTitle")}
         <span className="font-mono text-[12px] text-subtle-foreground">{rows.length}</span>
       </h2>
-      {/* At most 100 entries (the server's cap): they scroll here rather than push the rest of the Inbox away. */}
+      {/* At most 100 entries (the server's cap): they scroll here rather than push the rest of the page away. */}
       <ul className="flex max-h-[28rem] flex-col gap-1.5 overflow-y-auto">
         {shown.map((row) => {
           const lines = whatLines(row);
@@ -171,8 +189,10 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
             <li key={`${row.kind}\u0000${row.target}\u0000${row.unattended ? "scheduled" : "away"}`} data-testid="inbox-refused-row"
               className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5">
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex min-w-0 flex-col" title={lines.join(", ")}>
-                  {lines.map((line, i) => <span key={i} data-testid="inbox-refused-what" className="truncate font-mono text-[12px] text-foreground">{line}</span>)}
+                {/* What was attempted comes from outside (a command, or Arslan's sentence around a UI element's or a file's name): shown as
+                    stored, a bidi control as a marker (#602 review). */}
+                <div className="flex min-w-0 flex-col" title={isolate(lines.join(", "))}>
+                  {lines.map((line, i) => <span key={i} data-testid="inbox-refused-what" className="truncate font-mono text-[12px] text-foreground"><Escaped text={line} /></span>)}
                 </div>
                 <span className="text-[12px] text-muted-foreground">
                   {row.count > 1
@@ -182,8 +202,8 @@ export default function InboxRefused({ onCount, conversationId, hours = 24, unat
                 {offered && !done && <div data-testid="inbox-refused-stores" className="flex flex-col gap-0.5">
                   {row.always.map((rule, i) => {
                     const label = rule.label || rule.target;
-                    return <span key={i} data-testid="inbox-refused-rule" title={label} className="text-[12px] text-muted-foreground [overflow-wrap:anywhere]">
-                      {t("inbox.alwaysStores", { what: label })}</span>;
+                    return <span key={i} data-testid="inbox-refused-rule" title={isolate(label)} className="text-[12px] text-muted-foreground [overflow-wrap:anywhere]">
+                      {t("inbox.alwaysStores", { what: isolate(label) })}</span>;
                   })}
                 </div>}
               </div>

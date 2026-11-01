@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { CalendarClock, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
+import type { WaitingView } from "../hooks/useWaiting";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import { fmtMs } from "../lib/usageFormat";
 import { useActivityStore } from "../stores/activityStore";
@@ -20,7 +21,7 @@ export const ORIGIN_ICON = {
 } as const;
 
 /**
- * Activity (0.1.48): what Arslan did, and what it cost.
+ * Activity (0.1.48), called Progress since v0.1.64 (INB7-a): what Arslan did, what it cost, and what waits on you.
  *
  * Order (0.1.50, user ruling): usage, scheduled tasks, Hands, recent work, judgments.
  * 0.1.58 §7: each list sits in its own box that scrolls inside and loads 20 at a time;
@@ -28,7 +29,7 @@ export const ORIGIN_ICON = {
  * stays highlighted; clicking a chart slice or a model narrows 最近的工作; and all of it
  * (range, filter, open run, scroll) survives leaving the page and coming back.
  */
-export default function ActivityView() {
+export default function ActivityView({ waiting }: { waiting: WaitingView }) {
   const { t, i18n } = useTranslation();
   const filter = useActivityStore((s) => s.filter);
   const setFilter = useActivityStore((s) => s.setFilter);
@@ -93,7 +94,7 @@ export default function ActivityView() {
   return (
     <div ref={pageRef} className="flex-1 h-full overflow-auto p-6 space-y-8" data-testid="activity-view"
       onScroll={(e) => saveScroll("page", e.currentTarget.scrollTop)}>
-      <UsageCard />
+      <UsageCard waiting={waiting} />
       <HandsTraceCard />
       <section>
         <div className="flex items-baseline gap-2">

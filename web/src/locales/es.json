@@ -92,13 +92,12 @@
     "tagline": "Crea tus propios spawns de IA"
   },
   "nav": {
-    "inbox": "Bandeja",
     "projects": "Proyectos",
     "settings": "Ajustes",
     "arslan": "Asistente principal",
     "capabilities": "Capacidades",
     "brain": "Memoria",
-    "activity": "Actividad",
+    "progress": "Progreso",
     "scheduled": "Programadas"
   },
   "brain": {
@@ -578,15 +577,15 @@
     "automationLede": "Estos se ejecutan en segundo plano y llaman a tu proveedor de modelos, lo que cuesta dinero. Todos están desactivados por defecto y ninguno cambia nada sin ti.",
     "navDesktop": "Escritorio",
     "navProactive": "Proactividad",
-    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (hasta 30 minutos; si nadie responde, no se hacen, y eso no cuenta como un no). Una tarea programada nunca espera una respuesta: solo hace lo que no necesita tu confirmación, y todo lo demás se rechaza (la mayoría aparece en la Bandeja). Un «Siempre» anterior no cuenta ahí. Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
+    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (hasta 30 minutos; si nadie responde, no se hacen, y eso no cuenta como un no). Una tarea programada nunca espera una respuesta: solo hace lo que no necesita tu confirmación, y todo lo demás se rechaza (la mayoría aparece bajo la tarea en la página Programadas). Un «Siempre» anterior no cuenta ahí. Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
     "labelKeepAwake": "Mantener el Mac despierto mientras trabaja",
     "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",
     "labelDesktopNotifications": "Notificaciones",
     "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
     "labelIsland": "Mostrar Arslan en el notch",
     "islandDesc": "Un pequeño Arslan en la parte superior de la pantalla muestra en qué está trabajando, cuándo te necesita y cuándo termina una tarea. Pasa el puntero por encima para ver más. Nunca aparece en capturas, grabaciones ni al compartir pantalla.",
-    "automationElsewhere": "Las tareas programadas tienen su propia página; el uso de tokens y cada ejecución pasada están en Actividad.",
-    "automationOpenActivity": "Abrir Actividad",
+    "automationElsewhere": "Las tareas programadas tienen su propia página; el uso de tokens y cada ejecución pasada están en Progreso.",
+    "automationOpenActivity": "Abrir Progreso",
     "searchPlaceholder": "Buscar ajustes…",
     "searchNoHits": "Ninguna sección coincide",
     "modeSystem": "Sistema",
@@ -713,10 +712,9 @@
     "grpAccess": "Acceso para otras apps",
     "grpVersion": "Versión",
     "grpWhatsNew": "Novedades de esta versión",
-    "watchesInInbox": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la Bandeja.",
-    "openInbox": "Abrir la Bandeja",
-    "openActivity": "El uso y cada ejecución están en Actividad; las tareas programadas tienen su propia página.",
-    "openActivityBtn": "Abrir Actividad",
+    "watchesOnScheduled": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la página Programadas.",
+    "openActivity": "El uso y cada ejecución están en Progreso; las tareas programadas tienen su propia página.",
+    "openActivityBtn": "Abrir Progreso",
     "whatsNewEmpty": "No hay notas para esta versión."
   },
   "errors": {
@@ -784,6 +782,8 @@
     "fromPhone": "Iniciado desde el iPhone",
     "glyph": {
       "waiting": "Espera tu aprobación",
+      "waiting_reminder": "Un trabajo detenido te dejó un recordatorio",
+      "waiting_away": "No pudo preguntarte mientras no estabas",
       "remote": "Remote · tu iPhone",
       "working": "En curso",
       "progress": "En curso: {{done}} de {{total}}",
@@ -959,7 +959,7 @@
       "orphaned": "Archivos huérfanos"
     },
     "import": {
-      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad; los caracteres invisibles se cuentan.",
+      "subtitle": "SKILL.md estándar, importado tal como está escrito, tras el control de licencia y el análisis de seguridad. El análisis bloquea los caracteres de etiqueta ocultos y los controles de dirección del texto; los demás caracteres invisibles se cuentan, sin bloquear.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "subruta (opcional)",
       "scan": "Escanear",
@@ -1310,7 +1310,7 @@
     "every_minute": "cada minuto",
     "every_n_minutes": "cada {{count}} minutos",
     "prompt": "Lo que hará cada vez:",
-    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: un paso que necesitaría tu confirmación se rechaza y aparece en la Bandeja. Pueden buscar información y escribir archivos solo en la carpeta de trabajo propia de Arslan; no ejecutan comandos.",
+    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: un paso que necesitaría tu confirmación se rechaza y aparece bajo la tarea en la página Programadas. Pueden buscar información y escribir archivos solo en la carpeta de trabajo propia de Arslan; no ejecutan comandos.",
     "anyTask": "crear cualquier tarea programada"
   },
   "enroll": {
@@ -1379,13 +1379,6 @@
     "hiddenEnrollFailed": "No se pudo recordar {{name}}. {{why}}"
   },
   "inbox": {
-    "approveNow": "Aprobar ahora",
-    "answerFailed": "Esa tarjeta ya se respondió o caducó.",
-    "stalled": "Detenido",
-    "changed": "Cambios",
-    "other": "Otros",
-    "watching": "Vigilando",
-    "muted": "Sin recordatorios",
     "addWatch": "Vigilar otra página o carpeta",
     "refusedTitle": "Lo que no se hizo mientras no estabas",
     "alwaysAllow": "Permitir siempre",
@@ -1394,9 +1387,7 @@
     "scheduledNeverAsks": "Una tarea programada no hace nada que necesite tu confirmación. Hazlo en un chat.",
     "allowedNow": "Permitido a partir de ahora",
     "refusedTimes": "{{count}} veces desde {{since}}",
-    "undo": "Deshacer",
-    "openInArslan": "Abrir la conversación",
-    "heldCapability": "Esto añade una capacidad nueva a Arslan. Solo se puede permitir en su conversación, donde se ve la tarjeta completa."
+    "undo": "Deshacer"
   },
   "pendingMemory": {
     "curationFallback": "Una sugerencia para ordenar tu memoria",
@@ -1443,8 +1434,16 @@
     "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
     "watches": "Páginas y carpetas vigiladas",
     "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
+    "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que no se hizo en su propia conversación mientras no estabas se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola"
+  },
+  "whileAway": {
+    "title": "Lo que no se hizo mientras no estabas (esta conversación)",
+    "stopped": "Una tarea que se detuvo aquí"
+  },
+  "waiting": {
+    "count": "Esperando por ti: {{count}}"
   }
 }

@@ -188,6 +188,12 @@ async def test_a_real_scheduled_turn_with_every_standing_answer_runs_no_command(
     assert (row.kind, row.target, row.decided_by, row.decision) == ("command", "text:ls", "policy", "deny")
 
 
+def test_the_note_says_where_a_refused_step_is_listed():
+    """INB5 (#605 review F3): the Inbox is gone, so the model is not told to send the user there."""
+    from server.orchestrator.arslan import SCHEDULED_NOTE
+    assert "under the task on their Scheduled page" in SCHEDULED_NOTE and "Inbox" not in SCHEDULED_NOTE
+
+
 async def test_a_turn_with_someone_to_ask_is_not_told_commands_are_off(monkeypatch):
     from server.orchestrator.arslan import SCHEDULED_NOTE
     model = _CallsACommand()

@@ -26,7 +26,8 @@ from datetime import datetime
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
-from server.services import capability_install, capability_runtime, capability_scan, capability_search
+from server.services import (capability_allowlist, capability_install, capability_runtime, capability_scan,
+                             capability_search)
 from arslan.aio import within
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,14 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                         "can add it by asking for it in a conversation."}
     prepared = scan = locked = None
     if cand["kind"] == "mcp":
+        # CAP4a-3c: the user's one-click list as it is now (it may have changed since the search), and a listed GitHub
+        # organization still the one the list names. Off the list, only the user adds it, by hand.
+        allow = await capability_allowlist.current()
+        by_hand = capability_allowlist.verdict(cand, allow) or await capability_allowlist.confirm_account(cand, allow)
+        if by_hand:
+            return {"ok": False, "error": "cannot be added: add_by_hand", "by_hand": by_hand,
+                    "note": "The user's one-click list does not cover this one, so only the user can add it: by hand, "
+                            "in Capabilities (Connections, add by hand). Say so; do not propose it again."}
         # CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock before the card,
         # so the card shows the locked versions and a yes installs exactly them. After the "nobody to ask" answer
         # above: a run that cannot install resolves nothing.

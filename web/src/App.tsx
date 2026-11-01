@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
 import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
 import ShellPolicySwitchNotice from "./components/ShellPolicySwitchNotice";
-import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -51,11 +50,10 @@ import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { threadDisplayTitle } from './lib/threadTitles';
 import { useConversationIndex } from './hooks/useConversationIndex';
-import { subscribeOpenConversation } from './lib/shell';
-import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
-import ProactiveInbox from './components/proactive/ProactiveInbox';
+import { useNotificationRoutes } from './hooks/useNotificationRoutes';
+import ConversationStage from './components/conversation/ConversationStage';
 import ScheduledPage from './components/scheduled/ScheduledPage';
-import { useProactiveSummary } from './hooks/useProactiveSummary';
+import { useWaiting } from './hooks/useWaiting';
 import { useScheduledAttention } from './hooks/useScheduledAttention';
 import { request } from './api/client';
 
@@ -77,9 +75,9 @@ export default function App() {
   const loadRegistry = useRegistryStore((s) => s.loadRegistry);
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
-  // 0.1.47: the Inbox badge (unread proactive items), polled while the window is visible.
-  const proactive = useProactiveSummary();
-  const scheduledAttention = useScheduledAttention();
+  // INB5: what is waiting on you, counted once by the server, for the badge on Progress (the Inbox and its badge are gone).
+  const waiting = useWaiting();
+  const scheduledAttention = useScheduledAttention(waiting.scheduled);
   const [legacyExperts, setLegacyExperts] = useState(0);
   useEffect(() => {
     request<{ experts: { converted: boolean }[] }>('/experts/legacy')
@@ -121,25 +119,10 @@ export default function App() {
   const activeThreadIdRef = useRef(activeThreadId);
   activeThreadIdRef.current = activeThreadId;
 
-  // A clicked desktop notification asks for its conversation (0.1.41). Refs keep
-  // the one subscription pointed at the current thread list and handler.
-  const openFromNotification = useRef<(id: string) => void>(() => {});
-  openFromNotification.current = (id: string) => {
-    const target = notificationTarget(id, threads);
-    if (target?.kind === 'inbox') { setActiveSection('inbox'); setPanelView('default'); }
-    else if (target) selectConversation(target.id);
-  };
-  useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
-  // 0.1.52 S3: a link to an earlier conversation in a reply (conversation_search) — same
-  // rule as a notification: only a conversation the user has and has not archived.
-  useEffect(() => {
-    const onLink = (event: Event) => {
-      const id = (event as CustomEvent<string>).detail;
-      if (typeof id === 'string' && id) openFromNotification.current(id);
-    };
-    window.addEventListener(OPEN_CONVERSATION_EVENT, onLink);
-    return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onLink);
-  }, []);
+  // A clicked desktop notification (0.1.41), or a link to an earlier conversation in a reply (0.1.52 S3), opens a conversation the
+  // user has and has not archived; a proactive notice opens the page that shows what was noticed (useNotificationRoutes).
+  useNotificationRoutes({ threads, selectConversation,
+    openSection: (section) => { setActiveSection(section); setPanelView('default'); } });
   useEffect(() => {
     const onOpen = (event: Event) => {
       const asked = readOpenSection((event as CustomEvent<unknown>).detail);
@@ -447,7 +430,7 @@ export default function App() {
       const runId = (e as CustomEvent<number>).detail;
       if (typeof runId !== 'number') return;
       useActivityStore.getState().setOpenRun(runId);
-      setActiveSection('activity');
+      setActiveSection('progress');
     };
     window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
     return () => window.removeEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
@@ -594,9 +577,9 @@ export default function App() {
     if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
     setActiveThreadId(id); setActiveSection('arslan'); setPanelView('default');
   }
-  // A proactive item was accepted: the job reports into `conversationId`. A conversation the app does
-  // not have yet (or no longer has) is created first, so its job card has somewhere to appear.
-  function openInboxConversation(conversationId: string, created: boolean) {
+  // A reminder's 「接着做」 was clicked (in a conversation or on the Scheduled page): the job reports into `conversationId`. A
+  // conversation the app does not have yet (or no longer has) is created first, so its job card has somewhere to appear.
+  function openCardConversation(conversationId: string, created: boolean) {
     if (created || !threads.some(thread => thread.id === conversationId)) { handleAddArslanThread(conversationId); return; }
     setThreads(old => old.map(thread => thread.id === conversationId ? { ...thread, archived: false } : thread));
     selectConversation(conversationId);
@@ -622,8 +605,7 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
-        inboxUnread={proactive.unread + (proactive.approvals ?? 0)}
-        inboxHigh={proactive.high + (proactive.approvals ?? 0)}
+        waiting={waiting.count}
         scheduledDot={scheduledAttention.any}
         activeSection={activeSection}
         onChangeSection={(section) => {
@@ -737,9 +719,13 @@ export default function App() {
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* 0.1.55: every pending ask in ONE slot, queued "‹ 1 / 3 ›" (they used to
                 render into the same absolute spot and overlap). Same frames, same answers. */}
-            {activeSection === 'arslan' && <AskSlot send={wsSend} />}
-
+            {/* INB5b: the slot and the conversation in one answer guard, with what waited on top and the stopped jobs after the
+                messages (ConversationStage; a temporary conversation has neither). */}
             {activeSection === 'arslan' && (
+              <ConversationStage send={wsSend} conversationId={activeThreadId} temporary={activeThread?.temporary === true}
+                onOpenConversation={openCardConversation}
+                onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }}>
+              {({ header, footer }) => (
               <div className="flex h-full min-h-0 flex-col">
               <OrchestratorChat
                 key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
@@ -763,10 +749,14 @@ export default function App() {
                   setPanelView('default');
                 }}
                 conversationId={activeThreadId}
+                header={header}
+                footer={footer}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
               />
               </div>
+              )}
+              </ConversationStage>
             )}
 
             {activeSection === 'capabilities' && (
@@ -783,18 +773,15 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject}
               openProjectId={openProjectId} onOpenedProject={() => setOpenProjectId(null)} />}
-            {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
-              onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
-              onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
-            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} onOpenConversation={openInboxConversation}
+            {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} waitingTasks={waiting.scheduled} onOpenConversation={openCardConversation}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
-            {activeSection === 'activity' && <ActivityView />}
+            {activeSection === 'progress' && <ActivityView waiting={waiting} />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
                 initialSection={settingsInitialSection}
-                onOpenActivity={() => setActiveSection('activity')}
+                onOpenActivity={() => setActiveSection('progress')}
                 settings={settings}
                 setSettings={setSettings}
                 llmProviders={llmProviders}
