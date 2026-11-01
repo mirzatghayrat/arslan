@@ -33,7 +33,9 @@ APP_DATA = (
 
 @pytest.mark.macos
 @macos
-@pytest.mark.parametrize("mode", [NetworkMode.NONE, NetworkMode.PROXY])
+# DELETE-BY: v0.1.64 when SBX-6 proxy mode lands: remove the 16 any-declared
+# cases from this service list and the listener list below (D2 transition).
+@pytest.mark.parametrize("mode", [NetworkMode.NONE, NetworkMode.ANY_DECLARED, NetworkMode.PROXY])
 @pytest.mark.parametrize("service", gates.SERVICES.values(), ids=gates.SERVICES.keys())
 def test_commands_services(sbx, mode, service, record_property):
     gates.test_service_policy_and_reachability(sbx, mode, service, record_property)
@@ -90,8 +92,10 @@ def test_commands_apple_events(sbx):
 
 @pytest.mark.macos
 @macos
-@pytest.mark.parametrize("mode", [NetworkMode.PROXY])
+@pytest.mark.parametrize("mode", [NetworkMode.PROXY, NetworkMode.ANY_DECLARED])
 def test_commands_listener_and_arslan_port(sbx, mode):
+    # The shared gate requires ValueError for any-declared port exclusions;
+    # only proxy exercises an enforced port denial. Both must refuse listeners.
     gates.test_listener_refusal_and_arslan_port_exclusion(sbx, mode)
 
 

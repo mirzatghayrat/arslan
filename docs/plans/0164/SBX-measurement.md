@@ -278,3 +278,77 @@ not spawn/forkserver, all Python versions, a run-name integration, or the other
 SBX-3a lifecycle gates. macOS CI run id: pending. This entry preserves the
 original report's results; it does not change its historical counts or claim
 that the corpus's multiprocessing row now passes.
+
+## Port-22 DNS (Codex, 2026-11-01)
+
+Measured on macOS 26.6.2 (25G83), arm64, OpenSSH 10.3p1 / LibreSSL 3.3.6,
+against the candidate before gate 2 added its service grants. The original
+pytest logs were retained; the stderr below is copied from those logs, not
+reconstructed. Only the hostname and resolved address are replaced by
+`<HOST>` and `<RESOLVED_ADDRESS>`. UID 501 is retained as printed.
+
+The exact command was identical in all three stages (the profile changed):
+
+```sh
+/usr/bin/sandbox-exec -p '<PROFILE>' /usr/bin/ssh -vv -F /dev/null -o BatchMode=yes -o IdentityAgent=none -o IdentityFile=none -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o ConnectTimeout=1 '<HOST>'
+```
+
+`<PROFILE>` was the harness's default-deny profile in PORT_22 mode, with the
+stage's exact additions below. Harness execution used its scratch HOME and
+working folder, DEVNULL stdin and a ten-second process-group timeout. The
+measurement ran only through pytest with the outer HOME pinned to
+`/private/tmp/arslan-sbx-check-home`. No user name, key, agent or known-hosts
+file was supplied. All three SSH processes returned 255.
+
+1. **Original profile, no directory-service grant.** This stops before DNS,
+   both with and without the resolver socket:
+
+```text
+No user exists for uid 501
+```
+
+2. **Add only `com.apple.system.opendirectoryd.libinfo` as an exact test-only
+   Mach lookup grant.** This removes the earlier lookup obstacle; without the
+   resolver socket, SSH reaches its hostname lookup and is refused:
+
+```text
+debug1: OpenSSH_10.3p1, LibreSSL 3.3.6
+debug1: Reading configuration data /dev/null
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+debug1: Authenticator provider $SSH_SK_PROVIDER did not resolve; disabling
+debug2: resolving "<HOST>" port 22
+ssh: Could not resolve hostname <HOST>: nodename nor servname provided, or not known
+```
+
+3. **Hold that directory-service grant constant and add the exact resolver
+   socket `/private/var/run/mDNSResponder`.** SSH resolves the name and reaches
+   connection setup; it then times out during banner exchange:
+
+```text
+debug1: OpenSSH_10.3p1, LibreSSL 3.3.6
+debug1: Reading configuration data /dev/null
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+debug1: Authenticator provider $SSH_SK_PROVIDER did not resolve; disabling
+debug2: resolving "<HOST>" port 22
+debug1: Connecting to <HOST> [<RESOLVED_ADDRESS>] port 22.
+debug2: fd 5 setting O_NONBLOCK
+debug1: fd 5 clearing O_NONBLOCK
+debug1: Connection established.
+debug1: Local version string SSH-2.0-OpenSSH_10.3
+Connection timed out during banner exchange
+Connection to <RESOLVED_ADDRESS> port 22 timed out
+```
+
+This is evidence for the port-22 resolver channel, not a successful SSH login
+or authenticated session. The directory-service grant was a test-only
+constant in stages 2 and 3 and **is not in the product allowlist**. The stock
+user-lookup restriction therefore remains. The separate preference-daemon
+case is also unaddressed: the historical preference-read row fails on every
+base and does not justify opening that daemon. No new SSH-running test or
+product grant is added by this documentation follow-up. CI run id for the
+gates branch remains pending.
+
+The D2 transition adds 16 commands any-declared denial cases (15 services and
+one listener/unsupported-port-exclusion case), alongside NONE and PROXY and
+without PORT_22. DELETE-BY: v0.1.64 when SBX-6's proxy mode lands: remove those
+16 transitional cases. Product online-mode wiring remains SBX-3a's work.

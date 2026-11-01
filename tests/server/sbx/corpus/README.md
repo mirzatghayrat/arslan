@@ -19,10 +19,10 @@ The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
 the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The `sbx_mac` selection has 362 cases: 71 candidate assertion
-gates, 222 measurement rows, 56 commands cases, 12 service allowlist cases, and
+an availability skip. The `sbx_mac` selection has 378 cases: 71 candidate assertion
+gates, 222 measurement rows, 72 commands cases, 12 service allowlist cases, and
 one Pool diagnosis. With two compile checks and the existing 70 macOS cases,
-the total is 434. Widening the port sample within
+the total is 450. Widening the port sample within
 the same two compile cases does not change that count.
 
 SBX-3p added 56 commands cases, bringing the selection to 420 at its merge. They strictly
@@ -30,7 +30,9 @@ xfail only for an assertion matching the deliberate missing-adapter message unti
 `commands` is registered in the harness's
 `BUILT_BASES` adapter table. #619 and #620 landed `EXPECTED = 420` and
 `EXPECTED_XFAIL = 56`; #621 subsequently added one unrelated macOS case. This
-gate follow-up adds 13 more (421 -> 434), requiring a companion Claude count PR.
+gate follow-up adds 13 cases and D2 adds 16 commands any-declared cases
+(421 -> 450, strict xfails 56 -> 72), requiring a companion Claude count PR.
+The 16 transitional cases are removed when SBX-6's proxy mode lands.
 Once SBX-3a registers its real commands adapter, these cases must run with zero
 skips and zero xfails.
 
