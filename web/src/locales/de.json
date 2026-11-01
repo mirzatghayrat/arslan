@@ -92,7 +92,6 @@
     "tagline": "Erstelle deine eigenen KI-Spawns"
   },
   "nav": {
-    "inbox": "Posteingang",
     "projects": "Projekte",
     "settings": "Einstellungen",
     "arslan": "Hauptassistent",
@@ -578,7 +577,7 @@
     "automationLede": "Diese laufen im Hintergrund und rufen deinen Modellanbieter auf — das kostet Geld. Alle sind standardmäßig aus, und keines ändert etwas ohne dich.",
     "navDesktop": "Desktop",
     "navProactive": "Proaktivität",
-    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (bis zu 30 Minuten; antwortet niemand, passiert es nicht – ein Nein ist das nicht). Eine geplante Aufgabe wartet nie auf eine Antwort: Sie tut nur, was kein OK braucht, alles andere wird abgelehnt (die meisten davon stehen im Posteingang). Ein früheres „Immer“ zählt dort nicht. Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
+    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (bis zu 30 Minuten; antwortet niemand, passiert es nicht – ein Nein ist das nicht). Eine geplante Aufgabe wartet nie auf eine Antwort: Sie tut nur, was kein OK braucht, alles andere wird abgelehnt (die meisten davon stehen auf der Seite „Geplant“ unter der Aufgabe). Ein früheres „Immer“ zählt dort nicht. Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
     "labelKeepAwake": "Mac während der Arbeit wach halten",
     "keepAwakeDesc": "Solange eine Aufgabe oder geplante Aufgabe läuft, geht der Mac nicht von selbst in den Ruhezustand. Der Bildschirm kann trotzdem ausgehen; Deckel zu oder schwacher Akku versetzen ihn weiterhin in den Ruhezustand.",
     "labelDesktopNotifications": "Mitteilungen",
@@ -713,8 +712,7 @@
     "grpAccess": "Zugang für andere Apps",
     "grpVersion": "Version",
     "grpWhatsNew": "Neu in dieser Version",
-    "watchesInInbox": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du im Posteingang.",
-    "openInbox": "Posteingang öffnen",
+    "watchesOnScheduled": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du auf der Seite „Geplant“.",
     "openActivity": "Nutzung und jeder Lauf stehen unter Aktivität; geplante Aufgaben haben eine eigene Seite.",
     "openActivityBtn": "Aktivität öffnen",
     "whatsNewEmpty": "Keine Notizen zu dieser Version."
@@ -1310,7 +1308,7 @@
     "every_minute": "jede Minute",
     "every_n_minutes": "alle {{count}} Minuten",
     "prompt": "Was sie jedes Mal tut:",
-    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird abgelehnt und im Posteingang aufgeführt. Sie können nachschlagen und Dateien schreiben, aber nur in Arslans eigenem Arbeitsordner; Befehle führen sie nicht aus.",
+    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird abgelehnt und auf der Seite „Geplant“ unter der Aufgabe aufgeführt. Sie können nachschlagen und Dateien schreiben, aber nur in Arslans eigenem Arbeitsordner; Befehle führen sie nicht aus.",
     "anyTask": "beliebige geplante Aufgaben anlegen"
   },
   "enroll": {
@@ -1379,13 +1377,6 @@
     "hiddenEnrollFailed": "{{name}} konnte nicht gemerkt werden. {{why}}"
   },
   "inbox": {
-    "approveNow": "Jetzt freigeben",
-    "answerFailed": "Diese Karte wurde schon beantwortet oder ist abgelaufen.",
-    "stalled": "Angehalten",
-    "changed": "Geändert",
-    "other": "Sonstiges",
-    "watching": "Beobachtet",
-    "muted": "Keine Erinnerung",
     "addWatch": "Weitere Seite oder Ordner beobachten",
     "refusedTitle": "Nicht erledigt, während du weg warst",
     "alwaysAllow": "Immer erlauben",
@@ -1394,9 +1385,7 @@
     "scheduledNeverAsks": "Eine geplante Aufgabe tut nichts, was dein OK braucht. Mach es in einem Chat.",
     "allowedNow": "Ab jetzt erlaubt",
     "refusedTimes": "{{count}}-mal seit {{since}}",
-    "undo": "Rückgängig",
-    "openInArslan": "Gespräch öffnen",
-    "heldCapability": "Das erweitert Arslan um eine neue Fähigkeit. Erlauben lässt es sich nur in seinem Gespräch, wo die ganze Karte zu sehen ist."
+    "undo": "Rückgängig"
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",
@@ -1450,5 +1439,8 @@
   "whileAway": {
     "title": "Nicht erledigt, während du weg warst (dieses Gespräch)",
     "stopped": "Eine Aufgabe, die hier angehalten hat"
+  },
+  "waiting": {
+    "count": "Wartet auf dich: {{count}}"
   }
 }

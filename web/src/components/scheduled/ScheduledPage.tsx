@@ -8,7 +8,7 @@ import { proactiveErrorText } from "../../lib/proactive";
 import RunDrawer from "../activity/RunDrawer";
 import { buttonClass } from "../companion/CompanionDialog";
 import { Notice } from "../kit";
-import InboxRefused from "../proactive/InboxRefused";
+import NotDoneList from "../proactive/NotDoneList";
 import WatchesPanel from "../proactive/WatchesPanel";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import ScheduledTasksCard from "../ScheduledTasksCard";
@@ -65,7 +65,7 @@ export default function ScheduledPage({ attention, onOpenConversation, onOpenMod
         {notice.text}</Notice>}
       <ScheduledTasksCard onOpenRun={setOpenRun} attention={needsLook} details={(task) => <div className="mt-3 space-y-3">
         {(attention.tasks[task.id]?.problems ?? []).map(reminder)}
-        <InboxRefused conversationId={scheduledConversation(task)} hours={AWAY_HOURS} unattended title={t("scheduledPage.awayTitle")} />
+        <NotDoneList conversationId={scheduledConversation(task)} hours={AWAY_HOURS} unattended title={t("scheduledPage.awayTitle")} />
       </div>} />
       <section aria-labelledby="scheduled-watches" className="space-y-3">
         <h2 id="scheduled-watches" className="text-[13px] font-semibold text-muted-foreground">{t("scheduledPage.watches")}</h2>

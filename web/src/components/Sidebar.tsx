@@ -1,7 +1,7 @@
 import BrandMark from './BrandMark';
 import React, { useEffect, useState } from "react";
 import type { Section } from "../lib/sections";
-import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Inbox, Activity, PanelLeft, Clock } from "lucide-react";
+import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Activity, PanelLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
@@ -41,8 +41,8 @@ interface SidebarProps {
   onUnarchiveThread: (id: string) => void; onDeleteThread: (id: string) => void;
   backendStatus: BackendStatus;
   onOpenConversation?: (conversationId: string) => void;
-  /** Inbox badge: items not yet looked at, and how many of those need a look. */
-  inboxUnread?: number; inboxHigh?: number;
+  /** INB5: what is waiting on you, counted once by the server (conversations, projects, scheduled tasks), on Progress. */
+  waiting?: number;
   /** INB3: something on the Scheduled page needs a look. */
   scheduledDot?: boolean;
   /** Each conversation's kind and state (GET /conversations), for the glyphs and the Remote trace. */
@@ -60,7 +60,7 @@ const DRAG_TYPE = "application/x-arslan-conversation";
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, scheduledDot = false, meta = {},
+    onDeleteThread, backendStatus, onOpenConversation, waiting = 0, scheduledDot = false, meta = {},
     projects = [], onStartInProject, onOpenProject, onMoveToProject, onPinThread } = props;
   const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -130,6 +130,9 @@ export default function Sidebar(props: SidebarProps) {
     });
   }
   const archivedThreads = threads.filter(thread => thread.archived);
+  // INB5b-2's review (F5): a card in an archived conversation has no other way in (a notice and the Island refuse an archived one),
+  // so the fold says something in it waits on you.
+  const archivedWaiting = archivedThreads.filter(thread => meta[thread.id]?.state === "waiting").length;
   // 0.1.44 one Arslan: the sidebar lists conversations only; former experts are
   // turned into skills from Capabilities.
   const navClass = (active: boolean) => `w-full flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-left text-xs transition-colors ${active
@@ -229,10 +232,6 @@ export default function Sidebar(props: SidebarProps) {
         <Plus size={15} /><span>{t("workspace.newConversation")}</span>
       </button>
       <nav aria-label={t("workspace.navigation")} className="mt-2 shrink-0 space-y-1">
-        <button id="nav-btn-inbox-deck" onClick={() => onChangeSection("inbox")} className={navClass(activeSection === "inbox")}>
-          <Inbox size={15} /><span className="flex-1">{t("nav.inbox")}</span>
-          {inboxUnread > 0 && <span data-testid="inbox-badge" aria-label={`${inboxUnread}`}
-            className={`min-w-[18px] rounded-full px-1.5 text-center text-[10px] leading-[18px] tabular-nums ${inboxHigh > 0 ? "bg-warning text-background" : "bg-primary text-primary-foreground"}`}>{inboxUnread > 99 ? "99+" : inboxUnread}</span>}</button>
         <button id="nav-btn-projects-deck" onClick={() => onChangeSection("projects")} className={navClass(activeSection === "projects")}>
           <FolderOpen size={15} /><span>{t("companion.projects")}</span></button>
         <button id="nav-btn-scheduled-deck" onClick={() => onChangeSection("scheduled")} className={navClass(activeSection === "scheduled")}>
@@ -281,6 +280,8 @@ export default function Sidebar(props: SidebarProps) {
             <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground">
               <Archive size={13} /><span className="flex-1">{t("sidebar.archived_section")} ({archivedThreads.length})</span>
+              {archivedWaiting > 0 && <span role="img" aria-label={t("waiting.count", { count: archivedWaiting })}
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}
               {archivedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {archivedOpen && archivedThreads.map(thread => renderThread(thread, true))}
@@ -297,6 +298,8 @@ export default function Sidebar(props: SidebarProps) {
           permanent "Online" said nothing; the connection only shows when it is NOT fine. */}
       <button id="nav-btn-activity-footer" onClick={() => onChangeSection("activity")} className={navClass(activeSection === "activity")}>
         <Activity size={15} /><span className="flex-1">{t("nav.activity")}</span>
+        {waiting > 0 && <span data-testid="progress-badge" aria-label={t("waiting.count", { count: waiting })}
+          className="min-w-[18px] rounded-full bg-warning px-1.5 text-center text-[10px] leading-[18px] tabular-nums text-background">{waiting > 99 ? "99+" : waiting}</span>}
         {backendStatus !== "online" && <span data-testid="backend-status"
           className={`flex items-center gap-1 text-[10px] ${backendStatus === "offline" ? "text-danger" : "text-warning"}`}>
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${backendStatus === "offline" ? "bg-danger" : "bg-warning animate-pulse"}`} />

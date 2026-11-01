@@ -725,7 +725,7 @@ PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them
 #: up front rather than finding out from a refusal. DELETE-BY: v0.1.64, with S2a-3 and PR4.
 SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything: it runs no commands "
                   "(run_command is not available here). Save what you make with write_file, in Arslan's own "
-                  "folder; a step that needs the user's OK is refused and listed in their Inbox.")
+                  "folder; a step that needs the user's OK is refused and listed under the task on their Scheduled page.")
 
 
 BACKGROUND_SYSTEM = (
@@ -1521,7 +1521,8 @@ async def _every_tool() -> list[dict]:
                         "task, or for any scheduled task for the rest of the conversation. A scheduled "
                         "run is unattended: it can write files only in Arslan's own folder, it runs no "
                         "commands, it only calls MCP tools the server marks read-only, and any step that "
-                        "needs the user's OK is refused and listed in their Inbox."},
+                        # INB5: the Inbox is gone; what a run could not do is listed under its task (#605 review F3).
+                        "needs the user's OK is refused and listed under the task on their Scheduled page."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},
         {"key": "cancel_task",

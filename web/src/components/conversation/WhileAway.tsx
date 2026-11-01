@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { proactiveApi, type ProactiveItem } from "../../api/proactive";
-import InboxRefused from "../proactive/InboxRefused";
+import NotDoneList from "../proactive/NotDoneList";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import { Notice } from "../kit";
 import { useQueueGuard } from "../kit/guard";
@@ -17,7 +17,7 @@ const POLL_MS = 30_000;
  *  (those are its task's, on the Scheduled page). Nothing at all when nothing waits. */
 export function AwayEntries({ conversationId }: { conversationId: string }) {
   const { t } = useTranslation();
-  return <InboxRefused conversationId={conversationId} hours={AWAY_HOURS} awayOnly title={t("whileAway.title")}
+  return <NotDoneList conversationId={conversationId} hours={AWAY_HOURS} awayOnly title={t("whileAway.title")}
     className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-surface p-4" />;
 }
 
