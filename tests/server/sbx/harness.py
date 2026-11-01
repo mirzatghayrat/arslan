@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base == "commands":
+        if self.base in {"commands", "outside-floor"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
