@@ -24,11 +24,11 @@ const HOUR = 3600;
 const naive = (sec: number) => new Date(sec * 1000).toISOString().replace("Z", "");   // how /runs writes a time
 const utc = (sec: number) => new Date(sec * 1000).toISOString().replace(".000", "");  // how /process writes one
 const BANDS = ["<10s", "10–30s", "30s–1m", "1–3m", "3–10m", ">10m"];
-const summary = (range: string) => ({
+const summary = (range: string, first = T0) => ({
   range, daily: [], not_covered: [], rows: [], estimated_any: false, tokens_total: 0, usd_total: 0,
   runs: { total: 5, done: 2, failed: 1, stopped: 1, running: 2, p50_ms: 4000, p95_ms: 9000 },
   bin_seconds: HOUR, duration_bands: BANDS,
-  bins: Array.from({ length: 24 }, (_, i) => ({ start_ts: T0 + i * HOUR, runs: i === 2 ? 2 : 0, failed: i === 2 ? 1 : 0,
+  bins: Array.from({ length: 24 }, (_, i) => ({ start_ts: first + i * HOUR, runs: i === 2 ? 2 : 0, failed: i === 2 ? 1 : 0,
     tokens_total: i === 2 ? 50_000 : 0, durations: [0, 0, 0, 0, 0, 0] })),
 });
 const run = (id: number, status: string, start: number, ms: number | null, over: Record<string, unknown> = {}) => ({
@@ -40,6 +40,7 @@ const RUNS = [
   run(13, "recording", T0 + 20 * HOUR, null, { waiting: true }),
   run(14, "recording", T0 + 22 * HOUR, null),
   run(15, "cancelled", T0 + 10 * HOUR, 60_000),
+  run(16, "interrupted", T0 + 5 * HOUR, null),                                 // the boot sweep: no total, no end
 ];
 const PROCESS = {
   run_id: 11, status: "recorded", started_at: utc(T0 + 2 * HOUR), ended_at: utc(T0 + 2 * HOUR + 30 * 60),
@@ -156,6 +157,55 @@ describe("over 24 hours each run is a bar on the token row's axis", () => {
     expect(screen.getByTestId("axis-overflow").getAttribute("aria-label")).toBe("2 more at the same time");
   });
 
+  it("over a day reads the summary on the same beat, so the axis's window keeps up with now (⓪Plan's re-check of PR 622, A)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(11).style.left).toBe("8.33%"));
+    expect(getUsageSummary).toHaveBeenCalledTimes(1);
+    getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range, T0 + HOUR)));   // an hour later
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await waitFor(() => expect(bar(11).style.left).toBe("4.17%"));                // 02:00 is now one hour into the axis
+    expect(listRuns).toHaveBeenLastCalledWith({ since: T0 + HOUR, limit: 200 });
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    expect(getUsageSummary).toHaveBeenCalledTimes(3);
+  });
+
+  it("over 7 and 30 days reads the summary once per range, not on the beat", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useActivityStore.setState({ range: "7d" });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(screen.getByTestId("usage-heatmap")).toBeTruthy());
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(getUsageSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a read that a newer one overtook, so a late old answer does not bring back an amber bar (B)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(13).dataset.outcome).toBe("waiting"));
+    let late: (runs: unknown) => void = () => {};
+    const answered = RUNS.map((r) => (r.id === 13 ? { ...r, status: "recorded", total_ms: 600_000, waiting: false } : r));
+    listRuns.mockImplementationOnce(() => new Promise((resolve) => { late = resolve; }))   // read at the change: slow
+      .mockResolvedValue(answered);                                                       // read 1.5 s later: quick
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
+    await act(async () => { vi.advanceTimersByTime(1_500); });
+    await waitFor(() => expect(bar(13).dataset.outcome).toBe("ok"));
+    await act(async () => { late(RUNS); });
+    expect(bar(13).dataset.outcome).toBe("ok");
+  });
+
+  it("stops reading once the page is left (D)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<UsageCard waiting={waiting()} />);
+    await waitFor(() => expect(bar(11)).toBeTruthy());
+    const [runs, summaries] = [listRuns.mock.calls.length, getUsageSummary.mock.calls.length];
+    cleanup();
+    act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => { vi.advanceTimersByTime(90_000); });
+    expect([listRuns.mock.calls.length, getUsageSummary.mock.calls.length]).toEqual([runs, summaries]);
+  });
+
   it("reads the runs again every 30 seconds and when a card or reminder changes, so an answered card's bar stops waiting", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     render(<UsageCard waiting={waiting()} />);
@@ -222,9 +272,12 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
 
   it("says why a run has no steps yet: still running, waiting for your answer, or interrupted before they were saved", async () => {
     // RunSteps are written when a run ends (run_recorder.finalize), and a run the boot sweep interrupted never ends.
+    // A run that ended with a total and no tool steps stopped before any; only the boot sweep's has no total (⓪Plan's re-check, C).
     const cases = [[14, "recording", "Still running: its steps show when it ends"],
       [13, "recording", "Waiting for your answer in its conversation: its steps show when it ends"],
-      [15, "interrupted", "Interrupted: its steps weren't saved"]] as const;
+      [16, "interrupted", "Interrupted: its steps weren't saved"],
+      [11, "interrupted", "Ended before any step"], [15, "cancelled", "Ended before any step"],
+      [12, "failed", "Ended before any step"]] as const;
     for (const [id, status, words] of cases) {
       runProcess.mockResolvedValue({ ...PROCESS, run_id: id, status, entries: [] });
       useActivityStore.setState({ axisRunId: id });
@@ -261,7 +314,7 @@ describe("a picked run's steps sit on the axis and replay in order", () => {
 describe("the axis speaks every language", () => {
   it("has its words in all six, and reads in Chinese as board F does", async () => {
     const keys = ["axisHint", "waitingRun", "chartSteps", "replay", "pause", "restart", "stepOf", "noSteps", "openRun", "allRuns",
-      "stepsWhenDone", "stepsAfterAnswer", "stepsNotSaved", "overlapMore"];
+      "stepsWhenDone", "stepsAfterAnswer", "stepsNotSaved", "overlapMore", "stoppedNoSteps"];
     for (const language of SUPPORTED_LANGUAGES) {
       for (const key of keys) {
         const value = i18n.getResource(language, "translation", `activityPage.${key}`);

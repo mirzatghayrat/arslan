@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pause, Play, SkipBack, X } from "lucide-react";
 import { api } from "../../api/client";
@@ -74,29 +74,40 @@ function spanOf(run: RunListItem, now: number): { start: number; end: number } {
 const POLL_MS = 30_000;
 const AGAIN_MS = 1_500;
 
-/** The runs on a day's axis (GET /runs since its first hour), and when they were read: a running bar reaches that moment. Nothing
- *  is asked for while the axis is off (7 and 30 days). A failed read keeps the last bars. */
-export function useAxisRuns(t0: number, on: boolean): { runs: RunListItem[]; now: number } {
-  const [read, setRead] = useState<{ runs: RunListItem[]; now: number }>({ runs: [], now: 0 });
+/** Reads now, then again on the badge's cadence, until `read` is null or the page goes. A read that a newer one overtook is dropped,
+ *  so a late old answer never replaces a fresh one (⓪Plan's re-check of PR 622, B); a failed read keeps what is shown. `read` and
+ *  `apply` must be stable (useCallback, a state setter). */
+export function useFreshRead<T>(read: (() => Promise<T>) | null, apply: (value: T) => void): void {
   useEffect(() => {
-    if (!on) return;
+    if (!read) return;
     let cancelled = false;
-    const load = () => api.listRuns({ since: Math.floor(t0 / 1000), limit: RUNS_LIMIT })
-      .then((runs) => { if (!cancelled) setRead({ runs, now: Date.now() }); })
-      .catch(() => { /* keep the last bars */ });
-    void load();
-    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, POLL_MS);
+    let latest = 0;
+    const load = () => {
+      const mine = ++latest;
+      read().then((value) => { if (!cancelled && mine === latest) apply(value); }).catch(() => { /* keep what is shown */ });
+    };
+    load();
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") load(); }, POLL_MS);
     let again: ReturnType<typeof setTimeout> | undefined;
-    const onChange = () => { void load(); clearTimeout(again); again = setTimeout(() => void load(), AGAIN_MS); };
-    const onShown = () => { if (document.visibilityState !== "hidden") void load(); };
+    const onChange = () => { load(); clearTimeout(again); again = setTimeout(load, AGAIN_MS); };
+    const onShown = () => { if (document.visibilityState !== "hidden") load(); };
     window.addEventListener(PROACTIVE_CHANGED, onChange);
     document.addEventListener("visibilitychange", onShown);
     return () => {
       cancelled = true; clearInterval(timer); clearTimeout(again);
       window.removeEventListener(PROACTIVE_CHANGED, onChange); document.removeEventListener("visibilitychange", onShown);
     };
-  }, [t0, on]);
-  return read;
+  }, [read, apply]);
+}
+
+/** The runs on a day's axis (GET /runs since its first hour), and when they were read: a running bar reaches that moment. Nothing
+ *  is asked for while the axis is off (7 and 30 days). */
+export function useAxisRuns(t0: number, on: boolean): { runs: RunListItem[]; now: number } {
+  const [shown, setShown] = useState<{ runs: RunListItem[]; now: number }>({ runs: [], now: 0 });
+  const read = useCallback(() => api.listRuns({ since: Math.floor(t0 / 1000), limit: RUNS_LIMIT }), [t0]);
+  const apply = useCallback((runs: RunListItem[]) => setShown({ runs, now: Date.now() }), []);
+  useFreshRead(on ? read : null, apply);
+  return shown;
 }
 
 /** Above the axis: what a bar means until a run is picked, and the colours. */
@@ -227,10 +238,13 @@ export function StepLane({ runId, run, locale }: { runId: number; run: RunListIt
   const words = (entry: (typeof steps)[number]) => stepWords(
     { tool: entry.tool, argsSummary: entry.args_summary, status: entry.ok ? "ok" : "error", summary: entry.summary }, t);
   const current = step != null ? steps[step] : null;
-  // No steps: not written yet while it runs (⓪Plan's review of PR 622, 1), never written for a run the boot sweep interrupted,
-  // or it only replied.
-  const empty = proc?.status === "recording" ? (run?.waiting ? "activityPage.stepsAfterAnswer" : "activityPage.stepsWhenDone")
-    : proc?.status === "interrupted" ? "activityPage.stepsNotSaved" : "activityPage.noSteps";
+  // No steps: not written yet while it runs (⓪Plan's review of PR 622, 1); never written for a run the boot sweep interrupted,
+  // which has no total; a run that ended otherwise without a tool step stopped before any (re-check, C); or it only replied.
+  const ended = proc?.status;
+  const empty = ended === "recording" ? (run?.waiting ? "activityPage.stepsAfterAnswer" : "activityPage.stepsWhenDone")
+    : ended === "interrupted" && run?.total_ms == null ? "activityPage.stepsNotSaved"
+      : ended === "interrupted" || ended === "cancelled" || ended === "failed" ? "activityPage.stoppedNoSteps"
+        : "activityPage.noSteps";
 
   return (
     <div className="mt-3 border-t border-border pt-2">

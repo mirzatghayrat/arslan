@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown } from "lucide-react";
 import { api } from "../api/client";
@@ -6,7 +6,7 @@ import type { UsageBin, UsageSummary, UsageSummaryRow } from "../api/client.type
 import type { WaitingView } from "../hooks/useWaiting";
 import { fmtMs, fmtTok, fmtUsd } from "../lib/usageFormat";
 import { useActivityStore, type UsageRange } from "../stores/activityStore";
-import { AxisHead, RunsLane, StepLane, useAxisRuns } from "./activity/RunsLane";
+import { AxisHead, RunsLane, StepLane, useAxisRuns, useFreshRead } from "./activity/RunsLane";
 
 type RangeKey = UsageRange;
 const RANGES: RangeKey[] = ["24h", "7d", "30d"];
@@ -87,13 +87,19 @@ export default function UsageCard({ waiting }: { waiting?: WaitingView }) {
   const rememberSlots = useActivityStore((s) => s.rememberSlots);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
 
+  // Over a day the summary is read on the axis's beat too, so the axis's window keeps up with now and a running bar keeps growing
+  // (INB7-b; ⓪Plan's re-check of PR 622, A). Over 7 and 30 days, a heavier read, it is read once per range, as before.
+  const day = range === "24h";
+  const readSummary = useCallback(() => api.getUsageSummary(range), [range]);
+  useFreshRead(day ? readSummary : null, setSummary);
   useEffect(() => {
+    if (day) return;
     let cancelled = false;
-    api.getUsageSummary(range)
+    readSummary()
       .then((s) => { if (!cancelled) setSummary(s); })
       .catch(() => { /* dashboard is best-effort */ });
     return () => { cancelled = true; };
-  }, [range]);
+  }, [day, readSummary]);
 
   const cost = useMemo(() => costByModel(summary?.rows ?? [], remembered), [summary, remembered]);
   useEffect(() => { rememberSlots(cost.slots); }, [cost.slots, rememberSlots]);
