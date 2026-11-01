@@ -11,6 +11,7 @@ vi.mock("react-i18next", () => ({
 import * as client from "../api/client";
 import InboxApprovals from "../components/proactive/InboxApprovals";
 import InboxRefused from "../components/proactive/InboxRefused";
+import { isolate } from "../lib/outsideText";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import en from "../locales/en.json";
 import zh from "../locales/zh.json";
@@ -156,7 +157,7 @@ describe("Not done while you were away", () => {
     expect(row(0)).toHaveTextContent("mail -s hi me@x.com");                  // the command, not "rules:send-mail"
     expect(row(0)).not.toHaveTextContent("rules:send-mail");
     expect(row(0)).toHaveTextContent(`inbox.refusedTimes:${JSON.stringify({ count: 4, since: when("2026-10-12T07:00:00Z") })}`);
-    expect(within(row(0)).getByTestId("inbox-refused-stores")).toHaveTextContent('inbox.alwaysStores:{"what":"Send an email"}');
+    expect(within(row(0)).getByTestId("inbox-refused-stores")).toHaveTextContent(`inbox.alwaysStores:${JSON.stringify({ what: isolate("Send an email") })}`);
     expect(row(1)).toHaveTextContent(when("2026-10-12T08:00:00Z"));           // once: its time, no count
     expect(row(1)).not.toHaveTextContent("inbox.refusedTimes");
     expect(count).toHaveBeenLastCalledWith(2);
@@ -225,7 +226,7 @@ describe("Not done while you were away", () => {
     await screen.findAllByTestId("inbox-refused-row");
     await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(within(row(0)).getAllByTestId("inbox-refused-rule").map((r) => r.textContent)).toEqual(
-      ['inbox.alwaysStores:{"what":"Send an email"}', 'inbox.alwaysStores:{"what":"Mail"}']);                  // each rule on a line of its own
+      ["Send an email", "Mail"].map((name) => `inbox.alwaysStores:${JSON.stringify({ what: isolate(name) })}`));     // each rule on a line of its own
     fireEvent.click(within(row(0)).getByTestId("inbox-refused-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/permissions/rules", { method: "POST", body: JSON.stringify({ refused_id: 30 }) }));
   });
@@ -235,7 +236,7 @@ describe("Not done while you were away", () => {
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
     await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
-    expect(within(row(0)).getByTestId("inbox-refused-stores")).toHaveTextContent('inbox.alwaysStores:{"what":"send-mail"}');
+    expect(within(row(0)).getByTestId("inbox-refused-stores")).toHaveTextContent(`inbox.alwaysStores:${JSON.stringify({ what: isolate("send-mail") })}`);
   });
 
   it("a 409 (nothing to allow after all) says it asks each time", async () => {
