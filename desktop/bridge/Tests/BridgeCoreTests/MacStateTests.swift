@@ -9,7 +9,7 @@ final class FakeProbe: MacProbe {
     var batteryReading: MacBattery? = MacBattery(level: 80, charging: false, minutesLeft: 240)
     var memoryReading: MacMemory? = MacMemory(usedBytes: 12 << 30, totalBytes: 32 << 30, pressureLevel: 1)
     var diskReading: MacDisk? = MacDisk(freeBytes: 412_340_000_000, totalBytes: 994_660_000_000)
-    var networkReading: MacNetwork? = MacNetwork(kind: "wifi", quality: "good")
+    var networkReading: MacNetwork? = MacNetwork(kind: .wifi, quality: .good)
     var calls: [String: Int] = [:]
     let osVersion = "macOS 26.1"
 
@@ -56,18 +56,18 @@ final class MacStateTests: XCTestCase {
     }
 
     func testPressureWords() {
-        XCTAssertEqual([1, 2, 4, 0, 7].map(MacState.pressure), ["normal", "warn", "critical", "normal", "normal"])
+        XCTAssertEqual([1, 2, 4, 0, 7].map(MemoryPressure.init(level:)), [.normal, .warn, .critical, .normal, .normal])
     }
 
     func testNetworkQualityIsTheLinkStateNotASpeed() {
-        let cases: [(Bool, Bool, Bool, String)] = [(true, false, false, "good"), (true, true, false, "fair"),
-                                                    (true, false, true, "fair"), (false, false, false, "poor")]
+        let cases: [(Bool, Bool, Bool, LinkQuality)] = [(true, false, false, .good), (true, true, false, .fair),
+                                                         (true, false, true, .fair), (false, false, false, .poor)]
         for (satisfied, constrained, expensive, quality) in cases {
             XCTAssertEqual(MacNetwork.from(satisfied: satisfied, constrained: constrained, expensive: expensive,
                                            wifi: true, wired: false).quality, quality)
         }
-        XCTAssertEqual(MacNetwork.from(satisfied: true, constrained: false, expensive: false, wifi: false, wired: true).kind, "ethernet")
-        XCTAssertEqual(MacNetwork.from(satisfied: true, constrained: false, expensive: false, wifi: false, wired: false).kind, "other")
+        XCTAssertEqual(MacNetwork.from(satisfied: true, constrained: false, expensive: false, wifi: false, wired: true).kind, .ethernet)
+        XCTAssertEqual(MacNetwork.from(satisfied: true, constrained: false, expensive: false, wifi: false, wired: false).kind, .other)
     }
 
     func testWhatIsNotKnownIsLeftOut() {
@@ -129,20 +129,62 @@ final class MacStateTests: XCTestCase {
         let probe = SystemMacProbe()
         let state = MacState(probe: probe)
         _ = state.block(now: Date(), sleep: nil)
-        Thread.sleep(forTimeInterval: 0.3)                          // the first path update
+        for _ in 0..<40 where probe.network() == nil { Thread.sleep(forTimeInterval: 0.05) }    // the first path update
+        Thread.sleep(forTimeInterval: 0.3)                          // CPU ticks move on between the two samples
         let mac = state.block(now: Date() + 11, sleep: ["kept_awake": false])
         var readings = mac
         readings["taken_at"] = nil                                  // a time's colons would read as an IPv6 address
         let text = String(decoding: try JSONSerialization.data(withJSONObject: readings), as: UTF8.self)
         XCTAssertNil(text.range(of: #"\b\d{1,3}(\.\d{1,3}){3}\b"#, options: .regularExpression), text)
         XCTAssertNil(text.range(of: #"[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}"#, options: [.regularExpression, .caseInsensitive]), text)
-        for word in ["ssid", "bssid", "en0", "interface", "address"] { XCTAssertFalse(text.lowercased().contains(word), word) }
+        let host = ProcessInfo.processInfo.hostName.lowercased()
+        for word in ["ssid", "bssid", "en0", "en1", "interface", "address", host] where !word.isEmpty {
+            XCTAssertFalse(text.lowercased().contains(word), word)
+        }
+        // Every key and every word is one the spec allows (#652 review): nothing else can ride along.
         XCTAssertTrue(Set(mac.keys).isSubset(of: ["taken_at", "battery", "cpu", "memory", "disk", "network", "sleep", "os_version"]))
+        if let battery = mac["battery"] as? [String: Any] {
+            XCTAssertTrue(Set(battery.keys).isSubset(of: ["level", "charging", "minutes_left"]))
+            XCTAssertTrue(Set(["level", "charging"]).isSubset(of: Set(battery.keys)))
+        }
+        XCTAssertEqual(Set((mac["cpu"] as? [String: Any] ?? [:]).keys), ["now", "last_hour"], "two samples 10 s apart")
         let memory = try XCTUnwrap(mac["memory"] as? [String: Any])
+        XCTAssertEqual(Set(memory.keys), ["used_gb", "total_gb", "pressure"])
+        XCTAssertTrue(["normal", "warn", "critical"].contains(memory["pressure"] as? String ?? ""))
         XCTAssertGreaterThan(memory["total_gb"] as? Double ?? 0, 0)
-        XCTAssertNotNil((mac["cpu"] as? [String: Any])?["now"], "two samples 10 s apart")
-        XCTAssertTrue((mac["os_version"] as? String ?? "").hasPrefix("macOS "))
+        XCTAssertEqual(Set((mac["disk"] as? [String: Any] ?? [:]).keys), ["free_gb", "total_gb"])
+        let network = try XCTUnwrap(mac["network"] as? [String: Any], "the path update arrived")
+        XCTAssertEqual(Set(network.keys), ["kind", "quality"])
+        XCTAssertTrue(["wifi", "ethernet", "other"].contains(network["kind"] as? String ?? ""))
+        XCTAssertTrue(["good", "fair", "poor"].contains(network["quality"] as? String ?? ""))
+        XCTAssertEqual(mac["sleep"] as? [String: AnyHashable], ["kept_awake": false])
+        let os = try XCTUnwrap(mac["os_version"] as? String)
+        XCTAssertNotNil(os.range(of: #"^macOS \d+\.\d+(\.\d+)?$"#, options: .regularExpression), os)
     }
+
+    func testTwoLooksAtOnceNeverRace() async {
+        // tick() and a phone's hello both build a snapshot (#652 review: 3 crashes in 8 runs without the lock).
+        let probe = FakeProbe()
+        probe.ticks = (0..<7000).map { CPUTicks(busy: UInt64($0 * 30), total: UInt64($0 * 100)) }
+        let state = MacState(probe: probe)
+        await withTaskGroup(of: Void.self) { group in
+            for lane in 0..<2 {
+                group.addTask { for k in 0..<3000 { _ = state.block(now: self.t0 + Double(k) * 100 + Double(lane) * 50, sleep: nil); await Task.yield() } }
+            }
+        }
+        let cpu = state.block(now: t0 + 400_000, sleep: nil)["cpu"] as? [String: Any]
+        XCTAssertLessThanOrEqual((cpu?["last_hour"] as? [Int])?.count ?? 99, 12)
+    }
+
+    func testAClockSetBackStillRefreshes() {
+        let probe = FakeProbe()
+        let state = MacState(probe: probe)
+        _ = state.block(now: t0, sleep: nil)
+        probe.batteryReading = MacBattery(level: 12, charging: false, minutesLeft: nil)
+        let mac = state.block(now: t0 - 3600, sleep: nil)                 // the clock went back an hour
+        XCTAssertEqual((mac["battery"] as? [String: Any])?["level"] as? Int, 12, "a clock set back does not freeze readings")
+    }
+
 }
 
 final class StatusReporterMacTests: XCTestCase {
@@ -193,6 +235,15 @@ final class StatusReporterMacTests: XCTestCase {
         let body = try XCTUnwrap(beat.first?.envelope["body"] as? [String: Any])
         XCTAssertEqual(((body["mac"] as? [String: Any])?["battery"] as? [String: Any])?["level"] as? Int, 80 - 29,
                        "the heartbeat carries the newest readings")
+    }
+
+    func testTheMacsStateIsNotInTheSignature() {
+        let body: [String: Any] = ["presence": "online", "mascot": "idle", "waiting_approvals": 0, "jobs": [],
+                                   "mac": ["battery": ["level": 80], "memory": ["used_gb": 12.0], "cpu": ["now": 10]]]
+        var other = body
+        other["mac"] = ["battery": ["level": 21], "memory": ["used_gb": 30.5], "cpu": ["now": 97], "taken_at": "x"]
+        XCTAssertEqual(StatusReporter.signature(body).headline, StatusReporter.signature(other).headline)
+        XCTAssertEqual(StatusReporter.signature(body).detail, StatusReporter.signature(other).detail)
     }
 
     func ticks() -> [CPUTicks] { (0..<40).map { CPUTicks(busy: UInt64($0 * 37), total: UInt64($0 * 100)) } }

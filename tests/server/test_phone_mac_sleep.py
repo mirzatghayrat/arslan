@@ -34,5 +34,8 @@ async def test_kept_awake_is_the_shells_rule(client, setting, working, kept):
 
 
 def test_the_rule_is_the_desktop_shells():
+    import re
     source = (Path(__file__).resolve().parents[2] / "desktop/src-tauri/src/resident.rs").read_text()
-    assert "status.keep_awake && status.working > 0" in source, "change both copies together"
+    body = re.search(r"pub fn want_sleep_assertion\(status: &Status\) -> bool \{(.*?)\n\}", source, re.S)
+    assert body is not None and body.group(1).strip() == "status.keep_awake && status.working > 0", \
+        "the whole rule, so a change to either copy is seen (#652 review)"

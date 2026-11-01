@@ -33,16 +33,25 @@ public struct CPUTicks: Equatable {
     public init(busy: UInt64, total: UInt64) { (self.busy, self.total) = (busy, total) }
 }
 
+/// The words §5.11 allows, as types (#652 review): nothing else can be sent in these fields.
+public enum NetworkKind: String { case wifi, ethernet, other }
+public enum LinkQuality: String { case good, fair, poor }
+public enum MemoryPressure: String {
+    case normal, warn, critical
+    /// `kern.memorystatus_vm_pressure_level`: 1 normal, 2 warn, 4 critical.
+    public init(level: Int) { self = [2: .warn, 4: .critical][level] ?? .normal }
+}
+
 public struct MacNetwork: Equatable {
-    public var kind: String, quality: String
-    public init(kind: String, quality: String) { (self.kind, self.quality) = (kind, quality) }
+    public var kind: NetworkKind, quality: LinkQuality
+    public init(kind: NetworkKind, quality: LinkQuality) { (self.kind, self.quality) = (kind, quality) }
 
     /// macOS reports the link's state, not its speed (the frame list's Decide 1): `good` when it is up and
     /// neither constrained (Low Data Mode) nor expensive (a phone hotspot), `fair` when it is up but one of
     /// them, `poor` when it is down.
     public static func from(satisfied: Bool, constrained: Bool, expensive: Bool, wifi: Bool, wired: Bool) -> MacNetwork {
-        MacNetwork(kind: wifi ? "wifi" : wired ? "ethernet" : "other",
-                   quality: !satisfied ? "poor" : (constrained || expensive) ? "fair" : "good")
+        MacNetwork(kind: wifi ? .wifi : wired ? .ethernet : .other,
+                   quality: !satisfied ? .poor : (constrained || expensive) ? .fair : .good)
     }
 }
 
@@ -67,12 +76,16 @@ public final class MacState {
     var lastTicks: CPUTicks?, cpuNow: Int?
     var bucketStart: Date?, bucketSum = 0, bucketCount = 0
     var closed: [(end: Date, average: Int)] = []
+    /// tick() and a phone's hello can build a snapshot at the same time (#652 review).
+    let lock = NSLock()
 
     public init(probe: MacProbe) { self.probe = probe }
 
     /// The block for a snapshot built at `now`: every reading the Mac has, at most a minute old (disk: five),
     /// and `sleep` as the backend sent it. A reading the Mac doesn't have is left out.
     public func block(now: Date, sleep: [String: Any]?) -> [String: Any] {
+        lock.lock()
+        defer { lock.unlock() }
         if due(batteryAt, Self.slowEvery, now) { (battery, batteryAt) = (probe.battery(), now) }
         if due(memoryAt, Self.slowEvery, now) { (memory, memoryAt) = (probe.memory(), now) }
         if due(diskAt, Self.diskEvery, now) { (disk, diskAt) = (probe.disk(), now) }
@@ -89,20 +102,21 @@ public final class MacState {
         if let memory {
             out["memory"] = ["used_gb": tenths(Double(memory.usedBytes) / 1_073_741_824),
                              "total_gb": tenths(Double(memory.totalBytes) / 1_073_741_824),
-                             "pressure": Self.pressure(memory.pressureLevel)]
+                             "pressure": MemoryPressure(level: memory.pressureLevel).rawValue]
         }
         if let disk {     // GB (10^9), as Finder shows
             out["disk"] = ["free_gb": tenths(Double(disk.freeBytes) / 1e9), "total_gb": tenths(Double(disk.totalBytes) / 1e9)]
         }
-        if let network = probe.network() { out["network"] = ["kind": network.kind, "quality": network.quality] }
+        if let network = probe.network() { out["network"] = ["kind": network.kind.rawValue, "quality": network.quality.rawValue] }
         if let kept = sleep?["kept_awake"] as? Bool { out["sleep"] = ["kept_awake": kept] }
         return out
     }
 
-    /// `kern.memorystatus_vm_pressure_level`: 1 normal, 2 warn, 4 critical.
-    static func pressure(_ level: Int) -> String { [2: "warn", 4: "critical"][level] ?? "normal" }
-
-    func due(_ at: Date?, _ every: TimeInterval, _ now: Date) -> Bool { at.map { now.timeIntervalSince($0) >= every } ?? true }
+    /// Due once `every` has passed, or when the clock was set back past the last read (#652 review), which would
+    /// otherwise freeze the reading until the clock caught up.
+    func due(_ at: Date?, _ every: TimeInterval, _ now: Date) -> Bool {
+        at.map { now.timeIntervalSince($0) >= every || now < $0 } ?? true
+    }
 
     func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 
@@ -131,6 +145,8 @@ public final class MacState {
 
 /// The real readings, from public system calls only.
 public final class SystemMacProbe: MacProbe {
+    /// Taken once: each mach_host_self() call adds a send right (#652 review).
+    let host = mach_host_self()
     let monitor = NWPathMonitor()
     let lock = NSLock()
     var path: MacNetwork?
@@ -174,7 +190,7 @@ public final class SystemMacProbe: MacProbe {
         var count: natural_t = 0
         var info: processor_info_array_t?
         var infoCount: mach_msg_type_number_t = 0
-        guard host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &count, &info, &infoCount) == KERN_SUCCESS,
+        guard host_processor_info(host, PROCESSOR_CPU_LOAD_INFO, &count, &info, &infoCount) == KERN_SUCCESS,
               let info else { return nil }
         defer { vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(Int(infoCount) * MemoryLayout<integer_t>.stride)) }
         var busy: UInt64 = 0, idle: UInt64 = 0
@@ -192,13 +208,14 @@ public final class SystemMacProbe: MacProbe {
         var stats = vm_statistics64()
         var size = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
         let ok = withUnsafeMutablePointer(to: &stats) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(size)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &size) }
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(size)) { host_statistics64(host, HOST_VM_INFO64, $0, &size) }
         }
         var total: UInt64 = 0, totalSize = MemoryLayout<UInt64>.size
         var pressure: Int32 = 0, pressureSize = MemoryLayout<Int32>.size
         guard ok == KERN_SUCCESS, sysctlbyname("hw.memsize", &total, &totalSize, nil, 0) == 0 else { return nil }
         if sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &pressureSize, nil, 0) != 0 { pressure = 1 }
-        let pages = UInt64(stats.internal_page_count) - UInt64(stats.purgeable_count) + UInt64(stats.wire_count)
+        let app = UInt64(stats.internal_page_count), purgeable = UInt64(stats.purgeable_count)
+        let pages = (app > purgeable ? app - purgeable : 0) + UInt64(stats.wire_count)   // never a trap
             + UInt64(stats.compressor_page_count)
         return MacMemory(usedBytes: pages * UInt64(vm_kernel_page_size), totalBytes: total, pressureLevel: Int(pressure))
     }
