@@ -152,12 +152,23 @@ describe("a stopped job's card in its conversation", () => {
   });
 
   it("a handled card says what became of it and leads back to the conversation (Q7: it stays on its row)", async () => {
-    const doors = await inConversation([job({ status: "accepted", job_id: "j" }), job({ id: 2, status: "dismissed" })]);
+    const lately = new Date(Date.now() - 86_400_000).toISOString().replace("Z", "");
+    const doors = await inConversation([job({ status: "accepted", job_id: "j", created_at: lately }),
+      job({ id: 2, status: "dismissed", created_at: lately })]);
     expect(await screen.findByText("Started as a background job")).toBeTruthy();
     expect(screen.getByText("Dismissed")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Do it" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open the conversation" }));
     expect(doors.onOpenConversation).toHaveBeenCalledWith("thread-origin", false);
+  });
+
+  it("a card handled over a week ago, or expired, has no row any more (Q7: a job's reminder keeps its row 7 days)", async () => {
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().replace("Z", "");
+    await inConversation([job({ id: 1, status: "accepted", created_at: ago(8) }), job({ id: 2, status: "expired", created_at: ago(1) }),
+      job({ id: 3, status: "dismissed", created_at: ago(6) })]);
+    expect(await screen.findByTestId("proactive-item-3")).toBeInTheDocument();
+    expect(screen.queryByTestId("proactive-item-1")).toBeNull();
+    expect(screen.queryByTestId("proactive-item-2")).toBeNull();
   });
 
   it("a card set aside can still be acted on and says until when", async () => {
