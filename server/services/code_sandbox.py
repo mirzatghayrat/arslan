@@ -30,7 +30,8 @@ import sys
 import tempfile
 from pathlib import Path
 from arslan.aio import within
-from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
+from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
+                                             subpath)
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +125,6 @@ def _child_limits() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (_FSIZE_BYTES, _FSIZE_BYTES))
 
 
-#: What the shared base opens for a terminal: the tty devices (and their ioctls). Presets that run no terminal
-#: (computation, MCP servers) close them again after the base, so the base itself stays identical (#666 review).
-TTY_DEVICES = (literal("/dev/tty"), literal("/dev/ptmx"), '(regex #"^/dev/ttys[0-9]+$")')
-
-
 def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:
     """Default-deny compute policy: runtime reads, workspace writes, no network/host IPC.
 
@@ -154,6 +150,9 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
     # so the base stays identical across presets. No terminal (tty devices, their ioctls, pseudo-ttys), no file
     # events, no preference reads, and nothing in the workspace is mapped as code.
     rules.deny("file-read* file-write*", *TTY_DEVICES)
+    # Astra (#666, P1): the base's explicit `file-read* file-write-data` grant on these devices survives a later
+    # wildcard deny, so the exact operations are denied too: no writing to, or reading from, another terminal.
+    rules.deny("file-read-data file-write-data", *TTY_DEVICES)
     rules.deny("file-ioctl", *TTY_DEVICES)
     rules.deny("pseudo-tty")
     rules.deny("mach-lookup", '(global-name "com.apple.FSEvents")')

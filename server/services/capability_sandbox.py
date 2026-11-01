@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from server.services.code_sandbox import TTY_DEVICES
-from server.services.sandbox_profile import NetworkMode, Profile, default_deny_profile, literal, real, subpath
+from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
+                                             subpath)
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
@@ -55,9 +55,15 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
     rules = Profile("deny")
     # #666 review: an MCP server talks over stdio and never had a terminal: the base's tty devices, their
     # ioctls and pseudo-ttys close again here, after the base, which stays identical across presets.
-    rules.deny("file-write*", *TTY_DEVICES)
+    rules.deny("file-read* file-write*", *TTY_DEVICES)
+    # Astra (#666, P1): the exact operations too (the base's explicit grant survives a wildcard deny), and reads,
+    # since SYSTEM_READ opens /dev: an MCP server neither writes to nor reads another terminal.
+    rules.deny("file-read-data file-write-data", *TTY_DEVICES)
     rules.deny("file-ioctl", *TTY_DEVICES)
     rules.deny("pseudo-tty")
+    # Astra (#666, P2): file events would show the names, flags and ids of files outside its folders (contents
+    # stay closed). No one-click server watches files; computation closes them too.
+    rules.deny("mach-lookup", '(global-name "com.apple.FSEvents")')
     rules.allow("file-read-data", literal("/"))
     rules.allow_paths("file-read* file-map-executable", map(real, read))
     rules.allow("file-read* file-write* file-map-executable", subpath(real(root)))
