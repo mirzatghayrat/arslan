@@ -215,16 +215,29 @@ def placer(capture: dict):
     return place
 
 
-def shown_name(name, limit: int = 80) -> str:
-    """An app's name as a card and the model show it: one line, without control, format (a bidi override, a
-    zero-width space) or unassigned characters, at most `limit` characters (⓪Plan's review of #554: a name
-    with a line break could fake a "· App — tier" line). Its script stays, unlike capability_flow's
-    `outside_label`, so an app named in Chinese or Arabic still reads as itself. UNI1a's `untrusted.clean_name`
-    (#526) can take its place once merged."""
+def _without_controls(text) -> str:
     import unicodedata
-    kept = "".join(" " if ch.isspace() else ch for ch in str(name or "")
+    kept = "".join(" " if ch.isspace() else ch for ch in str(text or "")
                    if ch.isspace() or not unicodedata.category(ch).startswith("C"))
-    return " ".join(kept.split())[:limit]
+    return " ".join(kept.split())
+
+
+def shown_name(name, limit: int | None = 80, fallback: str = "") -> str:
+    """An app's name, or a button's label, as a card and the model show it: one line, without control, format
+    (a bidi override, a zero-width space) or unassigned characters, at most `limit` characters, or whole with
+    None (⓪Plan's review of #554: a name with a line break could fake a "· App — tier" line). A name of only
+    such characters is shown as `fallback` (the bundle id). Its script stays, unlike capability_flow's
+    `outside_label`, so an app named in Chinese or Arabic still reads as itself. UNI1a's
+    `untrusted.clean_name` (#526) can take its place once merged."""
+    return _without_controls(name)[:limit] or _without_controls(fallback)[:limit]
+
+
+def as_read(text) -> str:
+    """A label as it reads, for judging what it does (hands_service.risky_label): compatibility forms folded
+    (NFKC: a full-width letter is the letter), then shown_name's rule, uncut. A zero-width space or a soft
+    hyphen inside "Delete" used to make a risky button look harmless (⓪Plan's review of #554)."""
+    import unicodedata
+    return _without_controls(unicodedata.normalize("NFKC", str(text or "")))
 
 
 def one_line(text) -> str:

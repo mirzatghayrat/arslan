@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { PRESENTATION_BASES } from "./emojiBases";
 
 /**
  * Text from outside (a SKILL.md, a server's label, a registry entry) as the web shows it (v0.1.64 UNI1,
@@ -35,16 +36,12 @@ export const HIDDEN: [number, number][] = [
 /** Runs of these show as one marker with their range: variation selectors, their supplement, and tags. */
 export const RUN_RANGES: [string, number, number][] = [
   ["U+FE00\u2013FE0F", 0xfe00, 0xfe0f], ["U+E0100\u2013E01EF", 0xe0100, 0xe01ef], ["U+E0000\u2013E007F", 0xe0000, 0xe007f]];
-/** #586 review F1: one selector goes uncounted only when it does what ordinary text uses one for: VS15 or VS16 after
- *  a character that can take them (not an ASCII letter, not in NOT_A_BASE), or an ideographic variation selector
- *  after a CJK ideograph. Every other selector is counted. */
+/** #586 review F1, re-check R1 and R2: one selector goes uncounted only when it does what ordinary text uses one
+ *  for: VS15 or VS16 after an emoji or a keycap's base (PRESENTATION_BASES), or an ideographic variation selector
+ *  after a CJK ideograph, at most IVS_UNCOUNTED_MAX of those in a text. Every other selector is counted. */
 export const PRESENTATION_SELECTORS = [0xfe0e, 0xfe0f];
 export const IDEOGRAPHS: [number, number][] = [[0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xf900, 0xfaff], [0x20000, 0x323af]];
-/** White space, controls, the format marks left unmarked, the combining marks' blocks and surrogates. */
-export const NOT_A_BASE: [number, number][] = [
-  [0x0000, 0x0020], [0x007f, 0x00a0], [0x0300, 0x036f], [0x061c, 0x061c], [0x1680, 0x1680], [0x1ab0, 0x1aff],
-  [0x1dc0, 0x1dff], [0x2000, 0x200f], [0x2028, 0x202f], [0x205f, 0x206f], [0x20d0, 0x20ff], [0x3000, 0x3000],
-  [0xd800, 0xdfff], [0xfe20, 0xfe2f]];
+export const IVS_UNCOUNTED_MAX = 8;
 /** The tags of the three RGI subdivision flags (England, Scotland, Wales), after U+1F3F4 and before U+E007F. */
 export const FLAG_TAGS = ["gbeng", "gbsct", "gbwls"];
 
@@ -54,10 +51,7 @@ const isSelector = (cp: number) => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0
 
 function takesSelector(prev: number | undefined, selector: number): boolean {
   if (prev === undefined) return false;
-  if (PRESENTATION_SELECTORS.includes(selector)) {
-    const asciiLetter = (prev >= 0x41 && prev <= 0x5a) || (prev >= 0x61 && prev <= 0x7a);
-    return !asciiLetter && !within(prev, NOT_A_BASE) && !within(prev, HIDDEN);
-  }
+  if (PRESENTATION_SELECTORS.includes(selector)) return within(prev, PRESENTATION_BASES);
   return selector >= 0xe0100 && selector <= 0xe01ef && within(prev, IDEOGRAPHS);
 }
 
@@ -78,11 +72,17 @@ export function hiddenRuns(text: string | null | undefined): HiddenRun[] {
     }
   });
   const runs: HiddenRun[] = [];
-  let open = false;
+  let open = false, ivsUncounted = 0;
   cps.forEach((cp, i) => {
     let hidden = !flagged.has(i) && within(cp, HIDDEN);
     if (hidden && isSelector(cp) && !(i + 1 < cps.length && isSelector(cps[i + 1]))
-        && takesSelector(i ? cps[i - 1] : undefined, cp)) hidden = false;
+        && takesSelector(i ? cps[i - 1] : undefined, cp)) {
+      const ivs = cp >= 0xe0100 && cp <= 0xe01ef;
+      if (!ivs || ivsUncounted < IVS_UNCOUNTED_MAX) {        // re-check R1: past the cap, each one counts
+        hidden = false;
+        if (ivs) ivsUncounted += 1;
+      }
+    }
     if (hidden) {
       const last = open ? runs[runs.length - 1]?.cps : undefined;
       const lastCp = last?.[last.length - 1];

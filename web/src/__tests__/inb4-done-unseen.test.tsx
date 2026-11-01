@@ -87,12 +87,18 @@ describe("marking seen", () => {
     await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledWith("c1"));
   });
 
-  it("tries again on the next poll when marking failed (#589 F3)", async () => {
-    vi.mocked(api.listConversations).mockResolvedValue(rows as never);
-    vi.mocked(api.markConversationSeen).mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ seen_message_id: 9 } as never);
+  it("tries again on the next poll when marking failed (#589 F3), and stops once the server says it is seen", async () => {
+    let taken = false;                                                          // the server reads idle once a mark has taken
+    vi.mocked(api.listConversations).mockImplementation(async () => [{ conversation_id: "c1", kind: "chat", state: taken ? "idle" : "done_unseen" }] as never);
+    vi.mocked(api.markConversationSeen).mockRejectedValueOnce(new Error("offline"))
+      .mockImplementation(async () => { taken = true; return { seen_message_id: 9 } as never; });
     const { result } = renderHook(() => useConversationIndex(40, "arslan", "c1"));
-    await waitFor(() => expect(api.markConversationSeen).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(result.current.meta.c1.state).toBe("idle"));
+    await waitFor(() => expect(result.current.meta.c1?.state).toBe("idle"));
+    await wait(120);
+    const calls = vi.mocked(api.markConversationSeen).mock.calls.length;
+    expect(calls).toBeGreaterThanOrEqual(2);                                    // the failed one, then the one that took (a poll in flight may add one)
+    await wait(200);
+    expect(vi.mocked(api.markConversationSeen).mock.calls.length).toBe(calls);  // no more: the server says idle
   });
 
   it("marks a conversation each time it opens, whatever it reads: a stopped job too (#590 review F1)", async () => {
