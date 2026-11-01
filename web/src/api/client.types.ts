@@ -135,12 +135,17 @@ export interface TurnUndone {
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
+  /** INB7-b: when the run started and ended (UTC, "Z"); ended_at is null while it runs. Older backends omit both. */
+  started_at?: string | null;
+  ended_at?: string | null;
   entries: {
     kind: "note" | "tool";
     text?: string;
     tool?: string;
     ok?: boolean;
     ms?: number | null;
+    /** INB7-b: when the step started (UTC, "Z"); null for a step recorded before steps kept their time. */
+    at?: string | null;
     args_summary?: string;
     summary?: string;
     detail?: { view: string; error?: string | null; [key: string]: unknown };
@@ -889,6 +894,10 @@ export interface RunListItem {
   origin?: "chat" | "job" | "scheduled" | "phone" | "browser";
   model?: string | null;
   tokens?: number | null;
+  /** INB7-b: still running with a card open in its conversation, so it waits on you. Older backends omit it. */
+  waiting?: boolean;
+  /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
+  ended_at?: string | null;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */

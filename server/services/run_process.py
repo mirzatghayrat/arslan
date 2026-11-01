@@ -17,6 +17,7 @@ The client draws the words (i18n); this module returns data, never sentences.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 #: Starting, checking and stopping background work is shown by the job card itself, so a
@@ -28,6 +29,11 @@ LINK_LIMIT = 5          # web_search links shown
 HEAD_LINES = 5          # command / script output lines shown (Codex: 5 + "+N lines")
 TEXT_CAP = 600          # any one shown value
 ARGS_SHOWN = 6          # key/value rows for a tool without its own view
+
+
+def utc(when: datetime | None) -> str | None:
+    """A stored time (naive UTC) marked as UTC, so a browser does not read it as local time; None stays None."""
+    return when.isoformat() + "Z" if when else None
 
 
 def _load(raw: Any) -> Any:
@@ -155,7 +161,7 @@ def entries(steps: list, *, raw: bool) -> list[dict]:
             continue
         if detail.get("narration"):
             out.append({"kind": "note", "text": detail["narration"]})
-        entry = {"kind": "tool", "tool": tool, "ok": ok, "ms": s.duration_ms,
+        entry = {"kind": "tool", "tool": tool, "ok": ok, "ms": s.duration_ms, "at": utc(s.started_at),
                  "args_summary": detail.get("args_summary") or "", "summary": detail.get("summary") or "",
                  "detail": plain(tool, _args(detail), _result(detail), ok=ok, summary=detail.get("summary") or "")}
         if raw:
