@@ -4,6 +4,7 @@ import { ChevronLeft, Copy, Download, ExternalLink, FolderOpen, MessageSquarePlu
 import { api } from "../../api/client";
 import { filesApi, type TableSheet } from "../../api/files";
 import { baseName, dirName, kindOf, mimeOf, parseDelimited } from "../../lib/fileKinds";
+import { withFrameCsp } from "../../lib/frameCsp";
 import type { ReaderSource } from "../../stores/workbenchStore";
 import Markdown from "../Markdown";
 import FileIcon from "./FileIcon";
@@ -146,8 +147,9 @@ export default function Reader({ source, onBack }: { source: FileSource; onBack:
         {loaded?.kind === "text" && kind === "markdown" && mode === "rendered" && (
           <div className="rounded-xl border border-border bg-background px-5 py-4" data-testid="reader-markdown"><Markdown>{loaded.text}</Markdown></div>)}
         {loaded?.kind === "text" && kind === "html" && mode === "rendered" && (<>
-          {/* 🔒 sandbox="" — no scripts, no same-origin: a file's HTML can never reach Arslan's page. */}
-          <iframe title={name} sandbox="" srcDoc={loaded.text} className="h-[70vh] w-full rounded-lg border border-border bg-white" data-testid="reader-html" />
+          {/* 🔒 sandbox="" — no scripts, no same-origin: a file's HTML can never reach Arslan's page.
+              IMG1: the CSP meta first, so it loads nothing from the web either. */}
+          <iframe title={name} sandbox="" srcDoc={withFrameCsp(loaded.text)} className="h-[70vh] w-full rounded-lg border border-border bg-white" data-testid="reader-html" />
           {path && <button type="button" onClick={() => void filesApi.open(path)} className="mt-2 text-[12px] text-subtle-foreground hover:text-foreground">
             {t("workbench.openInBrowser")}</button>}
         </>)}
@@ -160,7 +162,7 @@ export default function Reader({ source, onBack }: { source: FileSource; onBack:
           </div>
           {loaded.cut && <p className="mt-2 text-[11.5px] text-subtle-foreground">{t("workbench.textCut")}</p>}
         </>)}
-        {loaded?.kind === "html" && <iframe title={name} sandbox="" srcDoc={loaded.html}
+        {loaded?.kind === "html" && <iframe title={name} sandbox="" srcDoc={withFrameCsp(loaded.html)}
           className="h-[70vh] w-full rounded-lg border border-border bg-white" data-testid="reader-doc" />}
         {loaded?.kind === "table" && (() => {
           const s = loaded.sheets[sheet] ?? loaded.sheets[0];

@@ -290,7 +290,7 @@ BODY_FIELDS: dict[str, tuple[str, ...]] = {
     "hello": ("app_version", "protocol_version", "capabilities"),
     "ack": ("ids",),
     "status.snapshot": ("presence", "mascot", "device_name", "last_seen", "jobs", "waiting_approvals",
-                        "high_risk_mac_only", "activity?"),
+                        "high_risk_mac_only", "activity?", "week?", "outcomes?"),
     "conversations.list": ("limit?", "kind?", "before?"),
     "conversations.result": ("conversations", "has_more?"),
     "chat.history": ("conversation_id", "limit"),
