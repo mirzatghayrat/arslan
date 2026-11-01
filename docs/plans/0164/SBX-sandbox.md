@@ -251,7 +251,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the proxy has no site list (NET adds it later, `lead-roadmap.md:87-91`). Its value in v0.1.64 is that the kernel lets out nothing else (no raw sockets, no DNS channel) and the proxy can log host names locally;
   - S2a-1's offline rule becomes `(deny network*)` including the proxy port, as today.
 - Mode "as today" (Q1 option N-b): network open in the sandbox, S2a-1 cut unchanged; proxy-only moves to NET (v0.1.65).
-- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (the user's finding, not yet measured in this repo; SBX-M measures it), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
+- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (measured in macOS CI run 41002402918), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
   - SBX-2's candidate preset denies all listening (`network-bind` and inbound);
   - "local dev servers work" is postponed;
   - **before SBX-3 wires the base into commands, this card must decide how listening comes back** without opening all interfaces. Options to weigh then (③Hands, 2026-10-30; none of them is seatbelt-only):
@@ -274,6 +274,9 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
       - When it is on, bind is `(local ip "*:*")`, inbound is `(local ip "localhost:*")` and outbound is `(remote ip "localhost:*")`.
     - **Neither restricts the bind to loopback.** Codex's inbound `(local ip "localhost:*")` comes closest to "never all interfaces". Whether it refuses a connection that doesn't come over loopback is an SBX-M measurement (§M, loopback). Given the any-address note above, it may not.
   - until that is decided, the bind and inbound bullets below describe the goal, not the preset, and a dev server inside the sandbox gets the usual re-run card.
+- **Decided (user, 2026-11-01, relayed by ④参谋: 「D1、D2 按推荐」).** Both are the recommended options in #520's "Decisions for the user, before the flip":
+  - **D1, listening:** SBX-3a wires the base into commands with listening still denied. This keeps the 10-30 decision and adds no code. Codex's `allow_local_binding` and sandbox-runtime's `allowLocalBinding` are also off by default. How listening comes back moves to NET (v0.1.65), choosing between option 4 above (a per-run listen card, which is cheap but opens every interface for that run) and option 2 (a Network Extension filter, a per-process boundary in the kernel but heavy). The precondition above ("before SBX-3 wires the base into commands") is met by this decision.
+  - **D2, online-mode commands between SBX-3 and SBX-6:** offline until Codex's DNS entry (SBX-3a gate 2) exists, then any-declared until SBX-6. Outbound TCP behaves as in v0.1.63, and UDP is denied. The gap it keeps, a command reaching Arslan's own ports over loopback, is v0.1.63's (any-declared can't take `denied_ports`, #570), and SBX-6's proxy-port-only mode closes it. #619's commands mode list also needs any-declared.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
   - allow outbound to `localhost:*`;

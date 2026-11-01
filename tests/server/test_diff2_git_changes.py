@@ -16,10 +16,42 @@ pytestmark = pytest.mark.skipif(subprocess.run(["git", "--version"], capture_out
                                 reason="needs git")
 
 
+GIT_ENV = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+
 def git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True,
-                          env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}).stdout
+                          env={**os.environ, **GIT_ENV}).stdout
+
+
+def script(path: Path, text: str) -> None:
+    """An executable, written, synced and closed before anything runs it (LOAD5)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o755)
+    try:
+        os.write(fd, text.encode())
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    path.chmod(0o755)
+
+
+SIGNATURE = "-----BEGIN PGP SIGNATURE-----\nc3lu\n-----END PGP SIGNATURE-----"   # synthetic, never verified
+
+
+def signed_commit(root: Path, signature: str = SIGNATURE) -> None:
+    """LOAD6: commit the index as a signed commit, built with plumbing so no signer runs. `commit -S` had to exec a
+    signer, and that exec failed in setup three times on CI with nothing after git's "gpg failed to sign the data:"
+    (#604's run 41229345300, #639's 41300011917). git only needs the gpgsig header to try to verify the commit, so
+    the header is written directly: write-tree, hash-object of the commit text, update-ref."""
+    tree = git(root, "write-tree").strip()
+    parent = git(root, "rev-parse", "HEAD").strip()
+    header = "gpgsig " + signature.replace("\n", "\n ") + "\n" if signature else ""
+    text = (f"tree {tree}\nparent {parent}\nauthor t <t@t> 1700000000 +0000\n"
+            f"committer t <t@t> 1700000000 +0000\n{header}\nsigned\n")
+    sha = subprocess.run(["git", "hash-object", "-w", "-t", "commit", "--stdin"], cwd=root, input=text, check=True,
+                         capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout.strip()
+    git(root, "update-ref", "HEAD", sha)
 
 
 def write(root: Path, rel: str, text: str) -> None:
@@ -108,34 +140,43 @@ def test_programs_named_in_the_repos_config_never_run(repo):
     marks = repo.parent / "marks"
     marks.mkdir()
     # A signed commit on the branch, so `log` would verify it if it were allowed to (gpg.program below marks).
-    signer = repo.parent / "signer"
-    signer.write_text("#!/bin/sh\necho '[GNUPG:] SIG_CREATED D 1 8 00 1 X' >&2\n"
-                      "printf -- '-----BEGIN PGP SIGNATURE-----\\nc3lu\\n-----END PGP SIGNATURE-----\\n'\n")
-    signer.chmod(0o755)
     write(repo, "signed.md", "signed\n")
     git(repo, "add", "-A")
-    git(repo, "-c", f"gpg.program={signer}", "-c", "user.signingkey=synthetic", "commit", "-qS", "-m", "signed")
+    signed_commit(repo)
     for key, name in (("filter.evil.clean", "clean"), ("filter.evil.smudge", "smudge"), ("filter.evil.process", "process"),
                       ("core.fsmonitor", "fsmonitor"), ("diff.evil.textconv", "textconv"), ("diff.evil.command", "extdiff"),
                       ("diff.external", "external"), ("core.pager", "pager")):
         git(repo, "config", key, f"sh -c 'touch {marks / name}; cat'")
     verifier = repo.parent / "verifier"             # git runs gpg.program as a program, not through a shell
-    verifier.write_text(f"#!/bin/sh\ntouch {marks / 'gpg'}\n")
-    verifier.chmod(0o755)
+    script(verifier, f"#!/bin/sh\ntouch {marks / 'gpg'}\n")
     git(repo, "config", "gpg.program", str(verifier))
     git(repo, "config", "log.showSignature", "true")
     (repo / ".git" / "info").mkdir(exist_ok=True)
     (repo / ".git" / "info" / "attributes").write_text("* filter=evil diff=evil\n")
     hooks = repo / ".git" / "hooks"
     for hook in ("post-checkout", "pre-commit", "reference-transaction"):
-        (hooks / hook).write_text(f"#!/bin/sh\ntouch {marks / hook}\n")
-        (hooks / hook).chmod(0o755)
+        script(hooks / hook, f"#!/bin/sh\ntouch {marks / hook}\n")
     time.sleep(1.1)                                               # every file's mtime differs from the index's
     write(repo, "a.md", "one\nTWO\nthree\nfour\n")
     s = git_changes.summary(repo, repo)
     git_changes.file_diff(repo, repo, "a.md")
     assert by_path(s)["a.md"]["uncommitted"] is True
     assert sorted(p.name for p in marks.iterdir()) == []
+
+
+@pytest.mark.parametrize("signature", [SIGNATURE, ""], ids=["signed", "unsigned"])
+def test_load6_git_tries_to_verify_the_plumbing_commit(repo, signature):
+    """LOAD6's positive control: the marker test's "never ran" means something only if git, left to itself, would run
+    gpg.program on that commit. Unsigned, the same commit gives git nothing to verify."""
+    write(repo, "signed.md", "signed\n")
+    git(repo, "add", "-A")
+    signed_commit(repo, signature)
+    assert ("gpgsig " in git(repo, "cat-file", "-p", "HEAD")) is bool(signature)
+    mark = repo.parent / "verified"
+    verifier = repo.parent / "verifier"
+    script(verifier, f"#!/bin/sh\ntouch {mark}\n")
+    git(repo, "-c", f"gpg.program={verifier}", "log", "--show-signature", "-1")
+    assert mark.exists() is bool(signature)
 
 
 def test_the_working_file_is_hashed_once_until_it_changes(repo, monkeypatch):

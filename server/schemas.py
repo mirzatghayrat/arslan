@@ -85,6 +85,7 @@ class SettingsIn(BaseModel):
     lan_discovery_enabled: str | None = None
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
+    folder_rules_enabled: str | None = None
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
@@ -158,6 +159,7 @@ class SettingsOut(BaseModel):
     lan_discovery_enabled: str = ""
     ssh_enabled: str = ""
     default_read_enabled: str = ""
+    folder_rules_enabled: str = ""
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""
@@ -590,6 +592,10 @@ class RunListItemOut(BaseModel):
     origin: str = "chat"
     model: str | None = None
     tokens: int | None = None
+    # INB7-b: still running and its conversation has a card open, so it waits on you (Progress draws its bar amber).
+    waiting: bool = False
+    # INB7-b: when it ended (naive UTC, like created_at). A run the boot sweep interrupted has this and no total_ms.
+    ended_at: str | None = None
 
 
 class RunSpawnSummaryOut(BaseModel):
@@ -804,8 +810,13 @@ class ConversationListItem(BaseModel):
     kind: str = "chat"
     #: SB1-2: pinned to the top of the sidebar (conversation_contexts.pinned, migration 0079).
     pinned: bool = False
-    #: idle | working | waiting | done | failed.
+    #: idle | working | waiting | done | done_unseen (INB4) | unfinished | failed.
     state: str = "idle"
+    #: INB4: the state without "done, not seen", for phones until INB4's phone half; never in the window's response.
+    phone_state: str | None = Field(default=None, exclude=True)
+    #: INB5b-3: what a "waiting" row waits on, "card", "away" (a card went unanswered while you were away) or "reminder"; None
+    #: when it does not wait. The window's list only: phones build theirs field by field (api/phone.py) and are not sent it.
+    waiting_on: str | None = None
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
     origin: str = "mac"
     #: The last message, one line.

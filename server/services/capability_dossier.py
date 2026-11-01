@@ -200,6 +200,16 @@ async def update(source_id: str) -> dict:
     problem = capability_flow.installable(cand)
     if problem:
         raise DossierError(problem)
+    # CAP4a-3c (#584 review 2): a newer version published by a listed GitHub organization is checked by its id, as a
+    # new card is: whoever took over a renamed organization's login could publish one.
+    from server.services import capability_allowlist
+    # #584 re-check: the id the install was confirmed against, checked even once the list no longer names the
+    # organization or reads closed; #625 review L-2: a source from before pins takes the list's id the same way.
+    changed_hands, pin = await capability_allowlist.confirm_update(cand, (row.candidate or {}).get("account_pin"))
+    if changed_hands in (capability_allowlist.ACCOUNT_CHANGED_HANDS, capability_allowlist.ACCOUNT_NOT_CHECKED):
+        raise DossierError(changed_hands)       # the list itself stays out of updates: only a listed org's id counts
+    if pin:
+        cand["account_pin"] = pin               # the newer source keeps it
     keys = {}
     if row.mcp_server_id:
         async with db_session.AsyncSessionLocal() as db:
@@ -216,6 +226,6 @@ async def update(source_id: str) -> dict:
 
 
 async def check_candidate_license(cand: dict) -> dict:
-    spdx, path = await capability_install.source_license(cand.get("repo"))
+    spdx, path = await capability_install.source_license(cand.get("repo"), (cand.get("package") or {}).get("version"))
     return {"spdx": spdx, "read_from": path,
             "verdict": capability_search.license_verdict(spdx, proprietary=bool(path) and spdx is None)}

@@ -41,20 +41,25 @@ describe("settings", () => {
     fireEvent.click(screen.getByTestId("proactive-toggle-enabled"));
     fireEvent.click(screen.getByTestId("proactive-toggle-notify"));
     fireEvent.click(screen.getByTestId("proactive-source-scheduled_problems"));
-    fireEvent.click(screen.getByTestId("proactive-toggle-brief"));
-    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(3));
     expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([
-      { enabled: false }, { notify: false }, { scheduled_problems: false }, { brief_enabled: true }]);
+      { enabled: false }, { notify: false }, { scheduled_problems: false }]);
   });
 
-  it("quiet hours, cap and brief time save their values", async () => {
-    api.config.mockResolvedValue({ ...CONFIG, brief_enabled: true });
+  it("quiet hours and the cap save their values", async () => {
     await ready();
     fireEvent.change(screen.getByTestId("proactive-quiet-start"), { target: { value: "23:15" } });
     fireEvent.change(screen.getByTestId("proactive-notify-cap"), { target: { value: "2" } });
-    fireEvent.change(screen.getByTestId("proactive-brief-time"), { target: { value: "07:45" } });
-    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(3));
-    expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([{ quiet_start: "23:15" }, { notify_daily_cap: 2 }, { brief_time: "07:45" }]);
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(2));
+    expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([{ quiet_start: "23:15" }, { notify_daily_cap: 2 }]);
+  });
+
+  it("offers no morning brief any more (the user's Q9: the setting goes), and keeps the pointer to the diagnosis limit", async () => {
+    api.config.mockResolvedValue({ ...CONFIG, brief_enabled: true });           // switched on before: still no switch, no time
+    await ready();
+    expect(screen.queryByTestId("proactive-toggle-brief")).toBeNull();
+    expect(screen.queryByTestId("proactive-brief-time")).toBeNull();
+    expect(screen.getByText("Guessing causes uses a model and costs money, so its daily limit sits under Automation.")).toBeTruthy();
   });
 
   it("a refused save puts the switch back and says why", async () => {

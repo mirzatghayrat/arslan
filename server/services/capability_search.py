@@ -67,13 +67,16 @@ class Candidate:
     package: dict | None = None
     remote: dict | None = None
     not_here: str | None = None   # why it cannot run here: needs_dotnet | needs_docker |
-                                  # no_runnable_package | nothing_published | not_in_registry
+                                  # no_runnable_package | nothing_published | not_in_registry |
+                                  # add_by_hand (CAP4a-3c: the user's list does not cover it)
     needs: dict = field(default_factory=lambda: {"keys": [], "network": None})
     license: dict = field(default_factory=lambda: {"spdx": None, "read_from": None, "verdict": "unknown"})
     stars: int | None = None
     pushed_days: int | None = None
     checked_at: float | None = None
     path: str | None = None       # a skill's SKILL.md inside its library
+    by_hand: str | None = None    # CAP4a-3c: why it is not one-click (not_here "add_by_hand"), as
+                                  # capability_allowlist names it
 
     def view(self) -> dict:
         return asdict(self)
@@ -386,7 +389,9 @@ def rank(cands: list[Candidate], words: list[str]) -> list[Candidate]:
     def score(c: Candidate):
         usable = c.license["verdict"] == "usable"
         installable = usable and c.not_here is None and c.runtime in ("uv", "node", "mcpb", "remote", "skill")
-        value = (2 * _matches(c, words) / max(1, len(words)) + 2 * usable + 2 * (c.not_here is None)
+        # CAP4a-3c: an entry added by hand still runs here, so it outranks its repository's GitHub copy.
+        runs_here = c.not_here in (None, "add_by_hand")
+        value = (2 * _matches(c, words) / max(1, len(words)) + 2 * usable + 2 * runs_here
                  + 1.5 * installable                      # something Arslan can actually add, first
                  + math.log10((c.stars or 0) + 1) / 2 - (1 if (c.pushed_days or 0) > 365 else 0))
         return (-value, c.id)
@@ -447,7 +452,22 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
         await within(enrich_batch(unread), TIMEOUT_S + 2)
     except Exception as exc:  # noqa: BLE001 — unread licenses stay "unknown" (not installable)
         logger.info("capability search enrich: %s", type(exc).__name__)
+    await mark_by_hand(found)
     return {"words": words, "candidates": [c.view() for c in rank(found, words)[:MAX_RESULTS]], "notes": notes}
+
+
+async def mark_by_hand(cands: list[Candidate]) -> None:
+    """CAP4a-3c: a Registry entry the user's list does not cover is shown, not offered: `not_here` "add_by_hand",
+    and `by_hand` says why (capability_allowlist)."""
+    from server.services import capability_allowlist
+    allow = await capability_allowlist.current()
+    for c in cands:
+        if c.not_here == "add_by_hand":         # #584 review 5: a cached result is marked again by the list as it is now
+            c.not_here, c.by_hand = None, None
+        if c.not_here is None:
+            reason = capability_allowlist.verdict(c.view(), allow)
+            if reason:
+                c.not_here, c.by_hand = "add_by_hand", reason
 
 
 def merge(cands: list[Candidate]) -> list[Candidate]:
@@ -488,8 +508,8 @@ def for_model(result: dict) -> dict:
     """What `find_capability` returns: the top few, compact, as outside content."""
     out = []
     for c in result["candidates"][:MODEL_RESULTS]:
-        out.append({k: c[k] for k in ("id", "kind", "name", "summary", "source_url", "version", "runtime",
-                                      "not_here", "stars", "pushed_days")} |
+        out.append({k: c.get(k) for k in ("id", "kind", "name", "summary", "source_url", "version", "runtime",
+                                          "not_here", "by_hand", "stars", "pushed_days")} |
                    {"license": c["license"]["spdx"], "license_verdict": c["license"]["verdict"],
                     "needs_keys": [k["name"] for k in c["needs"]["keys"]]})
     return {"words": result["words"], "candidates": out, "notes": result["notes"]}

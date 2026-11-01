@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ArslanMessage, Run, RunStep, ScheduledTask
-from server.services import artifact_store, background_jobs, desktop_status, run_registry, turn_journal
+from server.services import artifact_store, background_jobs, conversation_seen, desktop_status, run_registry, turn_journal
 
 #: A file travels to the phone inside one CloudKit record (protocol §4.6).
 PHONE_FILE_MAX = 20 * 1024 * 1024
@@ -252,6 +252,12 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
                                                      .where(ScheduledTask.conversation_id.is_not(None)))).all()}
     waiting = set(desktop_status.island_feed()["awaiting_conversations"])
     per_run = artifact_counts()
+    # INB4: what the window has shown, and the replies whose run failed (no finished turn).
+    seen = await conversation_seen.marks(db, ids)
+    from server.services import progress
+    asking = await progress.waiting_reasons(db)                # INB5: the same rule as the badge's count, with its reason
+    reply_runs = [m.run_id for m in messages.values() if m.role == "arslan" and m.run_id is not None]
+    failed = set((await db.execute(select(Run.id).where(Run.id.in_(reply_runs), Run.error_kind.is_not(None)))).scalars())
     out = {}
     for cid in ids:
         jobs = background_jobs.jobs_for(cid)
@@ -265,6 +271,7 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
             kind = "scheduled"
         else:
             kind = "chat"
+        outcome = None
         if cid in waiting:
             state = "waiting"
         elif running_job or run_registry.active_for(cid) or turn_journal.active(cid):
@@ -277,8 +284,24 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
                      "stopped": "failed"}.get(outcome or "", "idle")
         first = messages.get(first_user.get(cid))
         last = messages.get(last_ids.get(cid))
+        # INB4: a chat's last reply that came without an error, or a job done, newer than what the window showed: done,
+        # not seen. Once seen, a chat reads idle again (it looks as it does today) and a job done.
+        phone_state = state                  # what phones are sent until INB4's phone half (api/phone.py)
+        clean_reply = kind == "chat" and state == "idle" and last is not None and last.role == "arslan" and last.run_id not in failed
+        if (clean_reply or state == "done") and last_ids.get(cid, 0) > seen.get(cid, 0):
+            state = "done_unseen"
+        # INB7: a restart cut the job short (`outcome` is set only when nothing runs or waits there). Phones keep idle (phone_state).
+        if outcome == "interrupted":
+            state = "unfinished"
+        if cid in asking:                    # INB5: the badge counts it, so its row says so (#590 review F3a)
+            state = "waiting"
+        # INB5b-3: what a waiting row waits on, a card, an away entry or a stopped job's reminder (which hides the job's own outcome),
+        # for the window's list only: phones build their list field by field and are not sent it (api/phone.py). The island's open
+        # card wins, as a card does in waiting_reasons.
+        waiting_on = ("card" if cid in waiting else asking.get(cid)) if state == "waiting" else None
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
-        item = {"kind": kind, "state": state, "origin": "phone" if (first is not None and first.source == "phone") else "mac",
+        item = {"kind": kind, "state": state, "phone_state": phone_state, "waiting_on": waiting_on,
+                "origin": "phone" if (first is not None and first.source == "phone") else "mac",
                 "preview": one_line(last.display_content or last.content) if last is not None else "", "files": files}
         if running_job is not None:
             # The job's own checks, as its job.event counts them ("answer-delivered" is every job's).

@@ -2,8 +2,11 @@
 
 The candidate is an **unused preset**, not a claim that the product is already
 sandboxed this way. SBX-M measures it before SBX-3 connects any entry point.
-The initial Mach-service and Unix-socket allowlists are empty. No service has
-measurement evidence yet; additions require a named corpus result and Astra review.
+The measured allowlist grants FSEvents in every mode, and the trust agent and
+mDNSResponder socket only in ANY_DECLARED. The latter is the daemon's whole
+client interface, accepted by the user until SBX-6, not a DNS-only grant. See
+`docs/plans/0164/SBX-measurement.md` for the decision and measured controls.
+Further additions require a named corpus result and Astra review.
 Preference reads are an allowed operation, but no cfprefsd lookup is granted.
 
 Run on macOS CI first. After its results have been reviewed, the SBX-M operator
@@ -11,7 +14,7 @@ runs on the user's Mac from the repository root:
 
 ```sh
 sbx_output="$(mktemp -d "${TMPDIR:-/tmp}/arslan-sbx-evidence.XXXXXX")"
-.venv/bin/pytest tests/server/sbx -m sbx_mac -q -rfEs \
+HOME=/private/tmp/arslan-sbx-check-home .venv/bin/pytest tests/server/sbx -m sbx_mac -q -rfEs \
   --junitxml="$sbx_output/results.xml" --sbx-artifacts="$sbx_output/profiles"
 ```
 
@@ -19,16 +22,36 @@ The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
 the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The `sbx_mac` corpus has 293 cases: 71 assertion gates and
-222 measurement rows. With two compile checks and the existing 69, the macOS job
-must expect 364, as set by PR #576. Widening the port sample within the same
-two compile cases does not change that count.
+an availability skip. The `sbx_mac` selection has 361 cases: 59 candidate assertion
+gates, 222 measurement rows, 63 commands cases, 16 service allowlist/UDP cases, and
+one Pool diagnosis. With two compile checks and the existing 70 macOS cases,
+the total is 433. Widening the port sample within
+the same two compile cases does not change that count.
 
-The compile checks compare libsandbox bytecode with/without each deny over a
+SBX-3p added 56 commands cases, bringing the selection to 420 at its merge. They strictly
+xfail only for an assertion matching the deliberate missing-adapter message until
+`commands` is registered in the harness's
+`BUILT_BASES` adapter table. #619 and #620 landed `EXPECTED = 420` and
+`EXPECTED_XFAIL = 56`; #621 subsequently added one unrelated macOS case. This
+original gate follow-up brought the count to 450 with 72 strict xfails. Claude's
+workflow-only commit `2aba2f66` landed those values on this branch. The review
+follow-up adds four UDP cases and removes stale service aliases: 450 -> 433,
+strict xfails 72 -> 63. Claude updates EXPECTED and EXPECTED_XFAIL in another
+commit on this same branch after the user pushes; there is no companion PR.
+The remaining 13 any-declared transitional cases are removed when SBX-6's proxy
+mode lands.
+Once SBX-3a registers its real commands adapter, these cases must run with zero
+skips and zero xfails.
+
+Reference-only reproduction (not product validation): `HOME=/private/tmp/arslan-sbx-check-home .venv/bin/python -m pytest tests/server/sbx/test_sbx3_commands.py -p scripts.dev.sbx3_reference -m macos -q`.
+Add `--sbx-reference-permissive` to run the deliberate failing profile mutation.
+
+The compile checks compare libsandbox bytecode with/without each deny over the
 fixed regression ports plus every 65th port starting at 1: 1,018 ports for proxy
 and 1,017 for port-22. The regression ports include the original dropped ports
-and the proxy port itself. The required macOS job's JUnit report records each
-compile case's duration; include those timings with the CI run id in PR evidence.
+and the proxy port itself. CI publishes the macOS pytest step's total duration,
+not per-case timings or its JUnit file. Report that total with the CI run id;
+it includes the whole selected suite and does not isolate compilation cost.
 They exercise the exact proxy and port-22 allow pairs; removing either mode's
 port allow can lose denies. They do not apply a sandbox or replace runtime gates.
 The portable check compares the complete network allow list, including any new
@@ -43,10 +66,15 @@ card costs and may pass as pytest rows while reporting `tool-failed`, `timeout`,
 `tool-unavailable`, `not-supplied`, or `boundary-open`. Such a row is **not** a
 successful compatibility or security result. The terminal summary and JUnit
 properties preserve those distinctions. Inspect them before approving SBX-M.
-A hard-link `boundary-open` requires a follow-up before SBX-3 merges.
+A hard-link `boundary-open` requires a follow-up before SBX-3 merges. That row
+now targets scratch Arslan data and first requires a direct write to be denied
+under the exact same profile. The outside-floor profile uses scratch HOME too.
+An already-writable target fails this precondition instead of reporting an
+invented boundary crossing; the old report's historical rows remain unchanged.
 
 Every row records macOS release/build and architecture. Its `executions` JUnit
-property is a JSON list with one entry per launched subprocess: sequence number,
+property is a JSON list with one entry per sandboxed subprocess launched by the
+harness (unsandboxed host-side setup and cleanup checks are not entries): sequence number,
 probe label, base, configured network mode, whether the profile was overridden,
 exact profile SHA-256, completion/timeout result and return code. The test id plus
 sequence identifies the invocation. This includes the fixture smoke probe,
@@ -70,11 +98,22 @@ the historical profiles mean their historical online behavior; they have no
 proxy. On the candidate, the reserved proxy port has **no listener**: this tests
 compatibility with the restriction, not end-to-end proxy forwarding (SBX-6).
 
-Future p PRs add their strict-xfail gate when needed, together with a separate
-Claude CI change that distinguishes strict xfails from skips. The corresponding
-a PR must show zero skips and zero xfails on its own macOS job. No future gate is
-implemented here. An unknown adapter raises; it never silently uses the candidate
-or a historical profile.
+The commands gate fails explicitly before any smoke or probe while its adapter
+is absent. CI already distinguishes strict xfails from skips (#542). The adapter
+table is the only registration point: SBX-3a adds a callable using its real product
+preset and the harness's scratch HOME/TMPDIR, work/temp paths, protected fixture,
+IPC prefix, network mode and supplied listener-port exclusions. It must not return
+the candidate profile. Unknown adapters raise; there is no historical fallback.
+
+`test_sbx3_commands.py` reuses the SBX-2 service, IPC, device, pty/signal,
+filesystem, Unix-socket, Apple Event and loopback gates. It adds scratch closed-app
+paths (including symlink aliases), offline loopback refusal, six shared/other-run
+temp locations and two hard-link boundaries, with a workspace-link positive
+control. The IPC test is a confinement check, not a claim that SBX-M's failed
+Python Pool row now works. Hardcoded temp writes remain an expected refusal.
+Run creation/lifetime/boot sweep and classifier helpers belong to SBX-3a; cache
+isolation and proxy forwarding belong to SBX-5p/6p. These tests do not implement
+those surfaces or resolve the postponed localhost-server decision.
 
 ## Safety and coverage
 
@@ -83,7 +122,7 @@ or a historical profile.
   variables. Each subprocess group is killed and reaped on completion or timeout.
 - Service probes query the kernel policy and request/release a send right. They
   send no service messages. A failed lookup alone cannot prove a denial: the
-  test also requires a kernel deny and an allowed-policy historical control.
+  test also requires a kernel deny and a successful live historical lookup control.
   Pasteboard and screen probes never read content or capture a screen.
 - Only the candidate attempts launch-job and preference writes. Unique probe
   domains/labels are removed in `finally`, including after a timeout. The job

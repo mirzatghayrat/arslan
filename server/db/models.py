@@ -718,6 +718,18 @@ class ConversationEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ConversationSeen(Base):
+    """INB4 (v0.1.64): the newest message of a conversation the user has seen in the window; a clean reply or a job done
+    that is newer reads "done, not seen". A table of its own, because not every conversation has a conversation_contexts
+    row. The Scheduled page's "last opened" is to use it too, keyed `scheduled-<id>` (INB5)."""
+
+    __tablename__ = "conversation_seen"
+
+    conversation_id = Column(String(100), primary_key=True)
+    seen_message_id = Column(Integer, nullable=False, default=0)
+    seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Learning(Base):
     """心得 (know-how) distilled from concrete signals (a distill event, a user
     correction, or a repeated run pattern). Always carries a traceable source_ref.
@@ -869,6 +881,7 @@ class Judgment(Base):
     error = Column(String(40), nullable=True)
     ref = Column(String(80), nullable=True)              # e.g. the card's call_id
     conversation_id = Column(String(50), nullable=True)
+    run_id = Column(Integer, nullable=True)              # v0.1.64 (0085): the run it belongs to; older rows null
     outcome = Column(String(20), nullable=True)          # approved | declined | timeout | followed | ...
     outcome_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -929,6 +942,9 @@ class ScheduledTask(Base):
     consecutive_failures = Column(Integer, nullable=False, default=0)
     paused_reason = Column(Text, nullable=True)          # set on auto-pause (3 fails)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # INB5 (migration 0084): when you last opened this task on the Scheduled page. Its runs' "could not ask" entries newer
+    # than this wait on you (progress.waiting_on_user). The task's own column, so no conversation id can collide with it.
+    seen_at = Column(DateTime, nullable=True)
 
 
 class ScheduledTaskRun(Base):

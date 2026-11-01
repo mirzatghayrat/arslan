@@ -28,7 +28,7 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, settings_service
+from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, phone_stats, settings_service
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -124,7 +124,10 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
         edge = _iso(page[-1].last_at)
         page = [r for r in page if _iso(r.last_at) != edge] or [r for r in rows if _iso(r.last_at) == edge]
     return {"conversations": [{"id": r.conversation_id, "title": r.title, "updated_at": _iso(r.last_at),
-                               "kind": r.kind, "state": r.state, "origin": r.origin, "preview": r.preview,
+                               "kind": r.kind,
+                               # INB4: phones keep the state without "done, not seen" until the Bridge frame lets a phone say it
+                               # knows done_unseen (INB4's phone half, the user's nod). DELETE-BY: INB4's phone half.
+                               "state": r.phone_state or r.state, "origin": r.origin, "preview": r.preview,
                                "files": r.files, **({"job": r.job} if r.job else {})}
                               for r in page],
             "has_more": len(rows) > len(page)}
@@ -278,7 +281,7 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
             "jobs": [job.frame() for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
-            "activity": await phone_reads.activity(db)}
+            "activity": await phone_reads.activity(db), **await phone_stats.blocks(db)}
 
 
 @router.get("/phone/runs/{run_id}")

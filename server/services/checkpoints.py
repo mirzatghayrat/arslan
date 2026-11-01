@@ -138,6 +138,12 @@ def clone_of(run_id: int, root: Path) -> Path | None:
     return _run_dir(run_id) / entry["clone"]
 
 
+def holding(run_id: int) -> bool:
+    """Whether this process still holds the run: it saved a folder and has not finished it. Read only (INB7-c3: a run that
+    ended while held is being finished; one no process holds, after a crash or a quit, will never be)."""
+    return int(run_id) in _live or int(run_id) in _locks
+
+
 def _reset_for_tests() -> None:
     _locks.clear()
     _touching.clear()

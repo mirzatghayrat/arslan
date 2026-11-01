@@ -2,27 +2,29 @@ import { afterEach, describe, expect, it } from "vitest";
 import i18n from "../i18n";
 import { ApiError } from "../api/client";
 import { evidenceLines, evidencePath, groupEvidence, proactiveErrorText, titleOf } from "../lib/proactive";
+// #585 review: a param is outside text, isolated so bidi controls in it cannot reorder the sentence.
+import { isolate } from "../lib/outsideText";
 
 const t = i18n.getFixedT("en");
 afterEach(() => { void i18n.changeLanguage("en"); });
 
 describe("titles", () => {
   it("fills the item's own parameters", () => {
-    expect(titleOf(t, { title_key: "title.web_change", params: { label: "Pricing" } })).toBe("“Pricing” changed");
-    expect(titleOf(t, { title_key: "title.scheduled_problem", params: { name: "Digest" } })).toBe("Scheduled task “Digest” needs attention");
+    expect(titleOf(t, { title_key: "title.web_change", params: { label: "Pricing" } })).toBe(`“${isolate("Pricing")}” changed`);
+    expect(titleOf(t, { title_key: "title.scheduled_problem", params: { name: "Digest" } })).toBe(`Scheduled task “${isolate("Digest")}” needs attention`);
   });
 
   it("uses the plural form for counts", () => {
     const folder = (count: number) => titleOf(t, { title_key: "title.folder_change", params: { label: "Inbox", count } });
-    expect(folder(1)).toBe("1 new file in “Inbox”");
-    expect(folder(3)).toBe("3 new files in “Inbox”");
+    expect(folder(1)).toBe(`1 new file in “${isolate("Inbox")}”`);
+    expect(folder(3)).toBe(`3 new files in “${isolate("Inbox")}”`);
   });
 
   it("follows the chosen language", () => {
     const fr = i18n.getFixedT("fr");
-    expect(titleOf(fr, { title_key: "title.web_change", params: { label: "Tarifs" } })).toBe("« Tarifs » a changé");
+    expect(titleOf(fr, { title_key: "title.web_change", params: { label: "Tarifs" } })).toBe(`« ${isolate("Tarifs")} » a changé`);
     const zh = i18n.getFixedT("zh");
-    expect(titleOf(zh, { title_key: "title.folder_change", params: { label: "收件", count: 2 } })).toBe("「收件」里有 2 个新文件");
+    expect(titleOf(zh, { title_key: "title.folder_change", params: { label: "收件", count: 2 } })).toBe(`「${isolate("收件")}」里有 2 个新文件`);
   });
 });
 
@@ -34,8 +36,8 @@ describe("evidence", () => {
     const [paused, failing] = evidenceLines(t, "en", [
       { key: "sched.state", params: { name: "Digest", failures: 3, paused: true } },
       { key: "sched.state", params: { name: "Digest", failures: 2, paused: false } }]);
-    expect(paused.text).toBe("“Digest” failed 3 times in a row and was paused.");
-    expect(failing.text).toBe("“Digest” has failed 2 times in a row.");
+    expect(paused.text).toBe(`“${isolate("Digest")}” failed 3 times in a row and was paused.`);
+    expect(failing.text).toBe(`“${isolate("Digest")}” has failed 2 times in a row.`);
   });
 
   it("keeps outside text in `quote`, separate from the sentence", () => {
@@ -90,7 +92,7 @@ describe("grouping", () => {
       { key: "web.added", params: {}, quote: "v2.12.0" }, { key: "web.added", params: {}, quote: "Security fix" },
       { key: "web.removed", params: {}, quote: "v2.11.1" }]);
     expect(groupEvidence(lines)).toEqual([
-      { key: "web.changed", text: "+2 / −1 lines · https://example.com/r", quotes: [] },
+      { key: "web.changed", text: `+2 / −1 lines · ${isolate("https://example.com/r")}`, quotes: [] },
       { key: "web.added", text: "Added", quotes: ["v2.12.0", "Security fix"] },
       { key: "web.removed", text: "Removed", quotes: ["v2.11.1"] }]);
   });

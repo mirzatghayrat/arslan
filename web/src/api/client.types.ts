@@ -132,15 +132,32 @@ export interface TurnUndone {
   files?: { later: number[] };
 }
 
+/** INB7-c3: GET /runs/{id}/changes. `state`: running (not ended), finishing (ended, not recorded yet), kept (`paths` an undo can
+ *  still take back), none (nothing to list), expired (its copy is gone), not_saved (no folder could be saved) or interrupted (ended
+ *  while no process held it, so it will never be recorded). */
+export interface RunChangesOut {
+  state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
+  undone: boolean;
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  conversation_id: string;
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
+  /** INB7-b: when the run started and ended (UTC, "Z"); ended_at is null while it runs. Older backends omit both. */
+  started_at?: string | null;
+  ended_at?: string | null;
+  /** INB7-c3: the run's conversation, whose changes the inspector reads. Older backends omit it. */
+  conversation_id?: string;
   entries: {
     kind: "note" | "tool";
     text?: string;
     tool?: string;
     ok?: boolean;
     ms?: number | null;
+    /** INB7-b: when the step started (UTC, "Z"); null for a step recorded before steps kept their time. */
+    at?: string | null;
     args_summary?: string;
     summary?: string;
     detail?: { view: string; error?: string | null; [key: string]: unknown };
@@ -381,6 +398,7 @@ export interface AppSettings {
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
+  folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
@@ -608,7 +626,7 @@ export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: st
 
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
+  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability" | "rule_offer";
   /** kind === "capability" (0.1.57): how an install the user approved ended. */
   capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
@@ -632,6 +650,8 @@ export interface ArslanThreadItem {
   replyMessageId?: number | null;
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
+  /** kind === "rule_offer" (L11-2): "make this a rule for this folder?" for a lesson corrected twice. */
+  ruleOffer?: { lessonId: number; file: string };
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
@@ -732,6 +752,7 @@ export type ArslanServerMessage =
       proposal_id?: number | null; reason?: string | null }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string; not_in_effect?: string | null } }
+  | { type: "rule_offer"; lesson_id: number; text: string; file: string }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
       source?: string | null }
@@ -885,6 +906,10 @@ export interface RunListItem {
   origin?: "chat" | "job" | "scheduled" | "phone" | "browser";
   model?: string | null;
   tokens?: number | null;
+  /** INB7-b: still running with a card open in its conversation, so it waits on you. Older backends omit it. */
+  waiting?: boolean;
+  /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
+  ended_at?: string | null;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */

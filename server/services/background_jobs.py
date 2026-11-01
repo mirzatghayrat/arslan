@@ -296,15 +296,24 @@ async def _goal_not_reached(job: Job, text: str) -> bool:
     if any(check.get("id") != "answer-delivered" for check in job.acceptance) or not text.strip():
         return False
     from server.services import judgment
+    # The job's own run; None for a job whose run took no step, which never noted one (`_job_sink`).
     verdict = await judgment.judge("job.accomplished", {"goal": job.goal, "answer": text},
-                                   ref=job.job_id, conversation_id=job.conversation_id)
-    if verdict is None or verdict.answer:
+                                   ref=job.job_id, conversation_id=job.conversation_id, run_id=job.run_id)
+    return verdict is not None and goal_missed(verdict.answer, verdict.probability)
+
+
+def goal_missed(answer: bool | None, probability: float | None) -> bool:
+    """Whether the judge's answer on "was the goal reached" turns a done into blocked. Also read from
+    its recorded row (the phone's task results, phone_stats), so the two can't disagree.
+
+    The judge is asked for p = P(yes), but the same model also answers "false, 0.99" meaning
+    "sure it is no" (the ledger has both; the device run of 2026-10-05 was the latter and left a
+    failed copy "done"). A "no" counts when it is decisive either way; near 0.5 it is unsure."""
+    if answer is None or answer or probability is None:
         return False
-    # The judge is asked for p = P(yes), but the same model also answers "false, 0.99" meaning
-    # "sure it is no" (the ledger has both; the device run of 2026-10-05 was the latter and left a
-    # failed copy "done"). A "no" counts when it is decisive either way; near 0.5 it is unsure.
+    from server.services import judgment
     threshold = judgment.REGISTRY["job.accomplished"].threshold
-    return verdict.probability <= 1 - threshold or verdict.probability >= threshold
+    return probability <= 1 - threshold or probability >= threshold
 
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:
@@ -439,7 +448,7 @@ async def report_interrupted() -> int:
         async with repository() as repo:
             row = await repo.get(task_id, owner_id=owner_id)
             goal = (await repo.spec(row)).instruction[:200]
-            await repo.cancel(task_id, owner_id=owner_id)
+            await repo.cancel(task_id, owner_id=owner_id, reason="process_interrupted")   # INB7: not the user's cancel
         # S64-0b: the note names the goal, and nothing here knows whether it carries outside content.
         note = runtime_messages.render("job_interrupted", locale, goal=goal)
         await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,

@@ -13,11 +13,11 @@
  */
 export const SECTIONS = [
   "arslan",
-  "inbox",
   "projects",
+  "scheduled",
   "capabilities",
   "brain",
-  "activity",
+  "progress",
   "settings",
 ] as const;
 

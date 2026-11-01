@@ -92,13 +92,13 @@
     "tagline": "Créez vos propres spawns d'IA"
   },
   "nav": {
-    "inbox": "Boîte de réception",
     "projects": "Projets",
     "settings": "Paramètres",
     "arslan": "Assistant principal",
     "capabilities": "Capacités",
     "brain": "Mémoire",
-    "activity": "Activité"
+    "progress": "Avancement",
+    "scheduled": "Planifiées"
   },
   "brain": {
     "strip_details": "Couverture et limites",
@@ -577,15 +577,15 @@
     "automationLede": "Ceux-ci s'exécutent en arrière-plan et appellent votre fournisseur de modèles, ce qui coûte de l'argent. Ils sont tous désactivés par défaut et aucun ne change quoi que ce soit sans vous.",
     "navDesktop": "Bureau",
     "navProactive": "Proactivité",
-    "desktopLede": "Fermer la fenêtre ne quitte plus Arslan : il reste dans la barre des menus, les tâches et tâches planifiées continuent, et les actions qui vous attendent restent dans la fenêtre (jusqu’à 30 minutes ; sans réponse, elles ne sont pas faites, sans que ce soit un refus). Une tâche planifiée n’attend jamais de réponse : elle ne fait que ce qui ne demande aucune confirmation, et tout le reste est refusé (la plupart de ces refus sont listés dans la Boîte de réception). Un « Toujours » donné avant n’y compte pas. Quittez avec ⌘Q ou « Quitter Arslan » dans la barre des menus.",
+    "desktopLede": "Fermer la fenêtre ne quitte plus Arslan : il reste dans la barre des menus, les tâches et tâches planifiées continuent, et les actions qui vous attendent restent dans la fenêtre (jusqu’à 30 minutes ; sans réponse, elles ne sont pas faites, sans que ce soit un refus). Une tâche planifiée n’attend jamais de réponse : elle ne fait que ce qui ne demande aucune confirmation, et tout le reste est refusé (la plupart de ces refus sont listés sous la tâche, dans la page Planifiées). Un « Toujours » donné avant n’y compte pas. Quittez avec ⌘Q ou « Quitter Arslan » dans la barre des menus.",
     "labelKeepAwake": "Garder le Mac éveillé pendant le travail",
     "keepAwakeDesc": "Tant qu’une tâche ou tâche planifiée tourne, le Mac ne se met pas en veille de lui-même. L’écran peut s’éteindre ; fermer le capot ou une batterie faible le mettent quand même en veille.",
     "labelDesktopNotifications": "Notifications",
     "desktopNotificationsDesc": "Fenêtre fermée ou en arrière-plan, macOS vous prévient quand une tâche se termine, qu’une action attend votre confirmation ou qu’une tâche planifiée échoue. Les notifications n’affichent jamais le texte des messages.",
     "labelIsland": "Afficher Arslan dans l’encoche",
     "islandDesc": "Un petit Arslan en haut de l’écran montre ce qu’il fait, quand il a besoin de vous et quand une tâche est terminée. Survolez-le pour en voir plus. Il n’apparaît jamais dans les captures, les enregistrements ni le partage d’écran.",
-    "automationElsewhere": "Les tâches planifiées, l'utilisation des tokens et chaque exécution passée sont dans Activité.",
-    "automationOpenActivity": "Ouvrir Activité",
+    "automationElsewhere": "Les tâches planifiées ont leur propre page ; l'utilisation des tokens et chaque exécution passée sont dans Avancement.",
+    "automationOpenActivity": "Ouvrir Avancement",
     "searchPlaceholder": "Rechercher des paramètres…",
     "searchNoHits": "Aucune section ne correspond",
     "modeSystem": "Système",
@@ -712,10 +712,9 @@
     "grpAccess": "Accès pour d’autres apps",
     "grpVersion": "Version",
     "grpWhatsNew": "Nouveautés de cette version",
-    "watchesInInbox": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la boîte de réception.",
-    "openInbox": "Ouvrir la boîte de réception",
-    "openActivity": "Les tâches planifiées, l’usage et chaque exécution sont dans Activité.",
-    "openActivityBtn": "Ouvrir Activité",
+    "watchesOnScheduled": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la page Planifiées.",
+    "openActivity": "L’usage et chaque exécution sont dans Avancement ; les tâches planifiées ont leur propre page.",
+    "openActivityBtn": "Ouvrir Avancement",
     "whatsNewEmpty": "Pas de notes pour cette version."
   },
   "errors": {
@@ -783,13 +782,16 @@
     "fromPhone": "Lancé depuis l’iPhone",
     "glyph": {
       "waiting": "Attend ton accord",
+      "waiting_reminder": "Un travail arrêté t’a laissé un rappel",
+      "waiting_away": "N’a pas pu te demander pendant ton absence",
       "remote": "Remote · ton iPhone",
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",
       "done": "Terminé",
       "unfinished": "Pas abouti",
       "failed": "Arrêté sur un problème",
-      "scheduled": "Planifié"
+      "scheduled": "Planifié",
+      "done_unseen": "Terminé, pas encore vu"
     },
     "projects": "Projets",
     "allProjects": "Tous les projets",
@@ -957,7 +959,7 @@
       "orphaned": "Fichiers orphelins"
     },
     "import": {
-      "subtitle": "SKILL.md standard, importé tel qu’écrit, après le contrôle de licence et l’analyse de sécurité ; les caractères invisibles sont comptés.",
+      "subtitle": "SKILL.md standard, importé tel qu’écrit, après le contrôle de licence et l’analyse de sécurité. L’analyse bloque les caractères d’étiquette cachés et les contrôles de sens du texte ; les autres caractères invisibles sont comptés, sans blocage.",
       "repo_placeholder": "owner/repo",
       "subpath_placeholder": "sous-chemin (optionnel)",
       "scan": "Scanner",
@@ -1308,7 +1310,7 @@
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
     "prompt": "Ce qu’elle fera à chaque fois :",
-    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée dans la Boîte de réception. Elles peuvent chercher des informations et écrire des fichiers uniquement dans le dossier de travail d’Arslan ; elles ne lancent pas de commandes.",
+    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée sous la tâche, dans la page Planifiées. Elles peuvent chercher des informations et écrire des fichiers uniquement dans le dossier de travail d’Arslan ; elles ne lancent pas de commandes.",
     "anyTask": "créer n’importe quelle tâche planifiée"
   },
   "enroll": {
@@ -1377,13 +1379,6 @@
     "hiddenEnrollFailed": "Impossible de mémoriser {{name}}. {{why}}"
   },
   "inbox": {
-    "approveNow": "À approuver maintenant",
-    "answerFailed": "Cette carte a déjà eu une réponse ou a expiré.",
-    "stalled": "Arrêté",
-    "changed": "Changements",
-    "other": "Autres",
-    "watching": "Sous surveillance",
-    "muted": "Plus de rappel",
     "addWatch": "Surveiller une autre page ou un dossier",
     "refusedTitle": "Pas fait pendant votre absence",
     "alwaysAllow": "Toujours autoriser",
@@ -1392,9 +1387,7 @@
     "scheduledNeverAsks": "Une tâche planifiée ne fait rien qui demande votre confirmation. Faites-le dans une conversation.",
     "allowedNow": "Autorisé désormais",
     "refusedTimes": "{{count}} fois depuis {{since}}",
-    "undo": "Annuler",
-    "openInArslan": "Ouvrir la conversation",
-    "heldCapability": "Cela ajoute une nouvelle capacité à Arslan. Cela ne peut être autorisé que dans sa conversation, où la carte s’affiche en entier."
+    "undo": "Annuler"
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",
@@ -1436,5 +1429,21 @@
     "memoryBody": "Arslan l’oublie et ne le réapprendra pas des anciennes conversations.",
     "unsavedTitle": "Partir sans enregistrer ?",
     "unsavedBody": "Tes modifications de cette note seront perdues."
+  },
+  "scheduledPage": {
+    "intro": "Les tâches qui s'exécutent selon un horaire, et les pages et dossiers qu'Arslan surveille pour vous. Un point signale une ligne à regarder.",
+    "watches": "Pages et dossiers surveillés",
+    "awayTitle": "Pas fait pendant votre absence (cette tâche uniquement)",
+    "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui n’a pas été fait dans sa propre conversation pendant votre absence disparaît quand vous ouvrez cette conversation ; une carte s’y efface seulement une fois que vous y avez répondu.",
+    "attention": "À regarder",
+    "changed": "Modifié",
+    "failing": "Échouée ou mise en pause d'elle-même"
+  },
+  "whileAway": {
+    "title": "Pas fait pendant votre absence (cette conversation)",
+    "stopped": "Une tâche arrêtée ici"
+  },
+  "waiting": {
+    "count": "En attente de toi : {{count}}"
   }
 }
