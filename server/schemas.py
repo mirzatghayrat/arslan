@@ -816,6 +816,9 @@ class ConversationListItem(BaseModel):
     state: str = "idle"
     #: INB4: the state without "done, not seen", for phones until INB4's phone half; never in the window's response.
     phone_state: str | None = Field(default=None, exclude=True)
+    #: INB5b-3: what a "waiting" row waits on, "card", "away" (a card went unanswered while you were away) or "reminder"; None
+    #: when it does not wait. The window's list only: phones build theirs field by field (api/phone.py) and are not sent it.
+    waiting_on: str | None = None
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
     origin: str = "mac"
     #: The last message, one line.

@@ -251,7 +251,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the proxy has no site list (NET adds it later, `lead-roadmap.md:87-91`). Its value in v0.1.64 is that the kernel lets out nothing else (no raw sockets, no DNS channel) and the proxy can log host names locally;
   - S2a-1's offline rule becomes `(deny network*)` including the proxy port, as today.
 - Mode "as today" (Q1 option N-b): network open in the sandbox, S2a-1 cut unchanged; proxy-only moves to NET (v0.1.65).
-- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (the user's finding, not yet measured in this repo; SBX-M measures it), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
+- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (measured in macOS CI run 41002402918), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
   - SBX-2's candidate preset denies all listening (`network-bind` and inbound);
   - "local dev servers work" is postponed;
   - **before SBX-3 wires the base into commands, this card must decide how listening comes back** without opening all interfaces. Options to weigh then (③Hands, 2026-10-30; none of them is seatbelt-only):

@@ -439,7 +439,7 @@ async def report_interrupted() -> int:
         async with repository() as repo:
             row = await repo.get(task_id, owner_id=owner_id)
             goal = (await repo.spec(row)).instruction[:200]
-            await repo.cancel(task_id, owner_id=owner_id)
+            await repo.cancel(task_id, owner_id=owner_id, reason="process_interrupted")   # INB7: not the user's cancel
         # S64-0b: the note names the goal, and nothing here knows whether it carries outside content.
         note = runtime_messages.render("job_interrupted", locale, goal=goal)
         await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,
