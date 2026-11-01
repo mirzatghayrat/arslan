@@ -6,6 +6,8 @@ Where the id comes from, first that counts: the caller's own id (a job's `Job.ru
 `judgment.of_run` made for work that runs after its turn (the after-turn job, project evidence), then the run being
 executed (execution_context). Only ints count. The turns and the job here are real; the models are scripted."""
 import asyncio
+import hashlib
+import json
 import uuid
 
 import sqlalchemy as sa
@@ -21,16 +23,20 @@ fresh, active = bg.fresh, bg.active
 
 
 async def _a_turn(conversation_id: str, message: str, monkeypatch, **context) -> int:
-    """A real chat turn, then its after-turn work. Returns the turn's run id, as its events carry it."""
+    """A real chat turn; its after-turn work goes on (`_settled`). Returns the turn's run id, as its events carry it."""
     from server.orchestrator import arslan, tool_loop
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: MockAdapter(stream_chunks=["ok"], chat_content="ok"))
     events = []
-    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="turn-1", conversation_id=conversation_id, **context)):
+    with pc.bind(pc.TaskMemoryContext(task_id=f"t-{uuid.uuid4()}", run_id="turn-1", conversation_id=conversation_id,
+                                      **context)):
         await arslan.handle_user_message(conversation_id, message, events.append)
-    await settle_after_turn()
-    await asyncio.gather(*list(lessons._background))
     (run_id,) = {e["run_id"] for e in events if "run_id" in e}
     return run_id
+
+
+async def _settled() -> None:
+    await settle_after_turn()
+    await asyncio.gather(*list(lessons._background))
 
 
 async def _no_facts(conversation_id, user_message):
@@ -67,7 +73,35 @@ async def test_a_lesson_the_after_turn_job_weighs_names_the_turn_it_came_from(ex
         return []
     monkeypatch.setattr(turn_facts, "extract", extract)
     run_id = await _a_turn("c1", "No, keep summaries to three lines", monkeypatch)
+    await _settled()
     assert [(r.point, r.run_id) for r in await _rows(execution_db)] == [("memory.worth", run_id)]
+
+
+async def test_two_turns_whose_after_turn_jobs_chain_each_name_their_own_turn(execution_db, judge_with,  # noqa: F811
+                                                                              monkeypatch):
+    """By the time the first turn's job asks, the second turn's run is the conversation's newest: the first row
+    still names the first turn."""
+    adapter = judge_with(_Adapter('{"answer": false, "p": 0.1}'))
+    second_ran = asyncio.Event()
+
+    async def extract(conversation_id, user_message):
+        turn = "first" if user_message.startswith("first") else "second"
+        if turn == "first":
+            await asyncio.wait_for(second_ran.wait(), 20)     # the second job waits behind this one (K2b)
+        turn_facts._practices.set([{"situation": f"The {turn} turn asked for a summary",
+                                    "advice": "Keep it to three lines", "avoid": False}])
+        return []
+    monkeypatch.setattr(turn_facts, "extract", extract)
+    first = await _a_turn("c1", "first: no, keep summaries to three lines", monkeypatch)
+    second = await _a_turn("c1", "second: no, keep summaries to three lines", monkeypatch)
+    second_ran.set()
+    await _settled()
+    # A memory.worth row keeps a digest of its candidate (JUDGE1); the judge saw the candidate itself.
+    seen = [json.loads(user.split("Facts (JSON):\n", 1)[1])["candidate"] for user in adapter.calls]
+    turn_of = {"sha256:" + hashlib.sha256(c.encode()).hexdigest()[:16]: "first" if "The first turn" in c else "second"
+               for c in seen}
+    rows = sorted((turn_of[r.state["candidate"]], r.run_id) for r in await _rows(execution_db))
+    assert first < second and rows == [("first", first), ("second", second)]
 
 
 async def test_a_jobs_accomplished_judgment_names_the_jobs_run(execution_db, judge_with, active,  # noqa: F811
@@ -91,6 +125,7 @@ async def test_project_progress_after_a_turn_names_the_turn(api, execution_db, j
     judge_with(_Adapter('{"answer": false, "p": 0.1}'))      # the gate says no: one row, nothing ticked
     monkeypatch.setattr(turn_facts, "extract", _no_facts)
     run_id = await _a_turn("c-pr", "The fun test went great", monkeypatch, project_id=pid)
+    await _settled()
     assert [(r.point, r.run_id) for r in await _rows(execution_db)] == [("project.progress", run_id)]
 
 
