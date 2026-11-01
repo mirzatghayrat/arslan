@@ -115,7 +115,11 @@ def test_the_file_tools_refuse_the_cap6b_folders_and_arslans_data_even_inside_th
     assert workspace_paths.resolve_in_workspace("notes.md", home, for_write=True) == (home / "notes.md").resolve()
     with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data"):    # the data folder itself
         workspace_paths.resolve_in_workspace("mcp.json", data, for_write=True)
-    inside = data / "workspace"                    # a working folder inside the data folder writes its own files
+    for own in ("runtimes/node/bin", "capabilities/x"):      # Arslan's own folders as the working folder: refused
+        (data / own).mkdir(parents=True)
+        with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data"):
+            workspace_paths.resolve_in_workspace("npx", data / own, for_write=True)
+    inside = data / "workspace"                    # the eval's marked working folder writes its own files
     inside.mkdir()
     assert workspace_paths.resolve_in_workspace("brief.md", inside, for_write=True) == (inside / "brief.md").resolve()
     # Reading stays as before: SKILL.md is read through read_skill, not refused here.
