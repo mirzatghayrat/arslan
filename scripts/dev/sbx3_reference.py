@@ -1,7 +1,7 @@
 """Explicit pytest plugin for probe validation, never the product commands adapter.
 
 Usage: HOME=/private/tmp/arslan-sbx-check-home .venv/bin/python -m pytest tests/server/sbx/test_sbx3_commands.py -p scripts.dev.sbx3_reference -m macos -q
-Add --sbx-reference-permissive for the mutation that must fail all 56 gates.
+Add --sbx-reference-permissive for the mutation that must fail all 63 gates.
 """
 from server.services.sandbox_profile import NetworkMode, default_deny_profile
 from tests.server.sbx.harness import BUILT_BASES
