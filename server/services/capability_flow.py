@@ -27,7 +27,7 @@ from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
 from server.services import (capability_allowlist, capability_install, capability_runtime, capability_scan,
-                             capability_search)
+                             capability_search, osv_check)
 from arslan.aio import within
 
 logger = logging.getLogger(__name__)
@@ -298,6 +298,13 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         # CAP4a-3: the license the gate read, at the version being installed (`<file>@<ref>`), not the search's.
         spdx, read_from = locked["license"]
         card.update(lock=capability_install.lock_summary(locked), license={"spdx": spdx, "read_from": read_from})
+        # CAP9: what OSV.dev knows of every locked package, between the lock and the card. Facts only: what the card
+        # does with a hit is the user's question 5, still open. A stop here leaves no staged lock behind.
+        try:
+            card["vulns"] = await osv_check.check(cand, locked)
+        except BaseException:
+            capability_install.discard(locked)
+            raise
     elif cand["kind"] == "skill":
         # CAP4a-1: fetched whole at one pinned commit, scanned and hashed before the card; a blocked scan gets none.
         # After the "nobody to ask" answer above: a run that cannot install fetches nothing.
