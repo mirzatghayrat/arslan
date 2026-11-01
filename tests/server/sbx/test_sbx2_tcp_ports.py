@@ -115,3 +115,28 @@ def test_tcp_port_denies_survive_compilation(mode):
     for port in ports:
         denied = _compile_profile(default_deny_profile(**options, denied_ports=[port]))
         assert denied != baseline, f"{mode.value} compiler dropped deny for port {port}"
+
+
+@pytest.mark.parametrize("mode", list(NetworkMode))
+def test_complete_network_and_mach_allow_lists(mode):
+    text = default_deny_profile(network=mode, proxy_port=PROXY_PORT if mode == NetworkMode.PROXY else None)
+    lines = [line.strip() for line in text.splitlines()]
+    network = [line for line in lines if re.match(
+        r"\(allow\b.*\b(?:network|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+    mach = [line for line in lines if re.match(
+        r"\(allow\b.*\b(?:mach-lookup|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+    expected_network = {
+        NetworkMode.NONE: [],
+        NetworkMode.PROXY: ['(allow network-outbound (remote tcp "localhost:*"))',
+                            f'(allow network-outbound (remote tcp "localhost:{PROXY_PORT}"))'],
+        NetworkMode.PORT_22: ['(allow network-outbound (remote tcp "localhost:*"))',
+                              '(allow network-outbound (remote tcp "*:22"))'],
+        NetworkMode.ANY_DECLARED: ['(allow network-outbound (literal "/private/var/run/mDNSResponder"))',
+                                   '(allow network-outbound (remote tcp "localhost:*"))',
+                                   '(allow network-outbound (remote tcp "*:*"))'],
+    }
+    expected_mach = ['(allow mach-lookup (global-name "com.apple.FSEvents"))']
+    if mode == NetworkMode.ANY_DECLARED:
+        expected_mach += ['(allow mach-lookup (global-name "com.apple.trustd.agent"))']
+    assert network == expected_network[mode], "complete network allow list changed"
+    assert mach == expected_mach, "complete mach-lookup allow list changed"

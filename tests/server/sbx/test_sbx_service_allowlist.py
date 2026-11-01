@@ -91,3 +91,35 @@ def test_trust_service_is_limited_to_measured_https_mode(sbx, mode, record_prope
     for key, value in properties.items():
         record_property(key, value)
     assert properties["outcome"] == "ok", properties
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("mode", list(NetworkMode))
+def test_raw_udp_is_refused_in_every_mode(sbx, mode):
+    import socket
+
+    sbx.network = mode
+    source = """
+import socket, sys
+with socket.socket(int(sys.argv[1]), socket.SOCK_DGRAM) as client:
+    try:
+        client.sendto(b'sbx', (sys.argv[2], int(sys.argv[3])))
+    except OSError as exc:
+        print(exc.errno)
+    else:
+        print(0)
+"""
+    # Test-owned loopback endpoints; no DNS, LAN traffic or daemon RPCs.
+    for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        with socket.socket(family, socket.SOCK_DGRAM) as receiver:
+            receiver.bind((address, 0))
+            receiver.settimeout(3)
+            port = receiver.getsockname()[1]
+            control = sbx.python(source, family, address, port,
+                                 profile="(version 1)(allow default)", probe="udp-control-" + family.name)
+            assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
+            assert receiver.recv(16) == b"sbx"
+            denied = sbx.python(source, family, address, port, probe="udp-refusal-" + family.name)
+            assert denied.returncode == 0, denied.stderr
+            assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
