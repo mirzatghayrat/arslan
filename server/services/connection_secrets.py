@@ -32,6 +32,8 @@ _SECRET_LAST = frozenset({"token", "secret", "password", "passwd", "pwd", "key",
 #: Values that name a kind of credential, or none, rather than being one.
 _NOT_A_SECRET = frozenset({"true", "false", "yes", "no", "none", "null", "oauth", "basic", "bearer", "token", "env"})
 _FLAG = re.compile(r"--?([A-Za-z][A-Za-z0-9_-]*)(?:=(.*))?$", re.S)
+#: Any other `--name=value`, such as npm's own `--//registry.npmjs.org/:_authToken=…` (#623 re-check R-7).
+_OPTION = re.compile(r"--([^=\s]+)=(.*)$", re.S)
 _HEADER_FLAGS = frozenset({"header", "headers", "h"})
 #: `Name: value`, a scheme word (`Bearer`, `Basic`, `token`) before the value left in place.
 _HEADER = re.compile(r"\s*([A-Za-z0-9_-]+)\s*:\s*(?:(?:bearer|basic|token)\s+)?(.*?)\s*", re.I | re.S)
@@ -113,6 +115,17 @@ def _header_span(text: str, offset: int) -> list[tuple[dict, int, int]]:
     return []
 
 
+def _option_spans(name: str, value: str, value_at: int) -> list[tuple[dict, int, int]]:
+    """`--name=value`: the whole value when the name names a secret or the value reads like a key; else, when the
+    value is an address (`--index-url=https://user:token@host/simple`), its secret-looking parts, as in an argument
+    that is one (#623 re-check R-7)."""
+    if _secret_value(name, value):
+        return [({"key": name.lower()}, value_at, value_at + len(value))]
+    if _URL.match(value):
+        return [(part, value_at + start, value_at + end) for part, start, end in _url_spans(value)]
+    return []
+
+
 def _spans(url: str | None, args) -> list[tuple[dict, int | None, int, int]]:
     """Every secret-looking part, as (part, where it is: None for the address or an argument's index, start,
     end). One list that `find`, `move` and `shown` all read, so they always agree."""
@@ -124,12 +137,14 @@ def _spans(url: str | None, args) -> list[tuple[dict, int | None, int, int]]:
         found: list[tuple[dict, int, int]] = []
         if _URL.match(arg):                                                 # mcp-remote https://…?token=…
             found = _url_spans(arg)
-        elif flag and flag.group(2) is not None:                            # --token=VALUE, --header=…
+        elif flag and flag.group(2) is not None:              # --token=VALUE, --header=…, --index-url=https://…
             value_at = arg.index("=") + 1
             if flag.group(1).lower() in _HEADER_FLAGS:
                 found = _header_span(flag.group(2), value_at)
-            elif _secret_value(flag.group(1), flag.group(2)):
-                found = [({"key": flag.group(1).lower()}, value_at, len(arg))]
+            else:
+                found = _option_spans(flag.group(1), flag.group(2), value_at)
+        elif option := _OPTION.match(arg):                   # --//registry.npmjs.org/:_authToken=…
+            found = _option_spans(option.group(1), option.group(2), arg.index("=") + 1)
         elif flag:
             continue
         elif prev and prev.group(2) is None and prev.group(1).lower() in _HEADER_FLAGS:   # --header "Name: v"
