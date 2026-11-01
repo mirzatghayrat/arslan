@@ -413,8 +413,55 @@ macOS total from 450 to 433 (+4 raw UDP cases, -12 candidate service cases,
 pass. The unchanged commands adapter is still absent. Historical SBX-M results
 above retain their original counts and outcomes.
 
-The opt-in dns_sd operation measurement has **not run**. Registration, immediate
-NAT-request release and browsing require the user present at the Mac and their
-explicit go-ahead in the authoring thread. No operation result is inferred from
-the accepted policy decision. A later separate commit will record only return
-and callback error codes and callback-fired booleans from that run.
+### dns_sd client operations under any-declared
+
+Measured on 2026-11-01 after the user replied "run the dns_sd probe" in the
+authoring thread, on macOS 26.6.2 (25G83), arm64. The opt-in pytest used scratch
+HOME/TMPDIR and `ARSLAN_SECRET_KEY_FILE=` empty in both children. It ran the
+same sequence first under the ANY_DECLARED candidate and then unsandboxed:
+registration of the test service, an immediately released NAT request, and
+browse. Registration and browse each observed callbacks for five seconds.
+Only numeric return/callback codes and callback-fired booleans were retained;
+no LAN names, addresses or callback payloads were recorded.
+
+The initial invocation failed at library loading, before any daemon operation:
+`/usr/lib/libdns_sd.dylib` does not exist on this host. A no-operation startup
+check reproduced that failure. The installed SDK identifies these exports in
+libSystem; changing the loader to `/usr/lib/libSystem.B.dylib` made the import,
+library-load and symbol-resolution check pass. No DNS-SD operation is called
+by that startup check. After the correction, the call sequence ran **once per
+profile**, with no repeated operation measurement.
+
+```sh
+HOME=/private/tmp/arslan-sbx-check-home ARSLAN_SECRET_KEY_FILE= ARSLAN_DNSSD_PROBE=1 .venv/bin/python -m pytest scripts/dev/test_dnssd_probe.py -q -s
+```
+
+Result: **1 passed in 20.28 seconds**, no skips or xfails. This pytest result
+means the measurement completed, not that every daemon action completed.
+The exact retained codes were:
+
+| Profile | Operation | API return | Callback fired | Callback error codes | Process-result codes |
+| --- | --- | --- | --- | --- | --- |
+| ANY_DECLARED | Register | 0 | true | `[0]` | `[0]` |
+| ANY_DECLARED | NAT port mapping | 0 | false | `[]` | `[]` |
+| ANY_DECLARED | Browse | 0 | true | `[0, 0, 0, 0, 0, 0, 0, 0]` | `[0, 0]` |
+| Unsandboxed | Register | 0 | true | `[0]` | `[0]` |
+| Unsandboxed | NAT port mapping | 0 | false | `[]` | `[]` |
+| Unsandboxed | Browse | 0 | true | `[0, 0, 0, 0, 0, 0, 0, 0]` | `[0, 0]` |
+
+The candidate and baseline have identical recorded results. Registration and
+browse returned success and delivered success callbacks under the candidate;
+they are therefore not refused by this profile. The NAT API accepted the
+request, but its reference was released immediately without processing
+callbacks. **No completed router mapping is established.** No peer-side
+advertisement visibility, router state, discovered service identity or Local
+Network prompt outcome was recorded. Callback multiplicity does not establish
+a count of distinct services. These limits leave the user's broader-interface
+acceptance and `DELETE-BY: SBX-6` unchanged.
+
+The named `DNSSD-missing-library` mutation restores the original invalid loader
+and fails the no-operation startup check. Its full-path-keyed backup was copied
+back and SHA-256 verified, then the restored startup check passed (two local
+verification tests passed). The operation measurement was not repeated for
+mutation testing. No product rule, adapter, workflow or CI selection changed:
+**433 macOS cases, 63 strict xfails**. New-head macOS CI run id remains pending.

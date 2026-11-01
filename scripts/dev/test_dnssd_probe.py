@@ -26,7 +26,7 @@ import pytest
 def _exercise_daemon():
     # ABI: the installed macOS SDK's dns_sd.h. Callback string pointers are void*
     # so ctypes never decodes names/domains; addresses and ports are ignored too.
-    api = C.CDLL("/usr/lib/libdns_sd.dylib")
+    api = C.CDLL("/usr/lib/libSystem.B.dylib")
     ref_type, flags, error = C.c_void_p, C.c_uint32, C.c_int32
     register_reply = C.CFUNCTYPE(None, ref_type, flags, error,
                                 C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)
