@@ -1189,8 +1189,6 @@
     "waterfall": "Step waterfall",
     "how_it_went": "How it went",
     "scoring": "Scoring…",
-    "radar_title": "This run vs fleet (radar)",
-    "recent_scores": "Recent scores for this spawn",
     "sys_prompt_details": "Actual system prompt / injected knowledge",
     "sys_prompt": "System prompt",
     "injected": "Injected knowledge",

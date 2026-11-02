@@ -387,6 +387,339 @@
         "type": "status.snapshot",
         "body": {
           "presence": "online",
+          "mascot": "working",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false,
+          "week": [
+            {
+              "day": "2026-09-27",
+              "counts": [
+                3,
+                0,
+                1
+              ]
+            },
+            {
+              "day": "2026-09-28",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-09-29",
+              "counts": [
+                5,
+                1,
+                2
+              ]
+            },
+            {
+              "day": "2026-09-30",
+              "counts": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-01",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-02",
+              "counts": [
+                1,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-03",
+              "counts": [
+                4,
+                1,
+                1
+              ]
+            }
+          ],
+          "outcomes": {
+            "today": {
+              "tasks": [
+                {
+                  "conversation_id": "task-ab12",
+                  "title": "Q3 report",
+                  "state": "done",
+                  "checks_passed": 2,
+                  "checks_total": 2,
+                  "spent_usd": 0.42,
+                  "needed_you": true
+                }
+              ],
+              "spent_usd": 0.42,
+              "other_spent_usd": 0.0
+            },
+            "week": {
+              "tasks": [
+                {
+                  "conversation_id": "task-ab12",
+                  "title": "Q3 report",
+                  "state": "done",
+                  "checks_passed": 2,
+                  "checks_total": 2,
+                  "spent_usd": 0.42,
+                  "needed_you": true
+                }
+              ],
+              "spent_usd": 0.42,
+              "other_spent_usd": 0.0
+            }
+          },
+          "mac": {
+            "taken_at": "2026-10-03T00:00:00Z",
+            "battery": {
+              "level": 76,
+              "charging": false,
+              "minutes_left": 214
+            },
+            "cpu": {
+              "now": 37,
+              "last_hour": [
+                12,
+                18,
+                22,
+                30,
+                41,
+                35,
+                28,
+                25,
+                31,
+                44,
+                39,
+                37
+              ]
+            },
+            "memory": {
+              "used_gb": 18.4,
+              "total_gb": 32.0,
+              "pressure": "normal"
+            },
+            "disk": {
+              "free_gb": 412.3,
+              "total_gb": 994.7
+            },
+            "network": {
+              "kind": "wifi",
+              "quality": "good"
+            },
+            "sleep": {
+              "kept_awake": true
+            },
+            "os_version": "macOS 26.1"
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
+          "mascot": "idle",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false,
+          "mac": {
+            "taken_at": "2026-10-03T00:00:00Z",
+            "cpu": {
+              "now": 3,
+              "last_hour": [
+                4,
+                6,
+                5
+              ]
+            },
+            "memory": {
+              "used_gb": 41.2,
+              "total_gb": 48.0,
+              "pressure": "warn"
+            },
+            "disk": {
+              "free_gb": 96.4,
+              "total_gb": 994.7
+            },
+            "network": {
+              "kind": "ethernet",
+              "quality": "fair"
+            },
+            "sleep": {
+              "kept_awake": false
+            },
+            "os_version": "macOS 26.1.2"
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
+          "mascot": "idle",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false,
+          "mac": {
+            "taken_at": "2026-10-03T00:00:00Z",
+            "battery": {
+              "level": 100,
+              "charging": true
+            },
+            "cpu": {
+              "now": 64,
+              "last_hour": []
+            },
+            "memory": {
+              "used_gb": 7.9,
+              "total_gb": 8.0,
+              "pressure": "elevated"
+            },
+            "network": {
+              "kind": "other",
+              "quality": "poor"
+            }
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
+          "mascot": "idle",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false,
+          "week": [
+            {
+              "day": "2026-09-27",
+              "counts": [
+                3,
+                0,
+                1
+              ]
+            },
+            {
+              "day": "2026-09-28",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-09-29",
+              "counts": [
+                5,
+                1,
+                2
+              ]
+            },
+            {
+              "day": "2026-09-30",
+              "counts": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-01",
+              "counts": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-02",
+              "counts": [
+                1,
+                0,
+                0
+              ]
+            },
+            {
+              "day": "2026-10-03",
+              "counts": [
+                4,
+                1,
+                1
+              ]
+            }
+          ],
+          "mac": {
+            "memory": {
+              "used_gb": 7.9,
+              "total_gb": 8.0,
+              "pressure": "normal"
+            }
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
           "mascot": "idle",
           "device_name": "Vector Mac",
           "last_seen": "2026-10-03T00:00:00Z",
