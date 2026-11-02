@@ -35,6 +35,8 @@ TESTS = pathlib.Path(__file__).parents[1]
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
+    # SBX-5p: 73 CAP6b/cache cases, including the built outside floor.
+    "server/sbx/test_sbx5_paths.py": 10,
     # SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
     "server/sbx/test_sbx6_settings.py": 3,
     # SBX-6p: 78 network cases, 77 pending and one real SSH control.
@@ -128,11 +130,11 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 589  # +72 SBX-4p; +16 SBX-6p settings; +1 0.1.64 SBX-3a flip: a reopened work folder and a saved copy; +1 0.1.64 SBX-3a §1a: a command uses its own TMPDIR; +1 0.1.64 SBX-3a: the work folder, the devices and a pty still work; -13 SBX-6 commands transition; +78 SBX-6p; -12 stale service cases; +4 raw UDP denials; +1 multiprocessing diagnosis; +12 measured service allowlist cases; +1 0.1.64 L11-3a/3d: a rules file's path through /var refused, its real path written; +63 SBX-3p commands denial cases; +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 667  # +72 SBX-4p; +78 SBX-5p (includes one pre-existing-link measurement); +16 SBX-6p settings; +1 0.1.64 SBX-3a flip: a reopened work folder and a saved copy; +1 0.1.64 SBX-3a §1a: a command uses its own TMPDIR; +1 0.1.64 SBX-3a: the work folder, the devices and a pty still work; -13 SBX-6 commands transition; +78 SBX-6p; -12 stale service cases; +4 raw UDP denials; +1 multiprocessing diagnosis; +12 measured service allowlist cases; +1 0.1.64 L11-3a/3d: a rules file's path through /var refused, its real path written; +63 SBX-3p commands denial cases; +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function; SBX-1b's protected-folder test has
 # six names under one (+5).
-PARAMETERIZED_EXTRA_CASES = 473  # SBX-4p: +65 (72 over 7); SBX-6p settings: +13 (16 over 3); SBX-6p: +70 (78 over 8); Allowlist: +12 (16 cases over 4 functions); SBX-3p after SBX-6: +36 (50 cases over 14 functions); SBX-2: 283 over 16.
+PARAMETERIZED_EXTRA_CASES = 541  # SBX-4p: +65 (72 over 7); SBX-5p: +68 (78 over 10); SBX-6p settings: +13 (16 over 3); SBX-6p: +70 (78 over 8); Allowlist: +12 (16 cases over 4 functions); SBX-3p after SBX-6: +36 (50 cases over 14 functions); SBX-2: 283 over 16.
 
 #: Text that means "this test only means something on macOS". Kept broad on
 #: purpose — a new gating phrase should trip the drift check and be added here
