@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "../i18n";
 import CapabilityProposeCard from "../components/capabilities/CapabilityProposeCard";
+import { AskCard } from "../components/kit/AskCard";
 import { osvLink } from "../components/capabilities/SecurityRow";
 import type { Advisory, CapabilityCard, Vulns } from "../api/client.types";
 
@@ -16,9 +17,12 @@ const CARD: CapabilityCard = {
   remote_host: null, network: false, folders: [], keys: [], why: "", retry: "",
 };
 const adv = (id: string, severity: Advisory["severity"], over: Partial<Advisory> = {}): Advisory =>
-  ({ id, ids: [id], severity, summary: null, fixed: [], ...over });
+  ({ id, ids: [id], severity, summary: null, loaded: true, fixed: [], ...over });
 const checked = (over: Partial<Extract<Vulns, { state: "checked" }>> = {}): Vulns =>
-  ({ state: "checked", source: "OSV.dev", packages: 12, complete: true, count: 0, highest: null, own: [], deps: [], ...over });
+  ({ state: "checked", source: "OSV.dev", packages: 12, asked: 12, complete: true, count: 0, highest: null,
+     own_highest: null, deps_highest: null, own: [], own_more: 0, deps: [], deps_more: 0, ...over });
+const FSI = String.fromCharCode(0x2068), PDI = String.fromCharCode(0x2069);
+const NAME = `${FSI}notes-mcp${PDI}`;                  // the card's name is isolated in a sentence (UNI1a)
 
 function show(vulns?: Vulns, extra: Partial<CapabilityCard> = {}) {
   const onConfirm = vi.fn(), onCancel = vi.fn();
@@ -35,9 +39,9 @@ describe("the security row", () => {
   });
 
   it("a vulnerability in the package itself leads, its list open, each id linked to osv.dev", () => {
-    const { row } = show(checked({ count: 1, highest: "HIGH", own: [adv("GHSA-aaaa-bbbb-cccc", "HIGH",
+    const { row } = show(checked({ count: 1, highest: "HIGH", own_highest: "HIGH", own: [adv("GHSA-aaaa-bbbb-cccc", "HIGH",
       { summary: "notes-mcp reads outside its folder", fixed: ["1.2.1"] })] }));
-    expect(screen.getByTestId("vuln-summary")).toHaveTextContent("Known vulnerabilities in notes-mcp itself: 1. Highest: High.");
+    expect(screen.getByTestId("vuln-summary")).toHaveTextContent(`Known vulnerabilities in ${NAME} itself: 1. Highest: High.`);
     const list = screen.getByTestId("vuln-list");
     expect(list).toBeVisible();
     expect(list).toHaveTextContent("notes-mcp reads outside its folder");
@@ -49,11 +53,11 @@ describe("the security row", () => {
   });
 
   it("only in its dependencies: said so, each dependency with its advisories (and its alias)", () => {
-    show(checked({ count: 3, highest: "MODERATE", deps: [
+    show(checked({ count: 3, highest: "MODERATE", deps_highest: "MODERATE", deps: [
       { name: "event-stream", alias: "innocent-name", version: "3.3.6", more: 1,
         advisories: [adv("GHSA-mh6f-8j2x-4483", "MODERATE"), adv("GHSA-xxxx-yyyy-zzzz", "LOW")] }] }));
     expect(screen.getByTestId("vuln-summary")).toHaveTextContent(
-      "Known vulnerabilities only in its dependencies, not in notes-mcp itself: 3. Highest: Moderate.");
+      `Known vulnerabilities only in its dependencies, not in ${NAME} itself: 3. Highest: Moderate.`);
     const dep = screen.getByTestId("vuln-dep");
     expect(dep).toHaveTextContent("event-stream 3.3.6 (innocent-name)");
     expect(dep).toHaveTextContent("no fix yet");
@@ -93,7 +97,8 @@ describe("the security row", () => {
 });
 
 describe("the buttons, when the package itself has a known vulnerability (question 5, as the board draws it)", () => {
-  const own = () => checked({ count: 1, highest: "CRITICAL", own: [adv("GHSA-aaaa-bbbb-cccc", "CRITICAL")] });
+  const own = () => checked({ count: 1, highest: "CRITICAL", own_highest: "CRITICAL",
+    own: [adv("GHSA-aaaa-bbbb-cccc", "CRITICAL")] });
 
   it("'Don't install' is the safe answer and 'Install anyway' a red click", () => {
     const { onConfirm, onCancel } = show(own());
@@ -115,9 +120,105 @@ describe("the buttons, when the package itself has a known vulnerability (questi
   });
 
   it("a vulnerability only in a dependency keeps the usual buttons", () => {
-    show(checked({ count: 1, highest: "HIGH", deps: [
+    show(checked({ count: 1, highest: "HIGH", deps_highest: "HIGH", deps: [
       { name: "x", alias: null, version: "1", more: 0, advisories: [adv("GHSA-1111-2222-3333", "HIGH")] }] }));
     expect(screen.getByTestId("capability-card-allow")).toHaveTextContent("Add and retry");
     expect(screen.getByTestId("capability-card-decline")).toHaveTextContent("Not now");
+  });
+});
+
+describe("#661 max review", () => {
+  it("the package's own count and worst are its own, with the dependencies' said apart", () => {
+    show(checked({ count: 5, highest: "CRITICAL", own_highest: "LOW", deps_highest: "CRITICAL", own_more: 1,
+      own: [adv("GHSA-aaaa-aaaa-aaaa", "LOW"), adv("GHSA-bbbb-bbbb-bbbb", "LOW")],
+      deps: [{ name: "x", alias: null, version: "1", more: 0,
+        advisories: [adv("GHSA-cccc-cccc-cccc", "CRITICAL"), adv("GHSA-dddd-dddd-dddd", "LOW")] }] }));
+    expect(screen.getByTestId("vuln-summary")).toHaveTextContent(`Known vulnerabilities in ${NAME} itself: 3. Highest: Low.`);
+    expect(screen.getByTestId("vuln-also-deps")).toHaveTextContent("Also in its dependencies: 2. Highest: Critical.");
+    expect(screen.getByTestId("vuln-list")).toHaveTextContent("and 1 more");
+  });
+
+  it("dependencies left off the list are counted", () => {
+    show(checked({ count: 4, highest: "LOW", deps_highest: "LOW", deps_more: 3, deps: [
+      { name: "x", alias: null, version: "1", more: 0, advisories: [adv("GHSA-1111-2222-3333", "LOW")] }] }));
+    expect(screen.getByTestId("vuln-more-deps")).toHaveTextContent("and 3 more dependencies with known vulnerabilities");
+    expect(screen.queryByTestId("vuln-also-deps")).toBeNull();
+  });
+
+  it("an advisory whose record did not load says so, never 'no fix yet'", () => {
+    show(checked({ count: 1, highest: "UNKNOWN", own_highest: "UNKNOWN", complete: false,
+      own: [adv("GHSA-aaaa-bbbb-cccc", "UNKNOWN", { loaded: false })] }));
+    const list = screen.getByTestId("vuln-list");
+    expect(list).toHaveTextContent("details not loaded");
+    expect(list).not.toHaveTextContent("no fix yet");
+  });
+
+  it("a lock asked about in part says how much, and none known only of what was asked", () => {
+    show(checked({ packages: 1500, asked: 1000, complete: false }));
+    expect(screen.getByTestId("vuln-summary")).toHaveTextContent("No known vulnerabilities in the 1000 packages asked about.");
+    expect(screen.getByTestId("vuln-summary")).not.toHaveTextContent("1500");
+    expect(screen.getByTestId("vuln-asked")).toHaveTextContent(
+      "Asked OSV.dev about 1000 of the 1500 public packages in the lock (the package itself first)");
+  });
+
+  it("no lock says there is none, never that OSV.dev didn't answer", () => {
+    const { row } = show({ state: "skipped", why: "no_lock" });
+    expect(row()).toHaveTextContent("Not checked: there is no lock to look up.");
+    expect(row()).not.toHaveTextContent("didn't answer");
+  });
+
+  it("a name with direction controls cannot turn the sentence around", () => {
+    show(checked({ count: 1, highest: "HIGH", own_highest: "HIGH", own: [adv("GHSA-aaaa-bbbb-cccc", "HIGH")] }),
+      { name: "notes" + String.fromCharCode(0x202e) + "-mcp" });
+    expect(screen.getByTestId("vuln-summary").textContent).toContain(`in ${FSI}notes-mcp${PDI} itself`);
+  });
+});
+
+describe("question 5's buttons on a card the package itself is vulnerable in", () => {
+  const own = () => checked({ count: 1, highest: "HIGH", own_highest: "HIGH", own: [adv("GHSA-aaaa-bbbb-cccc", "HIGH")] });
+
+  it("'Don't install' leads and has focus; 'Install anyway' draws no ⌘⏎ hint", () => {
+    show(own());
+    const decline = screen.getByTestId("capability-card-decline"), install = screen.getByTestId("capability-card-allow");
+    expect(document.activeElement).toBe(decline);
+    expect(decline.className).not.toBe(install.className);
+    expect(install).not.toHaveTextContent("⌘⏎");
+    expect(decline).toHaveTextContent("esc");
+  });
+
+  it("esc still answers No", () => {
+    const { onCancel } = show(own());
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledWith("c1");
+  });
+
+  it("it stays the top surface: ⌘⏎ never answers a card behind it", () => {
+    const behind = vi.fn(), behindNo = vi.fn(), onConfirm = vi.fn(), onCancel = vi.fn();
+    render(<>
+      <AskCard who="Arslan" title="Run the plan" onAllow={behind} onDecline={behindNo} testId="behind" />
+      <CapabilityProposeCard card={{ ...CARD, vulns: own() }} callId="c1" onConfirm={onConfirm} onCancel={onCancel} />
+    </>);
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(behind).not.toHaveBeenCalled();
+    expect(behindNo).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledWith("c1");
+  });
+
+  it("while the user types elsewhere, focus stays where it is", () => {
+    const box = document.createElement("textarea");
+    document.body.appendChild(box);
+    box.focus();
+    show(own());
+    expect(document.activeElement).toBe(box);
+    box.remove();
+  });
+
+  it("a card with no known vulnerability in the package keeps ⌘⏎ and its usual focus", () => {
+    const { onConfirm } = show(checked());
+    expect(document.activeElement).not.toBe(screen.getByTestId("capability-card-decline"));
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

@@ -96,7 +96,7 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
       expiresAt={expiresAt} queue={queue} allowDisabled={missing.length > 0}
       allowLabel={t(risky ? "discover.card_installAnyway" : "discover.card_allow")}
       declineLabel={t(risky ? "discover.card_dontInstall" : "discover.card_decline")}
-      destructive={risky} keys={!risky}
+      destructive={risky} allowKey={!risky} safeDefault={risky}
       allowTestId="capability-card-allow" declineTestId="capability-card-decline"
       onAllow={() => { if (!missing.length) onConfirm(callId, keys, folders); }}
       onDecline={() => onCancel(callId)} />

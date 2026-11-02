@@ -77,8 +77,9 @@ async def test_only_each_locked_packages_name_ecosystem_and_version_is_sent(osv)
     assert osv.batch_sent() == {"queries": [
         {"package": {"name": "notes-mcp", "ecosystem": "PyPI"}, "version": "1.2.0"},
         {"package": {"name": "httpx", "ecosystem": "PyPI"}, "version": "0.27.0"}]}
-    assert out == {"state": "checked", "source": "OSV.dev", "packages": 2, "complete": True, "count": 0,
-                   "highest": None, "own": [], "deps": []}
+    assert out == {"state": "checked", "source": "OSV.dev", "packages": 2, "asked": 2, "complete": True, "count": 0,
+                   "highest": None, "own_highest": None, "deps_highest": None, "own": [], "own_more": 0, "deps": [],
+                   "deps_more": 0}
 
 
 async def test_an_npm_lock_is_asked_as_npm(osv):
@@ -93,7 +94,7 @@ async def test_a_vulnerability_in_the_package_itself_leads(osv):
                                                  summary="notes-mcp reads outside its folder", fixed=["1.2.1"])
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0"), ("httpx", "0.27.0")))
     assert out["own"] == [{"id": "GHSA-qw6h-vgh9-j6wx", "ids": ["GHSA-qw6h-vgh9-j6wx"], "severity": "HIGH",
-                           "summary": "notes-mcp reads outside its folder", "fixed": ["1.2.1"]}]
+                           "summary": "notes-mcp reads outside its folder", "loaded": True, "fixed": ["1.2.1"]}]
     assert out["deps"] == [] and out["count"] == 1 and out["highest"] == "HIGH"
 
 
@@ -105,7 +106,7 @@ async def test_a_vulnerability_only_in_a_dependency_is_listed_under_it(osv):
     assert out["own"] == [] and out["highest"] == "MODERATE"
     assert out["deps"] == [{"name": "httpx", "alias": None, "version": "0.27.0", "more": 0, "advisories": [
         {"id": "GHSA-aaaa-bbbb-cccc", "ids": ["GHSA-aaaa-bbbb-cccc"], "severity": "MODERATE", "summary": None,
-         "fixed": ["0.28.0"]}]}]
+         "loaded": True, "fixed": ["0.28.0"]}]}]
 
 
 async def test_the_same_advisory_under_two_ids_counts_once_with_githubs_severity(osv):
@@ -120,7 +121,7 @@ async def test_the_same_advisory_under_two_ids_counts_once_with_githubs_severity
     out = await osv_check.check(cand, _locked("uv", ("jinja2", "2.4.1")))
     assert out["count"] == 1 and out["own"] == [{
         "id": "GHSA-462w-v97r-4m45", "ids": ["GHSA-462w-v97r-4m45", "PYSEC-2019-217"], "severity": "HIGH",
-        "summary": "Jinja2 sandbox escape", "fixed": ["2.10.1"]}]
+        "summary": "Jinja2 sandbox escape", "loaded": True, "fixed": ["2.10.1"]}]
 
 
 async def test_fixed_versions_are_only_the_packages_own(osv):
@@ -194,7 +195,7 @@ async def test_records_past_the_lookup_limit_are_counted_but_not_fetched(osv, mo
 
 async def test_the_package_itself_is_looked_up_before_its_dependencies(osv, monkeypatch):
     monkeypatch.setattr(osv_check, "LOOKUPS_MAX", 1)
-    osv.hits = [["GHSA-dddd-dddd-dddd"], ["GHSA-oooo-oooo-oooo"]]
+    osv.hits = [["GHSA-oooo-oooo-oooo"], ["GHSA-dddd-dddd-dddd"]]       # asked in this order: the package itself first
     osv.records["GHSA-dddd-dddd-dddd"] = _record("GHSA-dddd-dddd-dddd", name="httpx", severity="LOW")
     osv.records["GHSA-oooo-oooo-oooo"] = _record("GHSA-oooo-oooo-oooo", name="notes-mcp", severity="HIGH")
     out = await osv_check.check(PYPI, _locked("uv", ("httpx", "0.27.0"), ("notes-mcp", "1.2.0")))
@@ -417,7 +418,7 @@ async def test_a_record_for_another_id_is_not_that_advisorys(osv):
                                                  summary="another advisory")
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
     assert out["own"] == [{"id": "GHSA-qw6h-vgh9-j6wx", "ids": ["GHSA-qw6h-vgh9-j6wx"], "severity": "UNKNOWN",
-                           "summary": None, "fixed": []}]
+                           "summary": None, "loaded": False, "fixed": []}]
 
 
 @pytest.mark.parametrize("odd", [
@@ -475,10 +476,12 @@ async def test_the_npm_lock_keeps_an_aliass_real_name(monkeypatch, tmp_path):
     monkeypatch.setattr(capability_runtime, "ensure", ensure)
     monkeypatch.setattr(capability_install, "_run", run)
     lock = await capability_install.lock_npm(tmp_path, "@acme/notes-js", "2.0.1")
-    assert lock["packages"] == [{"name": "@acme/notes-js", "version": "2.0.1", "registry_name": "@acme/notes-js"},
-                                {"name": "innocent-name", "version": "3.3.6", "registry_name": "event-stream"}]
-    assert capability_install.lock_summary({"lock": lock})["packages"] == [         # #661 re-review: the real name too
-        {"name": "@acme/notes-js", "version": "2.0.1"}, {"name": "innocent-name", "version": "3.3.6", "real": "event-stream"}]
+    assert lock["packages"] == [{"name": "@acme/notes-js", "version": "2.0.1", "registry_name": "@acme/notes-js",
+                                 "path": "node_modules/@acme/notes-js"},
+                                {"name": "innocent-name", "version": "3.3.6", "registry_name": "event-stream",
+                                 "path": "node_modules/innocent-name"}]
+    assert capability_install.lock_summary({"lock": lock})["packages"] == [         # the card's own list is unchanged
+        {"name": "@acme/notes-js", "version": "2.0.1"}, {"name": "innocent-name", "version": "3.3.6"}]
 
 
 async def test_json_nested_too_deep_for_the_parser_is_not_checked(osv):
@@ -510,8 +513,8 @@ async def test_one_odd_fixed_version_drops_nothing(osv, odd):
                                                  fixed=["1.10.0", odd, "1.9.0"])
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "0.1.0")))   # below every fix
     assert out["state"] == "checked" and out["own"][0]["severity"] == "HIGH"
-    fixed = out["own"][0]["fixed"]
-    assert [v for v in fixed if v.isascii()] == ["1.9.0", "1.10.0"] and len(fixed) == 3
+    fixed = out["own"][0]["fixed"]                 # #661 max review: a value that is not a version is left out
+    assert [v for v in fixed if v.isascii()] == ["1.9.0", "1.10.0"] and set(fixed) <= {"1.9.0", "1.10.0", odd}
 
 
 async def test_the_fixed_versions_listed_are_capped(osv):
@@ -548,9 +551,109 @@ async def test_the_fixed_versions_listed_are_the_nearest_above_the_installed_one
     assert out["own"][0]["fixed"] == ["1.2.1", "1.3.0", "1.4.0", "1.5.0", "1.10.0"]
 
 
-async def test_with_no_fix_above_the_installed_one_the_lowest_are_listed(osv):
+async def test_with_no_fix_above_the_installed_one_none_is_listed(osv):
+    """#661 max review: "fixed in 1.0.1" next to an installed 1.2.0 read as already fixed."""
     osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
     osv.records["GHSA-qw6h-vgh9-j6wx"] = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp", severity="LOW",
                                                  fixed=["0.9.0", "1.0.1"])
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
-    assert out["own"][0]["fixed"] == ["0.9.0", "1.0.1"]
+    assert out["own"][0]["fixed"] == []
+
+# ── #661 max review (comment 6572472764) ──
+
+def _npm_lock(*entries):
+    """An npm lock as capability_install.lock_npm writes it: (path, version, real name)."""
+    return {"runtime": "node", "lock": {"file": "package-lock.json", "sha256": "0" * 64, "packages": [
+        {"name": path.rsplit("node_modules/", 1)[-1], "version": version, "registry_name": real, "path": path}
+        for path, version, real in entries]}}
+
+
+async def test_the_npm_package_itself_is_its_top_level_entry_never_a_nested_older_copy(osv):
+    osv.hits = [[], ["GHSA-aaaa-bbbb-cccc"]]
+    osv.records["GHSA-aaaa-bbbb-cccc"] = _record("GHSA-aaaa-bbbb-cccc", name="@acme/notes-js", ecosystem="npm",
+                                                 severity="HIGH")
+    out = await osv_check.check(NPM, _npm_lock(
+        ("node_modules/a-dep/node_modules/@acme/notes-js", "1.0.0", "@acme/notes-js"),
+        ("node_modules/@acme/notes-js", "2.0.1", "@acme/notes-js")))
+    assert [q["version"] for q in osv.batch_sent()["queries"]] == ["2.0.1", "1.0.0"]
+    assert out["own"] == [] and out["deps"][0]["version"] == "1.0.0" and out["deps_highest"] == "HIGH"
+
+
+async def test_an_alias_of_the_package_is_a_dependency_not_the_package(osv):
+    osv.hits = [[], ["GHSA-aaaa-bbbb-cccc"]]
+    out = await osv_check.check(NPM, _npm_lock(
+        ("node_modules/notes-old", "1.0.0", "@acme/notes-js"),
+        ("node_modules/@acme/notes-js", "2.0.1", "@acme/notes-js")))
+    assert osv.batch_sent()["queries"][0]["version"] == "2.0.1" and out["own"] == []
+    assert out["deps"][0] | {"advisories": None} == {"name": "@acme/notes-js", "alias": "notes-old", "version": "1.0.0",
+                                                     "more": 0, "advisories": None}
+
+
+async def test_a_lock_past_the_batch_limit_still_asks_about_the_package_itself(osv):
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]] + [[]] * (osv_check.QUERIES_MAX - 1)
+    deps = [(f"dep{i:04d}", "1.0") for i in range(1499)]
+    out = await osv_check.check(PYPI, _locked("uv", *deps, ("notes-mcp", "1.2.0")))
+    queries = osv.batch_sent()["queries"]
+    assert len(queries) == osv_check.QUERIES_MAX and queries[0]["package"]["name"] == "notes-mcp"
+    assert (out["packages"], out["asked"], out["complete"]) == (1500, osv_check.QUERIES_MAX, False)
+    assert [a["id"] for a in out["own"]] == ["GHSA-qw6h-vgh9-j6wx"]
+
+
+async def test_a_record_that_does_not_load_makes_the_answer_incomplete(osv):
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out["complete"] is False and out["own"][0]["loaded"] is False and out["own"][0]["fixed"] == []
+
+
+async def test_a_git_ranges_commit_is_not_a_fixed_version(osv):
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    rec = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp", severity="LOW")
+    rec["affected"] = [{"package": {"name": "notes-mcp", "ecosystem": "PyPI"}, "ranges": [
+        {"type": "GIT", "repo": "https://example.com/notes", "events": [{"introduced": "0"}, {"fixed": "3f9c2e1a"}]},
+        {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.2.1"}]}]}]
+    osv.records["GHSA-qw6h-vgh9-j6wx"] = rec
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert out["own"][0]["fixed"] == ["1.2.1"]
+
+
+@pytest.mark.parametrize("cand, installed, fixed, listed", [
+    (PYPI, "1.2.0", ["1.3.0", "1.3.0rc1", "1.2.0.post1", "1.2.1", "1.3.0a2", "1.2.0rc1"],
+     ["1.2.0.post1", "1.2.1", "1.3.0a2", "1.3.0rc1", "1.3.0"]),
+    (PYPI, "1.3.0rc1", ["1.3.0", "1.3.0b1"], ["1.3.0"]),
+    (PYPI, "1.2.0", ["1.2.0-rc1", "1.2"], []),                    # -rc1 is before 1.2.0, never a post-release
+    (PYPI, "main", ["1.3.0"], []),                                # an installed version that does not read as one
+    (NPM, "2.0.1", ["2.0.1-rc.1", "2.1.0-rc.1", "2.1.0", "v2.2.0"], ["2.1.0-rc.1", "2.1.0", "v2.2.0"]),
+], ids=["pypi", "from-a-prerelease", "rc-is-not-post", "unreadable", "npm"])
+async def test_fixed_versions_are_in_version_order_prereleases_before_their_release(osv, cand, installed, fixed, listed):
+    pypi = cand is PYPI
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    osv.records["GHSA-qw6h-vgh9-j6wx"] = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp" if pypi else "@acme/notes-js",
+                                                 ecosystem="PyPI" if pypi else "npm", severity="LOW", fixed=fixed)
+    lock = _locked("uv", ("notes-mcp", installed)) if pypi else _npm_lock(
+        ("node_modules/@acme/notes-js", installed, "@acme/notes-js"))
+    out = await osv_check.check(cand, lock)
+    assert out["own"][0]["fixed"] == listed
+
+
+async def test_the_same_name_and_version_at_two_npm_paths_is_asked_once(osv):
+    osv.hits = [[], ["GHSA-aaaa-bbbb-cccc"]]
+    out = await osv_check.check(NPM, _npm_lock(
+        ("node_modules/@acme/notes-js", "2.0.1", "@acme/notes-js"),
+        ("node_modules/a/node_modules/qs", "6.5.2", "qs"), ("node_modules/b/node_modules/qs", "6.5.2", "qs")))
+    assert len(osv.batch_sent()["queries"]) == 2 and out["packages"] == 2
+    assert out["count"] == 1 and [d["name"] for d in out["deps"]] == ["qs"]
+
+
+async def test_what_is_left_off_the_card_is_counted(osv, monkeypatch):
+    monkeypatch.setattr(osv_check, "SHOWN_MAX", 2)
+    osv.hits = [[f"GHSA-own{i}-aaaa-aaaa" for i in range(3)], *[[f"GHSA-dep{i}-aaaa-aaaa"] for i in range(3)]]
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0"), *[(f"dep{i}", "1.0") for i in range(3)]))
+    assert (len(out["own"]), out["own_more"], len(out["deps"]), out["deps_more"], out["count"]) == (2, 1, 2, 1, 6)
+
+
+async def test_the_packages_own_worst_is_told_apart_from_its_dependencies(osv):
+    osv.hits = [["GHSA-oooo-oooo-oooo"], ["GHSA-dddd-dddd-dddd"]]
+    osv.records["GHSA-oooo-oooo-oooo"] = _record("GHSA-oooo-oooo-oooo", name="notes-mcp", severity="LOW")
+    osv.records["GHSA-dddd-dddd-dddd"] = _record("GHSA-dddd-dddd-dddd", name="httpx", severity="CRITICAL")
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0"), ("httpx", "0.27.0")))
+    assert (out["highest"], out["own_highest"], out["deps_highest"]) == ("CRITICAL", "LOW", "CRITICAL")

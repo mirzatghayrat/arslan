@@ -232,7 +232,8 @@ async def lock_npm(root: Path, identifier: str, version: str) -> dict:
     return {"file": "package-lock.json", "sha256": _sha256(root / "package-lock.json"),
             # CAP9 (#661 review F1): an alias's folder is not its name; npm writes the real one in the entry.
             "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or ""),
-                          "registry_name": str(meta.get("name") or path.rsplit("node_modules/", 1)[-1])}
+                          "registry_name": str(meta.get("name") or path.rsplit("node_modules/", 1)[-1]),
+                          "path": path}                    # CAP9 (#661 max review): the top-level entry is the package
                          for path, meta in sorted(packages.items()) if path and isinstance(meta, dict)]}
 
 
@@ -467,14 +468,8 @@ def lock_summary(prepared: dict | None) -> dict | None:
     lock = (prepared or {}).get("lock")
     if not lock:
         return None
-    packages = []
-    for p in lock["packages"][:40]:
-        entry = {"name": _LOCK_TEXT.sub("", str(p.get("name") or ""))[:214],
-                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]}
-        real = _LOCK_TEXT.sub("", str(p.get("registry_name") or ""))[:214]
-        if real and real != entry["name"]:          # CAP9 (#661 re-review): an npm alias shows what it really is
-            entry["real"] = real
-        packages.append(entry)
+    packages = [{"name": _LOCK_TEXT.sub("", str(p.get("name") or ""))[:214],
+                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]} for p in lock["packages"][:40]]
     return {"sha256": lock["sha256"], "count": len(lock["packages"]), "packages": packages}
 
 

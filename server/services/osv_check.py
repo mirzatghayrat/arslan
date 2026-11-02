@@ -15,11 +15,13 @@ dependencies) is asked about in one OSV.dev batch query, and the card shows what
 - **The package itself leads:** `own` lists its advisories, `deps` each dependency that has any.
 - **Not checked is never "none known":** OSV unreachable, an error status or a redirect, a body past MAX_BYTES or
   not the shape asked for, or DEADLINE_S passed: `{"state": "not_checked"}`, and the card says so. A single record
-  that does not answer still counts, as UNKNOWN.
+  that does not answer still counts, as UNKNOWN and `loaded: false`, and the answer is incomplete.
+- **Fixed versions** are only the ones above the installed version, from version ranges (never a GIT range's
+  commit); none is listed when none is above it, or when a version does not read as one.
 - **Not asked:** a remote server (nothing is installed here), an MCP bundle (no ecosystem OSV knows) and a skill
   (it names no packages): `{"state": "skipped", "why": …}`.
-- **What the card does with a hit is the user's question 5** (block, or only warn), still open. Until it is
-  decided this only puts the facts on the card: the buttons stay as they are, and nothing is refused here.
+- **What the card does with a hit is the user's question 5** (2026-11-02, "as drawn"): it warns and nothing is
+  refused here; the card makes "Don't install" the button that leads and has focus, and ⌘⏎ does not install.
 
 OSV's words are outside text on the card: an id must look like one before it is put in a URL or shown, and
 summaries and versions are cleaned as a card name is (UNI1's `clean_name`). An id can hold a colon (Red Hat's
@@ -128,31 +130,55 @@ def _severity(rec: dict | None) -> str:
 
 
 def _fixed(rec: dict | None, ecosystem: str, name: str) -> list[str]:
-    """The versions the record says fix this package (only its own entries: an advisory can cover several)."""
+    """The versions the record says fix this package: only its own entries (an advisory can cover several), and only
+    version ranges (ECOSYSTEM, SEMVER), never a GIT range's commit hash (#661 max review)."""
     out = []
     for affected in map(_dict, _list(_dict(rec).get("affected"))):
         pkg = _dict(affected.get("package"))
         if pkg.get("ecosystem") != ecosystem or _name(ecosystem, str(pkg.get("name") or "")) != _name(ecosystem, name):
             continue
         for rng in map(_dict, _list(affected.get("ranges"))):
+            if rng.get("type") not in ("ECOSYSTEM", "SEMVER"):
+                continue
             for event in map(_dict, _list(rng.get("events"))):
                 if isinstance(event.get("fixed"), str):
                     out.append(untrusted.clean_name(event["fixed"], 60))
     return [v for v in out if v]
 
 
+_RELEASE = re.compile(r"^v?([0-9]+(?:\.[0-9]+)*)(.*)$")
+_AFTER = re.compile(r"^[._-]?(?:post|rev|r)[0-9]*(?![a-z])", re.I)          # 1.0.post1, never 1.0-rc1
+
+
+def _vkey(version: str):
+    """A version for ordering, or None when it does not read as one: its release numbers (1.2 is 1.2.0), then a
+    pre-release (-rc1, a1, .dev3) below the release, the release, and a post-release (.post1) above it."""
+    m = _RELEASE.match(version)
+    if not m:
+        return None
+    nums = [int(n) for n in m.group(1).split(".")]
+    while len(nums) > 1 and nums[-1] == 0:
+        nums.pop()
+    rest = m.group(2)
+    tag = 1 if not rest or rest.startswith("+") else 2 if _AFTER.match(rest) else 0
+    return (tuple(nums), tag, [(0, int(p), "") if p.isdecimal() and p.isascii() else (1, 0, p)
+                               for p in re.split(r"([0-9]+)", rest)])
+
+
 def _versions(found, installed: str = "") -> list[str]:
-    """Versions once each, in version order (1.9.0 before 1.10.0), at most FIXED_MAX: the nearest above the
-    installed one (#661 re-review), else the lowest. Only decimal digits are read as numbers: a superscript is text
-    (#661 review), so one odd value never drops the advisory."""
-    key = lambda v: [(0, int(p), "") if p.isdecimal() else (1, 0, p) for p in re.split(r"(\d+)", v)]  # noqa: E731
-    ordered = sorted(set(found), key=key)
-    above = [v for v in ordered if installed and key(v) > key(installed)]
-    return (above or ordered)[:FIXED_MAX]
+    """The fixed versions above the installed one, once each, in version order, at most FIXED_MAX; none when none is
+    above it, or when either side does not read as a version (#661 max review: "fixed in 1.0.1" next to an installed
+    1.2.0 read as already fixed)."""
+    floor = _vkey(installed) if installed else None
+    if floor is None:
+        return []
+    above = {v: k for v in set(found) if (k := _vkey(v)) is not None and k > floor}
+    return sorted(above, key=above.__getitem__)[:FIXED_MAX]
 
 
 def _advisories(ids: list[str], records: dict, ecosystem: str, name: str, installed: str = "") -> list[dict]:
-    """One package's ids as advisories: ids whose records alias each other are one, under its GitHub id."""
+    """One package's ids as advisories: ids whose records alias each other are one, under its GitHub id. `loaded` is
+    false when no record of it answered: its severity, summary and fixes are then unknown, not none."""
     group = {vid: vid for vid in ids}
 
     def root(vid):
@@ -174,41 +200,74 @@ def _advisories(ids: list[str], records: dict, ecosystem: str, name: str, instal
         out.append({"id": lead, "ids": [lead, *(v for v in same if v != lead)],
                     "severity": max((_severity(r) for r in recs), key=SEVERITY.index),
                     "summary": untrusted.clean_name(summary, SUMMARY_MAX) if summary else None,
+                    "loaded": any(isinstance(r, dict) for r in recs),
                     "fixed": _versions((f for v in same for f in _fixed(records.get(v), ecosystem, name)), installed)})
     return sorted(out, key=lambda a: SEVERITY.index(a["severity"]), reverse=True)
 
 
+def _own_index(packages: list[dict], ecosystem: str, identifier: str) -> int | None:
+    """The package being installed. npm: the lock's top-level entry for it (`node_modules/<identifier>`), never a
+    nested older copy or an alias that sorts first (#661 max review); a lock without paths falls back to the entry
+    whose folder and real name are both the identifier. PyPI's lock is flat: its normalized name."""
+    for i, p in enumerate(packages):
+        if ecosystem == "npm":
+            if p.get("path") == f"node_modules/{identifier}" or (
+                    "path" not in p and p.get("name") == identifier and (p.get("registry_name") or identifier) == identifier):
+                return i
+        elif _name(ecosystem, str(p.get("registry_name") or p.get("name") or "")) == _name(ecosystem, identifier):
+            return i
+    return None
+
+
+def _worst(advisories: list[dict]):
+    return max((a["severity"] for a in advisories), key=SEVERITY.index) if advisories else None
+
+
 async def _check(ecosystem: str, identifier: str, packages: list[dict]) -> dict:
     from server.services.capability_install import _LOCK_TEXT
-    asked = packages[:QUERIES_MAX]
-    # #661 re-review: a name as the card's lock list writes it (the lock's own characters, at most 214).
-    queries = [{"package": {"name": _LOCK_TEXT.sub("", str(p.get("registry_name") or p.get("name") or ""))[:214],
-                            "ecosystem": ecosystem},
-                "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]} for p in asked]
-    folders = [_LOCK_TEXT.sub("", str(p.get("name") or ""))[:214] for p in asked]
+    own = _own_index(packages, ecosystem, identifier)
+    # The package itself is asked first, so a lock past QUERIES_MAX never leaves it out; the same name@version at
+    # several npm paths is asked once (#661 max review).
+    queries, folders, at = [], [], {}
+    for i in ([own] if own is not None else []) + [i for i in range(len(packages)) if i != own]:
+        p = packages[i]
+        query = {"package": {"name": _LOCK_TEXT.sub("", str(p.get("registry_name") or p.get("name") or ""))[:214],
+                             "ecosystem": ecosystem},
+                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]}
+        key = (query["package"]["name"], query["version"])
+        if key in at:
+            continue
+        at[key] = len(queries)
+        queries.append(query)
+        folders.append(_LOCK_TEXT.sub("", str(p.get("name") or ""))[:214])
+    asked = queries[:QUERIES_MAX]
+    own_q = 0 if own is not None else None
     async with httpx.AsyncClient(timeout=DEADLINE_S) as client:
-        hits, complete = _hits(await _json(client, "POST", f"{OSV}/v1/querybatch", "batch", {"queries": queries}),
-                               len(queries))
-        own = next((i for i, q in enumerate(queries)
-                    if _name(ecosystem, q["package"]["name"]) == _name(ecosystem, identifier)), None)
-        order = ([own] if own is not None else []) + [i for i in range(len(queries)) if i != own]
-        wanted = list(dict.fromkeys(vid for i in order for vid in hits[i]))
+        hits, complete = _hits(await _json(client, "POST", f"{OSV}/v1/querybatch", "batch", {"queries": asked}),
+                               len(asked))
+        wanted = list(dict.fromkeys(vid for ids in hits for vid in ids))
         limit = asyncio.Semaphore(8)
         fetched = await asyncio.gather(*(_record(client, vid, limit) for vid in wanted[:LOOKUPS_MAX]))
     records = dict(zip(wanted, fetched))
-    found = {i: _advisories(hits[i], records, ecosystem, queries[i]["package"]["name"], queries[i]["version"])
-             for i in order if hits[i]}
+    found = {i: _advisories(hits[i], records, ecosystem, asked[i]["package"]["name"], asked[i]["version"])
+             for i in range(len(asked)) if hits[i]}
     every = [a for advisories in found.values() for a in advisories]
-    deps = [{"name": untrusted.clean_name(queries[i]["package"]["name"], 214),
-             "alias": untrusted.clean_name(folders[i], 214) if folders[i] != queries[i]["package"]["name"] else None,
-             "version": untrusted.clean_name(queries[i]["version"], 60),
+    mine = found.get(own_q, []) if own_q is not None else []
+    theirs = [a for i, advisories in found.items() if i != own_q for a in advisories]
+    deps = [{"name": untrusted.clean_name(asked[i]["package"]["name"], 214),
+             "alias": untrusted.clean_name(folders[i], 214) if folders[i] != asked[i]["package"]["name"] else None,
+             "version": untrusted.clean_name(asked[i]["version"], 60),
              "more": max(0, len(found[i]) - SHOWN_MAX), "advisories": found[i][:SHOWN_MAX]}
-            for i in order if i != own and i in found]
-    return {"state": "checked", "source": "OSV.dev", "packages": len(packages),
-            "complete": complete and len(asked) == len(packages) and len(wanted) <= LOOKUPS_MAX,
-            "count": len(every),
-            "highest": max((a["severity"] for a in every), key=SEVERITY.index) if every else None,
-            "own": found.get(own, [])[:SHOWN_MAX] if own is not None else [], "deps": deps[:SHOWN_MAX]}
+            for i in range(len(asked)) if i != own_q and i in found]
+    return {"state": "checked", "source": "OSV.dev", "packages": len(queries), "asked": len(asked),
+            # incomplete: a lock past the limit, a result with more pages, records past the lookup limit or one
+            # that did not answer (#661 max review)
+            "complete": complete and len(asked) == len(queries) and len(wanted) <= LOOKUPS_MAX
+                        and all(r is not None for r in fetched),
+            "count": len(every), "highest": _worst(every),
+            "own_highest": _worst(mine), "deps_highest": _worst(theirs),
+            "own": mine[:SHOWN_MAX], "own_more": max(0, len(mine) - SHOWN_MAX),
+            "deps": deps[:SHOWN_MAX], "deps_more": max(0, len(deps) - SHOWN_MAX)}
 
 
 async def check(candidate: dict, prepared: dict | None) -> dict:

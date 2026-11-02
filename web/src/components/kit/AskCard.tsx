@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { AskMark } from "./AskMark";
@@ -43,6 +43,11 @@ export interface AskCardProps {
   extra?: ReactNode;
   /** Answers to ⌘⏎ / esc while it is the top surface. Off when shown as a preview. */
   keys?: boolean;
+  /** CAP9 (the user's question 5): ⌘⏎ does not answer Allow, and its hint is not drawn. The card stays the top
+   *  surface (another card behind it never takes the key), and esc still answers No. */
+  allowKey?: boolean;
+  /** CAP9: No is the safe answer: drawn as the primary, wide button, and focused unless the user is typing. */
+  safeDefault?: boolean;
   testId?: string;
   /** Extra attributes on the card (e.g. data-kind), and stable test ids for the two answers. */
   attrs?: Record<string, string>;
@@ -64,8 +69,16 @@ export function AskCard(p: AskCardProps) {
   // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
   const guarded = useAnswerGuard();
   const held = useAnswerHeld();                                     // the same hold, to be seen: Allow and No look disabled while it lasts
-  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled && !guarded()) p.onAllow(); },
+  const allowKey = p.allowKey !== false;
+  useAnswerKeys(top && !p.busy, { onAllow: allowKey ? () => { if (!p.allowDisabled && !guarded()) p.onAllow(); } : undefined,
                                   onDecline: () => { if (!guarded()) p.onDecline(); } }, root);
+  const declineId = p.declineTestId ?? "ask-decline";
+  useEffect(() => {
+    if (!p.safeDefault) return;
+    const active = document.activeElement;
+    const typing = active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+    if (!typing) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${declineId}"]`)?.focus();
+  }, [p.safeDefault, declineId]);
   return (
     <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
@@ -109,11 +122,12 @@ export function AskCard(p: AskCardProps) {
       )}
       {p.options}
       <div className="flex gap-2.5">
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
-          onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
+        <Button tone={p.safeDefault ? "primary" : "secondary"} grow={p.safeDefault ? 1.4 : 1} kbd="esc" disabled={p.busy}
+          aria-disabled={held || undefined} onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={declineId}>
           {p.declineLabel ?? t("kit.decline")}
         </Button>
-        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
+        <Button tone={p.destructive ? "destructive" : "primary"} grow={p.safeDefault ? 1 : 1.4} kbd={allowKey ? "⌘⏎" : undefined}
+          disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
           onClick={() => { if (!guarded()) p.onAllow(); }} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>

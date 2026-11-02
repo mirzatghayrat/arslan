@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Advisory, CapabilityCard } from "../../api/client.types";
-import { Escaped } from "../../lib/outsideText";
+import type { Advisory, CapabilityCard, Severity } from "../../api/client.types";
+import { Escaped, isolate } from "../../lib/outsideText";
 import { Row } from "./CapabilityProposeCard";
 
 /** An advisory's page on OSV.dev. Built from a fixed prefix: an id may hold a colon (`RHSA-2023:1234`), so it is never
@@ -16,8 +16,8 @@ function Advisories({ list }: { list: Advisory[] }) {
       <span className={a.severity === "CRITICAL" || a.severity === "HIGH" ? "font-semibold text-danger" : "text-muted-foreground"}>
         {t(`discover.sev_${a.severity}`)}</span>
       {a.summary ? <span className="text-muted-foreground"><Escaped text={a.summary} /></span> : <span />}
-      <span className="text-muted-foreground">{a.fixed.length ? t("discover.card_vulnFixed", { versions: a.fixed.join(", ") })
-        : t("discover.card_vulnNoFix")}</span>
+      <span className="text-muted-foreground">{!a.loaded ? t("discover.card_vulnNotLoaded")
+        : a.fixed.length ? t("discover.card_vulnFixed", { versions: a.fixed.join(", ") }) : t("discover.card_vulnNoFix")}</span>
     </span>))}</>;
 }
 
@@ -35,7 +35,8 @@ export function SecurityRow({ card }: { card: CapabilityCard }) {
   }
   if (!v) return null;
   if (v.state === "skipped") {
-    const why = v.why === "remote" ? "card_vulnRemote" : v.why === "bundle" ? "card_vulnBundle" : "card_vulnNotChecked";
+    const why = v.why === "remote" ? "card_vulnRemote" : v.why === "bundle" ? "card_vulnBundle"
+      : v.why === "no_lock" ? "card_vulnNoLock" : "card_vulnNotChecked";
     return <Row label={t("discover.card_security")} testId="capability-card-security">{t(`discover.${why}`)}</Row>;
   }
   if (v.state === "not_checked") {
@@ -47,32 +48,44 @@ export function SecurityRow({ card }: { card: CapabilityCard }) {
       </span>
     </Row>;
   }
-  const severity = v.highest ? t(`discover.sev_${v.highest}`) : "";
-  const own = v.own.length > 0;
-  const depCount = v.count - v.own.length;
+  // #661 max review: the counts include what the lists leave out, and the package's own worst is told apart from
+  // its dependencies'.
+  const sev = (s: Severity | null) => (s ? t(`discover.sev_${s}`) : "");
+  const ownCount = v.own.length + v.own_more;
+  const depCount = v.count - ownCount;
+  const name = isolate(card.name);
+  const part = v.asked < v.packages;
   return (
     <Row label={t("discover.card_security")} testId="capability-card-security">
       <span className="flex flex-col gap-1.5">
-        {v.count === 0 ? <span data-testid="vuln-summary">{t("discover.card_vulnNone", { count: v.packages })}</span>
-          : <span data-testid="vuln-summary" className={own ? "font-semibold text-danger" : "text-ask"}>
-            {own ? t("discover.card_vulnOwn", { name: card.name, count: v.own.length, severity })
-              : t("discover.card_vulnDeps", { name: card.name, count: depCount, severity })}</span>}
+        {v.count === 0 ? <span data-testid="vuln-summary">
+          {part ? t("discover.card_vulnNonePart", { count: v.asked }) : t("discover.card_vulnNone", { count: v.packages })}</span>
+          : <span data-testid="vuln-summary" className={ownCount ? "font-semibold text-danger" : "text-ask"}>
+            {ownCount ? t("discover.card_vulnOwn", { name, count: ownCount, severity: sev(v.own_highest) })
+              : t("discover.card_vulnDeps", { name, count: depCount, severity: sev(v.deps_highest) })}</span>}
+        {ownCount > 0 && depCount > 0 && <span className="text-ask" data-testid="vuln-also-deps">
+          {t("discover.card_vulnAlsoDeps", { count: depCount, severity: sev(v.deps_highest) })}</span>}
         {v.count > 0 && <>
           <button type="button" data-testid="vuln-toggle" aria-expanded={open} onClick={() => setOpen(!open)}
             className="self-start text-[12px] text-primary hover:underline">
             {t(open ? "discover.card_vulnHide" : "discover.card_vulnShow")}</button>
           <span hidden={!open} data-testid="vuln-list" className="flex flex-col gap-2 rounded-lg border border-border bg-background px-2.5 py-2">
             <Advisories list={v.own} />
+            {v.own_more > 0 && <span className="text-[12px] text-muted-foreground">{t("discover.card_vulnMore", { count: v.own_more })}</span>}
             {v.deps.map(d => <span key={`${d.name}@${d.version}`} className="flex flex-col gap-1" data-testid="vuln-dep">
               <span className="font-mono text-[12px]"><Escaped text={`${d.name} ${d.version}`} />
                 {d.alias ? <span className="text-muted-foreground"> (<Escaped text={d.alias} />)</span> : null}</span>
               <Advisories list={d.advisories} />
               {d.more > 0 && <span className="text-[12px] text-muted-foreground">{t("discover.card_vulnMore", { count: d.more })}</span>}
             </span>)}
+            {v.deps_more > 0 && <span className="text-[12px] text-muted-foreground" data-testid="vuln-more-deps">
+              {t("discover.card_vulnMoreDeps", { count: v.deps_more })}</span>}
           </span>
         </>}
         {!v.complete && <span className="text-[12px] text-ask" data-testid="vuln-incomplete">{t("discover.card_vulnIncomplete")}</span>}
-        <span className="text-[12px] text-muted-foreground">{t("discover.card_vulnAsked", { count: v.packages })}</span>
+        <span className="text-[12px] text-muted-foreground" data-testid="vuln-asked">
+          {part ? t("discover.card_vulnAskedPart", { asked: v.asked, count: v.packages })
+            : t("discover.card_vulnAsked", { count: v.packages })}</span>
       </span>
     </Row>
   );

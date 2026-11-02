@@ -615,10 +615,16 @@ export interface CapabilityCard {
   vulns?: Vulns;
 }
 export type Severity = "CRITICAL" | "HIGH" | "MODERATE" | "LOW" | "UNKNOWN";
-export interface Advisory { id: string; ids: string[]; severity: Severity; summary: string | null; fixed: string[] }
+/** `loaded` false: no record of it answered, so its severity, summary and fixes are unknown, not none. `fixed` lists
+ *  only versions above the installed one. */
+export interface Advisory { id: string; ids: string[]; severity: Severity; summary: string | null; loaded: boolean; fixed: string[] }
+/** `packages` counts the lock's distinct packages, `asked` those sent (the package itself first); `own_more` and
+ *  `deps_more` what the lists leave out; `own_highest` and `deps_highest` are told apart (#661 max review). */
 export type Vulns =
-  | { state: "checked"; source: string; packages: number; complete: boolean; count: number; highest: Severity | null;
-      own: Advisory[]; deps: { name: string; alias: string | null; version: string; more: number; advisories: Advisory[] }[] }
+  | { state: "checked"; source: string; packages: number; asked: number; complete: boolean; count: number;
+      highest: Severity | null; own_highest: Severity | null; deps_highest: Severity | null;
+      own: Advisory[]; own_more: number; deps_more: number;
+      deps: { name: string; alias: string | null; version: string; more: number; advisories: Advisory[] }[] }
   | { state: "not_checked"; why: string }
   | { state: "skipped"; why: string };
 /** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
