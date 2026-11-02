@@ -7,7 +7,7 @@ import type { ContextParts, ProviderConfig, ProviderOption } from "../../api/cli
 import { useDismissable } from "../../hooks/useDismissable";
 import { providerStatus, type ProviderStatus } from "../../lib/providerStatus";
 import ModelPicker, { type ModelChoice } from "./ModelPicker";
-import { useConversationModel } from "./useConversationModel";
+import { beginModelSave, useConversationModel } from "./useConversationModel";
 
 export { _resetChipCatalogs } from "./useConversationModel";
 
@@ -94,37 +94,52 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
   /** A pick is stored for this conversation, the primary's own model included: the default is whatever the
    *  server's routing resolves to, which may be another config (v0.1.64), so "same as primary" is no reason to
    *  clear. Only "use the default" clears. */
+  async function save(next: ModelChoice) {
+    const r = await conversationModelApi.set(conversationId, next.configId, next.model);
+    setChoice({ configId: r.choice.config_id, model: r.choice.model }, r.effective);
+  }
   async function pick(next: ModelChoice) {
     setOpen(false);
     setSaveError(null);
+    const done = beginModelSave(conversationId);
     try {
-      const r = await conversationModelApi.set(conversationId, next.configId, next.model);
-      setChoice({ configId: r.choice.config_id, model: r.choice.model }, r.effective);
+      await save(next);
     } catch (e) {
       failed(e);
+    } finally {
+      done();
     }
   }
   async function useDefault() {
     setOpen(false);
     setSaveError(null);
+    const done = beginModelSave(conversationId);
     try {
       const r = await conversationModelApi.clear(conversationId);
       setChoice(null, r.effective);
     } catch (e) {
       failed(e);
+    } finally {
+      done();
     }
   }
+  /** "Set as default" on a model means "this one here, and as the default": the config becomes primary and this
+   *  conversation keeps the pick. Clearing it instead (as before PR 691's review) put it back on whatever routing
+   *  picks, which under a strategy can be another config. */
   async function makeDefault() {
     if (!current) return;
+    const pickNow = current;
     setSaveError(null);
+    const done = beginModelSave(conversationId);
     try {
-      const target = configs.find((c) => c.id === current.configId);
-      if (target && target.model !== current.model) await updateProviderConfig(current.configId, { model: current.model });
-      await onSetDefault(current.configId);
-      const r = await conversationModelApi.clear(conversationId);
-      setChoice(null, r.effective);
+      const target = configs.find((c) => c.id === pickNow.configId);
+      if (target && target.model !== pickNow.model) await updateProviderConfig(pickNow.configId, { model: pickNow.model });
+      await onSetDefault(pickNow.configId);
+      await save(pickNow);
     } catch (e) {
       failed(e);
+    } finally {
+      done();
     }
     setOpen(false);
   }

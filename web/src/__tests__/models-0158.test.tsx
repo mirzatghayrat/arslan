@@ -22,6 +22,7 @@ import type { ModelInfo, ProviderConfig } from "../api/client.types";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 import ModelPicker, { fmtContext, fmtPrice, loadFavourites, unusableWhy } from "../components/models/ModelPicker";
 import ConversationModelChip, { _resetChipCatalogs } from "../components/models/ConversationModelChip";
+import { isModelSaving } from "../components/models/useConversationModel";
 import RolePicker from "../components/models/RolePicker";
 import ModelRolesSection from "../components/settings/ModelRolesSection";
 
@@ -155,7 +156,7 @@ describe("the model under the composer", () => {
     expect(screen.getByTestId("model-chip").textContent).toContain("deepseek-chat");
   });
 
-  it("设为默认 sets that config's model and makes it primary, then the conversation follows the default", async () => {
+  it("设为默认 sets that config's model and makes it primary, and keeps this conversation on it", async () => {
     conv.get.mockResolvedValue({ choice: { config_id: 2, model: "anthropic/claude-sonnet-4.5" } });
     chip();
     await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("claude-sonnet"));
@@ -163,7 +164,49 @@ describe("the model under the composer", () => {
     await act(async () => { fireEvent.click(screen.getByTestId("model-set-default")); });
     expect(client.updateProviderConfig).toHaveBeenCalledWith(2, { model: "anthropic/claude-sonnet-4.5" });
     expect(onSetDefault).toHaveBeenCalledWith(2);
-    expect(conv.clear).toHaveBeenCalledWith("c1");
+    expect(conv.set).toHaveBeenLastCalledWith("c1", 2, "anthropic/claude-sonnet-4.5");
+    expect(conv.clear).not.toHaveBeenCalled();
+  });
+
+  // #691 review 1: under a routing strategy the default can still be another config, so clearing after 设为默认 put the
+  // conversation back on it (and on its 402). Here clearing and saving give different answers.
+  it("设为默认 leaves the conversation on the pick even when the server's default is another config", async () => {
+    conv.get.mockResolvedValue({ choice: { config_id: 2, model: "openai/gpt-4o-mini" } });
+    conv.clear.mockResolvedValue({ choice: null, effective: { config_id: 1, model: "deepseek-chat", provider: "deepseek" } });
+    conv.set.mockImplementation(async (_c: string, id: number, model: string) => ({ choice: { config_id: id, model },
+      effective: { config_id: id, model, provider: "openrouter" } }));
+    chip();
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("gpt-4o-mini"));
+    fireEvent.click(screen.getByTestId("model-chip"));
+    await act(async () => { fireEvent.click(screen.getByTestId("model-set-default")); });
+    expect(screen.getByTestId("model-chip").textContent).toContain("openrouter · openai/gpt-4o-mini");
+  });
+
+  // #691 review 2: a provider test or a config change can move routing's pick; the chip asks again.
+  it("asks the server again when the configs change", async () => {
+    conv.get.mockResolvedValueOnce({ choice: null, effective: { config_id: 1, model: "deepseek-chat", provider: "deepseek" } })
+      .mockResolvedValueOnce({ choice: null, effective: { config_id: 2, model: "openai/gpt-4o-mini", provider: "openrouter" } });
+    const { rerender } = chip();
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("deepseek-chat"));
+    rerender(<ConversationModelChip conversationId="c1" llmProviders={[]} onSetDefault={onSetDefault}
+      configs={[cfg(1, "deepseek", "deepseek-chat", { last_health: "failed" }), configs[1]]} />);
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("openai/gpt-4o-mini"));
+    expect(conv.get).toHaveBeenCalledTimes(2);
+  });
+
+  // #691 review 4: a first send can't race the row.
+  it("says a pick is still being saved until the server answers", async () => {
+    let answer!: (v: unknown) => void;
+    conv.set.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    chip();
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId("model-chip"));
+    fireEvent.click(screen.getByTestId("model-all-2"));
+    const row = await screen.findByTestId("model-row-2-anthropic/claude-sonnet-4.5");
+    await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+    expect(isModelSaving("c1")).toBe(true);
+    await act(async () => { answer({ choice: { config_id: 2, model: "anthropic/claude-sonnet-4.5" } }); });
+    expect(isModelSaving("c1")).toBe(false);
   });
 
   it("设为默认 on a config's own model does not rewrite the config", async () => {

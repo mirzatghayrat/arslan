@@ -89,9 +89,14 @@ async def effective_choice(db, conversation_id: str | None) -> dict | None:
         from server.db.models import ConversationModel, ProviderConfig
         row = await db.get(ConversationModel, conversation_id)
         if row is not None and (config := await db.get(ProviderConfig, row.config_id)) is not None:
-            return {"config_id": config.id, "model": row.model, "provider": config.provider}
+            # As _config_adapter builds it: an empty stored model (older rows) runs the config's own.
+            return {"config_id": config.id, "model": row.model or config.model, "provider": config.provider}
     chosen = await _default_config(db, "execute")
-    return None if chosen is None else {"config_id": chosen["id"], "model": chosen["model"], "provider": chosen["provider"]}
+    if chosen is None:
+        return None
+    # As build_adapter builds it: a preset fills a model the config left blank.
+    _, model, _ = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
+    return {"config_id": chosen["id"], "model": model, "provider": chosen["provider"]}
 
 
 async def primary_chat_endpoint() -> tuple[str, str, str] | None:

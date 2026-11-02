@@ -20,6 +20,7 @@ import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
 import ConversationModelChip from './models/ConversationModelChip';
+import { isModelSaving, useModelSaving } from './models/useConversationModel';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -234,6 +235,7 @@ export default function OrchestratorChat({
   // (drafts are session-scoped, and persisting every keystroke to disk buys
   // nothing) and NOT a re-render source (read once on mount).
   const draftKey = conversationId ?? 'main';
+  const savingModel = useModelSaving(conversationId ?? 'main');
   const temporary = activeThread?.temporary === true;
   const [inputValue, _setInputValue] = useState(() => temporary ? '' : composerDrafts.get(draftKey) ?? '');
   const setInputValue = useCallback((v: string) => {
@@ -319,7 +321,8 @@ export default function OrchestratorChat({
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || attach.busy) return;
+    // PR 691's review (4): a model switch still being saved would race this turn; the send waits for it.
+    if (!inputValue.trim() || attach.busy || isModelSaving(conversationId ?? 'main')) return;
     if (firstTasks) hideFirstTasks();
     if (attachmentImageBudgetExceeded(attachments)) {
       attach.setError(t("inputs.imageBudget"));
@@ -478,7 +481,7 @@ export default function OrchestratorChat({
                 <button
                   type="button"
                   aria-label={t('chat.send')}
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() || savingModel}
                   onClick={(e) => {
                     if (inputValue.trim()) {
                       handleSendMessage(e);
@@ -1030,7 +1033,7 @@ export default function OrchestratorChat({
                   <button
                     id="chat-send-submit"
                     type="submit"
-                    disabled={!inputValue.trim()}
+                    disabled={!inputValue.trim() || savingModel}
                     className="p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
                   >
                     <ArrowRight className="w-4 h-4" />

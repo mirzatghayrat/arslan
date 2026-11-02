@@ -142,6 +142,27 @@ async def test_the_effective_model_is_the_one_the_turn_builds(db, monkeypatch):
     assert (eff["model"], turn.model) == ("x/chosen", "x/chosen")
 
 
+async def test_a_blank_model_is_refused_and_effective_never_reports_an_empty_name(client):
+    """#691 review 3: "  " passed the length check before the strip and stored "", so `effective` said "" while the
+    turn ran the config's own model. A blank is refused; a stored one (older rows) reads as the config's model, and the
+    default reports the model the turn really builds (a preset fills a blank one)."""
+    from sqlalchemy import select
+    async with client.db_maker() as s:
+        s.add(ProviderConfig(label="ds", provider="deepseek", model="", api_key="", is_primary=True))
+        s.add(ProviderConfig(label="or", provider="openrouter", model="openai/gpt-4o-mini", api_key=""))
+        await s.commit()
+        rid = (await s.execute(select(ProviderConfig.id).where(ProviderConfig.label == "or"))).scalar_one()
+        s.add(ConversationModel(conversation_id="c-old", config_id=rid, model=""))
+        await s.commit()
+    assert (await client.put("/api/v1/conversations/c-blank/model", json={"config_id": rid, "model": "   "})).status_code == 422
+    async with client.db_maker() as s:
+        old = await llm_factory.effective_choice(s, "c-old")
+        default = await llm_factory.effective_choice(s, "c-none")
+    assert old["model"] == "openai/gpt-4o-mini"
+    turn = await tool_loop._adapter_for_turn(has_images=False, conversation_id="c-none")
+    assert default["model"] and default["model"] == turn.model
+
+
 async def test_a_switch_takes_the_next_turn_at_each_point_the_user_can_make_it(client, monkeypatch):
     """v0.1.64 (user report: a DeepSeek balance error kept blocking a chat switched to Claude). DeepSeek is the
     default and answers 402; the user switches through the API the chip calls. The next turn runs on the pick:

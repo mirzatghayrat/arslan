@@ -237,6 +237,8 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
     if await db.get(ProviderConfig, body.config_id) is None:
         raise HTTPException(404, detail={"code": "provider_config_not_found"})
     model = body.model.strip()
+    if not model:          # "  " passes min_length before the strip (#691 review)
+        raise HTTPException(422, detail={"code": "invalid_model"})
     row = await db.get(ConversationModel, conversation_id)
     if row is None:
         db.add(ConversationModel(conversation_id=conversation_id, config_id=body.config_id, model=model, updated_at=_dt.utcnow()))
