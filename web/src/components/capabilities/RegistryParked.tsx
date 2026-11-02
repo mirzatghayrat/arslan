@@ -17,12 +17,18 @@ function names(value: RegistryNames | null) {
 
 /** Whitespace as the page draws it (any run, NBSP included, reads as one space). */
 const drawn = (text: string) => text.replace(/\s+/g, " ").trim();
+const label = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+/** A value as it reads on the page, each non-ASCII character spelled as its chip: a value that writes another's chip
+ *  in plain ASCII (a literal "U+00F6") then reads the same as it, and gets the note (#604 max review of d65f323a). */
+const labeled = (text: string) =>
+  [...text].map(ch => { const cp = ch.codePointAt(0) ?? 0; return cp >= 0x20 && cp <= 0x7e ? ch : label(cp); }).join("");
 
 /** One value the Registry wrote or that was installed. Names, versions and addresses are ASCII by rule, so every
  *  other character is shown as its code point (U+00A0, U+043E…): a lookalike letter or an odd space cannot pass for
  *  the installed value (#604 max review). An empty value reads "—". Isolated (<bdi>) from the words around it. */
 function Value({ text, testId }: { text: string; testId: string }) {
-  if (!drawn(text)) return <span data-testid={testId}>—</span>;
+  const { t } = useTranslation();
+  if (!drawn(labeled(text))) return <span data-testid={testId}>—</span>;       // an NBSP-only value shows its chip
   const parts: ReactNode[] = [];
   let plain = "";
   for (const ch of text) {
@@ -30,9 +36,9 @@ function Value({ text, testId }: { text: string; testId: string }) {
     if (cp >= 0x20 && cp <= 0x7e) { plain += ch; continue; }
     if (plain) parts.push(plain);
     plain = "";
-    parts.push(<span key={parts.length} data-testid="non-ascii"
-      className="mx-px rounded bg-ask-soft px-1 font-mono text-[10px] text-ask">
-      U+{cp.toString(16).toUpperCase().padStart(4, "0")}</span>);
+    parts.push(<span key={parts.length} data-testid="non-ascii" role="img"
+      aria-label={t("capabilityList.parked_char", { code: label(cp) })}
+      className="mx-px rounded bg-ask-soft px-1 font-mono text-[10px] text-ask">{label(cp)}</span>);
   }
   if (plain) parts.push(plain);
   return <span data-testid={testId} className="font-mono break-all"><bdi>{parts}</bdi></span>;
@@ -68,7 +74,9 @@ export function RegistryParked({ sourceId, onChanged }: { sourceId: string; onCh
     : parked.checked_at ? formatUiDate(parked.checked_at, i18n?.language) : "—";
   const installedText = names(parked.installed), nowText = names(parked.now);
   // #604 max review: the note shows whenever the two rows read the same as drawn, whatever looks_same said.
-  const readsSame = parked.why === "changed" && (parked.looks_same || drawn(installedText) === drawn(nowText));
+  // Either way of reading counts: as drawn (an NBSP is a space) or with the chips spelled (a literal "U+00F6").
+  const readsSame = parked.why === "changed" && (parked.looks_same || drawn(installedText) === drawn(nowText)
+    || drawn(labeled(installedText)) === drawn(labeled(nowText)));
 
   async function keep() {
     if (!parked) return;

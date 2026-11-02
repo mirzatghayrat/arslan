@@ -226,3 +226,37 @@ describe("values that could pass for each other", () => {
     expect(screen.queryByTestId("registry-parked-looks-same")).toBeNull();
   });
 });
+
+// #604 max review of d65f323a: a value that writes another value's chip in plain ASCII reads the same as it.
+describe("a value that spells another's chip", () => {
+  it("an address with ö and one that writes U+00F6 read the same: the note says so", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", looks_same: false,
+      installed: { url: "https://mcp.example.com/n" + String.fromCodePoint(0xf6) + "tes" },
+      now: { url: "https://mcp.example.com/nU+00F6tes" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    expect(await screen.findByTestId("registry-parked-looks-same")).toBeInTheDocument();
+  });
+
+  it.each([["an NBSP", 0xa0, "U+00A0"], ["a zero-width no-break space", 0xfeff, "U+FEFF"]])(
+    "a value of only %s shows its chip, not a dash", async (_what, cp, code) => {
+      api.source.mockResolvedValue(source({ why: "changed", now: { url: String.fromCodePoint(cp) } }));
+      render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+      const now = await screen.findByTestId("registry-parked-now");
+      expect(now).not.toHaveTextContent(/^—$/);
+      expect(within(now).getByTestId("non-ascii")).toHaveTextContent(code);
+    });
+
+  it("a chip has a name a screen reader says, not only a style", async () => {
+    api.source.mockResolvedValue(source({ why: "changed",
+      now: { registry_type: "pypi", identifier: "notes-mc" + String.fromCodePoint(0x440), version: "1.2.0" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    const chip = within(await screen.findByTestId("registry-parked-now")).getByRole("img");
+    expect(chip).toHaveAttribute("aria-label", 'capabilityList.parked_char {"code":"U+0440"}');
+  });
+
+  it("a literal U+0043 in plain ASCII stays text", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", now: { url: "https://example.com/U+0043" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    expect(within(await screen.findByTestId("registry-parked-now")).queryByTestId("non-ascii")).toBeNull();
+  });
+});
