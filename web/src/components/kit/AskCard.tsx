@@ -13,7 +13,7 @@ export type AskRiskLevel = "info" | "warn" | "irreversible";
 
 /** SMART-8: a choice besides the two answers, drawn as a secondary button after the primary one. */
 /** Another approval beside Allow (③Hands' re-run cards): off while Allow is (`allowDisabled`), red when `destructive`
- *  (#688 review 8). */
+ *  (PR 688's review, item 8). */
 export interface AskAction { label: string; onClick: () => void; testId?: string; destructive?: boolean }
 
 export interface AskCardProps {

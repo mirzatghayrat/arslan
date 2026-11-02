@@ -155,7 +155,7 @@ function words(tokens: string[]): Words {
   for (;;) {
     while (i < rest.length && ASSIGNMENT.test(rest[i])) i++;
     const name = base(rest[i] ?? "");
-    if (!(name in WRAPPERS)) break;
+    if (!Object.prototype.hasOwnProperty.call(WRAPPERS, name)) break;      // never `toString` and its kin
     i++;
     listed = listed || name === "xargs";
     while (i < rest.length && rest[i].startsWith("-") && rest[i] !== "-") {
