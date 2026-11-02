@@ -101,7 +101,7 @@ class Confirmations:
                 detail=shell,
                 frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                    remote_host=remote_host, fingerprints=list(fingerprints or [])))
+                    remote_host=remote_host, fingerprints=list(fingerprints or []), why=why))
         else:
             request = None
         if request is not None:
@@ -112,7 +112,7 @@ class Confirmations:
         rules = sorted(terminal_policy.ask_rules(shell))
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-            rule=verdict.rule or None, network=network)
+            rule=verdict.rule or None, network=network, why=why)    # SMART-8: the card's purpose, as Arslan's words
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
         with self._surface():
             decision = await permissions.decide(

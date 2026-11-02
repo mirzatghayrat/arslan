@@ -3,12 +3,15 @@ import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
 import { DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
+import { TOUCHES_MAX, commandRisk, summarize } from "../lib/commandSummary";
+import { Escaped } from "../lib/outsideText";
 
 interface Props {
   callId: string;
   /** Full command as one string, e.g. "git status". */
   pretty: string;
-  /** Why it asks — the terminal rule that matched (host classification, never the model's words). */
+  /** Why it asks, as the server's English line (the terminal rule that matched). SMART-8: the 「风险」 row now says it in
+   *  the user's language from `rule`, so the card no longer prints this; the phone still reads it. */
   reason?: string;
   /** Non-empty when the command runs on ANOTHER machine (P3b), as "user@ip". */
   remoteHost?: string;
@@ -18,8 +21,14 @@ interface Props {
   background?: boolean;
   /** 0.1.51 P3: "outside" — leave the sandbox; "retry" — the sandbox stopped it. */
   sandbox?: "outside" | "retry";
-  /** With "outside": Arslan's one-line reason (the model's words). */
+  /** Arslan's one-line reason for the step (the model's words, cleaned by the server). SMART-8: when present it is
+   *  the card's purpose, marked as Arslan's; else the purpose is read from the command. */
   why?: string;
+  /** The terminal rule the server matched (`rule`), whether the card also asks for the network (`network`), and
+   *  whether it would run with no sandbox around it (`unsandboxed`): the 「风险」 row, never the model's words. */
+  rule?: string;
+  network?: boolean;
+  unsandboxed?: boolean;
   expiresAt?: number | null;
   /** 0.1.61 §A4: the choices a card from the permission layer offers. Every command card carries them
    *  (S4a); a frame without them answers with its first, narrowest choice. */
@@ -48,9 +57,9 @@ interface Props {
  * of the conversation out, background tasks' too (S4a). 0.1.61: the card shows the frame's choices
  * and takes a note on No. (S4a deleted the old "remember" tick: every command card carries choices.)
  */
-export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
-                                         sandbox, why, expiresAt, options, alwaysLabel, permKind, busy, queue,
-                                         onOpenContext, onConfirm, onCancel }: Props) {
+export default function RunCommandCard({ callId, pretty, remoteHost, fingerprints, background,
+                                         sandbox, why, rule, network, unsandboxed, expiresAt, options, alwaysLabel,
+                                         permKind, busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
   const offered = offeredScopes(options, permKind);
@@ -58,10 +67,15 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
   const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
   const isRemote = Boolean(remoteHost);
-  const title = isRemote ? t("runcmd.remoteLabel", { host: remoteHost })
-    : sandbox === "outside" ? t("runcmd.sandboxOutsideLabel")
-    : sandbox === "retry" ? t("runcmd.sandboxRetryLabel")
-    : t("runcmd.label");
+  // SMART-8 (the card mock the user OK'd): the purpose first, Arslan's own reason when it gave one, else read from
+  // the command; then what it touches and the risk, read by code; the command itself folded, whole when opened.
+  const summary = summarize(pretty, rule);
+  const said = (why ?? "").trim();
+  const purpose = said || t(`runcmd.purpose.${summary.purpose.key}`, summary.purpose.params)
+    + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
+  const touched = [...new Set([...(remoteHost ? [remoteHost] : []), ...summary.touches])];
+  const risk = commandRisk({ rule, network, sandbox, remoteHost, unsandboxed });
+  const riskText = risk.keys.map(k => t(`runcmd.risk.${k.key}`, k.params)).join(t("kit.riskJoin"));
   const context = [
     ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),
     ...(sandbox ? [{ icon: lineIcon(ShieldAlert), text: <span data-testid="runcmd-sandbox-note">
@@ -71,13 +85,16 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
   return (
     <AskCard testId="runcmd-card" attrs={isRemote ? { "data-remote": "true" } : undefined}
       who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
-      title={title}
-      said={sandbox === "outside" && why ? why : null} saidTestId="runcmd-why"
-      risk={reason || null}
-      detail={<>
-        <CodeBox code={pretty} numbered={false} fold={8} />
-        {isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
-      </>}
+      title={<span data-testid="runcmd-purpose"><Escaped text={purpose} /></span>}
+      purposeFrom={said ? "arslan" : "command"}
+      touches={touched.length ? <span className="flex flex-col gap-0.5">
+        {touched.slice(0, TOUCHES_MAX).map(item => <span key={item} className="font-mono text-[12px]"><Escaped text={item} /></span>)}
+        {touched.length > TOUCHES_MAX ? <span className="text-muted-foreground">
+          {t("kit.touchesMore", { count: touched.length - TOUCHES_MAX })}</span> : null}
+      </span> : null}
+      riskRow={{ level: risk.level, text: riskText }}
+      folded={{ testId: "runcmd-show-command", body: <CodeBox code={pretty} numbered={false} fold={8} /> }}
+      detail={isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
       context={context}
       // A command card's "In this conversation" is a grant for its kind of command (the rules it matched: every `rm`, every
       // `git push`), not for this one text — the same set "Always" names (approvals._command_request). It says so.

@@ -1,7 +1,6 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock } from "lucide-react";
-import { AskMark } from "./AskMark";
 import { Button } from "./Button";
 import { CARD_MS, Countdown } from "./Countdown";
 import { useAnswerGuard, useAnswerHeld } from "./guard";
@@ -9,11 +8,29 @@ import { useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
 
+/** SMART-8: how hard a step is to take back, for the 「风险」 row's colour (orange to warn, red for irreversible). */
+export type AskRiskLevel = "info" | "warn" | "irreversible";
+
+/** SMART-8: a choice besides the two answers, drawn as a secondary button after the primary one. */
+export interface AskAction { label: string; onClick: () => void; testId?: string }
+
 export interface AskCardProps {
-  /** Who is asking: "Arslan 在问你" / "后台作业在问你". */
+  /** Who is asking: "Arslan 在问你" / "后台作业在问你". The card's accessible name; SMART-8 (the user: 「去掉小标题」)
+   *  no longer prints it as a heading. */
   who: string;
   /** One plain sentence: what Arslan wants to do. */
   title: ReactNode;
+  /** SMART-8: where `title` came from, shown under it: Arslan's own reason for the step (the model's words), or read
+   *  from the command by code. Absent on a card whose title is the server's own sentence. */
+  purposeFrom?: "arslan" | "command";
+  /** SMART-8: what the step touches (a host, a folder or file, a recipient), read by code: the 「涉及」 row. */
+  touches?: ReactNode;
+  /** SMART-8: the 「风险」 row, in plain words, read by code. With it, `risk` (the amber box) is not drawn. */
+  riskRow?: { level: AskRiskLevel; text: ReactNode };
+  /** SMART-8: the raw command (or the text to be sent), folded under "Show command" and shown whole when opened. */
+  folded?: { body: ReactNode; showLabel?: string; hideLabel?: string; testId?: string };
+  /** SMART-8: more choices, as secondary buttons after the primary one (③Hands' re-run cards). */
+  actions?: AskAction[];
   /** The MODEL's own description, never trusted for safety: shown as "Arslan 说：…". */
   said?: string | null;
   /** Derived from the code / command itself (decision 1): amber, with a lock. */
@@ -59,6 +76,7 @@ export interface AskCardProps {
  */
 export function AskCard(p: AskCardProps) {
   const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
   const top = useLayer(p.keys !== false);
   const root = useRef<HTMLElement>(null);
   // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
@@ -69,11 +87,12 @@ export function AskCard(p: AskCardProps) {
   return (
     <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <AskMark />
-          <span className="truncate text-[13px] font-semibold text-ask">{p.who}</span>
-        </div>
+      {/* The default asker ("Arslan is asking") is no longer printed (the user: 「去掉小标题」); another one (a background
+          job) still is, as it is the only place some cards say who is asking. */}
+      {(p.queue && p.queue.total > 1) || p.expiresAt || p.who !== t("kit.whoArslan") ? <header
+        className="flex items-center justify-between gap-3">
+        <span data-testid="ask-who" className="truncate text-[12px] font-semibold text-ask">
+          {p.who !== t("kit.whoArslan") ? p.who : null}</span>
         <div className="flex items-center gap-2.5">
           {p.queue && p.queue.total > 1 && (
             <span data-testid="ask-queue" className="inline-flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground">
@@ -86,19 +105,44 @@ export function AskCard(p: AskCardProps) {
           )}
           {p.expiresAt ? <Countdown expiresAt={p.expiresAt} totalMs={p.totalMs ?? CARD_MS} /> : null}
         </div>
-      </header>
-      <h3 className="text-[19px] font-bold leading-[1.35]">{p.title}</h3>
+      </header> : null}
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[16px] font-semibold leading-[1.45] [overflow-wrap:anywhere]">{p.title}</h3>
+        {p.purposeFrom ? <span data-testid="ask-purpose-from" className="text-[11px] text-muted-foreground">
+          {t(p.purposeFrom === "arslan" ? "kit.purposeFromArslan" : "kit.purposeFromCommand")}</span> : null}
+      </div>
       {p.said ? (
         <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
           <span className="text-subtle-foreground">{t("kit.arslanSays")}</span>{p.said}
         </p>
       ) : null}
-      {p.risk ? (
+      {p.touches || p.riskRow ? (
+        <div data-testid="ask-rows" className="grid grid-cols-[56px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[1.5]">
+          {p.touches ? <>
+            <span className="text-muted-foreground">{t("kit.touches")}</span>
+            <span data-testid="ask-touches" className="min-w-0 [overflow-wrap:anywhere]">{p.touches}</span>
+          </> : null}
+          {p.riskRow ? <>
+            <span className={p.riskRow.level === "irreversible" ? "font-semibold text-danger"
+              : p.riskRow.level === "warn" ? "font-semibold text-ask" : "text-muted-foreground"}>{t("kit.riskLabel")}</span>
+            <span data-testid="ask-risk-row" data-level={p.riskRow.level} className={p.riskRow.level === "irreversible"
+              ? "text-danger" : p.riskRow.level === "warn" ? "text-ask" : ""}>{p.riskRow.text}</span>
+          </> : null}
+        </div>
+      ) : null}
+      {p.risk && !p.riskRow ? (
         <div data-testid="ask-risk" className="flex items-center gap-2 rounded-[10px] bg-ask-soft px-3 py-2 text-[13px] font-semibold text-ask">
           <Lock size={15} aria-hidden="true" className="shrink-0" />
           <span>{p.risk}</span>
         </div>
       ) : null}
+      {p.folded ? <div className="flex flex-col gap-2">
+        <button type="button" data-testid={p.folded.testId ?? "ask-fold"} aria-expanded={open} onClick={() => setOpen(!open)}
+          className="self-start text-[12px] text-primary hover:underline">
+          {open ? (p.folded.hideLabel ?? t("kit.hideCommand")) : (p.folded.showLabel ?? t("kit.showCommand"))}</button>
+        {/* Kept in the page while folded, so it is the card's own text (find, tests), just not drawn. */}
+        <div hidden={!open} data-testid="ask-folded-body">{p.folded.body}</div>
+      </div> : null}
       {p.detail}
       {p.context && p.context.length > 0 && (
         <ul className="flex flex-col gap-[7px] text-[13px] text-muted-foreground">
@@ -108,14 +152,19 @@ export function AskCard(p: AskCardProps) {
         </ul>
       )}
       {p.options}
-      <div className="flex gap-2.5">
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
-          onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
-          {p.declineLabel ?? t("kit.decline")}
-        </Button>
+      {/* SMART-8 (the mock the user OK'd): the action first, named for what it does; then any other choice; No last. */}
+      <div className="flex flex-wrap gap-2.5">
         <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
           onClick={() => { if (!guarded()) p.onAllow(); }} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
+        </Button>
+        {p.actions?.map((a, i) => (
+          <Button key={i} tone="secondary" grow={1} disabled={p.busy} aria-disabled={held || undefined}
+            onClick={() => { if (!guarded()) a.onClick(); }} data-testid={a.testId}>{a.label}</Button>
+        ))}
+        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
+          onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
+          {p.declineLabel ?? t("kit.decline")}
         </Button>
       </div>
       {p.extra}
