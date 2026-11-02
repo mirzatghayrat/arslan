@@ -600,18 +600,26 @@ async def test_a_lock_past_the_batch_limit_still_asks_about_the_package_itself(o
 
 
 async def test_a_record_that_does_not_load_makes_the_answer_incomplete(osv):
-    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
+    """⓪Plan's probe: one record loads (LOW), the other answers 503. The answer is incomplete, and the one that did not
+    load is unknown, not "no fix"."""
+    osv.hits = [["GHSA-aaaa-aaaa-aaaa", "GHSA-bbbb-bbbb-bbbb"]]
+    osv.records["GHSA-aaaa-aaaa-aaaa"] = _record("GHSA-aaaa-aaaa-aaaa", name="notes-mcp", severity="LOW", fixed=["1.2.1"])
+    osv.vuln["GHSA-bbbb-bbbb-bbbb"] = httpx.Response(503)
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
-    assert out["complete"] is False and out["own"][0]["loaded"] is False and out["own"][0]["fixed"] == []
+    assert out["complete"] is False and out["highest"] == "LOW"
+    assert [(a["severity"], a["fixed"], a["loaded"]) for a in out["own"]] == [("LOW", ["1.2.1"], True),
+                                                                              ("UNKNOWN", [], False)]
 
 
 async def test_a_git_ranges_commit_is_not_a_fixed_version(osv):
-    osv.hits = [["GHSA-qw6h-vgh9-j6wx"]]
-    rec = _record("GHSA-qw6h-vgh9-j6wx", name="notes-mcp", severity="LOW")
+    """⓪Plan's probe: a PYSEC record carries a GIT range (a commit) beside the ECOSYSTEM one, in one affected entry."""
+    sha = "e4b2b6f8c3a1d9e7f5b3a1c9d7e5f3b1a9c7e5d3"
+    rec = _record("PYSEC-2024-1", name="notes-mcp")
     rec["affected"] = [{"package": {"name": "notes-mcp", "ecosystem": "PyPI"}, "ranges": [
-        {"type": "GIT", "repo": "https://example.com/notes", "events": [{"introduced": "0"}, {"fixed": "3f9c2e1a"}]},
+        {"type": "GIT", "repo": "https://github.com/acme/notes-mcp", "events": [{"introduced": "0"}, {"fixed": sha}]},
         {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.2.1"}]}]}]
-    osv.records["GHSA-qw6h-vgh9-j6wx"] = rec
+    osv.hits = [["PYSEC-2024-1"]]
+    osv.records["PYSEC-2024-1"] = rec
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
     assert out["own"][0]["fixed"] == ["1.2.1"]
 
@@ -657,3 +665,79 @@ async def test_the_packages_own_worst_is_told_apart_from_its_dependencies(osv):
     osv.records["GHSA-dddd-dddd-dddd"] = _record("GHSA-dddd-dddd-dddd", name="httpx", severity="CRITICAL")
     out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0"), ("httpx", "0.27.0")))
     assert (out["highest"], out["own_highest"], out["deps_highest"]) == ("CRITICAL", "LOW", "CRITICAL")
+
+
+# ── ⓪Plan's #661 probes at 0a5f0e20, each now asserting the fixed behaviour ──
+
+async def test_the_package_itself_is_asked_even_when_it_sorts_past_the_batch_limit(osv, monkeypatch):
+    monkeypatch.setattr(osv_check, "QUERIES_MAX", 2)
+    osv.hits = [["GHSA-qw6h-vgh9-j6wx"], []]
+    out = await osv_check.check(PYPI, _locked("uv", ("aaa", "1"), ("bbb", "1"), ("notes-mcp", "1.2.0")))
+    assert [q["package"]["name"] for q in osv.batch_sent()["queries"]] == ["notes-mcp", "aaa"]
+    assert (out["packages"], out["asked"], out["complete"]) == (3, 2, False)
+    assert [a["id"] for a in out["own"]] == ["GHSA-qw6h-vgh9-j6wx"]
+
+
+async def test_npm_locks_top_level_entry_is_the_package_not_a_dependencys_nested_older_copy(osv, monkeypatch, tmp_path):
+    """Through lock_npm itself: npm sorts the nested copy (`node_modules/a-helper/node_modules/notes-js`) before the
+    top-level one, and only the version being installed (2.0.1) is vulnerable."""
+    from server.services import capability_install, capability_runtime
+    reg = "https://registry.npmjs.org/"
+
+    async def ensure(name):
+        return tmp_path / "rt" / name / "bin" / name
+
+    async def run(argv, *, cwd, env):
+        (cwd / "package-lock.json").write_text(json.dumps({"packages": {
+            "": {"name": "arslan-capability"},
+            "node_modules/notes-js": {"version": "2.0.1", "resolved": reg + "notes-js/-/notes-js-2.0.1.tgz",
+                                      "integrity": "sha512-" + "A" * 86 + "=="},
+            "node_modules/a-helper": {"version": "1.0.0", "resolved": reg + "a-helper/-/a-helper-1.0.0.tgz",
+                                      "integrity": "sha512-" + "B" * 86 + "=="},
+            "node_modules/a-helper/node_modules/notes-js": {
+                "version": "1.0.0", "resolved": reg + "notes-js/-/notes-js-1.0.0.tgz",
+                "integrity": "sha512-" + "C" * 86 + "=="}}}))
+        return ""
+    monkeypatch.setattr(capability_runtime, "ensure", ensure)
+    monkeypatch.setattr(capability_install, "_run", run)
+    lock = await capability_install.lock_npm(tmp_path, "notes-js", "2.0.1")
+    assert [(p["name"], p["version"], p["path"]) for p in lock["packages"]] == [
+        ("a-helper", "1.0.0", "node_modules/a-helper"),
+        ("notes-js", "1.0.0", "node_modules/a-helper/node_modules/notes-js"),
+        ("notes-js", "2.0.1", "node_modules/notes-js")]
+    osv.hits = [["GHSA-aaaa-bbbb-cccc"], [], []]          # asked in this order: the package itself first
+    osv.records["GHSA-aaaa-bbbb-cccc"] = _record("GHSA-aaaa-bbbb-cccc", name="notes-js", ecosystem="npm",
+                                                 severity="CRITICAL", fixed=["2.0.2"])
+    cand = {**NPM, "package": {**NPM["package"], "identifier": "notes-js", "version": "2.0.1"}}
+    out = await osv_check.check(cand, {"runtime": "node", "lock": lock})
+    assert [q["version"] for q in osv.batch_sent()["queries"]][0] == "2.0.1"
+    assert [(a["id"], a["fixed"]) for a in out["own"]] == [("GHSA-aaaa-bbbb-cccc", ["2.0.2"])] and out["deps"] == []
+    assert out["own_highest"] == "CRITICAL"
+
+
+async def test_an_alias_of_the_package_in_a_lock_without_paths_is_a_dependency(osv):
+    """A lock with no `path` (one written before #661's max review): `"aaa": "npm:notes-js@1.0.0"` sorts first, and
+    the package is still the entry whose folder and real name are both its name."""
+    lock = _locked("node", ("aaa", "1.0.0"), ("notes-js", "2.0.1"))
+    lock["lock"]["packages"][0]["registry_name"] = "notes-js"
+    osv.hits = [["GHSA-aaaa-bbbb-cccc"], []]
+    osv.records["GHSA-aaaa-bbbb-cccc"] = _record("GHSA-aaaa-bbbb-cccc", name="notes-js", ecosystem="npm",
+                                                 severity="HIGH", fixed=["2.0.2"])
+    cand = {**NPM, "package": {**NPM["package"], "identifier": "notes-js"}}
+    out = await osv_check.check(cand, lock)
+    assert [q["version"] for q in osv.batch_sent()["queries"]] == ["2.0.1", "1.0.0"]
+    assert [a["id"] for a in out["own"]] == ["GHSA-aaaa-bbbb-cccc"] and out["deps"] == []
+
+
+async def test_the_packages_own_advisories_past_the_list_are_counted(osv, monkeypatch):
+    monkeypatch.setattr(osv_check, "SHOWN_MAX", 2)
+    osv.hits = [[f"GHSA-own{i}-aaaa-aaaa" for i in range(5)]]
+    out = await osv_check.check(PYPI, _locked("uv", ("notes-mcp", "1.2.0")))
+    assert (out["count"], len(out["own"]), out["own_more"]) == (5, 2, 3)
+
+
+async def test_the_same_name_and_version_twice_counts_once(osv):
+    osv.hits = [[], ["GHSA-aaaa-bbbb-cccc"]]
+    out = await osv_check.check(NPM, _locked("node", ("@acme/notes-js", "2.0.1"), ("x", "1.0"), ("x", "1.0")))
+    assert len(osv.batch_sent()["queries"]) == 2
+    assert out["count"] == 1 and [(d["name"], d["version"]) for d in out["deps"]] == [("x", "1.0")]

@@ -155,6 +155,7 @@ describe("#661 max review", () => {
 
   it("a lock asked about in part says how much, and none known only of what was asked", () => {
     show(checked({ packages: 1500, asked: 1000, complete: false }));
+    expect(screen.getByTestId("capability-card-allow")).toHaveTextContent("Add and retry");
     expect(screen.getByTestId("vuln-summary")).toHaveTextContent("No known vulnerabilities in the 1000 packages asked about.");
     expect(screen.getByTestId("vuln-summary")).not.toHaveTextContent("1500");
     expect(screen.getByTestId("vuln-asked")).toHaveTextContent(
@@ -181,7 +182,10 @@ describe("question 5's buttons on a card the package itself is vulnerable in", (
     show(own());
     const decline = screen.getByTestId("capability-card-decline"), install = screen.getByTestId("capability-card-allow");
     expect(document.activeElement).toBe(decline);
-    expect(decline.className).not.toBe(install.className);
+    expect(decline.className).toContain("bg-foreground");                  // the primary tone (⓪Plan's probe)
+    expect(decline.className).not.toContain("bg-fill");
+    expect(decline.style.flex).toMatch(/^1\.4/);
+    expect(install.style.flex).toMatch(/^1( |$)/);
     expect(install).not.toHaveTextContent("⌘⏎");
     expect(decline).toHaveTextContent("esc");
   });
@@ -220,5 +224,32 @@ describe("question 5's buttons on a card the package itself is vulnerable in", (
     expect(document.activeElement).not.toBe(screen.getByTestId("capability-card-decline"));
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("⓪Plan's #661 probes at 0a5f0e20, each now asserting the fixed behaviour", () => {
+  it("an ordinary install card mounted over a plan card still takes ⌘⏎ itself", () => {
+    const other = vi.fn(), onConfirm = vi.fn();
+    render(<>
+      <AskCard who="plan" title="Take the new plan?" onAllow={other} onDecline={vi.fn()} testId="plan" />
+      <CapabilityProposeCard card={{ ...CARD }} callId="c1" onConfirm={onConfirm} onCancel={vi.fn()} />
+    </>);
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(other).not.toHaveBeenCalled();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("the name in the row's sentence is isolated, as the title's is", () => {
+    const name = "\u0645\u0644\u0627\u062d\u0638\u0627\u062a";        // Arabic letters, no control characters
+    show(checked({ count: 1, highest: "HIGH", own_highest: "HIGH", own: [adv("GHSA-aaaa-bbbb-cccc", "HIGH")] }), { name });
+    expect(screen.getByTestId("vuln-summary").textContent).toContain(`${FSI}${name}${PDI}`);
+    expect(screen.getByRole("heading").textContent).toContain(`${FSI}${name}${PDI}`);
+  });
+
+  it("the package's own count is its total, not the advisories listed", () => {
+    const own10 = Array.from({ length: 10 }, (_, i) => adv(`GHSA-aaaa-bbbb-cc${i.toString().padStart(2, "0")}`, "HIGH"));
+    show(checked({ packages: 3, count: 25, highest: "HIGH", own_highest: "HIGH", own: own10, own_more: 15 }));
+    expect(screen.getByTestId("vuln-summary")).toHaveTextContent(`Known vulnerabilities in ${NAME} itself: 25. Highest: High.`);
+    expect(screen.getByTestId("vuln-list")).toHaveTextContent("and 15 more");
   });
 });
