@@ -1,5 +1,5 @@
 {
- "about": "SMART-8: a command card's plain purpose in each language. The server reads this file for the card's title (the iPhone's heading; server/services/card_purpose.py); the Mac card's strings are runcmd.purpose in the six locale files, and a test holds them equal.",
+ "about": "SMART-8: a command card's plain purpose in each language, and the code's facts that lead its title (where it runs, the network). The server reads this file for the card's title (the iPhone's heading; server/services/card_purpose.py); the Mac card's strings are runcmd.purpose in the six locale files, and a test holds them equal.",
  "en": {
   "purpose": {
    "run": "Run {{program}}",
@@ -26,14 +26,21 @@
    "mailTo": "Send an email to {{to}}",
    "install": "Install {{packages}}",
    "script": "Run the script {{file}} with {{program}}",
+   "fetchRun": "Download code from {{host}} and run it",
+   "write": "Write to {{target}}",
+   "findDelete": "Delete what it finds in {{where}}",
+   "deleteSome": "Delete files or folders",
+   "onHost": "{{what}} on {{host}}, over SSH",
    "more": " (and {{count}} more steps)",
    "more_one": " (and 1 more step)"
   },
-  "suffix": {
-   "outside": " (outside the sandbox, this time)",
-   "onHost": " (on {{host}})",
-   "shortcutAsYou": " (it runs as you, outside the sandbox; Arslan can't see what the Shortcut does)",
-   "network": " (uses the network, this time)"
+  "fact": {
+   "outside": "Outside the sandbox",
+   "noSandbox": "No sandbox",
+   "onHost": "On {{host}}",
+   "network": "Uses the network",
+   "shortcutAsYou": "Runs as you, outside the sandbox; Arslan can't see what the Shortcut does",
+   "join": " · "
   }
  },
  "zh": {
@@ -59,17 +66,24 @@
    "mailTo": "给 {{to}} 发一封邮件",
    "install": "安装 {{packages}}",
    "script": "用 {{program}} 运行脚本 {{file}}",
-   "more": "（还有 {{count}} 步）",
    "copyLocal_one": "复制 {{count}} 项",
    "delete_one": "删除 {{count}} 个文件或文件夹",
    "move_one": "移动 {{count}} 项",
+   "fetchRun": "从 {{host}} 下载代码并运行",
+   "write": "写入 {{target}}",
+   "findDelete": "删除在 {{where}} 里找到的文件",
+   "deleteSome": "删除文件或文件夹",
+   "onHost": "通过 SSH 在 {{host}} 上：{{what}}",
+   "more": "（还有 {{count}} 步）",
    "more_one": "（还有 {{count}} 步）"
   },
-  "suffix": {
-   "outside": "（这一次在沙盒外运行）",
-   "onHost": "（在 {{host}} 上）",
-   "shortcutAsYou": "（以你的身份在沙盒外运行；Arslan 看不到这个快捷指令做什么）",
-   "network": "（会联网，仅这一次）"
+  "fact": {
+   "outside": "沙盒外运行",
+   "noSandbox": "不在沙盒里",
+   "onHost": "在 {{host}} 上",
+   "network": "会联网",
+   "shortcutAsYou": "以你的身份在沙盒外运行；Arslan 看不到这个快捷指令做什么",
+   "join": " · "
   }
  },
  "ja": {
@@ -95,17 +109,24 @@
    "mailTo": "{{to}} にメールを送信",
    "install": "{{packages}} をインストール",
    "script": "{{program}} でスクリプト {{file}} を実行",
-   "more": "（ほか {{count}} ステップ）",
    "copyLocal_one": "{{count}} 件をコピー",
    "delete_one": "{{count}} 件のファイルまたはフォルダを削除",
    "move_one": "{{count}} 件を移動",
+   "fetchRun": "{{host}} からコードをダウンロードして実行",
+   "write": "{{target}} に書き込む",
+   "findDelete": "{{where}} で見つかったものを削除",
+   "deleteSome": "ファイルまたはフォルダを削除",
+   "onHost": "SSH で {{host}} 上：{{what}}",
+   "more": "（ほか {{count}} ステップ）",
    "more_one": "（ほか {{count}} ステップ）"
   },
-  "suffix": {
-   "outside": "（今回はサンドボックスの外で実行）",
-   "onHost": "（{{host}} 上で）",
-   "shortcutAsYou": "（あなたとしてサンドボックスの外で実行。Arslan にはショートカットの中身が見えません）",
-   "network": "（今回はネットワークを使います）"
+  "fact": {
+   "outside": "サンドボックス外で実行",
+   "noSandbox": "サンドボックスなし",
+   "onHost": "{{host}} 上で",
+   "network": "ネットワークを使用",
+   "shortcutAsYou": "あなたとしてサンドボックスの外で実行。Arslan にはショートカットの中身が見えません",
+   "join": " · "
   }
  },
  "es": {
@@ -134,14 +155,21 @@
    "mailTo": "Enviar un correo a {{to}}",
    "install": "Instalar {{packages}}",
    "script": "Ejecutar el script {{file}} con {{program}}",
+   "fetchRun": "Descargar código de {{host}} y ejecutarlo",
+   "write": "Escribir en {{target}}",
+   "findDelete": "Borrar lo que encuentre en {{where}}",
+   "deleteSome": "Borrar archivos o carpetas",
+   "onHost": "{{what}} en {{host}}, por SSH",
    "more": " (y {{count}} pasos más)",
    "more_one": " (y 1 paso más)"
   },
-  "suffix": {
-   "outside": " (fuera del entorno aislado, esta vez)",
-   "onHost": " (en {{host}})",
-   "shortcutAsYou": " (se ejecuta como tú, fuera del entorno aislado; Arslan no ve lo que hace el atajo)",
-   "network": " (usa la red, esta vez)"
+  "fact": {
+   "outside": "Fuera del entorno aislado",
+   "noSandbox": "Sin entorno aislado",
+   "onHost": "En {{host}}",
+   "network": "Usa la red",
+   "shortcutAsYou": "Se ejecuta como tú, fuera del entorno aislado; Arslan no ve lo que hace el atajo",
+   "join": " · "
   }
  },
  "de": {
@@ -170,14 +198,21 @@
    "mailTo": "Eine E-Mail an {{to}} senden",
    "install": "{{packages}} installieren",
    "script": "Das Skript {{file}} mit {{program}} ausführen",
+   "fetchRun": "Code von {{host}} herunterladen und ausführen",
+   "write": "In {{target}} schreiben",
+   "findDelete": "Löschen, was es in {{where}} findet",
+   "deleteSome": "Dateien oder Ordner löschen",
+   "onHost": "Auf {{host}} per SSH: {{what}}",
    "more": " (und {{count}} weitere Schritte)",
    "more_one": " (und 1 weiterer Schritt)"
   },
-  "suffix": {
-   "outside": " (diesmal außerhalb der Sandbox)",
-   "onHost": " (auf {{host}})",
-   "shortcutAsYou": " (läuft als du, außerhalb der Sandbox; Arslan sieht nicht, was der Kurzbefehl tut)",
-   "network": " (nutzt diesmal das Netzwerk)"
+  "fact": {
+   "outside": "Außerhalb der Sandbox",
+   "noSandbox": "Ohne Sandbox",
+   "onHost": "Auf {{host}}",
+   "network": "Nutzt das Netzwerk",
+   "shortcutAsYou": "Läuft als du, außerhalb der Sandbox; Arslan sieht nicht, was der Kurzbefehl tut",
+   "join": " · "
   }
  },
  "fr": {
@@ -206,14 +241,21 @@
    "mailTo": "Envoyer un e-mail à {{to}}",
    "install": "Installer {{packages}}",
    "script": "Exécuter le script {{file}} avec {{program}}",
+   "fetchRun": "Télécharger du code depuis {{host}} et l’exécuter",
+   "write": "Écrire dans {{target}}",
+   "findDelete": "Supprimer ce qu’il trouve dans {{where}}",
+   "deleteSome": "Supprimer des fichiers ou dossiers",
+   "onHost": "{{what}} sur {{host}}, en SSH",
    "more": " (et {{count}} étapes de plus)",
    "more_one": " (et 1 étape de plus)"
   },
-  "suffix": {
-   "outside": " (hors du bac à sable, cette fois)",
-   "onHost": " (sur {{host}})",
-   "shortcutAsYou": " (s’exécute en votre nom, hors du bac à sable ; Arslan ne voit pas ce que fait le raccourci)",
-   "network": " (utilise le réseau, cette fois)"
+  "fact": {
+   "outside": "Hors du bac à sable",
+   "noSandbox": "Sans bac à sable",
+   "onHost": "Sur {{host}}",
+   "network": "Utilise le réseau",
+   "shortcutAsYou": "S’exécute en votre nom, hors du bac à sable ; Arslan ne voit pas ce que fait le raccourci",
+   "join": " · "
   }
  }
 }

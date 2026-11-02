@@ -460,7 +460,8 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     net = " It will use the network, this time." if network else ""
 
     def plain(old: str, **where) -> str:
-        return card_purpose.phrase(shell, why, rules[0] if rules else None, lang=lang, **where) if lang else old
+        # #689 review 2: a card that also asks for the network says so in its title.
+        return card_purpose.phrase(shell, why, rules, lang=lang, network=network, **where) if lang else old
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.
@@ -476,14 +477,14 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
                                    conversation_ok=False, once_only=True, frame=frame)
     if ask_all:
         old = f"Run `{shell[:80]}`?{net}"
-        return permissions.Request(kind="command", target="text:" + shell, title=plain(old, outside=unsandboxed),
+        return permissions.Request(kind="command", target="text:" + shell, title=plain(old, unsandboxed=unsandboxed),
                                    model_title=old if lang else "",
                                    detail=shell,
                                    frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
     # Marked on the card (a key the web and the phone ignore), so the island never approves a command
     # that would run with no sandbox around it: `rm notes.txt` there is a real delete.
     return permissions.Request(kind="command", target="unsandboxed:*",
-                               title=plain(f"Run `{shell[:80]}` outside the sandbox?{net}", outside=True),
+                               title=plain(f"Run `{shell[:80]}` outside the sandbox?{net}", unsandboxed=True),
                                model_title=f"Run `{shell[:80]}` outside the sandbox?{net}" if lang else "", detail=shell,
                                frame={**frame, "unsandboxed": True} if frame else None)
 

@@ -13,8 +13,9 @@ Both readers are held to tests/fixtures/card_purpose_vectors.json. It is in the 
 setting), from web/src/locales/card-purposes.json, which the packaged app carries in server/resources.
 
 What the step touches and its risk are not in the title: the Mac card shows them in its own rows, and the phone its
-risk word. A command that runs outside the sandbox or on another machine says so after its purpose, as the title
-always did.
+risk word. Where it runs (outside the sandbox, with no sandbox, on another machine) and whether it uses the network
+are the code's facts, so they lead the title in a fixed form ("Outside the sandbox · Uses the network · …"), and only
+the purpose is cut to fit the phone's heading (#689 review 1).
 """
 from __future__ import annotations
 
@@ -31,40 +32,101 @@ if not _TEXT_PATH.exists():
     _TEXT_PATH = _SERVER.parent / "web/src/locales/card-purposes.json"
 TEXT = {lang: value for lang, value in json.loads(_TEXT_PATH.read_text(encoding="utf-8")).items() if lang != "about"}
 TITLE_MAX = 300
+#: The phone shows a title as the approval's heading, cut at 200 (FrameMapper.swift); the whole title fits in it.
+PHONE_MAX = 200
 
 QUIET = {"echo", "printf", "true", "false", ":", "cd", "pushd", "popd", "sleep", "set", "export", "unset", "test", "[",
          "read", "wait", "clear"}
-WRAPPERS = {"sudo", "env", "command", "exec", "nohup", "time", "nice"}
+#: Programs that run the rest of their words as another program, each with its options that take a value.
+WRAPPERS = {"sudo": "CDghpRrTUu", "env": "CSu", "command": "", "exec": "a", "nohup": "", "time": "", "nice": "n",
+            "timeout": "ks", "xargs": "adEILnPs", "caffeinate": "tw", "stdbuf": ""}
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-_REDIRECT = re.compile(r"^(?:\d*>>?|\d*>&\d*|&>>?|<{1,3}|\d*<&?\d*)$")
+_FD_DUP = re.compile(r"^[0-9]*[<>]&(?:[0-9]+|-)$")
+_OUT = re.compile(r"^(?:[0-9]*|&)>>?\|?$")
+_OUT_ATTACHED = re.compile(r"^(?:[0-9]*|&)>>?\|?([^>&|].*)$")
+_IN = re.compile(r"^[0-9]*<(?:<<?|>)?-?$")
+_IN_ATTACHED = re.compile(r"^[0-9]*<{1,3}-?\S")
+_NOT_A_FILE = {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"}
 _SSH_VALUE = set("BbcDEeFIiJLlmOoPpQRSWw")
+_COPY_VALUE = {"scp": "cFiJlOoPS", "sftp": "BbcDFiJlOoPRS", "rsync": "e"}
 _INSTALLERS = {"brew", "pip", "pip3", "npm", "pnpm", "yarn", "uv", "cargo", "gem", "pipx"}
 _SCRIPT_RUNNERS = {"python", "python3", "node", "ruby", "bash", "sh", "zsh", "perl", "deno", "bun"}
-_REMOTE_PATH = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):")
+_SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
+_RUNS_CODE = _SHELLS | {"python", "python2", "python3", "node", "perl", "ruby", "php", "deno", "bun", "source", ".",
+                        "eval"}
+_FETCHERS = {"curl", "wget", "http", "https", "xh"}
+_DELETERS = {"rm", "rmdir", "unlink", "trash", "srm"}
+_PATH_LIKE = re.compile(r"^(?:/|~|\.{1,2}/|\$HOME\b|\$\{HOME\})", re.A)
+_URL_LIKE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
+_REMOTE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):")
+_REMOTE_PATH = re.compile(r"^[^/:\s]+:")
+#: What is most at stake in a step, by its purpose: the step with the most names the line (ties: the first).
+STAKES = {"fetchRun": 10, "delete": 9, "deleteSome": 9, "findDelete": 9, "mailTo": 8, "mail": 8, "upload": 8,
+          "onHost": 7, "gitPush": 7, "kill": 6, "copyRemote": 6, "ssh": 5, "sshTimeout": 5, "appleScript": 5,
+          "shortcut": 5, "install": 5, "write": 4, "move": 4, "open": 3, "copyLocal": 3, "gitClone": 3, "fetch": 2,
+          "gitFetch": 2, "script": 2}
 
 
-def split_shell(text: str) -> list[list[str]] | None:
-    """The line's steps, each its tokens, or None when a quote is never closed (as commandSummary.splitShell)."""
-    steps: list[list[str]] = []
-    step: list[str] = []
-    token, in_token, quote = "", False, None
-    i = 0
+def _closing(text: str, open_at: int) -> int:
+    """The index of the `)` that closes the `(` at `open_at`, quotes skipped, or -1."""
+    depth, quote, j = 1, None, open_at + 1
+    while j < len(text):
+        c = text[j]
+        if quote:
+            if c == quote:
+                quote = None
+            elif c == "\\" and quote == '"':
+                j += 1
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            j += 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return -1
+
+
+def _parse(text: str) -> list[dict] | None:
+    """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
+    is never closed (as commandSummary's `parse`)."""
+    steps: list[dict] = []
+    step = {"tokens": [], "piped": False, "subs": []}
+    token, in_token, quote, i = "", False, None, 0
 
     def end_token():
         nonlocal token, in_token
         if in_token:
-            step.append(token)
+            step["tokens"].append(token)
         token, in_token = "", False
 
-    def end_step():
+    def end_step(piped: bool):
         nonlocal step
         end_token()
-        if step:
+        if step["tokens"] or step["subs"]:
             steps.append(step)
-        step = []
+        step = {"tokens": [], "piped": piped, "subs": []}
 
     while i < len(text):
         ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if quote != "'":
+            opens = nxt == "(" and text[i + 2:i + 3] != "(" and (ch == "$" or (not quote and ch in "<>"))
+            if opens or ch == "`":
+                end = text.find("`", i + 1) if ch == "`" else _closing(text, i + 1)
+                if end < 0:
+                    return None
+                inner = _parse(text[i + 1 if ch == "`" else i + 2:end])
+                if inner is None:
+                    return None
+                step["subs"].extend(inner)
+                token += text[i:end + 1]
+                in_token, i = True, end + 1
+                continue
         if quote:
             if ch == quote:
                 quote = None
@@ -79,13 +141,13 @@ def split_shell(text: str) -> list[list[str]] | None:
             i += 1
             token += text[i]
             in_token = True
+        elif ch == "&" and (re.search(r"[0-9]?>$", token) or (not in_token and nxt == ">")):
+            token += ch
+            in_token = True
         elif ch in ";\n|&":
-            if ch == "&" and re.search(r"\d?>$", token):
-                token += ch
-            else:
-                end_step()
-                if ch in "|&" and i + 1 < len(text) and text[i + 1] == ch:
-                    i += 1
+            end_step(ch == "|" and nxt != "|")
+            if ch in "|&" and (nxt == ch or (ch == "|" and nxt == "&")):
+                i += 1
         elif ch in " \t":
             end_token()
         else:
@@ -94,46 +156,154 @@ def split_shell(text: str) -> list[list[str]] | None:
         i += 1
     if quote:
         return None
-    end_step()
+    end_step(False)
     return steps
+
+
+def split_shell(text: str) -> list[list[str]] | None:
+    """The line's steps as words, the steps run inside a step before it; None when a quote is never closed."""
+    steps = _parse(text)
+    if steps is None:
+        return None
+    out: list[list[str]] = []
+
+    def walk(items):
+        for s in items:
+            walk(s["subs"])
+            out.append(s["tokens"])
+    walk(steps)
+    return out
 
 
 def _base(word: str) -> str:
     return word[word.rfind("/") + 1:]
 
 
-def _words(step: list[str]) -> list[str]:
-    """A step's words with the noise taken off: assignments, wrappers (sudo, env…) and redirects with their targets."""
-    out, i = [], 0
-    while i < len(step) and (_ASSIGNMENT.match(step[i]) or _base(step[i]) in WRAPPERS):
-        wrapper = _base(step[i]) == "sudo"
-        i += 1
-        while wrapper and i < len(step) and step[i].startswith("-"):
-            i += 1
-    while i < len(step):
-        if _REDIRECT.match(step[i]):
-            i += 2
-            continue
-        if not (re.match(r"^\d*>>?\S", step[i]) or re.match(r"^<\S", step[i])):
-            out.append(step[i])
-        i += 1
-    return out
+def _program_of(word: str) -> str:
+    """A program word by its file name; one that is itself a substitution (`$(curl …)`) is kept whole."""
+    return word if re.match(r"^(?:\$\(|`)", word) else _base(word)
 
 
 def _plain(args: list[str]) -> list[str]:
     return [a for a in args if not a.startswith("-")]
 
 
+def _unique(items) -> list:
+    return list(dict.fromkeys(items))
+
+
+def _words(tokens: list[str]) -> dict:
+    """A step's program and arguments with the noise taken off: redirects (an output one's file is kept as a write),
+    assignments and wrappers with their options. `listed`: xargs gives it its operands."""
+    rest, writes, i = [], [], 0
+
+    def write(target):
+        if target and target not in _NOT_A_FILE:
+            writes.append(target)
+    while i < len(tokens):
+        tk = tokens[i]
+        if re.match(r"^[<>]\(", tk):
+            rest.append(tk)
+        elif _FD_DUP.match(tk):
+            pass
+        elif _OUT.match(tk):
+            i += 1
+            write(tokens[i] if i < len(tokens) else None)
+        elif _IN.match(tk):
+            i += 1
+        elif m := _OUT_ATTACHED.match(tk):
+            write(m.group(1))
+        elif not _IN_ATTACHED.match(tk):
+            rest.append(tk)
+        i += 1
+    i, listed = 0, False
+    while True:
+        while i < len(rest) and _ASSIGNMENT.match(rest[i]):
+            i += 1
+        name = _base(rest[i]) if i < len(rest) else ""
+        if name not in WRAPPERS:
+            break
+        i += 1
+        listed = listed or name == "xargs"
+        while i < len(rest) and rest[i].startswith("-") and rest[i] != "-":
+            flag = rest[i]
+            i += 1
+            if flag == "--":
+                break
+            if not flag.startswith("--") and len(flag) == 2 and flag[1] in WRAPPERS[name]:
+                i += 1
+        if name == "timeout" and i < len(rest):
+            i += 1                                                         # its duration
+    return {"program": _program_of(rest[i]) if i < len(rest) else "", "args": rest[i + 1:], "writes": writes,
+            "listed": listed}
+
+
+def _inline_line(w: dict) -> str | None:
+    """The command line a shell's `-c` (or `watch`) runs, or None."""
+    if w["program"] in _SHELLS:
+        at = next((k for k, a in enumerate(w["args"]) if re.match(r"^-[a-z]*c[a-z]*$", a, re.I)), -1)
+        return w["args"][at + 1] if 0 <= at < len(w["args"]) - 1 else None
+    if w["program"] == "watch":
+        args = list(w["args"])
+        while args and args[0].startswith("-"):
+            flag = args.pop(0)
+            if re.match(r"^-[ndq]$", flag) and args:
+                args.pop(0)
+        return " ".join(args) if args else None
+    return None
+
+
+def _reads_code(w: dict) -> bool:
+    """Whether a program reads the code it runs from its input (`| sh`, `| python3 -`), not a file or `-c`."""
+    if w["program"] not in _RUNS_CODE:
+        return False
+    for a in w["args"]:
+        if a == "--":
+            return True
+        if (re.match(r"^-[a-z]*[cme]$", a, re.I) and w["program"] not in _SHELLS) or re.match(r"^-[a-z]*c[a-z]*$", a, re.I):
+            return False
+        if a in ("-s", "-"):
+            return True
+        if not a.startswith("-"):
+            return False                                                   # a script file
+    return True
+
+
 def _host_of_url(text: str) -> str | None:
     try:
-        host = urlsplit(text if re.match(r"^[a-z][a-z0-9+.-]*://", text, re.I) else f"https://{text}").hostname
+        host = urlsplit(text if _URL_LIKE.match(text) else f"https://{text}").hostname
     except ValueError:
         return None
     return host or None
 
 
-def _ssh(args: list[str]) -> tuple[dict, list[str]]:
-    host, timeout, i = "", 0, 0
+def _reading(key: str, params: dict, hosts=(), local=(), inner: dict | None = None) -> dict:
+    purpose = {"key": key, "params": params}
+    if inner is not None:
+        purpose["inner"] = inner
+    return {"purpose": purpose, "hosts": list(hosts), "local": list(local)}
+
+
+def _run(program: str) -> dict:
+    return _reading("run", {"program": program})
+
+
+def _operands(args: list[str], valued: str) -> list[str]:
+    """Skips an option's value where the program takes one, so the operands are what is left."""
+    out, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-") and len(a) > 1:
+            if len(a) == 2 and a[1] in valued:
+                i += 1
+        else:
+            out.append(a)
+        i += 1
+    return out
+
+
+def _ssh(program: str, args: list[str], rules: list[str]) -> dict:
+    timeout, i = 0, 0
     while i < len(args):
         arg = args[i]
         if arg.startswith("-") and len(arg) > 1:
@@ -145,89 +315,199 @@ def _ssh(args: list[str]) -> tuple[dict, list[str]]:
                 else:
                     i += 1
                     value = args[i] if i < len(args) else ""
-            m = re.match(r"^ConnectTimeout=(\d+)$", value, re.I) if flag == "o" else None
+            m = re.match(r"^ConnectTimeout=([0-9]+)$", value, re.I) if flag == "o" else None
             if m:
                 timeout = int(m.group(1))
             i += 1
             continue
         host = arg[arg.rfind("@") + 1:]
-        break
-    if not host:
-        return {"key": "run", "params": {"program": "ssh"}}, []
-    if timeout:
-        return {"key": "sshTimeout", "params": {"host": host, "seconds": timeout}}, [host]
-    return {"key": "ssh", "params": {"host": host}}, [host]
+        remote = args[i + 1:]
+        if remote[:1] == ["--"]:
+            remote = remote[1:]
+        # #688 review 6d: words after the host are a command that runs there, read as its own line.
+        there = _read(" ".join(remote), rules) if remote else None
+        if there and there["real"]:
+            return _reading("onHost", {"host": host}, [host, *there["hosts"]], [f"{host}:{p}" for p in there["local"]],
+                            inner=there["purpose"])
+        if timeout:
+            return _reading("sshTimeout", {"host": host, "seconds": timeout}, [host])
+        return _reading("ssh", {"host": host}, [host])
+    return _run(program)
 
 
-def _step(program: str, args: list[str], rule: str | None) -> tuple[dict, list[str]]:
-    run = {"key": "run", "params": {"program": program}}
+def _step(w: dict, rules: list[str]) -> dict:
+    """One step's purpose and what it touches: `hosts` (other machines, web and mail addresses) and `local` (paths on
+    the machine it runs on). `rules`: the server's terminal rules for the line (upload, git-push…)."""
+    program, args = w["program"], w["args"]
     plain = _plain(args)
     if program in ("ssh", "mosh", "autossh"):
-        return _ssh(args)
+        return _ssh(program, args, rules)
     if program in ("scp", "sftp", "rsync"):
-        hosts = list(dict.fromkeys(m.group(1) for a in plain if (m := _REMOTE_PATH.match(a))))
+        ops = _operands(args, _COPY_VALUE[program])
+        hosts = _unique(m.group(1) for a in ops if (m := _REMOTE.match(a)))
         if hosts:
-            return {"key": "copyRemote", "params": {"host": hosts[0]}}, hosts
-        return {"key": "copyLocal", "params": {"count": max(len(plain) - 1, 1)}}, plain
-    if program in ("curl", "wget", "http", "https", "xh"):
+            return _reading("copyRemote", {"host": hosts[0]}, hosts, [a for a in ops if not _REMOTE.match(a)])
+        return _reading("copyLocal", {"count": max(len(ops) - 1, 1)}, [], ops)
+    if program in _FETCHERS:
         url = next((a for a in plain if re.match(r"^https?://", a, re.I)), plain[0] if plain else None)
         host = _host_of_url(url) if url else None
         if not host:
-            return run, []
-        return {"key": "upload" if rule == "upload" else "fetch", "params": {"host": host}}, [url]
-    if program in ("rm", "rmdir", "unlink", "trash", "srm"):
-        return {"key": "delete", "params": {"count": len(plain)}}, plain
+            return _run(program)
+        return _reading("upload" if "upload" in rules else "fetch", {"host": host}, [url])
+    if program in _DELETERS:
+        if plain or not w["listed"]:
+            return _reading("delete", {"count": len(plain)}, [], plain)
+        return _reading("deleteSome", {})
+    if program == "find":
+        end = next((k for k, a in enumerate(args) if re.match(r"^[-(!)]", a)), -1)
+        roots = args if end < 0 else args[:end]
+        exe = next((k for k, a in enumerate(args) if re.match(r"^-(?:exec|execdir|ok|okdir)$", a)), -1)
+        if "-delete" in args or (exe >= 0 and _base(args[exe + 1] if exe + 1 < len(args) else "") in _DELETERS):
+            return _reading("findDelete", {"where": ", ".join(roots) or "."}, [], roots)
+        return _reading("run", {"program": program}, [], roots)
     if program == "mv":
-        return {"key": "move", "params": {"count": max(len(plain) - 1, 1)}}, plain
+        return _reading("move", {"count": max(len(plain) - 1, 1)}, [], plain)
     if program == "cp":
-        return {"key": "copyLocal", "params": {"count": max(len(plain) - 1, 1)}}, plain
+        return _reading("copyLocal", {"count": max(len(plain) - 1, 1)}, [], plain)
+    if program == "tee":
+        return _reading("write", {"target": plain[0]}, [], plain) if plain else _run(program)
     if program == "git":
-        own = [a for i, a in enumerate(args) if not re.match(r"^-[Cc]$", a)
-               and not (i and re.match(r"^-[Cc]$", args[i - 1]))]
+        own = [a for k, a in enumerate(args) if not re.match(r"^-[Cc]$", a)
+               and not (k and re.match(r"^-[Cc]$", args[k - 1]))]
         sub, *rest = _plain(own) or [None]
         if sub == "push":
-            return {"key": "gitPush", "params": {"remote": rest[0] if rest else "origin"}}, []
+            return _reading("gitPush", {"remote": rest[0] if rest else "origin"})
         if sub == "clone" and rest:
-            return {"key": "gitClone", "params": {"repo": rest[0]}}, [rest[0]]
+            return _reading("gitClone", {"repo": rest[0]}, [rest[0]])
         if sub in ("pull", "fetch"):
-            return {"key": "gitFetch", "params": {"remote": rest[0] if rest else "origin"}}, []
-        return {"key": "git", "params": {"sub": sub or ""}}, []
+            return _reading("gitFetch", {"remote": rest[0] if rest else "origin"})
+        return _reading("git", {"sub": sub or ""})
     if program == "open":
-        return ({"key": "open", "params": {"target": plain[-1]}}, [plain[-1]]) if plain else (run, [])
+        if not plain:
+            return _run(program)
+        target = plain[-1]
+        url = bool(_URL_LIKE.match(target))
+        return _reading("open", {"target": target}, [target] if url else [], [] if url else [target])
     if program == "osascript":
-        return {"key": "appleScript", "params": {}}, []
+        return _reading("appleScript", {})
     if program == "shortcuts":
         if len(plain) > 1 and plain[0] == "run":
-            return {"key": "shortcut", "params": {"name": plain[1]}}, []
-        return run, []
+            return _reading("shortcut", {"name": plain[1]})
+        return _run(program)
     if program in ("kill", "killall", "pkill"):
-        return {"key": "kill", "params": {"target": " ".join(plain)}}, []
+        return _reading("kill", {"target": " ".join(plain)})
     if program in ("mail", "mailx", "sendmail", "msmtp", "mutt"):
         to = next((a for a in plain if "@" in a), None)
-        return ({"key": "mailTo", "params": {"to": to}}, [to]) if to else ({"key": "mail", "params": {}}, [])
+        return _reading("mailTo", {"to": to}, [to]) if to else _reading("mail", {})
     sub = plain[0] if plain else None
     if program in _INSTALLERS and sub in ("install", "add"):
-        names = [p for p in plain[1:] if "/" not in p or p.startswith("@")]
-        return {"key": "install", "params": {"packages": ", ".join(names[:3]) or program}}, []
-    if program in _SCRIPT_RUNNERS and sub and "-c" not in args:
-        return {"key": "script", "params": {"program": program, "file": _base(sub)}}, [sub]
-    return run, []
+        names = [n for n in plain[1:] if "/" not in n or n.startswith("@")]
+        return _reading("install", {"packages": ", ".join(names[:3]) or program})
+    if (program in _SCRIPT_RUNNERS and sub and not any(a in ("-c", "-e", "-m") for a in args)
+            and not re.match(r"^(?:[<>$]\(|`)", sub)):
+        return _reading("script", {"program": program, "file": _base(sub)}, [], [sub])
+    # #688 review 6i: an unknown program's operands that look like paths are what it touches.
+    return _reading("run", {"program": program}, [], [a for a in plain if _PATH_LIKE.match(a)])
 
 
-def summarize(text: str, rule: str | None = None) -> dict:
-    """What a shell line is for and what it touches: `{"purpose": {key, params}, "touches": [...], "more": n}`."""
-    steps = split_shell(text)
-    first = (text.strip().split() or [""])[0]
+def _rebase(folder: str | None, path: str) -> str:
+    """`path` as seen from `folder` (a `cd` before it), unless it is absolute, from home, a variable or remote."""
+    if not folder or re.match(r"^(?:/|~|\$)", path) or _URL_LIKE.match(path) or _REMOTE_PATH.match(path):
+        return path
+    out: list[str] = []
+    for part in f"{folder.rstrip('/')}/{path}".split("/"):
+        if part == "." or (part == "" and out):
+            continue
+        if part == ".." and out and out[-1] not in ("..", "~", ""):
+            out.pop()
+        else:
+            out.append(part)
+    return "/".join(out) or "/"
+
+
+def _flatten(steps: list[dict], container: dict | None, out: list[dict]) -> None:
+    prev = None
+    for step in steps:
+        node = {"w": _words(step["tokens"]), "from": prev if step["piped"] else None, "container": container,
+                "merged": False, "run": False}
+        line = _inline_line(node["w"])
+        inner = None if line is None else _parse(line)
+        if inner:
+            _flatten(inner, container, out)                                # `sh -c '…'`: its line, read once
+        else:
+            _flatten(step["subs"], node, out)                              # what runs inside it runs first
+            out.append(node)
+        prev = node
+
+
+def _read(text: str, rules: list[str]) -> dict | None:
+    """The line read: its purpose, what it touches, and how many real steps it has."""
+    steps = _parse(text)
     if steps is None:
-        return {"purpose": {"key": "run", "params": {"program": _base(first)}}, "touches": [], "more": 0}
-    real = [w for w in map(_words, steps) if w and _base(w[0]) not in QUIET]
+        return None
+    nodes: list[dict] = []
+    _flatten(steps, None, nodes)
+    # #688 review 6e: a download whose output a program runs as code is one step.
+    for node in nodes:
+        if node["w"]["program"] not in _FETCHERS:
+            continue
+        n = node
+        while n is not None:
+            nxt = next((m for m in nodes if m["from"] is n), None)
+            if nxt is None:
+                break
+            if _reads_code(nxt["w"]):
+                node["run"], nxt["merged"] = True, True
+                break
+            n = nxt
+        host = node["container"]
+        if host is not None and (host["w"]["program"] in _RUNS_CODE or re.match(r"^[$`]", host["w"]["program"])
+                                 or host["w"]["program"] == ""):
+            node["run"], host["merged"] = True, True
+    folder, real = None, []
+    for node in nodes:
+        w = node["w"]
+        program, args, writes = w["program"], w["args"], w["writes"]
+        if program in ("cd", "pushd"):
+            to = (_plain(args) or ["~"])[0]
+            folder = None if to == "-" else _rebase(folder, to)
+            continue
+        if program == "popd":
+            folder = None
+            continue
+        quiet = program in QUIET or not program
+        if node["merged"] or (quiet and not writes):
+            continue
+        r = _reading("write", {"target": writes[0]}) if quiet else _step(w, rules)
+        if node["run"] and r["purpose"]["key"] in ("fetch", "upload"):
+            r["purpose"] = {"key": "fetchRun", "params": {"host": r["purpose"]["params"]["host"]}}
+        r["local"] = [_rebase(folder, p) for p in [*r["local"], *writes]]
+        if r["purpose"]["key"] == "write":
+            r["purpose"] = {"key": "write", "params": {"target": _rebase(folder, str(r["purpose"]["params"]["target"]))}}
+        real.append(r)
     if not real:
-        any_words = next((w for w in map(_words, steps) if w), None)
-        return {"purpose": {"key": "run", "params": {"program": _base(any_words[0] if any_words else first)}},
+        first = next((n["w"]["program"] for n in nodes if n["w"]["program"]), "")
+        return {"purpose": {"key": "run", "params": {"program": first}}, "hosts": [], "local": [], "real": 0}
+    lead = real[0]
+    for r in real[1:]:
+        if STAKES.get(r["purpose"]["key"], 1) > STAKES.get(lead["purpose"]["key"], 1):
+            lead = r
+    return {"purpose": lead["purpose"], "hosts": _unique(h for r in real for h in r["hosts"]),
+            "local": _unique(p for r in real for p in r["local"]), "real": len(real)}
+
+
+def summarize(text: str, rules: str | list[str] | None = None) -> dict:
+    """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...],
+    "more": n}`, as web/src/lib/commandSummary.ts reads it (both are held to tests/fixtures/card_purpose_vectors.json).
+    `rules`: the server's terminal rules for the line (one, or several)."""
+    listed = [rules] if isinstance(rules, str) else list(rules or [])
+    r = _read(text, listed)
+    if r is None:
+        return {"purpose": {"key": "run", "params": {"program": _base((text.strip().split() or [""])[0])}},
                 "touches": [], "more": 0}
-    read = [_step(_base(words[0]), words[1:], rule) for words in real]
-    touches = list(dict.fromkeys(t for _, ts in read for t in ts))
-    return {"purpose": read[0][0], "touches": touches, "more": len(real) - 1}
+    outside = [p for p in r["local"] if re.match(r"^(?:/|~|\$|\.\.(?:/|$))", p) or _REMOTE_PATH.match(p)]
+    return {"purpose": r["purpose"], "touches": _unique([*r["hosts"], *outside, *r["local"]]),
+            "more": max(r["real"] - 1, 0)}
 
 
 def _say(lang: str, group: str, key: str, params: dict) -> str:
@@ -238,6 +518,14 @@ def _say(lang: str, group: str, key: str, params: dict) -> str:
         key = f"{key}_one"
     text = table.get(key) or TEXT["en"][group][key]
     return re.sub(r"\{\{(\w+)\}\}", lambda m: str(params.get(m.group(1), "")), text)
+
+
+def _purpose(lang: str, purpose: dict) -> str:
+    """A purpose in `lang`: a step run on another machine says that step inside its own sentence."""
+    params = dict(purpose["params"])
+    if "inner" in purpose:
+        params["what"] = _purpose(lang, purpose["inner"])
+    return _say(lang, "purpose", purpose["key"], params)
 
 
 async def language() -> str:
@@ -254,30 +542,39 @@ async def language() -> str:
         return "en"
 
 
-def phrase(shell: str, why: str = "", rule: str | None = None, *, lang: str = "en", outside: bool = False,
-           host: str | None = None, shortcut_as_you: bool = False, network: bool = False) -> str:
-    """The card's purpose in `lang`: Arslan's reason when it gave one, else the reading of `shell`; then where it
-    runs, when that is not this Mac's sandbox. Cleaned as a name is, so the command's own words carry no bidi or
-    zero-width character into the heading."""
-    said = untrusted.clean_name(why, TITLE_MAX) if why else ""
-    if said:
-        text = said
-    else:
-        s = summarize(shell, rule)
-        text = _say(lang, "purpose", s["purpose"]["key"], s["purpose"]["params"])
-        if s["more"]:
-            text += _say(lang, "purpose", "more", {"count": s["more"]})
+def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, lang: str = "en",
+           outside: bool = False, unsandboxed: bool = False, host: str | None = None, shortcut_as_you: bool = False,
+           network: bool = False) -> str:
+    """The card's title in `lang`: first the code's facts, where it runs when that is not this Mac's sandbox and
+    whether it uses the network, in a fixed form; then its purpose, Arslan's reason when it gave one, else the
+    reading of `shell`. Only the purpose is cut, so the whole title fits the phone's heading (PHONE_MAX) and a long
+    reason can never push a fact off it (#689 review 1). Cleaned as a name is, so neither the model's words nor the
+    command's carry a bidi or zero-width character into the heading."""
+    facts = []
     if shortcut_as_you:
-        text += _say(lang, "suffix", "shortcutAsYou", {})
+        facts.append(_say(lang, "fact", "shortcutAsYou", {}))
     elif outside:
-        text += _say(lang, "suffix", "outside", {})
+        facts.append(_say(lang, "fact", "outside", {}))
+    elif unsandboxed:
+        facts.append(_say(lang, "fact", "noSandbox", {}))
     if host:
-        text += _say(lang, "suffix", "onHost", {"host": host})
-    if network:                             # a card that asks for the network itself (tool_loop's network cards)
-        text += _say(lang, "suffix", "network", {})
-    return untrusted.clean_name(text, TITLE_MAX)
+        facts.append(_say(lang, "fact", "onHost", {"host": untrusted.clean_name(host, 80)}))
+    if network:
+        facts.append(_say(lang, "fact", "network", {}))
+    join = _say(lang, "fact", "join", {})
+    lead = untrusted.clean_name(join.join(facts), PHONE_MAX) if facts else ""
+    # The model's words never take the facts' form: their separator is the facts' own.
+    said = untrusted.clean_name(why, TITLE_MAX).replace("\u00b7", ",") if why else ""
+    if not said:
+        s = summarize(shell, rules)
+        said = _purpose(lang, s["purpose"]) + (_say(lang, "purpose", "more", {"count": s["more"]}) if s["more"] else "")
+    room = PHONE_MAX - (len(lead) + len(join) if lead else 0)
+    text = untrusted.clean_name(said, TITLE_MAX)
+    if len(text) > room:
+        text = text[:max(room - 1, 0)].rstrip() + "\u2026"
+    return f"{lead}{join}{text}" if lead else text
 
 
-async def title(shell: str, why: str = "", rule: str | None = None, **where) -> str:
+async def title(shell: str, why: str = "", rules: str | list[str] | None = None, **where) -> str:
     """`phrase` in the user's language."""
-    return phrase(shell, why, rule, lang=await language(), **where)
+    return phrase(shell, why, rules, lang=await language(), **where)
