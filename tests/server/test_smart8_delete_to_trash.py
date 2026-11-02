@@ -271,3 +271,24 @@ async def test_the_card_says_how_allow_deletes(tmp_path, monkeypatch, mode, word
     monkeypatch.setattr(permissions, "decide", decide)
     assert await command_confirm.Confirmations("c1").command("rm -rf ~/smart8/old", [], delete=mode) is False
     assert words in seen[0].title and words in seen[0].frame["reason"]
+    assert seen[0].frame["delete_mode"] == mode and seen[0].frame["delete_targets"] == ["~/smart8/old"]
+
+
+@pytest.mark.parametrize("sandbox", [None, "outside", "retry"])
+async def test_the_mac_frame_carries_the_mode_and_targets_on_every_delete_card(tmp_path, monkeypatch, sandbox):
+    from server.services import command_confirm, permissions
+    from tests.server.test_workspace_tool_gate import _wire
+    await _wire(tmp_path, monkeypatch, workspace=str(tmp_path))
+    seen = []
+
+    async def decide(request, context):
+        seen.append(request)
+        return permissions.Decision(allowed=False, by="user")
+    monkeypatch.setattr(permissions, "decide", decide)
+    confirm = command_confirm.Confirmations("c1")
+    kw = {"sandbox": sandbox} if sandbox else {}
+    await confirm.command("rm -rf ~/smart8/*", [], delete="permanent", **kw)
+    await confirm.command("rm -r /tmp/smart8 b", [], delete="trash", **kw)
+    await confirm.command("rm -r /tmp/smart8", [], **kw)                  # not a delete card: no keys
+    assert [(r.frame.get("delete_mode"), r.frame.get("delete_targets")) for r in seen] == [
+        ("permanent", []), ("trash", ["/tmp/smart8", "b"]), (None, None)]

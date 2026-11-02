@@ -95,10 +95,10 @@ class Confirmations:
             # the command runs (`permissions._ALWAYS_ASKS`).
             request = permissions.Request(
                 kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
-                why=why, frame=protocol.propose_run_command(
+                why=why, frame={**protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv,
                     reason=_with_delete(verdict.reason if verdict.level == "ask" else "", deletes),
-                    sandbox=sandbox, why=why, network=network))
+                    sandbox=sandbox, why=why, network=network), **_delete_keys(delete, shell)})
         elif remote_host:
             # A remote command takes none of the shortcuts: the local risk grade describes a binary on THIS
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
@@ -120,6 +120,7 @@ class Confirmations:
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=_with_delete(verdict.reason or f"risk: {risk}", deletes),
             rule=verdict.rule or None, network=network)
+        frame.update(_delete_keys(delete, shell))
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
                                              unsandboxed=unsandboxed)
@@ -133,3 +134,15 @@ class Confirmations:
 def _with_delete(reason: str, deletes: str) -> str:
     """The card's reason with how allow deletes appended (SMART-8)."""
     return f"{reason}; {deletes}" if reason and deletes else (reason or deletes)
+
+
+def _delete_keys(mode: str, shell: str) -> dict:
+    """SMART-8: the delete card's mode and targets for the Mac card (⑤CAP's shared component), on the Mac's WS
+    frame only. The Bridge's FrameMapper reads named keys (title, perm_kind, expires_at…), so neither reaches the
+    phone, whose heading is the English `title` (⓪Plan, 2026-11-02). `delete_targets` are as written; [] when
+    the delete can't be read, and the card then reads rm's plain arguments itself."""
+    if not mode:
+        return {}
+    from server.services import delete_to_trash
+    found = delete_to_trash.plan(shell)
+    return {"delete_mode": mode, "delete_targets": list(found.targets) if found else []}
