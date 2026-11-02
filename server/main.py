@@ -342,6 +342,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — must never block boot
         logger.warning("task grants of the last run were not dropped at boot (non-fatal): %s", exc)
 
+    # SBX-3 §1a: a run's own temp folder goes when the run ends, unless a process it started is left; those
+    # the last start left go now, once their processes are gone. Best-effort — never blocks boot.
+    try:
+        from server.services import run_temp
+
+        run_temp.sweep()
+    except Exception as exc:  # noqa: BLE001 — must never block boot
+        logger.warning("run temp folders of the last start were not swept at boot (non-fatal): %s", exc)
+
     from server.registry.seeder import seed_registry
 
     await seed_registry()
