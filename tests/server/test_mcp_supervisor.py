@@ -2215,6 +2215,14 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
     opening = {sid: 0 for sid in range(1, n + 1)}
     problems = []
     background = {"now": 0, "max": 0}
+    # What happened to each server, in order, for the assert's message: CI failed seed 1 once (run 41332678508,
+    # "ready vs session", 5, "failed", host_allowed False) and 900 local runs under load never did, so a
+    # failure has to say which path it took.
+    began = time.monotonic()
+    events: dict[int, list] = {sid: [] for sid in range(1, n + 1)}
+
+    def note(sid, *what):
+        events[sid].append((round(time.monotonic() - began, 3), *what))
 
     class FuzzSession:
         def __init__(self, proc):
@@ -2226,6 +2234,7 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
 
     async def fake_open(server):
         sid = server["id"]
+        note(sid, "open")
         opening[sid] += 1
         if opening[sid] > 1:
             problems.append(("two opens at once", sid))
@@ -2233,8 +2242,9 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
         procs.append(proc)
         try:
             await asyncio.sleep(rng.choice([0, 0.005, 0.02, 0.05]))
-        except BaseException:
+        except BaseException as exc:
             proc.alive = False
+            note(sid, "open ended", type(exc).__name__)
             raise
         finally:
             opening[sid] -= 1
@@ -2242,6 +2252,8 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
         async def aclose():
             await asyncio.sleep(rng.choice([0, 0.003, 0.01]))
             proc.alive = False
+            note(sid, "closed", id(proc))
+        note(sid, "opened", id(proc))
         return FuzzSession(proc), SimpleNamespace(aclose=aclose)
     monkeypatch.setattr(session.manager, "_open_session", fake_open)
 
@@ -2250,12 +2262,15 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
     async def counted(sid, gen, plan):
         if plan == "restart":
             return await real_attempt(sid, gen, plan)
+        note(sid, "attempt", plan, gen)
         background["now"] += 1
         background["max"] = max(background["max"], background["now"])
         if background["now"] > sm.MAX_CONCURRENT:
             problems.append(("background over the limit", background["now"]))
         try:
-            return await real_attempt(sid, gen, plan)
+            result = await real_attempt(sid, gen, plan)
+            note(sid, "attempt ended", plan, gen, result.state)
+            return result
         finally:
             background["now"] -= 1
     monkeypatch.setattr(sup, "_attempt", counted)
@@ -2265,6 +2280,7 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
     sup.start(run_loops=False)
 
     async def op(name, sid):
+        note(sid, "op", name)
         try:
             if name == "restart":
                 await sup.restart(sid)
@@ -2319,4 +2335,6 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
             problems.append(("switched on but", sid, row.state))
     if sup._queued or sup._busy:
         problems.append(("left over", dict(sup._queued), dict(sup._busy)))
-    assert not problems, (seed, problems[:6], background)
+    bad = sorted({p[1] for p in problems if len(p) > 1 and isinstance(p[1], int) and p[1] in events})
+    timeline = "\n".join(f"  server {sid}: {event}" for sid in bad[:2] for event in events[sid][-40:])
+    assert not problems, f"seed {seed}: {problems[:6]} {background}\n{timeline}"   # a string, never cut short

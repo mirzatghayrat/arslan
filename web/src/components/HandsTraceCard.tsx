@@ -14,9 +14,13 @@ export interface HandsTraceEntry {
   target?: string | null;
   typed_chars?: number;
   ms?: number;
+  /** The conversation the call was made in, or null. */
+  conversation?: string | null;
+  /** v0.1.64 (#632): the run it was made in; null on older entries and outside a run. */
+  run_id?: number | null;
 }
 
-export const getHandsTrace = () => request<{ entries: HandsTraceEntry[] }>("/hands/trace?days=7&limit=100");
+export const getHandsTrace = (limit = 100) => request<{ entries: HandsTraceEntry[] }>(`/hands/trace?days=7&limit=${limit}`);
 
 /**
  * Arslan Hands in Activity (0.1.53): every look and action in Mac apps from the

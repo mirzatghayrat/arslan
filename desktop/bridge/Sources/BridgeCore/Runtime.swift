@@ -29,6 +29,14 @@ public final class BridgeRuntime {
     let control: ControlChannel
     let version: String
     var pending: [String: PairRequest] = [:]          // request_id → request, until the user decides
+    /// The poll loop opens pair requests while Arslan's control channel makes codes and decides, from another
+    /// task (BRG1): `pending` and `pairing` are only touched under this lock, never held across an `await`.
+    let pairingLock = NSLock()
+    func pairingLocked<T>(_ body: () throws -> T) rethrows -> T {
+        pairingLock.lock()
+        defer { pairingLock.unlock() }
+        return try body()
+    }
 
     public init(identities: IdentityStore, store: EnvelopeStore, control: ControlChannel, macName: String,
                 containerID: String, version: String, memory: ((String) throws -> MailboxMemoryStore)? = nil) throws {
@@ -79,13 +87,16 @@ public final class BridgeRuntime {
     public func handleControl(_ frame: [String: Any], now: Date = Date()) async throws {
         switch frame["type"] as? String {
         case "pairing.new":
-            let (uri, _) = try pairing.newCode(now: now)
+            let (uri, _) = try pairingLocked { try pairing.newCode(now: now) }
             try await control.send(["type": "pairing.code", "uri": uri, "qr_png": QRCode.png(uri)?.base64EncodedString() ?? "",
                                     "expires_at": ISO8601DateFormatter().string(from: now.addingTimeInterval(PairingCode.maxValidity))])
         case "pairing.decide":
-            guard let id = frame["request_id"] as? String, let request = pending.removeValue(forKey: id) else { return }
+            guard let id = frame["request_id"] as? String,
+                  let request = pairingLocked({ pending.removeValue(forKey: id) }) else { return }
             let accept = frame["accept"] as? Bool == true
-            let (record, peer) = try pairing.decide(request, accept ? .accept : .reject("declined_on_mac"), now: now)
+            let (record, peer) = try pairingLocked {
+                try pairing.decide(request, accept ? .accept : .reject("declined_on_mac"), now: now)
+            }
             try await store.save(record)
             if let peer {
                 try identities.save(phone: PairedPhone(deviceID: request.phoneID, name: request.phoneName,
@@ -123,7 +134,7 @@ public final class BridgeRuntime {
 
     /// Whether a pairing is under way: a code is waiting for its phone, or was answered under a
     /// minute ago (`PollPace`). Read by the poll loop, the same task that opens pair.requests in `poll`.
-    public func isPairing(now: Date = Date()) -> Bool { pairing.isPairing(now: now) }
+    public func isPairing(now: Date = Date()) -> Bool { pairingLocked { pairing.isPairing(now: now) } }
 
     /// One look at the store. Returns the paired phones' messages to act on.
     public func poll(now: Date = Date()) async throws -> [Received] {
@@ -134,11 +145,14 @@ public final class BridgeRuntime {
                 forMailbox.append(record)
                 continue
             }
-            guard let (request, answered) = try? pairing.open(record, now: now) else { continue }   // not a live code's
+            guard let (request, answered) = try? pairingLocked({ try pairing.open(record, now: now) }) else { continue }   // not a live code's
             if let answered {
                 try await store.save(answered)                        // a retry: the same answer again
-            } else if pending[request.requestID] == nil {
+            } else if pairingLocked({ () -> Bool in
+                guard pending[request.requestID] == nil else { return false }
                 pending[request.requestID] = request
+                return true
+            }) {
                 try await control.send(["type": "pairing.request", "request_id": request.requestID,
                                         "pairing_id": request.pairingID, "phone_id": request.phoneID,
                                         "phone_name": request.phoneName])
