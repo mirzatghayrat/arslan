@@ -138,7 +138,16 @@ class Harness:
                 (folder / (execution["profile_sha256"] + ".sb")).write_bytes(execution["profile_text"].encode())
 
 
-# SBX-3a adds a commands entry calling its real product preset, under scratch
+# SBX-3a's commands entry calls its real product preset, under scratch
 # HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
-# It must not delegate commands to the candidate. Until then no adapter exists.
+# It must not delegate commands to the candidate.
+def _commands_profile(self, **parameters) -> str:
+    options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
+    if self.network == NetworkMode.PROXY:
+        options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+    options.update(parameters)
+    return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
+
+
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
+BUILT_BASES["commands"] = _commands_profile
