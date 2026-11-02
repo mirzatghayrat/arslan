@@ -2101,8 +2101,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                               "API). After you read outside content in this turn, "
                                                               "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "With outside_sandbox or network: one short sentence "
-                                                          "the user reads on the card."}},
+                                           "description": "What this step does, in one short sentence: "
+                                                          "every command card shows it first."}},
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,

@@ -119,7 +119,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
     ...pendingCommands.map((c) => ({ seq: c.seq ?? 0, key: `cmd:${c.callId}`, render: (queue: AskQueuePosition) => (
       <RunCommandCard callId={c.callId} pretty={c.pretty} reason={c.reason}
         remoteHost={c.remoteHost} fingerprints={c.fingerprints}
-        background={c.background} sandbox={c.sandbox} why={c.why} rule={c.rule} network={c.network}
+        background={c.background} sandbox={c.sandbox} why={c.why} rule={c.rule} rules={c.rules} unreadable={c.unreadable} network={c.network}
         unsandboxed={c.unsandboxed}
         options={c.options} alwaysLabel={c.alwaysLabel} permKind={c.permKind}
         expiresAt={expires(c)} queue={queue}

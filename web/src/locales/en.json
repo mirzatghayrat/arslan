@@ -1061,6 +1061,11 @@
       "mailTo": "Send an email to {{to}}",
       "install": "Install {{packages}}",
       "script": "Run the script {{file}} with {{program}}",
+      "fetchRun": "Download code from {{host}} and run it",
+      "write": "Write to {{target}}",
+      "findDelete": "Delete what it finds in {{where}}",
+      "deleteSome": "Delete files or folders",
+      "onHost": "{{what}} on {{host}}, over SSH",
       "more": " (and {{count}} more steps)",
       "more_one": " (and 1 more step)"
     },
@@ -1088,7 +1093,12 @@
         "open-app": "Opens an app, a script or a link outside the sandbox",
         "screen-clipboard": "Reads your screen or clipboard",
         "protected-write": "Changes your shell, SSH, credential or login settings files",
-        "unreadable": "Arslan can't fully read what this command does"
+        "unreadable": "Arslan can't fully read what this command does",
+        "unknown": "Arslan asks before running this",
+        "unreadable-fetched-code": "Downloads, decodes or builds code and runs it",
+        "unreadable-script-reach": "Its script reaches out, starts programs or drives apps",
+        "unreadable-quoting": "Its quoting doesn't close, so what runs can't be read",
+        "unreadable-complex": "Too complex to read before it runs"
       }
     }
   },

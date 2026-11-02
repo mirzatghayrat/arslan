@@ -1058,10 +1058,15 @@
       "mailTo": "{{to}} にメールを送信",
       "install": "{{packages}} をインストール",
       "script": "{{program}} でスクリプト {{file}} を実行",
-      "more": "（ほか {{count}} ステップ）",
       "copyLocal_one": "{{count}} 件をコピー",
       "delete_one": "{{count}} 件のファイルまたはフォルダを削除",
       "move_one": "{{count}} 件を移動",
+      "fetchRun": "{{host}} からコードをダウンロードして実行",
+      "write": "{{target}} に書き込む",
+      "findDelete": "{{where}} で見つかったものを削除",
+      "deleteSome": "ファイルまたはフォルダを削除",
+      "onHost": "SSH で {{host}} 上：{{what}}",
+      "more": "（ほか {{count}} ステップ）",
       "more_one": "（ほか {{count}} ステップ）"
     },
     "risk": {
@@ -1088,7 +1093,12 @@
         "open-app": "サンドボックスの外でアプリ・スクリプト・リンクを開く",
         "screen-clipboard": "画面またはクリップボードを読み取る",
         "protected-write": "シェル・SSH・認証情報・ログイン設定のファイルを変更",
-        "unreadable": "Arslan にはこのコマンドの内容を読み切れません"
+        "unreadable": "Arslan にはこのコマンドの内容を読み切れません",
+        "unknown": "Arslan は実行前に確認します",
+        "unreadable-fetched-code": "コードをダウンロード・デコード・生成して実行します",
+        "unreadable-script-reach": "スクリプトが外部に接続したり、プログラムを起動したり、アプリを操作したりします",
+        "unreadable-quoting": "引用符が閉じていないため、何が実行されるか読めません",
+        "unreadable-complex": "複雑すぎて実行前に読み切れません"
       }
     }
   },

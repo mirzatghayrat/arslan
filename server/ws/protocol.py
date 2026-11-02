@@ -86,7 +86,8 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
                         fingerprints: list[str] | None = None,
                         rule: str | None = None,
                         sandbox: str | None = None, why: str = "",
-                        network: bool = False) -> dict[str, Any]:
+                        network: bool = False, rules: list[str] | None = None,
+                        unreadable: str = "") -> dict[str, Any]:
     """Arslan proposes running ONE command. Emitting this frame runs NOTHING — the
     frontend renders a confirm card showing the full command; only the user's
     `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
@@ -99,7 +100,10 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     stopped it; running again starts over). `why` is the model's reason for the step, on any card (SMART-8).
     `network` (S2a-2): this turn read outside content and the command would use the network, so the
     card asks for that too, this time (one card, not two); the reason says so, and the island never
-    answers it (an extra key the web and the phone ignore)."""
+    answers it (an extra key the web and the phone ignore).
+    `rules` (SMART-8, #688 review 1): every terminal rule the command matched, on every command card (the outside,
+    retry and remote ones too), so the card's risk row names each; `unreadable`, why it could not be read
+    (`command_confirm.UNREADABLE`). Extra keys: the phone reads `rule` and `reason` as before."""
     if network:
         reason = f"{reason}; uses the network" if reason else "uses the network"
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
@@ -116,6 +120,10 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
         frame["why"] = said
     if rule:
         frame["rule"] = rule
+    if rules:
+        frame["rules"] = list(rules)
+    if unreadable:
+        frame["unreadable"] = unreadable
     if remote_host:
         frame["remote_host"] = remote_host
         frame["fingerprints"] = list(fingerprints or [])

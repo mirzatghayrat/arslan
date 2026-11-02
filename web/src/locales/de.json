@@ -1061,6 +1061,11 @@
       "mailTo": "Eine E-Mail an {{to}} senden",
       "install": "{{packages}} installieren",
       "script": "Das Skript {{file}} mit {{program}} ausführen",
+      "fetchRun": "Code von {{host}} herunterladen und ausführen",
+      "write": "In {{target}} schreiben",
+      "findDelete": "Löschen, was es in {{where}} findet",
+      "deleteSome": "Dateien oder Ordner löschen",
+      "onHost": "Auf {{host}} per SSH: {{what}}",
       "more": " (und {{count}} weitere Schritte)",
       "more_one": " (und 1 weiterer Schritt)"
     },
@@ -1088,7 +1093,12 @@
         "open-app": "Öffnet eine App, ein Skript oder einen Link außerhalb der Sandbox",
         "screen-clipboard": "Liest deinen Bildschirm oder die Zwischenablage",
         "protected-write": "Ändert Einstellungsdateien für Shell, SSH, Zugangsdaten oder Anmeldung",
-        "unreadable": "Arslan kann nicht ganz lesen, was dieser Befehl tut"
+        "unreadable": "Arslan kann nicht ganz lesen, was dieser Befehl tut",
+        "unknown": "Arslan fragt, bevor es das ausführt",
+        "unreadable-fetched-code": "Lädt Code herunter, dekodiert oder erzeugt ihn und führt ihn aus",
+        "unreadable-script-reach": "Sein Skript greift nach außen, startet Programme oder steuert Apps",
+        "unreadable-quoting": "Seine Anführungszeichen schließen nicht, daher ist nicht lesbar, was läuft",
+        "unreadable-complex": "Zu komplex, um ihn vor dem Ausführen zu lesen"
       }
     }
   },

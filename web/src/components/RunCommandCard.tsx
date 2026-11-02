@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
 import { DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
-import { TOUCHES_MAX, commandRisk, summarize } from "../lib/commandSummary";
+import { TOUCHES_MAX, commandRisk, purposeText, summarize } from "../lib/commandSummary";
 import { Escaped } from "../lib/outsideText";
 
 interface Props {
@@ -27,6 +27,12 @@ interface Props {
   /** The terminal rule the server matched (`rule`), whether the card also asks for the network (`network`), and
    *  whether it would run with no sandbox around it (`unsandboxed`): the 「风险」 row, never the model's words. */
   rule?: string;
+  /** Every terminal rule the server matched (#688 review 1, 3): on every command card, the outside, retry and remote
+   *  ones too. An older frame has only `rule`. */
+  rules?: string[];
+  /** Why the server could not read it (fetched-code, script-reach, quoting, complex), when one of its rules is
+   *  `unreadable` (#688 review 5). */
+  unreadable?: string;
   network?: boolean;
   unsandboxed?: boolean;
   expiresAt?: number | null;
@@ -58,7 +64,7 @@ interface Props {
  * and takes a note on No. (S4a deleted the old "remember" tick: every command card carries choices.)
  */
 export default function RunCommandCard({ callId, pretty, remoteHost, fingerprints, background,
-                                         sandbox, why, rule, network, unsandboxed, expiresAt, options, alwaysLabel,
+                                         sandbox, why, rule, rules, unreadable, network, unsandboxed, expiresAt, options, alwaysLabel,
                                          permKind, busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
@@ -69,12 +75,13 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
   const isRemote = Boolean(remoteHost);
   // SMART-8 (the card mock the user OK'd): the purpose first, Arslan's own reason when it gave one, else read from
   // the command; then what it touches and the risk, read by code; the command itself folded, whole when opened.
-  const summary = summarize(pretty, rule);
+  const matched = rules?.length ? rules : rule ? [rule] : [];
+  const summary = summarize(pretty, matched);
   const said = (why ?? "").trim();
-  const purpose = said || t(`runcmd.purpose.${summary.purpose.key}`, summary.purpose.params)
-    + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
+  const reading = purposeText(t, summary.purpose) + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
+  const purpose = said || reading;
   const touched = [...new Set([...(remoteHost ? [remoteHost] : []), ...summary.touches])];
-  const risk = commandRisk({ rule, network, sandbox, remoteHost, unsandboxed });
+  const risk = commandRisk({ rules: matched, unreadable, network, sandbox, remoteHost, unsandboxed });
   const riskText = risk.keys.map(k => t(`runcmd.risk.${k.key}`, k.params)).join(t("kit.riskJoin"));
   const context = [
     ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),
@@ -87,13 +94,17 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
       who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
       title={<span data-testid="runcmd-purpose"><Escaped text={purpose} /></span>}
       purposeFrom={said ? "arslan" : "command"}
-      touches={touched.length ? <span className="flex flex-col gap-0.5">
+      // #688 review 2: Arslan's words are never the only description. When they lead, the code's own reading of the
+      // command starts the 「涉及」 row (the mock's three rows stay).
+      touches={touched.length || said ? <span className="flex flex-col gap-0.5">
+        {said ? <span data-testid="runcmd-reading"><Escaped text={reading} /></span> : null}
         {touched.slice(0, TOUCHES_MAX).map(item => <span key={item} className="font-mono text-[12px]"><Escaped text={item} /></span>)}
         {touched.length > TOUCHES_MAX ? <span className="text-muted-foreground">
           {t("kit.touchesMore", { count: touched.length - TOUCHES_MAX })}</span> : null}
       </span> : null}
       riskRow={{ level: risk.level, text: riskText }}
-      folded={{ testId: "runcmd-show-command", body: <CodeBox code={pretty} numbered={false} fold={8} /> }}
+      // #688 review 7: opened, the command is whole (the box scrolls), so no line of it waits behind a second click.
+      folded={{ testId: "runcmd-show-command", body: <CodeBox code={pretty} numbered={false} fold={Infinity} /> }}
       detail={isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
       context={context}
       // A command card's "In this conversation" is a grant for its kind of command (the rules it matched: every `rm`, every

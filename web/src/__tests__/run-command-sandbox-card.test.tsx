@@ -32,7 +32,7 @@ describe("RunCommandCard sandbox questions", () => {
 
   it("asking up front leads with Arslan's reason, marked as its words, and says first that it leaves the sandbox", () => {
     render(<RunCommandCard callId="c2" pretty="rm ~/Downloads/old.dmg" sandbox="outside" why="clean up Downloads"
-                           rule="delete-outside" reason="deletes files" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+                           rules={["delete-outside"]} reason="deletes files" onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("clean up Downloads");
     expect(screen.getByTestId("ask-purpose-from")).toHaveTextContent("kit.purposeFromArslan");
     expect(screen.getByTestId("ask-touches")).toHaveTextContent("~/Downloads/old.dmg");      // read by code, not said

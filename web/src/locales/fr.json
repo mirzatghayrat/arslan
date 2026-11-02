@@ -1061,6 +1061,11 @@
       "mailTo": "Envoyer un e-mail à {{to}}",
       "install": "Installer {{packages}}",
       "script": "Exécuter le script {{file}} avec {{program}}",
+      "fetchRun": "Télécharger du code depuis {{host}} et l’exécuter",
+      "write": "Écrire dans {{target}}",
+      "findDelete": "Supprimer ce qu’il trouve dans {{where}}",
+      "deleteSome": "Supprimer des fichiers ou dossiers",
+      "onHost": "{{what}} sur {{host}}, en SSH",
       "more": " (et {{count}} étapes de plus)",
       "more_one": " (et 1 étape de plus)"
     },
@@ -1088,7 +1093,12 @@
         "open-app": "Ouvre une app, un script ou un lien hors du bac à sable",
         "screen-clipboard": "Lit votre écran ou le presse-papiers",
         "protected-write": "Modifie les fichiers de réglages du shell, de SSH, des identifiants ou de connexion",
-        "unreadable": "Arslan ne peut pas lire entièrement ce que fait cette commande"
+        "unreadable": "Arslan ne peut pas lire entièrement ce que fait cette commande",
+        "unknown": "Arslan demande avant de l’exécuter",
+        "unreadable-fetched-code": "Télécharge, décode ou génère du code et l’exécute",
+        "unreadable-script-reach": "Son script se connecte, lance des programmes ou pilote des apps",
+        "unreadable-quoting": "Ses guillemets ne se ferment pas : on ne peut pas lire ce qui s’exécute",
+        "unreadable-complex": "Trop complexe pour être lue avant de s’exécuter"
       }
     }
   },

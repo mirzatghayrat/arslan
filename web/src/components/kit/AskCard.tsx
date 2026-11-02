@@ -12,7 +12,9 @@ export interface AskQueuePosition { index: number; total: number; onPrev?: () =>
 export type AskRiskLevel = "info" | "warn" | "irreversible";
 
 /** SMART-8: a choice besides the two answers, drawn as a secondary button after the primary one. */
-export interface AskAction { label: string; onClick: () => void; testId?: string }
+/** Another approval beside Allow (③Hands' re-run cards): off while Allow is (`allowDisabled`), red when `destructive`
+ *  (#688 review 8). */
+export interface AskAction { label: string; onClick: () => void; testId?: string; destructive?: boolean }
 
 export interface AskCardProps {
   /** Who is asking: "Arslan 在问你" / "后台作业在问你". The card's accessible name; SMART-8 (the user: 「去掉小标题」)
@@ -159,7 +161,8 @@ export function AskCard(p: AskCardProps) {
           {p.allowLabel ?? t("kit.allow")}
         </Button>
         {p.actions?.map((a, i) => (
-          <Button key={i} tone="secondary" grow={1} disabled={p.busy} aria-disabled={held || undefined}
+          <Button key={i} tone={a.destructive ? "destructive" : "secondary"} grow={1} disabled={p.busy || p.allowDisabled}
+            aria-disabled={held || undefined}
             onClick={() => { if (!guarded()) a.onClick(); }} data-testid={a.testId}>{a.label}</Button>
         ))}
         <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
