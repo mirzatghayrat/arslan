@@ -141,14 +141,17 @@ def _fixed(rec: dict | None, ecosystem: str, name: str) -> list[str]:
     return [v for v in out if v]
 
 
-def _versions(found) -> list[str]:
-    """Versions once each, in version order (1.9.0 before 1.10.0), the first FIXED_MAX. Only decimal digits are
-    read as numbers: a superscript is text (#661 review), so one odd value never drops the advisory."""
+def _versions(found, installed: str = "") -> list[str]:
+    """Versions once each, in version order (1.9.0 before 1.10.0), at most FIXED_MAX: the nearest above the
+    installed one (#661 re-review), else the lowest. Only decimal digits are read as numbers: a superscript is text
+    (#661 review), so one odd value never drops the advisory."""
     key = lambda v: [(0, int(p), "") if p.isdecimal() else (1, 0, p) for p in re.split(r"(\d+)", v)]  # noqa: E731
-    return sorted(set(found), key=key)[:FIXED_MAX]
+    ordered = sorted(set(found), key=key)
+    above = [v for v in ordered if installed and key(v) > key(installed)]
+    return (above or ordered)[:FIXED_MAX]
 
 
-def _advisories(ids: list[str], records: dict, ecosystem: str, name: str) -> list[dict]:
+def _advisories(ids: list[str], records: dict, ecosystem: str, name: str, installed: str = "") -> list[dict]:
     """One package's ids as advisories: ids whose records alias each other are one, under its GitHub id."""
     group = {vid: vid for vid in ids}
 
@@ -171,15 +174,18 @@ def _advisories(ids: list[str], records: dict, ecosystem: str, name: str) -> lis
         out.append({"id": lead, "ids": [lead, *(v for v in same if v != lead)],
                     "severity": max((_severity(r) for r in recs), key=SEVERITY.index),
                     "summary": untrusted.clean_name(summary, SUMMARY_MAX) if summary else None,
-                    "fixed": _versions(f for v in same for f in _fixed(records.get(v), ecosystem, name))})
+                    "fixed": _versions((f for v in same for f in _fixed(records.get(v), ecosystem, name)), installed)})
     return sorted(out, key=lambda a: SEVERITY.index(a["severity"]), reverse=True)
 
 
 async def _check(ecosystem: str, identifier: str, packages: list[dict]) -> dict:
+    from server.services.capability_install import _LOCK_TEXT
     asked = packages[:QUERIES_MAX]
-    queries = [{"package": {"name": str(p.get("registry_name") or p.get("name") or ""), "ecosystem": ecosystem},
-                "version": str(p.get("version") or "")} for p in asked]
-    folders = [str(p.get("name") or "") for p in asked]
+    # #661 re-review: a name as the card's lock list writes it (the lock's own characters, at most 214).
+    queries = [{"package": {"name": _LOCK_TEXT.sub("", str(p.get("registry_name") or p.get("name") or ""))[:214],
+                            "ecosystem": ecosystem},
+                "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]} for p in asked]
+    folders = [_LOCK_TEXT.sub("", str(p.get("name") or ""))[:214] for p in asked]
     async with httpx.AsyncClient(timeout=DEADLINE_S) as client:
         hits, complete = _hits(await _json(client, "POST", f"{OSV}/v1/querybatch", "batch", {"queries": queries}),
                                len(queries))
@@ -190,7 +196,8 @@ async def _check(ecosystem: str, identifier: str, packages: list[dict]) -> dict:
         limit = asyncio.Semaphore(8)
         fetched = await asyncio.gather(*(_record(client, vid, limit) for vid in wanted[:LOOKUPS_MAX]))
     records = dict(zip(wanted, fetched))
-    found = {i: _advisories(hits[i], records, ecosystem, queries[i]["package"]["name"]) for i in order if hits[i]}
+    found = {i: _advisories(hits[i], records, ecosystem, queries[i]["package"]["name"], queries[i]["version"])
+             for i in order if hits[i]}
     every = [a for advisories in found.values() for a in advisories]
     deps = [{"name": untrusted.clean_name(queries[i]["package"]["name"], 214),
              "alias": untrusted.clean_name(folders[i], 214) if folders[i] != queries[i]["package"]["name"] else None,

@@ -467,8 +467,14 @@ def lock_summary(prepared: dict | None) -> dict | None:
     lock = (prepared or {}).get("lock")
     if not lock:
         return None
-    packages = [{"name": _LOCK_TEXT.sub("", str(p.get("name") or ""))[:214],
-                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]} for p in lock["packages"][:40]]
+    packages = []
+    for p in lock["packages"][:40]:
+        entry = {"name": _LOCK_TEXT.sub("", str(p.get("name") or ""))[:214],
+                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]}
+        real = _LOCK_TEXT.sub("", str(p.get("registry_name") or ""))[:214]
+        if real and real != entry["name"]:          # CAP9 (#661 re-review): an npm alias shows what it really is
+            entry["real"] = real
+        packages.append(entry)
     return {"sha256": lock["sha256"], "count": len(lock["packages"]), "packages": packages}
 
 
