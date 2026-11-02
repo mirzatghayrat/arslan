@@ -45,6 +45,7 @@ import ConversationToggle from './ConversationToggle';
 import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded } from './ComposerAttach';
+import { ComposerInput } from './ComposerInput';
 import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 
@@ -441,20 +442,14 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
-              <textarea
+              {/* SMART: both composers wrap and grow with what is typed, then scroll (ComposerInput). */}
+              <ComposerInput
                 id="landing-message-input"
-                rows={3}
+                minRows={3}
                 value={inputValue}
                 onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (inputValue.trim()) {
-                      handleSendMessage(e);
-                    }
-                  }
-                }}
+                onSend={(e) => { if (inputValue.trim()) handleSendMessage(e); }}
                 placeholder={t('orchestrator.placeholder_empty')}
                 className="w-full bg-transparent text-sm text-foreground placeholder-subtle-foreground focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
@@ -992,9 +987,8 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
-              <input
+              <ComposerInput
                 id="chat-message-input"
-                type="text"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -1002,8 +996,9 @@ export default function OrchestratorChat({
                 value={inputValue}
                 onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
+                onSend={handleSendMessage}
                 placeholder={t('orchestrator.placeholder_chat')}
-                className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
+                className="block w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none resize-none font-sans leading-relaxed px-1 py-1.5"
               />
               <div className="composer-row">
                 <div data-testid="composer-input-tools" className="flex items-center gap-2">

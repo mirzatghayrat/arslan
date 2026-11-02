@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Grade | **Must** for v0.1.64 (user, 2026-11-02, relayed by ④参谋; the user asked that it not be pushed to later). |
-| Lanes | Parallel, off the SBX path. SMART-1 ③Hands, SMART-2 ②Main, SMART-3/4 ⑥Helper, SMART-5 ⓪Plan with ⑥Helper, SMART-6 the user. |
+| Lanes | Parallel, off the SBX path. SMART-1 ③Hands (#674), SMART-2 ②Main, SMART-3/4 ⑥Helper, SMART-5 ⓪Plan with ⑥Helper, SMART-7/8 ⑤CAP (SMART-8's cards with ③Hands). |
 | Review | SMART-1 touches the command environment, which is security surface, so it needs another session's effort=max review. The rest are reviewed at high, and each author self-merges under #644. |
-| Gate | SMART-5's bench gates v0.1.64 alongside M64 and the STY2 bench. |
+| Gate | SMART-5's bench gates v0.1.64 alongside M64 and the STY2 bench: **Arslan at least matches OpenClaw on the same model and the same tasks** (user, 2026-11-02). |
 
 ## Why
 
@@ -111,10 +111,52 @@ What a real chat showed (deepseek-v4-flash; the user's questions were "Claude Co
   - The guidance has a step, a place and a command.
   - No unread source is cited.
   - Live self-state is used.
-- **Run:** on DeepSeek within the proxy cap, before and after SMART-1 to SMART-4.
+- **Run:** on DeepSeek within the proxy cap, before and after SMART-1 to SMART-4, **and OpenClaw on the same model (deepseek-v4-flash) and the same tasks**, as in the 10-01 kernel bake-off (scripts/kernel_bench; OpenClaw is an entrant via install_entrants.sh). Tasks are single-turn where the runner can't give other entrants several turns.
+- **The gate (user, 2026-11-02):** Arslan at least matches OpenClaw on each axis: focus-following, length match, verify-before-claim, guide-when-blocked and self-state. The user, verbatim: 「目前我反馈都是同一个模型下的反馈 open claw 也是同一个模型 跟 Arslan 一样的，所以你也不要提 Arslan 的现状找借口」.
 
-### SMART-6: the default chat model (the user)
-The run above was on `deepseek-v4-flash`. Recommended: flash for Quick Ask only, and pro (or a Claude model) as the chat default. This is the user's call.
+### SMART-6: dropped (user, 2026-11-02)
+Changing the default chat model is **not** a fix. OpenClaw follows the user on the same model, so the gap is Arslan's harness: its prompt, tools, environment and self-knowledge. The chat default stays as it is.
+
+### SMART-7: two input and reading fixes (⑤CAP)
+The user asked for both to be normalized to how Claude, ChatGPT and OpenClaw behave. They described them exactly, so no mock is needed.
+- **The chat input wraps** and grows with its content to a cap (about 12 lines or 40% of the viewport), then scrolls inside.
+- **Prose-type fences wrap** (```text, ```markdown, ```md, unlabeled). Code languages keep horizontal scroll.
+
+### SMART-8: confirm and re-run cards say plainly what they're for (⑤CAP, with ③Hands' cards; a mock first)
+The user, verbatim: 「这种 弹卡的内容也能一块规范一下嘛…我觉得应该用更清楚的说明 我看是看不懂这个是要干嘛的」, about a card whose headline was a raw `ssh -o BatchMode=yes …` command cut off mid-flag.
+- **One shape for every card:**
+  - a one-line plain purpose in the user's language first;
+  - then what it touches (a host, or a folder or file);
+  - then the risk in plain words;
+  - the raw command or path collapsed under "Show command", never truncated in the headline.
+- **The purpose comes from** the model's stated reason for the step when there is one, else a deterministic summary of the command's parsed shape.
+- **Mocks:** ⑤CAP's general mock and ③Hands' LAN, certificate and app-data cards share the shape. No code before the user OKs the mock.
+- **Where the user saw it: the iPhone.** Their screenshot shows the phone's approval row: the countdown ring, the heading, and "Remote · Sends something out". The heading is the server's English `title` (`server/services/approvals.py`, built from `shell[:80]`), which the phone shows as is. `permissions.py:133` also puts it in refusal and expiry texts. So the plain purpose has to reach the server's `title` too, not only the Mac card. The frame's format doesn't change, but what the phone shows does, so the phone's state is in the mock and that piece waits for the user's OK. If the shared vectors or the protocol spec carry example title text, that PR is the user's to merge (the Bridge rule).
+
+#### Delete cards (user, 2026-11-02, relayed by ④参谋)
+The user, verbatim: “把「允许」从直接彻底删掉 改成 移到废纸篓…就不需要再额外加「改成移到废纸篓」了 也能有个容错率”, and then 「这种要彻底删的命令 可以用户给 Arslan 明确指令 也可以就直接删」.
+- **By default, 「允许」 moves the targets to the Mac's Trash.** That's Finder's default. It applies when Arslan decides on its own to delete (cleanup, tidying). There's no separate 「改成移到废纸篓」 button: the card keeps 「允许」 / 「拒绝」 and the 「不，告诉 Arslan 换个做法」 link.
+- **Where it applies:** the delete-outside card (`terminal_policy.py`, `_DELETE_OUTSIDE` in `ONCE_ONLY_RULES`) and any other delete card. Deletes inside the working folder are unchanged; the S3 checkpoint makes them undoable.
+- **What allow runs.**
+  - When the delete parses with certainty (`rm` with `-r`/`-f` and literal paths, no glob it can't expand safely, no command substitution, no `xargs`, the same parse `_deletes_outside` already does), allow moves each target to the Trash instead of running the command.
+  - It reuses `capability_install.to_trash`, which moves a link itself and never follows it.
+  - `to_trash` moves into `~/.Trash`, which copies when the target is on another volume. The builder may use that volume's own `.Trashes/<uid>` instead; otherwise the card says it will copy.
+- **An explicit permanent delete.**
+  - When the user's own chat message in this conversation explicitly asks to delete specific paths permanently (for example 「把 ~/Downloads/旧安装包 彻底删掉」), 「允许」 really deletes those paths.
+  - The card says so: 「你说要彻底删除，这次不进废纸篓」.
+  - Only the user's own message counts. Text from web pages, files, mail or tool output never does, since that's the injection path. This uses the existing untrusted-content tracking (`server/orchestrator/untrusted.py`).
+  - It covers only the paths the user named. Any other target in the same command still goes to the Trash.
+  - The card is still shown for deletes outside the working folder, as one click. Mainstream agents re-confirm irreversible deletes outside the workspace too, and the click catches a misread path.
+- **A delete that can't be parsed** (inside a script, a pipeline or a program): the card says plainly that the command deletes permanently and can't go to the Trash, and allow keeps today's meaning. It never implies a safety net that isn't there.
+- **Arslan never empties the Trash.** A permanent delete from the Trash is the user's own act.
+- **Tests (red first):**
+  - allow on `rm -r <outside dir>` puts it in the Trash, and the original path is gone;
+  - an explicit permanent-delete request from the user, naming the path, really deletes it;
+  - the same words in a web page or a file put it in the Trash;
+  - an extra target the user didn't name, in the same command, goes to the Trash;
+  - a delete that can't be parsed shows the permanent-delete wording;
+  - nothing ever empties the Trash (a source pin plus a behaviour test).
+- **Lanes:** ③Hands builds the policy and allow path (security surface, so it gets an effort=max review). ⑤CAP adds the card's wording to the shared component and puts the delete state in the mock.
 
 ## Method
 
@@ -127,10 +169,12 @@ Every piece has red tests first and mutations on its logic. SMART-1 gets an effo
 - The STY2 and M64 benches don't regress.
 - A real-Mac check with the user present: the same three questions from the run above get short, current, correct answers, and `claude` is found.
 
-## For the user to decide
+## Decided (user, 2026-11-02, relayed by ④参谋)
 
-1. **SMART-6:** the chat default model.
-2. **Other apps' private data:** close other apps' `~/Library/Application Support/<app>` folders to Arslan's file tools by default (a security change; SBX-5's protected list), or rely on SMART-4's rule.
+1. **SMART-6** is dropped (above).
+2. **Other apps' private data,** verbatim: 「我选 推荐：默认挡住，用到时弹卡问你」. Other apps' private folders (`~/Library/Application Support/<app>`, `~/Library/Containers/<app>`, Group Containers, other apps' preference plists) are denied to Arslan's file tools and commands by default, through SBX-5's protected list. A card asks per request ("allow once?"). It's built as SBX-5b by ③Hands, after 5a, and the card is in SMART-8's mock.
+
+3. **Delete cards** move to the Trash by default, with an explicit permanent delete when the user's own message names the paths (see SMART-8, "Delete cards").
 
 ## Size
 

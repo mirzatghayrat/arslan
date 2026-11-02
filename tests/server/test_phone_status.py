@@ -77,5 +77,5 @@ async def test_the_snapshot_has_the_running_jobs_and_the_waiting_cards(client):
     assert [j["job_id"] for j in got["jobs"]] == ["j0", "j1"], "unfinished only, oldest first"
     assert got["jobs"][1] == running.frame()
     assert set(got) == {"presence", "mascot", "jobs", "waiting_approvals", "high_risk_mac_only", "activity",
-                        "week", "outcomes"}, "device_name and last_seen are the Bridge's to add"
+                        "week", "outcomes", "mac"}, "device_name and last_seen are the Bridge's to add"
     assert len(got["activity"]["hours"]) == 24 and got["activity"]["waiting"] == 1

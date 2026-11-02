@@ -98,6 +98,10 @@ function stripAlertPrefix(children: React.ReactNode): React.ReactNode {
   return children;
 }
 
+// SMART (the user, 2026-11-02): a fence of prose wraps, so a "message to send" block reads without scrolling
+// sideways; a fence of code keeps its horizontal scroll, as Claude and ChatGPT do. No language at all counts as prose.
+const PROSE_FENCES = new Set(['', 'text', 'txt', 'plaintext', 'markdown', 'md']);
+
 // ─── Copy button for code blocks ──────────────────────────────────────────────
 
 function CopyButton({ code }: { code: string }) {
@@ -336,7 +340,9 @@ const components: import('react-markdown').Components = {
           fontSize: '12px',
           lineHeight: 1.6,
           color: 'var(--color-foreground)',
-          whiteSpace: 'pre',
+          ...(PROSE_FENCES.has(lang.toLowerCase())
+            ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+            : { whiteSpace: 'pre' }),
           WebkitOverflowScrolling: 'touch',
         }}>
           {children}
