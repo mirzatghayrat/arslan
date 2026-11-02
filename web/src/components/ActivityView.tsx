@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CalendarClock, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 import type { WaitingView } from "../hooks/useWaiting";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import { fmtMs } from "../lib/usageFormat";
 import { useActivityStore, type RunChip, type UsageRange } from "../stores/activityStore";
-import UsageCard from "./UsageCard";
 import HandsTraceCard from "./HandsTraceCard";
 import JudgmentsCard from "./JudgmentsCard";
+import UsageCard from "./UsageCard";
 import ScrollBox from "./activity/ScrollBox";
 import RunDrawer from "./activity/RunDrawer";
 import RunInspector from "./activity/RunInspector";
@@ -22,11 +22,13 @@ export const RUNS_PAGE = 20;
 /** How far back each range reaches (the axis and the tiles use the same spans). */
 const RANGE_SECONDS: Record<UsageRange, number> = { "24h": 86_400, "7d": 7 * 86_400, "30d": 30 * 86_400 };
 /** INB7-c2: what each chip asks GET /runs for, and its words. */
-const CHIPS: Record<RunChip, { outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone" }> = {
+const CHIPS: Record<RunChip, { outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone"; used?: "apps" }> = {
   waiting: { outcome: "waiting" }, failed: { outcome: "failed" }, scheduled: { origin: "scheduled" }, phone: { origin: "phone" },
+  apps: { used: "apps" },                  // INB7-c4c: the runs that used Mac apps (Hands), told on the server by the trace
 };
 const CHIP_WORD: Record<RunChip, string> = {
   waiting: "activityPage.kpiNeeds", failed: "activityPage.failed", scheduled: "activityPage.chipScheduled", phone: "activityPage.chipPhone",
+  apps: "activityPage.chipApps",
 };
 
 export const ORIGIN_ICON = {
@@ -37,7 +39,8 @@ export const ORIGIN_ICON = {
  * Activity (0.1.48), called Progress since v0.1.64 (INB7-a): what Arslan did, what it cost, and what waits on you.
  *
  * Order (0.1.50, user ruling): usage, scheduled tasks, Hands, recent work, judgments. Since INB7-c1 (board F): usage and the
- * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar), then Hands and judgments until INB7-c4 folds them.
+ * axis, then 「最近的工作」 with the inspector beside it (one pick: a row or a bar). Since INB7-c4c a run's Hands calls and judgments
+ * are in its 「诊断」, the 「应用」 chip lists the runs that used Mac apps, and the full lists are folded at the foot.
  * 0.1.58 §7: each list sits in its own box that scrolls inside and loads 20 at a time;
  * a run opens in a drawer over the page, so the list keeps its place and the opened row
  * stays highlighted; clicking a chart slice or a model narrows 最近的工作; and all of it
@@ -224,8 +227,13 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
       </section>
       <RunInspector runs={runs ?? []} needs={{ waiting, ...where }} />
       </div>
-      <HandsTraceCard />
-      <JudgmentsCard />
+      {/* The two records stay on Progress (the user, 2026-11-02: Settings is for settings, records belong here), each its own row,
+          collapsed and read only when opened: the full Hands trace (the only audit view of what Hands did on this Mac, calls
+          outside any run included) and the whole judgment ledger. A run's own calls and judgments are in its 「诊断」. */}
+      <div className="space-y-2">
+        <FootRecord title={t("activityPage.handsRecords")} testId="activity-hands-records"><HandsTraceCard embedded /></FootRecord>
+        <FootRecord title={t("activityPage.judgmentRecords")} testId="activity-judgment-records"><JudgmentsCard embedded /></FootRecord>
+      </div>
       {openRunId != null && <RunDrawer runId={openRunId} onClose={() => setOpenRun(null)} onStep={step} />}
     </div>
   );
@@ -240,5 +248,20 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
         <X size={11} aria-hidden />
       </button>
     </span>
+  );
+}
+
+
+/** One record at Progress's foot: its title as a row, collapsed until opened; what it holds mounts (and reads) only then. */
+function FootRecord({ title, testId, children }: { title: string; testId: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid={testId}
+        className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
+        {open ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}{title}
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </section>
   );
 }
