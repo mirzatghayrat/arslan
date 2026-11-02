@@ -41,7 +41,8 @@ export function outcomeOf(run: Pick<RunListItem, "status" | "waiting">): Outcome
 
 /** INB7-c2: whether a run is one a chip lists (the server decides the list; the axis dims by the same rule). */
 export function chipHas(chip: RunChip, run: RunListItem): boolean {
-  return chip === "waiting" ? outcomeOf(run) === "waiting" : chip === "failed" ? run.status === "failed" : run.origin === chip;
+  return chip === "waiting" ? outcomeOf(run) === "waiting" : chip === "failed" ? run.status === "failed"
+    : chip === "apps" ? !!run.used_apps : run.origin === chip;
 }
 
 /** Each run goes into the first row that is free when it starts, so a row never overlaps; a short run counts as MIN_BAR_MS. When

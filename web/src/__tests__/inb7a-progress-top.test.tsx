@@ -45,7 +45,7 @@ const OLD_NAMES: Record<string, string[]> = { en: ["Activity"], zh: ["活动", "
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, scroll: {}, byModelOpen: false, modelSlots: {} });
+  useActivityStore.setState({ range: "7d", filter: {}, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockResolvedValue(summary(WEEK));
   listRuns.mockResolvedValue([]);
   request.mockResolvedValue({ items: [], entries: [] });

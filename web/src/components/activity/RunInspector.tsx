@@ -13,8 +13,8 @@ import { isolate } from "../CapabilitySwitches";
 import { confirmSheet } from "../kit";
 import { triggerDownload } from "../MessageBody";
 import { buildRunMarkdown } from "../RunReplay";
-import { getHandsTrace, handsOpIcon, type HandsTraceEntry } from "../HandsTraceCard";
-import { judgmentVerdict, POINT_KEY, type JudgmentRow } from "../JudgmentsCard";
+import { getHandsTrace, handsOpIcon, type HandsTraceEntry } from "../../lib/handsTrace";
+import { judgmentIcon, judgmentVerdict, POINT_KEY, type JudgmentRow } from "../../lib/judgments";
 import { StepDetailView } from "../reply/ProcessList";
 import DiffReader, { opensDiff } from "../workbench/DiffReader";
 import NeedsPanel, { type NeedsProps } from "./NeedsPanel";
@@ -48,7 +48,6 @@ export default function RunInspector({ runs, needs }: { runs: RunListItem[]; nee
 function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
   const { t, i18n } = useTranslation();
   const setPickedRun = useActivityStore((s) => s.setPickedRun);
-  const setOpenRun = useActivityStore((s) => s.setOpenRun);
   const step = useActivityStore((s) => s.replayStep);
   const setReplay = useActivityStore((s) => s.setReplay);
   const clock = useMemo(() => clockOf(i18n.language), [i18n.language]);
@@ -94,8 +93,6 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
           <h3 className="truncate text-[13px] font-medium text-foreground">{run?.user_message || t("activityPage.run", { id: runId })}</h3>
           {meta && <p className="mt-0.5 text-[11px] text-subtle-foreground">{meta}</p>}
         </div>
-        <button type="button" onClick={() => setOpenRun(runId)}
-          className="shrink-0 rounded-md px-2 py-0.5 text-[11.5px] text-primary hover:bg-primary/10">{t("activityPage.details")}</button>
         <button type="button" onClick={() => setPickedRun(null)} aria-label={t("activityPage.allRuns")} title={t("activityPage.allRuns")}
           className="shrink-0 rounded p-1 text-muted-foreground hover:bg-foreground/5">
           <X size={12} aria-hidden />
@@ -280,8 +277,8 @@ function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t
 
 /**
  * INB7-c4a, board F's 「诊断」: the picked run's facts (run, model, tokens in and out, cost, duration, score), its problems, and
- * the drawer's two tools that belong here: clearing its debug details (asked first; it cannot be undone) and exporting it as
- * Markdown. The drawer's charts (the fleet radar, the history sparkline) wait on the user's word, behind "Details" (⓪Plan).
+ * the old drawer's two tools: clearing its debug details (asked first; it cannot be undone) and exporting it as Markdown. The
+ * drawer itself, with its fleet radar and history sparkline, is gone (the user, 2026-11-02: 「去掉」).
  */
 function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoaded, onCleared }: {
   detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void;
@@ -338,10 +335,12 @@ function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoade
           const Icon = handsOpIcon(entry.op);
           return (
             <li key={`${entry.at}-${i}`} data-testid="diag-hands-row" data-target={entry.target ?? ""} className="flex items-center gap-1.5">
-              <Icon size={12} aria-hidden className="shrink-0 text-muted-foreground" />
+              <Icon size={12} aria-hidden data-op={entry.op} className="shrink-0 text-muted-foreground" />
               <span className="shrink-0 text-foreground">{entry.app ?? "—"}</span>
               <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{entry.op}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{entry.target ? isolate(entry.target) : ""}</span>
+              {/* Never typed text: its length (0.1.53). */}
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {entry.target ? isolate(entry.target) : ""}{entry.typed_chars != null ? ` (${entry.typed_chars})` : ""}</span>
               {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground" title={t("activityPage.matchedByTimeNote")}>
                 {t("activityPage.matchedByTime")}</span>}
               <span className={`shrink-0 font-mono text-[11px] ${entry.outcome === "ok" ? "text-subtle-foreground" : "text-danger"}`}>{entry.outcome}</span>
@@ -351,13 +350,21 @@ function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoade
       {sidelightsLoaded && <div data-testid="diag-judgments">
         <div className="text-[10.5px] font-medium uppercase tracking-wide text-subtle-foreground">{t("activityPage.judgments")}</div>
         {!judgments.length && <p className="mt-1 text-muted-foreground">{t("activityPage.noJudgmentsFound")}</p>}
-        <ul className="mt-1 space-y-0.5">{judgments.map(({ row: r, byTime }) => (
-          <li key={r.id} data-testid="diag-judgment" data-id={r.id} className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-foreground">{t(POINT_KEY[r.point] ?? r.point)}</span>
-            {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground" title={t("activityPage.matchedByTimeNote")}>
-              {t("activityPage.matchedByTime")}</span>}
-            <span className="shrink-0 rounded-full bg-fill px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{judgmentVerdict(t, r)}</span>
-          </li>))}</ul>
+        <ul className="mt-1 space-y-0.5">{judgments.map(({ row: r, byTime }) => {
+          const Icon = judgmentIcon(r.point);
+          return (
+            <li key={r.id} data-testid="diag-judgment" data-id={r.id} className="flex items-center gap-2">
+              <Icon size={12} aria-hidden data-point-icon={r.point} className="shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-foreground">{t(POINT_KEY[r.point] ?? r.point)}</span>
+              {byTime && <span className="shrink-0 text-[10.5px] text-subtle-foreground" title={t("activityPage.matchedByTimeNote")}>
+                {t("activityPage.matchedByTime")}</span>}
+              {r.mode === "shadow" && <span className="shrink-0 rounded border border-border px-1.5 text-[10px] uppercase tracking-wide text-subtle-foreground">
+                {t("activityPage.judgeShadow")}</span>}
+              <span className="shrink-0 rounded-full bg-fill px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{judgmentVerdict(t, r)}</span>
+              {(r.outcome === "approved" || r.outcome === "declined") && <span className="shrink-0 text-muted-foreground">
+                {t(r.outcome === "approved" ? "activityPage.youApproved" : "activityPage.youDeclined")}</span>}
+            </li>);
+        })}</ul>
       </div>}
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => void clear()} disabled={clearing}

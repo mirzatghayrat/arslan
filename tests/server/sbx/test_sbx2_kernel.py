@@ -41,7 +41,7 @@ SERVICES = {
 @pytest.mark.parametrize("service", SERVICES.values(), ids=SERVICES.keys())
 def test_service_policy_and_reachability(sbx, mode, service, record_property):
     sbx.network = mode
-    argv = [sys.executable, "-I", str(PROBE), "mach-lookup", service]
+    argv = [sys.executable, "-I", "-c", PROBE.read_text(), "mach-lookup", service]
     # This control queries reachability only: no RPC, no credential or UI access.
     for base in ("legacy-commands", "outside-floor"):
         control = Harness(sbx.root, base, mode, executions=sbx.executions).run(
