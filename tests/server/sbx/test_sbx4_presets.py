@@ -14,11 +14,11 @@ from tests.server.sbx.harness import BUILT_BASES, Harness
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 SURFACES = (("run-python", NetworkMode.NONE), ("artifact", NetworkMode.NONE),
-            ("mcp", NetworkMode.NONE), ("mcp", NetworkMode.ANY_DECLARED))
+            ("mcp", NetworkMode.NONE), ("mcp-proxy", NetworkMode.PROXY))
 
 
 def pending(base):
-    stage = "SBX-3a" if base == "commands" else "SBX-4a"
+    stage = "SBX-3a" if base == "commands" else "SBX-6a" if base == "mcp-proxy" else "SBX-4a"
     message = f"{stage} {base} adapter is not built"
     return pytest.mark.xfail(base not in BUILT_BASES, strict=True,
                             raises=pytest.RaisesExc(AssertionError, match="^" + message),
@@ -38,7 +38,7 @@ def test_presets_have_no_wholesale_grants(tmp_path, base):
         from server.services.ssh_exec import ssh_profile
         text = ssh_profile()
     else:
-        stage = "SBX-3a" if base == "commands" else "SBX-4a"
+        stage = "SBX-3a" if base == "commands" else "SBX-6a" if base == "mcp-proxy" else "SBX-4a"
         assert base in BUILT_BASES, f"{stage} {base} adapter is not built"
         text = Harness(tmp_path, base).profile()
     # Read complete top-level forms, including multiline/modifier-first grants.
@@ -140,7 +140,7 @@ with socket.socket(int(sys.argv[1])) as client:
             assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
             result = sbx.python(source, family, host, port, probe="preset-network")
             assert result.returncode == 0, result.stderr
-            if mode == NetworkMode.NONE:
+            if mode == NetworkMode.NONE or family == socket.AF_UNIX:
                 assert int(result.stdout) in (errno.EPERM, errno.EACCES), result.stdout
             else:
                 assert result.stdout.strip() == "0", result.stdout
@@ -228,7 +228,7 @@ def test_preset_filesystem(sbx, mode):
     source = """
 import errno, pathlib, sys
 pathlib.Path('own').write_text('ok')
-if sys.argv[1] == 'mcp':
+if sys.argv[1] in {'mcp', 'mcp-proxy'}:
     (pathlib.Path(sys.argv[2]) / 'own').write_text('ok')
 for name in sys.argv[3:]:
     target = pathlib.Path(name)
@@ -244,7 +244,7 @@ print('checked')
     assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
     assert all(target.read_text() == "original" for target in targets)
     # Computation reads are as narrow as today's policy, not commands' broad reads.
-    if sbx.base != "mcp":
+    if sbx.base not in {"mcp", "mcp-proxy"}:
         result = sbx.python("""
 import errno, pathlib, sys
 assert pathlib.Path(sys.argv[2]).read_text() == 'original'
