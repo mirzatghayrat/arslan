@@ -19,7 +19,8 @@ const badgeLabel = (t: TFn, b?: string | null) => t(BADGE_KEY[b ?? "ok"]);
 const RADAR_DIMENSIONS = ["routing", "fabrication", "identity", "completion"] as const;
 
 /** Human-readable md export of a run — KPIs, steps, dims/comments, prompt/kb. */
-function buildRunMarkdown(run: UiRun, t: TFn): string {
+/** The run as Markdown, for the drawer's and the inspector's 「诊断」 export (INB7-c4a). */
+export function buildRunMarkdown(run: UiRun, t: TFn): string {
   const lines: string[] = [];
   lines.push(`# Run #${run.id}${run.spawnName ? ` · ${run.spawnName}` : ""}`);
   lines.push("");
