@@ -18,9 +18,21 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from server.db.base import Base
+
+
+def _clean_name(value, limit: int):
+    """v0.1.64 UNI1 (#526 review 4): a name an outside source can set (a skill's name and description, an MCP
+    server's label, a capability source's name) goes through the one name cleaner at every write, a constructor
+    or an attribute set, whichever code writes it, so what is stored is what shows. `limit` is the column's, or
+    for a Text column a bound above what any writer keeps. Bulk `update()` statements skip validators: none
+    writes these columns (tests/server/test_uni1a_names_and_bodies.py). Stored rows from before: 0082."""
+    if value is None:
+        return None
+    from server.orchestrator import untrusted
+    return untrusted.clean_name(value, limit)
 
 
 class RecipeVersion(Base):
@@ -233,6 +245,10 @@ class SkillPack(Base):
     # 0.1.57 §5.2: the capability source it was installed from (pinned commit + checksums).
     source_id = Column(String(36), nullable=True)
 
+    @validates("name", "description")
+    def _clean(self, field, value):
+        return _clean_name(value, 100 if field == "name" else 2000)
+
 
 class SpawnCapability(Base):
     """Per-spawn equipment row (toolset or skill grant)."""
@@ -290,6 +306,8 @@ class MCPServer(Base):
     command = Column(String(255), nullable=False)
     args = Column(JSON, nullable=False, default=list)
     env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
+    # SEC1 (migration 0081): the values behind `${NAME}` placeholders in url/args, encrypted JSON like env.
+    secrets = Column(Text, nullable=True)
     url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
     status = Column(String(20), nullable=False, default="registered")  # legacy, kept in step with `state` until PR 8: registered|connecting|connected|error
     # Server-level host consent (user ruling 2026-08-18): connect is the human
@@ -309,6 +327,10 @@ class MCPServer(Base):
     last_ok_at = Column(DateTime, nullable=True)
     next_retry_at = Column(DateTime, nullable=True)
     fail_count = Column(Integer, nullable=False, default=0, server_default="0")
+
+    @validates("label")
+    def _clean(self, field, value):
+        return _clean_name(value, 80)
 
 
 class CapabilitySource(Base):
@@ -349,6 +371,10 @@ class CapabilitySource(Base):
     skill_key = Column(String(60), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     installed_at = Column(DateTime, nullable=True)
+
+    @validates("name")
+    def _clean(self, field, value):
+        return _clean_name(value, 120)
 
 
 class ProviderConfig(Base):
@@ -692,6 +718,18 @@ class ConversationEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ConversationSeen(Base):
+    """INB4 (v0.1.64): the newest message of a conversation the user has seen in the window; a clean reply or a job done
+    that is newer reads "done, not seen". A table of its own, because not every conversation has a conversation_contexts
+    row. The Scheduled page's "last opened" is to use it too, keyed `scheduled-<id>` (INB5)."""
+
+    __tablename__ = "conversation_seen"
+
+    conversation_id = Column(String(100), primary_key=True)
+    seen_message_id = Column(Integer, nullable=False, default=0)
+    seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Learning(Base):
     """心得 (know-how) distilled from concrete signals (a distill event, a user
     correction, or a repeated run pattern). Always carries a traceable source_ref.
@@ -843,6 +881,7 @@ class Judgment(Base):
     error = Column(String(40), nullable=True)
     ref = Column(String(80), nullable=True)              # e.g. the card's call_id
     conversation_id = Column(String(50), nullable=True)
+    run_id = Column(Integer, nullable=True)              # v0.1.64 (0085): the run it belongs to; older rows null
     outcome = Column(String(20), nullable=True)          # approved | declined | timeout | followed | ...
     outcome_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -903,6 +942,9 @@ class ScheduledTask(Base):
     consecutive_failures = Column(Integer, nullable=False, default=0)
     paused_reason = Column(Text, nullable=True)          # set on auto-pause (3 fails)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # INB5 (migration 0084): when you last opened this task on the Scheduled page. Its runs' "could not ask" entries newer
+    # than this wait on you (progress.waiting_on_user). The task's own column, so no conversation id can collide with it.
+    seen_at = Column(DateTime, nullable=True)
 
 
 class ScheduledTaskRun(Base):

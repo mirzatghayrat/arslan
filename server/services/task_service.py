@@ -39,7 +39,7 @@ _run_owners: dict[int, str] = {}
 # This is an effect classification, NOT a permission grant.
 _READ_TOOLS = frozenset({
     "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
-    "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "render_chart", "task_progress", "delegate_work",
+    "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "my_status", "render_chart", "task_progress", "delegate_work",
 })
 _LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "remember", "create_skill",
                                 "start_background_work", "stop_background_work",
@@ -130,6 +130,9 @@ _OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege vi
 # S2a-1: under `(deny appleevent-send)` (the workspace sandbox, and the minimal profile outside it) no
 # event leaves the process, so the script's one app answers "isn't running" (-600): nothing happened there.
 _OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
+# SBX-3: the workspace sandbox is the default-deny base, which refuses the app's lookup before any event, so
+# osascript reports the app itself as not found (-1728, measured 2026-11-02). Only for the app, not an element.
+_OSA_SANDBOX_LOOKUP = re.compile(r"execution error: Can[’']t get application \"([^\"]+)\"\. \(-1728\)\Z")
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
                             r"write\s|set\s+eof)", re.I)
@@ -431,7 +434,7 @@ def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> 
         return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
-    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1])) is not None:
+    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1]) or _OSA_SANDBOX_LOOKUP.search(lines[-1])):
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])
     return match is not None and match.group(1).lower() in apps & _PRIVILEGE_ALL_OR_NOTHING
@@ -864,8 +867,8 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                              "Task final checkpoint failed")
             try:
                 await asyncio.shield(stopping)
-            except Exception:
-                pass                                  # logged by _kept
+            except Exception:  # noqa: BLE001 — its failure is logged by _kept
+                pass
             finally:
                 for run_id in runtime.run_ids:
                     _run_owners.pop(run_id, None)
@@ -1025,22 +1028,31 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         value = await repo.start(spec.id, created["version"])
     async def body(sink):
         return await function(conversation_id, user_message, sink, *args, **kwargs)
+    turn_run: dict = {}
+
+    def noting(event: dict) -> None:
+        if "id" not in turn_run and type(event.get("run_id")) is int:
+            turn_run["id"] = event["run_id"]     # v0.1.64: the turn's run, which host_run puts on each of its events
+        emit(event)
     token = _answer_only.set(_acceptance is None)
     try:
-        result = await _launch(value, emit, body, context=ctx)
+        result = await _launch(value, noting, body, context=ctx)
     finally:
         _answer_only.reset(token)
     if ctx.project_id:
-        _project_evidence_later(ctx.project_id, conversation_id, user_message)
+        _project_evidence_later(ctx.project_id, conversation_id, user_message, run_id=turn_run.get("id"))
     return result
 
 
-def _project_evidence_later(project_id: str, conversation_id: str, user_message: str) -> None:
+def _project_evidence_later(project_id: str, conversation_id: str, user_message: str, *,
+                            run_id: int | None = None) -> None:
     """0.1.56 §4: after a turn in a project conversation, look at the folder and (for the
-    user's own turns, not a background job's) at what the user said. Off the reply path."""
-    from server.services import background_jobs, lessons, project_evidence
-    lessons.later(project_evidence.after_turn(project_id, conversation_id, user_message,
-                                              said=not background_jobs.inside_job()))
+    user's own turns, not a background job's) at what the user said. Off the reply path. What it
+    judges belongs to the turn's run (v0.1.64: judgments.run_id), over by then, so the id is bound."""
+    from server.services import background_jobs, judgment, lessons, project_evidence
+    with judgment.of_run(run_id):        # lessons.later copies the context from here
+        lessons.later(project_evidence.after_turn(project_id, conversation_id, user_message,
+                                                  said=not background_jobs.inside_job()))
 
 
 async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None):

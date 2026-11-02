@@ -95,15 +95,16 @@ _PINNED = {"node": ("node", "bin/node"), "npm": ("node", "bin/npm"), "npx": ("no
 
 def runtime_for(command: str) -> str | None:
     """'node' | 'uv' when `command` is a bare name Arslan pins, else None. (No key of _PINNED
-    holds a path separator, so an explicit path is never a match.)"""
-    entry = _PINNED.get(command or "")
+    holds a path separator, so an explicit path is never a match.) Case-blind, as the Mac's file system finds
+    `Npx` too (#623 review L-1)."""
+    entry = _PINNED.get((command or "").lower())
     return entry[0] if entry else None
 
 
 def pinned_command(command: str) -> tuple[str, str | None]:
     """(absolute pinned binary, its bin dir) when that exact binary is installed; else
-    (command, None). Never downloads: the supervisor decides when to fetch (0.1.61 §B1)."""
-    entry = _PINNED.get(command or "")
+    (command, None). Never downloads: the supervisor decides when to fetch (0.1.61 §B1). Case-blind (#623 L-1)."""
+    entry = _PINNED.get((command or "").lower())
     if entry is None:
         return command, None
     from server.services import capability_runtime
@@ -132,6 +133,8 @@ def secret_forms(server: dict) -> list[str]:
     import urllib.parse
 
     values = [str(v) for v in (server.get("env") or {}).values() if v]
+    moved = [str(v) for v in (server.get("secrets") or {}).values() if v]     # SEC1: moved secrets, as written
+    values += moved + [urllib.parse.unquote(v) for v in moved]                  # and as a server may echo them
     url = urllib.parse.urlsplit(server.get("url") or "")
     values += [v for _, v in urllib.parse.parse_qsl(url.query) if v]
     values += [pair.partition("=")[2] for pair in url.query.split("&") if "=" in pair]

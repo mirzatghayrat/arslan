@@ -26,7 +26,8 @@ function Toggle({ id, label, desc, checked, onChange }: { id: string; label: str
  * spenders). Changes save as they are made: a toggle that waited for a Save button would leave
  * "look out for things" looking on while the loop still saw the old value.
  */
-export type ProactiveBlock = 'looking' | 'notify' | 'brief' | 'watches';
+// The morning brief has no block since the user's Q9 (#605 review F2): nothing shows a brief, and the scan makes none.
+export type ProactiveBlock = 'looking' | 'notify' | 'watches';
 
 export default function ProactiveSection({ only, bare = false }: { only?: ProactiveBlock[]; bare?: boolean } = {}) {
   const { t } = useTranslation();
@@ -54,8 +55,8 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
 
   const caps = CAPS.includes(config.notify_daily_cap) ? CAPS : [...CAPS, config.notify_daily_cap].sort((a, b) => a - b);
   const sources: [keyof ProactiveConfig, string][] = [['job_followups', 'jobFollowups'], ['scheduled_problems', 'scheduledProblems'], ['watches', 'watches']];
-  // 0.1.55 §11: notify + quiet hours live in General › Notifications; looking out and the
-  // brief in Background; watches and mutes are managed in the Inbox. Without `only`, all.
+  // 0.1.55 §11: notify + quiet hours live in General › Notifications; looking out in Background; watches and mutes are managed
+  // on the Scheduled page (INB3; the Inbox is gone, INB5). Without `only`, all.
   const show = (k: ProactiveBlock) => !only || only.includes(k);
   const content = <div className="space-y-5">
     {error && <p role="alert" className="text-[11px] text-destructive">{error}</p>}
@@ -68,6 +69,7 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
             <input type="checkbox" data-testid={`proactive-source-${key}`} checked={Boolean(config[key])} onChange={(e) => void save({ [key]: e.target.checked } as Partial<ProactiveConfig>)}
               className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0" />{t(`proactive.settings.${label}`)}</label>)}
         </fieldset>
+        <p className="text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.diagnosisPointer')}</p>
     </>}
     {show('notify') && <>
         <Toggle id="proactive-toggle-notify" label={t('proactive.settings.notify')} desc={t('proactive.settings.notifyDesc')}
@@ -87,13 +89,6 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
           </div>
           <p className="text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.quietDesc')}</p>
         </div>
-    </>}
-    {show('brief') && <>
-        <Toggle id="proactive-toggle-brief" label={t('proactive.settings.brief')} desc={t('proactive.settings.briefDesc')}
-          checked={config.brief_enabled} onChange={(v) => void save({ brief_enabled: v })} />
-        {config.brief_enabled && <label className="flex items-center gap-2 text-xs">{t('proactive.settings.briefAt')}
-          <input type="time" data-testid="proactive-brief-time" className={field} value={config.brief_time} onChange={(e) => e.target.value && void save({ brief_time: e.target.value })} /></label>}
-        <p className="text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.diagnosisPointer')}</p>
     </>}
     {show('watches') && <WatchesPanel watchesOn={config.enabled && config.watches} />}
   </div>;

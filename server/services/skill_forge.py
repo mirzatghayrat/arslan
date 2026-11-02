@@ -13,8 +13,8 @@ is refused before any card: that waits for v0.1.65's "for you to look at".
 
 `register` writes the row, for the card and for a converted former expert. Its category is
 `AUTHORED`, or `AUTHORED_OUTSIDE` when the card said the conversation had read outside content (the
-user's decision on #472 F1): read_skill then reads it like an imported skill, framed, and the turn that
-reads it counts as having read outside content. The seeder reads both as the user's skill (D7): a
+user's decision on #472 F1). Since the user's D2(1) (2026-10-30, SKF1) every skill reads unframed, so the mark
+is data: where the text came from, for the Capabilities list. The seeder reads both as the user's skill (D7): a
 retirement never deletes it.
 
 This replaces the Skill Forge page, its candidates and the curator (sessions.md §11). Migration 0077
@@ -25,13 +25,13 @@ from __future__ import annotations
 
 import os
 import re
-import unicodedata
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from server.db import session as db_session
 from server.db.models import SkillPack
+from server.orchestrator import untrusted
 
 MAX_SKILL_BYTES = 15 * 1024  # Hermes hygiene: skills stay <=15 KB
 _MIN_BODY_CHARS = 80
@@ -42,8 +42,8 @@ _LINE_MAX = 300         # the description and the reason, as the card shows them
 #: The category of a skill Arslan wrote and the user kept (the card's yes, or converting a former
 #: expert): the seeder's D7 mark of a user's skill (`seeder._USERS_SKILL`). No seed ever had it.
 AUTHORED = "authored"
-#: The same, saved from a card that said the conversation had read outside content (#472 F1): read like an
-#: imported skill. Both are `WRITTEN`, the seeder's mark.
+#: The same, saved from a card that said the conversation had read outside content (#472 F1). Both are
+#: `WRITTEN`, the seeder's mark; neither changes how a skill is read (D2(1), skill_trust).
 AUTHORED_OUTSIDE = "authored-outside"
 WRITTEN = (AUTHORED, AUTHORED_OUTSIDE)
 #: What an earlier turn's `<turn_tools>` block says when it read outside content, or when the block was cut
@@ -54,9 +54,6 @@ _HISTORY_OUTSIDE = ("external content, source only", "more tool calls")
 #: `skill_script`, read_skill's `references/` section, the "Bundled" headings). This tool writes text only.
 _USES_FILES = re.compile(r"skill_script|[\"']?section[\"']?\s*:\s*[\"']references/|^#+\s*bundled\s+(?:scripts|references)",
                          re.I | re.M)
-#: Invisible, though not in a "C" category: variation selectors, the combining grapheme joiner, the Hangul
-#: fillers and the blank braille pattern (#472 review F4). A name made only of these would show blank.
-_INVISIBLE = re.compile("[\u034f\u115f\u1160\u2800\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]")
 #: The longest run of white space kept inside a line, and the leading indentation kept as written: code and
 #: YAML nest deep, and their indentation is their meaning (#472 recheck R1).
 _RUN_MAX = 16
@@ -82,30 +79,22 @@ def validate(key: str, name: str, description: str, body: str) -> list[str]:
     return errors
 
 
-def _visible(text, keep: str = "") -> str:
-    """Without control or format characters (a bidi override, a zero-width space) but those in `keep`, and
-    without the other invisible ones: the card shows exactly what is stored."""
-    return _INVISIBLE.sub("", "".join(ch for ch in str(text or "")
-                                      if ch in keep or not unicodedata.category(ch).startswith("C")))
-
-
 def _tidy(body: str) -> str:
     """Blank padding cannot push the end of the text out of sight in the card's box (#472 review F5, recheck
     R1): the Unicode line and paragraph separators become line breaks (read_skill splits on them too), no
     line ends in white space, at most one blank line in a row, leading indentation is kept as written up to
     `_INDENT_MAX` characters, and a run of white space inside a line stops at `_RUN_MAX`. Any white space
-    counts, not only spaces and tabs. The card shows, and the skill keeps, the tidied text."""
+    counts, not only spaces and tabs, and so does what shows nothing or only blank space (#526 review 1: the
+    blank braille pattern, the Hangul fillers, zero-width characters): a line of only those is blank, and a run
+    of them stops at `_RUN_MAX` too. The card shows, and the skill keeps, the tidied text."""
     lines = []
     for line in body.replace("\u2028", "\n").replace("\u2029", "\n").split("\n"):
-        line = line.rstrip()
+        line = "" if untrusted.is_blank(line) else line.rstrip()
         text = line.lstrip()
-        lines.append(line[:len(line) - len(text)][:_INDENT_MAX]
-                     + re.sub(r"[^\S\n]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, text))
+        indent = line[:len(line) - len(text)][:_INDENT_MAX]
+        text = re.sub(r"[^\S\n]{%d,}" % (_RUN_MAX + 1), " " * _RUN_MAX, text)
+        lines.append(indent + untrusted.cap_blank_runs(text, _RUN_MAX))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
-
-
-def _line(text, limit: int) -> str:
-    return " ".join(_visible(text).split())[:limit]
 
 
 def _files_stored(key: str) -> bool:
@@ -141,8 +130,8 @@ async def _conversation_read_outside(conversation_id: str | None) -> bool:
 
 async def register(*, key: str, name: str, description: str, body: str, outside: bool) -> bool:
     """Write the skill, on and equippable at once (the registry reads SkillPack directly). `outside` (no
-    default: every caller says where the text came from) marks it to be read like an imported skill (#472
-    F1, recheck). False when the key is taken: nothing is overwritten."""
+    default: every caller says where the text came from) marks it `authored-outside` (#472 F1, recheck), data
+    since D2(1). False when the key is taken: nothing is overwritten."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             if await db.get(SkillPack, key) is not None:
@@ -162,11 +151,13 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     DELETE-BY: v0.1.65, when "for you to look at" lands (CAP card): a skill Arslan writes then waits there for
     the user's review instead of this card's direct save."""
     key = str(args.get("key") or "").strip()
-    name = _line(args.get("name"), _NAME_MAX)
-    description = _line(args.get("description"), _LINE_MAX)
-    body = _tidy(_visible(args.get("body"), keep="\n\t"))
+    name = untrusted.clean_name(args.get("name"), _NAME_MAX)          # UNI1: one cleaner for names
+    description = untrusted.clean_name(args.get("description"), _LINE_MAX)
+    # UNI1: ordinary text is kept, format characters included (ZWNJ, ZWJ, VS16, LRM/RLM, a bidi control the card
+    # shows escaped); only Tag and control characters go. Until UNI1 every category-C character went.
+    body = _tidy(untrusted.clean_body(args.get("body")))
     tidied = body != str(args.get("body") or "").strip() + "\n"
-    why = _line(args.get("why"), _LINE_MAX)
+    why = untrusted.clean_name(args.get("why"), _LINE_MAX)
     errors = validate(key, name, description, body) + (
         [f"key is at most {_KEY_MAX} characters"] if len(key) > _KEY_MAX else [])
     if errors:
@@ -180,7 +171,6 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
     async with db_session.AsyncSessionLocal() as db:
         if await db.get(SkillPack, key) is not None:
             return {"ok": False, "error": f"not saved: a skill with the key '{key}' exists; pick another key"}
-    from server.orchestrator import untrusted
     from server.services import approvals, background_jobs, permissions
     # The ledger keeps the key, the name and the model's reason; never the body.
     request = permissions.Request(kind="capability", target=f"skill:{key}", title=f"Save the skill {name}?"[:200],

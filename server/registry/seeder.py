@@ -15,7 +15,7 @@ from arslan.skills.skillpack import SkillPack as _SkillPackSpec
 from server.db import session as db_session
 from server.db.models import SkillPack, Tool, Toolset
 from server.registry.seed_catalog import SKILLS, TOOLSETS
-from server.services import skill_forge
+from server.registry import skill_trust
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +90,7 @@ def _skill_body(key: str) -> str | None:
 # The discovery centre (removed in v0.1.64 CAP1a) left "gh-" keys, which no retired key is (tested);
 # migration 0080 marked those rows outside ("imported" or "authored-outside"), so they are one of the above.
 _USERS_SKILL = or_(
-    SkillPack.category == "imported",
-    SkillPack.category.in_(skill_forge.WRITTEN),
+    SkillPack.category.in_(skill_trust.USER_CATEGORIES),          # the marks, in one place (#519 review)
     SkillPack.source_id.is_not(None),
 )
 

@@ -110,16 +110,34 @@ public final class Mailbox {
     let signing: Curve25519.Signing.PrivateKey
     let exchange: Curve25519.KeyAgreement.PrivateKey
     let store: EnvelopeStore
-    public internal(set) var peers: [String: Peer] = [:]
+    /// The Bridge's loops (the poll, the held progress lines, the status snapshot, the sweep) and a phone's hello
+    /// reach this Mailbox at the same time (BRG1). Every read and change of its state is under this lock, which is
+    /// never held across an `await`: a repeated `seq` would be dropped by the phone as a replay (§4.8). Recursive,
+    /// as `remember()` runs inside the other locked parts.
+    let lock = NSRecursiveLock()
+    func locked<T>(_ body: () throws -> T) rethrows -> T { lock.lock(); defer { lock.unlock() }; return try body() }
+    private var storedPeers: [String: Peer] = [:]
+    public internal(set) var peers: [String: Peer] {
+        get { locked { storedPeers } }
+        set { locked { storedPeers = newValue } }
+    }
     var windows: [String: ReplayWindow] = [:]
     var processed: Set<String> = []                 // envelope ids already acted on
     var processedOrder: [String] = []
     var sentAwaitingAck: [String: EnvelopeRecord] = [:]
     var awaitingFromBefore: Set<String> = []        // our records sent before a restart, not yet acked
     var awaitingTo: [String: String] = [:]          // …and whom each was for, when known (remember() keeps only awaited ids)
-    public private(set) var toDelete: Set<String> = []   // acked, waiting for CloudKit to delete them
+    private var storedToDelete: Set<String> = []       // acked, waiting for CloudKit to delete them
+    public private(set) var toDelete: Set<String> {
+        get { locked { storedToDelete } }
+        set { locked { storedToDelete = newValue } }
+    }
     var nextSeq: Int64
-    public var token: Data?
+    private var storedToken: Data?
+    public var token: Data? {
+        get { locked { storedToken } }
+        set { locked { storedToken = newValue } }
+    }
     let memoryStore: MailboxMemoryStore?
 
     /// With a `memoryStore`, the counter, windows, processed ids and change token survive a restart,
@@ -145,6 +163,10 @@ public final class Mailbox {
 
     /// Write what must survive a restart (before any CloudKit write that depends on it).
     public func remember() throws {
+        try locked { try rememberLocked() }
+    }
+
+    private func rememberLocked() throws {
         guard let memoryStore else { return }
         var memory = MailboxMemory()
         memory.nextSeq = nextSeq
@@ -164,7 +186,7 @@ public final class Mailbox {
         try memoryStore.save(memory)
     }
 
-    public func add(peer: Peer) { peers[peer.deviceID] = peer }
+    public func add(peer: Peer) { locked { storedPeers[peer.deviceID] = peer } }
     public func isPaired(_ deviceID: String) -> Bool { peers[deviceID] != nil }
 
     /// Forget a phone (Settings › Remove, or a newer pairing of the same phone that `replaces` it,
@@ -173,14 +195,16 @@ public final class Mailbox {
     /// identity's records in the user's iCloud for good (1,602 waiting for acks that never came).
     /// `sparing` stays in the store (not waited for): the `device.revoked` the phone should still read.
     public func remove(peer deviceID: String, sparing: Set<String> = []) throws {
-        peers[deviceID] = nil; windows[deviceID] = nil; heard[deviceID] = nil; capabilities[deviceID] = nil
-        let theirs = sentAwaitingAck.values.filter { $0.to == deviceID }.map(\.id)
-            + awaitingFromBefore.filter { awaitingTo[$0] == deviceID }
-        for id in theirs {
-            sentAwaitingAck[id] = nil; awaitingFromBefore.remove(id)
-            if !sparing.contains(id) { toDelete.insert(id) }
+        try locked {
+            peers[deviceID] = nil; windows[deviceID] = nil; heard[deviceID] = nil; capabilities[deviceID] = nil
+            let theirs = sentAwaitingAck.values.filter { $0.to == deviceID }.map(\.id)
+                + awaitingFromBefore.filter { awaitingTo[$0] == deviceID }
+            for id in theirs {
+                sentAwaitingAck[id] = nil; awaitingFromBefore.remove(id)
+                if !sparing.contains(id) { toDelete.insert(id) }
+            }
+            try remember()
         }
-        try remember()
     }
 
     /// At start-up: records still waiting for an ack from a phone that is no longer paired are
@@ -190,18 +214,18 @@ public final class Mailbox {
     /// addressed to a phone that is not paired, never on a guess. Returns how many were queued.
     @discardableResult
     public func dropOrphans() async throws -> Int {
-        let unknown = awaitingFromBefore.filter { awaitingTo[$0] == nil }.sorted()
-        if !unknown.isEmpty {
-            let found = try await store.recipients(of: unknown)
+        let unknown = locked { awaitingFromBefore.filter { awaitingTo[$0] == nil }.sorted() }
+        let found = unknown.isEmpty ? [:] : try await store.recipients(of: unknown)
+        return try locked {
             for id in unknown {
                 if let to = found[id] { awaitingTo[id] = to } else { awaitingFromBefore.remove(id) }
             }
+            let orphans = sentAwaitingAck.values.filter { peers[$0.to] == nil }.map(\.id)
+                + awaitingFromBefore.filter { awaitingTo[$0].map { peers[$0] == nil } ?? false }
+            for id in orphans { sentAwaitingAck[id] = nil; awaitingFromBefore.remove(id); toDelete.insert(id) }
+            try remember()
+            return orphans.count
         }
-        let orphans = sentAwaitingAck.values.filter { peers[$0.to] == nil }.map(\.id)
-            + awaitingFromBefore.filter { awaitingTo[$0].map { peers[$0] == nil } ?? false }
-        for id in orphans { sentAwaitingAck[id] = nil; awaitingFromBefore.remove(id); toDelete.insert(id) }
-        try remember()
-        return orphans.count
     }
 
     /// Seal a message to a paired peer and put it in the store. The record is kept until the
@@ -210,10 +234,13 @@ public final class Mailbox {
     @discardableResult
     public func send(type: String, body: [String: Any], to peerID: String, id: String = UUID().uuidString.lowercased(),
                      now: Date = Date(), asset: Data? = nil) async throws -> EnvelopeRecord {
-        guard let peer = peers[peerID] else { throw BridgeError.code("not_paired") }
-        let seq = nextSeq
-        nextSeq += 1
-        try remember()                      // §4.5: the counter is durable before the record exists
+        let (peer, seq): (Peer, Int64) = try locked {
+            guard let peer = storedPeers[peerID] else { throw BridgeError.code("not_paired") }
+            let seq = nextSeq
+            nextSeq += 1
+            try remember()                  // §4.5: the counter is durable before the record exists
+            return (peer, seq)
+        }
         let envelope: [String: Any] = ["v": Wire.version, "id": id, "seq": seq, "ts": ISO8601DateFormatter().string(from: now),
                                        "from": deviceID, "to": peerID, "type": type, "body": body]
         let plaintext = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
@@ -229,8 +256,10 @@ public final class Mailbox {
                                     notify: notify, sealed: data, asset: sealedAsset, createdAt: now)
         try await store.save(record)
         if type != "ack" {                                  // an ack is not acknowledged
-            sentAwaitingAck[record.id] = record
-            try remember()                                  // so a restart still deletes it on its ack
+            try locked {
+                sentAwaitingAck[record.id] = record
+                try remember()                              // so a restart still deletes it on its ack
+            }
         }
         return record
     }
@@ -247,6 +276,13 @@ public final class Mailbox {
 
     /// The same, for records fetched by the caller (the runtime splits pairing traffic off first).
     public func process(_ records: [EnvelopeRecord], now: Date = Date()) async throws -> [Received] {
+        let (out, acks) = try locked { try opened(records, now: now) }
+        for (peer, ids) in acks { try await send(type: "ack", body: ["ids": ids], to: peer) }
+        return out
+    }
+
+    /// `process`'s reading, under the lock: what to act on, and what to acknowledge to whom.
+    private func opened(_ records: [EnvelopeRecord], now: Date) throws -> ([Received], [String: [String]]) {
         var out: [Received] = []
         var acks: [String: [String]] = [:]
         for record in records where record.to == deviceID {
@@ -286,26 +322,29 @@ public final class Mailbox {
             out.append(Received(from: record.from, type: type, envelope: opened.envelope, asset: opened.asset))
         }
         try remember()
-        for (peer, ids) in acks { try await send(type: "ack", body: ["ids": ids], to: peer) }
-        return out
+        return (out, acks)
     }
 
     /// Delete the records the phone acknowledged. A failure keeps them queued for the next round.
     public func deleteAcknowledged() async throws {
-        guard !toDelete.isEmpty else { return }
-        let batch = Array(toDelete.sorted().prefix(100))
+        let batch = locked { Array(storedToDelete.sorted().prefix(100)) }
+        guard !batch.isEmpty else { return }
         try await store.delete(ids: batch)
-        batch.forEach { toDelete.remove($0) }
-        try remember()
+        try locked {
+            batch.forEach { storedToDelete.remove($0) }
+            try remember()
+        }
     }
 
     /// Take back a record the peer no longer needs: a `status.snapshot` that a newer one replaces
     /// (§5.3). It stops waiting for an ack and goes with the next deletions; one already
     /// acknowledged is left alone.
     public func withdraw(_ id: String) throws {
-        guard sentAwaitingAck.removeValue(forKey: id.lowercased()) != nil else { return }
-        toDelete.insert(id.lowercased())
-        try remember()
+        try locked {
+            guard sentAwaitingAck.removeValue(forKey: id.lowercased()) != nil else { return }
+            storedToDelete.insert(id.lowercased())
+            try remember()
+        }
     }
 
     /// How long an envelope may stay in the store (§2): long enough for a phone left closed over
@@ -322,35 +361,51 @@ public final class Mailbox {
         for start in stride(from: 0, to: old.count, by: 200) {      // CloudKit takes at most 400 per request
             try await store.delete(ids: Array(old[start..<min(start + 200, old.count)]))
         }
-        old.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0); toDelete.remove($0) }
-        if !old.isEmpty { try remember() }
+        try locked {
+            old.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0); storedToDelete.remove($0) }
+            if !old.isEmpty { try remember() }
+        }
         return (old.count, all.count - old.count)
     }
 
     /// When a paired phone last wrote anything, acks included. While its app is open it acks
     /// every heartbeat, so this stays recent exactly as long as someone is looking (`PollPace`).
-    public private(set) var lastHeard: Date?
+    private var storedLastHeard: Date?
+    public private(set) var lastHeard: Date? {
+        get { locked { storedLastHeard } }
+        set { locked { storedLastHeard = newValue } }
+    }
 
     /// Each paired phone: when the Mac last read an authenticated message from it (to the minute,
     /// remembered across restarts). No entry = paired but not heard from yet ("connecting").
-    public private(set) var heard: [String: Date] = [:]
+    private var storedHeard: [String: Date] = [:]
+    public private(set) var heard: [String: Date] {
+        get { locked { storedHeard } }
+        set { locked { storedHeard = newValue } }
+    }
     public static let heardResolution: TimeInterval = 60
 
     /// Each paired phone's `hello.capabilities`, remembered across restarts (§5.7). A phone that has
     /// not said hello has none of the new ones: today's iPhone answers an unknown `chat.event` kind
     /// with `unknown_type`, so `partial` and the Mac's own words go only to a phone that asked.
-    public private(set) var capabilities: [String: Set<String>] = [:]
+    private var storedCapabilities: [String: Set<String>] = [:]
+    public private(set) var capabilities: [String: Set<String>] {
+        get { locked { storedCapabilities } }
+        set { locked { storedCapabilities = newValue } }
+    }
 
     public func setCapabilities(_ said: Set<String>, for peer: String) {
-        guard capabilities[peer] != said else { return }
-        capabilities[peer] = said
-        do { try remember() } catch { BridgeLog.error("remembering a phone's capabilities", error) }
+        locked {
+            guard storedCapabilities[peer] != said else { return }
+            storedCapabilities[peer] = said
+            do { try remember() } catch { BridgeLog.error("remembering a phone's capabilities", error) }
+        }
     }
 
     public func has(_ capability: String, _ peer: String) -> Bool { capabilities[peer]?.contains(capability) == true }
 
     /// Records still waiting for an ack (to re-send, unchanged, with backoff).
-    public var unacknowledged: [EnvelopeRecord] { Array(sentAwaitingAck.values) }
+    public var unacknowledged: [EnvelopeRecord] { locked { Array(sentAwaitingAck.values) } }
 
     static func headerJSON(_ h: Header) -> [String: Any] {
         var out: [String: Any] = ["v": h.v, "id": h.id, "from": h.from, "to": h.to, "seq": h.seq, "kind": h.kind,

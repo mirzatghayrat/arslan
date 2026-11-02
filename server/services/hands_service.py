@@ -589,14 +589,19 @@ _RISKY_KEYS = {"cmd+delete", "cmd+backspace", "cmd+shift+delete", "cmd+shift+bac
 
 def risky_label(label: str | None) -> bool:
     """A button or menu item whose real label (read from the app, not the model's
-    words) deletes, sends, pays, buys, transfers or submits."""
-    return money_label(label) or (bool(label) and bool(_RISKY_WORDS.search(str(label))))
+    words) deletes, sends, pays, buys, transfers or submits, judged as it reads
+    (hands_contract.as_read: no invisible characters, full-width letters folded)."""
+    from server.services.hands_contract import as_read
+    label = as_read(label)
+    return money_label(label) or (bool(label) and bool(_RISKY_WORDS.search(label)))
 
 
 def money_label(label: str | None) -> bool:
     """A label that moves money: pay, buy, purchase, order, check out, transfer (0.1.61 §A11).
-    Such a step is `money`: a card every time, in every mode, Full access included."""
-    return bool(label) and bool(_MONEY_WORDS.search(str(label)))
+    Such a step is `money`: a card every time, in every mode, Full access included. Judged as it reads."""
+    from server.services.hands_contract import as_read
+    label = as_read(label)
+    return bool(label) and bool(_MONEY_WORDS.search(label))
 
 
 # Apps that reach every other app or the whole Mac (0.1.61 §A4): their card never offers
@@ -783,7 +788,7 @@ def prune_trace(today: date | None = None) -> None:
 def trace(entry: dict) -> None:
     """Append one Hands call (0600 file, 0700 folder). Never typed text: its length."""
     now = datetime.now(timezone.utc)
-    line = json.dumps({"at": now.isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
+    line = json.dumps({**entry, "at": now.isoformat(timespec="seconds")}, ensure_ascii=False)   # its own time
     path = _trace_dir() / f"{now.date().isoformat()}.jsonl"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a") as f:
@@ -806,9 +811,13 @@ def read_trace(days: int = TRACE_DAYS, limit: int = 500) -> list[dict]:
             continue
         for line in reversed(lines):
             try:
-                out.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            if not isinstance(entry, dict):
+                continue                           # a line that is no entry
+            entry.setdefault("run_id", None)       # v0.1.64; older entries have none (pruned within 7 days)
+            out.append(entry)
             if len(out) >= limit:
                 return out
     return out

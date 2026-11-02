@@ -55,7 +55,7 @@ async def _token() -> str:
     async with db_session.AsyncSessionLocal() as db:
         try:
             return await settings_service.get_decrypted(db, "github_token")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — no usable token: the call goes unauthenticated (_headers)
             return ""
 
 

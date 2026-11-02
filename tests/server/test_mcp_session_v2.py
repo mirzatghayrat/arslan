@@ -268,6 +268,76 @@ async def test_cleanup_noise_never_replaces_the_cause(fake_sdk, monkeypatch):
         await sess.MCPSessionManager()._open_session(_server())
 
 
+# ── LOAD2: a stdio program that exits at once, its pipe broken before EOF ─────────────────────
+
+def _cancelled_with_cleanup(monkeypatch, cleanup: BaseException):
+    """The shape the SDK gives (mcp 1.28.1): the stdio task group's writer fails, anyio cancels the
+    task awaiting initialize (cancelling() is 0: nobody asked for it), and closing raises the group."""
+    import mcp
+    import mcp.client.stdio as stdio_mod
+
+    class _Broken(_FakeStdio):
+        async def __aexit__(self, *a):
+            raise cleanup
+
+    class _Cancelled(_FakeClient):
+        async def initialize(self):
+            raise asyncio.CancelledError()
+    monkeypatch.setattr(stdio_mod, "stdio_client", _Broken)
+    monkeypatch.setattr(mcp, "ClientSession", _Cancelled)
+
+
+@pytest.mark.parametrize("cleanup", [
+    ExceptionGroup("unhandled errors in a TaskGroup", [anyio.BrokenResourceError()]),
+    ExceptionGroup("outer", [ExceptionGroup("inner", [anyio.BrokenResourceError()])]),
+], ids=["group", "nested group"])
+async def test_a_stdio_pipe_broken_before_eof_is_a_closed_connection(fake_sdk, monkeypatch, cleanup):
+    _cancelled_with_cleanup(monkeypatch, cleanup)
+    with pytest.raises(McpError) as caught:
+        await sess.MCPSessionManager()._open_session(_server())
+    assert caught.value.error.code == types.CONNECTION_CLOSED      # "not an MCP server", not "broken resource"
+
+
+async def test_a_stdio_group_with_anything_else_in_it_is_still_the_cause(fake_sdk, monkeypatch):
+    group = ExceptionGroup("tg", [anyio.BrokenResourceError(), RuntimeError("something else")])
+    _cancelled_with_cleanup(monkeypatch, group)
+    with pytest.raises(ExceptionGroup) as caught:
+        await sess.MCPSessionManager()._open_session(_server())
+    assert caught.value is group
+
+
+async def test_http_keeps_the_group_as_the_cause(fake_sdk, monkeypatch):
+    """The http rule is unchanged: a refused connection or an HTTP error fails a child task, and the
+    group the close raises is what happened."""
+    import mcp
+
+    from server.mcp import oauth_flow
+    group = ExceptionGroup("tg", [anyio.BrokenResourceError()])
+
+    class _BrokenHttp:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return ("r", "w", lambda: None)
+
+        async def __aexit__(self, *a):
+            raise group
+
+    class _Cancelled(_FakeClient):
+        async def initialize(self):
+            raise asyncio.CancelledError()
+
+    async def no_tokens(server_id):
+        return False
+    monkeypatch.setattr(sess, "streamablehttp_client", _BrokenHttp)
+    monkeypatch.setattr(mcp, "ClientSession", _Cancelled)
+    monkeypatch.setattr(oauth_flow, "has_tokens", no_tokens)
+    with pytest.raises(ExceptionGroup) as caught:
+        await sess.MCPSessionManager()._open_session(_server(transport="http", url="https://mcp.example/x"))
+    assert caught.value is group
+
+
 async def test_the_proxy_lookup_runs_off_the_event_loop(fake_sdk, monkeypatch):
     from server.mcp import proxy_resolve
 

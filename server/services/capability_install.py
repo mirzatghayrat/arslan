@@ -8,6 +8,11 @@ install:
   skill's own license file); not usable → refused before anything is downloaded;
 - pins: a lock with hashes (pypi via uv, npm via Node) or a published checksum (mcpb) or a
   commit (skills), and records the checksum in the dossier;
+- v0.1.64 CAP4a-2 (the user's D1, option a): the license, Arslan's own pinned runtime and the lock all come
+  BEFORE the card (`prepare`), so the card shows the locked versions and the install follows that lock
+  (`--require-hashes`, `npm ci`), stopping if the lock changed. Resolving runs no package code: uv resolves wheels
+  only, npm reads metadata with scripts off, and nothing is installed until the yes. Arslan's runtime is part of
+  the app (capability_runtime: pinned version, its SHA-256 in the repository, checked before use).
 - runs no package code while installing: wheels only (`--only-binary :all:`) for Python,
   `--ignore-scripts` for npm, so nothing executes before the sandbox exists;
 - leaves the server switched OFF (`host_allowed` False): the first test decides (P3).
@@ -33,6 +38,7 @@ import httpx
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer
+from server.orchestrator import untrusted
 from server.services import capability_runtime
 from arslan.aio import within
 
@@ -81,18 +87,38 @@ def _base_env(extra: dict | None = None) -> dict:
 
 # ── license at the source ────────────────────────────────────────────────────
 
-async def source_license(repo: str | None) -> tuple[str | None, str | None]:
-    """(SPDX, the file it was read from) for a repository: its LICENSE file at HEAD, read
-    from raw.githubusercontent.com (not the API, which allows 60 calls an hour without a
-    token) and recognised by its wording (skill_import.detect_license) — never metadata."""
+async def source_license(repo: str | None, version: str | None = None) -> tuple[str | None, str | None]:
+    """(SPDX, where it was read: `<file>@<ref>`) for a repository: its LICENSE file, read from
+    raw.githubusercontent.com (not the API, which allows 60 calls an hour without a token) and recognised by its
+    wording (skill_import.detect_license), never metadata.
+
+    v0.1.64 CAP4a-3: at the version being installed, not at HEAD. Every license file name is tried at the
+    repository's tag for it (`v<version>`, then `<version>`) before any at the next ref; a repository with neither
+    tag is read at HEAD, and `@HEAD` says so. Only a 404 moves on to the next name or ref: any other answer (a
+    rate limit, an outage) refuses with `license_unreadable`, never falling through to HEAD (#569 review F3a).
+    The ref read goes in the card's payload and the dossier; the card's face shows only that the file was read
+    (CAP4b's mock adds the ref).
+
+    What this binds, and what it does not (#569 review F4): the license file in the repository the Registry entry
+    declares, at a git tag named after the version. The repository is the publisher's own word, a tag can be
+    moved, and the file is not cross-checked against the artifact the lock pins (npm's gitHead and provenance, and
+    PyPI's attestations, exist but are not always present). `_VERSION` checks characters only, so a moving tag such
+    as `v1` is read as it is. The code's own boundary is the lock, the scan and the sandbox; this is the license
+    gate."""
+    from urllib.parse import quote
+
     from server.services import skill_import
     if not repo or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         return None, None
+    refs = [f"v{version}", str(version)] if version and _VERSION.fullmatch(str(version)) else []
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        for name in skill_import._LICENSE_NAMES:
-            r = await client.get(f"https://raw.githubusercontent.com/{repo}/HEAD/{name}")
-            if r.status_code == 200:
-                return skill_import.detect_license(r.text), name
+        for ref in [*refs, "HEAD"]:
+            for name in skill_import._LICENSE_NAMES:
+                r = await client.get(f"https://raw.githubusercontent.com/{repo}/{quote(ref, safe='')}/{name}")
+                if r.status_code == 200:
+                    return skill_import.detect_license(r.text), f"{name}@{ref}"
+                if r.status_code != 404:
+                    raise InstallFailure("license_unreadable", f"HTTP {r.status_code} for {name}@{ref}")
     return None, None
 
 
@@ -122,14 +148,104 @@ def _console_script(venv: Path, identifier: str) -> str:
     raise InstallFailure("no_command", f"{identifier}: console scripts {scripts or 'none'}")
 
 
-async def install_pypi(root: Path, identifier: str, version: str) -> dict:
-    uv = await capability_runtime.ensure("uv")
+#: CAP5 (the card's "own cache"): uv and npm download into a cache inside the install's own folder, never one every
+#: install shares, so no install is built from a file that another install, or anything else, left in a cache. The
+#: lock step fills it in the staging folder, which moves in whole; the install removes it (`_drop_cache`).
+CACHE = ".cache"
+
+
+def _drop_cache(root: Path) -> None:
+    """The install's own cache, once its packages are in: nothing runs uv or npm in this folder again, and the
+    server then runs with its folder writable. A link there goes itself, never what it points at."""
+    cache = root / CACHE
+    if cache.is_symlink():
+        cache.unlink()
+    else:
+        shutil.rmtree(cache, ignore_errors=True)
+
+
+def _tmp(root: Path) -> str:
+    """#606 review F1: the steps' temporary folder, inside the install's own cache, so nothing they write goes to
+    the shared /tmp (Node keeps its compile cache under os.tmpdir() when TMPDIR is unset)."""
+    tmp = root / CACHE / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    return str(tmp)
+
+
+def _uv_env(root: Path) -> dict:
     rt = capability_runtime.root()
-    env = _base_env({"UV_CACHE_DIR": str(rt / "uv-cache"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
-                     "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed"})
+    return _base_env({"UV_CACHE_DIR": str(root / CACHE / "uv"), "UV_PYTHON_INSTALL_DIR": str(rt / "python"),
+                      "UV_NO_CONFIG": "1", "UV_PYTHON_PREFERENCE": "only-managed", "TMPDIR": _tmp(root)})
+
+
+def _npm_env(node: Path, root: Path) -> dict:
+    # #561 review: no git (a dependency from a git host would be cloned, and its tree installed, before the card)
+    # and only the public registry; `_registry_only` then refuses any lock entry from elsewhere.
+    return _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(root / CACHE / "npm"),
+                      "npm_config_ignore_scripts": "true", "npm_config_audit": "false", "npm_config_fund": "false",
+                      "npm_config_update_notifier": "false", "npm_config_git": "/usr/bin/false",
+                      "npm_config_registry": NPM_REGISTRY, "HOME": str(root), "TMPDIR": _tmp(root),
+                      # #606 review F1: npm turns on Node's compile cache, shared by every Node process of the user
+                      # under /tmp, which a sandboxed command can write; the lock step runs npm before the card.
+                      "NODE_DISABLE_COMPILE_CACHE": "1"})
+
+
+#: A locked requirement line: `name==version \` (uv pip compile --generate-hashes).
+_PYPI_LOCKED = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)", re.M)
+
+
+async def lock_pypi(root: Path, identifier: str, version: str) -> dict:
+    """The lock, before the card: every package with its hashes, wheels only, nothing installed."""
+    uv = await capability_runtime.ensure("uv")
     (root / "requirements.in").write_text(f"{identifier}=={version}\n")
     await _run([str(uv), "pip", "compile", "requirements.in", "--generate-hashes", "--only-binary", ":all:",
-                "--python-version", PYTHON_VERSION, "-o", "requirements.lock", "--quiet"], cwd=root, env=env)
+                "--python-version", PYTHON_VERSION, "-o", "requirements.lock", "--quiet"], cwd=root, env=_uv_env(root))
+    text = (root / "requirements.lock").read_text()
+    return {"file": "requirements.lock", "sha256": _sha256(root / "requirements.lock"),
+            "packages": [{"name": n, "version": v} for n, v in _PYPI_LOCKED.findall(text)]}
+
+
+NPM_REGISTRY = "https://registry.npmjs.org/"
+
+
+def _registry_only(packages: dict) -> None:
+    """Every locked package comes from the public registry with its integrity hash (#561 review): a git, file,
+    link or other-host entry, or one with no integrity, stops before the card. A package bundled inside another
+    package's tarball is covered by that tarball's integrity."""
+    for path, meta in packages.items():
+        if not path or not isinstance(meta, dict) or meta.get("inBundle"):
+            continue
+        resolved, integrity = str(meta.get("resolved") or ""), str(meta.get("integrity") or "")
+        if meta.get("link") or not resolved.startswith(NPM_REGISTRY) or not integrity.startswith("sha512-"):
+            raise InstallFailure("lock_not_registry", path.rsplit("node_modules/", 1)[-1][:200])
+
+
+async def lock_npm(root: Path, identifier: str, version: str) -> dict:
+    """The lock, before the card: npm reads metadata only (`--package-lock-only`, scripts off)."""
+    node = await capability_runtime.ensure("node")
+    npm = capability_runtime.binary("node", "bin/npm")
+    (root / "package.json").write_text(json.dumps({"name": "arslan-capability", "private": True}))
+    await _run([str(npm), "install", f"{identifier}@{version}", "--package-lock-only", "--ignore-scripts",
+                "--save-exact"], cwd=root, env=_npm_env(node, root))
+    packages = json.loads((root / "package-lock.json").read_text()).get("packages") or {}
+    _registry_only(packages)
+    return {"file": "package-lock.json", "sha256": _sha256(root / "package-lock.json"),
+            "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or "")}
+                         for path, meta in sorted(packages.items()) if path and isinstance(meta, dict)]}
+
+
+def _check_lock(root: Path, lock: dict) -> None:
+    """The lock the card showed is the lock installed from: a changed or missing file stops the install."""
+    path = root / lock["file"]
+    if not path.is_file() or _sha256(path) != lock["sha256"]:
+        raise InstallFailure("lock_changed", "the lock is not the one the card showed")
+
+
+async def install_pypi(root: Path, identifier: str, lock: dict) -> dict:
+    """Install exactly the prepared lock (`--require-hashes`)."""
+    uv = await capability_runtime.ensure("uv")
+    env = _uv_env(root)
+    _check_lock(root, lock)
     await _run([str(uv), "venv", "venv", "--python", PYTHON_VERSION, "--quiet"], cwd=root, env=env)
     await _run([str(uv), "pip", "install", "--python", str(root / "venv" / "bin" / "python"), "--require-hashes",
                 "--only-binary", ":all:", "-r", "requirements.lock", "--quiet"], cwd=root, env=env)
@@ -138,16 +254,12 @@ async def install_pypi(root: Path, identifier: str, version: str) -> dict:
             "lock_sha256": _sha256(root / "requirements.lock")}
 
 
-async def install_npm(root: Path, identifier: str, version: str) -> dict:
+async def install_npm(root: Path, identifier: str, lock: dict) -> dict:
+    """Install exactly the prepared lock (`npm ci`, scripts off)."""
     node = await capability_runtime.ensure("node")
     npm = capability_runtime.binary("node", "bin/npm")
-    rt = capability_runtime.root()
-    env = _base_env({"PATH": f"{node.parent}:/usr/bin:/bin", "npm_config_cache": str(rt / "npm-cache"),
-                     "npm_config_ignore_scripts": "true", "npm_config_audit": "false", "npm_config_fund": "false",
-                     "npm_config_update_notifier": "false", "HOME": str(root)})
-    (root / "package.json").write_text(json.dumps({"name": "arslan-capability", "private": True}))
-    await _run([str(npm), "install", f"{identifier}@{version}", "--package-lock-only", "--ignore-scripts",
-                "--save-exact"], cwd=root, env=env)
+    env = _npm_env(node, root)
+    _check_lock(root, lock)
     await _run([str(npm), "ci", "--ignore-scripts", "--omit=dev"], cwd=root, env=env)
     pkg_dir = root / "node_modules" / identifier
     manifest = json.loads((pkg_dir / "package.json").read_text())
@@ -258,20 +370,120 @@ def grants_for(folders: list[str], needs: dict) -> dict:
     return {"folders": real, "network": network}
 
 
-async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] | None = None,
-                  owner_id: str = "local") -> CapabilitySource:
-    """Install one MCP server candidate (as the search returned it). Returns its dossier row
-    in state `installed` with the server registered and switched OFF, or `failed` with why."""
+def _prepared_root() -> Path:
+    return capabilities_root() / ".prepared"
+
+
+async def prepare(candidate: dict) -> dict:
+    """Everything before the card (CAP4a-2): the candidate checked, the license read at the source (not usable:
+    refused before anything is downloaded), Arslan's own pinned runtime ready, and for a package the lock resolved
+    in a staging folder. The card shows `lock`; `install(prepared=…)` follows it. Nothing third-party is installed
+    or run here. `discard` removes the staging folder when the card is not a yes."""
     _check_candidate(candidate)
-    spdx, license_path = await source_license(candidate.get("repo"))
+    runtime = candidate["runtime"]
+    spdx, license_path = await source_license(candidate.get("repo"), (candidate.get("package") or {}).get("version"))
     from server.services.skill_import import _license_gate
-    if candidate.get("runtime") != "remote" and _license_gate(spdx):
+    if runtime != "remote" and _license_gate(spdx):
         raise InstallFailure("license", _license_gate(spdx) or "")
+    prepared = {"runtime": runtime, "license": (spdx, license_path), "lock": None, "staging": None}
+    pkg = candidate.get("package") or {}
+    if runtime == "mcpb":
+        if not pkg.get("file_sha256"):
+            raise InstallFailure("no_checksum", "the registry gives no checksum for this bundle")
+        prepared["lock"] = {"file": None, "sha256": str(pkg["file_sha256"]).lower(),
+                            "packages": [{"name": str(pkg["identifier"]).rsplit("/", 1)[-1], "version": pkg.get("version") or ""}]}
+    elif runtime in ("uv", "node"):
+        _sweep_prepared()
+        staging = _prepared_root() / uuid.uuid4().hex
+        staging.mkdir(parents=True)
+        try:
+            lock = await (lock_pypi if runtime == "uv" else lock_npm)(staging, pkg["identifier"], pkg["version"])
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        prepared.update(lock=lock, staging=str(staging))
+    return prepared
+
+
+#: A staging folder older than this belongs to a card that can no longer be answered (cards expire long before).
+PREPARED_MAX_AGE_S = 24 * 3600
+
+
+def _sweep_prepared() -> None:
+    """Staging folders a crash or a restart left behind. A `.prepared` that is a link was not made by Arslan: the
+    link goes, never what it points at (#561 review); a link inside it is unlinked, never followed."""
+    import time
+    root = _prepared_root()
+    if root.is_symlink():
+        root.unlink()
+        return
+    for leftover in root.glob("*") if root.is_dir() else ():
+        try:
+            if time.time() - leftover.lstat().st_mtime > PREPARED_MAX_AGE_S:
+                if leftover.is_symlink():
+                    leftover.unlink()
+                else:
+                    shutil.rmtree(leftover, ignore_errors=True)
+        except OSError:
+            continue
+
+
+#: CAP5b (#606 review F5): the caches every one-click install shared before CAP5b, unused since. They go at boot
+#: (`sweep_leftover_caches`). DELETE-BY: v0.1.66, this cleanup with them, once every Mac that ran v0.1.64 has run it.
+_OLD_SHARED_CACHES = ("uv-cache", "npm-cache")
+
+
+def sweep_leftover_caches() -> None:
+    """At boot (#606 review F2, F5). No install runs yet, so an install folder's `.cache` is one that a stop, a crash
+    or an unexpected error left after the move (a finished install drops its own); and the old shared caches go. A
+    link goes itself, never what it points at."""
+    root = capabilities_root()
+    for folder in (root.iterdir() if root.is_dir() and not root.is_symlink() else ()):
+        if not folder.name.startswith(".") and folder.is_dir() and not folder.is_symlink():
+            _drop_cache(folder)
+    for name in _OLD_SHARED_CACHES:
+        old = capability_runtime.root() / name
+        if old.is_symlink():
+            old.unlink()
+        elif old.is_dir():
+            shutil.rmtree(old, ignore_errors=True)
+
+
+def discard(prepared: dict | None) -> None:
+    """A card that was not a yes: its staging folder goes; nothing was installed."""
+    if prepared and prepared.get("staging"):
+        shutil.rmtree(prepared["staging"], ignore_errors=True)
+
+
+#: What a package name or version on the card may hold (#561 review: the names come from the lock, so from the
+#: registry): npm's and PyPI's own name characters, nothing that could break a line or reorder it.
+_LOCK_TEXT = re.compile(r"[^A-Za-z0-9@/._+~-]")
+
+
+def lock_summary(prepared: dict | None) -> dict | None:
+    """What the card shows of the lock: its digest and every locked package with its version (the first 40)."""
+    lock = (prepared or {}).get("lock")
+    if not lock:
+        return None
+    packages = [{"name": _LOCK_TEXT.sub("", str(p.get("name") or ""))[:214],
+                 "version": _LOCK_TEXT.sub("", str(p.get("version") or ""))[:60]} for p in lock["packages"][:40]]
+    return {"sha256": lock["sha256"], "count": len(lock["packages"]), "packages": packages}
+
+
+async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] | None = None,
+                  owner_id: str = "local", prepared: dict | None = None) -> CapabilitySource:
+    """Install one MCP server candidate (as the search returned it), from what `prepare` resolved before the
+    card (prepared here when no card was shown, as the dossier's reinstall). Returns its dossier row in state
+    `installed` with the server registered and switched OFF, or `failed` with why."""
+    if prepared is None:
+        prepared = await prepare(candidate)
+    spdx, license_path = prepared["license"]
     source_id = uuid.uuid4().hex
     needs = candidate.get("needs") or {"keys": [], "network": None}
     grants = grants_for(folders, needs)
     row = CapabilitySource(
-        id=source_id, owner_id=owner_id, kind="mcp", name=str(candidate.get("name"))[:120],
+        id=source_id, owner_id=owner_id, kind="mcp",
+        name=untrusted.clean_name(candidate.get("name"), 120) or "connection",      # UNI1; also the server's label
         candidate_id=str(candidate.get("id"))[:300], source_url=candidate.get("source_url"), repo=candidate.get("repo"),
         version=(candidate.get("package") or {}).get("version") or candidate.get("version"),
         license_spdx=spdx, license_path=license_path, stars=candidate.get("stars"),
@@ -282,15 +494,21 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
         if candidate["runtime"] == "remote":
             spec = {"transport": "http", "url": (candidate.get("remote") or {}).get("url"), "command": "", "args": []}
         else:
-            root.mkdir(parents=True, exist_ok=True)
             pkg = candidate.get("package") or {}
             argv = start_arguments(pkg, grants["folders"])
-            if candidate["runtime"] == "uv":
-                spec = await install_pypi(root, pkg["identifier"], pkg["version"])
-            elif candidate["runtime"] == "node":
-                spec = await install_npm(root, pkg["identifier"], pkg["version"])
+            if prepared.get("staging"):
+                root.parent.mkdir(parents=True, exist_ok=True)
+                os.rename(prepared["staging"], root)               # the lock the card showed, moved in whole
+                prepared["staging"] = None
             else:
-                spec = await install_mcpb(root, pkg["identifier"], pkg.get("file_sha256"))
+                root.mkdir(parents=True, exist_ok=True)
+            if candidate["runtime"] == "uv":
+                spec = await install_pypi(root, pkg["identifier"], prepared["lock"])
+            elif candidate["runtime"] == "node":
+                spec = await install_npm(root, pkg["identifier"], prepared["lock"])
+            else:
+                spec = await install_mcpb(root, pkg["identifier"], prepared["lock"]["sha256"])
+            _drop_cache(root)
             spec["args"] = [*spec.get("args", []), *argv]
             spec["transport"] = "stdio"
         row.lock_sha256 = spec.get("lock_sha256")
@@ -315,6 +533,7 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
             db.add(row)
             await db.commit()
         shutil.rmtree(root, ignore_errors=True)
+        discard(prepared)
         raise
 
 

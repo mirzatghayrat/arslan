@@ -235,7 +235,7 @@ async def test_a_tool_that_cannot_be_called_is_refused_before_any_card(monkeypat
     assert step["result"]["code"] == "tool_unavailable" and asked == []
 
 
-async def test_propose_capability_through_use_tool_is_the_direct_call(execution_db, monkeypatch):
+async def test_propose_capability_through_use_tool_is_the_direct_call(execution_db, monkeypatch, fake_capability_prepare):
     """The same card, the same row in the approval ledger (⓪Plan's Q3 b; CAP1a removed the finds)."""
     from server.services import permission_store
     from tests.server.test_capability_flow import CAND, _ask, shown

@@ -1,10 +1,9 @@
 /** S1b (U14 d): the schedule card shows the text the task runs each time, beside its bounds: a yes no longer
- *  covers a prompt nobody saw. The frame's `prompt` reaches the window's card through the store (AskSlot)
- *  and the Inbox (AskForFrame); a frame without one (an older server) shows the card as before. */
+ *  covers a prompt nobody saw. The frame's `prompt` reaches the window's card through the store (AskSlot; the Inbox's copy went
+ *  with the Inbox, INB5b-2); a frame without one (an older server) shows the card as before. */
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import AskSlot from "../components/AskSlot";
-import AskForFrame from "../components/AskForFrame";
 import ScheduleGrantCard from "../components/ScheduleGrantCard";
 import { initialArslanState, useArslanStore } from "../stores/arslanStore";
 
@@ -31,12 +30,6 @@ describe("S1b: the schedule card shows what the task will do", () => {
   it("the prompt reaches the window's card from the frame", () => {
     act(() => { useArslanStore.getState().handleFrame(schedule as never); });
     render(<AskSlot send={() => {}} />);
-    expect(screen.getByTestId("schedule-prompt")).toHaveTextContent("Summarise my inbox");
-  });
-
-  it("and the Inbox's", () => {
-    render(<AskForFrame ask={{ call_id: "s1", conversation_id: "c", frame: schedule } as never}
-      onAnswer={() => {}} />);
     expect(screen.getByTestId("schedule-prompt")).toHaveTextContent("Summarise my inbox");
   });
 });

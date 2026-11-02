@@ -9,6 +9,7 @@
 (allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/ttys[0-9]+$"))
 (allow pseudo-tty)
 (allow file-ioctl (literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))
+(allow mach-lookup (global-name "com.apple.FSEvents"))
 (deny network-bind network-inbound)
 (deny appleevent-send)
 (deny user-preference-write)

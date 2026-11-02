@@ -147,8 +147,8 @@ async def test_connect_returns_the_tools_or_raises_with_the_classified_cause(exe
 async def test_adding_a_server_schedules_its_start_once(execution_db, monkeypatch):
     scheduled = []
     monkeypatch.setattr(sm.supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
-    first = await mcp_service.add_server("fs", "npx", ["-y", "x"], {})
-    again = await mcp_service.add_server("fs", "npx", ["-y", "x"], {})
+    first = await mcp_service.add_server("fs", "npx", ["-y", "x@1.0.0"], {})
+    again = await mcp_service.add_server("fs", "npx", ["-y", "x@1.0.0"], {})
     # the first plan (spec §B1: up to 3 more attempts 1/2/4 s apart), never a one-attempt refresh
     assert first["id"] == again["id"] and scheduled == [(first["id"], {})]
     assert first["state"] == "starting"

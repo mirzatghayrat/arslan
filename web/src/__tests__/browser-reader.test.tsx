@@ -169,3 +169,20 @@ describe("the address field (WB1)", () => {
       { action: "navigate", url: "https://www.bing.com/search?q=weather%20kashgar" }));
   });
 });
+
+it("DIFF2: a start address (a PR's link) opens once at start, https only", async () => {
+  const { unmount } = render(<BrowserReader conversationId="conversation" taskId={null} onTitle={() => {}}
+    startUrl="https://github.com/o/r/pull/42" />);
+  await screen.findByAltText("browser.screenshot");
+  expect(browserApi.readerAction).toHaveBeenCalledTimes(1);
+  expect(browserApi.readerAction).toHaveBeenCalledWith("session", { action: "navigate", url: "https://github.com/o/r/pull/42" });
+  unmount();
+  vi.mocked(browserApi.readerAction).mockClear();
+  for (const bad of ["javascript:alert(1)", "http://github.com/o/r", "https://user:pw@github.com/o/r", "github.com/o/r",
+                     "two words", "data:text/html,x"]) {
+    const { unmount: gone } = render(<BrowserReader conversationId="conversation" taskId={null} onTitle={() => {}} startUrl={bad} />);
+    await act(async () => { await Promise.resolve(); });
+    gone();
+  }
+  expect(browserApi.readerAction).not.toHaveBeenCalled();                  // never a search, a scheme added, or credentials
+});

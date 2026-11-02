@@ -86,7 +86,7 @@ def _json_field(raw):
         return raw
     try:
         return _json.loads(raw)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — a JSON column that does not parse is shown as absent, not an error
         return None
 
 
@@ -189,7 +189,7 @@ async def brain_tree() -> dict:
     def _note_tags(raw):
         try:
             return raw if isinstance(raw, list) else _json_tree.loads(raw or "[]")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — tags that do not parse are no tags; the note still shows
             return []
     note_leaves = [_leaf("note", f"note:{r['id']}", r["title"], "handwritten", None, umap,
                          tags=_note_tags(r["tags"])) for r in notes]

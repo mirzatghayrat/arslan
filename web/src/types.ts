@@ -224,6 +224,8 @@ export interface AppSettings {
   lanDiscoveryEnabled: boolean;
   sshEnabled: boolean;
   defaultReadEnabled: boolean;
+  /** K10-1: a folder's rules (AGENTS.md / CLAUDE.md) in each turn; default on. Optional until L11-0's switch. */
+  folderRulesEnabled?: boolean;
   voiceInputLocale: string;
   /** How the microphone is used: not at all, held, or always listening. */
   voiceMode: VoiceMode;

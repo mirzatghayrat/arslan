@@ -6,14 +6,16 @@ the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
 written here without changing a byte of what they produce, and SBX-1b changed how a path is spelt
 (below). SBX-2 adds the default-deny base that SBX-3 and SBX-4 move them onto
-(docs/plans/0164/SBX-sandbox.md). Two texts are still written by hand: `command_sandbox.available()`'s
-probe, which SBX-3 replaces with the real commands profile, and `code_sandbox._SEATBELT_PROFILE`,
-which no product caller reaches and SBX-4 deletes.
+(docs/plans/0164/SBX-sandbox.md). One text is still written by hand: `code_sandbox._SEATBELT_PROFILE`,
+which no product caller reaches and SBX-4 deletes. (`command_sandbox.available()` starts the real
+commands profile since SBX-3.)
 
 What every profile relies on:
 
-- Seatbelt applies the LAST matching rule (measured 2026-10-03), so the order of the rules is the
-  policy: a deny written after an allow wins over it, and the other way round.
+- Rule order matters for path and TCP rules alike (deny after allow), but for TCP port denies
+  it is not enough: survival also depends on the exact set of TCP allows, not only on `*:*`.
+  Proxy and port-22 are measured to hold on macOS 26.6.2 only with their allow pairs as built
+  below. See #574, comment 6543830944. Compile checks complement real-kernel checks.
 - Rules match real paths, so callers resolve every path before it goes in (`real`).
 - A path is written as an SBPL string (`sbpl_string`): its own UTF-8, with `\\` and `"` escaped, so a
   folder name cannot add rules, and control characters as `\\xHH`. sandbox-exec decodes those but
@@ -69,6 +71,14 @@ def file_or_folder(path: Path) -> str:
     return literal(path) if path.is_file() else subpath(path)
 
 
+def regex(pattern: str) -> str:
+    """Paths matching `pattern`, which is one of Arslan's own constants, never a path from outside (an SBPL
+    regex literal has no escape for `"`)."""
+    if '"' in pattern:
+        raise ValueError("an SBPL regex cannot hold a double quote")
+    return f'(regex #"{pattern}")'
+
+
 def remote_tcp(host: str, port: int) -> str:
     """An outbound TCP destination. The host must be `*` or `localhost`: sandbox-exec rejects an
     address (measured 2026-08-21, `ssh_exec`)."""
@@ -76,7 +86,7 @@ def remote_tcp(host: str, port: int) -> str:
 
 
 class Profile:
-    """The rules of one profile, in the order they are added (the last matching rule wins)."""
+    """Emit rules in the supplied order; source order is not an enforcement guarantee."""
 
     def __init__(self, default: str):
         self._lines = ["(version 1)", f"({default} default)"]
@@ -108,12 +118,16 @@ class NetworkMode(str, Enum):
     PORT_22 = "port-22"
 
 
-# No service has measurement evidence yet. SBX-M may add exact names, each with
-# its corpus id, in a reviewed follow-up. In particular, preference reads do not
-# imply permission to contact cfprefsd. Never import a system profile: its grants
-# can change independently of this policy.
-SYSTEM_MACH_SERVICES: tuple[str, ...] = ()
-SYSTEM_UNIX_SOCKETS: tuple[str, ...] = ()
+# Exact names only, justified by corpus rows; never import a system profile.
+SYSTEM_MACH_SERVICES = {
+    "com.apple.FSEvents": tuple(NetworkMode),  # node-watch-none-default-deny
+    # DNS alone does not restore swift-certificate-any-declared-default-deny.
+    "com.apple.trustd.agent": (NetworkMode.ANY_DECLARED,),
+}
+SYSTEM_UNIX_SOCKETS = {
+    # dns-any-declared-default-deny; PORT_22 accepts IPv4 literals, never DNS.
+    "/private/var/run/mDNSResponder": (NetworkMode.ANY_DECLARED,),
+}
 
 
 def default_deny_profile(
@@ -136,9 +150,12 @@ def default_deny_profile(
     ownership check. Do not give two runs the same prefix.
 
     Network grants are TCP only. Unix sockets are a separate exact allowlist;
-    online modes allow outbound localhost connections, excluding all supplied
-    Arslan listener ports. All modes deny binds/listens: Seatbelt's localhost
-    bind filter also permits wildcard binds. Restoring dev servers requires a
+    online modes allow outbound localhost connections. Proxy and port-22 exclude
+    supplied Arslan listener ports; any-declared rejects nonempty denied_ports
+    because Seatbelt cannot reliably enforce them alongside its wildcard grant.
+    Port-22 also rejects excluding port 22: its non-localhost allow covers that port.
+    All modes deny binds/listens: Seatbelt's localhost bind filter also permits
+    wildcard binds. Restoring dev servers requires a
     card decision before SBX-3 wiring. Offline also denies Unix sockets.
     """
     network = NetworkMode(network)
@@ -146,6 +163,10 @@ def default_deny_profile(
     for port in (*denied_ports, *((proxy_port,) if proxy_port is not None else ())):
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError("ports must be integers from 1 to 65535")
+    if network == NetworkMode.ANY_DECLARED and denied_ports:
+        raise ValueError("any-declared cannot enforce denied_ports; use proxy, port-22, or none")
+    if network == NetworkMode.PORT_22 and 22 in denied_ports:
+        raise ValueError("port-22 cannot exclude port 22; use proxy or none")
     if network == NetworkMode.PROXY and proxy_port is None:
         raise ValueError("proxy mode requires a proxy port")
     if network != NetworkMode.PROXY and proxy_port is not None:
@@ -176,16 +197,22 @@ def default_deny_profile(
     if ipc_prefix is not None:
         rules.allow("ipc-posix-shm* ipc-posix-sem*",
                     f"(ipc-posix-name-prefix {sbpl_string(ipc_prefix)})")
-    if SYSTEM_MACH_SERVICES:
-        rules.allow("mach-lookup", *(f"(global-name {sbpl_string(n)})" for n in SYSTEM_MACH_SERVICES))
+    for name, modes in SYSTEM_MACH_SERVICES.items():
+        if network in modes:
+            rules.allow("mach-lookup", f"(global-name {sbpl_string(name)})")
     if network != NetworkMode.NONE:
-        rules.allow_paths("network-outbound", map(real, SYSTEM_UNIX_SOCKETS), literal)
+        sockets = [real(path) for path, modes in SYSTEM_UNIX_SOCKETS.items() if network in modes]
+        rules.allow_paths("network-outbound", sockets, literal)
         rules.allow("network-outbound", '(remote tcp "localhost:*")')
         if network == NetworkMode.PROXY:
+            # Load-bearing with localhost:*: removing this can drop TCP denies.
+            # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("localhost", proxy_port))
         elif network == NetworkMode.ANY_DECLARED:
             rules.allow("network-outbound", '(remote tcp "*:*")')
         elif network == NetworkMode.PORT_22:
+            # Load-bearing with localhost:*: removing this can drop TCP denies.
+            # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("*", 22))
         for port in sorted(set(denied_ports)):
             rules.deny("network-outbound", remote_tcp("localhost", port))

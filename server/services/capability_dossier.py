@@ -28,6 +28,7 @@ class DossierError(Exception):
 # ── dossiers ─────────────────────────────────────────────────────────────────
 
 def view(row: CapabilitySource) -> dict:
+    from server.services import capability_recheck
     return {"id": row.id, "kind": row.kind, "name": row.name, "candidate_id": row.candidate_id,
             "source_url": row.source_url, "repo": row.repo, "version": row.version, "commit_sha": row.commit_sha,
             "artifact_sha256": row.artifact_sha256, "lock_sha256": row.lock_sha256,
@@ -35,7 +36,10 @@ def view(row: CapabilitySource) -> dict:
             "stars": row.stars, "pushed_days": row.pushed_days,
             "checked_at": row.checked_at.isoformat() + "Z" if row.checked_at else None,
             "runtime": row.runtime, "needs": row.needs or {}, "grants": row.grants or {}, "scan": row.scan,
-            "test": row.test, "files": row.files, "state": row.state, "error": row.error,
+            # #604 review L2: the Registry's answer goes out only as the cleaned `registry_parked`, never raw.
+            "test": {k: v for k, v in row.test.items() if k != "registry_check"} if isinstance(row.test, dict)
+            else row.test, "files": row.files, "state": row.state, "error": row.error,
+            "registry_parked": capability_recheck.parked(row),             # CAP4a-3d: the row and its keep
             "mcp_server_id": row.mcp_server_id, "skill_key": row.skill_key,
             "installed_at": row.installed_at.isoformat() + "Z" if row.installed_at else None}
 
@@ -76,6 +80,58 @@ async def set_folders(source_id: str, folders: list[str]) -> dict:
         stored.grants = {**(stored.grants or {}), "folders": grants["folders"]}
         await db.commit()
     await mcp_service.restart_after_edit(row.mcp_server_id)     # restarted with the new grants
+    return view(await source(source_id))
+
+
+async def accept_tools(source_id: str, digest: str) -> dict:
+    """CAP5a: the user read a server's tool change (its `test.tools_changed`) and accepts it: those tools become
+    the pin, the hold ends, and the server starts again in the background, so its next listing is compared to
+    them. `digest` names the change the user read: a change recorded since, or none, is refused, and nothing is
+    pinned; so is a change too large to show whole (#577 review F2), which only a removal or a reinstall ends.
+    It runs under the server's listing lock, so a listing's record and this accept never interleave."""
+    from server.mcp import discovery
+    from server.services import mcp_service
+    row = await source(source_id)
+    if row.kind != "mcp" or not row.mcp_server_id:
+        raise DossierError("no_tool_change")
+    async with discovery._write_locks.hold(row.mcp_server_id):
+        async with db_session.AsyncSessionLocal() as db:
+            stored = await db.get(CapabilitySource, source_id)
+            test = dict(stored.test or {})
+            change = test.get("tools_changed") or {}
+            if not change:
+                raise DossierError("no_tool_change")
+            if not isinstance(digest, str) or digest != change.get("digest"):
+                raise DossierError("tool_change_moved")
+            if not change.get("reviewable", True):
+                raise DossierError("too_long_to_review")
+            test.pop("tools_changed")
+            stored.test = {**test, "tools_pin": change["pin"]}
+            await db.commit()
+    await mcp_service.restart_after_edit(row.mcp_server_id)
+    return view(await source(source_id))
+
+
+async def accept_source(source_id: str, seen: str) -> dict:
+    """CAP4a-3d: the user read why this server's Registry entry parked it (withdrawn, or changed) and keeps it:
+    that answer (`seen`, its digest) is remembered until the entry changes again (no expiry, the user 2026-11-01),
+    so the same answer does not park it again, and the server starts again in the background. Another answer since, or none, is refused."""
+    from server.mcp import discovery
+    from server.services import mcp_service
+    row = await source(source_id)
+    if row.kind != "mcp" or not row.mcp_server_id:
+        raise DossierError("no_source_problem")
+    async with discovery._write_locks.hold(row.mcp_server_id):     # never interleaved with a start's check
+        async with db_session.AsyncSessionLocal() as db:
+            stored = await db.get(CapabilitySource, source_id)
+            check = dict((stored.test or {}).get("registry_check") or {})
+            if not check.get("problem"):
+                raise DossierError("no_source_problem")
+            if not isinstance(seen, str) or seen != check.get("seen"):
+                raise DossierError("source_answer_moved")
+            stored.test = {**(stored.test or {}), "registry_check": {**check, "accepted": {"seen": seen}}}
+            await db.commit()
+    await mcp_service.restart_after_edit(row.mcp_server_id)
     return view(await source(source_id))
 
 
@@ -148,6 +204,16 @@ async def update(source_id: str) -> dict:
     problem = capability_flow.installable(cand)
     if problem:
         raise DossierError(problem)
+    # CAP4a-3c (#584 review 2): a newer version published by a listed GitHub organization is checked by its id, as a
+    # new card is: whoever took over a renamed organization's login could publish one.
+    from server.services import capability_allowlist
+    # #584 re-check: the id the install was confirmed against, checked even once the list no longer names the
+    # organization or reads closed; #625 review L-2: a source from before pins takes the list's id the same way.
+    changed_hands, pin = await capability_allowlist.confirm_update(cand, (row.candidate or {}).get("account_pin"))
+    if changed_hands in (capability_allowlist.ACCOUNT_CHANGED_HANDS, capability_allowlist.ACCOUNT_NOT_CHECKED):
+        raise DossierError(changed_hands)       # the list itself stays out of updates: only a listed org's id counts
+    if pin:
+        cand["account_pin"] = pin               # the newer source keeps it
     keys = {}
     if row.mcp_server_id:
         async with db_session.AsyncSessionLocal() as db:
@@ -164,6 +230,6 @@ async def update(source_id: str) -> dict:
 
 
 async def check_candidate_license(cand: dict) -> dict:
-    spdx, path = await capability_install.source_license(cand.get("repo"))
+    spdx, path = await capability_install.source_license(cand.get("repo"), (cand.get("package") or {}).get("version"))
     return {"spdx": spdx, "read_from": path,
             "verdict": capability_search.license_verdict(spdx, proprietary=bool(path) and spdx is None)}

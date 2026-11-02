@@ -143,6 +143,13 @@ def _rel(path: Path, root: Path) -> str:
         return str(path)
 
 
+def _touch_rules(path: Path) -> None:
+    """K10-1: a subfolder's rules (AGENTS.md / CLAUDE.md) join the conversation once a file tool works there."""
+    from server.services import folder_rules, personal_context
+    ctx = personal_context.current()
+    folder_rules.note_touch(ctx.conversation_id if ctx is not None else None, path)
+
+
 class ReadFileExecutor:
     """Read a text file from any readable folder (green ring + workspace)."""
     key = "read_file"
@@ -158,6 +165,7 @@ class ReadFileExecutor:
             return _refusal(exc)
         if not path.is_file():
             return {"ok": False, "error": f"file not found: {_home_rel(path)}"}
+        _touch_rules(path)
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
@@ -299,6 +307,7 @@ class WriteFileExecutor:
             return err
         # 0.1.63 S3: the run's first change saves the folder first, before any folder is made.
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
+        _touch_rules(path)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:

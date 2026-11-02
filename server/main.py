@@ -342,6 +342,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — must never block boot
         logger.warning("task grants of the last run were not dropped at boot (non-fatal): %s", exc)
 
+    # SBX-3 §1a: a run's own temp folder goes when the run ends, unless a process it started is left; those
+    # the last start left go now, once their processes are gone. Best-effort — never blocks boot.
+    try:
+        from server.services import run_temp
+
+        run_temp.sweep()
+    except Exception as exc:  # noqa: BLE001 — must never block boot
+        logger.warning("run temp folders of the last start were not swept at boot (non-fatal): %s", exc)
+
     from server.registry.seeder import seed_registry
 
     await seed_registry()
@@ -371,6 +380,13 @@ async def lifespan(app: FastAPI):
         await judgment.prune()
     except Exception as exc:  # noqa: BLE001
         logger.warning("judgment ledger prune failed (non-fatal): %s", exc)
+    # JUDGE1 (the user, 2026-10-31): drop ledger rows holding memory text from before digests. After the prune, in
+    # its own try, so a failure here neither skips the prune nor reads as a prune failure (#582 review, L3).
+    try:
+        from server.services import judgment
+        await judgment.drop_unredacted()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("judgment ledger clean failed (non-fatal): %s", exc)
 
     # E1 reaper: re-enqueue judge scoring for runs stuck in 'recorded'/'score_failed'
     # for >10 minutes (process died around the fire-and-forget scoring task). The judge
@@ -448,6 +464,17 @@ async def lifespan(app: FastAPI):
         proactive_service.start()
     except Exception as exc:  # noqa: BLE001 — proactivity start must never block boot
         logger.warning("proactive loop start failed (non-fatal): %s", exc)
+
+    # CAP5b (#606 review F2, F5): a one-click install's leftover download cache, and the caches every
+    # install shared before CAP5b. In a thread, since a cache can be large; never blocks boot.
+    try:
+        import asyncio
+
+        from server.services import capability_install
+
+        await asyncio.to_thread(capability_install.sweep_leftover_caches)
+    except Exception as exc:  # noqa: BLE001 — a cache sweep must never block boot
+        logger.warning("capability cache sweep failed (non-fatal): %s", exc)
 
     # Drive the inbound MCP server's streamable-http session manager for the app's
     # lifetime (Nail 1: a mounted sub-app's lifespan is NOT auto-run by Starlette).

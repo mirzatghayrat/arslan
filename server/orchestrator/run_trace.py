@@ -29,14 +29,21 @@ def record(*, tool: str, args, result, ok: bool, error: str | None, ms: int | No
     except Exception:  # noqa: BLE001
         args_full = str(args)
     result_str = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, default=str)
-    buf.append({
+    entry = {
         "tool": tool,
         "args_full": _cap(args_full),
         "result_raw": _cap(result_str),
         "ok": bool(ok),
         "error": (_cap(error) if error else None),
         "ms": ms,
-    })
+    }
+    # INB6: the files a read read, whole. result_raw is cut at RUN_RAW_CAP, which loses most of a search's matches.
+    if isinstance(result, dict) and result.get("ok") and tool in ("read_file", "search_files"):
+        found = [result.get("path")] if tool == "read_file" else [m.get("path") for m in result.get("matches") or ()]
+        paths = list(dict.fromkeys(path for path in found if path))
+        if paths:
+            entry["paths"] = paths
+    buf.append(entry)
 
 
 def snapshot() -> list[dict]:

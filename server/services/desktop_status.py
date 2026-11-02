@@ -203,7 +203,7 @@ def _thumbnail(data_b64: str) -> str | None:
             out = io.BytesIO()
             image.save(out, format="JPEG", quality=70)
         return base64.b64encode(out.getvalue()).decode()
-    except Exception:  # noqa: BLE001 - a thumbnail must never stop a look
+    except Exception:  # noqa: BLE001 — a thumbnail must never stop a look
         return None
 
 

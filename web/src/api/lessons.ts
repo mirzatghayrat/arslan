@@ -35,4 +35,9 @@ export const lessonsApi = {
     json("POST", expectedUpdatedAt ? { status, expected_updated_at: expectedUpdatedAt } : { status })),
   pin: (id: number, pinned: boolean) => request<Lesson>(`/lessons/${id}/pin`, json("POST", { pinned })),
   remove: (id: number) => request(`/lessons/${id}`, { method: "DELETE" }),
+  /** K10-1 / L11-0: the rules files this conversation follows, with their text, for Overview. */
+  folderRules: (conversationId: string) =>
+    request<{ enabled: boolean; files: { file: string; text: string }[];
+      notes?: string[] }>(
+      `/conversations/${encodeURIComponent(conversationId)}/folder-rules`),
 };

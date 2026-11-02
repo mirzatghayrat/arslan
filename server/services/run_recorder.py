@@ -470,4 +470,6 @@ class RunRecorder:
                 continue
             s["detail"] = {**s["detail"], "args_full": entry["args_full"],
                             "result_raw": entry["result_raw"], "error": entry.get("error")}
+            if entry.get("paths"):
+                s["detail"]["paths"] = entry["paths"]      # INB6: run_trace.record
             s["ref"] = {**s["ref"], "ok": entry["ok"]}

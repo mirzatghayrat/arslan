@@ -189,6 +189,8 @@ export interface ServerConversation {
   project_id?: string | null;
   /** SB1-2: pinned to the top of the sidebar. */
   pinned?: boolean;
+  /** INB5b-3: what a "waiting" row waits on, "card" or "reminder" (the window's list only). */
+  waiting_on?: string | null;
 }
 
 /**

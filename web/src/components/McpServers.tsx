@@ -336,7 +336,7 @@ export default function McpServers({ only, form = false, onChanged }:
                         className="flex items-center gap-2 flex-wrap bg-surface/50 border border-border/40 rounded-lg px-3 py-2"
                       >
                         <span className="text-[11px] font-mono text-foreground truncate max-w-[12rem]">
-                          {t.name}
+                          {t.shown ?? t.name}
                         </span>
                         <span
                           className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${
@@ -355,7 +355,7 @@ export default function McpServers({ only, form = false, onChanged }:
                             onChange={(e) =>
                               wire(s.id, t, e.target.value, t.status === "wired")
                             }
-                            aria-label={tr("connectionsUI.tierFor", { name: t.name })}
+                            aria-label={tr("connectionsUI.tierFor", { name: t.shown ?? t.name })}
                             className="bg-surface border border-border-strong rounded-md px-2 py-1 text-[10px] text-foreground font-mono focus:outline-none focus:border-primary"
                           >
                             <option value="orchestrator">{tr("connectionsUI.orchestrator")}</option>

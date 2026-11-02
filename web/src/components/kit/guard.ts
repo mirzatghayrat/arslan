@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /** 0.1.61 §A4: how long after the card on top of an AskQueue changes — the one before it was answered, resolved elsewhere, ran out
  *  or was paged away, or none was there — nothing can answer the one that comes up. A double-click, or a second ⌘⏎, aimed at the card
@@ -81,6 +81,55 @@ export function useQueueGuard(build: () => AnswerGuardState = makeAnswerGuard): 
   const own = useRef<AnswerGuardState | null>(null);
   if (above) return above;
   return (own.current ??= build());
+}
+
+/** The guard of the scope above, or null outside one. */
+export const useScopeGuard = (): AnswerGuardState | null => useContext(GuardContext);
+
+/** Two guards as one: held while either holds, and telling whoever listens when either starts or ends a hold. A hold asked of it goes to
+ *  the first, the scope's, so a list that changes still holds the slot's card; the second is a list's own (a scroll, below). */
+export function eitherGuard(scope: AnswerGuardState, own: AnswerGuardState): AnswerGuardState {
+  return {
+    shown: scope.shown,
+    hold: scope.hold,
+    held: () => scope.held() || own.held(),
+    subscribe(listener) {
+      const fromScope = scope.subscribe(listener);
+      const fromOwn = own.subscribe(listener);
+      return () => { fromScope(); fromOwn(); };
+    },
+  };
+}
+
+/** INB5b: a list in the conversation (the away entries on top, a stopped job's card at the end) moves under a still pointer when the
+ *  conversation scrolls, as when a reply streams in while it is stuck to the bottom. That holds the list's own answers for the guard
+ *  time, on `own`: a guard of the list's, not the scope's, since the slot's card floats and does not move. A scroll of the list, or of
+ *  anything around it, counts. So does a change in the size of the content the list sits in (its parent, the conversation's
+ *  messages): a reply growing above the card moves it with no scroll at all, in a conversation too short to scroll or one scrolled
+ *  up (#611 review, 1). */
+export function useScrollHold(ref: { current: HTMLElement | null }, own: AnswerGuardState): void {
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      const list = ref.current;
+      if (list && e.target instanceof Node && (e.target.contains(list) || list.contains(e.target))) own.hold();
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => document.removeEventListener("scroll", onScroll, true);
+  }, [ref, own]);
+  // The list may render after the hook first runs (it waits for its rows), so the content is (re)watched after each render once
+  // the list is there, and whenever the list moves to other content.
+  const watched = useRef<{ content: Element | null; observer: ResizeObserver | null }>({ content: null, observer: null });
+  useEffect(() => {
+    const content = ref.current?.parentElement ?? null;
+    if (content === watched.current.content) return;
+    watched.current.observer?.disconnect();
+    let first = true;                                  // an observer reports once on observe: that is not a move
+    const observer = content && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => { if (first) first = false; else own.hold(); }) : null;
+    if (content) observer?.observe(content);
+    watched.current = { content, observer };
+  });
+  useEffect(() => () => { watched.current.observer?.disconnect(); }, []);
 }
 
 /** For a card's doors: whether an answer (a click on Allow, No or a scope, ⌘⏎, Esc, a note) must be ignored right now. Outside a queue it never is. */

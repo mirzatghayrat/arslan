@@ -103,7 +103,7 @@ def make_emit(conversation_id: str, *, skip: Callable[[dict], None] | None = Non
                 continue
             try:
                 sink(ev)
-            except Exception:
+            except Exception:  # noqa: BLE001 — a broken sink (a dead socket) never stops the others; the journal has the event
                 pass
 
     return _emit

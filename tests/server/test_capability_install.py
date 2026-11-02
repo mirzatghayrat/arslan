@@ -150,8 +150,15 @@ def test_the_console_script_is_found_in_a_real_dist_info_layout(tmp_path):
 
 # ── the install ──────────────────────────────────────────────────────────────
 
-async def _fake_pypi(root: Path, identifier: str, version: str) -> dict:
+async def _fake_lock(root: Path, identifier: str, version: str) -> dict:
+    """CAP4a-2: the lock `prepare` resolves before the card."""
     (root / "requirements.lock").write_text(f"{identifier}=={version} --hash=sha256:abc\n")
+    return {"file": "requirements.lock", "sha256": hashlib.sha256((root / "requirements.lock").read_bytes()).hexdigest(),
+            "packages": [{"name": identifier, "version": version}]}
+
+
+async def _fake_pypi(root: Path, identifier: str, lock: dict) -> dict:
+    assert (root / "requirements.lock").is_file()                    # installed from the prepared lock
     return {"command": str(root / "venv" / "bin" / identifier), "args": [], "lock_sha256": "f" * 64}
 
 
@@ -160,9 +167,10 @@ async def test_an_install_is_pinned_switched_off_and_sandboxed(execution_db, dat
     grant = tmp_path / "Downloads"
     grant.mkdir()
 
-    async def mit(repo):
+    async def mit(repo, version=None):
         return "MIT", "LICENSE"
     monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
     monkeypatch.setattr(ci, "install_pypi", _fake_pypi)
     row = await ci.install(CAND, folders=[str(grant)])
     assert row.state == "installed" and row.version == "1.1.2" and row.lock_sha256 == "f" * 64
@@ -180,15 +188,32 @@ async def test_an_install_is_pinned_switched_off_and_sandboxed(execution_db, dat
     assert runtime_dict(server)["sandbox"] == server.sandbox          # what the launch reads
 
 
+async def test_an_installs_names_go_through_the_one_name_cleaner(execution_db, data, monkeypatch):
+    """UNI1a: a card's name is outside text; its source name and its server's label are cleaned as they come in
+    (no bidi override, zero-width or Tag character, one line)."""
+    from server.db.models import CapabilitySource, MCPServer
+
+    async def mit(repo, version=None):
+        return "MIT", "LICENSE"
+    monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
+    monkeypatch.setattr(ci, "install_pypi", _fake_pypi)
+    row = await ci.install({**CAND, "name": "Excel\u202e\u200b  server\U000e0041\nlike that"}, folders=[])
+    async with execution_db() as db:
+        server, saved = await db.get(MCPServer, row.mcp_server_id), await db.get(CapabilitySource, row.id)
+    assert (saved.name, server.label) == ("Excel server like that", "Excel server like that")
+
+
 async def test_a_license_that_is_not_usable_stops_before_any_download(execution_db, data, monkeypatch):
     downloads = []
 
-    async def gpl(repo):
+    async def gpl(repo, version=None):
         return None, "LICENSE"                                 # a file that is not a permissive license
     monkeypatch.setattr(ci, "source_license", gpl)
 
     async def never(*a, **k):
         downloads.append(a)
+    monkeypatch.setattr(ci, "lock_pypi", never)
     monkeypatch.setattr(ci, "install_pypi", never)
     with pytest.raises(ci.InstallFailure, match="license"):
         await ci.install(CAND, folders=[])
@@ -200,12 +225,13 @@ async def test_a_failed_step_is_recorded_and_leaves_nothing_behind(execution_db,
 
     from server.db.models import CapabilitySource, MCPServer
 
-    async def mit(repo):
+    async def mit(repo, version=None):
         return "MIT", "LICENSE"
 
-    async def broken(root, identifier, version):
-        raise ci.InstallFailure("step_failed", "uv pip compile: no wheel for excel-mcp-server")
+    async def broken(root, identifier, lock):
+        raise ci.InstallFailure("step_failed", "uv pip install: no wheel for excel-mcp-server")
     monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
     monkeypatch.setattr(ci, "install_pypi", broken)
     with pytest.raises(ci.InstallFailure):
         await ci.install(CAND, folders=[])
@@ -213,14 +239,15 @@ async def test_a_failed_step_is_recorded_and_leaves_nothing_behind(execution_db,
         rows = (await db.execute(select(CapabilitySource))).scalars().all()
         servers = (await db.execute(select(MCPServer))).scalars().all()
     assert [(r.state, r.error.split(":")[0]) for r in rows] == [("failed", "step_failed")]
-    assert servers == [] and list((data / "capabilities").iterdir()) == []
+    assert servers == [] and [p.name for p in (data / "capabilities").iterdir()] == [".prepared"]
+    assert list((data / "capabilities" / ".prepared").iterdir()) == []      # the staged lock went too
 
 
 async def test_a_remote_server_is_registered_without_a_sandbox_and_keeps_its_key(execution_db, data, monkeypatch):
     from server.db.models import MCPServer
     from server.mcp.discovery import runtime_dict
 
-    async def none(repo):
+    async def none(repo, version=None):
         return None, None
     monkeypatch.setattr(ci, "source_license", none)
     remote = {**CAND, "runtime": "remote", "package": None, "repo": None,
@@ -238,9 +265,10 @@ async def test_remove_moves_the_folder_to_the_trash(execution_db, data, monkeypa
     trash = tmp_path / "home" / ".Trash"
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
 
-    async def mit(repo):
+    async def mit(repo, version=None):
         return "MIT", "LICENSE"
     monkeypatch.setattr(ci, "source_license", mit)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
     monkeypatch.setattr(ci, "install_pypi", _fake_pypi)
     row = await ci.install(CAND, folders=[])
     await ci.remove(row.id)
@@ -280,3 +308,90 @@ def test_no_installer_reads_search_results_and_the_catalog_stays_static():
     source = Path(inspect.getfile(ci)).read_text()
     assert "capability_search" not in source and "/search/" not in source
     assert json.loads(json.dumps(CAND)) == CAND
+
+
+# ── CAP4a-3: the license at the version being installed ───────────────────────────────────────
+
+def _github_raw(monkeypatch, files: dict[str, str]):
+    """raw.githubusercontent.com as a fake: `files` maps "<ref>/<name>" to text; anything else is a 404."""
+    import httpx
+    asked = []
+
+    def handler(request):
+        ref_and_name = request.url.path.split("/", 3)[3]
+        asked.append(ref_and_name)
+        if ref_and_name in files:
+            return httpx.Response(200, text=files[ref_and_name])
+        return httpx.Response(404)
+    real = httpx.AsyncClient
+    monkeypatch.setattr(ci.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    return asked
+
+
+MIT = "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy"
+GPL = "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007"
+
+
+@pytest.mark.parametrize("files,expected", [
+    ({"v1.2.0/LICENSE": MIT, "HEAD/LICENSE": GPL}, ("MIT", "LICENSE@v1.2.0")),     # the version's tag wins
+    ({"1.2.0/LICENSE": MIT, "HEAD/LICENSE": GPL}, ("MIT", "LICENSE@1.2.0")),        # a tag without the v
+    ({"HEAD/LICENSE": MIT}, ("MIT", "LICENSE@HEAD")),                               # no tag: HEAD, and it says so
+])
+async def test_the_license_is_read_at_the_versions_tag(monkeypatch, files, expected):
+    _github_raw(monkeypatch, files)
+    assert await ci.source_license("acme/notes", "1.2.0") == expected
+
+
+async def test_a_license_changed_after_the_version_is_judged_at_the_version(monkeypatch):
+    """The red case before CAP4a-3: HEAD was read, so a repository that went copyleft after a permissive release
+    (or the reverse) was judged by its HEAD."""
+    _github_raw(monkeypatch, {"v1.2.0/LICENSE": GPL, "HEAD/LICENSE": MIT})
+    spdx, where = await ci.source_license("acme/notes", "1.2.0")
+    assert where == "LICENSE@v1.2.0" and spdx != "MIT"
+
+
+async def test_an_odd_version_is_never_a_ref(monkeypatch):
+    asked = _github_raw(monkeypatch, {"HEAD/LICENSE": MIT})
+    assert await ci.source_license("acme/notes", "1.2.0/../../other") == ("MIT", "LICENSE@HEAD")
+    assert all(not a.startswith(("1.2.0", "v1.2.0")) for a in asked)
+
+
+async def test_every_name_is_tried_at_the_tag_before_any_at_head(monkeypatch):
+    """#569 review F5 (M7): a release whose license file has another name than HEAD's is judged at the release."""
+    _github_raw(monkeypatch, {"v1.2.0/COPYING": GPL, "HEAD/LICENSE": MIT})
+    assert await ci.source_license("acme/notes", "1.2.0") == (None, "COPYING@v1.2.0")
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+async def test_only_a_404_moves_on_and_any_other_answer_refuses(monkeypatch, status):
+    """#569 review F3a: a rate limit or an outage at the tag never falls through to HEAD's license."""
+    import httpx
+    asked = []
+
+    def handler(request):
+        ref_and_name = request.url.path.split("/", 3)[3]
+        asked.append(ref_and_name)
+        if ref_and_name.startswith("HEAD/"):
+            return httpx.Response(200, text=MIT)
+        return httpx.Response(status)
+    real = httpx.AsyncClient
+    monkeypatch.setattr(ci.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    with pytest.raises(ci.InstallFailure) as refused:
+        await ci.source_license("acme/notes", "1.2.0")
+    assert refused.value.code == "license_unreadable" and asked == ["v1.2.0/LICENSE"]
+
+
+async def test_the_card_and_the_dossier_ask_for_the_license_at_the_package_version(execution_db, data, monkeypatch):
+    from server.services import capability_dossier
+    asked = []
+
+    async def license_at(repo, version=None):
+        asked.append((repo, version))
+        return "MIT", f"LICENSE@v{version}"
+    monkeypatch.setattr(ci, "source_license", license_at)
+    monkeypatch.setattr(ci, "lock_pypi", _fake_lock)
+    cand = {**CAND, "version": "9.9.9"}       # #569 review F5 (M2, M3): the entry's version is not the package's
+    prepared = await ci.prepare(cand)
+    assert prepared["license"] == ("MIT", "LICENSE@v1.1.2")
+    await capability_dossier.check_candidate_license(cand)
+    assert asked == [("haris-musa/excel-mcp-server", "1.1.2")] * 2

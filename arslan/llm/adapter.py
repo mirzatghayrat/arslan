@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from arslan.context_budget import estimate_tokens
-from arslan.llm import usage_sink
+from arslan.llm import tool_names, usage_sink
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
@@ -102,11 +102,14 @@ class LLMAdapter:
         max_tokens: int | None = None,
     ) -> LLMResponse:
         """Build messages and delegate to the underlying provider. `max_tokens`
-        (OpenAI-compatible and Anthropic) raises this one request after a length cut."""
-        messages = self._provider.build_messages(system, user, history)
+        (OpenAI-compatible and Anthropic) raises this one request after a length cut.
+        Tools go under names every provider takes, and the reply's calls come back under
+        their keys (NAME1, arslan/llm/tool_names.py)."""
+        names = tool_names.Names(tools)
+        messages = tool_names.messages(self._provider.build_messages(system, user, history))
         extra = {"max_tokens": max_tokens} if max_tokens else {}
-        resp = await self._provider.chat(messages, tools=tools, temperature=temperature, **extra)
-        return await self._account(resp, system, user)
+        resp = await self._provider.chat(messages, tools=names.tools(tools), temperature=temperature, **extra)
+        return names.reply(await self._account(resp, system, user))
 
     def native_trajectory(self) -> bool:
         """Whether run_native should send the neutral trajectory natively
@@ -131,17 +134,25 @@ class LLMAdapter:
         """Send the neutral in-turn trajectory (arslan/llm/trajectory.py) in the
         provider's native tool protocol. Only for native_trajectory() adapters.
         `on_text` (K8a) gets the answer's text as it arrives, where the endpoint
-        streams; elsewhere it is never called and the reply comes whole."""
-        wire = self._provider.build_trajectory_messages(system, messages)
+        streams; elsewhere it is never called and the reply comes whole. Names as in `chat`."""
+        names = tool_names.Names(tools)
+        wire = self._provider.build_trajectory_messages(system, tool_names.messages(messages))
         extra = {"max_tokens": max_tokens} if max_tokens else {}
         if getattr(self._provider, "streams_tool_calls", lambda: False)():
             extra["stream"] = True   # idle watchdog instead of a total timeout (0.1.49 S7)
             if on_text is not None:
                 extra["on_text"] = on_text
-        resp = await self._provider.chat(wire, tools=tools, temperature=temperature,
+        resp = await self._provider.chat(wire, tools=names.tools(tools), temperature=temperature,
                                          tool_choice=tool_choice, **extra)
         last = messages[-1].get("content") if messages else ""
-        return await self._account(resp, system, last if isinstance(last, (str, list)) else "")
+        return names.reply(await self._account(resp, system, last if isinstance(last, (str, list)) else ""))
+
+    def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:
+        """0.1.62 F3: the key of the tool a refusal points at, read against the names this request sent."""
+        named = getattr(getattr(self, "_provider", None), "named_tool", None)
+        names = tool_names.Names(tools)
+        found = named(names.tools(tools), error_text) if callable(named) else None
+        return names.real(found) if isinstance(found, str) else None
 
     def _usd(self, usage: dict | None) -> float | None:
         """K4a: this response's price by cache tier, or None when it can't be known honestly."""
@@ -194,12 +205,12 @@ class LLMAdapter:
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
-        """Build messages and stream content deltas from the provider."""
-        messages = self._provider.build_messages(system, user, history)
+        """Build messages and stream content deltas from the provider (tool names as in `chat`)."""
+        messages = tool_names.messages(self._provider.build_messages(system, user, history))
         chunks: list[str] = []
         try:
             async for piece in self._provider.chat_stream(
-                messages, tools=tools, temperature=temperature
+                messages, tools=tool_names.Names(tools).tools(tools), temperature=temperature
             ):
                 chunks.append(piece)
                 yield piece

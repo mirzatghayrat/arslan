@@ -32,6 +32,12 @@ describe("a card that says what it asks, whatever the frame", () => {
     frame({ ...ACTION, title: "Use App?", why: "https://example.com/" + "a".repeat(200) });
     expect(screen.getByTestId("action-title").className).toContain("overflow-wrap:anywhere");
   });
+
+  it("the line under it breaks words too, so a long target never spills out (moved from the Inbox's test, INB5b-2)", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame({ ...ACTION, target: "com.example." + "a".repeat(200), title: "Use App?", why: "Send the notes" });
+    expect(screen.getByTestId("action-subject").className).toContain("break-words");
+  });
 });
 
 describe("the model's own line under \"Arslan says\", whatever it is", () => {

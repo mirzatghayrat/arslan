@@ -18,6 +18,7 @@ import { Copy, Check, Download, ChevronDown, ChevronUp, Eye, X, FileCode } from 
 import Markdown from './Markdown';
 import { useDismissable } from "../hooks/useDismissable";
 import { Dialog } from './kit';
+import { withFrameCsp } from '../lib/frameCsp';
 
 const LONG_CHARS = 1800;      // prose longer than this collapses in-bubble AND gets .md/.html downloads
 const COPY_MIN_CHARS = 240;   // shorter messages don't get a standalone copy row (keeps chat clean)
@@ -232,8 +233,9 @@ export function HtmlDocCard({
         <Dialog open width={896} testId="html-preview-dialog" onClose={() => setPreview(false)} closeLabel={t('msg.close')}
           title={<span className="flex items-center gap-2 font-mono text-[12px] font-normal text-muted-foreground">
             <FileCode className="h-3.5 w-3.5" />{t('msg.html_preview')}<span className="text-subtle-foreground">· {kb} KB</span></span>}>
-          {/* 🔒 sandbox="" → no scripts, no same-origin: untrusted HTML rendered fully isolated. */}
-          <iframe title={t('msg.html_preview')} srcDoc={html} sandbox="" className="block h-[70vh] w-full bg-white" />
+          {/* 🔒 sandbox="" → no scripts, no same-origin: untrusted HTML rendered fully isolated.
+              IMG1: the CSP meta first, so a model's page can't send anything out by loading an image. */}
+          <iframe title={t('msg.html_preview')} srcDoc={withFrameCsp(html)} sandbox="" className="block h-[70vh] w-full bg-white" />
         </Dialog>
       )}
     </div>

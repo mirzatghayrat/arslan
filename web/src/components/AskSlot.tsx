@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
+import { announceProactiveChange } from "../api/proactive";
 import { useTranslation } from "react-i18next";
 import { useArslanStore } from "../stores/arslanStore";
 import ActionApprovalCard from "./ActionApprovalCard";
@@ -8,7 +9,8 @@ import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
 import SkillSaveCard from "./capabilities/SkillSaveCard";
 import WorkspaceWriteCard from "./WorkspaceWriteCard";
-import { AnswerGuardScope, AskQueue, CARD_MS, Notice, scopeToSend, useAnswerGuardState, type AskQueuePosition, type QueuedAsk } from "./kit";
+import { AnswerGuardScope, AskQueue, CARD_MS, Notice, scopeToSend, type AskQueuePosition, type QueuedAsk } from "./kit";
+import { useQueueGuard } from "./kit/guard";
 
 /** A window's own card gets no word from the server when it runs out; it leaves this slot
  *  this long after its expiry, so the server has closed it first. */
@@ -46,9 +48,14 @@ function focusComposer() {
  */
 export default function AskSlot({ send }: { send: (frame: Record<string, unknown>) => void }) {
   // What holds an answer for a moment after a card leaves (kit/guard.ts) is kept here, above the queue: the queue is not on screen
-  // while no card waits, and the card that comes up in that gap — the next command of the turn — must be held too.
-  const guard = useAnswerGuardState();
-  return <AnswerGuardScope value={guard}><AskCards send={send} /></AnswerGuardScope>;
+  // while no card waits, and the card that comes up in that gap — the next command of the turn — must be held too. INB5b: the scope
+  // above it when there is one: App puts the slot and the conversation in one, so a card leaving the slot holds what wasn't done while
+  // you were away under the pointer, and a change in that list holds the slot (one gesture answers one thing, as in the Inbox).
+  const guard = useQueueGuard();
+  // #605 review F4: an answer can clear what waits on you, so the badge on Progress is told at once. A window's own card ends with no
+  // `card_resolved`, so the answer itself is the signal; the badge reads again a moment later, after the server has applied it.
+  const answer = useCallback((frame: Record<string, unknown>) => { send(frame); announceProactiveChange(); }, [send]);
+  return <AnswerGuardScope value={guard}><AskCards send={answer} /></AnswerGuardScope>;
 }
 
 function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) {

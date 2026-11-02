@@ -136,6 +136,16 @@ def is_dropped_error(exc: BaseException) -> bool:
                                                             SESSION_TERMINATED)
 
 
+def _only_broken_pipe(exc: BaseException) -> bool:
+    """True when `exc` is anyio's BrokenResourceError, or an exception group holding nothing else
+    (nested groups included): what the stdio client's task group raises when its stdin writer hits
+    the pipe of a program that has exited (LOAD2)."""
+    if isinstance(exc, BaseExceptionGroup):
+        match, rest = exc.split(anyio.BrokenResourceError)
+        return match is not None and rest is None
+    return isinstance(exc, anyio.BrokenResourceError)
+
+
 def cap_log(path: Path, *, limit: int = LOG_CAP_BYTES, keep: int = LOG_KEEP_BYTES) -> None:
     """Over `limit` bytes → keep the last `keep`, rewritten in place (a child appending with
     O_APPEND carries on at the new end). Best effort: a log never blocks a start."""
@@ -301,8 +311,8 @@ class MCPSessionManager:
 
         sid = server["id"]
         stack = AsyncExitStack()
+        transport = server.get("transport") or "stdio"
         try:
-            transport = server.get("transport") or "stdio"
             if transport == "http":
                 # Tokens stored for this server (a completed Authorize flow) turn into the SDK's
                 # auth provider. SILENT provider on purpose: a background connect may refresh with
@@ -369,12 +379,22 @@ class MCPSessionManager:
             # NeedsInteractiveAuth fails THAT task, and anyio cancels this one (awaiting
             # initialize) — a CancelledError nobody asked for (cancelling() is 0 again once the
             # group's scope has closed). Then the group the close raises IS the cause.
+            # Except on stdio when the group holds only BrokenResourceError (LOAD2): a program that
+            # exits at once closes its stdin, and the SDK's stdin writer can hit that closed pipe
+            # before its stdout reader sees EOF. That is the same "connection closed" the reader's EOF
+            # gives (the SDK's own CONNECTION_CLOSED), so it is answered as one: "not an MCP server"
+            # for a program that printed usage, never "broken resource".
             try:
                 await stack.aclose()
             except Exception as cleanup:  # noqa: BLE001 — cleanup noise, never the cause
                 task = asyncio.current_task()
                 if (isinstance(exc, asyncio.CancelledError) and task is not None
                         and not task.cancelling()):
+                    if transport != "http" and _only_broken_pipe(cleanup):
+                        # Kept for the next time this is debugged: `from None` drops the group itself.
+                        logger.debug("MCP open: broken pipe on a closed stdio program %s", sid, exc_info=cleanup)
+                        raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED,
+                                                       message="Connection closed")) from None
                     raise cleanup from None
                 logger.debug("MCP open cleanup failed for %s", sid, exc_info=True)
             raise

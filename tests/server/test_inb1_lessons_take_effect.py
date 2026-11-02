@@ -16,6 +16,14 @@ from server.services import judgment, lessons, proactive_service
 from server.services import personal_context as pc
 
 
+@pytest.fixture(autouse=True)
+def _a_local_turn():
+    """JUDGE1: capture asks the judge about stored lessons only where memory may be shown to a model; these tests
+    run as a local model's turn, as the app binds one (a test that binds another context inside still can)."""
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c-lessons", model_is_local=True)):
+        yield
+
+
 @pytest.fixture
 def judge(monkeypatch):
     """answers[point] = True / False / None (no answer), or a function of what is asked."""

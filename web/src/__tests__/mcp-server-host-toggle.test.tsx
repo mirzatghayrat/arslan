@@ -83,6 +83,19 @@ describe("server-level Allow Arslan", () => {
     expect(screen.queryByText("allow Arslan")).toBeNull();                  // per-tool switch gone
   });
 
+  it("a tool row shows the name through the name rule, not as the server sent it (UNI1a, #526)", async () => {
+    servers.mockResolvedValue([base]);
+    connect.mockResolvedValue([{
+      key: "mcp_3__odd", name: "search\u202Edocs\u200B", shown: "searchdocs", description: "d",
+      tier: "orchestrator", status: "registered", suggested_tier: "orchestrator", host_enabled: false,
+    }]);
+    render(<McpServers only={3} />);
+    await waitFor(() => expect(screen.getByText("Playwright")).toBeTruthy());
+    fireEvent.click(screen.getByText("Connect"));
+    await waitFor(() => expect(screen.getByText("searchdocs")).toBeTruthy());
+    expect(screen.getByLabelText("tier for searchdocs")).toBeTruthy();
+  });
+
   it("the expose checkbox reflects the backend's real state, not a hardcoded false", async () => {
     servers.mockResolvedValue([{ ...base, exposed: true }]);
     render(<McpServers only={3} />);

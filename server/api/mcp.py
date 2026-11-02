@@ -1,11 +1,13 @@
 """MCP server config + connect/expose/wire/health endpoints."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server.auth import require_auth
-from server.services import mcp_service
+from server.services import mcp_pin, mcp_service
 from arslan.aio import within
 
 # PB-4 条件3: the health probe must sit behind require_auth. The MCP router historically
@@ -39,8 +41,11 @@ class ServerHostBody(BaseModel):
 
 @router.post("/servers")
 async def add_server(body: AddServerBody):
-    return await mcp_service.add_server(body.label, body.command, body.args, body.env,
-                                        transport=body.transport, url=body.url)
+    try:
+        return await mcp_service.add_server(body.label, body.command, body.args, body.env,
+                                            transport=body.transport, url=body.url)
+    except (mcp_pin.PinRefused, mcp_service.AddRefused) as exc:     # CAP5c: the form shows why
+        raise HTTPException(status_code=400, detail=str(exc)[:500]) from exc
 
 
 @router.get("/servers")
@@ -161,6 +166,35 @@ async def set_host(server_id: int, body: ServerHostBody):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
+
+
+class SecretPart(BaseModel):
+    """Where a secret sits, as `connection_secrets.find` names it (#536 review §12: an untyped dict let an
+    unhashable value through to a 500)."""
+    where: Literal["url", "arg"]
+    index: int | None = None
+    at: Literal["password", "user", "path", "query", "header"] | None = None
+    key: str | None = Field(default=None, max_length=200)
+    n: int = 0
+
+
+class MoveSecretBody(BaseModel):
+    part: SecretPart
+    name: str = Field(max_length=64)
+
+
+@router.post("/servers/{server_id}/secrets")
+async def move_secret(server_id: int, body: MoveSecretBody):
+    """SEC1: one secret-looking part of a connection's address or arguments into its encrypted store, a `${name}`
+    placeholder in its place (the card's click is SEC1b). 409 when there is nothing to move there, 404 for no such
+    server. The answer is the connection as listed: the moved value is in none of it."""
+    from server.services import connection_secrets
+    try:
+        return await mcp_service.move_secret(server_id, body.part.model_dump(exclude_none=True), body.name)
+    except connection_secrets.NothingToMove as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/servers/{server_id}/reconnect")

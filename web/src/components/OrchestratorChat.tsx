@@ -45,6 +45,7 @@ import ConversationToggle from './ConversationToggle';
 import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded } from './ComposerAttach';
+import { ComposerInput } from './ComposerInput';
 import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 
@@ -89,6 +90,10 @@ interface OrchestratorChatProps {
   onSelectModel?: (id: number) => void;
   /** The active conversation id. */
   conversationId?: string;
+  /** INB5b: shown above the messages (what wasn't done while you were away) and after them (a stopped job's card), so both scroll
+   *  with the conversation. Each renders nothing when there is nothing to show. */
+  header?: React.ReactNode;
+  footer?: React.ReactNode;
   /** True when the orchestrator-shell capability is enabled (drives the policy pill). */
   shellEnabled?: boolean;
   /** Current shell confirmation posture, shown + flippable in the composer pill. */
@@ -112,6 +117,8 @@ export default function OrchestratorChat({
   conversationId,
   shellEnabled = false,
   shellPolicy = 'ask_all',
+  header,
+  footer,
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -383,6 +390,7 @@ export default function OrchestratorChat({
         <div className="flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 relative w-full">
           {/* Scrollable Chat Area */}
           <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+        {header}
         {chatHistory.length === 0 ? (
           <div className="min-h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto py-10 px-4 space-y-8 select-none">
             {/* Shared product typography; wraps safely with long display names. */}
@@ -434,20 +442,14 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
-              <textarea
+              {/* SMART: both composers wrap and grow with what is typed, then scroll (ComposerInput). */}
+              <ComposerInput
                 id="landing-message-input"
-                rows={3}
+                minRows={3}
                 value={inputValue}
                 onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (inputValue.trim()) {
-                      handleSendMessage(e);
-                    }
-                  }
-                }}
+                onSend={(e) => { if (inputValue.trim()) handleSendMessage(e); }}
                 placeholder={t('orchestrator.placeholder_empty')}
                 className="w-full bg-transparent text-sm text-foreground placeholder-subtle-foreground focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
@@ -919,6 +921,7 @@ export default function OrchestratorChat({
             return null;
           })
         )}
+        {footer}
         {/* LLM error banner: shown when the backend emits an error frame (e.g. LLM timeout, auth failure) */}
         {llmError && (() => {
           // 0.1.44: a task-status code (a check to make, a budget used up…) is not a
@@ -984,9 +987,8 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
-              <input
+              <ComposerInput
                 id="chat-message-input"
-                type="text"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -994,8 +996,9 @@ export default function OrchestratorChat({
                 value={inputValue}
                 onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
+                onSend={handleSendMessage}
                 placeholder={t('orchestrator.placeholder_chat')}
-                className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
+                className="block w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none resize-none font-sans leading-relaxed px-1 py-1.5"
               />
               <div className="composer-row">
                 <div data-testid="composer-input-tools" className="flex items-center gap-2">

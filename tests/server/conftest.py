@@ -351,6 +351,20 @@ class MockAdapter:
             yield chunk
 
 
+@pytest.fixture
+def fake_capability_prepare(monkeypatch):
+    """v0.1.64 CAP4a-2: an MCP install card is prepared first (the license at the source, Arslan's runtime, the
+    lock), which reaches the network. For tests that drive the card for another reason: a prepared lock with no
+    network. The real prepare is tested in test_cap4a2_lock_before_card.py."""
+    from server.services import capability_install
+
+    async def prepare(c):
+        return {"runtime": c.get("runtime"), "license": ("MIT", "LICENSE"), "staging": None,
+                "lock": {"file": "requirements.lock", "sha256": "0" * 64,
+                         "packages": [{"name": "excel-mcp-server", "version": "1.1.2"}]}}
+    monkeypatch.setattr(capability_install, "prepare", prepare)
+
+
 @pytest_asyncio.fixture
 def mock_adapter():
     """Factory: `mock_adapter(stream_chunks=[...], raise_on_call=...)`."""

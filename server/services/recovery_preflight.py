@@ -14,7 +14,7 @@ import sqlite3
 from cryptography.fernet import InvalidToken
 
 from server.crypto_material import keyring
-from server.services.secret_inventory import CIPHERTEXT_SITES
+from server.services.secret_inventory import CIPHERTEXT_SITES, has_column
 
 MAX_CREDENTIALS = 10_000
 MAX_TOKEN_BYTES = 1024 * 1024
@@ -57,7 +57,7 @@ def _check(db, secret):
     keys = keyring(effective, salt) if effective else None
     checked = unreadable = 0
     for table, column, where in CIPHERTEXT_SITES:
-        if table not in tables:
+        if table not in tables or not has_column(db.execute, table, column):
             continue
         sql = (f"SELECT substr({column},1,?), length({column}), typeof({column}) FROM {table} "
                f"WHERE {column} IS NOT NULL AND {column} != ''")

@@ -49,6 +49,31 @@ def _dossier_error(exc) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": exc.code})
 
 
+# ── CAP4a-3c: the one-click list (the user's; the model has no way to it) ──────────
+
+@router.get("/capability-allowlist")
+async def capability_allowlist_get() -> dict:
+    from server.services import capability_allowlist
+    return {"list": await capability_allowlist.current(), "default": capability_allowlist.validate(
+        capability_allowlist.DEFAULT)}
+
+
+@router.put("/capability-allowlist")
+async def capability_allowlist_put(body: dict) -> dict:
+    from server.services import capability_allowlist
+    try:
+        return {"list": await capability_allowlist.save(body)}
+    except capability_allowlist.AllowlistError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
+
+
+@router.delete("/capability-allowlist")
+async def capability_allowlist_reset() -> dict:
+    """Back to the first version of the list."""
+    from server.services import capability_allowlist
+    return {"list": await capability_allowlist.reset()}
+
+
 @router.get("/capability-sources")
 async def capability_sources() -> list[dict]:
     from server.services import capability_dossier
@@ -73,6 +98,35 @@ async def set_folders(source_id: str, body: FoldersIn) -> dict:
     from server.services import capability_dossier
     try:
         return await capability_dossier.set_folders(source_id, body.folders[:3])
+    except capability_dossier.DossierError as exc:
+        raise _dossier_error(exc) from exc
+
+
+class ToolsAcceptIn(BaseModel):
+    digest: str
+
+
+@router.post("/capability-sources/{source_id}/tools/accept")
+async def accept_tools(source_id: str, body: ToolsAcceptIn) -> dict:
+    """CAP5a: accept the tool change the user read (its digest); 409 when there is none or a newer one."""
+    from server.services import capability_dossier
+    try:
+        return await capability_dossier.accept_tools(source_id, body.digest[:64])
+    except capability_dossier.DossierError as exc:
+        raise _dossier_error(exc) from exc
+
+
+class SourceAcceptIn(BaseModel):
+    seen: str
+
+
+@router.post("/capability-sources/{source_id}/source/accept")
+async def accept_source(source_id: str, body: SourceAcceptIn) -> dict:
+    """CAP4a-3d: keep a server its Registry entry parked (the answer the user read); 409 when there is none or a
+    newer one."""
+    from server.services import capability_dossier
+    try:
+        return await capability_dossier.accept_source(source_id, body.seen[:64])
     except capability_dossier.DossierError as exc:
         raise _dossier_error(exc) from exc
 

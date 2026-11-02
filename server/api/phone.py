@@ -14,6 +14,7 @@ import asyncio
 import base64
 import binascii
 import hashlib
+import logging
 import re
 import time
 from datetime import datetime
@@ -28,11 +29,13 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, settings_service
+from server.services import (artifact_store, background_jobs, desktop_status, phone_details, phone_ids, phone_reads,
+                             phone_stats, settings_service)
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+logger = logging.getLogger(__name__)
 
 #: The island's search tools (`SEARCH_TOOLS` in web/src/island/islandMachine.ts, plus any
 #: browser_* tool). A test reads that file, so the two cannot drift apart.
@@ -125,7 +128,10 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
         edge = _iso(page[-1].last_at)
         page = [r for r in page if _iso(r.last_at) != edge] or [r for r in rows if _iso(r.last_at) == edge]
     return {"conversations": [{"id": r.conversation_id, "title": r.title, "updated_at": _iso(r.last_at),
-                               "kind": r.kind, "state": r.state, "origin": r.origin, "preview": r.preview,
+                               "kind": r.kind,
+                               # INB4: phones keep the state without "done, not seen" until the Bridge frame lets a phone say it
+                               # knows done_unseen (INB4's phone half, the user's nod). DELETE-BY: INB4's phone half.
+                               "state": r.phone_state or r.state, "origin": r.origin, "preview": r.preview,
                                "files": r.files, **({"job": r.job} if r.job else {})}
                               for r in page],
             "has_more": len(rows) > len(page)}
@@ -238,9 +244,11 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
          # §5.7: who typed it — the phone ("from iPhone") or a Mac window.
          **({"source": "phone" if m.source == "phone" else "mac"} if m.role == "user" else {})}
         for m in reversed(rows)]
-    # §5.7: one envelope holds it all; the oldest go first, and the phone is told.
-    messages, truncated = phone_reads.fit_history(conversation_id, messages)
-    return {"conversation_id": conversation_id, "messages": messages, **({"truncated": True} if truncated else {})}
+    # §5.7: one envelope holds it all; the oldest go first, and the phone is told. §5.10: `details` first.
+    details = await phone_details.details(db, conversation_id)
+    messages, truncated = phone_reads.fit_history(conversation_id, messages, details)
+    return {"conversation_id": conversation_id, "messages": messages, "details": details,
+            **({"truncated": True} if truncated else {})}
 
 
 @router.get("/phone/runs/{run_id}/files")
@@ -277,9 +285,38 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     `high_risk_mac_only` stays false until that switch exists (§6.1)."""
     feed = desktop_status.island_feed()
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
-            "jobs": [job.frame() for job in background_jobs.active()],
+            "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
-            "activity": await phone_reads.activity(db)}
+            "activity": await phone_reads.activity(db), **await _stats(db),
+            # IPB (§5.11): the one part of `mac` only Arslan knows; the Bridge adds the Mac's own readings.
+            "mac": {"sleep": {"kept_awake": await kept_awake(db)}}}
+
+
+def _clean_job(frame: dict) -> dict:
+    """A running job's free text as `outcomes` titles have it (`phone_stats.clean_text`): a lone surrogate in a
+    goal failed the whole snapshot (#651 review)."""
+    frame["goal"] = phone_stats.clean_text(frame.get("goal"))
+    if frame.get("step"):
+        frame["step"] = phone_stats.clean_text(frame["step"])
+    for criterion in frame.get("criteria") or ():
+        criterion["description"] = phone_stats.clean_text(criterion.get("description"))
+    return frame
+
+
+async def _stats(db: AsyncSession) -> dict:
+    """`week` and `outcomes` (§5.9), or neither: they are optional, and a failure in them must not fail the
+    snapshot, which the phone would read as the Mac being offline (#647 review F2)."""
+    try:
+        return await phone_stats.blocks(db)
+    except Exception as exc:  # noqa: BLE001 — logged, and the snapshot goes out without them
+        logger.warning("phone snapshot: week and outcomes left out: %s", type(exc).__name__)
+        return {}
+
+
+async def kept_awake(db: AsyncSession) -> bool:
+    """Whether Arslan holds the Mac awake right now: the desktop shell's rule (`want_sleep_assertion`,
+    desktop/src-tauri/src/resident.rs), from the same two inputs it reads (/desktop/status). A test pins them."""
+    return await settings_service.keep_awake_enabled(db) and desktop_status.snapshot()["working"] > 0
 
 
 @router.get("/phone/runs/{run_id}")

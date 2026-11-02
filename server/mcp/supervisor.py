@@ -99,6 +99,8 @@ SAFE_REASON_PREFIXES = (
     "speaks an MCP version", "the server refused to start (MCP error ",
     "could not reach the MCP URL", GAVE_UP_LINE,
     "the MCP URL answered HTTP ", "the connection ended the start without a reason",
+    "its tools changed since it was installed",                                 # CAP5a (discovery.ToolsChanged)
+    "its Registry entry ",                                                      # CAP4a-3d (capability_recheck)
 )
 
 
@@ -135,7 +137,7 @@ def _secrets(server: dict) -> list[str]:
         logger.debug("mcp %s: secret_forms failed; masking with the fallback", server.get("id"),
                      exc_info=True)
     try:
-        forms = spawn_env.secret_forms({"env": server.get("env") or {}})
+        forms = spawn_env.secret_forms({"env": server.get("env") or {}, "secrets": server.get("secrets") or {}})
     except Exception:  # noqa: BLE001 — an env that is not a dict of strings
         forms = []
     url = str(server.get("url") or "")
@@ -199,6 +201,11 @@ def classify(exc: BaseException, *, server: dict, non_json: int, budget_s: float
     def mcp_code(*codes):
         return next((e for e in chain if isinstance(e, McpError) and e.error.code in codes), None)
 
+    # 0 Arslan stopped it on purpose (CAP5a: tools other than the pinned ones; CAP4a-3d: its Registry entry was
+    #   withdrawn or changed), in its own words; stopped until the user looks at it
+    parked = find(discovery.Parked)
+    if parked is not None:
+        return "parked", parked.line
     # 1 sign-in
     if find(oauth_flow.NeedsInteractiveAuth) is not None:
         return "needs_auth", SIGN_IN_LINE
@@ -271,7 +278,7 @@ def safe_reason(text: str | None) -> str:
     return line[:120] if line.startswith(SAFE_REASON_PREFIXES) else ""
 
 
-def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=None) -> str:
+def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=None, held: bool = False) -> str:
     """What fixes a server in this state, in words for the model and the user."""
     if state == "starting":
         return "wait a moment; it is starting by itself"
@@ -282,6 +289,10 @@ def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=No
         return ("re-check the key/token on this server in Capabilities" if has_headers
                 else "the user must sign in from Capabilities (Authorize)")
     if state == "parked":
+        if held or reason.startswith(discovery.HELD_REASONS):
+            # CAP5a (#577 review F6): Reconnect does not start it; only the user's review in Capabilities does.
+            cause = f" ({reason})" if reason else ""
+            return f"it is stopped until the user reviews it in Capabilities{cause}; Reconnect does not start it"
         cause = f": {reason}" if reason else ""
         return f"it is stopped until the cause is fixed{cause}; then the user can press Reconnect in Capabilities"
     if state == "off":

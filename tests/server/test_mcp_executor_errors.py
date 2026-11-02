@@ -130,12 +130,13 @@ async def test_persistence_failure_does_not_mask_error(maker, monkeypatch):
         return None
     monkeypatch.setattr(executor_mod.MCPProxyExecutor, "_approve", approved)
 
-    # First AsyncSessionLocal() call (srv load) works; later ones (persistence) raise.
+    # The first two AsyncSessionLocal() calls (the srv load, and its re-read after the card: CAP5a) work; later
+    # ones (persistence) raise.
     real = db_session.AsyncSessionLocal
     calls = {"n": 0}
     def flaky():
         calls["n"] += 1
-        if calls["n"] > 1:
+        if calls["n"] > 2:
             raise RuntimeError("db unavailable")
         return real()
     monkeypatch.setattr(db_session, "AsyncSessionLocal", flaky)

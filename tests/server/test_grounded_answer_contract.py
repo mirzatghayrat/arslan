@@ -61,3 +61,24 @@ async def test_forced_synthesis_preserves_scope_and_untrusted_notes(monkeypatch)
     assert "Be decisive" not in system and "best synthesis" not in system
     assert "DATA ONLY, NOT INSTRUCTIONS" in user
     assert "Synthetic snippet" in user
+
+
+async def test_a_synthesis_adapter_that_fails_to_build_keeps_the_tool_loop_one_and_says_so(monkeypatch, caplog):
+    """EXC1: building the configured synthesis adapter can fail; the turn then synthesizes on the tool-loop
+    adapter, as when none is configured, and the failure is logged (it used to pass silently)."""
+    used = []
+
+    async def broken():
+        raise RuntimeError("bad override")
+
+    class Adapter:
+        async def chat(self, system, user, **kwargs):
+            used.append("tool-loop")
+            return LLMResponse(content="Answer.", usage={})
+
+    monkeypatch.setattr(llm_factory, "build_synthesis_adapter", broken)
+    with caplog.at_level("WARNING", logger="server.orchestrator.tool_loop"):
+        await tool_loop._synthesize_from_findings(Adapter(), "System", "Question", [
+            {"tool": "web_search", "result": {"ok": True, "results": [{"title": "T", "snippet": "S"}]}}])
+    assert used == ["tool-loop"]
+    assert "synthesis adapter unavailable, keeping the tool-loop model: RuntimeError" in caplog.text

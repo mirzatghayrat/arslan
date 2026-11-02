@@ -29,6 +29,7 @@ import os
 from server import crypto
 from server.db.migrations.versions._0039_crypto_salt_into_db import SALT_SETTING_KEY
 from server.services.secret_inventory import CIPHERTEXT_SITES as _CIPHERTEXT_SITES
+from server.services.secret_inventory import has_column
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,8 @@ def _corrupt(detail: str) -> bytes:
 
 
 def _stored_ciphertext(connection):
-    """Yield (table, pk_or_key, value) for every non-empty encrypted value present.
+    """Yield (table, column, pk_or_key, value) for every non-empty encrypted value present. A table may hold more
+    than one encrypted column (mcp_servers: env and, since SEC1, secrets), so each value names its own.
 
     Missing tables are skipped rather than raising: on a very first boot the schema
     may not be fully created yet, and a partially-built database must not be read as
@@ -96,7 +98,7 @@ def _stored_ciphertext(connection):
     """
     present = _tables(connection)
     for table, column, where in _CIPHERTEXT_SITES:
-        if table not in present:
+        if table not in present or not has_column(connection.exec_driver_sql, table, column):
             continue
         ident = "key" if table == "settings" else "id"
         sql = (f"SELECT {ident}, {column} FROM {table} "
@@ -104,7 +106,7 @@ def _stored_ciphertext(connection):
         if where:
             sql += f" AND ({where})"
         for row in connection.exec_driver_sql(sql).fetchall():
-            yield table, row[0], row[1]
+            yield table, column, row[0], row[1]
 
 
 def _has_unreachable_ciphertext(connection) -> bool:
@@ -125,7 +127,7 @@ def _has_unreachable_ciphertext(connection) -> bool:
     needs the primary key, it was written under some salt, and the salt is missing.
     """
     legacy = crypto.legacy_fernet()
-    for _table, _ident, value in _stored_ciphertext(connection):
+    for _table, _column, _ident, value in _stored_ciphertext(connection):
         try:
             legacy.decrypt(value.encode("utf-8"))
         except Exception:  # noqa: BLE001 — any failure to open means "not reachable"
@@ -212,17 +214,17 @@ def migrate_legacy_ciphertext(connection) -> int:
     primary = crypto.primary_fernet()
     migrated = 0
 
-    for table, ident, value in list(_stored_ciphertext(connection)):
+    for table, column, ident, value in list(_stored_ciphertext(connection)):
         raw = value.encode("utf-8")
         try:
             primary.decrypt(raw)
             continue                      # already current
-        except Exception:                 # noqa: BLE001
+        except Exception:                 # noqa: BLE001 — a trial decrypt: failing is the expected path, the legacy try decides
             pass
         try:
             plaintext = legacy.decrypt(raw).decode("utf-8")
-        except Exception:                 # noqa: BLE001
-            continue                      # group B — not ours to touch
+        except Exception:                 # noqa: BLE001 — neither key opens it: group B, not ours to touch
+            continue
         replacement = crypto.encrypt(plaintext)
         try:
             if primary.decrypt(replacement.encode("utf-8")).decode("utf-8") != plaintext:
@@ -233,7 +235,6 @@ def migrate_legacy_ciphertext(connection) -> int:
             raise MigrationVerificationError(
                 f"{table} row {ident!r} did not read back after re-encryption"
             ) from exc
-        column = next(c for t, c, _ in _CIPHERTEXT_SITES if t == table)
         id_col = "key" if table == "settings" else "id"
         connection.exec_driver_sql(
             f"UPDATE {table} SET {column} = ? WHERE {id_col} = ?", (replacement, ident))
@@ -306,7 +307,7 @@ def _fernet_for_salt(salt: bytes):
 def _opens(fernet, value: str) -> str | None:
     try:
         return fernet.decrypt(value.encode("utf-8")).decode("utf-8")
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — "this key does not open it" is the answer (None), not an error
         return None
 
 
@@ -337,7 +338,7 @@ def probe_recovery_candidates(connection, *, extra_salts=()) -> dict:
     candidates = _candidates(connection, extra_salts)
     findings, recoverable, unreachable = [], 0, 0
 
-    for table, ident, value in _stored_ciphertext(connection):
+    for table, _column, ident, value in _stored_ciphertext(connection):
         if ident == SALT_SETTING_KEY or _group_a_can_open(value):
             continue
         hit = next((label for label, salt in candidates
@@ -369,7 +370,7 @@ def recover_with_salt(connection, salt: bytes) -> int:
     primary = crypto.primary_fernet()
     moved = 0
 
-    for table, ident, value in list(_stored_ciphertext(connection)):
+    for table, column, ident, value in list(_stored_ciphertext(connection)):
         if ident == SALT_SETTING_KEY or _opens(primary, value) is not None:
             continue
         plaintext = _opens(fernet, value)
@@ -379,7 +380,6 @@ def recover_with_salt(connection, salt: bytes) -> int:
         if _opens(primary, replacement) != plaintext:
             raise MigrationVerificationError(
                 f"{table} row {ident!r} did not read back after recovery")
-        column = next(c for t, c, _ in _CIPHERTEXT_SITES if t == table)
         id_col = "key" if table == "settings" else "id"
         connection.exec_driver_sql(
             f"UPDATE {table} SET {column} = ? WHERE {id_col} = ?", (replacement, ident))
@@ -446,7 +446,7 @@ def diagnose(connection) -> dict:
         return result
 
     undecryptable = sum(
-        1 for _table, ident, value in _stored_ciphertext(connection)
+        1 for _table, _column, ident, value in _stored_ciphertext(connection)
         if ident != SALT_SETTING_KEY and not _group_a_can_open(value))
     result["undecryptable"] = undecryptable
     if undecryptable == 0:

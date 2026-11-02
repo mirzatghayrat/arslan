@@ -18,6 +18,7 @@ Honesty rules (shared with /conversations/{id}/usage via item_usd):
 """
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
@@ -147,10 +148,11 @@ _KIND_SCOPES = {"live": "spawn", "host": "answer", "scheduled": "scheduled", "re
 
 async def fetch_usage_items(
     *, conversation_id: str | None = None, since: datetime | None = None,
-    include_replay: bool = False,
+    include_replay: bool = False, run_ids: Collection[int] | None = None,
 ) -> list[tuple]:
     """Runs (kind mapped per _KIND_SCOPES) + ledger rows, normalized to
-    (scope, provider, model, tokens_in, tokens_out, estimated, tokens_total, ts)."""
+    (scope, provider, model, tokens_in, tokens_out, estimated, tokens_total, ts).
+    `run_ids`: only those runs and the ledger rows tied to them (IPB: one task's cost)."""
     # kind='replay' → scope "replay" only on the fleet-wide card (evolution arms are
     # the single largest burner — omitting them would break the card's own "never
     # pretends full coverage" contract). Replay rows carry synthetic conversation
@@ -165,6 +167,9 @@ async def fetch_usage_items(
     if conversation_id is not None:
         run_q = run_q.where(Run.conversation_id == conversation_id)
         led_q = led_q.where(UsageLedger.conversation_id == conversation_id)
+    if run_ids is not None:
+        run_q = run_q.where(Run.id.in_(list(run_ids)))
+        led_q = led_q.where(UsageLedger.run_id.in_(list(run_ids)))
     if since is not None:
         run_q = run_q.where(Run.created_at >= since)
         led_q = led_q.where(UsageLedger.ts >= since)

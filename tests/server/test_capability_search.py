@@ -29,9 +29,9 @@ PYPI = lambda v: [{"registryType": "pypi", "identifier": "excel-mcp-server", "ve
                    "environmentVariables": [{"name": "EXCEL_FILES_PATH", "isRequired": False}]}]
 
 REGISTRY = {"servers": [
-    reg("io.github.haris-musa/excel-mcp-server", "1.1.0", packages=PYPI("1.1.0"), repo="haris-musa/excel-mcp-server"),
-    reg("io.github.haris-musa/excel-mcp-server", "1.1.2", packages=PYPI("1.1.2"), repo="haris-musa/excel-mcp-server"),
-    reg("io.github.haris-musa/excel-mcp-server", "1.1.10", packages=PYPI("1.1.10"), repo="haris-musa/excel-mcp-server"),
+    reg("com.example/excel-mcp-server", "1.1.0", packages=PYPI("1.1.0"), repo="haris-musa/excel-mcp-server"),
+    reg("com.example/excel-mcp-server", "1.1.2", packages=PYPI("1.1.2"), repo="haris-musa/excel-mcp-server"),
+    reg("com.example/excel-mcp-server", "1.1.10", packages=PYPI("1.1.10"), repo="haris-musa/excel-mcp-server"),
     reg("com.example/excel-cloud", "0.2", remotes=[{"type": "streamable-http", "url": "https://mcp.example.com/excel",
         "headers": [{"name": "Authorization", "isSecret": True, "isRequired": True, "description": "Bearer token"}]}]),
     reg("io.github.someone/excel-dotnet", "2.0", packages=[{"registryType": "nuget", "identifier": "X", "version": "2.0"}],
@@ -204,7 +204,7 @@ async def test_a_library_is_indexed_per_skill_with_each_skills_own_license_at_on
     assert found["csv-tidy"].license == {"spdx": "MIT", "read_from": "skills/csv-tidy/LICENSE.txt", "verdict": "usable"}
     assert found["xlsx"].license["verdict"] == "reference_only"           # a license file that is not permissive
     assert found["poetry"].license["verdict"] == "unknown"                 # no license file at all
-    assert found["xlsx"].version == LIB_SHA[:12] and f"/tree/{LIB_SHA}/skills/xlsx" in found["xlsx"].source_url
+    assert found["xlsx"].version == LIB_SHA and f"/tree/{LIB_SHA}/skills/xlsx" in found["xlsx"].source_url
     # One archive, no API call (60 an hour without a token).
     assert [u for u in net.calls if "anthropics" in u] == ["https://codeload.github.com/anthropics/skills/tar.gz/HEAD"]
 
@@ -299,10 +299,13 @@ def test_with_the_same_fit_a_usable_license_comes_before_more_stars():
 
 async def test_a_github_mcp_repository_is_looked_up_in_the_registry_by_name(net):
     """The registry's search is slow (≈19 s or a timeout); a lookup by name is ≈0.9 s.
-    A GitHub MCP repository published under io.github.<owner>/<repo> becomes installable."""
+    A GitHub MCP repository published under io.github.<owner>/<repo> becomes a Registry candidate. CAP4a-3c: an
+    account the user's list does not name gets no one-click card, and the Registry copy still outranks the
+    repository's GitHub copy (it can run here; only the card is by hand)."""
     result = await cs.search("excel", words=["excel"], kinds={"mcp"})
     gpl = [c for c in result["candidates"] if c["repo"] == "acme/excel-mcp-gpl"]
     assert len(gpl) == 1 and gpl[0]["source"] == "registry" and gpl[0]["runtime"] == "node"
+    assert (gpl[0]["not_here"], gpl[0]["by_hand"]) == ("add_by_hand", "publisher_not_listed")
     assert gpl[0]["license"]["verdict"] == "reference_only"        # taken from the GitHub result
     assert any("/v0/servers/io.github.acme%2Fexcel-mcp-gpl/versions/latest" in u for u in net.calls)
     # The ones already found by the registry's search are not looked up again.

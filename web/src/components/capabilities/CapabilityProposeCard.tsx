@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Escaped, isolate } from "../../lib/outsideText";
 import type { CapabilityCard } from "../../api/client.types";
 import { AskCard, type AskQueuePosition } from "../kit";
 
@@ -37,9 +38,9 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
     : t(card.network ? "discover.card_runSandboxNet" : "discover.card_runSandbox");
   const detail = (
     <div className="flex flex-col" data-testid="capability-card-rows">
-      <Row label={t("discover.card_does")}>{card.summary || card.name}</Row>
+      <Row label={t("discover.card_does")}><Escaped text={card.summary || card.name} /></Row>
       <Row label={t("discover.card_source")}>
-        {card.source_url ? <a href={card.source_url} target="_blank" rel="noopener noreferrer" className="underline">{card.repo ?? card.source_url}</a> : card.name}
+        {card.source_url ? <a href={card.source_url} target="_blank" rel="noopener noreferrer" className="underline"><Escaped text={card.repo ?? card.source_url} /></a> : <Escaped text={card.name} />}
         {card.stars != null && <span className="text-muted-foreground"> · ★ {card.stars}</span>}
         {card.pushed_days != null && <span className="text-muted-foreground"> · {t("discover.pushed", { count: card.pushed_days })}</span>}
         {card.version && <span className="text-muted-foreground"> · {card.version}</span>}
@@ -58,7 +59,14 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
               onClick={() => setFolders(folders.filter(x => x !== f))}><X size={11} /></button></span>)}
         </span>}
       </Row>
-      <Row label={t("discover.card_checks")}>{t("discover.card_checksText")}</Row>
+      {/* UNI1b (#586 review F2): under D2 this card is the guard, so it says what the skill's text hides. */}
+      {card.kind === "skill" && (card.hidden?.count ?? 0) > 0 && <Row label={t("discover.card_hidden")} testId="capability-card-hidden">
+        <span className="text-ask">{t("discover.card_hiddenText", { count: card.hidden!.count,
+          runs: [card.hidden!.runs.join(", "), card.hidden!.more ? t("capabilities.import.hiddenMore", { count: card.hidden!.more }) : ""]
+            .filter(Boolean).join(" ") })}</span>
+      </Row>}
+      {/* A skill gets the scan, never a test run: under the user's D2 this card is the check (#519 recheck). */}
+      <Row label={t("discover.card_checks")}>{t(card.kind === "skill" ? "discover.card_checksSkill" : "discover.card_checksText")}</Row>
       {card.keys.length > 0 && <Row label={t("discover.card_needs")}>
         <span className="flex flex-col gap-1.5">
           {card.keys.map(k => <label key={k.name} className="flex flex-col gap-0.5">
@@ -75,7 +83,7 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
   );
   return (
     <AskCard testId="capability-card" who={t("discover.card_who")}
-      title={t(card.kind === "skill" ? "discover.card_titleSkill" : "discover.card_title", { name: card.name })}
+      title={t(card.kind === "skill" ? "discover.card_titleSkill" : "discover.card_title", { name: isolate(card.name) })}
       said={card.why || null} detail={detail}
       context={card.retry ? [{ text: t("discover.card_retry", { step: card.retry }) }] : undefined}
       extra={<span className="text-[11px] text-subtle-foreground">{t("discover.card_footer")}</span>}

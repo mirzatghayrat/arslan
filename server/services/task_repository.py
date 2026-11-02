@@ -311,7 +311,9 @@ class TaskRepository:
             attempt.status, attempt.ended_at = phase, datetime.utcnow()
         return await self.present(row)
 
-    async def cancel(self, task_id: str, *, expected_version: int | None = None, owner_id="local") -> dict:
+    async def cancel(self, task_id: str, *, expected_version: int | None = None, owner_id="local",
+                     reason: str = "user_cancelled") -> dict:
+        """`reason` is why it stopped, written now: the user's own cancel, or a restart that cut it short (INB7)."""
         row = await self.get(task_id, owner_id=owner_id)
         if row.phase == "cancelled":
             return await self.present(row)  # Repeated cancel must remain harmless.
@@ -320,7 +322,7 @@ class TaskRepository:
         if row.phase == "succeeded":
             raise TaskError("task_already_finished")
         await self._advance(row, "cancel_requested", changes={
-            "phase": "cancelled", "cancel_requested": True, "pause_reason": "user_cancelled"})
+            "phase": "cancelled", "cancel_requested": True, "pause_reason": reason})
         attempt = await self.db.get(TaskAttempt, row.attempt_id)
         if attempt:
             attempt.status, attempt.ended_at = "cancelled", datetime.utcnow()

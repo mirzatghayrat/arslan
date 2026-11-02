@@ -36,9 +36,11 @@ Why: a safety classifier stopped ③Hands' response as it started SBX-2, right a
   - p's PRs give their macOS-job counts too. The Linux job has no seatbelt, and a skip there reads as green.
   - **Correction (⓪Plan's plumbing review of #507, 2026-10-30; ③Hands checked pytest 9.1.1):** JUnit records an xfail that fails as expected as `<skipped type="pytest.xfail">`. ci.yml's macOS step fails on any skip, and its ran-count uses `total - skipped` (`ci.yml:352-355`). So a p PR with strict-xfail tests can't go green as written above. Nothing uses the gate before the first p PR, and the gate needs a ci.yml change, which Codex doesn't make. So SBX-2 doesn't build it yet. The first p PR comes with a Claude ci.yml change that:
     - counts `type="pytest.xfail"` entries apart from skips, and as ran;
-    - doesn't count a strict xfail that passes (a plain `<skipped>` with no type; pytest already exits 1 for it);
+    - doesn't count a strict xfail that passes. pytest 9.1.1 writes it as a `<failure>` ("[XPASS(strict)]") and exits 1, so the step fails on it (⓪Plan's probe, 2026-10-30; the earlier "a plain `<skipped>`" here was wrong);
     - runs the macOS pytest with `-o xfail_strict=true`, because JUnit doesn't record strictness. No test uses xfail on main today.
+    - **Done** in the ci.yml PR that follows SBX-2, tested by `tests/server/test_ci_macos_xfail_gate.py`, which runs the step's own script from ci.yml.
 
+    - every p test's xfail pins `raises=` (normally `AssertionError`), and none uses `strict=False` or `pytest.xfail()`. An xfail counts as ran whatever made it fail, so without `raises=` a fixture error or a NameError would also read as "failed as expected" (③Hands' review of #542). `test_ci_macos_xfail_gate.py` guards this over `tests/`.
     Na's gate stays as above: 0 skipped and 0 xfail.
 - **In parallel:** while Codex writes SBX-2, Claude may draft 3a, 4a, 5a and 7 on SBX-1's builder. They are rebased after SBX-2 merges, and **none of them merges before SBX-M**.
 - **A Claude review stopped part-way** goes to Astra as it is, not reworded.
@@ -249,7 +251,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
   - the proxy has no site list (NET adds it later, `lead-roadmap.md:87-91`). Its value in v0.1.64 is that the kernel lets out nothing else (no raw sockets, no DNS channel) and the proxy can log host names locally;
   - S2a-1's offline rule becomes `(deny network*)` including the proxy port, as today.
 - Mode "as today" (Q1 option N-b): network open in the sandbox, S2a-1 cut unchanged; proxy-only moves to NET (v0.1.65).
-- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (the user's finding, not yet measured in this repo; SBX-M measures it), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
+- **Decision (user, 2026-10-30): listening is denied for now.** Seatbelt's localhost listen rule also lets the process listen on every interface (measured in macOS CI run 41002402918), so the two requirements below conflict: local dev servers should work, but never on all interfaces. The user chose this:
   - SBX-2's candidate preset denies all listening (`network-bind` and inbound);
   - "local dev servers work" is postponed;
   - **before SBX-3 wires the base into commands, this card must decide how listening comes back** without opening all interfaces. Options to weigh then (③Hands, 2026-10-30; none of them is seatbelt-only):
@@ -272,6 +274,30 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
       - When it is on, bind is `(local ip "*:*")`, inbound is `(local ip "localhost:*")` and outbound is `(remote ip "localhost:*")`.
     - **Neither restricts the bind to loopback.** Codex's inbound `(local ip "localhost:*")` comes closest to "never all interfaces". Whether it refuses a connection that doesn't come over loopback is an SBX-M measurement (§M, loopback). Given the any-address note above, it may not.
   - until that is decided, the bind and inbound bullets below describe the goal, not the preset, and a dev server inside the sandbox gets the usual re-run card.
+- **Decided (user, 2026-11-01, relayed by ④参谋: 「D1、D2 按推荐」).** Both are the recommended options in #520's "Decisions for the user, before the flip":
+  - **D1, listening:** SBX-3a wires the base into commands with listening still denied. This keeps the 10-30 decision and adds no code. Codex's `allow_local_binding` and sandbox-runtime's `allowLocalBinding` are also off by default. How listening comes back moves to NET (v0.1.65), choosing between option 4 above (a per-run listen card, which is cheap but opens every interface for that run) and option 2 (a Network Extension filter, a per-process boundary in the kernel but heavy). The precondition above ("before SBX-3 wires the base into commands") is met by this decision.
+  - **D2, online-mode commands between SBX-3 and SBX-6:** offline until Codex's DNS entry (SBX-3a gate 2) exists, then any-declared until SBX-6. Outbound TCP behaves as in v0.1.63, and UDP is denied. The gap it keeps, a command reaching Arslan's own ports over loopback, is v0.1.63's (any-declared can't take `denied_ports`, #570), and SBX-6's proxy-port-only mode closes it. #619's commands mode list also needs any-declared.
+- **Decided (user, 2026-11-01, about 14:50 UTC, relayed by ④参谋: 「A 放行，B 测」), after #645's reviews.**
+  - **A:** until SBX-6's proxy, any-declared mode keeps the mDNSResponder socket (gate 2's DNS entry). The trade-off is accepted: the socket is the daemon's whole client interface (registration, NAT port mapping, browse), and seatbelt can't filter individual requests. Recorded in SBX-measurement.md with `DELETE-BY: SBX-6`.
+  - **Port-22 mode doesn't get the socket.** Product ssh takes only IPv4 literals (`server/services/ssh_exec.py:68-80`), as this card's "ssh: unchanged" says.
+  - **B:** the three daemon calls are measured once on the user's Mac, with the user present. Codex writes the opt-in runner, which isn't collected by CI, and only return and callback codes are recorded.
+  - **Measured, then re-confirmed (user, about 15:35 UTC, relayed by ④参谋: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」).** Under any-declared, Register, Browse and NATPortMappingCreate all succeed, as they do unsandboxed. So a sandboxed command can ask the router to forward an internet port to this Mac, which exposes all-interface listeners.
+    - The user accepts this **only for the development window on main.**
+    - **SBX-6, the proxy that closes it, is a hard release condition for v0.1.64** (README §7).
+    - If SBX-6 isn't on main at release, the fallback ships instead: no name lookup in any-declared mode. That's a one-line Codex change before the tag.
+- **Decided (user, 2026-11-02, relayed by ④参谋: 「代理端口选 a」): the loopback proxy.** Loopback stays open for dev servers; in proxy and port-22 modes the profile denies the system proxy's own loopback port(s), read via `proxy_resolve` (HTTP, HTTPS, SOCKS). Built in 6a, which also refuses a sandbox proxy port equal to a system proxy's port. Any-declared is retired for commands.
+- **Decided (user, 2026-11-02, relayed by ④参谋): trustd in proxy mode,** verbatim 「trustd 照 Anthropic：默认不给，加开关」 then 「定了」.
+  - `com.apple.trustd.agent` is denied in every mode by default.
+  - A user setting, off by default (`sandbox_system_certificates`), grants it in PROXY only. That mirrors sandbox-runtime's `enableWeakerNetworkIsolation`; Codex grants trustd and ocspd by default, and the user chose Anthropic's default.
+  - The re-run card for a certificate failure mentions the setting.
+  - A per-project grant is a v0.1.65 candidate.
+- **Decided (user, 2026-11-02): the LAN through the proxy,** verbatim 「选 c」.
+  - Private and shared ranges are denied by default (literals and names that resolve there).
+  - A "Trusted local devices" setting lists specific hosts or IPs. Names are pinned to their recorded address and re-checked per connect. This Mac's own addresses can't be listed.
+  - Trusting a device trusts all its ports.
+  - Both settings are backend in 6a (#668); the Settings UI and cards go in one mock first.
+- **Decided (user, 2026-11-02): other apps' private data,** verbatim 「我选 推荐：默认挡住，用到时弹卡问你」. It's denied by default via the protected list, with an allow-once card. Built as SBX-5b.
+- **SBX-6's release gate covers MCP** (⓪Plan with ③Hands, 2026-11-02, from #666's review): MCP with network moves from any-declared to proxy mode (6p's `mcp-proxy` base) in the "SBX-6 MCP proxy" PR, before v0.1.64 ships.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
   - allow outbound to `localhost:*`;

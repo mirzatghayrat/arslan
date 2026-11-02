@@ -471,8 +471,11 @@ class ListMyCapabilitiesExecutor:
                 if reason:
                     entry["reason"] = reason
                 # the reason is said once (`reason`), never again inside the fix (review M-3)
+                # CAP5a (re-check G3): a server held for the user's review is told so, without saying its reason again.
+                from server.mcp.discovery import HELD_REASONS
                 entry["fix"] = fix_for(state, has_headers=rechecks_key(s.get("last_error"), s.get("env")),
-                                       next_retry_at=s.get("next_retry_at"))
+                                       next_retry_at=s.get("next_retry_at"),
+                                       held=state == "parked" and (stored or "").startswith(HELD_REASONS))
                 if s.get("next_retry_at"):
                     entry["next_retry_at"] = s["next_retry_at"]
             mcp.append(entry)
@@ -512,8 +515,11 @@ class FindCapabilityExecutor:
         capability_search.remember(ctx.conversation_id if ctx else None, result)
         out = capability_search.for_model(result)
         return {"ok": True, "external": True, **out,
-                "note": "Candidates only; nothing is installed. Prefer license_verdict 'usable' and not_here null. "
-                        "Never install by other means (no pip/npm/git clone in the terminal for this)."}
+                "note": "Candidates only; nothing is installed. Prefer not_here null; a skill needs license_verdict "
+                        "'usable', and an MCP server's license is read at its version when proposed. "
+                        "not_here 'add_by_hand': the user's one-click list does not cover it; only the user can add "
+                        "it, by hand in Capabilities. Never install by other means (no pip/npm/git clone in the "
+                        "terminal for this)."}
 
 
 class WhatsNewExecutor:
@@ -531,6 +537,19 @@ class WhatsNewExecutor:
             count = 3
         return {"ok": True, "version": release_notes.settings.app_version,
                 "releases": release_notes.recent(count)}
+
+
+class MyStatusExecutor:
+    """SMART-2 (v0.1.64): Arslan's own state, read live (server/services/self_status.py): version and what's new,
+    the models, the sandbox and approvals, phones and SSH hosts, the last failures, and where its own code and
+    plans are (GitHub main)."""
+
+    key = "my_status"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import personal_context, self_status
+        ctx = personal_context.current()
+        return {"ok": True, **await self_status.snapshot(ctx.conversation_id if ctx else None)}
 
 
 _CHART_MAX_POINTS = 50
@@ -845,11 +864,11 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
-        # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
-        # untrusted, and the turn counts as having read outside content. So is one Arslan wrote in a
-        # conversation that had read outside content (v0.1.64 #472 F1). Arslan's own others are not.
-        from server.services.skill_forge import AUTHORED_OUTSIDE
-        outside = row.category in ("imported", AUTHORED_OUTSIDE)
+        # The user's D2(1), 2026-10-30 (v0.1.64 SKF1): every skill is trusted and read unframed, as Claude
+        # Code and Codex do; 0.1.57 decision 5's frame no longer applies to skills. skill_trust is the one
+        # place that decides, and states the limit (the same trust model as approved MCP servers' text).
+        from server.registry import skill_trust
+        outside = not skill_trust.reads_as_own(row)
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
@@ -927,7 +946,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
-    RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
+    RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
     FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),

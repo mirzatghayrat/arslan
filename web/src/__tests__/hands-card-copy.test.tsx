@@ -242,17 +242,20 @@ describe("fix round 1: a stray frame of the kind that is gone (a pre-0.1.61 desk
     }
   });
 
-  it("in the Inbox it is a card headed by the app, with Allow and No", async () => {
-    const client = await import("../api/client");
-    vi.spyOn(client, "request").mockImplementation(async (path: string) =>
-      (path === "/approvals/pending" ? [{ call_id: "s1", conversation_id: "conv-1", opened_at: 1000, expires_at: 1300, frame: { ...stray, call_id: "s1" } }] : { ok: true }) as never);
-    const { default: InboxApprovals } = await import("../components/proactive/InboxApprovals");
-    render(<InboxApprovals onOpenConversation={() => {}} />);
-    const card = await screen.findByTestId("action-card");
-    expect(screen.getByTestId("action-title")).toHaveTextContent("Notes");
-    expect(card.textContent?.trim()).not.toBe("");
-    expect(screen.getByTestId("action-allow")).toBeInTheDocument();
-    expect(screen.getByTestId("action-deny")).toBeInTheDocument();
-    vi.restoreAllMocks();
+  it("in the conversation it is a card headed by the app, with Allow and No (the Inbox's copy went with the Inbox, INB5b-2)", async () => {
+    const { default: AskSlot } = await import("../components/AskSlot");
+    const { useArslanStore, initialArslanState } = await import("../stores/arslanStore");
+    useArslanStore.setState(initialArslanState(), true);
+    try {
+      act(() => { useArslanStore.getState().handleFrame({ ...stray, call_id: "s1" } as never); });
+      render(<AskSlot send={() => {}} />);
+      const card = screen.getByTestId("action-card");
+      expect(screen.getByTestId("action-title")).toHaveTextContent("Notes");
+      expect(card.textContent?.trim()).not.toBe("");
+      expect(screen.getByTestId("action-allow")).toBeInTheDocument();
+      expect(screen.getByTestId("action-deny")).toBeInTheDocument();
+    } finally {
+      cleanup(); useArslanStore.setState(initialArslanState(), true);
+    }
   });
 });

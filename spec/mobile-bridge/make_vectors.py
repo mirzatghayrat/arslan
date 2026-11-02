@@ -215,6 +215,20 @@ def qr() -> dict:
 QUICK = "phone-0b0c1d2e-3f40-4152-8a6b-7c8d9e0fa1b2"     # §5.8: `phone-` and a lowercase UUID v4
 
 
+#: §5.9 (IPB): the most finished tasks one `outcomes` set lists; server/services/phone_stats.py's TASK_CAP,
+#: which a test pins to this vector.
+TASK_CAP = 50
+WEEK = [{"day": f"2026-{day}", "counts": counts} for day, counts in zip(
+    ("09-27", "09-28", "09-29", "09-30", "10-01", "10-02", "10-03"),
+    ([3, 0, 1], [0, 0, 0], [5, 1, 2], [2, 2, 0], [0, 0, 0], [1, 0, 0], [4, 1, 1]))]
+DONE_TASK = {"conversation_id": "task-ab12", "title": "Q3 report", "state": "done", "checks_passed": 2, "checks_total": 2,
+             "spent_usd": 0.42, "needed_you": True}
+UNFINISHED_TASK = {"conversation_id": "task-cd34", "title": "Turn the invoices in Downloads into one table by month",
+                   "state": "unfinished", "checks_passed": 0, "checks_total": 1, "needed_you": False}
+CAPPED = [{"conversation_id": f"task-{k:04d}", "title": f"Task {k}", "state": "done", "checks_passed": 1, "checks_total": 1,
+           "spent_usd": 0.01, "needed_you": False} for k in range(TASK_CAP)]
+
+
 def messages() -> dict:
     """One plaintext envelope per type, with the kind and notify bit it travels under."""
     s, m = PHONE, MAC
@@ -232,6 +246,46 @@ def messages() -> dict:
                                            "waiting_approvals": 0, "high_risk_mac_only": False,
                                            "activity": {"hours": [[0, 0, 0]] * 9 + [[2, 1, 0], [1, 0, 1]] + [[0, 0, 0]] * 13,
                                                         "done": 3, "files": 2, "waiting": 0}}),
+        # §5.9: the week and the task results; one task priced, one not (no spent_usd), and some use unpriced.
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
+                                           "outcomes": {"today": {"tasks": [DONE_TASK], "spent_usd": 0.61, "other_spent_usd": 0.19},
+                                                        "week": {"tasks": [DONE_TASK, UNFINISHED_TASK], "spent_usd": 3.05,
+                                                                 "other_spent_usd": 2.63, "spent_partial": True}}}),
+        # §5.11: the Mac's own state, with the week and the results: a full block; a desktop Mac (no battery,
+        # fewer than 12 five-minute averages, a fair wired link); one just started (`last_hour: []`, an unknown
+        # pressure word, no network yet); and a block missing `taken_at`, which a phone drops on its own.
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "working", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
+                                           "outcomes": {"today": {"tasks": [DONE_TASK], "spent_usd": 0.42, "other_spent_usd": 0.0},
+                                                        "week": {"tasks": [DONE_TASK], "spent_usd": 0.42, "other_spent_usd": 0.0}},
+                                           "mac": {"taken_at": TS, "battery": {"level": 76, "charging": False, "minutes_left": 214},
+                                                   "cpu": {"now": 37, "last_hour": [12, 18, 22, 30, 41, 35, 28, 25, 31, 44, 39, 37]},
+                                                   "memory": {"used_gb": 18.4, "total_gb": 32.0, "pressure": "normal"},
+                                                   "disk": {"free_gb": 412.3, "total_gb": 994.7},
+                                                   "network": {"kind": "wifi", "quality": "good"},
+                                                   "sleep": {"kept_awake": True}, "os_version": "macOS 26.1"}}),
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False,
+                                           "mac": {"taken_at": TS, "cpu": {"now": 3, "last_hour": [4, 6, 5]},
+                                                   "memory": {"used_gb": 41.2, "total_gb": 48.0, "pressure": "warn"},
+                                                   "disk": {"free_gb": 96.4, "total_gb": 994.7},
+                                                   "network": {"kind": "ethernet", "quality": "fair"},
+                                                   "sleep": {"kept_awake": False}, "os_version": "macOS 26.1.2"}}),
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False,
+                                           "mac": {"taken_at": TS, "battery": {"level": 100, "charging": True},
+                                                   "cpu": {"now": 64, "last_hour": []},
+                                                   "memory": {"used_gb": 7.9, "total_gb": 8.0, "pressure": "elevated"},
+                                                   "network": {"kind": "other", "quality": "poor"}}}),
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
+                                           "mac": {"memory": {"used_gb": 7.9, "total_gb": 8.0, "pressure": "normal"}}}),
+        # §5.9: a set at the cap (TASK_CAP), newest first.
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
+                                           "outcomes": {"today": {"tasks": [], "spent_usd": 0.0, "other_spent_usd": 0.0},
+                                                        "week": {"tasks": CAPPED, "spent_usd": 0.5, "other_spent_usd": 0.0}}}),
         envelope(s, m, "conversations.list", {"limit": 20}),
         envelope(m, s, "conversations.result", {"conversations": [
             {"id": "c1", "title": "Trip", "updated_at": TS},
@@ -241,6 +295,16 @@ def messages() -> dict:
         envelope(s, m, "chat.history", {"conversation_id": "c1", "limit": 50}),
         envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
             {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}]}),
+        # §5.10: a conversation's details, full (no context in v1), and with no connectors (`[]`, required).
+        envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
+            {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}],
+            "details": {"folder": "~/Arslan/Projects/Trip", "model": "claude-sonnet-5-5", "mode": "standard",
+                        "connectors": [{"name": "Hands", "kind": "hands", "on": True},
+                                       {"name": "Calendar", "kind": "mcp", "on": True},
+                                       {"name": "PDF tools", "kind": "skill", "on": False}],
+                        "changes": {"files": 3, "added": 168, "removed": 2, "last_run_id": 87}, "spent_usd": 0.84}}),
+        envelope(m, s, "chat.history.result", {"conversation_id": "c2", "messages": [],
+                                               "details": {"model": "claude-sonnet-5-5", "connectors": []}}),
         envelope(s, m, "chat.send", {"conversation_id": "c1", "text": "Find flights", "attachments": [],
                                      "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
         # §5.8 (2026-10-29): a quick question, a new ordinary conversation, the quick list's next page, a quick
@@ -319,8 +383,15 @@ def messages() -> dict:
     ]
     for e in examples:
         r.check_body(e)
-    return {"contract": CONTRACT, "examples": [{"envelope": e, "kind": r.kind_of(e["type"]),
-                                                "notify": r.should_notify(e)} for e in examples]}
+    # Test-only, never on the wire (#652, ①iOS): the body keys a part-B phone drops by design, here the `mac`
+    # block without `taken_at`. The phone's round-trip test strips the listed keys, checks they decoded to nil,
+    # and still fails on any drop that isn't listed.
+    def phone_drops(e):
+        body = e["body"]
+        return ["mac"] if e["type"] == "status.snapshot" and "taken_at" not in body.get("mac", {"taken_at": None}) else []
+    return {"contract": CONTRACT, "examples": [{"envelope": e, "kind": r.kind_of(e["type"]), "notify": r.should_notify(e),
+                                                **({"phone_drops": drops} if (drops := phone_drops(e)) else {})}
+                                               for e in examples]}
 
 
 def build() -> dict[str, dict]:

@@ -10,5 +10,5 @@ def upgrade_sync(connection) -> None:
 def downgrade_sync(connection) -> None:
     try:
         connection.exec_driver_sql("ALTER TABLE runs DROP COLUMN injected_kb_sources")
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — downgrade is best-effort on old SQLite
         pass

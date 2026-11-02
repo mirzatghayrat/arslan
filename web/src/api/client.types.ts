@@ -132,15 +132,32 @@ export interface TurnUndone {
   files?: { later: number[] };
 }
 
+/** INB7-c3: GET /runs/{id}/changes. `state`: running (not ended), finishing (ended, not recorded yet), kept (`paths` an undo can
+ *  still take back), none (nothing to list), expired (its copy is gone), not_saved (no folder could be saved) or interrupted (ended
+ *  while no process held it, so it will never be recorded). */
+export interface RunChangesOut {
+  state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
+  undone: boolean;
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  conversation_id: string;
+}
+
 export interface RunProcessOut extends Partial<ProcessSummary> {
   run_id: number;
   status: string;
+  /** INB7-b: when the run started and ended (UTC, "Z"); ended_at is null while it runs. Older backends omit both. */
+  started_at?: string | null;
+  ended_at?: string | null;
+  /** INB7-c3: the run's conversation, whose changes the inspector reads. Older backends omit it. */
+  conversation_id?: string;
   entries: {
     kind: "note" | "tool";
     text?: string;
     tool?: string;
     ok?: boolean;
     ms?: number | null;
+    /** INB7-b: when the step started (UTC, "Z"); null for a step recorded before steps kept their time. */
+    at?: string | null;
     args_summary?: string;
     summary?: string;
     detail?: { view: string; error?: string | null; [key: string]: unknown };
@@ -381,6 +398,7 @@ export interface AppSettings {
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
+  folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
@@ -591,13 +609,16 @@ export interface CapabilityCard {
   runtime_download: { name: string; size_mb: number } | null; remote_host: string | null; network: boolean;
   folders: string[]; keys: { name: string; secret: boolean; required: boolean; description: string }[];
   why: string; retry: string;
+  /** UNI1b (#586 review F2): a skill's characters that show nothing, in its text and references. */
+  hidden?: { count: number; runs: string[]; more: number };
 }
 /** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
  *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */
 export interface AuthoredSkillCard {
   kind: "authored"; key: string; name: string; description: string; body: string; why: string;
-  /** This conversation read a page, a file or another tool's result: the text may carry what that said, and
-   *  the saved skill stays outside content (#472 F1, F2). */
+  /** This conversation read a page, a file or another tool's result: the text may carry what that said. The
+   *  saved skill is marked so (#472 F1, F2); since the user's D2 it is read unframed like every skill, so the
+   *  card is the check. */
   outside: boolean;
 }
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
@@ -882,6 +903,12 @@ export interface RunListItem {
   origin?: "chat" | "job" | "scheduled" | "phone" | "browser";
   model?: string | null;
   tokens?: number | null;
+  /** INB7-b: still running with a card open in its conversation, so it waits on you. Older backends omit it. */
+  waiting?: boolean;
+  /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
+  ended_at?: string | null;
+  /** INB7-c4c: it used Mac apps (Hands), by the 「应用」 chip's rule. Older backends omit it. */
+  used_apps?: boolean;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */
@@ -1015,6 +1042,8 @@ export interface McpServer {
 export interface McpTool {
   key: string;
   name: string;
+  /** The name through the server's name rule (UNI1a): what the page shows. */
+  shown?: string;
   description: string;
   tier: string; // safe|orchestrator
   status: string; // registered|wired

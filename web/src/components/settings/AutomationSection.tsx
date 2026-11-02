@@ -15,8 +15,8 @@ import ProactiveDiagnosisCap from './ProactiveDiagnosisCap';
  * across sections, someone turns on the second one having never read the
  * first one's warning.
  *
- * Scheduled tasks and usage are on the Activity page; the link at the bottom
- * says so beside the related settings. (0.1.48: auto-evolution went with the
+ * Usage and every run are on the Activity page, and scheduled tasks on their
+ * own page (INB3); the line at the bottom says so beside the related settings. (0.1.48: auto-evolution went with the
  * experts it evolved.)
  */
 export default function AutomationSection({

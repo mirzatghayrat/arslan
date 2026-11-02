@@ -67,13 +67,16 @@ class Candidate:
     package: dict | None = None
     remote: dict | None = None
     not_here: str | None = None   # why it cannot run here: needs_dotnet | needs_docker |
-                                  # no_runnable_package | nothing_published | not_in_registry
+                                  # no_runnable_package | nothing_published | not_in_registry |
+                                  # add_by_hand (CAP4a-3c: the user's list does not cover it)
     needs: dict = field(default_factory=lambda: {"keys": [], "network": None})
     license: dict = field(default_factory=lambda: {"spdx": None, "read_from": None, "verdict": "unknown"})
     stars: int | None = None
     pushed_days: int | None = None
     checked_at: float | None = None
     path: str | None = None       # a skill's SKILL.md inside its library
+    by_hand: str | None = None    # CAP4a-3c: why it is not one-click (not_here "add_by_hand"), as
+                                  # capability_allowlist names it
 
     def view(self) -> dict:
         return asdict(self)
@@ -136,6 +139,38 @@ def _repo_of(url: str | None) -> str | None:
     return f"{parsed[0]}/{parsed[1]}" if parsed and "github.com" in url else None
 
 
+def publisher_of(c: dict) -> dict | None:
+    """Who published a candidate, as a fact (CAP4a-1): a Registry name's reverse-DNS namespace, which the Registry
+    verified, is a domain the publisher owns (`com.example/notes` -> example.com), and `io.github.<account>/…` a
+    GitHub account; a candidate from GitHub is its repository's account. Neither proves "official". An account
+    is one GitHub would accept (letters, digits and single hyphens, at most 39), else there is no fact to say."""
+    if c.get("source") == "registry":
+        namespace = str(c.get("id") or "").removeprefix("registry:").rpartition("@")[0].partition("/")[0]
+        if namespace.startswith("io.github."):
+            return _github_account(namespace[len("io.github."):])
+        labels = namespace.split(".")
+        if len(labels) >= 2 and all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) for label in labels):
+            return {"kind": "domain", "value": ".".join(reversed(labels))}
+        return None
+    repo = str(c.get("repo") or "")
+    return _github_account(repo.split("/")[0]) if "/" in repo else None
+
+
+def _github_account(login: str) -> dict | None:
+    if re.fullmatch(r"[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}", login):
+        return {"kind": "github", "value": login}
+    return None
+
+
+def _deleted(entry: dict) -> bool:
+    """The Registry marks a withdrawn entry `deleted` (its official `_meta`, or `status` in older answers)."""
+    srv = entry.get("server", entry)
+    meta = entry.get("_meta")
+    official = meta.get("io.modelcontextprotocol.registry/official") if isinstance(meta, dict) else None
+    status = official.get("status") if isinstance(official, dict) else None
+    return (status or (srv.get("status") if isinstance(srv, dict) else None)) == "deleted"
+
+
 def from_registry(entry: dict) -> Candidate:
     srv = entry.get("server", entry)
     name = srv.get("name") or "?"
@@ -143,6 +178,9 @@ def from_registry(entry: dict) -> Candidate:
     cand = Candidate(id=f"registry:{name}@{srv.get('version')}", kind="mcp", name=name.rsplit("/", 1)[-1],
                      summary=(srv.get("description") or "")[:300], source="registry",
                      source_url=repo_url or None, repo=_repo_of(repo_url), version=srv.get("version"))
+    if _deleted(entry):                                        # CAP4a-1: never offered
+        cand.not_here = "deleted_in_registry"
+        return cand
     packages = srv.get("packages") or []
     remotes = srv.get("remotes") or []
     usable = next((p for p in packages if p.get("registryType") in RUNTIMES), None)
@@ -185,6 +223,8 @@ async def search_registry(client: httpx.AsyncClient, word: str) -> list[Candidat
     for entry in r.json().get("servers") or []:
         srv = entry.get("server", entry)
         name = srv.get("name")
+        if _deleted(entry):                                    # CAP4a-1: a withdrawn entry is not a result
+            continue
         if name and (name not in newest or _version_key(srv.get("version")) >
                      _version_key(newest[name].get("server", newest[name]).get("version"))):
             newest[name] = entry
@@ -313,7 +353,7 @@ def index_archive(library: str, data: bytes) -> list[Candidate]:
         out.append(Candidate(
             id=f"library:{library}:{path}", kind="skill", name=parsed["name"], summary=parsed["description"],
             source="library", source_url=f"https://github.com/{library}/tree/{sha or 'HEAD'}/{folder}", repo=library,
-            version=sha[:12] or None, runtime="skill", path=path,
+            version=sha or None, runtime="skill", path=path,     # all 40 digits: the card pins it (#539 review 6)
             license={"spdx": spdx, "read_from": lic_path, "verdict": license_verdict(spdx, proprietary=bool(proprietary))},
             checked_at=time.time()))
     return out
@@ -349,7 +389,9 @@ def rank(cands: list[Candidate], words: list[str]) -> list[Candidate]:
     def score(c: Candidate):
         usable = c.license["verdict"] == "usable"
         installable = usable and c.not_here is None and c.runtime in ("uv", "node", "mcpb", "remote", "skill")
-        value = (2 * _matches(c, words) / max(1, len(words)) + 2 * usable + 2 * (c.not_here is None)
+        # CAP4a-3c: an entry added by hand still runs here, so it outranks its repository's GitHub copy.
+        runs_here = c.not_here in (None, "add_by_hand")
+        value = (2 * _matches(c, words) / max(1, len(words)) + 2 * usable + 2 * runs_here
                  + 1.5 * installable                      # something Arslan can actually add, first
                  + math.log10((c.stars or 0) + 1) / 2 - (1 if (c.pushed_days or 0) > 365 else 0))
         return (-value, c.id)
@@ -410,7 +452,22 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
         await within(enrich_batch(unread), TIMEOUT_S + 2)
     except Exception as exc:  # noqa: BLE001 — unread licenses stay "unknown" (not installable)
         logger.info("capability search enrich: %s", type(exc).__name__)
+    await mark_by_hand(found)
     return {"words": words, "candidates": [c.view() for c in rank(found, words)[:MAX_RESULTS]], "notes": notes}
+
+
+async def mark_by_hand(cands: list[Candidate]) -> None:
+    """CAP4a-3c: a Registry entry the user's list does not cover is shown, not offered: `not_here` "add_by_hand",
+    and `by_hand` says why (capability_allowlist)."""
+    from server.services import capability_allowlist
+    allow = await capability_allowlist.current()
+    for c in cands:
+        if c.not_here == "add_by_hand":         # #584 review 5: a cached result is marked again by the list as it is now
+            c.not_here, c.by_hand = None, None
+        if c.not_here is None:
+            reason = capability_allowlist.verdict(c.view(), allow)
+            if reason:
+                c.not_here, c.by_hand = "add_by_hand", reason
 
 
 def merge(cands: list[Candidate]) -> list[Candidate]:
@@ -451,8 +508,8 @@ def for_model(result: dict) -> dict:
     """What `find_capability` returns: the top few, compact, as outside content."""
     out = []
     for c in result["candidates"][:MODEL_RESULTS]:
-        out.append({k: c[k] for k in ("id", "kind", "name", "summary", "source_url", "version", "runtime",
-                                      "not_here", "stars", "pushed_days")} |
+        out.append({k: c.get(k) for k in ("id", "kind", "name", "summary", "source_url", "version", "runtime",
+                                          "not_here", "by_hand", "stars", "pushed_days")} |
                    {"license": c["license"]["spdx"], "license_verdict": c["license"]["verdict"],
                     "needs_keys": [k["name"] for k in c["needs"]["keys"]]})
     return {"words": result["words"], "candidates": out, "notes": result["notes"]}

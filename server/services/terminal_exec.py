@@ -15,7 +15,6 @@ import collections
 import contextvars
 import os
 import signal
-import tempfile
 from pathlib import Path
 
 from server.mcp.spawn_env import child_environment, merged_path
@@ -158,19 +157,29 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     S2a-1 piece 4 (U11): outside the sandbox the command runs under the minimal profile
     (sandbox="outside"), except an approved plain osascript or `shortcuts run` (`unwrapped`, set by
     the tool loop for that one call), which runs with no wrapper (sandbox="off"), as does any
-    command where seatbelt cannot start."""
+    command where seatbelt cannot start.
+
+    SBX-3 §1a: TMPDIR is the run's own folder (`run_temp`), shared by the run's commands; a command
+    outside any run gets one of its own that goes with it."""
+    from server.services import execution_context, run_temp
+    with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
+        return await _run(command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
+                          readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key)
+
+
+async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
+               readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int) -> dict:
     # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
     # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
-    # failed (0.1.49 bench). Keep both inside the process temp dir.
-    tmp = tempfile.gettempdir()
+    # failed (0.1.49 bench). Keep both inside the run's own folder.
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
-                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp,
+                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
-    from server.services import command_sandbox
+    from server.services import command_sandbox, run_temp
     prefix: list[str] = []
     mode = "off"
     if sandbox:
-        prefix = command_sandbox.wrapper(cwd, offline=offline, closed=closed, readable=readable,
+        prefix = command_sandbox.wrapper(cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
                                          copies=copies) or []
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
@@ -184,6 +193,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
+    run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left
     # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the
     # end), so a time limit keeps what was already printed instead of losing it with the read.
     out_buf, err_buf = _Capped(), _Capped()

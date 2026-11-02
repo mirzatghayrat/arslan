@@ -58,7 +58,10 @@ _WEB_SITE_REFUSED_BY_CODE = {
 # S2a-1: inside the command sandbox no Apple Event reaches any app (-600 under its deny rule; -10004
 # under any seatbelt wrapper on macOS 26, measured 2026-10-20). Automation permission is not the
 # cause there, so the hint never sends the user to System Settings, and no outside card is offered.
-_SANDBOX_APPLE_EVENTS = re.compile(r"execution error: .*\((?:-600|-1743|-10004)\)")
+# SBX-3: on the default-deny base the app's lookup is refused first, so osascript reports the app itself as
+# not found (-1728, measured 2026-11-02 on macOS 26.6.2). Only that form: -1728 for an element is the script's.
+_SANDBOX_APPLE_EVENTS = re.compile(r"execution error: (?:.*\((?:-600|-1743|-10004)\)"
+                                   r"|Can[\u2019']t get application \"[^\"]*\"\. \(-1728\))")
 SANDBOX_APPLE_EVENTS_HINT = (
     "Apple Events can't be sent from inside the command sandbox, so this AppleScript reached no app. Run the "
     "AppleScript as its own run_command (`osascript -e '…'` or a here-doc, nothing else in the command): the "

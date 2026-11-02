@@ -6,11 +6,11 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import Lesson
+from server.db.models import Judgment, Lesson
 from server.services import lessons
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -73,6 +73,14 @@ async def lesson_pin(lesson_id: int, body: LessonPin):
     return await _change(lesson_id, pinned=body.pinned)
 
 
+@router.get("/conversations/{conversation_id}/folder-rules")
+async def conversation_folder_rules(conversation_id: str):
+    """K10-1 / L11-0: the rules files this conversation follows, for Overview (each with its text), and whether the
+    switch is on. Read only; the same exact-name, no-link reads as the turn's block."""
+    from server.services import folder_rules
+    return await folder_rules.listing(conversation_id)
+
+
 @router.delete("/lessons/{lesson_id}")
 async def delete_lesson(lesson_id: int):
     async with db_session.AsyncSessionLocal() as db:
@@ -80,5 +88,8 @@ async def delete_lesson(lesson_id: int):
         if row is None:
             raise HTTPException(404, "lesson_not_found")
         await db.delete(row)
+        # JUDGE1: the judgments ledger's rows keyed to it (merge, conflict, applied) go too. The candidate side of a
+        # question is never kept as text (judgment's `redact`), so no row elsewhere still holds this lesson's words.
+        await db.execute(delete(Judgment).where(Judgment.ref == f"lesson:{lesson_id}"))
         await db.commit()
     return {"id": lesson_id, "deleted": True}
