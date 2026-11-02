@@ -176,7 +176,7 @@ async def _mcp_rows() -> list[dict]:
         where = {"section": "connections", "source_id": installed.get(server["id"]),
                  "reach": _reach(server, runtimes.get(server["id"])),
                  "origin": "installed" if server["id"] in installed else "manual"}
-        missing = _runtime_missing(server)
+        missing = await asyncio.to_thread(_runtime_missing, server)    # it looks the command up on the user's PATH
         allowed = bool(server.get("host_allowed"))
         connected = server.get("status") == "connected"
         # starting by itself: the supervisor says so, or the row says it is connected and switched on

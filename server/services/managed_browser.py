@@ -128,7 +128,7 @@ async def setup() -> dict:
         if not Path(browser).is_file() or not Path(browser).is_relative_to(root):
             raise RuntimeError("Browser installation did not produce the pinned executable")
         (root / ".ready.json").write_text(json.dumps({"browser": browser, "lock_sha256": _digest()}))
-        return status()
+        return await asyncio.to_thread(status)
 
 
 async def preview(url: str) -> dict:

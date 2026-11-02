@@ -275,7 +275,9 @@ def test_overlapping_first_calls_read_the_shell_once(monkeypatch):
 
 # ── nothing on the event loop waits for the shell (#674 review) ─────────────
 
-async def _longest_stall(coro) -> float:
+async def _longest_stall(coro):
+    """(the loop's longest wait while `coro` ran, what it returned or raised). The outcome is returned, not
+    swallowed, so a coroutine that fails at once can't pass as one that never waited."""
     import asyncio
     gaps: list[float] = []
     done = False
@@ -290,18 +292,19 @@ async def _longest_stall(coro) -> float:
     ticker = asyncio.create_task(tick())
     await asyncio.sleep(0.03)
     try:
-        await coro
-    except Exception:  # noqa: BLE001 — only the loop's wait is measured here; a refusal after it is expected
-        pass
+        outcome = await coro
+    except Exception as exc:  # noqa: BLE001 — returned to the test, which checks it is the expected refusal
+        outcome = exc
     finally:
         done = True
         await ticker
-    return max(gaps)
+    return max(gaps), outcome
 
 
 @pytest.fixture
 def slow_path(monkeypatch):
-    """The browser status, the user's PATH and node's lookup take 0.6 s, as a slow ~/.zshrc does before the cache."""
+    """The browser status, the user's PATH and a command's lookup take 0.6 s, as a slow ~/.zshrc does before the
+    cache is filled."""
     from server.services import managed_browser
 
     def slow_status():
@@ -315,46 +318,113 @@ def slow_path(monkeypatch):
     monkeypatch.setattr(spawn_env, "resolve_command", slow_resolve)
 
 
-async def test_the_capability_rows_and_the_tool_list_never_wait_on_the_loop(tmp_path, monkeypatch, slow_path):
+async def test_the_capability_rows_and_the_tool_list_never_wait_on_the_loop(execution_db, monkeypatch, slow_path):
     from server.orchestrator import arslan
-    from server.services import capability_list
-    from tests.server.test_workspace_tool_gate import _wire
-    await _wire(tmp_path, monkeypatch, workspace=str(tmp_path))
-    assert await _longest_stall(capability_list._builtin_rows()) < 0.3
-    assert await _longest_stall(arslan._arslan_tools()) < 0.3
+    from server.services import capability_list, mcp_service
+
+    async def one_stdio_server(**kw):          # a bare command that isn't a pinned runtime: looked up on PATH
+        return [{"id": 7, "label": "Docker", "transport": "stdio", "command": "docker", "status": "registered",
+                 "state": "off", "enabled": False, "host_allowed": True}]
+    monkeypatch.setattr(mcp_service, "list_servers", one_stdio_server)
+    for coro in (capability_list._builtin_rows(), arslan._arslan_tools(), capability_list._mcp_rows()):
+        stall, outcome = await _longest_stall(coro)
+        assert isinstance(outcome, list) and outcome and stall < 0.3, (coro, stall, outcome)
 
 
 async def test_starting_a_browser_never_waits_on_the_loop(slow_path):
-    from server.services import agent_browser, browser_reader, managed_browser
     import asyncio
-    assert await _longest_stall(browser_reader.ReaderSession("c1", None).start()) < 0.3
-    assert await _longest_stall(agent_browser._Worker()._run(asyncio.get_running_loop().create_future())) < 0.3
-    assert await _longest_stall(managed_browser.setup()) < 0.3
-    assert await _longest_stall(managed_browser._preview("https://example.com")) < 0.3
+    from server.services import agent_browser, browser_reader, managed_browser
+    stall, outcome = await _longest_stall(browser_reader.ReaderSession("c1", None).start())
+    assert stall < 0.3 and isinstance(outcome, browser_reader.ReaderError), outcome
+    ready = asyncio.get_running_loop().create_future()
+    stall, outcome = await _longest_stall(agent_browser._Worker()._run(ready))
+    assert stall < 0.3 and isinstance(ready.exception(), agent_browser.BrowserUnavailable), outcome
+    for coro in (managed_browser.setup(), managed_browser._preview("https://example.com")):
+        stall, outcome = await _longest_stall(coro)
+        assert stall < 0.3 and isinstance(outcome, ValueError) and "node_required" in str(outcome), outcome
 
 
-def test_no_async_code_calls_the_path_helpers_directly():
-    """Source pin: in an `async def`, the helpers that may wait for the login shell run in a thread
-    (`await asyncio.to_thread(...)`), never called on the loop."""
+def _blocking_calls_in_async_code(root: Path) -> list[str]:
+    """Every call in an `async def` that reaches `spawn_env.login_shell_path` (which may wait for the shell)
+    through sync functions: directly, through a helper in any module, by a bare name in its own module, or by a
+    `from … import` alias. Passing a function to `asyncio.to_thread` isn't a call, so it doesn't count."""
     import ast
-    owners = {"managed_browser": {"status"}, "spawn_env": {"resolve_command", "merged_path", "login_shell_path"},
-              "agent_browser": {"available"}}
-    bare = {"merged_path", "login_shell_path", "resolve_command"}
-    root = Path(__file__).resolve().parents[2] / "server"
-    hits = []
+    modules: dict[str, ast.Module] = {}
     for path in root.rglob("*.py"):
-        for fn in ast.walk(ast.parse(path.read_text())):
-            if not isinstance(fn, ast.AsyncFunctionDef):
+        name = ".".join(path.relative_to(root.parent).with_suffix("").parts)
+        modules[name.removesuffix(".__init__")] = ast.parse(path.read_text())
+
+    def imports(tree):
+        mods, names = {}, {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    mods[a.asname or a.name.split(".")[0]] = a.name if a.asname else a.name.split(".")[0]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                for a in node.names:
+                    full = f"{node.module}.{a.name}"
+                    if full in modules:
+                        mods[a.asname or a.name] = full
+                    else:
+                        names[a.asname or a.name] = (node.module, a.name)
+        return mods, names
+    table = {m: imports(t) for m, t in modules.items()}
+
+    def target(module, call):
+        mods, names = table[module]
+        f = call.func
+        if isinstance(f, ast.Name):
+            return names.get(f.id, (module, f.id))
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in mods:
+            return (mods[f.value.id], f.attr)
+        return None
+
+    def calls(fn):
+        stack, out = list(fn.body), []
+        while stack:
+            node = stack.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
                 continue
-            stack = list(fn.body)
-            while stack:
-                node = stack.pop()
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
-                    continue
-                if isinstance(node, ast.Call):
-                    f = node.func
-                    if ((isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
-                         and f.attr in owners.get(f.value.id, ())) or (isinstance(f, ast.Name) and f.id in bare)):
-                        hits.append(f"{path.relative_to(root)}:{node.lineno}")
-                stack.extend(ast.iter_child_nodes(node))
-    assert hits == []
+            if isinstance(node, ast.Call):
+                out.append(node)
+            stack.extend(ast.iter_child_nodes(node))
+        return out
+    sync = {(m, n.name): n for m, t in modules.items() for n in t.body if isinstance(n, ast.FunctionDef)}
+    blocking = {("server.mcp.spawn_env", "login_shell_path")}
+    grew = True
+    while grew:
+        grew = False
+        for key, fn in sync.items():
+            if key not in blocking and any(target(key[0], c) in blocking for c in calls(fn)):
+                blocking.add(key)
+                grew = True
+    hits = []
+    for module, tree in modules.items():
+        for fn in ast.walk(tree):
+            if isinstance(fn, ast.AsyncFunctionDef):
+                hits += [f"{module}:{c.lineno} {'.'.join(target(module, c))}" for c in calls(fn)
+                         if target(module, c) in blocking]
+    return sorted(hits)
+
+
+def test_no_async_code_reaches_the_login_shell_on_the_loop():
+    """Source pin (#674 reviews): the helpers that may wait for the login shell, and every sync function that
+    calls them, run in a thread from async code."""
+    root = Path(__file__).resolve().parents[2] / "server"
+    assert _blocking_calls_in_async_code(root) == []
+
+
+def test_the_pin_finds_each_way_a_call_reaches_the_shell(tmp_path):
+    """The pin's own check, on a small tree: a helper module, a sync wrapper, a bare name, an alias."""
+    pkg = tmp_path / "server"
+    (pkg / "mcp").mkdir(parents=True)
+    (pkg / "mcp" / "spawn_env.py").write_text(
+        "def login_shell_path():\n    return ''\n\ndef merged_path():\n    return login_shell_path()\n")
+    (pkg / "svc.py").write_text(
+        "import asyncio\nfrom server.mcp import spawn_env\nfrom server.mcp.spawn_env import merged_path as mp\n\n"
+        "def status():\n    return spawn_env.merged_path()\n\n"
+        "async def a():\n    return status()\n\n"
+        "async def b():\n    return mp()\n\n"
+        "async def c():\n    return await asyncio.to_thread(status)\n")
+    assert [hit.split(" ")[1] for hit in _blocking_calls_in_async_code(pkg)] == [
+        "server.mcp.spawn_env.merged_path", "server.svc.status"]          # b's alias, a's sync wrapper; not c
