@@ -22,6 +22,8 @@ import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
 import SandboxGrantsPanel from './SandboxGrantsPanel';
 import TerminalRulesPanel from './TerminalRulesPanel';
+import TrustedDevicesPanel from './TrustedDevicesPanel';
+import type { TrustedDevice } from '../../types';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
@@ -70,6 +72,12 @@ export interface AdvancedSectionProps {
   /** K10-1 / L11-0: read a folder's AGENTS.md (or CLAUDE.md) each turn; default on. */
   folderRulesEnabled?: boolean;
   onFolderRulesChange?: (value: boolean) => void;
+  /** SBX-6a: macOS's certificate trust service for sandboxed commands (Swift, Xcode, Go); default off. */
+  sandboxSystemCertificates?: boolean;
+  onSandboxSystemCertificatesChange?: (value: boolean) => void;
+  /** SBX-6a: local-network devices sandboxed commands may reach, each pinned to an address. */
+  sandboxTrustedDevices?: TrustedDevice[];
+  onSandboxTrustedDevicesChange?: (value: TrustedDevice[]) => void;
   voiceInputLocale: string;
   onVoiceInputLocaleChange: (value: string) => void;
   /** How the microphone is used: not at all, held, or always listening. */
@@ -113,6 +121,10 @@ export default function AdvancedSection({
   defaultReadEnabled,
   onDefaultReadChange,
   folderRulesEnabled = true,
+  sandboxSystemCertificates = false,
+  onSandboxSystemCertificatesChange,
+  sandboxTrustedDevices = [],
+  onSandboxTrustedDevicesChange,
   onFolderRulesChange,
   voiceInputLocale,
   onVoiceInputLocaleChange,
@@ -408,6 +420,28 @@ export default function AdvancedSection({
               className="kit-switch mt-0.5"
             />
           </div>
+        )}
+        {orchestratorShellEnabled && terminalSandboxEnabled && onSandboxSystemCertificatesChange && (
+          <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
+            <div>
+              <h4 className="text-[13px] font-medium text-foreground">{t('settings.sandboxCertificatesLabel')}</h4>
+              <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+                {t('settings.sandboxCertificatesDesc')}
+              </p>
+            </div>
+            <input
+              id="settings-sandbox-certificates-toggle"
+              data-testid="settings-sandbox-certificates-toggle"
+              type="checkbox"
+              aria-label={t('settings.sandboxCertificatesLabel')}
+              checked={sandboxSystemCertificates}
+              onChange={(e) => onSandboxSystemCertificatesChange(e.target.checked)}
+              className="kit-switch mt-0.5"
+            />
+          </div>
+        )}
+        {orchestratorShellEnabled && terminalSandboxEnabled && onSandboxTrustedDevicesChange && (
+          <TrustedDevicesPanel devices={sandboxTrustedDevices} onChange={onSandboxTrustedDevicesChange} />
         )}
         {orchestratorShellEnabled && <TerminalRulesPanel />}
         {orchestratorShellEnabled && <SandboxGrantsPanel />}

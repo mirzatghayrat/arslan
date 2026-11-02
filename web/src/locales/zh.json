@@ -715,7 +715,22 @@
     "watchesOnScheduled": "盯着的网页和文件夹、不再提醒的，在「定时任务」页管理。",
     "openActivity": "用量和每一次运行在「进展」里；定时任务在「定时任务」页。",
     "openActivityBtn": "打开进展",
-    "whatsNewEmpty": "这一版没有更新说明。"
+    "whatsNewEmpty": "这一版没有更新说明。",
+    "sandboxCertificatesLabel": "在沙箱里允许系统证书检查",
+    "sandboxCertificatesDesc": "Swift、Xcode、Go 这类工具要通过 macOS 检查证书时需要它。这个 macOS 服务会自己上网取证书信息，绕过 Arslan 的代理，所以打开后沙箱的网络隔离会变弱。默认关闭。",
+    "trustedDevicesTitle": "受信任的本地设备",
+    "trustedDevicesDesc": "沙箱里的命令连不了你的局域网，这些设备除外。一次加一台，不能加一整段地址。名字会绑定到你添加时它对应的地址：以后它指向别处就会被拒绝。信任一台设备，就等于让沙箱里的命令能连它的所有端口。",
+    "trustedDevicesEmpty": "还没有。沙箱里的命令连不了你的局域网。",
+    "trustedDevicesAddressOnly": "仅地址",
+    "trustedDevicesRemove": "移除",
+    "trustedDevicesAddLabel": "添加设备：局域网里的名字或地址",
+    "trustedDevicesAddPlaceholder": "printer.local 或 192.168.1.30",
+    "trustedDevicesAdd": "添加",
+    "trustedDevicesNote": "添加时会查一次名字，并显示它要绑定的地址。这台 Mac 自己的地址、回环地址和链路本地地址不能添加。",
+    "trustedDevicesRefused_not_private": "这不是你局域网里的地址。",
+    "trustedDevicesRefused_own_address": "这是这台 Mac 自己的地址，不能信任。",
+    "trustedDevicesRefused_unresolvable": "在你的网络里找不到这个名字。",
+    "trustedDevicesRefused_mixed": "这个名字对应不止一个地址。请直接添加你要的那个地址。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

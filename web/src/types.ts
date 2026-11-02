@@ -193,6 +193,12 @@ export interface UiRun {
 /** How the microphone is used: not at all, held, or always listening. */
 export type VoiceMode = 'off' | 'push_to_talk' | 'conversation';
 
+/** SBX-6a: one trusted local device, as the backend stores it: a name pinned to its address, or an address. */
+export interface TrustedDevice {
+  host?: string;
+  address: string;
+}
+
 export interface AppSettings {
   searchProvider: string;
   /** Self-hosted SearXNG address. Plain text — an address, not a credential. */
@@ -228,6 +234,10 @@ export interface AppSettings {
   defaultReadEnabled: boolean;
   /** K10-1: a folder's rules (AGENTS.md / CLAUDE.md) in each turn; default on. Optional until L11-0's switch. */
   folderRulesEnabled?: boolean;
+  /** SBX-6a: sandboxed commands may use macOS's certificate trust service (Swift, Xcode, Go). Default OFF. */
+  sandboxSystemCertificates?: boolean;
+  /** SBX-6a: the LAN devices sandboxed commands may reach through the proxy, each pinned to an address. */
+  sandboxTrustedDevices?: TrustedDevice[];
   voiceInputLocale: string;
   /** How the microphone is used: not at all, held, or always listening. */
   voiceMode: VoiceMode;

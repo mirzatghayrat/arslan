@@ -126,6 +126,8 @@ describe("every settings field the UI can edit is mappable", () => {
       desktop_notifications_enabled: { desktopNotificationsEnabled: false },
       island_enabled: { islandEnabled: false },
       terminal_sandbox_enabled: { terminalSandboxEnabled: false },
+      sandbox_system_certificates: { sandboxSystemCertificates: true },
+      sandbox_trusted_devices: { sandboxTrustedDevices: [{ host: "nas.local", address: "192.168.1.10" }] },
       memory_in_conversations: { memoryInConversations: false },
       learned_practices_take_effect: { learnedPracticesTakeEffect: false },
       phone_bridge_enabled: { phoneBridgeEnabled: true },

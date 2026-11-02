@@ -1,4 +1,4 @@
-import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } from "../types";
+import type { AppSettings, Message, Spawn, TrustedDevice, UiRun, UiRunDimension, UiRunStep } from "../types";
 import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
 import { fromSteps, summarize } from "../lib/process";
 import { lastVersions } from "../components/reply/ReplyArtifacts";
@@ -36,6 +36,21 @@ function looksMasked(value: string): boolean {
  */
 /** K4a: the per-task dollar cap as the server reads it (settings_service.task_usd_cap): $2 when unset or
  * unusable, at most $100. */
+/** SBX-6a: the stored JSON list of trusted devices; anything malformed is an empty list. */
+export function parseTrustedDevices(raw: string | undefined): TrustedDevice[] {
+  if (!raw) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((e) => (e && typeof e === "object" && typeof (e as TrustedDevice).address === "string"
+      ? [{ address: (e as TrustedDevice).address,
+           ...(typeof (e as TrustedDevice).host === "string" ? { host: (e as TrustedDevice).host } : {}) }]
+      : []));
+  } catch {
+    return [];
+  }
+}
+
 export function readTaskUsdCap(raw: string | number | undefined): number {
   const n = typeof raw === "number" ? raw : Number.parseFloat(raw ?? "");
   return Number.isFinite(n) && n > 0 ? Math.min(100, n) : 2;
@@ -99,6 +114,9 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     defaultReadEnabled: backend.default_read_enabled !== "false",
     // K10-1: a folder's rules, default on like reading; the switch's UI comes with L11-0.
     folderRulesEnabled: backend.folder_rules_enabled !== "false",
+    // SBX-6a: default OFF; and the trusted devices, malformed JSON trusting nothing (as the backend reads it).
+    sandboxSystemCertificates: backend.sandbox_system_certificates === "true",
+    sandboxTrustedDevices: parseTrustedDevices(backend.sandbox_trusted_devices),
     // Voice output — default OFF (opt-in; not everyone wants their machine talking).
     // Empty means "follow the interface language" — resolved at the call site,
     // not stored, so changing the UI language moves it too.
@@ -161,6 +179,8 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   sshEnabled: { key: "ssh_enabled", to: (v) => (v ? "true" : "false") },
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
   folderRulesEnabled: { key: "folder_rules_enabled", to: (v) => (v ? "true" : "false") },
+  sandboxSystemCertificates: { key: "sandbox_system_certificates", to: (v) => (v ? "true" : "false") },
+  sandboxTrustedDevices: { key: "sandbox_trusted_devices", to: (v) => JSON.stringify((v as TrustedDevice[]) ?? []) },
   voiceInputLocale: { key: "voice_input_locale", to: (v) => String(v) },
   voiceMode: { key: "voice_mode", to: (v) => String(v) },
   voiceEndpointSilenceMs: { key: "voice_endpoint_silence_ms", to: (v) => String(v) },

@@ -715,7 +715,22 @@
     "watchesOnScheduled": "Les pages et dossiers surveillés, et ce que tu as mis en sourdine, se gèrent dans la page Planifiées.",
     "openActivity": "L’usage et chaque exécution sont dans Avancement ; les tâches planifiées ont leur propre page.",
     "openActivityBtn": "Ouvrir Avancement",
-    "whatsNewEmpty": "Pas de notes pour cette version."
+    "whatsNewEmpty": "Pas de notes pour cette version.",
+    "sandboxCertificatesLabel": "Autoriser la vérification des certificats système dans le bac à sable",
+    "sandboxCertificatesDesc": "Nécessaire aux outils Swift, Xcode et Go, qui vérifient les certificats via macOS. Ce service macOS récupère lui-même les données de certificats, sans passer par le proxy d'Arslan : cela affaiblit l'isolation réseau du bac à sable. Désactivé par défaut.",
+    "trustedDevicesTitle": "Appareils locaux de confiance",
+    "trustedDevicesDesc": "Les commandes du bac à sable ne peuvent pas atteindre votre réseau local, sauf ces appareils. Ajoutez un appareil à la fois, jamais une plage. Un nom est lié à l'adresse qu'il a quand vous l'ajoutez : s'il pointe ensuite ailleurs, il est refusé. Faire confiance à un appareil ouvre tous ses ports aux commandes du bac à sable.",
+    "trustedDevicesEmpty": "Aucun. Les commandes du bac à sable ne peuvent pas atteindre votre réseau local.",
+    "trustedDevicesAddressOnly": "adresse seule",
+    "trustedDevicesRemove": "Retirer",
+    "trustedDevicesAddLabel": "Ajouter un appareil : un nom ou une adresse de votre réseau",
+    "trustedDevicesAddPlaceholder": "printer.local ou 192.168.1.30",
+    "trustedDevicesAdd": "Ajouter",
+    "trustedDevicesNote": "L'ajout consulte le nom une fois et affiche l'adresse à laquelle il sera lié. L'adresse de ce Mac, les adresses de bouclage et de lien local ne peuvent pas être ajoutées.",
+    "trustedDevicesRefused_not_private": "Ce n'est pas une adresse de votre réseau local.",
+    "trustedDevicesRefused_own_address": "C'est l'adresse de ce Mac, à laquelle on ne peut pas faire confiance.",
+    "trustedDevicesRefused_unresolvable": "Ce nom est introuvable sur votre réseau.",
+    "trustedDevicesRefused_mixed": "Ce nom pointe vers plusieurs adresses. Ajoutez l'adresse voulue."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

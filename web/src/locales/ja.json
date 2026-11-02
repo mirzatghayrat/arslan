@@ -715,7 +715,22 @@
     "watchesOnScheduled": "見守るページやフォルダー、通知しない項目は「定期タスク」ページで管理します。",
     "openActivity": "使用量とすべての実行は「進捗」にあります。定期タスクは専用のページです。",
     "openActivityBtn": "進捗を開く",
-    "whatsNewEmpty": "このバージョンの説明はありません。"
+    "whatsNewEmpty": "このバージョンの説明はありません。",
+    "sandboxCertificatesLabel": "サンドボックスでシステムの証明書チェックを許可",
+    "sandboxCertificatesDesc": "Swift、Xcode、Go などのツールが macOS で証明書を確認するのに必要です。この macOS のサービスは Arslan のプロキシを通らずに自分で証明書情報を取得するため、オンにするとサンドボックスのネットワーク分離が弱まります。既定はオフです。",
+    "trustedDevicesTitle": "信頼するローカルデバイス",
+    "trustedDevicesDesc": "サンドボックス内のコマンドはローカルネットワークに接続できません。ここにあるデバイスだけは例外です。1 台ずつ追加し、範囲では追加できません。名前は追加したときのアドレスに固定され、あとで別のアドレスを指すと拒否されます。デバイスを信頼すると、そのすべてのポートにサンドボックス内のコマンドから接続できます。",
+    "trustedDevicesEmpty": "なし。サンドボックス内のコマンドはローカルネットワークに接続できません。",
+    "trustedDevicesAddressOnly": "アドレスのみ",
+    "trustedDevicesRemove": "削除",
+    "trustedDevicesAddLabel": "デバイスを追加：ネットワーク上の名前またはアドレス",
+    "trustedDevicesAddPlaceholder": "printer.local または 192.168.1.30",
+    "trustedDevicesAdd": "追加",
+    "trustedDevicesNote": "追加するときに名前を一度調べ、固定されるアドレスを表示します。この Mac 自身のアドレス、ループバック、リンクローカルのアドレスは追加できません。",
+    "trustedDevicesRefused_not_private": "ローカルネットワーク上のアドレスではありません。",
+    "trustedDevicesRefused_own_address": "この Mac 自身のアドレスなので信頼できません。",
+    "trustedDevicesRefused_unresolvable": "その名前はネットワーク上で見つかりませんでした。",
+    "trustedDevicesRefused_mixed": "その名前は複数のアドレスを指しています。目的のアドレスを追加してください。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

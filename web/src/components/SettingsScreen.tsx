@@ -143,6 +143,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
         folderRulesEnabled={localSettings.folderRulesEnabled ?? true}
         onFolderRulesChange={(v) => saveField({ folderRulesEnabled: v })}
+        sandboxSystemCertificates={localSettings.sandboxSystemCertificates ?? false}
+        onSandboxSystemCertificatesChange={(v) => saveField({ sandboxSystemCertificates: v })}
+        sandboxTrustedDevices={localSettings.sandboxTrustedDevices ?? []}
+        onSandboxTrustedDevicesChange={(v) => saveField({ sandboxTrustedDevices: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         voiceMode={localSettings.voiceMode ?? 'push_to_talk'}

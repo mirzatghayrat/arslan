@@ -715,7 +715,22 @@
     "watchesOnScheduled": "Beobachtete Seiten und Ordner sowie Stummgeschaltetes verwaltest du auf der Seite „Geplant“.",
     "openActivity": "Nutzung und jeder Lauf stehen unter Fortschritt; geplante Aufgaben haben eine eigene Seite.",
     "openActivityBtn": "Fortschritt öffnen",
-    "whatsNewEmpty": "Keine Notizen zu dieser Version."
+    "whatsNewEmpty": "Keine Notizen zu dieser Version.",
+    "sandboxCertificatesLabel": "Systemeigene Zertifikatsprüfung in der Sandbox erlauben",
+    "sandboxCertificatesDesc": "Nötig für Swift-, Xcode- und Go-Werkzeuge, die Zertifikate über macOS prüfen. Dieser macOS-Dienst lädt Zertifikatsdaten selbst, an Arslans Proxy vorbei; das schwächt die Netzwerkisolation der Sandbox. Standardmäßig aus.",
+    "trustedDevicesTitle": "Vertrauenswürdige lokale Geräte",
+    "trustedDevicesDesc": "Befehle in der Sandbox erreichen dein lokales Netzwerk nicht, außer diese Geräte. Füge ein Gerät nach dem anderen hinzu, nie einen Bereich. Ein Name wird an die Adresse gebunden, die er beim Hinzufügen hat; zeigt er später woandershin, wird er abgelehnt. Wer einem Gerät vertraut, öffnet Befehlen in der Sandbox alle seine Ports.",
+    "trustedDevicesEmpty": "Keine. Befehle in der Sandbox erreichen dein lokales Netzwerk nicht.",
+    "trustedDevicesAddressOnly": "nur Adresse",
+    "trustedDevicesRemove": "Entfernen",
+    "trustedDevicesAddLabel": "Gerät hinzufügen: ein Name oder eine Adresse in deinem Netzwerk",
+    "trustedDevicesAddPlaceholder": "printer.local oder 192.168.1.30",
+    "trustedDevicesAdd": "Hinzufügen",
+    "trustedDevicesNote": "Beim Hinzufügen wird der Name einmal nachgeschlagen und die Adresse angezeigt, an die er gebunden wird. Die eigene Adresse dieses Mac, Loopback- und Link-local-Adressen lassen sich nicht hinzufügen.",
+    "trustedDevicesRefused_not_private": "Das ist keine Adresse in deinem lokalen Netzwerk.",
+    "trustedDevicesRefused_own_address": "Das ist die eigene Adresse dieses Mac; ihr kann nicht vertraut werden.",
+    "trustedDevicesRefused_unresolvable": "Dieser Name wurde in deinem Netzwerk nicht gefunden.",
+    "trustedDevicesRefused_mixed": "Dieser Name zeigt auf mehr als eine Adresse. Füge die gemeinte Adresse hinzu."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

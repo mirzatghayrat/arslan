@@ -715,7 +715,22 @@
     "watchesOnScheduled": "Las páginas y carpetas vigiladas, y lo silenciado, se gestionan en la página Programadas.",
     "openActivity": "El uso y cada ejecución están en Progreso; las tareas programadas tienen su propia página.",
     "openActivityBtn": "Abrir Progreso",
-    "whatsNewEmpty": "No hay notas para esta versión."
+    "whatsNewEmpty": "No hay notas para esta versión.",
+    "sandboxCertificatesLabel": "Permitir comprobaciones de certificados del sistema en el sandbox",
+    "sandboxCertificatesDesc": "Lo necesitan las herramientas de Swift, Xcode y Go, que comprueban certificados a través de macOS. Ese servicio de macOS descarga los datos de certificados por su cuenta, fuera del proxy de Arslan, así que debilita el aislamiento de red del sandbox. Desactivado por defecto.",
+    "trustedDevicesTitle": "Dispositivos locales de confianza",
+    "trustedDevicesDesc": "Los comandos en el sandbox no pueden llegar a tu red local, salvo a estos dispositivos. Añade un dispositivo cada vez, nunca un rango. Un nombre queda ligado a la dirección que tiene al añadirlo: si luego apunta a otro sitio, se rechaza. Confiar en un dispositivo abre todos sus puertos a los comandos del sandbox.",
+    "trustedDevicesEmpty": "Ninguno. Los comandos en el sandbox no pueden llegar a tu red local.",
+    "trustedDevicesAddressOnly": "solo dirección",
+    "trustedDevicesRemove": "Quitar",
+    "trustedDevicesAddLabel": "Añadir un dispositivo: un nombre o una dirección de tu red",
+    "trustedDevicesAddPlaceholder": "printer.local o 192.168.1.30",
+    "trustedDevicesAdd": "Añadir",
+    "trustedDevicesNote": "Al añadirlo se busca el nombre una vez y se muestra la dirección a la que quedará ligado. No se pueden añadir la dirección de este Mac ni direcciones de loopback o de enlace local.",
+    "trustedDevicesRefused_not_private": "Esa no es una dirección de tu red local.",
+    "trustedDevicesRefused_own_address": "Esa es la dirección de este Mac, y no se puede confiar en ella.",
+    "trustedDevicesRefused_unresolvable": "No se encontró ese nombre en tu red.",
+    "trustedDevicesRefused_mixed": "Ese nombre apunta a más de una dirección. Añade la dirección que quieres."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

@@ -715,7 +715,22 @@
     "watchesOnScheduled": "Watched pages and folders, and what you muted, are managed on the Scheduled page.",
     "openActivity": "Usage and every run are in Progress; scheduled tasks have their own page.",
     "openActivityBtn": "Open Progress",
-    "whatsNewEmpty": "No notes for this version."
+    "whatsNewEmpty": "No notes for this version.",
+    "sandboxCertificatesLabel": "Allow system certificate checks in the sandbox",
+    "sandboxCertificatesDesc": "Needed by Swift, Xcode and Go tools, which check certificates through macOS. That macOS service fetches certificate data itself, outside Arslan's proxy, so this weakens the sandbox's network isolation. Off by default.",
+    "trustedDevicesTitle": "Trusted local devices",
+    "trustedDevicesDesc": "Sandboxed commands can't reach your local network, except these devices. Add one device at a time, never a range. A name is tied to the address it has when you add it: if it later points somewhere else, it's refused. Trusting a device opens all of its ports to sandboxed commands.",
+    "trustedDevicesEmpty": "None. Sandboxed commands can't reach your local network.",
+    "trustedDevicesAddressOnly": "address only",
+    "trustedDevicesRemove": "Remove",
+    "trustedDevicesAddLabel": "Add a device: a name or an address on your network",
+    "trustedDevicesAddPlaceholder": "printer.local or 192.168.1.30",
+    "trustedDevicesAdd": "Add",
+    "trustedDevicesNote": "Adding looks the name up once and shows the address it will be tied to. Your own Mac's address, loopback and link-local addresses can't be added.",
+    "trustedDevicesRefused_not_private": "That isn't an address on your local network.",
+    "trustedDevicesRefused_own_address": "That's this Mac's own address, which can't be trusted.",
+    "trustedDevicesRefused_unresolvable": "That name couldn't be found on your network.",
+    "trustedDevicesRefused_mixed": "That name points to more than one address. Add the address you mean."
   },
   "errors": {
     "load_failed": "Failed to load data.",
