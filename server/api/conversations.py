@@ -218,10 +218,13 @@ class ConversationModelIn(BaseModel):
 
 @router.get("/conversations/{conversation_id}/model")
 async def get_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
-    """The model chosen for this conversation, or null = the default (the primary config's model)."""
+    """The model chosen for this conversation (null = the default), and `effective`: what its next text turn
+    really runs on (llm_factory.effective_choice), which the chip shows."""
     from server.db.models import ConversationModel
+    from server.services import llm_factory
     row = await db.get(ConversationModel, conversation_id)
-    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None}
+    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None,
+            "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.put("/conversations/{conversation_id}/model")
@@ -240,17 +243,20 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
     else:
         row.config_id, row.model, row.updated_at = body.config_id, model, _dt.utcnow()
     await db.commit()
-    return {"choice": {"config_id": body.config_id, "model": model}}
+    from server.services import llm_factory
+    return {"choice": {"config_id": body.config_id, "model": model},
+            "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.delete("/conversations/{conversation_id}/model")
 async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     from server.db.models import ConversationModel
+    from server.services import llm_factory
     row = await db.get(ConversationModel, conversation_id)
     if row is not None:
         await db.delete(row)
         await db.commit()
-    return {"choice": None}
+    return {"choice": None, "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.post("/conversations/{conversation_id}/seen")

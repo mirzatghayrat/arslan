@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchProviderModels } from "../../api/client";
-import { conversationModelApi } from "../../api/conversationModel";
+import { conversationModelApi, type EffectiveModel } from "../../api/conversationModel";
 import type { ContextParts, ModelInfo, ProviderConfig } from "../../api/client.types";
 import { useArslanStore } from "../../stores/arslanStore";
 import type { ModelChoice } from "./ModelPicker";
@@ -18,6 +18,10 @@ function catalog(id: number): Promise<ModelInfo[]> {
 }
 export function _resetChipCatalogs() { catalogs.clear(); }
 
+function toChoice(e: EffectiveModel | undefined): ModelChoice | null {
+  return e ? { configId: e.config_id, model: e.model } : null;
+}
+
 /**
  * Which model THIS conversation runs on and how full its context is (0.1.58 §6, K4b), shared by the
  * model chip and the workbench's Overview (WB1-2): the conversation's own choice, else the primary
@@ -25,6 +29,8 @@ export function _resetChipCatalogs() { catalogs.clear(); }
  */
 export function useConversationModel(conversationId: string, configs: ProviderConfig[]) {
   const [choice, setChoiceState] = useState<ModelChoice | null>(null);
+  // v0.1.64: the server's answer for "the default" (routing, not always the primary config).
+  const [effective, setEffective] = useState<ModelChoice | null>(null);
   const [window_, setWindow] = useState<number | null>(null);
   const lastInput = useArslanStore((s) => {
     for (let i = s.items.length - 1; i >= 0; i--) { const u = s.items[i].usage; if (u?.last_input) return u.last_input; }
@@ -38,27 +44,37 @@ export function useConversationModel(conversationId: string, configs: ProviderCo
 
   useEffect(() => {
     const onChanged = (e: Event) => {
-      const d = (e as CustomEvent<{ conversationId: string; choice: ModelChoice | null }>).detail;
-      if (d?.conversationId === conversationId) setChoiceState(d.choice);
+      const d = (e as CustomEvent<{ conversationId: string; choice: ModelChoice | null; effective?: ModelChoice | null }>).detail;
+      if (d?.conversationId === conversationId) {
+        setChoiceState(d.choice);
+        if (d.effective !== undefined) setEffective(d.effective);
+      }
     };
     window.addEventListener(MODEL_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(MODEL_CHANGED_EVENT, onChanged);
   }, [conversationId]);
 
-  useEffect(() => { setChoiceState(null); }, [conversationId]);   // never show the last conversation's choice
+  useEffect(() => { setChoiceState(null); setEffective(null); }, [conversationId]);   // never show the last conversation's choice
 
   useEffect(() => {
     let alive = true;
     // Deferred into the promise so an unavailable client (offline, or a test's partial mock) is a rejection.
     Promise.resolve().then(() => conversationModelApi.get(conversationId))
-      .then((r) => { if (alive) setChoiceState(r.choice ? { configId: r.choice.config_id, model: r.choice.model } : null); })
+      .then((r) => {
+        if (!alive) return;
+        setChoiceState(r.choice ? { configId: r.choice.config_id, model: r.choice.model } : null);
+        setEffective(toChoice(r.effective));
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, [conversationId]);
 
   const primary = configs.find((c) => c.is_primary) ?? configs[0] ?? null;
-  const current: ModelChoice | null = choice && configs.some((c) => c.id === choice.configId) ? choice
-    : primary ? { configId: primary.id, model: primary.model } : null;
+  const known = (c: ModelChoice | null) => c && configs.some((x) => x.id === c.configId) ? c : null;
+  // The conversation's own choice, else what the server says the default resolves to, else (before the server
+  // answered) the primary.
+  const current: ModelChoice | null = known(choice) ?? known(effective)
+    ?? (primary ? { configId: primary.id, model: primary.model } : null);
 
   useEffect(() => {
     if (!current) return;
@@ -67,9 +83,11 @@ export function useConversationModel(conversationId: string, configs: ProviderCo
     return () => { alive = false; };
   }, [current?.configId, current?.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Record this conversation's choice here and tell the other places showing it. */
-  const setChoice = useCallback((next: ModelChoice | null) => {
-    window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail: { conversationId, choice: next } }));
+  /** Record what the server stored for this conversation (and, when it said, what that resolves to) here and tell
+   *  the other places showing it. Called only after the server answered. */
+  const setChoice = useCallback((next: ModelChoice | null, resolved?: EffectiveModel) => {
+    const detail = { conversationId, choice: next, ...(resolved !== undefined ? { effective: toChoice(resolved) } : {}) };
+    window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail }));
   }, [conversationId]);
 
   const pct = lastInput && window_ ? Math.round((lastInput / window_) * 100) : null;

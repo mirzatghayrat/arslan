@@ -191,6 +191,50 @@ describe("the model under the composer", () => {
     expect(screen.getByTestId("model-chip").getAttribute("title")).toBe("Key rejected");
   });
 
+  // v0.1.64 (user report): a chat that showed Claude kept running on DeepSeek. The default is the server's
+  // answer (routing can pick another config than the primary), and a pick is stored, never assumed.
+  it("with no choice, shows what the server says the next turn runs on, not the primary", async () => {
+    conv.get.mockResolvedValue({ choice: null, effective: { config_id: 2, model: "openai/gpt-4o-mini", provider: "openrouter" } });
+    chip();
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("openrouter · openai/gpt-4o-mini"));
+  });
+
+  it("picking the primary's own model stores it for this conversation; it does not clear the choice", async () => {
+    conv.get.mockResolvedValue({ choice: null, effective: { config_id: 2, model: "openai/gpt-4o-mini", provider: "openrouter" } });
+    chip();
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("gpt-4o-mini"));
+    fireEvent.click(screen.getByTestId("model-chip"));
+    fireEvent.click(screen.getByTestId("model-all-1"));
+    const row = await screen.findByTestId("model-row-1-deepseek-chat");
+    await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+    expect(conv.set).toHaveBeenCalledWith("c1", 1, "deepseek-chat");
+    expect(conv.clear).not.toHaveBeenCalled();
+    expect(screen.getByTestId("model-chip").textContent).toContain("deepseek · deepseek-chat");
+  });
+
+  it("a save that fails leaves the chip as it was and says so", async () => {
+    conv.set.mockRejectedValue(new Error("provider_config_not_found"));
+    chip();
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId("model-chip"));
+    fireEvent.click(screen.getByTestId("model-all-2"));
+    const row = await screen.findByTestId("model-row-2-anthropic/claude-sonnet-4.5");
+    await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+    expect(screen.getByTestId("model-chip").textContent).toContain("deepseek · deepseek-chat");
+    expect(screen.getByTestId("model-chip-error").textContent).toContain("models.saveFailed");
+  });
+
+  it("back to the default, the chip shows what the server now runs on", async () => {
+    conv.get.mockResolvedValue({ choice: { config_id: 1, model: "deepseek-chat" } });
+    conv.clear.mockResolvedValue({ choice: null, effective: { config_id: 2, model: "openai/gpt-4o-mini", provider: "openrouter" } });
+    chip();
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("deepseek-chat"));
+    fireEvent.click(screen.getByTestId("model-chip"));
+    await act(async () => { fireEvent.click(screen.getByTestId("model-use-default")); });
+    expect(conv.clear).toHaveBeenCalledWith("c1");
+    expect(screen.getByTestId("model-chip").textContent).toContain("openrouter · openai/gpt-4o-mini");
+  });
+
   it("switching conversations loads that conversation's choice", async () => {
     conv.get.mockImplementation(async (id: string) => ({ choice: id === "c2" ? { config_id: 2, model: "x/two" } : null }));
     const { rerender } = chip("c1");
