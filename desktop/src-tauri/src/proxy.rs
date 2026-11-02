@@ -115,13 +115,23 @@ pub enum UpdaterProxy {
 pub fn updater_proxy(resolved: Option<String>) -> UpdaterProxy {
     match resolved {
         None => UpdaterProxy::Direct,
-        Some(value) => match value.parse() {
-            Ok(url) => UpdaterProxy::Via(url),
-            Err(e) => UpdaterProxy::Unusable {
-                error: format!("{e}"),
-                value,
-            },
-        },
+        Some(value) => {
+            // `host:port` without a scheme is common in HTTPS_PROXY. reqwest's own
+            // parsing, httpx (the sidecar) and curl take it as http, so retry with
+            // http:// when the value has no host as written.
+            let v = value.trim();
+            let parsed = match v.parse::<tauri::Url>() {
+                Ok(url) if url.has_host() => Ok(url),
+                _ => format!("http://{v}").parse::<tauri::Url>(),
+            };
+            match parsed {
+                Ok(url) => UpdaterProxy::Via(url),
+                Err(e) => UpdaterProxy::Unusable {
+                    error: format!("{e}"),
+                    value,
+                },
+            }
+        }
     }
 }
 
@@ -231,6 +241,24 @@ mod tests {
             updater_proxy(Some("http://127.0.0.1:7899".into())),
             UpdaterProxy::Via("http://127.0.0.1:7899".parse().unwrap())
         );
+    }
+
+    #[test]
+    fn a_proxy_without_a_scheme_is_taken_as_http() {
+        // HTTPS_PROXY=127.0.0.1:7899 is common; reqwest's own parsing, httpx (the
+        // sidecar) and curl all take it as http://, and 2.10.1's updater did too.
+        for (value, want) in [
+            ("127.0.0.1:7899", "http://127.0.0.1:7899"),
+            ("localhost:7899", "http://localhost:7899"),
+            ("[::1]:7899", "http://[::1]:7899"),
+            ("user:pw@10.0.0.2:3128", "http://user:pw@10.0.0.2:3128"),
+        ] {
+            assert_eq!(
+                updater_proxy(Some(value.into())),
+                UpdaterProxy::Via(want.parse().unwrap()),
+                "{value}"
+            );
+        }
     }
 
     #[test]
