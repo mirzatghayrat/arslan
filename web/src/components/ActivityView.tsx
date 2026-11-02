@@ -11,7 +11,6 @@ import UsageCard from "./UsageCard";
 import HandsTraceCard from "./HandsTraceCard";
 import JudgmentsCard from "./JudgmentsCard";
 import ScrollBox from "./activity/ScrollBox";
-import RunDrawer from "./activity/RunDrawer";
 import RunInspector from "./activity/RunInspector";
 import type { NeedsProps } from "./activity/NeedsPanel";
 import { COLOUR, outcomeOf, useFreshRead } from "./activity/RunsLane";
@@ -47,8 +46,6 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
   const { t, i18n } = useTranslation();
   const filter = useActivityStore((s) => s.filter);
   const setFilter = useActivityStore((s) => s.setFilter);
-  const openRunId = useActivityStore((s) => s.openRunId);
-  const setOpenRun = useActivityStore((s) => s.setOpenRun);
   const pickedRunId = useActivityStore((s) => s.pickedRunId);
   const setPickedRun = useActivityStore((s) => s.setPickedRun);
   const pageTop = useActivityStore((s) => s.scroll.page ?? 0);
@@ -113,17 +110,6 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
       .finally(() => { loading.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [more, runs, filter.until, filter.model, filter.chip]);
-
-  const showRun = useActivityStore((s) => s.showRun);
-  const step = useCallback((delta: -1 | 1) => {
-    if (!runs?.length || openRunId == null) return;
-    const i = runs.findIndex((r) => r.id === openRunId);
-    const next = runs[Math.min(runs.length - 1, Math.max(0, (i < 0 ? 0 : i) + delta))];
-    if (next) {
-      showRun(next.id, next);                      // the pick follows the drawer (⓪Plan's review of PR 624, B)
-      document.querySelector(`[data-testid="activity-run-${next.id}"]`)?.scrollIntoView?.({ block: "nearest" });
-    }
-  }, [runs, openRunId, showRun]);
 
   const statusLabel = (s: string) =>
     s === "failed" ? t("activityPage.failed")
@@ -226,7 +212,6 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
       </div>
       <HandsTraceCard />
       <JudgmentsCard />
-      {openRunId != null && <RunDrawer runId={openRunId} onClose={() => setOpenRun(null)} onStep={step} />}
     </div>
   );
 }

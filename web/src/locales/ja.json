@@ -1189,8 +1189,6 @@
     "waterfall": "ステップ滝図",
     "how_it_went": "出来栄え",
     "scoring": "採点中…",
-    "radar_title": "今回 vs 全体(レーダー)",
-    "recent_scores": "このスポーンの最近のスコア",
     "sys_prompt_details": "実際のシステムプロンプト / 注入知識",
     "sys_prompt": "システムプロンプト",
     "injected": "注入知識",

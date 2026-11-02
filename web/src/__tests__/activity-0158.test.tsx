@@ -1,6 +1,6 @@
 /**
- * 0.1.58 §7 Activity: lists in boxes that page inside, a run drawer that keeps the list's
- * place, state that survives leaving the page, a chart you can hover and click, icons.
+ * 0.1.58 §7 Activity: lists in boxes that page inside, a picked run that keeps the list's place (the old drawer is gone,
+ * 2026-11-02), state that survives leaving the page, a chart you can hover and click, icons.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +40,7 @@ const summary = {
 };
 
 beforeEach(() => {
-  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+  useActivityStore.setState({ range: "7d", filter: {}, pickedRunId: null, pickedRun: null, replayStep: null,
     replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   runProcess.mockResolvedValue({ run_id: 0, status: "recorded", entries: [] });
   getUsageSummary.mockResolvedValue(summary);
@@ -57,22 +57,16 @@ describe("最近的工作", () => {
     expect(origins).toEqual(["job", "phone", "chat"]);
   });
 
-  it("opens a run in a drawer while the list stays, and Esc / arrows work", async () => {
+  it("picks a run while the list stays, with no drawer (the user, 2026-11-02: 「去掉」)", async () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
     render(<ActivityView waiting={WAITING} />);
-    // INB7-c1: a row picks the run for the inspector; its "Details" opens the drawer (until INB7-c4).
     fireEvent.click(await screen.findByTestId("activity-run-2"));
-    expect(screen.queryByTestId("run-drawer")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "activityPage.details" }));
-    expect(screen.getByTestId("run-drawer")).toHaveTextContent("run 2");
-    // the list is still there, with the picked row marked
     expect(screen.getByTestId("activity-run-2")).toHaveAttribute("aria-current", "true");
     expect(screen.getByTestId("activity-run-3")).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "ArrowDown" });
-    expect(screen.getByTestId("run-drawer")).toHaveTextContent("run 1");
-    expect(screen.getByTestId("activity-run-1")).toHaveAttribute("aria-current", "true");    // the pick follows the drawer
-    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByTestId("run-inspector")).toHaveTextContent("task 2");
     expect(screen.queryByTestId("run-drawer")).toBeNull();
+    expect(screen.queryByRole("button", { name: "activityPage.details" })).toBeNull();     // its entry point is gone
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("loads the next 20 back from the last row when the box reaches its end", async () => {
@@ -91,14 +85,12 @@ describe("最近的工作", () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
     const first = render(<ActivityView waiting={WAITING} />);
     fireEvent.click(await screen.findByTestId("activity-run-2"));
-    fireEvent.click(screen.getByRole("button", { name: "activityPage.details" }));
     const box = screen.getByTestId("activity-runs-box");
     box.scrollTop = 120;
     fireEvent.scroll(box);
     first.unmount();                               // App unmounts the page on leaving it
     render(<ActivityView waiting={WAITING} />);
-    expect(await screen.findByTestId("run-drawer")).toHaveTextContent("run 2");
-    // INB7-c1: the pick survives too, so the inspector opens on the same run.
+    // INB7-c1: the pick survives, so the inspector opens on the same run.
     expect(await screen.findByTestId("activity-run-2")).toHaveAttribute("aria-current", "true");
     expect(screen.getByTestId("run-inspector")).toHaveTextContent("task 2");
     expect((await screen.findByTestId("activity-runs-box")).scrollTop).toBe(120);

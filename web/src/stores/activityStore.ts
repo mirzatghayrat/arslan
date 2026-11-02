@@ -24,9 +24,8 @@ export interface ActivityFilter {
 interface ActivityState {
   range: UsageRange;
   filter: ActivityFilter;
-  openRunId: number | null;
   /** INB7-c1: the page's one pick. A bar on the axis or a row of 「最近的工作」 picks a run; the axis shows its steps and the
-   *  inspector opens it. The drawer (openRunId) is one click away from the inspector until INB7-c4. */
+   *  inspector opens it, its 「诊断」 included. (The old drawer is gone: the user, 2026-11-02.) */
   pickedRunId: number | null;
   /** The picked run as it was listed when picked, for the inspector's header when the list it came from is not the one loaded. */
   pickedRun: RunListItem | null;
@@ -40,9 +39,8 @@ interface ActivityState {
   modelSlots: Record<string, number>;
   setRange: (range: UsageRange) => void;
   setFilter: (filter: ActivityFilter) => void;
-  setOpenRun: (id: number | null) => void;
   setPickedRun: (id: number | null, run?: RunListItem | null) => void;
-  /** Opens a run in the drawer and picks it, so the list, the axis and the inspector follow (a reply's link, the drawer's arrows). */
+  /** Picks a run from outside the page (a reply's link, a scheduled run), so the list, the axis and the inspector follow. */
   showRun: (id: number, run?: RunListItem | null) => void;
   setReplay: (replay: { step?: number | null; playing?: boolean }) => void;
   saveScroll: (key: string, top: number) => void;
@@ -53,7 +51,6 @@ interface ActivityState {
 export const useActivityStore = create<ActivityState>((set) => ({
   range: "7d",
   filter: {},
-  openRunId: null,
   pickedRunId: null,
   pickedRun: null,
   replayStep: null,
@@ -64,10 +61,9 @@ export const useActivityStore = create<ActivityState>((set) => ({
   // A new range has a new axis: its replay starts over (⓪Plan's review of PR 624, C).
   setRange: (range) => set({ range, replayStep: null, replayPlaying: false }),
   setFilter: (filter) => set((s) => ({ filter, scroll: { ...s.scroll, runs: 0 } })),
-  setOpenRun: (openRunId) => set({ openRunId }),
   setPickedRun: (pickedRunId, run = null) => set({ pickedRunId, pickedRun: pickedRunId == null ? null : run, replayStep: null,
     replayPlaying: false }),
-  showRun: (id, run = null) => set({ openRunId: id, pickedRunId: id, pickedRun: run, replayStep: null, replayPlaying: false }),
+  showRun: (id, run = null) => set({ pickedRunId: id, pickedRun: run, replayStep: null, replayPlaying: false }),
   setReplay: ({ step, playing }) => set((s) => ({ replayStep: step === undefined ? s.replayStep : step,
     replayPlaying: playing ?? s.replayPlaying })),
   saveScroll: (key, top) => set((s) => (s.scroll[key] === top ? s : { scroll: { ...s.scroll, [key]: top } })),
