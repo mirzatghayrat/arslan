@@ -152,6 +152,7 @@ def _commands_profile(self, **parameters) -> str:
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
 
-# SBX-5a adds "cap6b" and "shared-cache-exclusions" when their protections land.
-# The existing commands/outside-floor adapters alone do not claim those features.
+# Feature keys are declared only when their protections land: SBX-6a adds "trustd-toggle" and
+# "trusted-lan" with the settings; SBX-5a adds "cap6b" and "shared-cache-exclusions". The existing
+# commands/outside-floor adapters alone do not claim any of them.
 BUILT_FEATURES = frozenset()
