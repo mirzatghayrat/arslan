@@ -373,9 +373,10 @@ jobs:
           # 0.1.64 SBX-5p follow-ups (#671) (Codex): recounted after the merge of main, by collection.
           # 0.1.64 SBX-5p (#671) after the merge of SBX-4p (#670): both p sets, by collection.
           # 0.1.64 SBX-5p (#671) after the merge of SBX-6p (#669): SBX-4p, SBX-5p and SBX-6p, by collection.
+          # 0.1.64 L11 (b) (#681): −1, the rules writer went, and with it L11-3d's /var-link write test.
           # 0.1.64 SMART-1: +10, run_command sees what ~/.zshrc adds to PATH; rc output, prompts, hangs, a `.` on PATH,
           # a child that leaves the group, and the server's secrets can't break it or leak into it.
-          EXPECTED = 677
+          EXPECTED = 676
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
