@@ -465,3 +465,29 @@ back and SHA-256 verified, then the restored startup check passed (two local
 verification tests passed). The operation measurement was not repeated for
 mutation testing. No product rule, adapter, workflow or CI selection changed:
 **433 macOS cases, 63 strict xfails**. New-head macOS CI run id remains pending.
+
+### Pre-existing hard-link alias in an MCP root (2026-11-02)
+
+`test_preexisting_hardlink_measurement` in `tests/server/sbx/test_sbx5_paths.py`
+is an SBX-M measurement, not a denial gate. It belongs to SBX-5's path/lifecycle
+work: the test creates the same-volume alias before the sandbox starts. The
+SBX-4p gate separately requires refusal when the sandbox tries to create a new
+external hard link.
+
+On macOS 26.6.2 (25G83), arm64, a read-only copy of SBX-5a's MCP profile at
+`d3deeed6` allowed the write through that pre-existing alias. The parent observed
+the outside sentinel change; the row records `hardlink_outcome=exposed` and
+`denial_gate=false`, together with the exact executed profile hash. The explicit
+SBX-5 reference gives the same result. Both files are disposable test-owned
+sentinels; no user file was used. Reproduction uses pytest with
+`HOME=/private/tmp/arslan-sbx-check-home` and the committed
+`scripts.dev.sbx5_reference` plugin, selecting `preexisting` in that test file.
+
+This remains a follow-up for Hands under §1 and Acceptance's hard-link clause:
+a path-only allowlist does not establish confinement for aliases already inside
+a writable root. A kernel-side rule or a pre-run rejection/staging decision is
+needed before claiming that boundary. This tests-only block does not choose or
+implement that product change. An eventual refusal is recorded as `refused` by
+the same measurement. As built, the row is base-keyed pending MCP, just like the
+other MCP cases; registering the adapter must execute the row and retain its
+outcome in the evidence.

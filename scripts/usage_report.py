@@ -44,7 +44,7 @@ BUILT_IN_TOOLS = frozenset("""
     desktop_access desktop_apps desktop_batch desktop_click desktop_look desktop_menu
     desktop_open desktop_press desktop_scroll desktop_select desktop_takeover desktop_type
     edit_file enroll_node find_capability list_dir list_my_capabilities list_my_tasks list_nodes
-    mac_applescript mac_list_shortcuts mac_run_shortcut memory_note read_file read_skill recall
+    mac_applescript mac_list_shortcuts mac_run_shortcut memory_note my_status read_file read_skill recall
     remember render_chart render_deck run_command run_python scan_local_network schedule_task
     search_files ssh_probe ssh_run start_background_work stop_background_work task_progress
     web_extract web_search whats_new write_file
