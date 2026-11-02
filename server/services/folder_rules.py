@@ -14,9 +14,9 @@ past that the outermost files are left out first, and one file larger on its own
 The rules go into the turn's reference block, never the system prompt (K3's cache), in a frame of their own: the
 folder owner's preferences, below Arslan's rules and the user, never a permission (not untrusted.wrap_external's
 "data only" frame, which would tell the model to ignore them). Loading any counts as outside content (⓪Plan, K10; D3).
-The classifier never sees them (D1). Arslan never writes these files on its own (user, 2026-11-02, L11 (b)): a
-correction that recurs in a folder becomes a practice in Arslan's own memory, and a rules file is written only when
-the user asks, through the ordinary write_file and its approval.
+The classifier never sees them (D1). Arslan's server never writes these files (user, 2026-11-02, L11 (b)): a
+correction that recurs in a folder becomes a practice in Arslan's own memory. The model's writes to them go through
+write_file's usual gate, like any other file.
 """
 from __future__ import annotations
 

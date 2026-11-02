@@ -136,3 +136,21 @@ async def test_memory_lists_a_lesson_without_a_rule_field(client, execution_db, 
     await _corrected_twice([])
     rows = (await client.get("/api/v1/lessons")).json()
     assert len(rows) == 1 and "rule" not in rows[0]
+
+
+async def test_one_file_over_16_kb_still_counts_as_outside(execution_db, home):
+    """#681 review, finding 2: the cut branch is the only path for one oversized file."""
+    agents(home).write_text("START " + "z" * 20000)
+    text, outside = await folder_rules.for_turn(CID)
+    assert "START" in text and "cut" in text and outside == 1
+
+
+async def test_chosen_folder_is_never_the_default_workspace_on_its_own(execution_db, monkeypatch, tmp_path):
+    """#681 review, finding 3 (ported unchanged from #603 F7's test): chosen_folder is a project folder, or a
+    workspace the user set; never Arslan's default ~/Arslan on its own. PR-B scopes practices with it."""
+    async with execution_db() as db:
+        assert await folder_rules.chosen_folder(db, CID) is None
+        await settings_service._set_raw(db, "workspace_dir", str(tmp_path))
+        await db.commit()
+    async with execution_db() as db:
+        assert await folder_rules.chosen_folder(db, CID) == tmp_path.resolve()
