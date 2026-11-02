@@ -138,11 +138,20 @@ class Harness:
                 (folder / (execution["profile_sha256"] + ".sb")).write_bytes(execution["profile_text"].encode())
 
 
-# SBX-3a adds a commands entry calling its real product preset, under scratch
+# SBX-3a's commands entry calls its real product preset, under scratch
 # HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
-# It must not delegate commands to the candidate. Until then no adapter exists.
-BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
+# It must not delegate commands to the candidate.
+def _commands_profile(self, **parameters) -> str:
+    options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
+    if self.network == NetworkMode.PROXY:
+        options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+    options.update(parameters)
+    return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
 
-# SBX-5a adds "cap6b" here in the same commit that builds its protections.
-# The existing outside-floor adapter alone does not claim that feature.
+
+BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
+BUILT_BASES["commands"] = _commands_profile
+
+# SBX-5a adds "cap6b" and "shared-cache-exclusions" when their protections land.
+# The existing commands/outside-floor adapters alone do not claim those features.
 BUILT_FEATURES = frozenset()

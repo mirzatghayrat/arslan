@@ -42,6 +42,6 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # Advertise the feature even for the permissive mutation: regressions must
     # fail as real gates instead of being hidden by the missing-feature guard.
-    harness.BUILT_FEATURES = harness.BUILT_FEATURES | {"cap6b"}
+    harness.BUILT_FEATURES = harness.BUILT_FEATURES | {"cap6b", "shared-cache-exclusions"}
     for base in ("commands", "outside-floor", "mcp", "run-python"):
         BUILT_BASES[base] = permissive if config.getoption("--sbx5-permissive") else reference

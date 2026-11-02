@@ -1,11 +1,11 @@
-"""Portable contract for the ten deferred outside-floor CAP6b protections."""
+"""Portable contract for measured SBX-5 features on already-built adapters."""
 from itertools import product
 
 from tests.server.sbx import harness
 from tests.server.sbx import test_sbx5_paths as gates
 
 
-def test_cap6b_uses_only_its_feature_key(monkeypatch):
+def test_features_use_only_their_own_key(monkeypatch):
     assert isinstance(getattr(harness, "BUILT_FEATURES", None), frozenset)
     queried = []
 
@@ -14,26 +14,34 @@ def test_cap6b_uses_only_its_feature_key(monkeypatch):
             queried.append(key)
             return super().__contains__(key)
 
-    for features, missing in (((), True), (("unrelated",), True), (("cap6b",), False)):
-        queried.clear()
-        monkeypatch.setattr(harness, "BUILT_FEATURES", Features(features))
-        mark, = gates.pending("outside-floor", cap6b=True).marks
-        assert mark.args == (missing,)
-        assert queried == ["cap6b"]
-        assert mark.kwargs["strict"] is True
-        matcher = mark.kwargs["raises"]
-        assert matcher.matches(AssertionError("SBX-5a cap6b protection is not built"))
-        assert not matcher.matches(AssertionError("real gate failure"))
+    for base, options, key in (
+        ("outside-floor", {"cap6b": True}, "cap6b"),
+        ("commands", {"feature": "cap6b"}, "cap6b"),
+        ("commands", {"feature": "shared-cache-exclusions"}, "shared-cache-exclusions"),
+    ):
+        for features in ((), ("unrelated",), ("cap6b",), ("shared-cache-exclusions",),
+                         ("cap6b", "shared-cache-exclusions")):
+            queried.clear()
+            monkeypatch.setattr(harness, "BUILT_FEATURES", Features(features))
+            mark, = gates.pending(base, **options).marks
+            assert mark.args == (key not in features,)
+            assert queried == [key]
+            assert mark.kwargs["strict"] is True
+            matcher = mark.kwargs["raises"]
+            assert matcher.matches(AssertionError(f"SBX-5a {key} protection is not built"))
+            assert not matcher.matches(AssertionError("real gate failure"))
+            other = "shared-cache-exclusions" if key == "cap6b" else "cap6b"
+            assert not matcher.matches(AssertionError(f"SBX-5a {other} protection is not built"))
         queried.clear()
         for base in gates.BASES:
-            # Other cases still depend only on their product adapter.
+            # Passing cases stay real; other unbuilt surfaces still key on bases.
             mark, = gates.pending(base).marks
             assert mark.args == (base not in harness.BUILT_BASES,)
         assert queried == []
 
 
-def test_exactly_ten_outside_floor_cases_use_the_cap6b_gate():
-    selected = set()
+def test_only_measured_future_cases_use_feature_gates():
+    selected, real_commands = set(), set()
     total = 0
     for name, test in vars(gates).items():
         if not name.startswith("test_"):
@@ -47,12 +55,16 @@ def test_exactly_ten_outside_floor_cases_use_the_cap6b_gate():
                 arguments.update(zip(parameter.args[0].split(","), values))
                 row_marks = getattr(row, "marks", ())
                 marks.extend(row_marks if isinstance(row_marks, (tuple, list)) else (row_marks,))
-            if any(m.name == "xfail" and m.kwargs.get("reason") ==
-                   "SBX-5a cap6b protection is not built" for m in marks):
-                assert arguments["cap_sbx"] == "outside-floor"
-                selected.add((name, arguments.get("name"), arguments.get("kind"), arguments.get("through_alias")))
+            row = (name, arguments.get("name"), arguments.get("kind"), arguments.get("through_alias"))
+            features = [key for key, message in gates.FEATURE_MESSAGES.items()
+                        if any(m.name == "xfail" and m.kwargs.get("reason") == message for m in marks)]
+            if features:
+                assert len(features) == 1
+                selected.add((features[0], arguments["cap_sbx"], *row))
+            elif arguments["cap_sbx"] == "commands":
+                real_commands.add(row)
     assert total == 73
-    expected = {
+    outside = {
         (name, target, None, None)
         for name in ("test_cap6b_write_denied", "test_cap6b_read_denied")
         for target in ("skills", "plugin")
@@ -62,4 +74,22 @@ def test_exactly_ten_outside_floor_cases_use_the_cap6b_gate():
         ("test_links_do_not_open_write_paths", target, kind, None)
         for target in ("skills", "plugin") for kind in ("symlink", "hardlink")
     }
-    assert selected == expected
+    cap6b_commands = {
+        ("test_cap6b_read_denied", target, None, None) for target in ("skills", "plugin")
+    } | {
+        ("test_cap6b_symlink_root", None, None, alias) for alias in (False, True)
+    } | {("test_commands_exclusions_override_a_writable_ancestor", "plugin", None, None)}
+    cache_commands = {
+        (name, target, None, None)
+        for name in ("test_shared_cache_is_not_writable", "test_commands_exclusions_override_a_writable_ancestor")
+        for target in ("npm", "cache", "Library-Caches")
+    } | {("test_links_do_not_open_write_paths", "npm", kind, None) for kind in ("symlink", "hardlink")}
+    assert selected == ({("cap6b", "outside-floor", *row) for row in outside}
+                        | {("cap6b", "commands", *row) for row in cap6b_commands}
+                        | {("shared-cache-exclusions", "commands", *row) for row in cache_commands})
+    assert real_commands == {
+        ("test_cap6b_write_denied", target, None, None) for target in ("skills", "plugin", "data")
+    } | {("test_cap6b_read_denied", "data", None, None)} | {
+        ("test_links_do_not_open_write_paths", target, kind, None)
+        for target in ("skills", "plugin", "data") for kind in ("symlink", "hardlink")
+    }

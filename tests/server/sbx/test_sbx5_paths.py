@@ -11,13 +11,20 @@ BASES = ("commands", "outside-floor", "mcp", "run-python")
 
 
 CAP6B_PENDING = "SBX-5a cap6b protection is not built"
+FEATURE_MESSAGES = {
+    "cap6b": CAP6B_PENDING,
+    "shared-cache-exclusions": "SBX-5a shared-cache-exclusions protection is not built",
+}
 
 
-def pending(base, *, cap6b=False):
+def pending(base, *, cap6b=False, feature=None):
     if base == "outside-floor" and cap6b:
+        feature = "cap6b"
+    if feature is not None:
+        message = FEATURE_MESSAGES[feature]
         return pytest.param(base, marks=pytest.mark.xfail(
-            "cap6b" not in harness.BUILT_FEATURES, strict=True,
-            raises=pytest.RaisesExc(AssertionError, match="^" + CAP6B_PENDING), reason=CAP6B_PENDING))
+            feature not in harness.BUILT_FEATURES, strict=True,
+            raises=pytest.RaisesExc(AssertionError, match="^" + message), reason=message))
     message = f"SBX-5a {base} adapter is not built"
     return pytest.param(base, marks=pytest.mark.xfail(
         base not in BUILT_BASES, strict=True,
@@ -28,10 +35,11 @@ def pending(base, *, cap6b=False):
 def cap_sbx(tmp_path, request, record_property):
     base = request.param
     assert base in BUILT_BASES, f"SBX-5a {base} adapter is not built"
-    if any(m.kwargs.get("reason") == CAP6B_PENDING for m in request.node.iter_markers("xfail")):
-        # Only the selected feature cases stop here. Once built, all probe and
-        # fixture errors are ordinary failures, including AssertionError.
-        assert "cap6b" in harness.BUILT_FEATURES, CAP6B_PENDING
+    for feature, message in FEATURE_MESSAGES.items():
+        if any(m.kwargs.get("reason") == message for m in request.node.iter_markers("xfail")):
+            # Only measured future cases stop here. Once built, all probe and
+            # fixture errors are ordinary failures, including AssertionError.
+            assert feature in harness.BUILT_FEATURES, message
     h = Harness(tmp_path, base)
     # Test inputs, not computed policy: wide grants must not cancel exclusions.
     h.plugin_root = h.home / "user-chosen-plugin-folder"
@@ -100,7 +108,8 @@ def test_cap6b_write_denied(cap_sbx, name):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("name,cap_sbx", [
-    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
+    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"},
+                 feature="cap6b" if base == "commands" and name in {"skills", "plugin"} else None).marks)
     for base in ("commands", "outside-floor", "run-python")
     for name in ("skills", "plugin", "data")], indirect=["cap_sbx"])
 def test_cap6b_read_denied(cap_sbx, name):
@@ -114,7 +123,8 @@ def test_cap6b_read_denied(cap_sbx, name):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("cap_sbx", [pending(b, cap6b=True) for b in BASES], indirect=True)
+@pytest.mark.parametrize("cap_sbx", [
+    pending(b, cap6b=True, feature="cap6b" if b == "commands" else None) for b in BASES], indirect=True)
 @pytest.mark.parametrize("through_alias", [False, True], ids=["real-name", "home-link"])
 def test_cap6b_symlink_root(cap_sbx, through_alias):
     real = cap_sbx.work / "agent-source"
@@ -129,7 +139,9 @@ def test_cap6b_symlink_root(cap_sbx, through_alias):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("cap_sbx", [pending(b) for b in ("commands", "mcp", "run-python")], indirect=True)
+@pytest.mark.parametrize("cap_sbx", [
+    pending(b, feature="shared-cache-exclusions" if b == "commands" else None)
+    for b in ("commands", "mcp", "run-python")], indirect=True)
 @pytest.mark.parametrize("name", ["npm", "cache", "Library-Caches"])
 def test_shared_cache_is_not_writable(cap_sbx, name):
     folder = target_folder(cap_sbx, name)
@@ -146,8 +158,10 @@ def test_shared_cache_is_not_writable(cap_sbx, name):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("cap_sbx", [pending("commands")], indirect=True)
-@pytest.mark.parametrize("name", ["plugin", "npm", "cache", "Library-Caches"])
+@pytest.mark.parametrize("name,cap_sbx", [
+    pytest.param(name, "commands", marks=pending("commands",
+                 feature="cap6b" if name == "plugin" else "shared-cache-exclusions").marks)
+    for name in ("plugin", "npm", "cache", "Library-Caches")], indirect=["cap_sbx"])
 def test_commands_exclusions_override_a_writable_ancestor(cap_sbx, name):
     # Choosing scratch HOME as the workspace puts each excluded root inside an
     # ordinary write grant. Confinement outside the workspace cannot pass this.
@@ -179,7 +193,8 @@ def test_commands_cache_is_not_visible_to_mcp(cap_sbx):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("cap_sbx,name", [
-    pytest.param(base, name, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
+    pytest.param(base, name, marks=pending(base, cap6b=name in {"skills", "plugin"},
+                 feature="shared-cache-exclusions" if base == "commands" and name == "npm" else None).marks)
     for base in BASES for name in ("skills", "plugin", "data", "npm")
     if not (base == "outside-floor" and name == "npm")], indirect=["cap_sbx"])
 @pytest.mark.parametrize("kind", ["symlink", "hardlink"])
