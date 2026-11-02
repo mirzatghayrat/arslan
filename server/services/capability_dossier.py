@@ -28,6 +28,7 @@ class DossierError(Exception):
 # ── dossiers ─────────────────────────────────────────────────────────────────
 
 def view(row: CapabilitySource) -> dict:
+    from server.services import capability_recheck
     return {"id": row.id, "kind": row.kind, "name": row.name, "candidate_id": row.candidate_id,
             "source_url": row.source_url, "repo": row.repo, "version": row.version, "commit_sha": row.commit_sha,
             "artifact_sha256": row.artifact_sha256, "lock_sha256": row.lock_sha256,
@@ -35,7 +36,10 @@ def view(row: CapabilitySource) -> dict:
             "stars": row.stars, "pushed_days": row.pushed_days,
             "checked_at": row.checked_at.isoformat() + "Z" if row.checked_at else None,
             "runtime": row.runtime, "needs": row.needs or {}, "grants": row.grants or {}, "scan": row.scan,
-            "test": row.test, "files": row.files, "state": row.state, "error": row.error,
+            # #604 review L2: the Registry's answer goes out only as the cleaned `registry_parked`, never raw.
+            "test": {k: v for k, v in row.test.items() if k != "registry_check"} if isinstance(row.test, dict)
+            else row.test, "files": row.files, "state": row.state, "error": row.error,
+            "registry_parked": capability_recheck.parked(row),             # CAP4a-3d: the row and its keep
             "mcp_server_id": row.mcp_server_id, "skill_key": row.skill_key,
             "installed_at": row.installed_at.isoformat() + "Z" if row.installed_at else None}
 
@@ -103,6 +107,29 @@ async def accept_tools(source_id: str, digest: str) -> dict:
                 raise DossierError("too_long_to_review")
             test.pop("tools_changed")
             stored.test = {**test, "tools_pin": change["pin"]}
+            await db.commit()
+    await mcp_service.restart_after_edit(row.mcp_server_id)
+    return view(await source(source_id))
+
+
+async def accept_source(source_id: str, seen: str) -> dict:
+    """CAP4a-3d: the user read why this server's Registry entry parked it (withdrawn, or changed) and keeps it:
+    that answer (`seen`, its digest) is remembered until the entry changes again (no expiry, the user 2026-11-01),
+    so the same answer does not park it again, and the server starts again in the background. Another answer since, or none, is refused."""
+    from server.mcp import discovery
+    from server.services import mcp_service
+    row = await source(source_id)
+    if row.kind != "mcp" or not row.mcp_server_id:
+        raise DossierError("no_source_problem")
+    async with discovery._write_locks.hold(row.mcp_server_id):     # never interleaved with a start's check
+        async with db_session.AsyncSessionLocal() as db:
+            stored = await db.get(CapabilitySource, source_id)
+            check = dict((stored.test or {}).get("registry_check") or {})
+            if not check.get("problem"):
+                raise DossierError("no_source_problem")
+            if not isinstance(seen, str) or seen != check.get("seen"):
+                raise DossierError("source_answer_moved")
+            stored.test = {**(stored.test or {}), "registry_check": {**check, "accepted": {"seen": seen}}}
             await db.commit()
     await mcp_service.restart_after_edit(row.mcp_server_id)
     return view(await source(source_id))

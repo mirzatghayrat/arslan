@@ -5,6 +5,7 @@ import { capabilitiesApi, type CapabilityRow, type CapabilitySource } from "../a
 import { professionalMethodsApi, type ProfessionalMethod } from "../api/professionalMethods";
 import McpServers from "./McpServers";
 import { SourceDossier } from "./capabilities/AddedCapabilities";
+import { RegistryParked } from "./capabilities/RegistryParked";
 import { MethodEditor } from "./companion/ProfessionalMethods";
 import { Button, Dialog, Notice, Tag } from "./kit";
 
@@ -54,6 +55,8 @@ export default function CapabilitySheet({ row, name, what, used, error, onClose,
       </div>
       {failed && <p role="alert" className="text-[12px] text-danger-strong">{t("capabilityList.loadFailed")}</p>}
       {error && <Notice tone="error" role="alert" testId="cap-sheet-error">{error}</Notice>}
+      {/* CAP4a-3d: a connection its Registry entry stopped, and the button that keeps it. */}
+      {kind === "mcp" && row.source_id && <RegistryParked sourceId={row.source_id} onChanged={onChanged} />}
       {server !== undefined && <McpServers only={server} onChanged={onChanged} />}
       {row.origin === "builtin" && row.switch !== null &&
         <p className="text-[12px] text-subtle-foreground" data-testid="cap-sheet-builtin">{t("capabilityList.builtinHint")}</p>}

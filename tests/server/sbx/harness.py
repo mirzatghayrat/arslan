@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base == "commands":
+        if self.base in {"commands", "outside-floor"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -152,6 +152,7 @@ def _commands_profile(self, **parameters) -> str:
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
 
-# SBX-6a declares these only when the corresponding settings are implemented.
-# SBX-5p also uses this immutable set for its independent feature keys.
+# Feature keys are declared only when their protections land: SBX-6a adds "trustd-toggle" and
+# "trusted-lan" with the settings; SBX-5a adds "cap6b" and "shared-cache-exclusions". The existing
+# commands/outside-floor adapters alone do not claim any of them.
 BUILT_FEATURES = frozenset()

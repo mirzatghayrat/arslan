@@ -98,35 +98,6 @@ class Candidate:
     evidence: dict
 
 
-# L11-2 (the user's D2 and the L11-0 picks, 2026-10-31): the same correction folded in a second time offers "make this
-# a rule for this folder?" once; evidence[RULE_OFFER] is offered / added / skipped / removed. RULE_RECORD holds what
-# the card showed (the line, the file, the conversation, the lesson's updated_at), and Add writes only that (#603 F2).
-RULE_OFFER = "rule_offer"
-RULE_RECORD = "rule_offer_record"
-RULE_LINE_MAX = 600
-
-
-async def _rule_offer_target(db, conversation_id: str | None):
-    """The rules file the card would write to; None when there is no folder to offer it for: none chosen (Arslan's
-    default ~/Arslan in a plain chat doesn't count), home itself, folder rules switched off, or learned practices
-    switched off (a rule would make it take effect anyway)."""
-    from server.services import folder_rules, settings_service
-    if not conversation_id or not await settings_service.folder_rules_enabled(db) \
-            or not await settings_service.learned_practices_take_effect(db):
-        return None
-    folder = await folder_rules.chosen_folder(db, conversation_id)
-    if folder is None or folder == folder_rules._home():
-        return None
-    return folder_rules.target(folder)
-
-
-def rule_line(row) -> str:
-    """The lesson as one rules-file line: what is stored is what the card shows (no control, bidi or invisible
-    character, one line, #603 F6)."""
-    from server.orchestrator import untrusted
-    return untrusted.clean_name(render(row), RULE_LINE_MAX)
-
-
 def render(lesson) -> str:
     advice = ("Avoid: " if lesson.polarity == "avoid" else "") + lesson.advice
     return f"{lesson.situation} → {advice}"
@@ -154,31 +125,10 @@ def switched_on(row) -> None:
     row.evidence = {k: v for k, v in (row.evidence or {}).items() if k not in _NOT_IN_EFFECT_KEYS}
 
 
-def rule_state(row) -> dict | None:
-    """L11-3b: where the lesson stands with the folder's rules, for Memory, so an offer outlives the chat's live card.
-    `offered` (Add / Not now) or `added` (Open / Remove), with the file as Overview names it, the conversation the card
-    was offered in, and the line. Memory sends these values to the card's and Overview's endpoints, which check them
-    as before. Nothing for "not now", "removed", no offer, a partial record, or an offer the lesson has outgrown since
-    (Add would refuse it as `lesson_changed`)."""
-    from pathlib import Path
-    evidence = row.evidence if isinstance(row.evidence, dict) else {}
-    state, record = evidence.get(RULE_OFFER), evidence.get(RULE_RECORD)
-    if state not in ("offered", "added") or not isinstance(record, dict):
-        return None
-    line, path, cid = record.get("line"), record.get("path"), record.get("conversation_id")
-    if not all(isinstance(v, str) and v for v in (line, path, cid)):
-        return None
-    if state == "offered" and row.updated_at.isoformat() != record.get("updated_at"):
-        return None
-    from server.services import folder_rules
-    return {"state": state, "file": folder_rules._shown(Path(path), folder_rules._home()), "conversation_id": cid,
-            "line": line}
-
-
 def present(row) -> dict:
     return {"id": row.id, "situation": row.situation, "advice": row.advice, "polarity": row.polarity,
             "source": row.source, "status": row.status, "pinned": bool(row.pinned), "text": render(row),
-            "not_in_effect": not_in_effect(row), "rule": rule_state(row),
+            "not_in_effect": not_in_effect(row),
             "recalled": row.recalled, "followed": row.followed, "succeeded": row.succeeded, "failed": row.failed,
             "evidence": row.evidence or {},
             "last_used_at": row.last_used_at.isoformat() + "Z" if row.last_used_at else None,
@@ -409,7 +359,6 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         async with db_session.AsyncSessionLocal() as db:
             if merged is not None:
                 row = await db.get(Lesson, merged.id)
-                was_correction = row.source == "user_correction"
                 evidence = dict(row.evidence or {})
                 evidence["seen"] = int(evidence.get("seen") or 1) + 1
                 # S64-0: a waiting lesson's words may come from a turn that read outside content.
@@ -438,23 +387,8 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     if takes_effect and row.status == "proposed":
                         row.status = "active"
                     row.updated_at = now
-                    offer = None
-                    if was_correction and cand.source == "user_correction" and evidence["seen"] >= 2 \
-                            and RULE_OFFER not in evidence:
-                        path = await _rule_offer_target(db, conversation_id)
-                        if path is not None:
-                            from server.services import folder_rules
-                            offer = {"line": rule_line(row), "path": str(path), "conversation_id": conversation_id,
-                                     "updated_at": now.isoformat()}
-                            evidence[RULE_OFFER], evidence[RULE_RECORD] = "offered", offer
-                            shown = folder_rules._shown(path, folder_rules._home())
                     row.evidence = evidence
                     await db.commit()
-                    if offer is not None and emit is not None:
-                        try:
-                            emit({"type": "rule_offer", "lesson_id": row.id, "text": offer["line"], "file": shown})
-                        except Exception:  # noqa: BLE001 — the socket may be gone by now; the lesson stands
-                            logger.debug("rule offer not sent")
                     continue
             status, rival_id = ("active" if immediate else "proposed"), None
             if conflicting is not None:

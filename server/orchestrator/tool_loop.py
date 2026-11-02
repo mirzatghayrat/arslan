@@ -2262,6 +2262,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "additionalProperties": False,
     },
     "list_my_capabilities": {"type": "object", "properties": {}, "additionalProperties": False},
+    "my_status": {"type": "object", "properties": {}, "additionalProperties": False},
     "schedule_task": {
         "type": "object",
         "properties": {

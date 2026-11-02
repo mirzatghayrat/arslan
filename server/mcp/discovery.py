@@ -142,20 +142,30 @@ class ServerGone(ValueError):
 
 #: CAP5a: the parked line for a server whose tools changed (Arslan's own words, in the supervisor's safe reasons).
 TOOLS_CHANGED_LINE = "its tools changed since it was installed — review the change in Capabilities"
-#: Parks only the user's own review ends (the supervisor's fix line says so, never "press Reconnect").
-HELD_REASONS = (TOOLS_CHANGED_LINE,)
+#: Parks only the user's own review ends (the supervisor's fix line says so, never "press Reconnect"): CAP5a's,
+#: and CAP4a-3d's (capability_recheck.LINES, which all start so).
+HELD_REASONS = (TOOLS_CHANGED_LINE, "its Registry entry ")
 #: CAP5a (#577 review F2): a review shows whole every tool the accept would pin. A change too large to read in
 #: full (more tools, or a longer tool, than this) is recorded without an accept: remove or reinstall instead.
 REVIEW_TOOLS_MAX, REVIEW_TOOL_CHARS_MAX = 100, 20_000
 
 
-class ToolsChanged(Exception):
+class Parked(Exception):
+    """A start Arslan stops on purpose: the supervisor parks the server with `line`, Arslan's own words (each
+    line starts with one of its safe reasons), until the user looks at it in Capabilities."""
+
+    def __init__(self, server_id: int, line: str):
+        super().__init__(line)
+        self.server_id, self.line = server_id, line
+
+
+class ToolsChanged(Parked):
     """CAP5a: a server Arslan installed listed tools that differ from the ones pinned at its first test.
-    Nothing of the new listing was written; the supervisor parks the server (TOOLS_CHANGED_LINE)."""
+    Nothing of the new listing was written."""
 
     def __init__(self, server_id: int, changes: dict):
-        super().__init__(TOOLS_CHANGED_LINE)
-        self.server_id, self.changes = server_id, changes
+        super().__init__(server_id, TOOLS_CHANGED_LINE)
+        self.changes = changes
 
 
 def _fingerprint(tool) -> str:
@@ -421,6 +431,10 @@ async def connect_and_discover(server_id: int, *, start_budget_s: float | None =
         pending = await held(server_id)
         if pending is not None:                 # #577 review F1: held until reviewed; no process is opened
             raise ToolsChanged(server_id, pending)
+        # CAP4a-3d: an installed Registry server's entry, asked again once a day (and after an update of Arslan)
+        # before it starts; a withdrawn or changed entry parks it, also before any process is opened.
+        from server.services import capability_recheck
+        await capability_recheck.before_start(server_id)
         tools, complete = await _list_all(server)
         try:
             return await _write(server_id, tools, complete=complete)
