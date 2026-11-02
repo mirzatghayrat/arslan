@@ -63,7 +63,7 @@ def test_only_measured_future_cases_use_feature_gates():
                 selected.add((features[0], arguments["cap_sbx"], *row))
             elif arguments["cap_sbx"] == "commands":
                 real_commands.add(row)
-    assert total == 73
+    assert total == 78
     outside = {
         (name, target, None, None)
         for name in ("test_cap6b_write_denied", "test_cap6b_read_denied")
@@ -78,12 +78,17 @@ def test_only_measured_future_cases_use_feature_gates():
         ("test_cap6b_read_denied", target, None, None) for target in ("skills", "plugin")
     } | {
         ("test_cap6b_symlink_root", None, None, alias) for alias in (False, True)
-    } | {("test_commands_exclusions_override_a_writable_ancestor", "plugin", None, None)}
+    } | {("test_commands_exclusions_override_a_writable_ancestor", "plugin", None, None)} | {
+        ("test_commands_workspace_inside_cap6b_stays_read_only", target, None, None)
+        for target in ("skills", "plugin")
+    }
     cache_commands = {
         (name, target, None, None)
         for name in ("test_shared_cache_is_not_writable", "test_commands_exclusions_override_a_writable_ancestor")
         for target in ("npm", "cache", "Library-Caches")
-    } | {("test_links_do_not_open_write_paths", "npm", kind, None) for kind in ("symlink", "hardlink")}
+    } | {("test_links_do_not_open_write_paths", "npm", kind, None) for kind in ("symlink", "hardlink")} | {
+        ("test_peer_cache_inside_a_grant_stays_closed", None, None, None)
+    }
     assert selected == ({("cap6b", "outside-floor", *row) for row in outside}
                         | {("cap6b", "commands", *row) for row in cap6b_commands}
                         | {("shared-cache-exclusions", "commands", *row) for row in cache_commands})

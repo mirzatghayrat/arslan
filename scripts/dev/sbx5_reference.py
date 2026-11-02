@@ -21,7 +21,7 @@ def reference(h, **parameters):
         # Commands grant the workspace, not all HOME. MCP also gets the supplied
         # folder grants; the ancestor test deliberately makes HOME the workspace.
         grants = h.granted_folders if h.base == "mcp" else []
-        text = default_deny_profile([h.work, *grants, h.cache_root], closed=[h.peer_cache],
+        text = default_deny_profile([h.work, h.temp, *grants, h.cache_root], closed=[h.peer_cache],
                                     ipc_prefix=h.ipc_prefix)
     for path in cap:
         text += f'(deny file-read* file-write* {subpath(path.resolve())})\n'

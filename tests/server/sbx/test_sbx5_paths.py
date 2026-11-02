@@ -1,4 +1,9 @@
-"""CAP6b/cache gates distinguish built adapters from built protections."""
+"""CAP6b/cache gates distinguish built adapters from built protections.
+
+Must go red: M3 CAP6b moved from protected to closed; M7 commands peer-cache
+closure removed; M7-REVERSE MCP peer-cache closure removed. H1 corrupts the
+pre-existing-link measurement's result and must fail its parent-side check.
+"""
 import sys
 
 import pytest
@@ -229,3 +234,86 @@ print('checked')
 """, target, probe="cap6b-hardlink")
     assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
     assert target.read_text() == "original"
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@pytest.mark.parametrize("cap_sbx", [pending("commands", feature="cap6b")], indirect=True)
+@pytest.mark.parametrize("name", ["skills", "plugin"])
+def test_commands_workspace_inside_cap6b_stays_read_only(cap_sbx, name):
+    # Unlike a protected child of a writable parent, this catches moving CAP6b
+    # into `closed`: commands intentionally reopen workspaces under closed roots.
+    cap_sbx.work = target_folder(cap_sbx, name) / "nested-workspace"
+    cap_sbx.work.mkdir(parents=True)
+    target = cap_sbx.work / "sentinel"
+    target.write_text("original")
+    source = """
+import errno, pathlib, sys
+# Positive control is outside the protected workspace, in this run's private temp.
+(pathlib.Path(sys.argv[2]) / 'ordinary').write_text('ok')
+try:
+    pathlib.Path(sys.argv[1]).write_text('changed')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    raise AssertionError('nested CAP6b workspace reopened')
+print('checked')
+"""
+    result = cap_sbx.python(source, target, cap_sbx.temp, probe="nested-cap6b-workspace")
+    assert result.returncode == 0 and result.stdout.strip() == "checked", result.stderr
+    assert target.read_text() == "original"
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@pytest.mark.parametrize("cap_sbx", [
+    pending("commands", feature="shared-cache-exclusions"), pending("mcp")], indirect=True)
+def test_peer_cache_inside_a_grant_stays_closed(cap_sbx):
+    # MCP's supplied grant is independent of its own server root. Reopening a
+    # server root is a different lifecycle decision, not this nested-grant case.
+    parent = cap_sbx.work if cap_sbx.base == "commands" else cap_sbx.granted_folders[0]
+    cap_sbx.peer_cache = parent / "peer-cache"
+    cap_sbx.peer_cache.mkdir()
+    target = cap_sbx.peer_cache / "package"
+    target.write_text("original")
+    assert target.is_relative_to(parent)
+    result = cap_sbx.python("import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('own')",
+                             cap_sbx.cache_root / "own", probe="own-cache-control")
+    assert result.returncode == 0, result.stderr
+    refuse(cap_sbx, target, "read")
+    refuse(cap_sbx, target, "write")
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@pytest.mark.parametrize("cap_sbx", [pending("mcp")], indirect=True)
+def test_preexisting_hardlink_measurement(cap_sbx, record_property):
+    # §1/Acceptance permit an SBX-M exposure report for existing aliases. This
+    # is deliberately a measurement, not a claim that a writable alias is safe.
+    import json
+    import os
+
+    target = cap_sbx.root / "outside-preexisting"
+    target.write_text("original")
+    alias = cap_sbx.work / "preexisting-alias"
+    os.link(target, alias)
+    assert target.stat().st_ino == alias.stat().st_ino
+    result = cap_sbx.python("""
+import errno, json, pathlib, sys
+pathlib.Path('ordinary').write_text('ok')
+try:
+    pathlib.Path(sys.argv[1]).write_text('changed')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+    print(json.dumps({'write_allowed': False, 'errno': exc.errno}))
+else:
+    print(json.dumps({'write_allowed': True, 'errno': 0}))
+""", alias, probe="preexisting-hardlink-measurement")
+    assert result.returncode == 0, result.stderr
+    outcome = json.loads(result.stdout)
+    assert target.read_text() == ("changed" if outcome["write_allowed"] else "original")
+    record_property("hardlink_outcome", "exposed" if outcome["write_allowed"] else "refused")
+    record_property("denial_gate", False)
