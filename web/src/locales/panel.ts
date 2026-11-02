@@ -153,8 +153,7 @@ export const activityMessages = {
     "origin_job": "Background job",
     "origin_scheduled": "Scheduled task",
     "origin_phone": "From iPhone",
-    "origin_browser": "Browser preview",
-    "drawerKeys": "↑ ↓ previous / next · Esc closes"
+    "origin_browser": "Browser preview"
   },
   "zh": {
     "judgments": "判断记录",
@@ -278,8 +277,7 @@ export const activityMessages = {
     "origin_job": "后台作业",
     "origin_scheduled": "定时任务",
     "origin_phone": "手机发来",
-    "origin_browser": "浏览器预览",
-    "drawerKeys": "↑ ↓ 上一条 / 下一条 · Esc 关闭"
+    "origin_browser": "浏览器预览"
   },
   "ja": {
     "judgments": "判断記録",
@@ -403,8 +401,7 @@ export const activityMessages = {
     "origin_job": "バックグラウンド作業",
     "origin_scheduled": "定期タスク",
     "origin_phone": "iPhone から",
-    "origin_browser": "ブラウザのプレビュー",
-    "drawerKeys": "↑ ↓ 前 / 次 · Esc で閉じる"
+    "origin_browser": "ブラウザのプレビュー"
   },
   "es": {
     "judgments": "Juicios",
@@ -531,8 +528,7 @@ export const activityMessages = {
     "origin_job": "Trabajo en segundo plano",
     "origin_scheduled": "Tarea programada",
     "origin_phone": "Desde el iPhone",
-    "origin_browser": "Vista previa del navegador",
-    "drawerKeys": "↑ ↓ anterior / siguiente · Esc cierra"
+    "origin_browser": "Vista previa del navegador"
   },
   "de": {
     "judgments": "Urteile",
@@ -659,8 +655,7 @@ export const activityMessages = {
     "origin_job": "Hintergrundauftrag",
     "origin_scheduled": "Geplante Aufgabe",
     "origin_phone": "Vom iPhone",
-    "origin_browser": "Browser-Vorschau",
-    "drawerKeys": "↑ ↓ vorherige / nächste · Esc schließt"
+    "origin_browser": "Browser-Vorschau"
   },
   "fr": {
     "judgments": "Jugements",
@@ -787,7 +782,6 @@ export const activityMessages = {
     "origin_job": "Travail en arrière-plan",
     "origin_scheduled": "Tâche planifiée",
     "origin_phone": "Depuis l’iPhone",
-    "origin_browser": "Aperçu du navigateur",
-    "drawerKeys": "↑ ↓ précédent / suivant · Échap ferme"
+    "origin_browser": "Aperçu du navigateur"
   }
 };

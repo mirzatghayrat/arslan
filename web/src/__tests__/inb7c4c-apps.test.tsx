@@ -52,7 +52,7 @@ const panel = () => within(inspector()).getByRole("tabpanel");
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+  useActivityStore.setState({ range: "24h", filter: {}, pickedRunId: null, pickedRun: null, replayStep: null,
     replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue([run]);

@@ -48,7 +48,6 @@ export default function RunInspector({ runs, needs }: { runs: RunListItem[]; nee
 function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
   const { t, i18n } = useTranslation();
   const setPickedRun = useActivityStore((s) => s.setPickedRun);
-  const setOpenRun = useActivityStore((s) => s.setOpenRun);
   const step = useActivityStore((s) => s.replayStep);
   const setReplay = useActivityStore((s) => s.setReplay);
   const clock = useMemo(() => clockOf(i18n.language), [i18n.language]);
@@ -94,8 +93,6 @@ function Picked({ runId, run }: { runId: number; run: RunListItem | null }) {
           <h3 className="truncate text-[13px] font-medium text-foreground">{run?.user_message || t("activityPage.run", { id: runId })}</h3>
           {meta && <p className="mt-0.5 text-[11px] text-subtle-foreground">{meta}</p>}
         </div>
-        <button type="button" onClick={() => setOpenRun(runId)}
-          className="shrink-0 rounded-md px-2 py-0.5 text-[11.5px] text-primary hover:bg-primary/10">{t("activityPage.details")}</button>
         <button type="button" onClick={() => setPickedRun(null)} aria-label={t("activityPage.allRuns")} title={t("activityPage.allRuns")}
           className="shrink-0 rounded p-1 text-muted-foreground hover:bg-foreground/5">
           <X size={12} aria-hidden />
@@ -280,8 +277,8 @@ function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t
 
 /**
  * INB7-c4a, board F's 「诊断」: the picked run's facts (run, model, tokens in and out, cost, duration, score), its problems, and
- * the drawer's two tools that belong here: clearing its debug details (asked first; it cannot be undone) and exporting it as
- * Markdown. The drawer's charts (the fleet radar, the history sparkline) wait on the user's word, behind "Details" (⓪Plan).
+ * the old drawer's two tools: clearing its debug details (asked first; it cannot be undone) and exporting it as Markdown. The
+ * drawer itself, with its fleet radar and history sparkline, is gone (the user, 2026-11-02: 「去掉」).
  */
 function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoaded, onCleared }: {
   detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void;
