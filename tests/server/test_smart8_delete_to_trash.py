@@ -122,6 +122,7 @@ def test_another_disk_without_a_trash_is_refused_and_nothing_is_copied(home, tmp
     "osascript <<'EOF'\ntell application \"Finder\"\n  empty trash without warning\nend tell\nEOF",
     "cd ~/.Trash && rm -rf *", "cd ~/.Trash; find . -delete", "pushd ~/.Trash && rm old.txt",
     'cd "$HOME/.Trash" && rm -rf -- *', "cd /Volumes/X/.Trashes/501 && rmdir old",
+    "builtin cd ~/.Trash && rm -rf *", "CDPATH=/x cd ~/.Trash && rm -rf *", "A=1 B=2 builtin cd ~/.Trash; rm x",
     "osascript -e 'tell application \"Finder\" to «event fndrempt»'",
 ])
 def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
@@ -263,7 +264,7 @@ async def test_the_executor_moves_and_never_runs_the_command(home, tmp_path, mon
 
 @pytest.mark.parametrize("mode,words", [
     ("trash", "moves them to the Trash"), ("permanent", "deletes permanently; it can't go to the Trash"),
-    ("sandboxed", "deleted permanently"),
+    ("sandboxed", "deleted permanently"), ("protected", "neither moved nor deleted"),
 ])
 async def test_the_card_says_how_allow_deletes(tmp_path, monkeypatch, mode, words):
     from server.services import command_confirm, permissions
@@ -403,3 +404,16 @@ def test_another_disks_trash_that_is_a_link_is_refused(home, tmp_path, monkeypat
     monkeypatch.setattr(dt.os, "lstat", lstat)
     out = dt.move(f"rm -r {target}", tmp_path)
     assert not out["ok"] and (target / "notes.txt").exists() and not any(elsewhere.iterdir())
+
+
+@pytest.mark.parametrize("command,mode", [
+    ("rm -rf ~/.arslan", "protected"), ("rm -rf ~/Library", "protected"), ("rm -rf ~/old ~/.arslan/secret_key", "protected"),
+    ("rm -rf ~/old", "trash"), ("rm -rf .arslan", "trash"),        # relative: resolved only when allowed, then refused
+])
+def test_the_card_says_when_arslan_s_own_files_are_among_the_targets(protected, command, mode):
+    assert dt.card_mode(command, outside=True) == mode
+
+
+async def test_a_card_with_a_protected_target_still_moves_the_rest(monkeypatch, protected):
+    ex, asked = await _run(monkeypatch, {"command": "rm -rf ~/smart8-old ~/.arslan"}, sandbox_on=False)
+    assert asked == [{"delete": "protected"}] and ex.ran == [True]

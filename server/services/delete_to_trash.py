@@ -95,16 +95,26 @@ def _literal_target(word: str) -> bool:
 
 
 def card_mode(command: str, *, outside: bool) -> str:
-    """How allow deletes, for the card: "trash" when it moves the targets to the Trash; "sandboxed" when the
-    command runs in the sandbox, whose delete is permanent where it is allowed; "permanent" otherwise."""
+    """How allow deletes, for the card: "trash" when it moves the targets to the Trash; "protected" when one of
+    them is Arslan's own data or keys, which stay where they are (the rest go to the Trash); "sandboxed" when the
+    command runs in the sandbox, whose delete is permanent where it is allowed; "permanent" otherwise. A relative
+    target is resolved only when allowed (the card doesn't know the folder yet), and `move` refuses it then too."""
     if not outside:
         return "sandboxed"
-    return "trash" if plan(command) is not None else "permanent"
+    found = plan(command)
+    if found is None:
+        return "permanent"
+    for word in found.targets:
+        if (word.startswith(("/", "~"))) and touches_protected(_absolute(word, Path("/"))):
+            return "protected"
+    return "trash"
 
 
 def card_note(mode: str) -> str:
     """The card's sentence for its delete mode (⑤CAP's shared component words the Mac card itself)."""
     return {"trash": "Allow moves them to the Trash.",
+            "protected": "Arslan's own data and keys are among them: those stay where they are, and are neither "
+                         "moved nor deleted. Allow moves the rest to the Trash.",
             "sandboxed": "It runs in the sandbox; what it deletes there is deleted permanently.",
             "permanent": "This deletes permanently; it can't go to the Trash."}.get(mode, "")
 
