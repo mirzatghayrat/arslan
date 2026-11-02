@@ -7,18 +7,23 @@ which inherits the terminal's PATH, never reproduces it. The fix is twofold
 because resolving the command alone is not enough: `npx` re-launches `node`
 from the child's PATH, so the child env needs the merged PATH too.
 
-The login-shell PATH is fetched once per process (the user's dotfiles are
-where Homebrew/nvm append themselves) with hard fallbacks for when that
-resolution fails.
+The user's PATH is fetched once per process from an INTERACTIVE login shell (the user's dotfiles are where
+Homebrew, nvm and installers like `claude`'s append themselves; SMART-1: a zsh login shell alone never reads
+~/.zshrc), with hard fallbacks for when that resolution fails. It runs in the server, outside every sandbox, and
+the commands run later never run the rc files themselves.
 """
 from __future__ import annotations
 
 import functools
 import os
+import secrets
 import shutil
+import signal
 import subprocess
 
 _FALLBACK_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+#: SMART-1: where user-level installers put their tools, under ~ (added even when the shell can't answer).
+_HOME_FALLBACK_DIRS = (".local/bin", "bin", ".cargo/bin")
 _SHELL_TIMEOUT = 5.0
 
 # Ambient provider keys, the Arslan secret, SSH agents, NODE_OPTIONS and
@@ -40,24 +45,50 @@ def child_environment(additions: dict, explicit: dict) -> dict:
 
 @functools.lru_cache(maxsize=1)
 def login_shell_path() -> str:
-    """The user's interactive PATH, or "" when the shell can't produce one."""
+    """The user's interactive PATH, or "" when the shell can't produce one in time.
+
+    SMART-1: `-i -l`, so zsh reads ~/.zshrc as well as ~/.zprofile (the old `-l` alone never read ~/.zshrc). The
+    PATH is printed between a marker made fresh for this call, so whatever the rc files print (a banner, a fake
+    marker) is ignored; stdin is empty, so a prompt in them reads EOF; and the whole process group gets
+    `_SHELL_TIMEOUT` seconds, then is killed, so an rc that hangs, or leaves a child holding the pipes, can't
+    hold a spawn."""
     shell = os.environ.get("SHELL") or "/bin/zsh"
+    token = secrets.token_hex(8)
+    script = f'printf "\\n__ARSLAN_PATH_{token}__%s__END_{token}__\\n" "$PATH"'
     try:
-        proc = subprocess.run(
-            [shell, "-l", "-c", 'printf %s "$PATH"'],
-            capture_output=True, text=True, timeout=_SHELL_TIMEOUT, check=False,
-        )
+        proc = subprocess.Popen([shell, "-i", "-l", "-c", script], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                start_new_session=True)
     except Exception:  # noqa: BLE001 — a broken shell must never block a spawn
         return ""
-    return proc.stdout.strip() if proc.returncode == 0 else ""
+    try:
+        out, _ = proc.communicate(timeout=_SHELL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            proc.communicate(timeout=1)
+        except Exception:  # noqa: BLE001 — the pipes are abandoned, not waited on
+            pass
+        return ""
+    except Exception:  # noqa: BLE001
+        return ""
+    start, end = f"__ARSLAN_PATH_{token}__", f"__END_{token}__"
+    for line in (out or "").splitlines():
+        if line.startswith(start) and line.endswith(end):
+            return line[len(start):-len(end)].strip()
+    return ""
 
 
 def merged_path() -> str:
     """Current PATH first (dev behaviour unchanged), then login-shell additions,
     then hard fallbacks — deduplicated, order-preserving."""
     parts: list[str] = []
-    for chunk in (os.environ.get("PATH", ""), login_shell_path(),
-                  os.pathsep.join(_FALLBACK_DIRS)):
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    fallbacks = [*_FALLBACK_DIRS, *(os.path.join(home, d) for d in _HOME_FALLBACK_DIRS)]
+    for chunk in (os.environ.get("PATH", ""), login_shell_path(), os.pathsep.join(fallbacks)):
         for p in chunk.split(os.pathsep):
             if p and p not in parts:
                 parts.append(p)
