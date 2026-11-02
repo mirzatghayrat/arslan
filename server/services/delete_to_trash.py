@@ -1,4 +1,4 @@
-"""SMART-8 delete cards (the user, 2026-11-02: 「把「允许」从直接彻底删掉 改成 移到废纸篓」): when the user allows a
+"""SMART-8 delete cards (the user, 2026-11-02: 「把“允许”从直接彻底删掉 改成 移到废纸篓」): when the user allows a
 delete outside the working folder, the targets go to the Trash instead of being deleted outright, as Finder does.
 
 Only a delete that reads with certainty is moved: the whole command is one `rm`, `rmdir` or `unlink` with literal
