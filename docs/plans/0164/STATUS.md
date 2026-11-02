@@ -240,7 +240,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 **Your list (late evening):**
 1. **#650 (IPB-1b), you merge:** on the iOS critical path. Main is merged in at b8af9a45 (724 / 261), and ①iOS's OK carries over by identity. Merge once CI is green.
 2. **Build 31:** ①iOS waits for your 「传」 to upload it to TestFlight; it can go before 0.1.64.
-3. **#525 (retire the pocket):** ①iOS recommends shipping it in 0.1.64, so a 1.0 user never sees a 「Remote（旧）」 row. Your go.
+3. **#525 (retire the pocket): in 0.1.64** (the user, 2026-11-02, "Yes, in 0.1.64"). ②Main merges main into it, takes it out of draft and gets a review; ①iOS re-checks the vectors. It's a Bridge PR, so you merge it.
 4. **#666 (SBX-4a), you merge,** after Codex's 4p device gates land and CI is green.
 5. **Before the tag (you present):** the real-Mac signed-feed update test from #684's body (a throwaway key, a separately named test app); the OCR / PDF / attachment smoke for DEP1; Q1c end to end with build 31.
 
