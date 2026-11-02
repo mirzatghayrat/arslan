@@ -85,13 +85,15 @@ def _json_size(value) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
 
 
-def fit_history(conversation_id: str, messages: list[dict]) -> tuple[list[dict], bool]:
+def fit_history(conversation_id: str, messages: list[dict], details: dict | None = None) -> tuple[list[dict], bool]:
     """The newest messages whose `chat.history.result` body fits HISTORY_BUDGET, oldest first,
     and whether any were left out (§5.7). The oldest go first; a single message bigger than
-    the whole budget keeps its start, cut with "…", rather than vanishing."""
+    the whole budget keeps its start, cut with "…", rather than vanishing. `details` (IPB, §5.10)
+    is counted first, whole, and the messages fit into what is left."""
     budget = HISTORY_BUDGET
+    shell = {"conversation_id": conversation_id, "messages": [], **({"details": details} if details is not None else {})}
     sizes = [_json_size(m) for m in messages]
-    total = _json_size({"conversation_id": conversation_id, "messages": []}) + sum(sizes) + max(len(sizes) - 1, 0)
+    total = _json_size(shell) + sum(sizes) + max(len(sizes) - 1, 0)
     if total <= budget:
         return messages, False
     start = 0
@@ -105,7 +107,7 @@ def fit_history(conversation_id: str, messages: list[dict]) -> tuple[list[dict],
         while low < high:                              # the longest start of the text that fits
             middle = (low + high + 1) // 2
             trial = kept[:-1] + [{**last, "text": text[:middle] + "…"}]
-            if _json_size({"conversation_id": conversation_id, "messages": trial}) <= budget:
+            if _json_size({**shell, "messages": trial}) <= budget:
                 low = middle
             else:
                 high = middle - 1
