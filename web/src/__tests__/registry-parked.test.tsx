@@ -1,6 +1,6 @@
 // CAP4a-3d's web half (the board the user OK'd, 2026-11-02): a connection its Registry entry stopped, and the button
 // that keeps it. The row reads the server's `registry_parked`; the keep posts the `seen` it showed.
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -15,6 +15,7 @@ vi.mock("../components/McpServers", () => ({ default: () => null }));
 import { ApiError } from "../api/client";
 import { RegistryParked } from "../components/capabilities/RegistryParked";
 import CapabilitySheet from "../components/CapabilitySheet";
+import { formatUiDate } from "../lib/localeFormatting";
 import type { CapabilitySource, RegistryParked as Parked } from "../api/capabilities";
 
 const INSTALLED = { registry_type: "pypi", identifier: "notes-mcp", version: "1.2.0" };
@@ -84,7 +85,7 @@ describe("a connection its Registry entry stopped", () => {
     render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
     const why = await screen.findByTestId("registry-parked-why");
     expect(why).not.toHaveTextContent("capabilityList.parked_today");
-    expect(why).toHaveTextContent(new Date("2026-10-01T09:00:00Z").toLocaleDateString());
+    expect(why).toHaveTextContent(formatUiDate("2026-10-01T09:00:00Z"));
   });
 
   it("keeping posts the answer it showed, then says it started again", async () => {
@@ -103,15 +104,21 @@ describe("a connection its Registry entry stopped", () => {
     const newer = source({ why: "changed", seen: "b".repeat(64),
       now: { registry_type: "pypi", identifier: "other", version: "9" } });
     api.source.mockResolvedValue(newer).mockResolvedValueOnce(source({}));
-    api.acceptSource.mockRejectedValue(new ApiError("moved", 409, { code: "source_answer_moved" }));
+    api.acceptSource.mockRejectedValueOnce(new ApiError("moved", 409, { code: "source_answer_moved" }))
+      .mockResolvedValueOnce(source(null));
     render(<RegistryParked sourceId="src1" onChanged={onChanged} />);
     fireEvent.click(await screen.findByTestId("registry-keep"));
     expect(await screen.findByTestId("registry-parked-error")).toHaveTextContent("capabilityList.parked_moved");
     expect(await screen.findByTestId("registry-parked-now")).toHaveTextContent("other 9 (PyPI)");
     expect(screen.queryByTestId("registry-kept")).toBeNull();
     expect(onChanged).not.toHaveBeenCalled();
+    // The newer answer is shown, never kept by itself: one post so far, of the answer that was shown first.
+    expect(api.acceptSource).toHaveBeenCalledTimes(1);
+    expect(api.acceptSource).toHaveBeenNthCalledWith(1, "src1", "a".repeat(64));
     fireEvent.click(screen.getByTestId("registry-keep"));
-    await waitFor(() => expect(api.acceptSource).toHaveBeenLastCalledWith("src1", "b".repeat(64)));
+    expect(await screen.findByTestId("registry-kept")).toBeInTheDocument();
+    expect(api.acceptSource).toHaveBeenNthCalledWith(2, "src1", "b".repeat(64));
+    expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
   it("a reload that fails after a 409 keeps the row it showed", async () => {
@@ -121,6 +128,19 @@ describe("a connection its Registry entry stopped", () => {
     fireEvent.click(await screen.findByTestId("registry-keep"));
     expect(await screen.findByTestId("registry-parked-error")).toHaveTextContent("capabilityList.parked_moved");
     expect(screen.getByTestId("registry-parked-installed")).toHaveTextContent("notes-mcp 1.2.0 (PyPI)");
+  });
+
+  it("a first load that fails says so", async () => {
+    api.source.mockRejectedValue(new ApiError("down", 503));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    expect(await screen.findByTestId("registry-parked-load-failed")).toHaveTextContent("capabilityList.loadFailed");
+  });
+
+  it("a changed remote says keeping it keeps connecting to the address it was added with", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", installed: { url: "https://mcp.example.com/notes" },
+      now: { url: "https://elsewhere.example.net/notes" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    expect(await screen.findByTestId("registry-parked-keep-runs")).toHaveTextContent("capabilityList.parked_keepRunsRemote");
   });
 
   it("another failure says so and keeps the row", async () => {
@@ -153,5 +173,56 @@ describe("in a row's details sheet", () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(api.source).not.toHaveBeenCalled();
     expect(screen.queryByTestId("registry-parked")).toBeNull();
+  });
+});
+
+// #604 max review (0396a90d): two rows must never read the same without a word, and a lookalike never pass.
+describe("values that could pass for each other", () => {
+  const NBSP = String.fromCodePoint(0xa0);
+  const rows = async () => ({ installed: await screen.findByTestId("registry-parked-installed"),
+                              now: screen.getByTestId("registry-parked-now") });
+
+  it("spacing moved between the name and the version reads the same: the note says so, the odd space is marked", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", looks_same: false,
+      installed: { registry_type: "pypi", identifier: "notes-mcp 1.2.0", version: " " },
+      now: { registry_type: "pypi", identifier: NBSP, version: "notes-mcp 1.2.0" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    const { now } = await rows();
+    expect(screen.getByTestId("registry-parked-looks-same")).toBeInTheDocument();
+    expect(within(now).getByTestId("non-ascii")).toHaveTextContent("U+00A0");
+  });
+
+  it.each([["a Cyrillic р", "notes-mc" + String.fromCodePoint(0x440), "U+0440"],
+           ["a Cyrillic о", "n" + String.fromCodePoint(0x43e) + "tes-mcp", "U+043E"],
+           ["U+2010 for a hyphen", "notes" + String.fromCodePoint(0x2010) + "mcp", "U+2010"]])(
+    "%s in a name is marked by its code point", async (_what, identifier, code) => {
+      api.source.mockResolvedValue(source({ why: "changed", now: { registry_type: "pypi", identifier, version: "1.2.0" } }));
+      render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+      const { now } = await rows();
+      expect(within(now).getByTestId("non-ascii")).toHaveTextContent(code);
+    });
+
+  it("a non-ASCII address is marked too", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", installed: { url: "https://example.com/mcp" },
+      now: { url: "https://ex" + String.fromCodePoint(0x430) + "mple.com/mcp" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    const { now } = await rows();
+    expect(within(now).getByTestId("non-ascii")).toHaveTextContent("U+0430");
+  });
+
+  it("an empty value reads as a dash, on either side", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", installed: { identifier: "", version: "" }, now: {} }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    const { installed, now } = await rows();
+    expect(installed).toHaveTextContent(/^—$/);
+    expect(now).toHaveTextContent(/^—$/);
+  });
+
+  it("plain ASCII is shown as it is, with no marks", async () => {
+    api.source.mockResolvedValue(source({ why: "changed", now: { registry_type: "pypi", identifier: "notes-mcp-next", version: "1.2.0" } }));
+    render(<RegistryParked sourceId="src1" onChanged={vi.fn()} />);
+    await rows();
+    expect(screen.queryByTestId("non-ascii")).toBeNull();
+    expect(screen.queryByTestId("registry-parked-looks-same")).toBeNull();
   });
 });

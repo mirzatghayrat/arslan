@@ -500,6 +500,13 @@ async def test_a_changed_remote_shows_both_urls(world):
     await _parked_by(world, _cloud(ELSEWHERE), cand=REMOTE)
     parked = (await _view(world))["registry_parked"]
     assert parked["installed"] == {"url": URL["url"]} and parked["now"] == {"url": ELSEWHERE["url"]}
+    assert parked["looks_same"] is False                      # #604 max review: SM3 compared the identifier only
+
+
+async def test_a_change_of_version_only_does_not_read_the_same(world):
+    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": "notes-mcp", "version": "1.2.1"}]))
+    parked = (await _view(world))["registry_parked"]
+    assert parked["now"]["version"] == "1.2.1" and parked["looks_same"] is False
 
 
 @pytest.mark.parametrize("state", ["the same entry", "kept", "never asked", "no answer"])

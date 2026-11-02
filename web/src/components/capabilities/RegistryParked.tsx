@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../api/client";
 import { capabilitiesApi, type CapabilitySource, type RegistryNames } from "../../api/capabilities";
-import { Escaped } from "../../lib/outsideText";
+import { formatUiDate } from "../../lib/localeFormatting";
 import { Button, Notice } from "../kit";
 
 const REGISTRY = { pypi: "PyPI", npm: "npm", oci: "OCI", nuget: "NuGet" } as Record<string, string>;
@@ -15,6 +15,29 @@ function names(value: RegistryNames | null) {
   return [value.identifier, value.version].filter(Boolean).join(" ") + (where ? ` (${where})` : "");
 }
 
+/** Whitespace as the page draws it (any run, NBSP included, reads as one space). */
+const drawn = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** One value the Registry wrote or that was installed. Names, versions and addresses are ASCII by rule, so every
+ *  other character is shown as its code point (U+00A0, U+043E…): a lookalike letter or an odd space cannot pass for
+ *  the installed value (#604 max review). An empty value reads "—". Isolated (<bdi>) from the words around it. */
+function Value({ text, testId }: { text: string; testId: string }) {
+  if (!drawn(text)) return <span data-testid={testId}>—</span>;
+  const parts: ReactNode[] = [];
+  let plain = "";
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (cp >= 0x20 && cp <= 0x7e) { plain += ch; continue; }
+    if (plain) parts.push(plain);
+    plain = "";
+    parts.push(<span key={parts.length} data-testid="non-ascii"
+      className="mx-px rounded bg-ask-soft px-1 font-mono text-[10px] text-ask">
+      U+{cp.toString(16).toUpperCase().padStart(4, "0")}</span>);
+  }
+  if (plain) parts.push(plain);
+  return <span data-testid={testId} className="font-mono break-all"><bdi>{parts}</bdi></span>;
+}
+
 /**
  * CAP4a-3d's web half (the board the user OK'd, 2026-11-02): a connection its Registry entry stopped, withdrawn or
  * naming something else, and the button that keeps it. The row reads the server's `registry_parked`, so it needs no
@@ -22,23 +45,30 @@ function names(value: RegistryNames | null) {
  * Nothing shows when nothing is parked.
  */
 export function RegistryParked({ sourceId, onChanged }: { sourceId: string; onChanged: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [source, setSource] = useState<CapabilitySource | null>(null);
+  const [failed, setFailed] = useState(false);
   const [kept, setKept] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    capabilitiesApi.source(sourceId).then(s => { if (live) setSource(s); }).catch(() => undefined);
+    capabilitiesApi.source(sourceId).then(s => { if (live) setSource(s); })
+      .catch(() => { if (live) setFailed(true); });                     // said, as the sheet does (#604 max review)
     return () => { live = false; };
   }, [sourceId]);
 
   if (kept) return <Notice tone="info" testId="registry-kept">{t("capabilityList.parked_kept")}</Notice>;
+  if (failed) return <p role="alert" data-testid="registry-parked-load-failed" className="text-[12px] text-danger-strong">
+    {t("capabilityList.loadFailed")}</p>;
   const parked = source?.registry_parked;
   if (!parked) return null;
   const when = parked.checked_at && new Date(parked.checked_at).toDateString() === new Date().toDateString()
     ? t("capabilityList.parked_today")
-    : parked.checked_at ? new Date(parked.checked_at).toLocaleDateString() : "—";
+    : parked.checked_at ? formatUiDate(parked.checked_at, i18n?.language) : "—";
+  const installedText = names(parked.installed), nowText = names(parked.now);
+  // #604 max review: the note shows whenever the two rows read the same as drawn, whatever looks_same said.
+  const readsSame = parked.why === "changed" && (parked.looks_same || drawn(installedText) === drawn(nowText));
 
   async function keep() {
     if (!parked) return;
@@ -69,16 +99,17 @@ export function RegistryParked({ sourceId, onChanged }: { sourceId: string; onCh
         {t(parked.why === "withdrawn" ? "capabilityList.parked_withdrawn" : "capabilityList.parked_changed", { when })}</p>
       <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
         <span className="text-muted-foreground">{t("capabilityList.parked_installed")}</span>
-        <span data-testid="registry-parked-installed" className="font-mono break-all"><Escaped text={names(parked.installed)} /></span>
+        <Value text={installedText} testId="registry-parked-installed" />
         <span className="text-muted-foreground">{t("capabilityList.parked_now")}</span>
-        <span data-testid="registry-parked-now" className={parked.why === "withdrawn" ? "" : "font-mono break-all"}>
-          {parked.why === "withdrawn" ? t("capabilityList.parked_nowWithdrawn") : <Escaped text={names(parked.now)} />}</span>
+        {parked.why === "withdrawn" ? <span data-testid="registry-parked-now">{t("capabilityList.parked_nowWithdrawn")}</span>
+          : <Value text={nowText} testId="registry-parked-now" />}
       </div>
-      {parked.looks_same && <p data-testid="registry-parked-looks-same" className="text-[12px] text-warning">
+      {readsSame && <p data-testid="registry-parked-looks-same" className="text-[12px] text-warning">
         {t("capabilityList.parked_looksSame")}</p>}
       {parked.hidden.now > 0 && <p data-testid="registry-parked-hidden" className="text-[12px] text-warning">
         {t("capabilityList.parked_hidden", { count: parked.hidden.now })}</p>}
-      {parked.why === "changed" && <p className="text-[12px] text-muted-foreground">{t("capabilityList.parked_keepRuns")}</p>}
+      {parked.why === "changed" && <p className="text-[12px] text-muted-foreground" data-testid="registry-parked-keep-runs">
+        {t(parked.installed?.url ? "capabilityList.parked_keepRunsRemote" : "capabilityList.parked_keepRuns")}</p>}
       {error && <Notice tone="error" role="alert" testId="registry-parked-error">{error}</Notice>}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" tone="primary" disabled={busy} data-testid="registry-keep" onClick={() => void keep()}>
