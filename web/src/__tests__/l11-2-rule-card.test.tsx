@@ -3,7 +3,7 @@
  * same correction twice (Add / Not now; Remove after Add), the rules a conversation follows as one row in Overview's
  * Environment (each file opening in the reader), and the "Follow folder rules" switch in Settings → Advanced.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -213,9 +213,14 @@ describe("Overview's row", () => {
     const view = mount();
     expect(await screen.findByTestId("overview-rules")).toHaveTextContent("workbench.rulesOff");
     view.unmount();
+    // A mount fetches again when the folder (`home`) arrives, so how many calls one mount makes depends on timing
+    // (a fixed count was a flake on a loaded CI runner). What matters: the new mount asked, and once every answer
+    // is in, there is no row.
+    const before = spy.mock.calls.length;
     spy.mockResolvedValue({ enabled: true, files: [] });
     mount();
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(spy.mock.calls.length).toBeGreaterThan(before));
+    await act(async () => { await Promise.all(spy.mock.results.map((r) => r.value)); });
     expect(screen.queryByTestId("overview-rules")).toBeNull();
   });
 });
