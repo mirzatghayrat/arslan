@@ -157,16 +157,20 @@ def parked(source: CapabilitySource) -> dict | None:
     """What the source view shows of a server this check parked, so the page's row and its keep button need no
     rule of their own (#604 review F6): why, when the Registry was asked, what was installed, what the entry names
     now (None for a withdrawn one), `hidden`, how many characters that show nothing each side held before it was
-    cleaned (#604 review L1: a name that differs only by one is a change, though both read the same), and `seen`,
+    cleaned (#604 review L1: a name that differs only by one is a change, though both read the same), `looks_same`,
+    whether a changed entry reads the same as what was installed once both are cleaned (the re-review of 66bf3767:
+    a trailing space, an NBSP or an orphan mark is no invisible character, yet cleaning removes it too), and `seen`,
     the digest a keep sends (`accept_source`). None when nothing is parked, or when the user kept this very
     answer."""
     check = (source.test or {}).get("registry_check") or {}
     if not check.get("problem") or _kept(check):
         return None
     installed = _installed(source.candidate or {})
+    shown, now = _shown(installed), _shown(check.get("names"))
     return {"why": check["problem"], "seen": check.get("seen"), "checked_at": check.get("at"),
-            "installed": _shown(installed), "now": _shown(check.get("names")),
-            "hidden": {"installed": discovery._hidden(installed), "now": discovery._hidden(check.get("names"))}}
+            "installed": shown, "now": now,
+            "hidden": {"installed": discovery._hidden(installed), "now": discovery._hidden(check.get("names"))},
+            "looks_same": check["problem"] == CHANGED and now == shown}
 
 
 def _shown(names) -> dict | None:

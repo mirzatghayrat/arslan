@@ -484,7 +484,7 @@ async def test_the_view_shows_a_withdrawn_entry_and_the_digest_a_keep_sends(worl
     assert (await _view(world))["registry_parked"] == {
         "why": "withdrawn", "seen": check["seen"], "checked_at": check["at"],
         "installed": {"registry_type": "pypi", "identifier": "notes-mcp", "version": "1.2.0"}, "now": None,
-        "hidden": {"installed": 0, "now": 0}}
+        "hidden": {"installed": 0, "now": 0}, "looks_same": False}
 
 
 async def test_the_view_shows_what_a_changed_entry_names_now(world):
@@ -556,6 +556,36 @@ async def test_hidden_characters_are_counted_so_a_lookalike_change_shows_as_one(
     parked = (await _view(world))["registry_parked"]
     assert parked["why"] == "changed" and parked["now"] == parked["installed"]
     assert parked["hidden"] == {"installed": 0, "now": 1}
+
+
+@pytest.mark.parametrize("lookalike", ["notes-mcp ", "notes-mcp" + chr(0xA0), "notes-mcp" + chr(0x2028),
+                                       chr(0x301) + "notes-mcp", "notes" + chr(0x200B) + "-mcp"],
+                         ids=["a trailing space", "a trailing NBSP", "U+2028", "an orphan combining mark", "a zero-width space"])
+async def test_a_change_that_reads_the_same_once_cleaned_is_flagged(world, lookalike):
+    """#604 re-review of 66bf3767: `hidden` misses what cleaning removes that is not invisible (a trailing space, an
+    NBSP, U+2028, an orphan combining mark). `looks_same` covers every case: the entry changed, and the row reads
+    the same on both sides."""
+    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": lookalike, "version": "1.2.0"}]))
+    parked = (await _view(world))["registry_parked"]
+    assert parked["why"] == "changed" and parked["now"] == parked["installed"] and parked["looks_same"] is True
+
+
+async def test_a_change_that_reads_differently_is_not_flagged(world):
+    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": "notes-mcp-next",
+                                              "version": "1.2.0"}]))
+    assert (await _view(world))["registry_parked"]["looks_same"] is False
+
+
+async def test_an_nbsp_inside_a_name_shows_as_a_space_so_it_reads_differently(world):
+    await _parked_by(world, _entry(packages=[{"registryType": "pypi", "identifier": "notes" + chr(0xA0) + "-mcp",
+                                              "version": "1.2.0"}]))
+    parked = (await _view(world))["registry_parked"]
+    assert parked["now"]["identifier"] == "notes -mcp" and parked["looks_same"] is False
+
+
+async def test_a_withdrawn_entry_does_not_look_the_same(world):
+    await _parked_by(world, WITHDRAWN)
+    assert (await _view(world))["registry_parked"]["looks_same"] is False
 
 
 async def test_a_withdrawn_entry_hides_nothing(world):
