@@ -221,23 +221,107 @@ def _chip(q, outcome: str | None, origin: str | None, asking: set[str]):
     return q
 
 
-async def _phone_turns(db: AsyncSession, q, limit: int | None) -> tuple[list[Run], dict[int, str]]:
-    """The phone chip's runs: read in batches, newest first, keeping those that came from the phone, until `limit` are found
-    (None: all of them, for the count)."""
+async def _batched(db: AsyncSession, q, limit: int | None, keep) -> list[Run]:
+    """Runs a chip can only tell after the query: read in batches, newest first, keeping those `keep` keeps, until `limit` are
+    found (None: all of them, for the count)."""
     found: list[Run] = []
-    origins: dict[int, str] = {}
     cursor: int | None = None
     while limit is None or len(found) < limit:
         batch = list((await db.execute((q if cursor is None else q.where(Run.id < cursor)).limit(_PHONE_BATCH))).scalars())
         if not batch:
             break
-        seen = await run_origins(db, batch)
-        origins.update(seen)
-        found += [r for r in batch if seen.get(r.id) == "phone"]
+        found += await keep(batch)
         cursor = batch[-1].id
         if len(batch) < _PHONE_BATCH:
             break
-    return (found if limit is None else found[:limit]), origins
+    return found if limit is None else found[:limit]
+
+
+async def _phone_turns(db: AsyncSession, q, limit: int | None) -> tuple[list[Run], dict[int, str]]:
+    """The phone chip's runs: those whose turn came from the phone."""
+    origins: dict[int, str] = {}
+
+    async def keep(batch: list[Run]) -> list[Run]:
+        seen = await run_origins(db, batch)
+        origins.update(seen)
+        return [r for r in batch if seen.get(r.id) == "phone"]
+    return await _batched(db, q, limit, keep), origins
+
+
+#: INB7-c4c: every Hands call the trace keeps (7 days, one local file a day), not the Activity list's 500.
+_TRACE_ALL = 100_000
+
+
+def _hands_calls() -> tuple[set[int], dict[str, list[datetime]]]:
+    """INB7-c4c: the runs the Hands trace names by id (#632), and, for older calls with no id, each conversation's call times
+    (naive UTC). An entry that can't be read is skipped."""
+    from server.services import hands_service
+    named: set[int] = set()
+    unnamed: dict[str, list[datetime]] = {}
+    for entry in hands_service.read_trace(limit=_TRACE_ALL):
+        if not isinstance(entry, dict):
+            continue
+        run_id = entry.get("run_id")
+        if run_id is not None:
+            if isinstance(run_id, int) and not isinstance(run_id, bool):
+                named.add(run_id)
+            continue
+        conversation, at = entry.get("conversation"), entry.get("at")
+        if not isinstance(conversation, str) or not isinstance(at, str):
+            continue
+        try:
+            unnamed.setdefault(conversation, []).append(_naive_utc(datetime.fromisoformat(at)))
+        except ValueError:
+            continue
+    return named, unnamed
+
+
+#: The last read of the trace and what it was read from (⓪Plan, PR 636): the counts are read on the badge's beat, every 30 s.
+_hands_read: dict = {"key": None, "calls": (set(), {})}
+
+
+def _trace_files() -> tuple:
+    """What the trace was read from: today (a day's turn drops its oldest file) and each file's name, change time and size. Empty
+    when there is no trace, which is never cached."""
+    from datetime import date
+    from server.services import hands_service
+    folder = hands_service._dir() / "trace"                 # read-only: the folder hands_service.read_trace reads
+    try:
+        files = tuple(sorted((path.name, path.stat().st_mtime_ns, path.stat().st_size) for path in folder.glob("*.jsonl")))
+    except OSError:
+        return ()
+    return (date.today().isoformat(), files) if files else ()
+
+
+def _hands_calls_now() -> tuple[set[int], dict[str, list[datetime]]]:
+    """The trace's calls, read again only when a file of it changed."""
+    key = _trace_files()
+    if key and key == _hands_read["key"]:
+        return _hands_read["calls"]
+    calls = _hands_calls()
+    _hands_read.update(key=key or None, calls=calls)
+    return calls
+
+
+def _used_apps(q, named: set[int], unnamed: dict[str, list[datetime]]):
+    """The 「应用」 chip's candidates: a run a call names, or one in a conversation with calls that name none."""
+    return q.where(or_(Run.id.in_(named), Run.conversation_id.in_(list(unnamed))))
+
+
+def _used_apps_by(named: set[int], unnamed: dict[str, list[datetime]]):
+    """Whether a run used Mac apps: by the id a call carries, never by time (runs overlap and a call can be logged late); a call
+    with no id counts for a run in its conversation whose window (start to end, to now while it runs) holds it."""
+    now = datetime.utcnow()
+    return lambda r: r.id in named or any(
+        r.created_at is not None and r.created_at <= at <= (r.ended_at or now) for at in unnamed.get(r.conversation_id or "", ()))
+
+
+def _apps_keep(named: set[int], unnamed: dict[str, list[datetime]]):
+    """The 「应用」 chip's keep: the candidates that used Mac apps."""
+    async def keep(batch: list[Run]) -> list[Run]:
+        used = _used_apps_by(named, unnamed)
+        return [r for r in batch if used(r)]
+    return keep
 
 
 @router.get("/runs", response_model=list[RunListItemOut])
@@ -251,10 +335,16 @@ async def list_runs(
     model: str | None = Query(None, max_length=200),
     outcome: Literal["failed", "waiting"] | None = None,
     origin: Literal["scheduled", "phone"] | None = None,
+    used: Literal["apps"] | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
     asking = _asking()
     q = _chip(_scoped(since, until, model), outcome, origin, asking)
+    # Every row says whether it used Mac apps (the axis dims what the chip leaves out), so the trace is read for every list; it is
+    # read again only when it changed.
+    named, unnamed = await asyncio.to_thread(_hands_calls_now)
+    if used == "apps":
+        q = _used_apps(q, named, unnamed)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
@@ -263,9 +353,13 @@ async def list_runs(
         q = q.where(Run.id < before_id)
     if origin == "phone":
         rows, origins = await _phone_turns(db, q, limit)
+    elif used == "apps":
+        rows = await _batched(db, q, limit, _apps_keep(named, unnamed))
+        origins = await run_origins(db, rows)
     else:
         rows = list((await db.execute(q.limit(limit))).scalars().all())
         origins = await run_origins(db, rows)
+    used_apps = _used_apps_by(named, unnamed)
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
@@ -275,6 +369,7 @@ async def list_runs(
             origin=origins.get(r.id, "chat"), model=r.model, tokens=r.task_tokens or None,
             waiting=r.status == "recording" and r.conversation_id in asking,
             ended_at=r.ended_at.isoformat() if r.ended_at else None,
+            used_apps=used_apps(r),
         )
         for r in rows
     ]
@@ -298,8 +393,11 @@ async def run_counts(
     # Only what run_origins reads, not whole rows: the count may walk every phone turn in the span.
     lean = _chip(scope, None, "phone", asking).options(load_only(Run.id, Run.kind, Run.spawn_name, Run.conversation_id))
     phone, _ = await _phone_turns(db, lean, None)
+    named, unnamed = await asyncio.to_thread(_hands_calls_now)
+    apps = await _batched(db, _used_apps(scope, named, unnamed).options(
+        load_only(Run.id, Run.conversation_id, Run.created_at, Run.ended_at)), None, _apps_keep(named, unnamed))
     return {"waiting": await count(_chip(scope, "waiting", None, asking)), "failed": await count(_chip(scope, "failed", None, asking)),
-            "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone)}
+            "scheduled": await count(_chip(scope, None, "scheduled", asking)), "phone": len(phone), "apps": len(apps)}
 
 
 def _naive_utc(ts: datetime) -> datetime:

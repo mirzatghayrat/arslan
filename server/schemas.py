@@ -596,6 +596,8 @@ class RunListItemOut(BaseModel):
     waiting: bool = False
     # INB7-b: when it ended (naive UTC, like created_at). A run the boot sweep interrupted has this and no total_ms.
     ended_at: str | None = None
+    # INB7-c4c: it used Mac apps (Hands), by the 「应用」 chip's rule, so the axis can dim what the chip leaves out.
+    used_apps: bool = False
 
 
 class RunSpawnSummaryOut(BaseModel):

@@ -174,8 +174,8 @@ describe("RunReplay", () => {
     render(<RunReplay runId={7} onClose={() => {}} />);
     await screen.findByTestId("run-compare");
     expect(screen.getByText("replay.compare_title")).toBeTruthy();
-    // one echart for the compare-bars, one for the dims radar (both render when scored)
-    expect(screen.getAllByTestId("echart-stub")).toHaveLength(2);
+    // one echart: the compare-bars (the dims radar is gone, the user, 2026-11-02)
+    expect(screen.getAllByTestId("echart-stub")).toHaveLength(1);
     // overall 8 vs fleet avg 7.67 → subtle delta line
     expect(screen.getByText("replay.compare_delta")).toBeTruthy();
   });
@@ -295,7 +295,7 @@ describe("RunReplay", () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith(7));
   });
 
-  it("renders a dims radar, a spawn history sparkline, kb chips, and export buttons", async () => {
+  it("renders kb chips and export buttons, and no radar or history sparkline (gone, 2026-11-02)", async () => {
     const withKbAndSpawn: RunDetailDto = {
       ...scored,
       run: { ...scored.run, spawn_id: 2, injected_kb_sources: ["半导体行业笔记", "WSTS 数据源"] },
@@ -316,9 +316,10 @@ describe("RunReplay", () => {
       { id: 7, spawn_name: "Mermer", status: "scored", overall_score: 8.1, overall_badge: "good", total_ms: 100, user_message: "x" },
     ]);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    expect(await screen.findByTestId("dims-radar")).toBeTruthy();
-    expect(screen.getByTestId("history-spark")).toBeTruthy();
-    expect(screen.getByText(/半导体行业笔记/)).toBeTruthy();
+    expect(await screen.findByText(/半导体行业笔记/)).toBeTruthy();
+    expect(screen.queryByTestId("dims-radar")).toBeNull();
+    expect(screen.queryByTestId("history-spark")).toBeNull();
+    expect(api.getRuns).not.toHaveBeenCalled();                 // the sparkline's read went with it
     expect(screen.getByText("replay.export_md")).toBeTruthy();
     expect(screen.getByText("replay.export_json")).toBeTruthy();
   });
@@ -398,7 +399,7 @@ describe("RunReplay", () => {
     });
   }
 
-  it("degrades gracefully: no spawnId → no sparkline, no kb sources → no chips, summary failure → no radar", async () => {
+  it("degrades gracefully: no kb sources → no chips, a summary failure → still renders", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...scored,
       run: { ...scored.run, spawn_id: null, injected_kb_sources: null },

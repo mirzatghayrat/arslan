@@ -1,58 +1,38 @@
 import { useEffect, useState } from "react";
-import { ArrowDownUp, Command, Eye, Keyboard, ListChecks, MousePointerClick, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { request } from "../api/client";
+import { getHandsTrace, handsOpIcon, type HandsTraceEntry } from "../lib/handsTrace";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import ScrollBox from "./activity/ScrollBox";
-
-/** One Hands call as the backend traced it (0.1.53): never typed text, only its length. */
-export interface HandsTraceEntry {
-  at: string;
-  app?: string | null;
-  op: string;
-  outcome: string;
-  target?: string | null;
-  typed_chars?: number;
-  ms?: number;
-  /** The conversation the call was made in, or null. */
-  conversation?: string | null;
-  /** v0.1.64 (#632): the run it was made in; null on older entries and outside a run. */
-  run_id?: number | null;
-}
-
-export const getHandsTrace = (limit = 100) => request<{ entries: HandsTraceEntry[] }>(`/hands/trace?days=7&limit=${limit}`);
-
-/**
- * Arslan Hands in Activity (0.1.53): every look and action in Mac apps from the
- * last 7 days (the trace file is 0600 and pruned after 7 days). Shown only when
- * there is something to show.
- */
-/** 0.1.58 §7: one icon per kind of Hands call; anything that only looks gets the eye. */
-export function handsOpIcon(op: string): LucideIcon {
-  return ({ click: MousePointerClick, set_value: Keyboard, select: ListChecks, scroll: ArrowDownUp, press: Command } as
-    Record<string, LucideIcon>)[op] ?? Eye;
-}
 
 /** The trace is one local file read whole (≤ 500 calls); the box shows 20 more each time it reaches its end. */
 const STEP = 20;
 
-export default function HandsTraceCard() {
+/**
+ * Arslan Hands (0.1.53): every look and action in Mac apps from the last 7 days (the trace file is 0600 and pruned after 7 days),
+ * calls outside any run included. Since INB7-c4c a run's own calls show in its 「诊断」; this full list is the audit view, a
+ * record of its own at the foot of Progress (the user, 2026-11-02). `embedded`: the row above it is its title, and an empty list
+ * says so instead of showing nothing.
+ */
+export default function HandsTraceCard({ embedded = false }: { embedded?: boolean }) {
   const { t, i18n } = useTranslation();
-  const [entries, setEntries] = useState<HandsTraceEntry[]>([]);
+  const [entries, setEntries] = useState<HandsTraceEntry[] | null>(null);
   const [shown, setShown] = useState(STEP);
 
   useEffect(() => {
     let cancelled = false;
-    getHandsTrace().then((r) => { if (!cancelled) setEntries(r.entries ?? []); }).catch(() => {});
+    getHandsTrace().then((r) => { if (!cancelled) setEntries(r.entries ?? []); }).catch(() => { if (!cancelled) setEntries([]); });
     return () => { cancelled = true; };
   }, []);
 
-  if (entries.length === 0) return null;
+  if (entries === null) return null;
+  if (entries.length === 0) {
+    return embedded ? <p className="text-xs text-muted-foreground">{t("activityPage.noRecords")}</p> : null;
+  }
   const visible = entries.slice(0, shown);
   return (
     <section data-testid="hands-trace">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-sm font-medium text-foreground">{t("hands.activity.title")}</h2>
+        {!embedded && <h2 className="text-sm font-medium text-foreground">{t("hands.activity.title")}</h2>}
         <span className="font-mono text-[11px] text-subtle-foreground">{entries.length}</span>
       </div>
       <div className="mt-3">

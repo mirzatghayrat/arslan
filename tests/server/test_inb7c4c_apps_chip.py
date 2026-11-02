@@ -1,0 +1,123 @@
+"""INB7-c4c (v0.1.64): board F's 「应用」 chip over 「最近的工作」: the runs that used Mac apps (Hands). A run is in it when a Hands call
+carries its id (#632), never by time, since runs overlap and a call can be logged late; an older call with no id falls back to its
+conversation and the run's window. The trace is faked: hands_service.read_trace is what the chip reads."""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+from server.db.models import Run
+from server.services import approvals, hands_service
+
+T = datetime(2026, 10, 30, 9, 0, 0)                       # naive UTC, as runs are stored
+
+
+def _run(message: str, conversation: str, start_min: int, end_min: int | None, **kw) -> Run:
+    return Run(conversation_id=conversation, spawn_name="Arslan", user_message=message, kind="host", task_tokens=0,
+               status="recorded" if end_min is not None else "recording", created_at=T + timedelta(minutes=start_min),
+               ended_at=T + timedelta(minutes=end_min) if end_min is not None else None, **kw)
+
+
+def _at(minutes: int) -> str:
+    return (T + timedelta(minutes=minutes)).replace(tzinfo=timezone.utc).isoformat(timespec="seconds")
+
+
+async def _seed(client, monkeypatch) -> dict[str, int]:
+    """Two overlapping runs in one conversation (a: 0–10 min, b: 5–20 min), a run in another conversation, an older run whose call
+    has no id, a run with no Hands at all, and one still running."""
+    monkeypatch.setattr(approvals, "all_pending", lambda: [])
+    async with client.db_maker() as db:
+        named = {"a": _run("a", "c", 0, 10), "b": _run("b", "c", 5, 20), "other": _run("other", "d", 0, 10),
+                 "old": _run("old", "e", 30, 40), "none": _run("none", "c", 60, 70), "live": _run("live", "f", 80, None)}
+        db.add_all(named.values())
+        await db.commit()
+        ids = {name: run.id for name, run in named.items()}
+    trace = [
+        {"at": _at(25), "conversation": "c", "run_id": ids["a"], "op": "click", "outcome": "ok"},   # a's, logged after a ended
+        {"at": _at(15), "conversation": "c", "run_id": ids["a"], "op": "look", "outcome": "ok"},    # a's, inside b's window: not b's
+        {"at": _at(7), "conversation": "d", "run_id": ids["other"], "op": "look", "outcome": "ok"},
+        {"at": _at(35), "conversation": "e", "run_id": None, "op": "look", "outcome": "ok"},        # no id: e's window → old
+        {"at": _at(65), "conversation": "z", "run_id": None, "op": "look", "outcome": "ok"},        # no id, no run there
+        {"at": _at(90), "conversation": "f", "run_id": None, "op": "look", "outcome": "ok"},        # no id, a run still going
+    ]
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: trace)
+    return ids
+
+
+async def _listed(client, **params) -> list[str]:
+    return [row["user_message"] for row in (await client.get("/api/v1/runs", params={"limit": 50, **params})).json()]
+
+
+async def test_the_apps_chip_lists_the_runs_a_hands_call_names_and_falls_back_to_the_window_without_an_id(client, monkeypatch):
+    await _seed(client, monkeypatch)
+    # a: by its id though the call came after it ended, and b, which overlaps it in the same conversation, is not in by time.
+    assert await _listed(client, used="apps") == ["live", "old", "other", "a"]
+    assert await _listed(client, used="apps", limit=2) == ["live", "old"]
+    assert (await client.get("/api/v1/runs", params={"used": "everything"})).status_code == 422
+
+
+async def test_the_count_agrees_with_the_list(client, monkeypatch):
+    await _seed(client, monkeypatch)
+    counts = (await client.get("/api/v1/runs/counts")).json()
+    assert counts["apps"] == 4
+
+
+async def test_no_trace_lists_none(client, monkeypatch):
+    await _seed(client, monkeypatch)
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: [])
+    assert await _listed(client, used="apps") == []
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 0
+
+
+async def test_an_unreadable_entry_is_skipped_not_fatal(client, monkeypatch):
+    ids = await _seed(client, monkeypatch)
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: [
+        "not a dict", {"run_id": "7"}, {"run_id": None, "conversation": "e", "at": "yesterday"},
+        {"run_id": ids["other"], "at": _at(7)}])
+    assert await _listed(client, used="apps") == ["other"]
+
+
+async def test_the_trace_is_read_again_only_when_its_files_change(client, monkeypatch, tmp_path):
+    """The counts are read on the badge's beat (every 30 s), and the trace can hold 7 days of calls: it is read again only when a
+    file of it changed (⓪Plan, PR 636)."""
+    from datetime import date
+    import json
+    real = hands_service.read_trace                          # the real trace reader, over a folder of this test's own
+    ids = await _seed(client, monkeypatch)
+    monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
+    folder = tmp_path / "hands" / "trace"
+    folder.mkdir(parents=True)
+    day = folder / f"{date.today().isoformat()}.jsonl"
+    day.write_text(json.dumps({"at": _at(25), "conversation": "c", "run_id": ids["a"], "op": "click", "outcome": "ok"}) + "\n")
+    reads: list[int] = []
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: reads.append(1) or real(*a, **k))
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 1
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 1
+    assert await _listed(client, used="apps") == ["a"]
+    assert len(reads) == 1
+    with day.open("a") as f:                                 # a new call: the file changed
+        f.write(json.dumps({"at": _at(7), "conversation": "d", "run_id": ids["other"], "op": "look", "outcome": "ok"}) + "\n")
+    assert (await client.get("/api/v1/runs/counts")).json()["apps"] == 2
+    assert len(reads) == 2
+
+
+async def test_every_run_says_whether_it_used_apps_by_the_same_rule(client, monkeypatch):
+    """The axis reads the unfiltered list and dims what the chip leaves out, so each run carries `used_apps` (⓪Plan's review of PR
+    636, 1)."""
+    await _seed(client, monkeypatch)
+    rows = (await client.get("/api/v1/runs", params={"limit": 50})).json()
+    assert {row["user_message"]: row["used_apps"] for row in rows} == {
+        "a": True, "b": False, "other": True, "old": True, "none": False, "live": True}
+
+
+async def test_a_call_with_no_id_counts_only_for_the_run_whose_window_holds_it(client, monkeypatch):
+    """Z2 (⓪Plan's review of PR 636): two runs in one conversation, a call with no id inside only one of their windows."""
+    monkeypatch.setattr(approvals, "all_pending", lambda: [])
+    async with client.db_maker() as db:
+        first, second = _run("first", "g", 100, 110), _run("second", "g", 120, 130)
+        db.add_all([first, second])
+        await db.commit()
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: [
+        {"at": _at(105), "conversation": "g", "run_id": None, "op": "look", "outcome": "ok"}])
+    assert await _listed(client, used="apps") == ["first"]
+    rows = (await client.get("/api/v1/runs", params={"limit": 50})).json()
+    assert {row["user_message"]: row["used_apps"] for row in rows} == {"first": True, "second": False}
