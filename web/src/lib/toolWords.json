@@ -38,6 +38,7 @@
   "mac_list_shortcuts": { "family": "read" },
   "mac_run_shortcut": { "family": "command", "arg": "name" },
   "memory_note": { "family": "memory" },
+  "my_status": { "family": "read" },
   "propose_capability": { "family": "capability" },
   "propose_plan_change": { "family": "plan" },
   "read_file": { "family": "read", "arg": "path" },

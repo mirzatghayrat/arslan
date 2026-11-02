@@ -539,6 +539,19 @@ class WhatsNewExecutor:
                 "releases": release_notes.recent(count)}
 
 
+class MyStatusExecutor:
+    """SMART-2 (v0.1.64): Arslan's own state, read live (server/services/self_status.py): version and what's new,
+    the models, the sandbox and approvals, phones and SSH hosts, the last failures, and where its own code and
+    plans are (GitHub main)."""
+
+    key = "my_status"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import personal_context, self_status
+        ctx = personal_context.current()
+        return {"ok": True, **await self_status.snapshot(ctx.conversation_id if ctx else None)}
+
+
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
@@ -941,7 +954,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
-    RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
+    RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
     FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
