@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Grade | **Must** for v0.1.64 (user, 2026-11-02, relayed by ④参谋; the user asked that it not be pushed to later). |
-| Lanes | Parallel, off the SBX path. SMART-1 ③Hands, SMART-2 ②Main, SMART-3/4 ⑥Helper, SMART-5 ⓪Plan with ⑥Helper, SMART-6 the user. |
+| Lanes | Parallel, off the SBX path. SMART-1 ③Hands (#674), SMART-2 ②Main, SMART-3/4 ⑥Helper, SMART-5 ⓪Plan with ⑥Helper, SMART-7/8 ⑤CAP (SMART-8's cards with ③Hands). |
 | Review | SMART-1 touches the command environment, which is security surface, so it needs another session's effort=max review. The rest are reviewed at high, and each author self-merges under #644. |
-| Gate | SMART-5's bench gates v0.1.64 alongside M64 and the STY2 bench. |
+| Gate | SMART-5's bench gates v0.1.64 alongside M64 and the STY2 bench: **Arslan at least matches OpenClaw on the same model and the same tasks** (user, 2026-11-02). |
 
 ## Why
 
@@ -111,10 +111,26 @@ What a real chat showed (deepseek-v4-flash; the user's questions were "Claude Co
   - The guidance has a step, a place and a command.
   - No unread source is cited.
   - Live self-state is used.
-- **Run:** on DeepSeek within the proxy cap, before and after SMART-1 to SMART-4.
+- **Run:** on DeepSeek within the proxy cap, before and after SMART-1 to SMART-4, **and OpenClaw on the same model (deepseek-v4-flash) and the same tasks**, as in the 10-01 kernel bake-off (scripts/kernel_bench; OpenClaw is an entrant via install_entrants.sh). Tasks are single-turn where the runner can't give other entrants several turns.
+- **The gate (user, 2026-11-02):** Arslan at least matches OpenClaw on each axis: focus-following, length match, verify-before-claim, guide-when-blocked and self-state. The user, verbatim: 「目前我反馈都是同一个模型下的反馈 open claw 也是同一个模型 跟 Arslan 一样的，所以你也不要提 Arslan 的现状找借口」.
 
-### SMART-6: the default chat model (the user)
-The run above was on `deepseek-v4-flash`. Recommended: flash for Quick Ask only, and pro (or a Claude model) as the chat default. This is the user's call.
+### SMART-6: dropped (user, 2026-11-02)
+Changing the default chat model is **not** a fix. OpenClaw follows the user on the same model, so the gap is Arslan's harness: its prompt, tools, environment and self-knowledge. The chat default stays as it is.
+
+### SMART-7: two input and reading fixes (⑤CAP)
+The user asked for both to be normalized to how Claude, ChatGPT and OpenClaw behave. They described them exactly, so no mock is needed.
+- **The chat input wraps** and grows with its content to a cap (about 12 lines or 40% of the viewport), then scrolls inside.
+- **Prose-type fences wrap** (```text, ```markdown, ```md, unlabeled). Code languages keep horizontal scroll.
+
+### SMART-8: confirm and re-run cards say plainly what they're for (⑤CAP, with ③Hands' cards; a mock first)
+The user, verbatim: 「这种 弹卡的内容也能一块规范一下嘛…我觉得应该用更清楚的说明 我看是看不懂这个是要干嘛的」, about a card whose headline was a raw `ssh -o BatchMode=yes …` command cut off mid-flag.
+- **One shape for every card:**
+  - a one-line plain purpose in the user's language first;
+  - then what it touches (a host, or a folder or file);
+  - then the risk in plain words;
+  - the raw command or path collapsed under "Show command", never truncated in the headline.
+- **The purpose comes from** the model's stated reason for the step when there is one, else a deterministic summary of the command's parsed shape.
+- **Mocks:** ⑤CAP's general mock and ③Hands' LAN, certificate and app-data cards share the shape. No code before the user OKs the mock.
 
 ## Method
 
@@ -127,10 +143,10 @@ Every piece has red tests first and mutations on its logic. SMART-1 gets an effo
 - The STY2 and M64 benches don't regress.
 - A real-Mac check with the user present: the same three questions from the run above get short, current, correct answers, and `claude` is found.
 
-## For the user to decide
+## Decided (user, 2026-11-02, relayed by ④参谋)
 
-1. **SMART-6:** the chat default model.
-2. **Other apps' private data:** close other apps' `~/Library/Application Support/<app>` folders to Arslan's file tools by default (a security change; SBX-5's protected list), or rely on SMART-4's rule.
+1. **SMART-6** is dropped (above).
+2. **Other apps' private data,** verbatim: 「我选 推荐：默认挡住，用到时弹卡问你」. Other apps' private folders (`~/Library/Application Support/<app>`, `~/Library/Containers/<app>`, Group Containers, other apps' preference plists) are denied to Arslan's file tools and commands by default, through SBX-5's protected list. A card asks per request ("allow once?"). It's built as SBX-5b by ③Hands, after 5a, and the card is in SMART-8's mock.
 
 ## Size
 

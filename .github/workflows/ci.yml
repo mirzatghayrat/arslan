@@ -366,8 +366,10 @@ jobs:
           # 0.1.64 SBX-3a: +1, the work folder, the narrowed devices and a pty still work.
           # 0.1.64 SBX-3a §1a: +1, a sandboxed command writes its own run's TMPDIR.
           # 0.1.64 SBX-3a flip: +1, a work folder inside a closed folder and a saved copy still work on the default-deny base.
+          # 0.1.64 SBX-6p (#669) (Codex): recounted after the merge of main, by collection.
           # 0.1.64 SBX-4p (#670) (Codex): recounted after the merge of main, by collection.
-          EXPECTED = 508
+          # 0.1.64 SBX-6p (#669) after the trust and LAN settings and the merge of SBX-4p (#670): both p sets, by collection.
+          EXPECTED = 589
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
@@ -376,8 +378,10 @@ jobs:
           # 0.1.64 SBX-3a gates (#645, Codex): 72, the 56 plus 16 any-declared cases in the commands tests.
           # 0.1.64 SBX-3a gates review round (#645): 63, after the keychain gate's list shrank by 3 services in each of the 3 commands modes.
           # 0.1.64 SBX-3a flip: 0. The commands adapter is registered, and all 63 pass on the product preset.
+          # 0.1.64 SBX-6p (#669) (Codex): 77 strict xfails for surfaces not built yet.
           # 0.1.64 SBX-4p (#670) (Codex): 72 strict xfails for surfaces not built yet.
-          EXPECTED_XFAIL = 72
+          # 0.1.64 SBX-6p (#669) after the trust and LAN settings and the merge of SBX-4p (#670): 165, SBX-4p's 72 plus SBX-6p's 93.
+          EXPECTED_XFAIL = 165
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is
