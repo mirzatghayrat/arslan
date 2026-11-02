@@ -1,6 +1,6 @@
 /**
- * INB7-c4c (v0.1.64): board F folds Hands and the judgments into the inspector; the page's two full lists fold at its foot until the
- * user decides whether they stay. What the cards guarded is also in 「诊断」 (an icon per kind of call and per family of question,
+ * INB7-c4c (v0.1.64): board F folds Hands and the judgments into the inspector; the page's two full records stay at its foot, each
+ * its own collapsed row (the user, 2026-11-02). What the cards guarded is also in 「诊断」 (an icon per kind of call and per family of question,
  * typed text as a length only, the judge's view and what you chose, a shadow question marked). The 「应用」 chip lists the runs that
  * used Mac apps, counted and paged by the server.
  */
@@ -73,20 +73,46 @@ describe("the 「应用」 chip", () => {
   });
 });
 
-describe("the full Hands and judgments lists are folded at the page's foot (#636: the user decides whether they stay)", () => {
-  it("shows neither and reads neither until opened, then both", async () => {
+describe("the two records at the page's foot (the user, 2026-11-02: kept on Progress, each its own collapsed row)", () => {
+  const read = () => request.mock.calls.map(([p]) => String(p)).filter((p) => p.startsWith("/hands/trace") || p.startsWith("/judgments"));
+
+  it("are two titled rows, both collapsed, and read nothing until opened", async () => {
     render(<ActivityView waiting={waiting} />);
     await screen.findByTestId("activity-run-11");
-    const read = () => request.mock.calls.filter(([p]) => String(p).startsWith("/hands/trace") || String(p).startsWith("/judgments"));
+    const hands = screen.getByTestId("activity-hands-records"), judged = screen.getByTestId("activity-judgment-records");
+    expect(hands).toHaveTextContent("Mac app actions (last 7 days)");
+    expect(judged).toHaveTextContent("Judgment log");
+    expect([hands.getAttribute("aria-expanded"), judged.getAttribute("aria-expanded")]).toEqual(["false", "false"]);
     expect(screen.queryByTestId("hands-trace")).toBeNull();
     expect(screen.queryByTestId("judgments-card")).toBeNull();
     expect(read()).toEqual([]);
-    const all = screen.getByTestId("activity-all-lists");
-    expect(all).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(all);
+  });
+
+  it("each opens on its own and reads only its own list", async () => {
+    render(<ActivityView waiting={waiting} />);
+    await screen.findByTestId("activity-run-11");
+    fireEvent.click(screen.getByTestId("activity-hands-records"));
     expect(await screen.findByTestId("hands-trace")).toBeTruthy();
+    expect(screen.queryByTestId("judgments-card")).toBeNull();
+    expect(read()).toEqual(["/hands/trace?days=7&limit=100"]);
+    expect(within(screen.getByTestId("hands-trace")).queryByRole("heading")).toBeNull();   // the row's title is the one title
+    fireEvent.click(screen.getByTestId("activity-judgment-records"));
     expect(await screen.findByTestId("judgments-card")).toBeTruthy();
-    expect(read().map(([p]) => p)).toEqual(["/hands/trace?days=7&limit=100", "/judgments?limit=20"]);
+    expect(read()).toEqual(["/hands/trace?days=7&limit=100", "/judgments?limit=20"]);
+    expect(within(screen.getByTestId("judgments-card")).queryByRole("heading")).toBeNull();
+    fireEvent.click(screen.getByTestId("activity-hands-records"));                     // folds again; the other stays open
+    expect(screen.queryByTestId("hands-trace")).toBeNull();
+    expect(screen.getByTestId("judgments-card")).toBeTruthy();
+  });
+
+  it("an opened row with nothing recorded says so", async () => {
+    request.mockImplementation((path: string) => Promise.resolve(
+      path.startsWith("/hands/trace") ? { entries: [] } : path.startsWith("/judgments") ? { items: [] } : { items: [], entries: [] }));
+    render(<ActivityView waiting={waiting} />);
+    await screen.findByTestId("activity-run-11");
+    fireEvent.click(screen.getByTestId("activity-hands-records"));
+    fireEvent.click(screen.getByTestId("activity-judgment-records"));
+    expect(await screen.findAllByText("Nothing recorded yet.")).toHaveLength(2);
   });
 });
 
@@ -115,7 +141,7 @@ describe("the chip's word", () => {
     for (const lng of SUPPORTED_LANGUAGES) {
       await i18n.changeLanguage(lng);
       expect(i18n.exists("activityPage.chipApps"), lng).toBe(true);
-      expect(i18n.exists("activityPage.allLists"), lng).toBe(true);
+      for (const key of ["handsRecords", "judgmentRecords", "noRecords"]) expect(i18n.exists(`activityPage.${key}`), `${lng} ${key}`).toBe(true);
     }
   });
 });

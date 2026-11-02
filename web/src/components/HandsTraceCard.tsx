@@ -9,26 +9,30 @@ const STEP = 20;
 
 /**
  * Arslan Hands (0.1.53): every look and action in Mac apps from the last 7 days (the trace file is 0600 and pruned after 7 days),
- * calls outside any run included. Since INB7-c4c a run's own calls show in its 「诊断」; this full list is the audit view, kept under
- * "Show all" at the foot of Progress until the user decides whether it stays (⓪Plan, PR 636).
+ * calls outside any run included. Since INB7-c4c a run's own calls show in its 「诊断」; this full list is the audit view, a
+ * record of its own at the foot of Progress (the user, 2026-11-02). `embedded`: the row above it is its title, and an empty list
+ * says so instead of showing nothing.
  */
-export default function HandsTraceCard() {
+export default function HandsTraceCard({ embedded = false }: { embedded?: boolean }) {
   const { t, i18n } = useTranslation();
-  const [entries, setEntries] = useState<HandsTraceEntry[]>([]);
+  const [entries, setEntries] = useState<HandsTraceEntry[] | null>(null);
   const [shown, setShown] = useState(STEP);
 
   useEffect(() => {
     let cancelled = false;
-    getHandsTrace().then((r) => { if (!cancelled) setEntries(r.entries ?? []); }).catch(() => {});
+    getHandsTrace().then((r) => { if (!cancelled) setEntries(r.entries ?? []); }).catch(() => { if (!cancelled) setEntries([]); });
     return () => { cancelled = true; };
   }, []);
 
-  if (entries.length === 0) return null;
+  if (entries === null) return null;
+  if (entries.length === 0) {
+    return embedded ? <p className="text-xs text-muted-foreground">{t("activityPage.noRecords")}</p> : null;
+  }
   const visible = entries.slice(0, shown);
   return (
     <section data-testid="hands-trace">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-sm font-medium text-foreground">{t("hands.activity.title")}</h2>
+        {!embedded && <h2 className="text-sm font-medium text-foreground">{t("hands.activity.title")}</h2>}
         <span className="font-mono text-[11px] text-subtle-foreground">{entries.length}</span>
       </div>
       <div className="mt-3">

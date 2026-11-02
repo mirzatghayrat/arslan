@@ -9,10 +9,10 @@ const PAGE = 20;
 
 /**
  * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked and what it said, every one of them. Since INB7-c4c a run's
- * own judgments show in its 「诊断」; this full ledger is kept under "Show all" at the foot of Progress until the user decides
- * whether it stays (⓪Plan, PR 636).
+ * own judgments show in its 「诊断」; this full ledger is a record of its own at the foot of Progress (the user, 2026-11-02).
+ * `embedded`: the row above it is its title, and an empty ledger says so instead of showing nothing.
  */
-export default function JudgmentsCard() {
+export default function JudgmentsCard({ embedded = false }: { embedded?: boolean }) {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<JudgmentRow[] | null>(null);
   const [more, setMore] = useState(false);
@@ -35,12 +35,13 @@ export default function JudgmentsCard() {
       .finally(() => { loading.current = false; });
   }, [more, rows]);
 
-  if (!rows || rows.length === 0) return null;
+  if (!rows) return null;
+  if (rows.length === 0) return embedded ? <p className="text-xs text-muted-foreground">{t("activityPage.noRecords")}</p> : null;
   const verdict = (r: JudgmentRow) => judgmentVerdict(t, r);
   return (
     <section data-testid="judgments-card">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-sm font-medium text-foreground">{t("activityPage.judgments")}</h2>
+        {!embedded && <h2 className="text-sm font-medium text-foreground">{t("activityPage.judgments")}</h2>}
         <span className="font-mono text-[11px] text-subtle-foreground">{more ? t("activityPage.shownMore", { n: rows.length }) : rows.length}</span>
       </div>
       <p className="text-xs text-muted-foreground mt-0.5 mb-3">{t("activityPage.judgmentsHint")}</p>

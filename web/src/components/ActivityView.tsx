@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarClock, ChevronDown, ChevronRight, Globe, MessageSquare, Smartphone, Timer, X } from "lucide-react";
 import { api } from "../api/client";
@@ -60,7 +60,6 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
   const [runs, setRuns] = useState<RunListItem[] | null>(null);
   const [more, setMore] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [allLists, setAllLists] = useState(false);
   const loading = useRef(false);
 
   useLayoutEffect(() => {
@@ -228,15 +227,13 @@ export default function ActivityView({ waiting, ...where }: { waiting: WaitingVi
       </section>
       <RunInspector runs={runs ?? []} needs={{ waiting, ...where }} />
       </div>
-      {/* The full Hands trace (the only audit view of what Hands did on this Mac, calls outside any run included) and the whole
-          judgment ledger, folded at the foot and read only when opened, until the user decides whether they stay (⓪Plan, PR 636). */}
-      <section>
-        <button type="button" aria-expanded={allLists} onClick={() => setAllLists((v) => !v)} data-testid="activity-all-lists"
-          className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
-          {allLists ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}{t("activityPage.allLists")}
-        </button>
-        {allLists && <div className="mt-4 space-y-8"><HandsTraceCard /><JudgmentsCard /></div>}
-      </section>
+      {/* The two records stay on Progress (the user, 2026-11-02: Settings is for settings, records belong here), each its own row,
+          collapsed and read only when opened: the full Hands trace (the only audit view of what Hands did on this Mac, calls
+          outside any run included) and the whole judgment ledger. A run's own calls and judgments are in its 「诊断」. */}
+      <div className="space-y-2">
+        <FootRecord title={t("activityPage.handsRecords")} testId="activity-hands-records"><HandsTraceCard embedded /></FootRecord>
+        <FootRecord title={t("activityPage.judgmentRecords")} testId="activity-judgment-records"><JudgmentsCard embedded /></FootRecord>
+      </div>
       {openRunId != null && <RunDrawer runId={openRunId} onClose={() => setOpenRun(null)} onStep={step} />}
     </div>
   );
@@ -251,5 +248,20 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
         <X size={11} aria-hidden />
       </button>
     </span>
+  );
+}
+
+
+/** One record at Progress's foot: its title as a row, collapsed until opened; what it holds mounts (and reads) only then. */
+function FootRecord({ title, testId, children }: { title: string; testId: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid={testId}
+        className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
+        {open ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}{title}
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </section>
   );
 }
