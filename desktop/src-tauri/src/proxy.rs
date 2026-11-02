@@ -93,6 +93,38 @@ pub fn resolve() -> Option<String> {
     system_proxy().map(|p| p.url)
 }
 
+/// What the updater's HTTP client is told.
+///
+/// `resolve` is the only decision. Since tauri-plugin-updater 2.11, reqwest's
+/// `system-proxy` feature is on, and a client given no proxy reads the macOS
+/// HTTP/HTTPS entries itself and ignores PAC, which this module refuses to
+/// guess at. So "nothing resolved" has to become an explicit `Direct`
+/// (`no_proxy()`), never reqwest's default (review on #684, v0.1.64 DEP1).
+#[derive(Debug, PartialEq)]
+pub enum UpdaterProxy {
+    Via(tauri::Url),
+    Direct,
+    /// The value came from the user's own environment and doesn't parse:
+    /// carry on direct and say so once, rather than failing the whole check.
+    Unusable {
+        value: String,
+        error: String,
+    },
+}
+
+pub fn updater_proxy(resolved: Option<String>) -> UpdaterProxy {
+    match resolved {
+        None => UpdaterProxy::Direct,
+        Some(value) => match value.parse() {
+            Ok(url) => UpdaterProxy::Via(url),
+            Err(e) => UpdaterProxy::Unusable {
+                error: format!("{e}"),
+                value,
+            },
+        },
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn system_proxy() -> Option<SystemProxy> {
     let out = std::process::Command::new("scutil")
@@ -184,6 +216,28 @@ mod tests {
         // proxying either would break a working setup.
         for host in ["localhost", "127.0.0.1", "::1"] {
             assert!(NO_PROXY.contains(host), "{host} must be exempt");
+        }
+    }
+
+    #[test]
+    fn the_updater_goes_direct_when_nothing_was_resolved() {
+        // A PAC (parse_scutil -> None) must not let reqwest's own system-proxy pick the static entry.
+        assert_eq!(updater_proxy(None), UpdaterProxy::Direct);
+    }
+
+    #[test]
+    fn the_updater_uses_the_resolved_proxy() {
+        assert_eq!(
+            updater_proxy(Some("http://127.0.0.1:7899".into())),
+            UpdaterProxy::Via("http://127.0.0.1:7899".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn an_unusable_proxy_value_goes_direct_and_says_why() {
+        match updater_proxy(Some("not a url".into())) {
+            UpdaterProxy::Unusable { value, .. } => assert_eq!(value, "not a url"),
+            other => panic!("expected Unusable, got {other:?}"),
         }
     }
 }
