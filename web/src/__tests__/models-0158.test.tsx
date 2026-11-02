@@ -23,6 +23,7 @@ import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 import ModelPicker, { fmtContext, fmtPrice, loadFavourites, unusableWhy } from "../components/models/ModelPicker";
 import ConversationModelChip, { _resetChipCatalogs } from "../components/models/ConversationModelChip";
 import { isModelSaving } from "../components/models/useConversationModel";
+import { SAVE_TIMEOUT_MS } from "../components/models/ConversationModelChip";
 import RolePicker from "../components/models/RolePicker";
 import ModelRolesSection from "../components/settings/ModelRolesSection";
 
@@ -276,6 +277,60 @@ describe("the model under the composer", () => {
     await act(async () => { fireEvent.click(screen.getByTestId("model-use-default")); });
     expect(conv.clear).toHaveBeenCalledWith("c1");
     expect(screen.getByTestId("model-chip").textContent).toContain("openrouter · openai/gpt-4o-mini");
+  });
+
+  // PR 691's review: a save that throws must still end, or send stays disabled until the window reloads.
+  it("a save that fails stops counting as in flight", async () => {
+    conv.set.mockRejectedValue(new Error("boom"));
+    chip();
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId("model-chip"));
+    fireEvent.click(screen.getByTestId("model-all-2"));
+    const row = await screen.findByTestId("model-row-2-anthropic/claude-sonnet-4.5");
+    await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+    expect(isModelSaving("c1")).toBe(false);
+    expect(screen.getByTestId("model-chip-error")).toBeInTheDocument();
+  });
+
+  // PR 691's review: a refetch started before a save can't land after it with an older answer.
+  it("an answer to a question asked before a save does not overwrite the save", async () => {
+    let late!: (v: unknown) => void;
+    conv.get.mockResolvedValueOnce({ choice: null, effective: { config_id: 1, model: "deepseek-chat", provider: "deepseek" } })
+      .mockImplementationOnce(() => new Promise((resolve) => { late = resolve; }));
+    const { rerender } = chip();
+    await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("deepseek-chat"));
+    rerender(<ConversationModelChip conversationId="c1" llmProviders={[]} onSetDefault={onSetDefault}
+      configs={[cfg(1, "deepseek", "deepseek-chat", { last_health: "failed" }), configs[1]]} />);   // asks again; no answer yet
+    fireEvent.click(screen.getByTestId("model-chip"));
+    fireEvent.click(screen.getByTestId("model-all-2"));
+    const row = await screen.findByTestId("model-row-2-anthropic/claude-sonnet-4.5");
+    await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+    expect(screen.getByTestId("model-chip").textContent).toContain("claude-sonnet-4.5");
+    await act(async () => { late({ choice: null, effective: { config_id: 1, model: "deepseek-chat", provider: "deepseek" } }); });
+    expect(screen.getByTestId("model-chip").textContent).toContain("claude-sonnet-4.5");
+  });
+
+  // PR 691's review: a server that never answers can't hold send forever. The chip gives up, says so, and asks the
+  // server what it has (the save may have landed after all).
+  it("a save with no answer gives up after a while and asks the server what it has", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      conv.set.mockImplementation(() => new Promise(() => {}));
+      chip();
+      await act(async () => {});
+      const asked = conv.get.mock.calls.length;
+      fireEvent.click(screen.getByTestId("model-chip"));
+      fireEvent.click(screen.getByTestId("model-all-2"));
+      const row = await screen.findByTestId("model-row-2-anthropic/claude-sonnet-4.5");
+      await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+      expect(isModelSaving("c1")).toBe(true);
+      await act(async () => { vi.advanceTimersByTime(SAVE_TIMEOUT_MS + 10); });
+      expect(isModelSaving("c1")).toBe(false);
+      expect(screen.getByTestId("model-chip-error")).toBeInTheDocument();
+      expect(conv.get.mock.calls.length).toBeGreaterThan(asked);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("switching conversations loads that conversation's choice", async () => {

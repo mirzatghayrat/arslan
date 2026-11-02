@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchProviderModels } from "../../api/client";
 import { conversationModelApi, type EffectiveModel } from "../../api/conversationModel";
 import type { ContextParts, ModelInfo, ProviderConfig } from "../../api/client.types";
@@ -65,6 +65,11 @@ export function useConversationModel(conversationId: string, configs: ProviderCo
   const [choice, setChoiceState] = useState<ModelChoice | null>(null);
   // v0.1.64: the server's answer for "the default" (routing, not always the primary config).
   const [effective, setEffective] = useState<ModelChoice | null>(null);
+  // PR 691's review: each stored change counts here, so an answer to a GET asked before it is dropped instead of
+  // overwriting it with an older state. `refresh` asks again on demand (after a save that timed out).
+  const changes = useRef(0);
+  const [asks, setAsks] = useState(0);
+  const refresh = useCallback(() => setAsks((n) => n + 1), []);
   const [window_, setWindow] = useState<number | null>(null);
   const lastInput = useArslanStore((s) => {
     for (let i = s.items.length - 1; i >= 0; i--) { const u = s.items[i].usage; if (u?.last_input) return u.last_input; }
@@ -80,6 +85,7 @@ export function useConversationModel(conversationId: string, configs: ProviderCo
     const onChanged = (e: Event) => {
       const d = (e as CustomEvent<{ conversationId: string; choice: ModelChoice | null; effective?: ModelChoice | null }>).detail;
       if (d?.conversationId === conversationId) {
+        changes.current += 1;
         setChoiceState(d.choice);
         if (d.effective !== undefined) setEffective(d.effective);
       }
@@ -95,16 +101,17 @@ export function useConversationModel(conversationId: string, configs: ProviderCo
   const configsKey = configs.map((c) => `${c.id}:${c.is_primary ? 1 : 0}:${c.model}:${c.last_health ?? ""}`).join("|");
   useEffect(() => {
     let alive = true;
+    const asked = changes.current;
     // Deferred into the promise so an unavailable client (offline, or a test's partial mock) is a rejection.
     Promise.resolve().then(() => conversationModelApi.get(conversationId))
       .then((r) => {
-        if (!alive) return;
+        if (!alive || changes.current !== asked) return;
         setChoiceState(r.choice ? { configId: r.choice.config_id, model: r.choice.model } : null);
         setEffective(toChoice(r.effective));
       })
       .catch(() => {});
     return () => { alive = false; };
-  }, [conversationId, configsKey]);
+  }, [conversationId, configsKey, asks]);
 
   const primary = configs.find((c) => c.is_primary) ?? configs[0] ?? null;
   const known = (c: ModelChoice | null) => c && configs.some((x) => x.id === c.configId) ? c : null;
@@ -128,5 +135,5 @@ export function useConversationModel(conversationId: string, configs: ProviderCo
   }, [conversationId]);
 
   const pct = lastInput && window_ ? Math.round((lastInput / window_) * 100) : null;
-  return { choice, setChoice, primary, current, window: window_, lastInput, parts, pct };
+  return { choice, setChoice, refresh, primary, current, window: window_, lastInput, parts, pct };
 }

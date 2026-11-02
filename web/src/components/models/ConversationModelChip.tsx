@@ -11,6 +11,15 @@ import { beginModelSave, useConversationModel } from "./useConversationModel";
 
 export { _resetChipCatalogs } from "./useConversationModel";
 
+/** PR 691's review: how long a save may take before the chip stops waiting (send is held meanwhile). */
+export const SAVE_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("timeout")), SAVE_TIMEOUT_MS); });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
 const DOT: Record<ProviderStatus, string> = {
   ok: "bg-success", failed: "bg-danger", untested: "bg-subtle-foreground/50", testing: "bg-subtle-foreground/50 animate-pulse",
 };
@@ -74,7 +83,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
   const [ringOpen, setRingOpen] = useState(false);
   const ringFloat = useDismissable<HTMLButtonElement, HTMLDivElement>(ringOpen, () => setRingOpen(false));
   const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(open, () => setOpen(false));
-  const { choice, setChoice, current, lastInput, parts, pct: ringPct } = useConversationModel(conversationId, configs);
+  const { choice, setChoice, refresh, current, lastInput, parts, pct: ringPct } = useConversationModel(conversationId, configs);
   // v0.1.64: a switch the server didn't store is never shown as made; the chip says why instead.
   const [saveError, setSaveError] = useState<string | null>(null);
   const label = (c: ProviderConfig) => llmProviders.find((p) => p.key === c.provider)?.label ?? c.label ?? c.provider;
@@ -90,12 +99,16 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
   const fmt = (n: number) => n.toLocaleString(i18n.resolvedLanguage || undefined);
   const health = providerStatus(cfg);
 
-  const failed = (e: unknown) => setSaveError(t("models.saveFailed", { reason: e instanceof Error ? e.message : String(e) }));
+  const failed = (e: unknown) => {
+    setSaveError(t("models.saveFailed", { reason: e instanceof Error ? e.message : String(e) }));
+    // A save with no answer may still have landed: show what the server has, not a guess.
+    if (e instanceof Error && e.message === "timeout") refresh();
+  };
   /** A pick is stored for this conversation, the primary's own model included: the default is whatever the
    *  server's routing resolves to, which may be another config (v0.1.64), so "same as primary" is no reason to
    *  clear. Only "use the default" clears. */
   async function save(next: ModelChoice) {
-    const r = await conversationModelApi.set(conversationId, next.configId, next.model);
+    const r = await withTimeout(conversationModelApi.set(conversationId, next.configId, next.model));
     setChoice({ configId: r.choice.config_id, model: r.choice.model }, r.effective);
   }
   async function pick(next: ModelChoice) {
@@ -115,7 +128,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
     setSaveError(null);
     const done = beginModelSave(conversationId);
     try {
-      const r = await conversationModelApi.clear(conversationId);
+      const r = await withTimeout(conversationModelApi.clear(conversationId));
       setChoice(null, r.effective);
     } catch (e) {
       failed(e);
