@@ -143,3 +143,24 @@ async def test_a_sandboxed_tool_writes_its_redirected_cache(tmp_path):
     assert result["stdout"].strip() == "ok"
     assert (run_temp.cache("commands") / "pip_cache_dir" / "probe").read_text() == "ok"
     os.remove(run_temp.cache("commands") / "pip_cache_dir" / "probe")
+
+
+def test_a_server_whose_folder_holds_a_link_from_outside_does_not_start(tmp_path):
+    """SBX-5p measured that a hard link already in a server's folder writes the outside file; refused at spawn."""
+    root = tmp_path / "srv"
+    (root / "lib").mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x")
+    os.link(outside, root / "lib" / "planted")
+    with pytest.raises(capability_sandbox.OutsideLink, match="lib/planted"):
+        capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"}, {"root": str(root), "folders": [], "network": False})
+
+
+def test_links_inside_the_folder_and_symlinks_are_fine(tmp_path):
+    root = tmp_path / "srv"
+    (root / "cache").mkdir(parents=True)
+    (root / "cache" / "pkg").write_text("x")
+    os.link(root / "cache" / "pkg", root / "pkg")                # a tool linking from its own cache
+    (root / "to-outside").symlink_to(tmp_path)                    # never followed
+    assert capability_sandbox.outside_links(root) == []
+    capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"}, {"root": str(root), "folders": [], "network": False})

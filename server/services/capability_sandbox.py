@@ -17,6 +17,7 @@ protected paths from command_sandbox close last, even inside a granted folder.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
@@ -71,12 +72,47 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], c
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
+class OutsideLink(RuntimeError):
+    """A file in a server's own folder is a hard link whose other name is outside it (SBX-5p, #666 review P2)."""
+
+
+def outside_links(root: Path) -> list[Path]:
+    """Regular files under `root` with more names than `root` holds: a hard link from outside. The profile lets a
+    server write its own folder, and a write through such a link changes the outside file. Creating a new link is
+    refused by the kernel already; this finds one made before launch. Links between two names inside the folder
+    (a tool hard-linking from its own cache there) are fine. Symlinks are not followed. About 240 ms for a
+    13,000-file node_modules (measured 2026-11-02)."""
+    seen: dict[tuple[int, int], list] = {}
+    stack = [root]
+    while stack:
+        folder = stack.pop()
+        try:
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        st = entry.stat(follow_symlinks=False)
+                        if st.st_nlink > 1:
+                            names = seen.setdefault((st.st_dev, st.st_ino), [st.st_nlink, []])
+                            names[1].append(Path(entry.path))
+        except OSError:
+            continue
+    return sorted(p for nlink, paths in seen.values() if nlink > len(paths) for p in paths)
+
+
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:
     """(command, args, env, cwd) to start `command args` inside the profile, in its own home
     (a cwd outside the profile makes the shell complain it cannot read where it starts)."""
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
+    # SBX-5 (#666 review P2; option a): Arslan made this folder, so a file linked from outside it is anomalous.
+    # Refuse to start rather than let the server write through it.
+    linked = outside_links(root)
+    if linked:
+        raise OutsideLink(f"refusing to start: {linked[0].relative_to(root)} in this capability's folder is a hard "
+                          "link to a file outside it; reinstall the capability")
     text = profile(root=root, folders=list(sandbox.get("folders") or []), network=bool(sandbox.get("network")),
                    read=list(sandbox.get("read") or []))
     from server.services import command_sandbox
