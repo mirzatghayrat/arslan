@@ -9,8 +9,9 @@ from the child's PATH, so the child env needs the merged PATH too.
 
 The user's PATH is fetched once per process from an INTERACTIVE login shell (the user's dotfiles are where
 Homebrew, nvm and installers like `claude`'s append themselves; SMART-1: a zsh login shell alone never reads
-~/.zshrc), with hard fallbacks for when that resolution fails. It runs in the server, outside every sandbox, and
-the commands run later never run the rc files themselves.
+~/.zshrc), with hard fallbacks for when that resolution fails. It runs in the server, outside every sandbox, with a
+minimal environment. The commands run later read neither ~/.zshrc nor ~/.zprofile; `zsh -c` still reads
+~/.zshenv for every command, as it always has.
 """
 from __future__ import annotations
 
@@ -43,54 +44,94 @@ def child_environment(additions: dict, explicit: dict) -> dict:
     return {**ambient, **additions, **explicit}
 
 
+#: SMART-1 review: the only variables the PATH-resolving shell gets. The server's own environment holds the Arslan
+#: secret and provider keys, which an rc file has no business seeing.
+_RESOLVING_KEYS = ("HOME", "USER", "LOGNAME", "SHELL", "ZDOTDIR", "XDG_CONFIG_HOME", "LANG", "LC_ALL", "LC_CTYPE",
+                   "TZ", "TMPDIR")
+#: Set while Arslan reads the PATH, so an rc can skip slow or interactive steps (unlocking credentials, say):
+#: `[[ -n $ARSLAN_RESOLVING_ENVIRONMENT ]] && return`. VS Code sets VSCODE_RESOLVING_ENVIRONMENT the same way.
+RESOLVING_FLAG = "ARSLAN_RESOLVING_ENVIRONMENT"
+
+
+def _resolving_environment() -> dict:
+    env = {key: os.environ[key] for key in _RESOLVING_KEYS if os.environ.get(key)}
+    env.update(PATH="/usr/bin:/bin:/usr/sbin:/sbin", TERM="dumb", **{RESOLVING_FLAG: "1"})
+    return env
+
+
+def _shell_output(argv: list[str], env: dict) -> str:
+    """What the shell printed on stdout within `_SHELL_TIMEOUT`. After the limit its whole process group is
+    killed, and what it printed before the kill is still returned (an rc that leaves a child holding the pipe
+    after the PATH was printed must not lose that PATH)."""
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, env=env, start_new_session=True)
+    except Exception:  # noqa: BLE001 — a broken shell must never block a spawn
+        return ""
+    partial: bytes | str | None = None
+    try:
+        out, _ = proc.communicate(timeout=_SHELL_TIMEOUT)
+        return _decoded(out)
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.output
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        out, _ = proc.communicate(timeout=1)     # everything read so far, the part before the limit included
+        return _decoded(out)
+    except subprocess.TimeoutExpired as exc:   # a child that left the group still holds the pipe: give up on it
+        return _decoded(exc.output or partial)
+    except Exception:  # noqa: BLE001 — the pipes are abandoned, not waited on
+        return _decoded(partial)
+
+
+def _decoded(out: bytes | str | None) -> str:
+    if isinstance(out, bytes):
+        return out.decode("utf-8", errors="replace")
+    return out or ""
+
+
 @functools.lru_cache(maxsize=1)
 def login_shell_path() -> str:
     """The user's interactive PATH, or "" when the shell can't produce one in time.
 
-    SMART-1: `-i -l`, so zsh reads ~/.zshrc as well as ~/.zprofile (the old `-l` alone never read ~/.zshrc). The
-    PATH is printed between a marker made fresh for this call, so whatever the rc files print (a banner, a fake
-    marker) is ignored; stdin is empty, so a prompt in them reads EOF; and the whole process group gets
-    `_SHELL_TIMEOUT` seconds, then is killed, so an rc that hangs, or leaves a child holding the pipes, can't
-    hold a spawn."""
+    SMART-1: `-i -l`, so zsh reads ~/.zshrc as well as ~/.zprofile (the old `-l` alone never read ~/.zshrc). When
+    that gives no PATH (an rc that hangs, say), `-l` alone is tried, so what ~/.zprofile adds isn't lost too. The
+    PATH is printed between a marker made fresh for each try, so whatever the rc files print (a banner, a fake
+    marker) is ignored; stdin is empty, so a prompt in them reads EOF; the environment is minimal
+    (`_resolving_environment`); and the whole process group gets `_SHELL_TIMEOUT` seconds, then is killed, so an
+    rc that hangs, or leaves a child holding the pipes, can't hold a spawn."""
     shell = os.environ.get("SHELL") or "/bin/zsh"
-    token = secrets.token_hex(8)
-    script = f'printf "\\n__ARSLAN_PATH_{token}__%s__END_{token}__\\n" "$PATH"'
-    try:
-        proc = subprocess.Popen([shell, "-i", "-l", "-c", script], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                                start_new_session=True)
-    except Exception:  # noqa: BLE001 — a broken shell must never block a spawn
-        return ""
-    try:
-        out, _ = proc.communicate(timeout=_SHELL_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
-        try:
-            proc.communicate(timeout=1)
-        except Exception:  # noqa: BLE001 — the pipes are abandoned, not waited on
-            pass
-        return ""
-    except Exception:  # noqa: BLE001
-        return ""
-    start, end = f"__ARSLAN_PATH_{token}__", f"__END_{token}__"
-    for line in (out or "").splitlines():
-        if line.startswith(start) and line.endswith(end):
-            return line[len(start):-len(end)].strip()
+    env = _resolving_environment()
+    for flags in (("-i", "-l"), ("-l",)):
+        token = secrets.token_hex(8)
+        script = f'printf "\\n__ARSLAN_PATH_{token}__%s__END_{token}__\\n" "$PATH"'
+        start, end = f"__ARSLAN_PATH_{token}__", f"__END_{token}__"
+        for line in _shell_output([shell, *flags, "-c", script], env).splitlines():
+            if line.startswith(start) and line.endswith(end):
+                found = line[len(start):-len(end)].strip()
+                if found:
+                    return found
     return ""
 
 
 def merged_path() -> str:
     """Current PATH first (dev behaviour unchanged), then login-shell additions,
-    then hard fallbacks — deduplicated, order-preserving."""
+    then hard fallbacks — deduplicated, order-preserving. Only absolute folders: a `.` or a relative entry (an rc
+    that adds `.`) would let a file planted in a command's working folder shadow the real tool (#674 review)."""
     parts: list[str] = []
     home = os.environ.get("HOME") or os.path.expanduser("~")
     fallbacks = [*_FALLBACK_DIRS, *(os.path.join(home, d) for d in _HOME_FALLBACK_DIRS)]
     for chunk in (os.environ.get("PATH", ""), login_shell_path(), os.pathsep.join(fallbacks)):
         for p in chunk.split(os.pathsep):
-            if p and p not in parts:
+            if p and os.path.isabs(p) and p not in parts:
                 parts.append(p)
     return os.pathsep.join(parts)
 
