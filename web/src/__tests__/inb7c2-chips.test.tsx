@@ -9,7 +9,7 @@ import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
 const { getUsageSummary, listRuns, runCounts, runProcess, request } = vi.hoisted(() => ({
   getUsageSummary: vi.fn(), listRuns: vi.fn(), runCounts: vi.fn(), runProcess: vi.fn(), request: vi.fn() }));
-vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts, runProcess, runChanges: () => new Promise(() => {}) }, request }));
+vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts, runProcess, runChanges: () => new Promise(() => {}), getRun: () => new Promise(() => {}), getRunAnomalies: () => new Promise(() => {}) }, request }));
 
 import { PROACTIVE_CHANGED } from "../api/proactive";
 import ActivityView from "../components/ActivityView";
@@ -37,7 +37,7 @@ const listCalls = () => listRuns.mock.calls.map(([o]) => o).filter((o) => o.limi
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+  useActivityStore.setState({ range: "24h", filter: {}, pickedRunId: null, pickedRun: null, replayStep: null,
     replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue(RUNS);

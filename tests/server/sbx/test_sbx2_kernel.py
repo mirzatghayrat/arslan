@@ -41,7 +41,7 @@ SERVICES = {
 @pytest.mark.parametrize("service", SERVICES.values(), ids=SERVICES.keys())
 def test_service_policy_and_reachability(sbx, mode, service, record_property):
     sbx.network = mode
-    argv = [sys.executable, "-I", str(PROBE), "mach-lookup", service]
+    argv = [sys.executable, "-I", "-c", PROBE.read_text(), "mach-lookup", service]
     # This control queries reachability only: no RPC, no credential or UI access.
     for base in ("legacy-commands", "outside-floor"):
         control = Harness(sbx.root, base, mode, executions=sbx.executions).run(
@@ -104,7 +104,7 @@ def test_launch_submission_is_refused(sbx):
 
 @pytest.mark.macos
 @macos
-def test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx):
+def test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx, modes=tuple(NetworkMode)):
     # A short path also works with AF_UNIX's 104-byte path limit on macOS.
     import tempfile
     with tempfile.TemporaryDirectory(prefix="sbx-", dir="/private/tmp") as directory:
@@ -125,7 +125,7 @@ with socket.socket(socket.AF_UNIX) as sock:
             control = sbx.python(source, path, profile="(version 1)(allow default)",
                                  probe="unix-socket-control")
             assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
-            for mode in NetworkMode:
+            for mode in modes:
                 sbx.network = mode
                 result = sbx.python(source, path, probe="unix-socket-refusal")
                 assert result.returncode == 0, result.stderr

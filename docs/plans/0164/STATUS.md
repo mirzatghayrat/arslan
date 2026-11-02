@@ -2,12 +2,46 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-01 (UTC), late evening. #625, #626 and #642 have merged since the last update. The user OK'd IPB's frames, so ②Main builds IPB after the INB7 chain. Codex's SBX-3a gates branch is ready to push once the addendum is in. The list below is for the user's return.
+**Updated:** 2026-11-02 (UTC), evening (the twice-a-day update). **Today: 11 PRs merged** (list below), including SBX-3a (#520), SBX-4p (#670), IPB-2 (#652) and the first SMART pieces (#676, #679, #678). **SBX chain:** 3a is on main. 4a (#666) is yours to merge. 6p (#669), 5p (#671) and the gates notes (#654) have main merged in and recounted, and wait for you. 6a (#668) merges only after 6p is green on main. 5a and the MCP proxy open after #666. **New today:** SMART is a must (the user's 「全新的很酷很聪明的 Arslan」); delete cards move to the Trash; DEP1 (dependency alerts) is a release gate.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #676 | SMART-7a: the chat input wraps and grows, then scrolls | `bc9cf50b` |
+| #679 | SMART-7b: a prose fence wraps; a code fence keeps its horizontal scroll | `625543b2` |
+| #652 | IPB-2: the Mac's own state on status.snapshot (mac) | `260b90a7` |
+| #678 | SMART-5: the "feels smart" bench, Arslan against OpenClaw on one model | `9df71108` |
+| #675 | SMART and SBX cards: the user's 2026-11-02 decisions | `dbdeff84` |
+| #670 | SBX-4p: Python, artifact and MCP denial contracts (Codex) | `b383c5cf` |
+| #673 | SMART card, a v0.1.64 must | `e1bfd3a7` |
+| #672 | Progress: the run drawer is gone, with its fleet radar and sparkline | `20ccb304` |
+| #636 | INB7-c4c: the 「应用」 chip; Hands and judgments fold into 「诊断」 | `4cad2fbb` |
+| #520 | SBX-3a: the commands' build half on the default-deny base | `a565bc62` |
+| #665 | LOAD: the M-2 MCP fuzz says which path a failure took (MCPF1) | `626c3feb` |
+| #660 | LOAD: the MCP slow-close test no longer races its two timeouts | `784bc3b5` |
+| #662 | BRG1 follow-up: the pairing state under a lock, and the order tests | `f800df61` |
+| #633 | INB7-c5: what waits on you in the inspector while no run is picked | `9d0005b9` |
+| #634 | INB7-c4b: the picked run's Hands calls and judgments in 「诊断」 | `ab8abbcc` |
+| #663 | CI: the Bridge's tests under ThreadSanitizer (10-minute timeout) | `a4188e67` |
+| #664 | Tests: L11 Overview's rules row doesn't count fetches (main CI flake) | `51a72794` |
+| #657 | BRG1: one lock over the Bridge Mailbox's state | `5c2e9d0b` |
+| #659 | gitleaks: #650's test fixture allowlisted on main, anchored | `32223c20` |
+| #631 | INB7-c4a: the inspector's 「诊断」 tab | `d9223e5e` |
+| #651 | IPB-1a follow-up: #647's security review (F1–F5) | `031fed45` |
+| #656 | L11-3b (not UI): each lesson says where it stands with the folder's rules | `76a29d84` |
+| #655 | IMG1 follow-up: the frame check parses exactly what the frame gets | `f198e0db` |
+| #653 | BRG1 card | `f089fd01` |
+| #648 | IMG1: web images in Markdown are chips; frames load nothing from the web | `0095d523` |
+| #645 | SBX-3a gates 2 and 4 (Codex): measured service grants; multiprocessing decision | `a343a875` |
+| #629 | INB7-c3: the inspector's 「改动」 tab | `7ddce445` |
+| #627 | INB7-c2: board F's chips over Recent work | `d5211959` |
+| #647 | IPB-1a: the week and the task results on status.snapshot | `c1526caf` |
+| #646 | IMG1 decided: A + C now, B later | `52e12282` |
+| #644 | Merge rule: security-surface and product-code PRs may auto-merge after a review at the current head | `5d60c087` |
+| #624 | INB7-c1: one pick on Progress, the inspector beside the list | `68feebbc` |
+| #643 | The user OK'd IPB's frames; Decide 3 leaves context out of 1.0 | `74192fd9` |
+| #622 | INB7-b: Progress's one time axis, a bar per run, a picked run's steps with a replay | `642e750f` |
 | #642 | STATUS after #639, #640 and #641; Codex's SBX-3a gates branch | `c6adf955` |
 | #626 | L11-3d: one Add or Remove at a time, the recorded copy, folder-by-folder opens | `31ae56c2` |
 | #625 | CAP4a-3c follow-up: a listed organization's install keeps its id | `1c9507e9` |
@@ -187,59 +221,53 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | #433 | v0.1.64 Inbox: the user's eight points (merged 2026-10-27, before the plan) | `502012f5` |
 | #439, #437, #435 | Codex queue, read-only Codex connection, #438 in the queue | `8df2d44e`, `ef356fb5`, `601baee0` |
 
-## Ready for the user to merge (in this order)
+## Ready to merge, and who merges
 
-Every PR below is OK'd at the head shown, with the verdict posted on the PR. A PR stacked on another is retargeted to main by its lane once the one below it lands, then re-checked at the new head. A draft needs **Ready for review** clicked first, whenever the lane's own ready step was blocked.
+**Who merges (docs/sessions.md, #644):** the author auto-merges after another session's review OK at the current head and all five checks green (effort=max on the security surface). **Still yours:** Codex's PRs, Bridge-frame PRs, and anything below marked "you".
 
-1. **The INB7 chain, in this order:** #622 `8f496450` → #624 `a69094f0` → #627 `3d7ab9a4` → #629 `07ce3a98` → #631 `2b21e843` → #633 `02da15c4` → #634 `3a3ee0f6` → #636 `b209174e`.
-   - #622 is on main, with green CI. Each of the others is stacked on the one before it, and its diff was re-checked identical at the head shown.
-   - As each lands, ②Main retargets the next one to main and merges main in. ⓪Plan re-checks it, and then it needs CI.
-   - **#634** now finds a run's judgments by `run_id` (#637), and falls back to time only for rows judged before 0085. Delta-checked OK at `3a3ee0f6`. **#636** carries it at `b209174e`, delta-checked OK.
-   - **#636** waits on your call about the full lists (see below).
+**Your list (evening), in this order:**
+1. **Codex PRs — you merge:** #654 (gates notes, 3e00bafd), #669 (6p, ece0781f, release-critical) and #671 (5p, 49fc63d3). Each has main merged in, and ⓪Plan recounted ci.yml by collection on the merged tree (552/88, 589/165 and 586/136). All three move the same counts, so after each merge ⓪Plan recounts the other two before you merge the next.
+2. **#666 (SBX-4a) — you merge,** after Codex's 4p device gates land and CI is green (Astra covered the tty and device reach).
+3. **Frame PR #650 (IPB-1b) — you merge,** once ②Main fixes its red backend (the macOS marker test at 7c8bb24e).
+4. **#667 — you, with or before the 0.1.64 release:** the privacy page's IPB paragraph, now with the two §04 lines (MCP Registry daily recheck, OSV.dev at install).
+5. **CAP drafts — you:** #661 (CAP9 server half, green, OK at 022c26b4) and #604 (CAP4a-3d; its web half was just pushed at 0396a90d and needs a re-review).
+6. **#658 (STY2):** waits for the bench, which is rerunning now at $2.50 per run.
 
-**Not ready yet:**
-- **#604** (CAP4a-3d) at `be2cf748`: re-checked OK, with KEEP_FOR gone and F3 a stated limit. It waits for the web keep button, whose mock needs your OK first.
+**Self-merging under #644 (no click needed):** #677 (SMART-2 my_status, re-OK'd at a22b5247), #680 (SMART-3/4), and #674 (SMART-1) once ③Hands' fixes pass an effort=max re-review.
 
-**Under review or on hold (don't merge these):**
-
-- **#525** (Q1 #4, retire the pocket): a draft until Q1c ships and you say go. It now conflicts with main; ②Main merges main in when it's time.
-- **#520** (SBX-3a, ③Hands) at `de71df02`, a draft: #619's file keeps its path while 3a's is renamed. It conflicts with main again since #621 landed; ③Hands merges main in with the flip commit.
-  - **The flip onto the default-deny base is blocked.** ③Hands measured it on macOS 26.6.2: the current preset passes 20 of #619's 56 cases.
-  - Gates 1 and 3 are decided (D1 and D2, below). Codex has done gates 2 and 4 on its local branch `codex/sbx-allowlist-gates` (head `f30c59f9`, base `ffd605c6`, not pushed yet):
-    - gate 2: FSEvents in every mode, trustd in ANY_DECLARED, and the mDNSResponder socket in ANY_DECLARED **and PORT_22** (Codex measured that ssh needs DNS to resolve a host name; the effort=max review checks this);
-    - gate 4: option (b), no IPC rule change, with the cost recorded for SBX-8;
-    - Astra's P3s from #619.
-  - The macOS count goes 421 → 434 with EXPECTED_XFAIL 56. Codex's addendum (ANY_DECLARED in #619's two commands tests) comes next and makes it 450 / 72; the stacked ci.yml count PR uses those final numbers.
-  - The flip, the BUILT_BASES line and EXPECTED_XFAIL → 0 go in one commit, and the effort=max review waits for that commit.
-- **#531, #535, #538** (SBX-4a, 5a, 7): drafts. They pick up 3a after the flip, so the carry happens once.
-
-**Who merges (#467):** sessions auto-merge docs, plan cards, bench scripts, tests and deletion-only PRs outside the security surface, after another session's OK on the current head and green checks. The user merges the security surface and ordinary product code. For SB1 and WB1, the user's approval also lets the author auto-merge.
+**Backup branches:** 6a is open as #668 (draft). 5a (`claude/0164-sbx5a-cap6b`) and the SBX-6 MCP proxy (`claude/0164-sbx6-mcp-proxy`) open once #666 lands. The review trails are saved for each.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
-| ②Main | Retargets the INB7 chain as each parent lands; then builds IPB to the OK'd frame list, with ①iOS reviewing each PR's frames |
-| ③Hands | Idle until Codex's gates branch is on main; then the flip commit on #520, and its effort=max review |
-| ⑤CAP | Idle: #625 merged; #604 waits on the keep mock |
-| ⑥Helper | The L11-3b mock; #626 and LOAD6 (#641) merged |
-| Codex (via ⑦Codex) | Gates 2 and 4 done on the local branch (above). The addendum (+16 ANY_DECLARED strict xfails) is on the Mac's clipboard for you to send to Codex's writer thread from the phone, since the Mac is on a fullscreen Space. Then you push the branch and open its PR (plan A); a Claude lane stacks the ci.yml count PR on it |
-| ④参谋 | Main CI and the user's return list |
-| ①iOS | Reviews IPB's frames in each Bridge PR; iPhone 1.0's pre-submission list (below) |
-| ⓪Plan | Re-checks as heads move; this page |
+| ②Main | SMART-2 (#677) arming; #650's red backend; DEP1 next (three PRs, one per ecosystem) |
+| ③Hands | SMART-1 (#674) fixes from the effort=max review; SBX settings UI and the LAN-refusal backend after #668; 5b (other apps' data) after 5a; the delete-to-Trash allow path |
+| ⑤CAP | SMART-8: the shared card component (mock v6, no header), then the iPhone heading once you OK it; #604's web half pushed |
+| ⑥Helper | SMART-3/4 (#680); L11 PR-A to PR-C |
+| Codex (via ⑦Codex) | 4p, 5p, 6p and the gates notes pushed; follow-up gates queued |
+| ①iOS | Build 31 wording |
+| ⓪Plan | This page; recounts ci.yml after each Codex merge; the STY2 and SMART-5 benches; reviews |
 
 ## Waiting on the user
 
-- **Codex's addendum, then the gates push:** send the addendum from the phone to Codex's writer thread; when Codex has committed it, push `codex/sbx-allowlist-gates` and open its PR (plan A).
+**Decided today (2026-11-02, relayed by ④参谋 unless noted):**
+- **trustd in proxy mode:** a Settings toggle, off by default, grants it in PROXY only (SBX card).
+- **The LAN through the proxy:** trusted devices, pinned by address (SBX card).
+- **#636's lists:** (b) the Hands trace stays in Settings › Hands, (a) the judgments list goes. Merged.
+- **The drawer:** the radar and the sparkline are gone (#672, merged). The 「要你做」 label is kept.
+- **Mocks:** #604's keep button, L11-3b and CAP9 v6 are OK'd. The privacy page's §04 has both lines (#667).
+- **SMART is a must for v0.1.64.** SMART-6 (changing the chat model) is dropped. The gate is Arslan at least matching OpenClaw on the same model (SMART card).
+- **Other apps' private data:** blocked by default, with an allow-once card (SBX-5b).
+- **SMART-8 as recommended** (the user, directly): one card shape, with the plain purpose first. The card the user saw was on the iPhone, so the server's `title` gets the plain purpose too. That piece waits for the phone mock.
+- **Delete cards:** 「允许」 moves the targets to the Trash. When the user's own message names paths to delete permanently, those are really deleted, and the card says so. A delete that can't be parsed says it's permanent. Arslan never empties the Trash (SMART card, "Delete cards").
+- **DEP1:** no open critical or high runtime dependency alert at the tag (8 critical and 52 high open today; card [DEP1](DEP1-dependency-alerts.md)).
 
-- **#636's full lists:** (b) keep the Hands trace in Settings › Hands, and (a) drop the judgments list. Both recommended.
-- **The drawer:** drop the radar and the sparkline (recommended).
-- **The 「要你做」 label:** the chip and the tile now share it, with a title. It's kept unless you say otherwise.
-- **CAP9's mock**, sent as a private link.
+**Still open:**
+- **The phone heading (SMART-8):** whether the iPhone's approval heading becomes the plain purpose. It's in the mock for your OK.
+- **A probe-rule slip (⑥Helper, self-reported):** a bare `python -c` read `~/.arslan/secret_key` to compare it, and nothing was printed or written. Rotate the key? Your call.
+- **Housekeeping:** three Reminders lists from T1 (`python -m scripts.kernel_bench.cleanup_t1 --delete --yes`, which you run yourself); an old metering proxy on :8900 since Oct 24.
 
-- **IMG1's scope** (#617): A, web images as a chip that opens in the browser (recommended); B, a CSP on the main window; C, a CSP in the reader's HTML and Word frames. Recommended: A + C now, B after A is on a real Mac.
-- **#604's keep button:** the mock (the parked row plus 「keep it」, on CAP5a's board) needs your OK before ⑤CAP builds it.
-- **L11-3b's mock** (Memory's lesson rows show the rule state), once ⑥Helper sends it. The extra, "also remove it from AGENTS.md", is recommended no.
 - **③Hands' session effort:** switch it to high, per the pacing rule (②Main is switched).
 
 - **SEC1 mock** (⑤CAP), sent as a private link.
@@ -310,6 +338,23 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - MCP tool descriptions from an approved server stay unmarked, as a stated limit;
 - the English name is "Quick Chat";
 - Codex works under plan A.
+
+**Decided overnight (2026-11-01/02):**
+- **The loopback proxy (relayed, 「代理端口选 a」):** loopback stays open for dev servers; the profile denies the system proxy's own loopback port(s), read via proxy_resolve. Built in 6a; any-declared is retired for commands.
+- **SBX-6's release gate covers MCP too** (⓪Plan with ③Hands, from #666's review): MCP with network moves to proxy mode in the "SBX-6 MCP proxy" PR. Node: the pinned runtime is 24.21.0, and `NODE_USE_ENV_PROXY` covers fetch and https in the sandbox, so no Node change is needed.
+
+**Decided on 2026-11-01, evening:**
+- **#645 and #650** (relayed by ④参谋, about 15:35 UTC), verbatim: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」.
+  - **#645:** merge as is. The any-declared socket, including the router port-mapping exposure, is accepted only for the development window on main.
+    - **SBX-6 is a hard release condition** (README §7, SBX card).
+    - The fallback, if SBX-6 isn't on main at release: no name lookup in any-declared mode.
+  - **#650:** a folder outside home is shown by its last name only, e.g. `proj`. No volume and no full path leave the Mac.
+- **#645's two questions** (relayed by ④参谋, about 14:50 UTC), verbatim: 「A 放行，B 测」.
+  - **A:** any-declared mode keeps the mDNSResponder socket until SBX-6's proxy. The trade-off is recorded with `DELETE-BY: SBX-6`: the socket is the daemon's whole client interface (service registration, NAT port mapping, browse). Port-22 mode drops the socket.
+  - **B:** the three daemon calls are measured once on this Mac, with you present.
+- **IMG1** (relayed, verbatim): 「直接按 A + C 做 确实听着靠谱些」. A + C now, B later, no extras (#646).
+- **Self-merge after review** (in ⓪Plan's chat): it covers the security surface and then ordinary product code. Codex PRs and Bridge-frame PRs stay yours (#644).
+- **Process** (relayed, 「都同意」): no stacked PRs, STATUS twice a day, and ④参谋 pushes each ready merge to your phone as it comes.
 
 **Decided on 2026-11-01, about 13:45 UTC (user, relayed by ④参谋): IPB's frames are OK**, 「帧 OK，1/2/4 按推荐，3 选 b」.
 - The frames are as listed in [IPB-frame-list](IPB-frame-list.md) (#640): `status.snapshot` gains the optional `mac`, `week` and `outcomes`, and `chat.history.result` gains `details`. No new frame types and no `hello` flag.

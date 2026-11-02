@@ -1,7 +1,7 @@
 /**
  * INB7-c1 (v0.1.64): one pick on Progress, as board F draws it. A row of 「最近的工作」 and a bar on the axis pick the same run; the
  * inspector beside the list opens it, with its steps in the conversation's words, following the axis's replay and moving it when a
- * step is clicked. The drawer is one click away ("Details") until INB7-c4 folds what it shows into the inspector.
+ * step is clicked. What the old drawer showed is in the inspector's 「诊断」 (INB7-c4); the drawer is gone (2026-11-02).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +54,7 @@ const steps = () => within(inspector()).getAllByTestId(/^inspector-step-/);
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+  useActivityStore.setState({ range: "24h", filter: {}, pickedRunId: null, pickedRun: null, replayStep: null,
     replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue(RUNS);
@@ -248,27 +248,20 @@ describe("the inspector keeps up (⓪Plan's review of PR 624)", () => {
   });
 });
 
-describe("the drawer is one click away", () => {
-  it("a link from a reply opens the run in the drawer and picks it (B)", () => {
+describe("the old drawer is gone (the user, 2026-11-02: 「去掉」)", () => {
+  it("a link from a reply or a scheduled run picks the run for the inspector", () => {
     act(() => { useActivityStore.getState().showRun(12); });
-    expect([useActivityStore.getState().openRunId, useActivityStore.getState().pickedRunId]).toEqual([12, 12]);
+    expect(useActivityStore.getState().pickedRunId).toBe(12);
+    expect("openRunId" in useActivityStore.getState()).toBe(false);
   });
 
-  it("the drawer's arrows move the pick with it (B)", async () => {
+  it("the inspector has no Details button and opens no drawer; × still lets the run go", async () => {
     render(<ActivityView waiting={waiting()} />);
     fireEvent.click(await screen.findByTestId("activity-run-11"));
-    fireEvent.click(within(inspector()).getByRole("button", { name: "Details" }));
-    fireEvent.keyDown(document, { key: "ArrowDown" });
-    expect([useActivityStore.getState().openRunId, useActivityStore.getState().pickedRunId]).toEqual([14, 14]);
-    expect(screen.getByTestId("activity-run-14").getAttribute("aria-current")).toBe("true");
-  });
-
-  it("Details opens the drawer on the picked run; × lets the run go", async () => {
-    render(<ActivityView waiting={waiting()} />);
-    fireEvent.click(await screen.findByTestId("activity-run-11"));
-    fireEvent.click(within(inspector()).getByRole("button", { name: "Details" }));
-    expect(useActivityStore.getState().openRunId).toBe(11);
-    expect(screen.getByTestId("run-drawer")).toBeTruthy();
+    expect(within(inspector()).queryByRole("button", { name: "Details" })).toBeNull();
+    fireEvent.keyDown(document, { key: "ArrowDown" });                      // the drawer's arrows went with it
+    expect(useActivityStore.getState().pickedRunId).toBe(11);
+    expect(screen.queryByTestId("run-drawer")).toBeNull();
     fireEvent.click(within(inspector()).getByRole("button", { name: "Back to all runs" }));
     expect(useActivityStore.getState().pickedRunId).toBeNull();
   });

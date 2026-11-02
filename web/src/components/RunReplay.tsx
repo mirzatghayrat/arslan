@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
-import { toUiRun, DIMENSION_LABEL_KEYS } from "../api/adapters";
-import type { RunListItem, RunSummary } from "../api/client.types";
+import { toUiRun } from "../api/adapters";
 import type { UiRun } from "../types";
 import RunCompareChart from "./RunCompareChart";
-import EChart from "./EChart";
 import ArtifactDownloads from "./ArtifactDownloads";
 import { triggerDownload } from "./MessageBody";
 import { Notice, confirmSheet } from "./kit";
@@ -15,11 +13,9 @@ const BADGE_KEY: Record<string, string> = { good: "replay.badge_good", ok: "repl
 type TFn = (key: string, opts?: Record<string, unknown>) => string;
 const badgeLabel = (t: TFn, b?: string | null) => t(BADGE_KEY[b ?? "ok"]);
 
-// Fixed axis order for the this-run-vs-fleet radar, matching the backend judge dimensions.
-const RADAR_DIMENSIONS = ["routing", "fabrication", "identity", "completion"] as const;
-
 /** Human-readable md export of a run — KPIs, steps, dims/comments, prompt/kb. */
-function buildRunMarkdown(run: UiRun, t: TFn): string {
+/** The run as Markdown, for the inspector's 「诊断」 export (INB7-c4a) and this replay's own. */
+export function buildRunMarkdown(run: UiRun, t: TFn): string {
   const lines: string[] = [];
   lines.push(`# Run #${run.id}${run.spawnName ? ` · ${run.spawnName}` : ""}`);
   lines.push("");
@@ -93,8 +89,6 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
   const [clearing, setClearing] = useState(false);
-  const [dimSummary, setDimSummary] = useState<RunSummary["dimension_averages"] | null>(null);
-  const [history, setHistory] = useState<RunListItem[] | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
 
@@ -129,26 +123,6 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, pollMs]);
-
-  // Dims radar data: fleet dimension averages, best-effort (skip radar on failure).
-  useEffect(() => {
-    if (!run?.scored) return;
-    let cancelled = false;
-    api.getRunsSummary()
-      .then((s) => { if (!cancelled) setDimSummary(s.dimension_averages); })
-      .catch(() => { /* radar is optional */ });
-    return () => { cancelled = true; };
-  }, [run?.scored]);
-
-  // Spawn history sparkline: recent scored runs for this spawn, best-effort.
-  useEffect(() => {
-    if (run?.spawnId == null) return;
-    let cancelled = false;
-    api.getRuns(run.spawnId, 12)
-      .then((items) => { if (!cancelled) setHistory(items); })
-      .catch(() => { /* sparkline is optional */ });
-    return () => { cancelled = true; };
-  }, [run?.spawnId]);
 
   async function handleClearThisRun() {
     // 0.1.55: the kit's sheet, not window.confirm (irreversible: the details are redacted).
@@ -206,49 +180,6 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
     const tooltipLabel = s.kind === "tool_call" ? `${s.kind} · ${s.label}` : s.kind;
     return { seq: s.seq, kind: s.kind, label: s.kind, tooltipLabel, offsetMs, durationMs: s.durationMs ?? 0, color };
   });
-
-  // Dims radar: this run's dimension scores vs the fleet averages. Guarded — renders
-  // only once both the run is scored, has dimensions, and the summary fetch succeeded.
-  const scoreByDim: Record<string, number> = {};
-  for (const d of run.dimensions) scoreByDim[d.dimension] = d.score;
-  const showRadar = run.scored && run.dimensions.length > 0 && dimSummary != null;
-  const radarOption = showRadar
-    ? {
-        tooltip: {},
-        // legend at the BOTTOM so it never collides with the top vertex's axis name
-        // (the "路由匹配" overlap); radar recentred up + smaller radius for label clearance.
-        legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 } },
-        radar: {
-          indicator: RADAR_DIMENSIONS.map((d) => ({ name: DIMENSION_LABEL_KEYS[d] ? t(DIMENSION_LABEL_KEYS[d]) : d, max: 10, min: 0 })),
-          radius: "52%",
-          center: ["50%", "44%"],
-          axisName: { fontSize: 10 },
-        },
-        series: [
-          {
-            type: "radar",
-            data: [
-              {
-                name: t("replay.this_run"),
-                value: RADAR_DIMENSIONS.map((d) => scoreByDim[d] ?? 0),
-                areaStyle: { opacity: 0.18 },
-              },
-              {
-                name: t("replay.fleet_avg"),
-                value: RADAR_DIMENSIONS.map((d) => dimSummary?.[d] ?? 0),
-                lineStyle: { type: "dashed" as const },
-                areaStyle: { opacity: 0 },
-              },
-            ],
-          },
-        ],
-      }
-    : null;
-
-  // History sparkline: recent scored runs for this run's spawn, current run highlighted.
-  const historyScored = (history ?? []).filter((r) => r.overall_score != null);
-  const showSparkline = run.spawnId != null && historyScored.length > 0;
-  const sparkMax = showSparkline ? Math.max(...historyScored.map((r) => r.overall_score ?? 0), 10) : 1;
 
   return (
     <div className="run-replay" data-testid="run-replay">
@@ -492,33 +423,6 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           <p className="run-replay__pending">{t(run.noLearning || isTerminalRunStatus(run.status) ? "tasks.noAutomaticScore" : "replay.scoring")}</p>
         )}
       </section>
-
-      {/* Per-dimension radar: this run vs the fleet average, on the same 4 axes.
-          Best-effort — hides silently if the summary fetch fails or there are no dims yet. */}
-      {showRadar && radarOption && (
-        <section className="run-replay__radar" data-testid="dims-radar">
-          <h4>{t("replay.radar_title")}</h4>
-          <EChart option={radarOption} height={230} />
-        </section>
-      )}
-
-      {/* Spawn history sparkline: recent scored runs for this spawn, current run highlighted.
-          Hides silently when the run has no spawn or there's no history yet. */}
-      {showSparkline && (
-        <section className="run-replay__history" data-testid="history-spark">
-          <h4>{t("replay.recent_scores")}</h4>
-          <div className="history-spark__bars">
-            {historyScored.map((r) => (
-              <span
-                key={r.id}
-                className={`history-spark__bar${r.id === run.id ? " history-spark__bar--current" : ""}`}
-                style={{ height: `${((r.overall_score ?? 0) / sparkMax) * 100}%` }}
-                title={`run #${r.id}: ${r.overall_score}/10`}
-              />
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* This run against the fleet averages (self-hides when <2 scored runs
           or the summary fetch fails). Only meaningful once the run is scored. */}

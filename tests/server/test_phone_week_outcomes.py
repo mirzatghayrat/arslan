@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from server.db.models import ApprovalEvent, Judgment, Run, UsageLedger
+from server.db.models import ApprovalEvent, ArslanMessage, Judgment, Run, UsageLedger
 from server.db.task_models import CompanionTask, TaskAttempt, TaskRevision
 from server.services import background_jobs, phone_stats
 from server.services.background_jobs import Job
@@ -55,7 +55,9 @@ def task(task_id: str, finished: datetime, *, phase="succeeded", reason=None, go
                           results=[{"check_id": c, "status": s, "evaluator": "model"} for c, s in results],
                           created_at=utc(finished - timedelta(minutes=5)), updated_at=utc(finished)),
             TaskRevision(task_id=task_id, revision=1, spec=spec),
-            TaskAttempt(id=f"a-{task_id}", task_id=task_id, number=1, spec_revision=1, run_ids=[r.id for r in runs])]
+            TaskAttempt(id=f"a-{task_id}", task_id=task_id, number=1, spec_revision=1, run_ids=[r.id for r in runs]),
+            # A task's conversation still has its messages (#647 review F1: a deleted one's tasks are never listed).
+            ArslanMessage(conversation_id=conversation or f"conv-{task_id}", role="user", content=goal)]
 
 
 def asked(at: datetime, decided_by: str, job_id=None) -> ApprovalEvent:
