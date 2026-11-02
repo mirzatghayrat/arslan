@@ -707,7 +707,10 @@
         }
       },
       "kind": "msg",
-      "notify": false
+      "notify": false,
+      "phone_drops": [
+        "mac"
+      ]
     },
     {
       "envelope": {
