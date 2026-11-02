@@ -31,7 +31,7 @@ def reference(harness, **parameters):
         text += '(deny process-exec)\n'
         for path in sorted({Path(python).absolute(), Path(python).resolve()}):
             text += f'(allow process-exec {literal(path)})\n'
-        return text
+        return text + device_rules()
     reads = parameters.pop("read", [])
     if harness.base == "mcp-proxy":
         # Match SBX-6p and capability_sandbox.profile's public argument names.
@@ -48,7 +48,16 @@ def reference(harness, **parameters):
     return default_deny_profile([harness.work, *grants], protected,
                                 readable=[*capability_sandbox.SYSTEM_READ, Path(sys.prefix),
                                           Path(sys.base_prefix), harness.work, *grants, *map(Path, reads)],
-                                network=harness.network, ipc_prefix=harness.ipc_prefix, **parameters) + '(allow file-read-data (literal "/"))\n'
+                                network=harness.network, ipc_prefix=harness.ipc_prefix, **parameters) + '(allow file-read-data (literal "/"))\n' + device_rules()
+
+
+def device_rules():
+    devices = '(literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$")'
+    return (f'(deny file-read* file-write* {devices})\n'
+            f'(deny file-read-data file-write-data {devices})\n'
+            f'(deny file-ioctl {devices})\n'
+            '(deny pseudo-tty)\n'
+            '(deny mach-lookup (global-name "com.apple.FSEvents"))\n')
 
 
 def legacy(harness, **parameters):
