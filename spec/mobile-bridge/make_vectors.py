@@ -374,8 +374,15 @@ def messages() -> dict:
     ]
     for e in examples:
         r.check_body(e)
-    return {"contract": CONTRACT, "examples": [{"envelope": e, "kind": r.kind_of(e["type"]),
-                                                "notify": r.should_notify(e)} for e in examples]}
+    # Test-only, never on the wire (#652, ①iOS): the body keys a part-B phone drops by design, here the `mac`
+    # block without `taken_at`. The phone's round-trip test strips the listed keys, checks they decoded to nil,
+    # and still fails on any drop that isn't listed.
+    def phone_drops(e):
+        body = e["body"]
+        return ["mac"] if e["type"] == "status.snapshot" and "taken_at" not in body.get("mac", {"taken_at": None}) else []
+    return {"contract": CONTRACT, "examples": [{"envelope": e, "kind": r.kind_of(e["type"]), "notify": r.should_notify(e),
+                                                **({"phone_drops": drops} if (drops := phone_drops(e)) else {})}
+                                               for e in examples]}
 
 
 def build() -> dict[str, dict]:
