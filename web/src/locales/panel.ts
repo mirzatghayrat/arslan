@@ -137,6 +137,10 @@ export const activityMessages = {
     "noneInFilter": "Nothing ran in this filter.",
     "chipScheduled": "Scheduled",
     "chipPhone": "iPhone",
+    "chipApps": "Apps",
+    "handsRecords": "Mac app actions (last 7 days)",
+    "judgmentRecords": "Judgment log",
+    "noRecords": "Nothing recorded yet.",
     "chipNeedsTitle": "Runs waiting for your answer in their conversation",
     "noneInRange": "Nothing ran in this range.",
     "onlySpan": "Only {{span}}",
@@ -149,8 +153,7 @@ export const activityMessages = {
     "origin_job": "Background job",
     "origin_scheduled": "Scheduled task",
     "origin_phone": "From iPhone",
-    "origin_browser": "Browser preview",
-    "drawerKeys": "↑ ↓ previous / next · Esc closes"
+    "origin_browser": "Browser preview"
   },
   "zh": {
     "judgments": "判断记录",
@@ -258,6 +261,10 @@ export const activityMessages = {
     "noneInFilter": "这个范围里没有运行。",
     "chipScheduled": "定时",
     "chipPhone": "手机",
+    "chipApps": "应用",
+    "handsRecords": "Mac 应用操作记录（最近 7 天）",
+    "judgmentRecords": "判定记录",
+    "noRecords": "还没有记录。",
     "chipNeedsTitle": "在对话里等你回答的运行",
     "noneInRange": "这个范围里没有运行。",
     "onlySpan": "只看 {{span}}",
@@ -270,8 +277,7 @@ export const activityMessages = {
     "origin_job": "后台作业",
     "origin_scheduled": "定时任务",
     "origin_phone": "手机发来",
-    "origin_browser": "浏览器预览",
-    "drawerKeys": "↑ ↓ 上一条 / 下一条 · Esc 关闭"
+    "origin_browser": "浏览器预览"
   },
   "ja": {
     "judgments": "判断記録",
@@ -379,6 +385,10 @@ export const activityMessages = {
     "noneInFilter": "この範囲には実行がありません。",
     "chipScheduled": "定期",
     "chipPhone": "iPhone",
+    "chipApps": "アプリ",
+    "handsRecords": "Mac アプリの操作記録（直近 7 日）",
+    "judgmentRecords": "判定の記録",
+    "noRecords": "まだ記録はありません。",
     "chipNeedsTitle": "会話であなたの返事を待っている実行",
     "noneInRange": "この期間に実行はありません。",
     "onlySpan": "{{span}} のみ",
@@ -391,8 +401,7 @@ export const activityMessages = {
     "origin_job": "バックグラウンド作業",
     "origin_scheduled": "定期タスク",
     "origin_phone": "iPhone から",
-    "origin_browser": "ブラウザのプレビュー",
-    "drawerKeys": "↑ ↓ 前 / 次 · Esc で閉じる"
+    "origin_browser": "ブラウザのプレビュー"
   },
   "es": {
     "judgments": "Juicios",
@@ -503,6 +512,10 @@ export const activityMessages = {
     "noneInFilter": "Nada se ejecutó en este filtro.",
     "chipScheduled": "Programadas",
     "chipPhone": "iPhone",
+    "chipApps": "Apps",
+    "handsRecords": "Acciones en apps del Mac (últimos 7 días)",
+    "judgmentRecords": "Registro de juicios",
+    "noRecords": "Aún no hay nada registrado.",
     "chipNeedsTitle": "Ejecuciones que esperan tu respuesta en su conversación",
     "noneInRange": "Nada se ejecutó en este periodo.",
     "onlySpan": "Solo {{span}}",
@@ -515,8 +528,7 @@ export const activityMessages = {
     "origin_job": "Trabajo en segundo plano",
     "origin_scheduled": "Tarea programada",
     "origin_phone": "Desde el iPhone",
-    "origin_browser": "Vista previa del navegador",
-    "drawerKeys": "↑ ↓ anterior / siguiente · Esc cierra"
+    "origin_browser": "Vista previa del navegador"
   },
   "de": {
     "judgments": "Urteile",
@@ -627,6 +639,10 @@ export const activityMessages = {
     "noneInFilter": "In diesem Filter lief nichts.",
     "chipScheduled": "Geplant",
     "chipPhone": "iPhone",
+    "chipApps": "Apps",
+    "handsRecords": "Mac-App-Aktionen (letzte 7 Tage)",
+    "judgmentRecords": "Urteilsprotokoll",
+    "noRecords": "Noch nichts aufgezeichnet.",
     "chipNeedsTitle": "Läufe, die in ihrem Gespräch auf deine Antwort warten",
     "noneInRange": "In diesem Zeitraum lief nichts.",
     "onlySpan": "Nur {{span}}",
@@ -639,8 +655,7 @@ export const activityMessages = {
     "origin_job": "Hintergrundauftrag",
     "origin_scheduled": "Geplante Aufgabe",
     "origin_phone": "Vom iPhone",
-    "origin_browser": "Browser-Vorschau",
-    "drawerKeys": "↑ ↓ vorherige / nächste · Esc schließt"
+    "origin_browser": "Browser-Vorschau"
   },
   "fr": {
     "judgments": "Jugements",
@@ -751,6 +766,10 @@ export const activityMessages = {
     "noneInFilter": "Rien n’a tourné dans ce filtre.",
     "chipScheduled": "Planifiées",
     "chipPhone": "iPhone",
+    "chipApps": "Apps",
+    "handsRecords": "Actions dans les apps du Mac (7 derniers jours)",
+    "judgmentRecords": "Journal des jugements",
+    "noRecords": "Rien d’enregistré pour l’instant.",
     "chipNeedsTitle": "Exécutions qui attendent ta réponse dans leur conversation",
     "noneInRange": "Rien n’a tourné sur cette période.",
     "onlySpan": "Seulement {{span}}",
@@ -763,7 +782,6 @@ export const activityMessages = {
     "origin_job": "Travail en arrière-plan",
     "origin_scheduled": "Tâche planifiée",
     "origin_phone": "Depuis l’iPhone",
-    "origin_browser": "Aperçu du navigateur",
-    "drawerKeys": "↑ ↓ précédent / suivant · Échap ferme"
+    "origin_browser": "Aperçu du navigateur"
   }
 };
