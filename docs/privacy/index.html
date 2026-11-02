@@ -87,6 +87,8 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
   <li>the AI model service you configured, with your key;</li>
   <li>what a task you give it needs, such as the web pages it reads or a remote tool (MCP server) you connected;</li>
   <li>your iCloud, for the iPhone link, only while <span class="k">Use Arslan from your iPhone</span> is on;</li>
+  <li>the official MCP Registry, about once a day, to recheck the entries of tool servers you installed from it, so it can tell you if one was withdrawn or changed (it sends only those entries' public names);</li>
+  <li>OSV.dev, the open vulnerability database, when you install a tool, to ask about known vulnerabilities in the public packages it locks (it sends only each package's public name, ecosystem and version);</li>
   <li>GitHub, to check for and download updates of Arslan itself.</li>
 </ul>
 <p>Each of those services sees what it is sent under its own terms. None of them is operated by us.</p>
