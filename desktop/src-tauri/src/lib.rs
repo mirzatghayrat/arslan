@@ -564,19 +564,21 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
         if interactive {
             app.state::<UpdateShared>().set(&app, "checking", "", "");
         }
-        // Built rather than taken off the handle so the system proxy can be
-        // attached: reqwest reads only the environment, which a Finder-launched
-        // app does not have, and "could not reach the update feed" was the
-        // first symptom of that on a proxied machine.
-        let mut builder = app.updater_builder();
-        if let Some(url) = proxy::resolve() {
-            match url.parse() {
-                Ok(parsed) => builder = builder.proxy(parsed),
-                // An unparseable value is the user's own env var; say so once
-                // and carry on direct rather than failing the whole check.
-                Err(e) => eprintln!("ignoring unusable proxy {url:?}: {e}"),
+        // Built rather than taken off the handle so proxy.rs's answer can be
+        // attached: a Finder-launched app has no proxy variables, and "could not
+        // reach the update feed" was the first symptom of that on a proxied
+        // machine. proxy.rs is the only decision: since tauri-plugin-updater
+        // 2.11, reqwest would otherwise read the macOS HTTP/HTTPS proxy itself
+        // and ignore PAC, which proxy.rs refuses to guess at.
+        let builder = app.updater_builder();
+        let builder = match proxy::updater_proxy(proxy::resolve()) {
+            proxy::UpdaterProxy::Via(url) => builder.proxy(url),
+            proxy::UpdaterProxy::Direct => builder.no_proxy(),
+            proxy::UpdaterProxy::Unusable { value, error } => {
+                eprintln!("ignoring unusable proxy {value:?}: {error}");
+                builder.no_proxy()
             }
-        }
+        };
         let updater = match builder.build() {
             Ok(u) => u,
             Err(e) => {
