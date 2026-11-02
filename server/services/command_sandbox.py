@@ -43,6 +43,7 @@ from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_
                                              real as _real, regex, subpath)
 
 _SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+_TRUST_SERVICE = '(global-name "com.apple.trustd.agent")'   # SBX-6a, the user's setting
 _available: bool | None = None
 
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
@@ -239,7 +240,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      readable: list[Path] = (), copies: list[Path] = (), network: NetworkMode | None = None,
                      proxy_port: int | None = None, denied_ports: tuple[int, ...] = (),
                      ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
-                     system_proxies: list[str] | None = None) -> str:
+                     system_proxies: list[str] | None = None, trust_service: bool = False) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -250,7 +251,10 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     (`system_proxies`, likewise), so neither is a way out round the proxy. Online with no proxy port, or with
     Arslan's own ports unknown, is offline: closed, not open. Any-declared is retired for commands (D2's
     interim until SBX-6). `network` and `proxy_port` go to the base as given, and `denied_ports` adds to the
-    excluded ports (SBX-3p's and SBX-6p's harness pass them).
+    excluded ports (SBX-3p's and SBX-6p's harness pass them). `trust_service` (the user's setting
+    `sandbox_system_certificates`, default off) grants macOS's certificate trust service in proxy mode only, the
+    one thing it adds, as sandbox-runtime's `enableWeakerNetworkIsolation` does: Swift, Xcode's and Go's tools
+    check certificates through it, and it fetches certificate data itself, round the proxy.
     `ipc_prefix` is None for product runs, which permits no POSIX IPC (gate 4, option b: a stock
     multiprocessing Pool is refused, SBX-measurement.md); the harness passes a per-run one to test the rule."""
     roots = writable_roots(workspace, temp)
@@ -286,18 +290,22 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.allow_paths("file-read* file-map-executable", open_r, file_or_folder)
     if open_rw or open_r:
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
+    if trust_service and network == NetworkMode.PROXY:
+        after.allow("mach-lookup", _TRUST_SERVICE)
     after.allow_paths("file-read*", map(_real, copies), literal)
     return text + "".join(after.text().splitlines(True)[2:])        # its rules, without a second header
 
 
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
-            readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None) -> list[str] | None:
+            readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
+            trust_service: bool = False) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
     return [_SANDBOX_EXEC, "-p", commands_profile(workspace, temp=temp, offline=offline, closed=closed,
-                                                  readable=readable, copies=copies, proxy_port=proxy_port)]
+                                                  readable=readable, copies=copies, proxy_port=proxy_port,
+                                                  trust_service=trust_service)]
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
@@ -347,11 +355,26 @@ def available() -> bool:
 
 
 def stopped_by_sandbox(result: dict) -> bool:
-    """A sandboxed run that failed with EPERM. Heuristic on purpose (Codex does the
-    same): a false positive only offers a re-run card the user can decline."""
+    """A sandboxed run that failed with EPERM, or with a certificate check the closed trust service failed
+    (`trust_check_failed`). Heuristic on purpose (Codex does the same): a false positive only offers a re-run
+    card the user can decline."""
     if result.get("sandbox") != "workspace" or result.get("ok") or result.get("exit_code") in (0, None):
         return False
-    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}")) or trust_check_failed(result)
+
+
+#: SBX-6a: the certificate errors a tool prints when Security.framework can't reach the trust service (URLSession
+#: and Swift, Xcode's tools, Go on macOS). Their own CA bundles keep curl, Python and git working without it.
+_TRUST_FAILED = re.compile(r"NSURLErrorDomain[^\n]*-120[0-6]|NSURLErrorServerCertificate|kCFStreamErrorDomainSSL|"
+                           r"errSSL[A-Za-z]+|SecTrust[A-Za-z]*(?:Evaluate|failed)|x509: OSStatus -?\d+|"
+                           r"The certificate for this server is invalid", re.I)
+
+
+def trust_check_failed(result: dict) -> bool:
+    """A sandboxed online run whose certificate check failed the way a closed trust service makes it fail."""
+    if result.get("sandbox") != "workspace" or result.get("ok") or result.get("offline"):
+        return False
+    return bool(_TRUST_FAILED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
 def refused_outside(result: dict) -> bool:
@@ -359,7 +382,7 @@ def refused_outside(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = ()) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False) -> str:
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
@@ -367,7 +390,10 @@ def note(workspace: Path, closed: list[Path] = ()) -> str:
                 "cannot open them either.")
     return ("The sandbox stopped this command: commands may write only inside the working folder "
             f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data."
-            + shut + " If it really needs to work elsewhere, run it again with outside_sandbox: true and a short "
+            + shut + (" This looks like a certificate check through macOS's trust service, which the sandbox "
+                      "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
+                      "sandbox\"), or run this once outside the sandbox." if trust else "")
+            + " If it really needs to work elsewhere, run it again with outside_sandbox: true and a short "
             "why — the user decides with a click. Otherwise tell the user what you needed.")
 
 

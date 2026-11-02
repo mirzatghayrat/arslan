@@ -167,6 +167,17 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
                           readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key)
 
 
+async def _trust_service_allowed() -> bool:
+    """SBX-6a: the user's "Allow system certificate checks in the sandbox" (default off). Off when unreadable."""
+    try:
+        from server.db import session as db_session
+        from server.services import settings_service
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.sandbox_system_certificates(db)
+    except Exception:  # noqa: BLE001 — a setting that can't be read is the default: off
+        return False
+
+
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int) -> dict:
     # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
@@ -182,13 +193,14 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         # SBX-6: online, the sandbox lets TCP out only to Arslan's local proxy, and the child is told to use
         # it; dev servers on loopback are reached directly. No proxy means the profile is offline.
         proxy_port = None if offline else await sandbox_proxy.port()
+        trust = proxy_port is not None and await _trust_service_allowed()
         if proxy_port is not None:
             via = f"http://127.0.0.1:{proxy_port}"
             env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                                                "http_proxy", "https_proxy", "all_proxy")})
             env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
         prefix = command_sandbox.wrapper(cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
-                                         copies=copies, proxy_port=proxy_port) or []
+                                         copies=copies, proxy_port=proxy_port, trust_service=trust) or []
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
         prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies) or []
@@ -254,7 +266,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                           "command. A command may read only the copies saved in this conversation.")
     elif command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
-        result["note"] = command_sandbox.note(cwd, closed)
+        result["note"] = command_sandbox.note(cwd, closed, trust=command_sandbox.trust_check_failed(result))
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
                           "Arslan Hands' folder. Tell the user what you needed.")

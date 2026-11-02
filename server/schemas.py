@@ -86,6 +86,8 @@ class SettingsIn(BaseModel):
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
     folder_rules_enabled: str | None = None
+    sandbox_system_certificates: str | None = None   # SBX-6a, default off
+    sandbox_trusted_devices: str | None = None   # SBX-6a, JSON list, default empty
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
@@ -160,6 +162,8 @@ class SettingsOut(BaseModel):
     ssh_enabled: str = ""
     default_read_enabled: str = ""
     folder_rules_enabled: str = ""
+    sandbox_system_certificates: str = ""   # SBX-6a, default off
+    sandbox_trusted_devices: str = ""   # SBX-6a, JSON list, default empty
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""

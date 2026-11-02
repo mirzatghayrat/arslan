@@ -27,9 +27,11 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 import ipaddress
+import json
 import logging
 import os
 import re
+import socket
 import subprocess
 from urllib.parse import urlsplit
 
@@ -122,6 +124,87 @@ def excluded_ports(bound, system, *, proxy_port: int) -> tuple[int, ...]:
     return tuple(sorted(p for p in {*bound, *theirs} if p != proxy_port and 1 <= p <= 65535))
 
 
+# ── trusted local devices (the user, 2026-11-02: 「选 c」) ──────────────────────
+# The LAN stays refused through the proxy, except the specific devices the user listed (a NAS, a Mac mini): never a
+# range. A listed name is pinned to the address recorded when it was added (or to a listed IP), and re-checked on
+# every connect, so a name rebound to another private address is refused. Loopback and link-local are never
+# trusted (Arslan's own ports, metadata services). sandbox-runtime's proxy-only mode refuses private ranges reached
+# by name too (src/sandbox/proxy-only.ts:47-51).
+
+def _is_public_literal(name: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return ip.is_global
+
+
+def _private(address: str) -> bool:
+    ip = ipaddress.ip_address(address)
+    if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+        return False
+    return ip.is_private or ip in ipaddress.ip_network("100.64.0.0/10")
+
+
+def parse_trusted(raw: str | None) -> list[dict]:
+    """The setting's JSON list of {"host"?: name, "address": IP}. Anything malformed trusts nothing."""
+    try:
+        entries = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    out = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        address, host = entry.get("address"), entry.get("host")
+        try:
+            if not isinstance(address, str) or not _private(address):
+                continue
+        except ValueError:
+            continue
+        out.append({"address": str(ipaddress.ip_address(address)),
+                    **({"host": host.strip().lower()} if isinstance(host, str) and host.strip() else {})})
+    return out
+
+
+def trusted_address(host: str, trusted: list[dict], resolve=socket.getaddrinfo) -> str | None:
+    """The one address to connect to when `host` is a listed device, else None (the destination stays refused).
+    A literal must be listed. A name must be listed and every answer must be its recorded address or a listed IP."""
+    name = host.strip("[]").lower()
+    listed = {e["address"] for e in trusted}
+    try:
+        literal = str(ipaddress.ip_address(name))
+    except ValueError:
+        literal = None
+    if literal is not None:
+        return literal if literal in listed else None
+    pinned = {e["address"] for e in trusted if e.get("host") == name}
+    if not pinned:
+        return None
+    try:
+        answers = {str(ipaddress.ip_address(info[4][0].split("%")[0])) for info in resolve(name, None)}
+    except (OSError, ValueError):
+        return None
+    if not answers or not answers <= (pinned | listed):
+        return None
+    return sorted(answers & pinned or answers)[0]
+
+
+def _dial(address: str, port: int):
+    """A trusted device's connection (a seam: tests stand the device in on loopback)."""
+    return asyncio.open_connection(address, port)
+
+
+async def _trusted() -> list[dict]:
+    try:
+        from server.db import session as db_session
+        from server.services import settings_service
+        async with db_session.AsyncSessionLocal() as db:
+            return parse_trusted(await settings_service.sandbox_trusted_devices(db))
+    except Exception:  # noqa: BLE001 — a setting that can't be read trusts nothing
+        return []
+
+
 # ── the proxy ────────────────────────────────────────────────────────────────
 
 class _Refused(Exception):
@@ -164,8 +247,13 @@ class LocalProxy:
         A tunnel is checked as https (net_pin lets a fake-IP name through only for https on port 443)."""
         name = host.strip("[]").lower()
         url = f"{'http' if first else 'https'}://{host}:{port}/"
-        chain = browser_proxy._upstream_proxy(name)          # ValueError: a broken setting is refused
-        if chain is not None:
+        device = None if _is_public_literal(name) else await within(
+            asyncio.to_thread(trusted_address, name, await _trusted()), 5)    # DNS off the loop
+        chain = None if device is not None else browser_proxy._upstream_proxy(name)   # ValueError: refused
+        if device is not None:
+            # A device the user trusts, at its pinned address, directly (a system proxy can't reach the LAN).
+            remote, upstream = await within(_dial(device, port), 8, dispose=close_connection)
+        elif chain is not None:
             await within(asyncio.to_thread(_resolve_pinned, url, via_proxy=True), 5)
             remote, upstream = await within(asyncio.open_connection(chain.host, chain.port), 8,
                                             dispose=close_connection)

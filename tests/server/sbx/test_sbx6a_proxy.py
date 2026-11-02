@@ -401,3 +401,113 @@ async def test_a_sandboxed_command_reaches_the_proxy_and_nothing_local_through_i
         await sandbox_proxy.shutdown()
     assert result["sandbox"] == "workspace" and result["ok"], result
     assert "403 Forbidden" in result["stdout"]
+
+
+# ── the user's "Allow system certificate checks in the sandbox" (default off) ──
+
+_TRUST = '(allow mach-lookup (global-name "com.apple.trustd.agent"))'
+
+
+def test_the_trust_service_is_off_by_default_and_on_only_in_proxy_mode(home):
+    kw = dict(bound_ports=[], system_proxies=[])
+    assert _TRUST not in command_sandbox.commands_profile(home / "ws", proxy_port=41000, **kw)
+    assert _TRUST in command_sandbox.commands_profile(home / "ws", proxy_port=41000, trust_service=True, **kw)
+    assert _TRUST not in command_sandbox.commands_profile(home / "ws", offline=True, trust_service=True)
+    assert _TRUST not in command_sandbox.commands_profile(home / "ws", network=NetworkMode.PORT_22,
+                                                          trust_service=True, **kw)
+    text = command_sandbox.commands_profile(home / "ws", proxy_port=41000, trust_service=True, **kw)
+    assert text.count("(allow mach-lookup") == 2                        # FSEvents and the trust service, no more
+
+
+async def test_the_setting_is_read_and_passed_on(monkeypatch, tmp_path):
+    seen = {}
+
+    async def port():
+        return 41000
+
+    async def allowed():
+        return True
+    monkeypatch.setattr(sandbox_proxy, "port", port)
+    monkeypatch.setattr(terminal_exec, "_trust_service_allowed", allowed)
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda cwd, **kw: seen.update(kw) or ["/usr/bin/true"])
+    await terminal_exec.run("true", cwd=tmp_path, sandbox=True)
+    assert seen["trust_service"] is True
+    await terminal_exec.run("true", cwd=tmp_path, sandbox=True, offline=True)
+    assert seen["trust_service"] is False                                # never offline
+
+
+async def test_the_setting_defaults_off(tmp_path, monkeypatch):
+    from server.services import settings_service
+
+    async def raw(session, key):
+        return None
+    monkeypatch.setattr(settings_service, "_get_raw", raw)
+    assert await settings_service.sandbox_system_certificates(object()) is False
+    async def on(session, key):
+        return "true"
+    monkeypatch.setattr(settings_service, "_get_raw", on)
+    assert await settings_service.sandbox_system_certificates(object()) is True
+
+
+@pytest.mark.parametrize("stderr", [
+    'Error Domain=NSURLErrorDomain Code=-1202 "The certificate for this server is invalid."',
+    "x509: OSStatus -26276",
+    "SSL error: errSSLXCertChainInvalid",
+])
+def test_a_failed_certificate_check_offers_the_card_and_names_the_setting(tmp_path, stderr):
+    result = {"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": stderr, "stdout": ""}
+    assert command_sandbox.trust_check_failed(result) and command_sandbox.stopped_by_sandbox(result)
+    assert "Allow system certificate checks in the sandbox" in command_sandbox.note(tmp_path, trust=True)
+    assert "trust service" not in command_sandbox.note(tmp_path)
+    assert not command_sandbox.trust_check_failed({**result, "sandbox": "off"})
+    assert not command_sandbox.trust_check_failed({**result, "stderr": "curl: (60) SSL certificate problem"})
+
+
+# ── trusted local devices (default: the LAN stays refused) ──────────────────
+
+def _resolver(answers):
+    return lambda name, port: [(None, None, None, "", (a, 0)) for a in answers.get(name, [])]
+
+
+def test_only_listed_private_devices_are_trusted_and_names_are_pinned():
+    trusted = sandbox_proxy.parse_trusted(
+        '[{"host": "nas.local", "address": "192.168.1.20"}, {"address": "10.0.0.7"},'
+        ' {"address": "127.0.0.1"}, {"address": "169.254.169.254"}, {"address": "8.8.8.8"}, "junk"]')
+    assert trusted == [{"address": "192.168.1.20", "host": "nas.local"}, {"address": "10.0.0.7"}]   # no loopback,
+    resolve = _resolver({"nas.local": ["192.168.1.20"], "rebound.local": ["192.168.1.20"],     # link-local, public
+                         "nas2.local": ["192.168.1.99"]})
+    assert sandbox_proxy.trusted_address("10.0.0.7", trusted, resolve) == "10.0.0.7"         # a listed IP
+    assert sandbox_proxy.trusted_address("nas.local", trusted, resolve) == "192.168.1.20"     # a listed name, pinned
+    assert sandbox_proxy.trusted_address("10.0.0.8", trusted, resolve) is None                # unlisted literal
+    assert sandbox_proxy.trusted_address("rebound.local", trusted, resolve) is None           # unlisted name
+    rebind = _resolver({"nas.local": ["192.168.1.99"]})
+    assert sandbox_proxy.trusted_address("nas.local", trusted, rebind) is None                # rebound elsewhere
+    mixed = _resolver({"nas.local": ["192.168.1.20", "192.168.1.99"]})
+    assert sandbox_proxy.trusted_address("nas.local", trusted, mixed) is None                 # one bad answer
+    assert sandbox_proxy.parse_trusted("not json") == [] and sandbox_proxy.parse_trusted("") == []
+
+
+async def test_a_trusted_device_is_reached_and_an_untrusted_lan_host_refused(proxy, origin, monkeypatch):
+    port, got = origin
+    async def trusted():
+        return [{"address": "192.168.77.5"}]
+    monkeypatch.setattr(sandbox_proxy, "_trusted", trusted)
+    dialled = []
+
+    def fake_dial(address, p):                               # the LAN device stands in on loopback
+        dialled.append(address)
+        return asyncio.open_connection("127.0.0.1", port)
+    monkeypatch.setattr(sandbox_proxy, "_dial", fake_dial)
+    reply = await _ask(proxy.port, b"CONNECT 192.168.77.5:445 HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert reply.startswith(b"HTTP/1.1 200 Connection Established") and dialled == ["192.168.77.5"]
+    refused = await _ask(proxy.port, b"CONNECT 192.168.77.6:445 HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert refused.startswith(b"HTTP/1.1 403 Forbidden") and dialled == ["192.168.77.5"]
+
+
+async def test_the_trusted_devices_setting_defaults_empty(monkeypatch):
+    from server.services import settings_service
+
+    async def raw(session, key):
+        return None
+    monkeypatch.setattr(settings_service, "_get_raw", raw)
+    assert await settings_service.sandbox_trusted_devices(object()) == ""

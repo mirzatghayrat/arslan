@@ -57,6 +57,13 @@ _PLAIN_KEYS = (
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
                "folder_rules_enabled",
+               # SBX-6a (the user, 2026-11-02: 「trustd 照 Anthropic：默认不给，加开关」): sandboxed commands may ask
+               # macOS's certificate trust service ("true" | "false"; default off). The Settings toggle comes after
+               # its mock is OKed.
+               "sandbox_system_certificates",
+               # SBX-6a (the user, 2026-11-02: 「选 c」): the LAN devices sandboxed commands may reach through the proxy,
+               # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused).
+               "sandbox_trusted_devices",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
@@ -321,6 +328,22 @@ async def folder_rules_enabled(session: AsyncSession) -> bool:
     not an old path (§9)."""
     raw = await _get_raw(session, "folder_rules_enabled")
     return raw is None or str(raw).strip().lower() != "false"
+
+
+async def sandbox_system_certificates(session: AsyncSession) -> bool:
+    """SBX-6a: whether a sandboxed command online (proxy mode) may reach `com.apple.trustd.agent`, which tools that
+    check certificates through Security.framework need (Swift, Xcode's tools, Go). Default OFF, like sandbox-runtime's
+    `enableWeakerNetworkIsolation`: the trust service fetches revocation and intermediate certificates itself, a
+    channel round the proxy. Only an explicit 'true' turns it on. A long-lived user switch, not an old path (§9)."""
+    raw = await _get_raw(session, "sandbox_system_certificates")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def sandbox_trusted_devices(session: AsyncSession) -> str:
+    """SBX-6a: the raw JSON of the user's trusted local devices; `sandbox_proxy.parse_trusted` reads it, and
+    anything malformed trusts nothing. Default empty."""
+    raw = await _get_raw(session, "sandbox_trusted_devices")
+    return str(raw) if raw is not None else ""
 
 
 async def ssh_enabled(session: AsyncSession) -> bool:
