@@ -56,7 +56,7 @@ const bar = (id: number) => screen.getByTestId(`axis-run-${id}`);
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, replayStep: null, replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
+  useActivityStore.setState({ range: "24h", filter: {}, pickedRunId: null, replayStep: null, replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue(RUNS);
   runProcess.mockResolvedValue(PROCESS);

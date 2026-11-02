@@ -6,13 +6,13 @@ import type { ScheduledTaskDto } from "../../api/client.types";
 import { announceProactiveChange, proactiveApi, type ProactiveItem } from "../../api/proactive";
 import { AWAY_HOURS, scheduledConversation, type ScheduledAttention } from "../../hooks/useScheduledAttention";
 import { proactiveErrorText } from "../../lib/proactive";
-import RunDrawer from "../activity/RunDrawer";
 import { buttonClass } from "../companion/CompanionDialog";
 import { Notice } from "../kit";
 import NotDoneList from "../proactive/NotDoneList";
 import WatchesPanel from "../proactive/WatchesPanel";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import ScheduledTasksCard from "../ScheduledTasksCard";
+import { OPEN_ACTIVITY_RUN_EVENT } from "../reply/ReplyFooter";
 
 /**
  * INB3: the scheduled tasks and the pages and folders Arslan watches, in one place (the INB card, item 3). A row carries a dot when
@@ -20,6 +20,11 @@ import ScheduledTasksCard from "../ScheduledTasksCard";
  * page or folder changed. A task's problem and its away entries show under its runs, a change under its watch with the guess and
  * next step. Opening a task's row marks it seen, which clears what its runs could not ask you so far. "Check now" lives here.
  */
+/** A scheduled run opens on Progress, picked in the inspector with its 「诊断」 (the old drawer is gone: the user, 2026-11-02). */
+function openRun(runId: number) {
+  window.dispatchEvent(new CustomEvent(OPEN_ACTIVITY_RUN_EVENT, { detail: runId }));
+}
+
 export default function ScheduledPage({ attention, waitingTasks, onOpenConversation, onOpenModelSettings }: {
   attention: ScheduledAttention;
   /** The tasks waiting on you, as the server counts them (progress.waiting_on_user's `scheduled`). */
@@ -30,7 +35,6 @@ export default function ScheduledPage({ attention, waitingTasks, onOpenConversat
   onOpenModelSettings?: () => void;
 }) {
   const { t, i18n } = useTranslation();
-  const [openRun, setOpenRun] = useState<number | null>(null);
   const [checking, setChecking] = useState(false);
   const { busyId, notice, setNotice, doIt, snooze, dismiss } = useReminderActions({ reload: attention.reload, onOpenConversation });
   const reminder = (item: ProactiveItem) => <ReminderCard key={item.id} item={item} busy={busyId === item.id} language={i18n.language}
@@ -68,7 +72,7 @@ export default function ScheduledPage({ attention, waitingTasks, onOpenConversat
       {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}
         action={notice.needsModel && onOpenModelSettings ? <button className="text-[13px] underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button> : undefined}>
         {notice.text}</Notice>}
-      <ScheduledTasksCard onOpenRun={setOpenRun} attention={needsLook} onOpen={markSeen} details={(task) => <div className="mt-3 space-y-3">
+      <ScheduledTasksCard onOpenRun={openRun} attention={needsLook} onOpen={markSeen} details={(task) => <div className="mt-3 space-y-3">
         {(attention.tasks[task.id]?.problems ?? []).map(reminder)}
         <NotDoneList conversationId={scheduledConversation(task)} hours={AWAY_HOURS} unattended title={t("scheduledPage.awayTitle")} />
         <p className="text-[11px] text-muted-foreground">{t("scheduledPage.seenNote")}</p>
@@ -80,6 +84,5 @@ export default function ScheduledPage({ attention, waitingTasks, onOpenConversat
             ? <div className="mt-3 space-y-2">{attention.changeRows[watch.id].map(reminder)}</div> : null} />
       </section>
     </div>
-    {openRun != null && <RunDrawer runId={openRun} onClose={() => setOpenRun(null)} />}
   </section>;
 }
