@@ -139,15 +139,48 @@ def _is_public_literal(name: str) -> bool:
     return ip.is_global
 
 
+def _ip(address: str):
+    """An address, with an IPv4-mapped IPv6 one read as its IPv4 address (not left to the interpreter's rules)."""
+    ip = ipaddress.ip_address(address.split("%")[0])
+    return ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped else ip
+
+
+_OWN_TTL = 60.0
+_own: tuple[float, frozenset[str]] = (-_OWN_TTL, frozenset())
+
+
+def own_addresses() -> frozenset[str]:
+    """This Mac's own interface addresses (ifconfig), cached for a minute. Trusting one would expose every service
+    this Mac listens on all interfaces to sandboxed commands (#668 review)."""
+    global _own
+    import time
+    now = time.monotonic()
+    if now - _own[0] < _OWN_TTL:
+        return _own[1]
+    try:
+        out = subprocess.run(["/sbin/ifconfig"], capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    found = set()
+    for word in re.findall(r"^\s+inet6? (\S+)", out, re.M):
+        try:
+            found.add(str(_ip(word)))
+        except ValueError:
+            continue
+    _own = (now, frozenset(found))
+    return _own[1]
+
+
 def _private(address: str) -> bool:
-    ip = ipaddress.ip_address(address)
+    ip = _ip(address)
     if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
         return False
     return ip.is_private or ip in ipaddress.ip_network("100.64.0.0/10")
 
 
 def parse_trusted(raw: str | None) -> list[dict]:
-    """The setting's JSON list of {"host"?: name, "address": IP}. Anything malformed trusts nothing."""
+    """The setting's JSON list of {"host"?: name, "address": IP}. Anything malformed trusts nothing, and neither do
+    this Mac's own addresses. Trusting a device trusts every port on it."""
     try:
         entries = json.loads(raw) if raw else []
     except ValueError:
@@ -158,22 +191,23 @@ def parse_trusted(raw: str | None) -> list[dict]:
             continue
         address, host = entry.get("address"), entry.get("host")
         try:
-            if not isinstance(address, str) or not _private(address):
+            if not isinstance(address, str) or not _private(address) or str(_ip(address)) in own_addresses():
                 continue
         except ValueError:
             continue
-        out.append({"address": str(ipaddress.ip_address(address)),
+        out.append({"address": str(_ip(address)),
                     **({"host": host.strip().lower()} if isinstance(host, str) and host.strip() else {})})
     return out
 
 
-def trusted_address(host: str, trusted: list[dict], resolve=socket.getaddrinfo) -> str | None:
+def trusted_address(host: str, trusted: list[dict], resolve=None) -> str | None:
     """The one address to connect to when `host` is a listed device, else None (the destination stays refused).
     A literal must be listed. A name must be listed and every answer must be its recorded address or a listed IP."""
     name = host.strip("[]").lower()
+    resolve = resolve or socket.getaddrinfo
     listed = {e["address"] for e in trusted}
     try:
-        literal = str(ipaddress.ip_address(name))
+        literal = str(_ip(name))
     except ValueError:
         literal = None
     if literal is not None:
@@ -182,7 +216,7 @@ def trusted_address(host: str, trusted: list[dict], resolve=socket.getaddrinfo) 
     if not pinned:
         return None
     try:
-        answers = {str(ipaddress.ip_address(info[4][0].split("%")[0])) for info in resolve(name, None)}
+        answers = {str(_ip(info[4][0])) for info in resolve(name, None)}
     except (OSError, ValueError):
         return None
     if not answers or not answers <= (pinned | listed):

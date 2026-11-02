@@ -511,3 +511,41 @@ async def test_the_trusted_devices_setting_defaults_empty(monkeypatch):
         return None
     monkeypatch.setattr(settings_service, "_get_raw", raw)
     assert await settings_service.sandbox_trusted_devices(object()) == ""
+
+
+async def test_a_trusted_name_is_dialled_at_its_pinned_address(proxy, origin, monkeypatch):
+    """#668 review: the dial gets the pinned IP, never the name (a by-name dial would resolve again)."""
+    port, _ = origin
+    async def trusted():
+        return [{"host": "nas.local", "address": "192.168.77.5"}]
+    monkeypatch.setattr(sandbox_proxy, "_trusted", trusted)
+    real = sandbox_proxy.socket.getaddrinfo
+    monkeypatch.setattr(sandbox_proxy.socket, "getaddrinfo",
+                        lambda name, *a, **k: [(None, None, None, "", ("192.168.77.5", 0))] if name == "nas.local"
+                        else real(name, *a, **k))
+    dialled = []
+
+    def fake_dial(address, p):
+        dialled.append((address, p))
+        return asyncio.open_connection("127.0.0.1", port)
+    monkeypatch.setattr(sandbox_proxy, "_dial", fake_dial)
+    reply = await _ask(proxy.port, b"CONNECT nas.local:445 HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert reply.startswith(b"HTTP/1.1 200 Connection Established") and dialled == [("192.168.77.5", 445)]
+
+
+def test_this_macs_own_addresses_and_mapped_forms(monkeypatch):
+    monkeypatch.setattr(sandbox_proxy, "own_addresses", lambda: frozenset({"192.168.1.10"}))
+    trusted = sandbox_proxy.parse_trusted('[{"address": "192.168.1.10"}, {"address": "::ffff:192.168.1.20"},'
+                                          ' {"address": "::ffff:127.0.0.1"}]')
+    assert trusted == [{"address": "192.168.1.20"}]          # own refused, mapped read as IPv4, mapped loopback refused
+    assert sandbox_proxy.trusted_address("::ffff:192.168.1.20", trusted) == "192.168.1.20"
+    assert not sandbox_proxy._private("::ffff:169.254.169.254")
+
+
+async def test_an_unreadable_certificates_setting_is_off(monkeypatch):
+    from server.db import session as db_session
+
+    def broken():
+        raise RuntimeError("no database")
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", broken)
+    assert await terminal_exec._trust_service_allowed() is False
