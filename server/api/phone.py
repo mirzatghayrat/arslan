@@ -283,7 +283,9 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
             "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
-            "activity": await phone_reads.activity(db), **await _stats(db)}
+            "activity": await phone_reads.activity(db), **await _stats(db),
+            # IPB (§5.11): the one part of `mac` only Arslan knows; the Bridge adds the Mac's own readings.
+            "mac": {"sleep": {"kept_awake": await kept_awake(db)}}}
 
 
 def _clean_job(frame: dict) -> dict:
@@ -305,6 +307,12 @@ async def _stats(db: AsyncSession) -> dict:
     except Exception as exc:  # noqa: BLE001 — logged, and the snapshot goes out without them
         logger.warning("phone snapshot: week and outcomes left out: %s", type(exc).__name__)
         return {}
+
+
+async def kept_awake(db: AsyncSession) -> bool:
+    """Whether Arslan holds the Mac awake right now: the desktop shell's rule (`want_sleep_assertion`,
+    desktop/src-tauri/src/resident.rs), from the same two inputs it reads (/desktop/status). A test pins them."""
+    return await settings_service.keep_awake_enabled(db) and desktop_status.snapshot()["working"] > 0
 
 
 @router.get("/phone/runs/{run_id}")
