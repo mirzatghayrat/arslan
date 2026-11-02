@@ -326,6 +326,11 @@ async def test_the_capability_rows_and_the_tool_list_never_wait_on_the_loop(exec
         return [{"id": 7, "label": "Docker", "transport": "stdio", "command": "docker", "status": "registered",
                  "state": "off", "enabled": False, "host_allowed": True}]
     monkeypatch.setattr(mcp_service, "list_servers", one_stdio_server)
+    from server.registry import executors
+
+    async def no_search_config():               # it opens its own session (imported by name), not the test's
+        return executors.SearchConfig(name="", key="", key_state="unset", base_url="", role="")
+    monkeypatch.setattr(executors, "_read_search_config", no_search_config)
     for coro in (capability_list._builtin_rows(), arslan._arslan_tools(), capability_list._mcp_rows()):
         stall, outcome = await _longest_stall(coro)
         assert isinstance(outcome, list) and outcome and stall < 0.3, (coro, stall, outcome)
