@@ -36,6 +36,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("SHELL", shutil.which("zsh") or "/bin/zsh")
     monkeypatch.delenv("ZDOTDIR", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)   # forwarded to the shell; a system rc may derive ZDOTDIR
     return home
 
 
@@ -157,6 +158,7 @@ def test_the_rc_sees_a_minimal_environment(home, monkeypatch):
 async def test_a_dot_on_the_rc_path_doesnt_let_a_planted_tool_run(home, tmp_path):
     """An rc that puts `.` on PATH: a file of that name in the command's folder is not found."""
     (home / ".zshrc").write_text('export PATH=".:$PATH"\n')
+    assert "." in spawn_env.login_shell_path().split(os.pathsep)      # the shell really gave it
     work = tmp_path / "work"
     _tool(work, "smart1planted")
     result = await terminal_exec.run("smart1planted", cwd=work, unwrapped=True)
@@ -199,10 +201,11 @@ def test_only_a_whole_marker_line_counts(monkeypatch):
 def test_only_absolute_folders_reach_the_merged_path(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("PATH", f".{os.pathsep}/usr/bin{os.pathsep}rel/bin")
-    monkeypatch.setattr(spawn_env, "login_shell_path", lambda: os.pathsep.join([".", "", "bin", "./x", "/opt/real"]))
+    monkeypatch.setattr(spawn_env, "login_shell_path",
+                        lambda: os.pathsep.join([".", "", "bin", "./x", "/nul\0x", "/opt/real"]))
     path = spawn_env.merged_path().split(os.pathsep)
     assert path[:2] == ["/usr/bin", "/opt/real"]
-    assert all(os.path.isabs(p) for p in path), path
+    assert all(os.path.isabs(p) and "\0" not in p for p in path), path
 
 
 def test_an_interactive_shell_with_no_answer_falls_back_to_a_login_shell(monkeypatch):
@@ -226,3 +229,132 @@ def test_an_interactive_shell_with_no_answer_falls_back_to_a_login_shell(monkeyp
     assert [flags for flags, _ in calls] == [["-i", "-l"], ["-l"]]
     for _, env in calls:
         assert "OPENAI_API_KEY" not in env and env["ARSLAN_RESOLVING_ENVIRONMENT"] == "1"
+
+
+@pytest.mark.macos
+@zsh
+def test_a_path_printed_before_a_child_that_left_the_group_holds_the_pipe_still_counts(home, monkeypatch):
+    """A child in its own session isn't killed with the shell's group and keeps the pipe past the second wait:
+    what was read before still counts (#674 review, M5c)."""
+    monkeypatch.setattr(spawn_env, "_SHELL_TIMEOUT", 1.0)
+    pids = home / "pids"
+    (home / ".zshrc").write_text(
+        'export PATH="$HOME/tools:$PATH"\n'
+        f"/usr/bin/perl -MPOSIX -e 'POSIX::setsid(); sleep 30' &\necho $! > {pids}\n")
+    try:
+        path = spawn_env.login_shell_path().split(os.pathsep)
+        assert str(home / "tools") in path
+    finally:
+        for pid in (pids.read_text().split() if pids.exists() else []):
+            try:
+                os.kill(int(pid), 9)
+            except OSError:
+                pass
+
+
+def test_overlapping_first_calls_read_the_shell_once(monkeypatch):
+    """The prewarm, a command and the turn's environment note can ask at the same time (#674 review)."""
+    import threading
+    reads = []
+
+    def shell(argv, env):
+        reads.append(argv)
+        time.sleep(0.3)
+        body = argv[-1].split('"', 2)[1]
+        start, end = (part.replace("\\n", "") for part in body.split("%s"))
+        return f"{start}/once/bin{end}\n"
+    monkeypatch.setattr(spawn_env, "_shell_output", shell)
+    seen = []
+    threads = [threading.Thread(target=lambda: seen.append(spawn_env.login_shell_path())) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert seen == ["/once/bin"] * 3 and len(reads) == 1
+
+
+# ── nothing on the event loop waits for the shell (#674 review) ─────────────
+
+async def _longest_stall(coro) -> float:
+    import asyncio
+    gaps: list[float] = []
+    done = False
+
+    async def tick():
+        last = time.monotonic()
+        while not done:
+            await asyncio.sleep(0.01)
+            now = time.monotonic()
+            gaps.append(now - last)
+            last = now
+    ticker = asyncio.create_task(tick())
+    await asyncio.sleep(0.03)
+    try:
+        await coro
+    except Exception:  # noqa: BLE001 — only the loop's wait is measured here; a refusal after it is expected
+        pass
+    finally:
+        done = True
+        await ticker
+    return max(gaps)
+
+
+@pytest.fixture
+def slow_path(monkeypatch):
+    """The browser status, the user's PATH and node's lookup take 0.6 s, as a slow ~/.zshrc does before the cache."""
+    from server.services import managed_browser
+
+    def slow_status():
+        time.sleep(0.6)
+        return {"ready": False, "reason": "node_required", "version": "x"}
+
+    def slow_resolve(command):
+        time.sleep(0.6)
+        return "/usr/bin/true"
+    monkeypatch.setattr(managed_browser, "status", slow_status)
+    monkeypatch.setattr(spawn_env, "resolve_command", slow_resolve)
+
+
+async def test_the_capability_rows_and_the_tool_list_never_wait_on_the_loop(tmp_path, monkeypatch, slow_path):
+    from server.orchestrator import arslan
+    from server.services import capability_list
+    from tests.server.test_workspace_tool_gate import _wire
+    await _wire(tmp_path, monkeypatch, workspace=str(tmp_path))
+    assert await _longest_stall(capability_list._builtin_rows()) < 0.3
+    assert await _longest_stall(arslan._arslan_tools()) < 0.3
+
+
+async def test_starting_a_browser_never_waits_on_the_loop(slow_path):
+    from server.services import agent_browser, browser_reader, managed_browser
+    import asyncio
+    assert await _longest_stall(browser_reader.ReaderSession("c1", None).start()) < 0.3
+    assert await _longest_stall(agent_browser._Worker()._run(asyncio.get_running_loop().create_future())) < 0.3
+    assert await _longest_stall(managed_browser.setup()) < 0.3
+    assert await _longest_stall(managed_browser._preview("https://example.com")) < 0.3
+
+
+def test_no_async_code_calls_the_path_helpers_directly():
+    """Source pin: in an `async def`, the helpers that may wait for the login shell run in a thread
+    (`await asyncio.to_thread(...)`), never called on the loop."""
+    import ast
+    owners = {"managed_browser": {"status"}, "spawn_env": {"resolve_command", "merged_path", "login_shell_path"},
+              "agent_browser": {"available"}}
+    bare = {"merged_path", "login_shell_path", "resolve_command"}
+    root = Path(__file__).resolve().parents[2] / "server"
+    hits = []
+    for path in root.rglob("*.py"):
+        for fn in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(fn, ast.AsyncFunctionDef):
+                continue
+            stack = list(fn.body)
+            while stack:
+                node = stack.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                    continue
+                if isinstance(node, ast.Call):
+                    f = node.func
+                    if ((isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                         and f.attr in owners.get(f.value.id, ())) or (isinstance(f, ast.Name) and f.id in bare)):
+                        hits.append(f"{path.relative_to(root)}:{node.lineno}")
+                stack.extend(ast.iter_child_nodes(node))
+    assert hits == []

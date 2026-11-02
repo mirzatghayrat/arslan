@@ -21,6 +21,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+import threading
 
 _FALLBACK_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 #: SMART-1: where user-level installers put their tools, under ~ (added even when the shell can't answer).
@@ -74,7 +75,7 @@ def _shell_output(argv: list[str], env: dict) -> str:
         return _decoded(out)
     except subprocess.TimeoutExpired as exc:
         partial = exc.output
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — fails closed: the group is killed below and only what was read counts
         pass
     try:
         os.killpg(proc.pid, signal.SIGKILL)
@@ -98,8 +99,20 @@ def _decoded(out: bytes | str | None) -> str:
     return out or ""
 
 
-@functools.lru_cache(maxsize=1)
+#: #674 review: one read at a time, so calls that overlap before the cache is filled (the supervisor's prewarm,
+#: a command, the turn's environment note) run the user's rc once, not once each.
+_RESOLVE_LOCK = threading.Lock()
+
+
 def login_shell_path() -> str:
+    """The user's interactive PATH (read once per process, see `_login_shell_path_once`). It may wait for the
+    shell, up to about 12 s at worst, so callers on the event loop call it, or `merged_path`, in a thread."""
+    with _RESOLVE_LOCK:
+        return _login_shell_path_once()
+
+
+@functools.lru_cache(maxsize=1)
+def _login_shell_path_once() -> str:
     """The user's interactive PATH, or "" when the shell can't produce one in time.
 
     SMART-1: `-i -l`, so zsh reads ~/.zshrc as well as ~/.zprofile (the old `-l` alone never read ~/.zshrc). When
@@ -122,6 +135,9 @@ def login_shell_path() -> str:
     return ""
 
 
+login_shell_path.cache_clear = _login_shell_path_once.cache_clear   # type: ignore[attr-defined]
+
+
 def merged_path() -> str:
     """Current PATH first (dev behaviour unchanged), then login-shell additions,
     then hard fallbacks — deduplicated, order-preserving. Only absolute folders: a `.` or a relative entry (an rc
@@ -131,7 +147,7 @@ def merged_path() -> str:
     fallbacks = [*_FALLBACK_DIRS, *(os.path.join(home, d) for d in _HOME_FALLBACK_DIRS)]
     for chunk in (os.environ.get("PATH", ""), login_shell_path(), os.pathsep.join(fallbacks)):
         for p in chunk.split(os.pathsep):
-            if p and os.path.isabs(p) and p not in parts:
+            if p and "\0" not in p and os.path.isabs(p) and p not in parts:   # a NUL breaks every spawn
                 parts.append(p)
     return os.pathsep.join(parts)
 
