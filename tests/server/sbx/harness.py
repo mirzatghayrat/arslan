@@ -151,3 +151,7 @@ def _commands_profile(self, **parameters) -> str:
 
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
+
+# SBX-6a declares these only when the corresponding settings are implemented.
+# SBX-5p also uses this immutable set for its independent feature keys.
+BUILT_FEATURES = frozenset()
