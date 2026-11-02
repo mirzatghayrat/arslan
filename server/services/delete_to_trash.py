@@ -19,6 +19,7 @@ import contextvars
 import os
 import re
 import shlex
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,9 @@ _VERBS = {"rm", "rmdir", "unlink"}
 _VERB_PATHS = {"/bin/rm": "rm", "/bin/rmdir": "rmdir", "/bin/unlink": "unlink", "/usr/bin/unlink": "unlink"}
 # Anything a shell could expand or redirect, even quoted: a target is only ever the literal text.
 _NOT_LITERAL = re.compile(r"[*?\[\]{}$`!;&|<>()\\\n\r#\x00]")
+# A `~` the shell would not expand (`'~/x'` is the literal folder `./~/x`): quotes strip away in the parse, so
+# such a delete is not read as one (#686 review F2).
+_QUOTED_TILDE = re.compile(r"[\"']~|~[\"']")
 _RM_SHORT = set("rRfdv")
 _RM_LONG = {"--recursive": "r", "--force": "f", "--dir": "d", "--verbose": "v"}
 
@@ -46,7 +50,7 @@ class Plan:
 def plan(command: str) -> Plan | None:
     """The delete, when the whole command is one `rm`/`rmdir`/`unlink` with literal targets; else None."""
     text = str(command or "").strip()
-    if not text or _NOT_LITERAL.search(text):
+    if not text or _NOT_LITERAL.search(text) or _QUOTED_TILDE.search(text):
         return None
     try:
         words = shlex.split(text, posix=True)
@@ -122,22 +126,41 @@ def _volume_root(path: Path) -> Path:
 def trash_folder(path: Path) -> Path:
     """The Trash on the same volume as `path`: `~/.Trash`, or that disk's `.Trashes/<uid>`. Raises OSError when
     that volume has none (nothing is ever copied to another disk's Trash)."""
-    home_trash = Path.home() / ".Trash"
-    home_trash.mkdir(exist_ok=True)
+    home_trash = _real_folder(Path.home() / ".Trash", create=True)
     if os.lstat(path.parent).st_dev == os.lstat(home_trash).st_dev:
         return home_trash
     shared = _volume_root(path.parent) / ".Trashes"
-    if not shared.is_dir():
+    if not os.path.lexists(shared):
         raise OSError(f"{path.parent} is on a disk with no Trash")
-    own = shared / str(os.getuid())
-    own.mkdir(mode=0o700, exist_ok=True)
-    return own
+    return _real_folder(_real_folder(shared, create=False) / str(os.getuid()), create=True)
+
+
+def _real_folder(path: Path, *, create: bool) -> Path:
+    """`path` itself as a folder, never through a link (#686 review): made 0o700 when missing and `create`."""
+    if create and not os.path.lexists(path):
+        os.mkdir(path, 0o700)
+    if os.path.islink(path) or not stat.S_ISDIR(os.lstat(path).st_mode):
+        raise OSError(f"{path} is not a plain folder, so nothing was moved into it")
+    return path
 
 
 def in_a_trash(path: Path) -> bool:
     """Whether `path` is inside a Trash (or is one): Arslan never deletes from the Trash."""
     parts = Path(os.path.realpath(path.parent)).joinpath(path.name).parts
     return ".Trash" in parts or ".Trashes" in parts
+
+
+def touches_protected(path: Path) -> bool:
+    """Whether `path` is, is inside, or holds a path of `command_sandbox.arslan_protected()` (Arslan's data, keys
+    and Hands' folder), which a command outside the sandbox can't touch either (#686 review F1). Compared without
+    case, as the Mac's disk finds `.ARSLAN` too."""
+    from server.services import command_sandbox
+    mine = str(path).rstrip("/").casefold()
+    for protected in command_sandbox.arslan_protected():
+        theirs = str(protected).rstrip("/").casefold()
+        if mine == theirs or theirs.startswith(mine + "/") or mine.startswith(theirs + "/"):
+            return True
+    return False
 
 
 def _move(path: Path) -> Path:
@@ -177,13 +200,19 @@ def move(command: str, cwd: Path) -> dict:
         except OSError as exc:
             errors.append(f"{word}: not moved to the Trash ({exc.strerror or exc}); nothing was deleted")
     stdout = "".join(f"Moved to the Trash: {m['from']}\n" for m in moved)
+    note = ""
+    if moved:
+        note = "The user allowed this delete; what was moved is in the Trash, where the user can restore it."
+    if errors:
+        note += (" " if note else "") + "Not moved, and not deleted: " + "; ".join(errors) + "."
     return {"ok": not errors, "exit_code": 0 if not errors else 1, "stdout": stdout,
-            "stderr": "".join(f"{e}\n" for e in errors), "cwd": str(cwd), "trashed": moved,
-            "note": "The user allowed this delete; the targets are in the Trash, where the user can restore them."}
+            "stderr": "".join(f"{e}\n" for e in errors), "cwd": str(cwd), "trashed": moved, "note": note}
 
 
 def _refusal(found: Plan, path: Path) -> str:
     """Why this target is not moved ("" to move it, "skip" for `rm -f` on nothing), as the command would fail."""
+    if touches_protected(path):
+        return "it is or holds Arslan's own data or keys, which Arslan never moves or deletes; nothing was deleted"
     if in_a_trash(path):
         return "it is in the Trash; Arslan never deletes from the Trash"
     if not os.path.lexists(path):

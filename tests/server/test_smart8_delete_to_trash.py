@@ -44,6 +44,7 @@ def test_a_plain_delete_reads_with_certainty(command, targets):
     "rm a; echo done", "rm a && ls", "rm a > log", "find ~/x -delete", "rm -i ~/x", "rm -P ~/x", "rmdir -p a/b",
     "unlink a b", "rm ~bob/x", "rm ~/x/", "rm ..", "rm ~/x/.", "rm", "rm -rf", "sudo rm x", "command rm x",
     "rm 'a\nb'", "rm a\\ b", "srm ~/x", "trash ~/x", "rm {a,b}", "rm 'unclosed",
+    "rm -rf '~/Library'", 'rm -rf "~/Library"', 'rm -rf ~"/Library"', "rm '~'",     # a ~ the shell would not expand
 ])
 def test_anything_else_does_not(command):
     assert dt.plan(command) is None
@@ -119,13 +120,16 @@ def test_another_disk_without_a_trash_is_refused_and_nothing_is_copied(home, tmp
     "find ~/.Trash -mindepth 1 -delete", "find ~/.Trash -exec rm {} +", "unlink ~/.Trash/x",
     "osascript -e 'tell application \"Finder\" to empty trash'", "osascript -e 'tell app \"Finder\" to empty the trash'",
     "osascript <<'EOF'\ntell application \"Finder\"\n  empty trash without warning\nend tell\nEOF",
+    "cd ~/.Trash && rm -rf *", "cd ~/.Trash; find . -delete", "pushd ~/.Trash && rm old.txt",
+    'cd "$HOME/.Trash" && rm -rf -- *', "cd /Volumes/X/.Trashes/501 && rmdir old",
     "osascript -e 'tell application \"Finder\" to «event fndrempt»'",
 ])
 def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
     assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", "trash")
 
 
-@pytest.mark.parametrize("command", ["ls ~/.Trash", "mv old.txt ~/.Trash/", "du -sh ~/.Trash", "rm notes-on-trash.txt"])
+@pytest.mark.parametrize("command", ["ls ~/.Trash", "mv old.txt ~/.Trash/", "du -sh ~/.Trash", "rm notes-on-trash.txt",
+                                     "cd ~/.Trash && ls -la", "cd ~/Desktop && rm old.txt"])
 def test_looking_at_or_moving_into_the_trash_is_not(command):
     assert tp.assess(command).rule != "trash"
 
@@ -317,3 +321,85 @@ async def test_an_applescript_that_empties_the_trash_is_refused_before_any_card(
 def test_looking_at_the_trash_in_a_script_is_not_refused(script):
     from server.services import hands_service
     assert not hands_service.empties_trash(script)
+
+
+# ── #686 review: Arslan's own files, a quoted ~, the note, and the Trash folders ─
+
+@pytest.fixture
+def protected(home, monkeypatch):
+    from server.services import command_sandbox
+    own = [home / ".arslan", home / "Library" / "Application Support" / "Arslan"]
+    for folder in own:
+        _folder(folder)
+    (home / ".arslan" / "secret_key").write_text("k")
+    monkeypatch.setattr(command_sandbox, "arslan_protected", lambda: own)
+    return own
+
+
+@pytest.mark.parametrize("target", [
+    "~/.arslan",                                  # the folder itself
+    "~/.arslan/secret_key",                       # inside it
+    "{home}/Library/Application Support",         # a folder that holds it
+    "{home}/Library",
+    "~/.ARSLAN",                                  # the Mac's disk ignores case
+])
+def test_arslan_s_own_data_and_keys_are_never_moved(home, tmp_path, protected, target):
+    out = dt.move(f"rm -rf '{target.format(home=home)}'" if "{home}" in target else f"rm -rf {target}", tmp_path)
+    assert not out["ok"] and "Arslan's own data or keys" in out["stderr"]
+    assert (home / ".arslan" / "secret_key").read_text() == "k"
+    assert (home / "Library" / "Application Support" / "Arslan" / "notes.txt").exists()
+    assert "in the Trash" not in out["note"] and "Not moved" in out["note"]
+
+
+def test_the_real_protected_list_covers_the_secret_key(home):
+    assert dt.touches_protected(home / ".arslan") and dt.touches_protected(home)
+
+
+def test_other_targets_of_the_same_command_still_move(home, tmp_path, protected):
+    old = _folder(tmp_path / "old")
+    out = dt.move(f"rm -rf {old} ~/.arslan", tmp_path)
+    assert not old.exists() and (home / ".Trash" / "old").exists() and (home / ".arslan" / "secret_key").exists()
+    assert "in the Trash" in out["note"] and "Not moved" in out["note"]
+
+
+async def test_a_quoted_tilde_is_not_moved_and_its_card_says_permanent(monkeypatch):
+    ex, asked = await _run(monkeypatch, {"command": "rm -rf '~/Library'"}, sandbox_on=False)
+    assert asked == [{"delete": "permanent"}] and ex.ran == [False]
+
+
+def test_a_missing_home_trash_is_made_private(home, tmp_path):
+    (tmp_path / "a.log").write_text("x")
+    dt.move(f"rm {tmp_path / 'a.log'}", tmp_path)
+    assert (os.stat(home / ".Trash").st_mode & 0o777) == 0o700
+
+
+def test_a_home_trash_that_is_a_link_is_refused(home, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (home / ".Trash").symlink_to(elsewhere)
+    (tmp_path / "a.log").write_text("x")
+    out = dt.move(f"rm {tmp_path / 'a.log'}", tmp_path)
+    assert not out["ok"] and (tmp_path / "a.log").exists() and not any(elsewhere.iterdir())
+
+
+@pytest.mark.parametrize("linked", [".Trashes", ".Trashes/{uid}"])
+def test_another_disks_trash_that_is_a_link_is_refused(home, tmp_path, monkeypatch, linked):
+    ext = tmp_path / "ext"
+    target = _folder(ext / "x")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    link = ext / linked.format(uid=os.getuid())
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(elsewhere)
+    real_lstat = os.lstat
+
+    class Stat:
+        def __init__(self, st, dev):
+            self.st_dev, self.st_mode, self._st = dev, st.st_mode, st
+
+    def lstat(path, *a, **k):
+        st = real_lstat(path, *a, **k)
+        return Stat(st, 999) if str(ext) in str(path) else st
+    monkeypatch.setattr(dt.os, "lstat", lstat)
+    out = dt.move(f"rm -r {target}", tmp_path)
+    assert not out["ok"] and (target / "notes.txt").exists() and not any(elsewhere.iterdir())
