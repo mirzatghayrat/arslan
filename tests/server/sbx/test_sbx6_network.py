@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from server.services.sandbox_profile import NetworkMode
+from tests.server.sbx import harness
 from tests.server.sbx import test_sbx2_kernel as gates
 from tests.server.sbx import test_sbx_service_allowlist as services
 from tests.server.sbx.harness import BUILT_BASES, Harness
@@ -29,6 +30,9 @@ def bases(names):
 @pytest.fixture
 def net_sbx(tmp_path, request, record_property):
     base = request.param
+    feature = getattr(getattr(request.node, "callspec", None), "params", {}).get("feature")
+    if feature is not None:
+        assert feature in harness.BUILT_FEATURES, f"SBX-6a {feature} protection is not built"
     assert base in BUILT_BASES, f"SBX-6a {base} adapter is not built"
     h = Harness(tmp_path, base, NetworkMode.PROXY)
     with socket.socket() as proxy:
