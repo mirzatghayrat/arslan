@@ -139,10 +139,20 @@ def switched_on(row) -> None:
     row.evidence = {k: v for k, v in (row.evidence or {}).items() if k not in _NOT_IN_EFFECT_KEYS}
 
 
+def scope_of(row) -> dict | None:
+    """L11 (b): where a practice applies, for Memory: {"folder": the folder as Overview names it} when it is scoped to
+    one (PR-B), else None (everywhere)."""
+    from pathlib import Path
+
+    from server.services import folder_rules
+    scope = _scope(row)
+    return {"folder": folder_rules._shown(Path(scope), folder_rules._home())} if scope else None
+
+
 def present(row) -> dict:
     return {"id": row.id, "situation": row.situation, "advice": row.advice, "polarity": row.polarity,
             "source": row.source, "status": row.status, "pinned": bool(row.pinned), "text": render(row),
-            "not_in_effect": not_in_effect(row),
+            "not_in_effect": not_in_effect(row), "scope": scope_of(row),
             "recalled": row.recalled, "followed": row.followed, "succeeded": row.succeeded, "failed": row.failed,
             "evidence": row.evidence or {},
             "last_used_at": row.last_used_at.isoformat() + "Z" if row.last_used_at else None,
