@@ -74,7 +74,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <h2><span class="n">02</span>How your messages travel</h2>
 <p>When you send a message, a task or an approval from your iPhone, it is encrypted on the iPhone and saved as a record in <strong>your own iCloud private database</strong> (Apple CloudKit), under your Apple ID. Arslan for Mac, signed in to the same Apple ID, reads and decrypts it. Replies, progress and files travel back the same way.</p>
 <p>Photos and files you attach to a message (up to 20 MB each) travel the same way, each encrypted with its own key and checked when it arrives. Arslan for Mac saves them in its work folder, under <span class="k">~/Arslan/Inbox/iPhone</span>, so the task can use them. Each record is deleted from your iCloud once the other device has it.</p>
-<p>Arslan for Mac also sends your iPhone, the same way, what its Overview and a conversation's details show (Arslan for Mac 0.1.64 or later): your Mac's battery, CPU, memory and disk use, its network type and whether the link is good (never the Wi-Fi name, a network address or a device identifier), whether Arslan is keeping the Mac awake, and its macOS version; for each conversation, the model and mode, the working folder (as <span class="k">~/…</span> inside your home folder, otherwise only the folder's own name), the names of the tools it can use (anything that looks like a key or a web address is masked), how many files and lines it changed, and what it cost; and over the last 7 days, how many replies, tasks and cards there were, plus your finished tasks' titles, whether their checks passed, whether they needed you and what they cost. None of this goes anywhere but your own iCloud, encrypted end to end.</p>
+<p>Arslan for Mac also sends your iPhone, the same way, what its Overview and a conversation's details show (Arslan for Mac 0.1.64 or later): your Mac's battery, CPU, memory and disk use, its network type and the link's state (connected, limited by Low Data Mode or a hotspot, or down; never the Wi-Fi name, a network address or a device identifier), whether Arslan is keeping the Mac awake, and its macOS version; for each conversation, the model and mode, the working folder (as <span class="k">~/…</span> inside your home folder, otherwise only the folder's own name), the names of its tools and connectors and whether each is on (anything that looks like a key or a web address is masked), how many files and lines it changed, and what it cost; and over the last 7 days, how many replies, tasks and approval cards there were, plus your finished tasks' titles, whether their checks passed, whether they needed you and what they cost, and the total spent over those days. None of this goes anywhere but your own iCloud, encrypted end to end.</p>
 <p>The encryption keys are created when you pair the two devices and stay in the keychains of your iPhone and your Mac, so neither Apple nor we can read the contents. To deliver records, iCloud does see a few routing details next to the ciphertext: which of your devices sent a record and which should receive it, a sequence number, a coarse kind, whether it should notify you, and the time. Apple stores the encrypted records for you under <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>.</p>
 
 <h2><span class="n">03</span>AI processing happens on your Mac</h2>
@@ -134,7 +134,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <div class="eyebrow">隐私政策</div>
 <h1>没有服务器，<br><span class="g">什么都不收集。</span></h1>
 <p class="lead">你的 iPhone 只和你自己的 Mac 通信，经由你自己的 iCloud，端到端加密。AI 在你的 Mac 上工作，用的是你选的模型服务和你自己的 key。开发者不在这条路径上。</p>
-<p class="meta">最后更新：2026 年 10 月 13 日 · Arslan iPhone 版 1.0 · Arslan Mac 版 0.1.61</p>
+<p class="meta">最后更新：2026 年 11 月 2 日 · Arslan iPhone 版 1.0 · Arslan Mac 版 0.1.64</p>
 
 <div class="cards">
   <div class="card"><div class="dot d1">0</div><b>我们什么都不收集</b><p>没有统计分析、没有跟踪、没有广告、没有账号。我们收不到你的消息、文件、任务，也不知道你怎么用这个 App。</p></div>
@@ -162,6 +162,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <h2><span class="n">02</span>消息怎么传</h2>
 <p>你在 iPhone 上发出的消息、任务或批准，会先在 iPhone 上加密，再作为一条记录存进<strong>你自己的 iCloud 私有数据库</strong>（Apple CloudKit），归属于你的 Apple ID。登录同一个 Apple ID 的 Arslan Mac 版读取并解密它。回复、进度和文件按同样的路径传回来。</p>
 <p>你附在消息里的照片和文件（每个最多 20 MB）走同样的路径，每个文件用自己的密钥加密，到达时校验。Arslan Mac 版把它们存进工作文件夹的 <span class="k">~/Arslan/Inbox/iPhone</span>，供任务使用。对方设备收到后，这条记录就会从你的 iCloud 里删除。</p>
+<p>Arslan Mac 版还会用同样的方式，把它的「概览」和对话详情里显示的内容发给你的 iPhone（Arslan Mac 版 0.1.64 及以上）：Mac 的电量、CPU、内存和磁盘用量，网络类型和连接状态（已连接、被低数据模式或个人热点限制、或已断开；从不包括 Wi-Fi 名称、网络地址或设备标识），Arslan 是否让 Mac 保持唤醒，以及 macOS 版本；每个对话的模型和模式、工作文件夹（在你的主文件夹里显示为 <span class="k">~/…</span>，否则只显示文件夹自己的名字）、它的工具和连接器的名字以及各自是否打开（看起来像 key 或网址的内容会被遮盖）、改了多少文件和多少行、花了多少钱；以及最近 7 天里回复、任务和批准卡片的数量，加上你已完成任务的标题、检查是否通过、是否需要你处理、各花了多少钱，以及这几天的总花费。这些内容只会进入你自己的 iCloud，端到端加密。</p> <!-- lang-check: allow (the page's Chinese article) -->
 <p>加密密钥在你配对两台设备时生成，只保存在 iPhone 和 Mac 的钥匙串里，所以苹果和我们都读不到内容。为了投递，iCloud 能看到密文旁边的少量路由信息：哪台设备发出、该由哪台接收、序号、粗略的类别、是否需要通知你，以及时间。苹果依照<a href="https://www.apple.com/legal/privacy/">其隐私政策</a>替你保存这些加密记录。</p>
 
 <h2><span class="n">03</span>AI 处理发生在你的 Mac 上</h2>
@@ -174,6 +175,8 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
   <li>你配置的 AI 模型服务，用你自己的 key；</li>
   <li>你交给它的任务所需要的地方，比如它读取的网页，或你接入的远程工具（MCP 服务器）；</li>
   <li>你的 iCloud——只在 <span class="k">在 iPhone 上使用 Arslan</span> 打开时，用于 iPhone 连接；</li>
+  <li>官方 MCP Registry——大约每天一次，复查你从那里安装的工具服务器的条目，以便在条目被撤下或改动时告诉你（只发送这些条目的公开名称）；</li> <!-- lang-check: allow (the page's Chinese article) -->
+  <li>OSV.dev（开放的漏洞数据库）——在你安装工具时，查询它锁定的公开软件包有没有已知漏洞（只发送每个软件包的公开名称、生态和版本）；</li> <!-- lang-check: allow (the page's Chinese article) -->
   <li>GitHub——检查并下载 Arslan 自己的更新。</li>
 </ul>
 <p>这些服务各自按自己的条款看到发给它们的内容；没有一个由我们运营。</p>
