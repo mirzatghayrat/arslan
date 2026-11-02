@@ -287,6 +287,7 @@ mac_only = pytest.mark.skipif(sys.platform != "darwin" or not os.path.isdir("/Sy
                               reason="APFS firmlinks and normalization-insensitive names")
 
 
+@pytest.mark.macos
 @mac_only
 def test_a_home_reached_through_the_data_volume_firmlink_is_a_tilde(tmp_path):
     home = (tmp_path / "Home").resolve()
@@ -294,6 +295,7 @@ def test_a_home_reached_through_the_data_volume_firmlink_is_a_tilde(tmp_path):
     assert phone_details.shown_folder("/System/Volumes/Data" + str(home / "Code"), home) == "~/Code"
 
 
+@pytest.mark.macos
 @mac_only
 def test_a_home_written_in_another_unicode_form_is_a_tilde(tmp_path):
     nfc = unicodedata.normalize("NFC", "Jos" + chr(0xE9))
