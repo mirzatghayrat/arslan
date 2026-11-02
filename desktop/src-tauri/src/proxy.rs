@@ -252,6 +252,7 @@ mod tests {
             ("localhost:7899", "http://localhost:7899"),
             ("[::1]:7899", "http://[::1]:7899"),
             ("user:pw@10.0.0.2:3128", "http://user:pw@10.0.0.2:3128"),
+            (" 127.0.0.1:7899 ", "http://127.0.0.1:7899"),
         ] {
             assert_eq!(
                 updater_proxy(Some(value.into())),
