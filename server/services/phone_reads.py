@@ -340,7 +340,10 @@ async def activity(db: AsyncSession, now: float | None = None) -> dict:
     directory = artifact_store.root()
     if directory.exists():
         files = sum(1 for path in directory.glob("run_*.manifest.json") if path.stat().st_mtime >= midnight.timestamp())
-    return {"hours": hours, "done": done, "files": files, "waiting": desktop_status.snapshot()["awaiting"]}
+    # The cards waiting now, for the phone: the retired pocket's are answered on the Mac only (Q1 #4).
+    from server.services import phone_ids
+    waiting = desktop_status.awaiting_count(excluding=phone_ids.POCKET)
+    return {"hours": hours, "done": done, "files": files, "waiting": waiting}
 
 
 # ------------------------------------------------------------------ tasks from the phone

@@ -283,7 +283,10 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     Bridge maps to job.event bodies like every other job update) and the cards waiting.
     Presence is "online" because this answered; the phone marks a Mac silent for 90 s offline.
     `high_risk_mac_only` stays false until that switch exists (§6.1)."""
+    # Q1 #4 (#525): a card waiting in the retired pocket is answered on the Mac only, so the phone neither counts it
+    # nor sees the mascot turn to "approval" for it.
     feed = desktop_status.island_feed()
+    feed["awaiting"] = desktop_status.awaiting_count(excluding=phone_ids.POCKET)
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
             "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
