@@ -797,6 +797,14 @@ class RunCommandExecutor:
         # command let out of the sandbox can change others, and those are not saved).
         from server.services import checkpoints, execution_context
         await checkpoints.ensure(execution_context.current_run_id(), [cwd])
+        # SMART-8: an allowed delete outside the working folder that runs outside the sandbox and reads with
+        # certainty moves its targets to the Trash; the command itself never runs (the tool loop sets this).
+        from server.services import delete_to_trash
+        if delete_to_trash.TRASH.get():
+            import asyncio
+            result = await asyncio.to_thread(delete_to_trash.move, command, cwd)
+            result["summary"] = f"moved {len(result.get('trashed') or [])} item(s) to the Trash"
+            return result
         # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
         from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,

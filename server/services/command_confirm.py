@@ -12,6 +12,7 @@ Every rule card, the workspace write and the schedule are decided by `permission
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import uuid
 
 from server.ws import protocol
@@ -68,12 +69,13 @@ class Confirmations:
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False, host: str | None = None) -> bool:
+                      network: bool = False, host: str | None = None, delete: str = "") -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
         outside the sandbox; "retry" — the sandbox stopped it and it would run again outside, from the
         start. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
-        machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`)."""
+        machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`). `delete` (SMART-8):
+        for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it."""
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
@@ -81,6 +83,10 @@ class Confirmations:
         shell = terminal_policy.as_shell(command, argv)
         verdict = terminal_policy.assess(shell)
         net = " It will use the network, this time." if network else ""
+        from server.services import delete_to_trash
+        deletes = delete_to_trash.card_note(delete)
+        if deletes:
+            net = f" {deletes}{net}"
         if sandbox in ("outside", "retry"):
             # S4a: this time, or every command of this conversation — a background job's too — for as long as
             # the conversation lasts (a stored grant, `outside` / `*`). No "Always". Only a Mac window gives
@@ -90,7 +96,8 @@ class Confirmations:
             request = permissions.Request(
                 kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
                 why=why, frame=protocol.propose_run_command(
-                    uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
+                    uuid.uuid4().hex, command, argv,
+                    reason=_with_delete(verdict.reason if verdict.level == "ask" else "", deletes),
                     sandbox=sandbox, why=why, network=network))
         elif remote_host:
             # A remote command takes none of the shortcuts: the local risk grade describes a binary on THIS
@@ -111,12 +118,18 @@ class Confirmations:
             ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
         rules = sorted(terminal_policy.ask_rules(shell))
         frame = protocol.propose_run_command(
-            uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
+            uuid.uuid4().hex, command, argv, reason=_with_delete(verdict.reason or f"risk: {risk}", deletes),
             rule=verdict.rule or None, network=network)
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
+        request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
+                                             unsandboxed=unsandboxed)
+        if deletes:
+            request = dataclasses.replace(request, title=f"{request.title} {deletes}")
         with self._surface():
-            decision = await permissions.decide(
-                approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                           unsandboxed=unsandboxed),
-                self._context())
+            decision = await permissions.decide(request, self._context())
         return decision.allowed
+
+
+def _with_delete(reason: str, deletes: str) -> str:
+    """The card's reason with how allow deletes appended (SMART-8)."""
+    return f"{reason}; {deletes}" if reason and deletes else (reason or deletes)
