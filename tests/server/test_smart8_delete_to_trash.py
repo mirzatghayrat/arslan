@@ -118,6 +118,8 @@ def test_another_disk_without_a_trash_is_refused_and_nothing_is_copied(home, tmp
     "rm -rf ~/.Trash/*", "rm ~/.Trash/old.txt", "rm -rf ~/.Trash", "rm -r '/Volumes/X/.Trashes/501'",
     "find ~/.Trash -mindepth 1 -delete", "find ~/.Trash -exec rm {} +", "unlink ~/.Trash/x",
     "osascript -e 'tell application \"Finder\" to empty trash'", "osascript -e 'tell app \"Finder\" to empty the trash'",
+    "osascript <<'EOF'\ntell application \"Finder\"\n  empty trash without warning\nend tell\nEOF",
+    "osascript -e 'tell application \"Finder\" to «event fndrempt»'",
 ])
 def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
     assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", "trash")
@@ -292,3 +294,26 @@ async def test_the_mac_frame_carries_the_mode_and_targets_on_every_delete_card(t
     await confirm.command("rm -r /tmp/smart8", [], **kw)                  # not a delete card: no keys
     assert [(r.frame.get("delete_mode"), r.frame.get("delete_targets")) for r in seen] == [
         ("permanent", []), ("trash", ["/tmp/smart8", "b"]), (None, None)]
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Finder" to empty trash', 'tell application "Finder"\n  empty the trash\nend tell',
+    'tell application "Finder" to empty trash without warning', 'tell application "Finder" to «event fndrempt»',
+])
+async def test_an_applescript_that_empties_the_trash_is_refused_before_any_card(monkeypatch, script):
+    """mac_applescript (and Hands' scripts through it): refused, never carded, in a job or not."""
+    from server.registry import hands_tools
+
+    async def no_card(*a, **k):
+        raise AssertionError("a card was shown")
+    monkeypatch.setattr(hands_tools, "_decide", no_card)
+    monkeypatch.setattr(hands_tools, "_not_in_job", no_card)
+    out = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+    assert out["ok"] is False and out["code"] == "empties_trash" and out["refused"] is True
+
+
+@pytest.mark.parametrize("script", ['tell application "Finder" to open trash',
+                                    'tell application "Notes" to make new note with properties {name:"empty"}'])
+def test_looking_at_the_trash_in_a_script_is_not_refused(script):
+    from server.services import hands_service
+    assert not hands_service.empties_trash(script)

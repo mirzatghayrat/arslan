@@ -660,6 +660,17 @@ def _high_reach(app: str) -> bool:
     return any(b.lower() in reach_ids for b in _bundles_of(app))
 
 
+# SMART-8 (the user: Arslan never empties the Trash): Finder's `empty trash` (`empty the trash`, `… without
+# warning`), or its raw event «event fndrempt». Refused, never carded: a permanent delete from the Trash is the
+# user's own act. run_command's osascript is refused by terminal_policy's `trash` rule.
+_EMPTIES_TRASH = re.compile(r"\bempty\s+(?:the\s+)?trash\b|«\s*event\s+fndrempt\s*»", re.I)
+
+
+def empties_trash(script: str) -> bool:
+    """Whether an AppleScript empties the Trash (SMART-8)."""
+    return bool(_EMPTIES_TRASH.search(script or ""))
+
+
 def script_kind(script: str) -> tuple[str, list[str]]:
     """How an AppleScript is asked (0.1.61 §A11; `mac_applescript`, and run_command's osascript in
     the "apps" category): (kind, the apps it names).

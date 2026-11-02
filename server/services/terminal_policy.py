@@ -74,7 +74,7 @@ _FORBID = [
     # act; allowed deletes go to the Trash (`delete_to_trash`), so Arslan never takes them out of it.
     ("trash", r"(?:" + _POS + r"(?:rm|rmdir|unlink|srm)\b[^\n;&|]*\.Trash(?:es)?(?:[/\"'\s)`]|$)"
               r"|" + _POS + r"find\b[^\n;&|]*\.Trash(?:es)?\b[^\n;&|]*\s-(?:delete\b|exec)"
-              r"|(?:osascript|Finder)\b[^\n]*\bempty\s+(?:the\s+)?trash\b)",
+              r"|(?:osascript|Finder)\b.*?(?:\bempty\s+(?:the\s+)?trash\b|«\s*event\s+fndrempt))",
      "deletes from or empties the Trash; that's yours to do", False),
     ("raw-disk", _POS + r"(?:dd\b[^\n]*\bof=" + _RAW_DISK
                  + r"|diskutil\s+(?:erase\w*|zeroDisk|secureErase|randomDisk|partitionDisk|reformat)\b"
