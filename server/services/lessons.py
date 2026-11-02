@@ -55,6 +55,12 @@ NOT_IN_EFFECT = "not_in_effect"
 # One that waits because it conflicts with an active lesson keeps that lesson's id here, whatever
 # its reason says: it waits for the user to choose, and the user's own correction is that choice.
 CONFLICTS_WITH = "conflicts_with"
+# L11 (b) (the user, 2026-11-02): where the user's corrections of a practice happened. CORRECTED_IN is the chosen
+# folder of every correction so far ("" once they came from more than one place, or from no chosen folder);
+# FOLDER_SCOPE is set when that folder saw the correction again, and then the practice applies only there (recall).
+# A practice with no CORRECTED_IN (from before v0.1.64, or born from a detour) is never narrowed.
+CORRECTED_IN = "corrected_in"
+FOLDER_SCOPE = "folder_scope"
 # INB1: failed turns in a row that followed a practice (memory.applied said it was followed);
 # a success starts the count again. At FAIL_STREAK_LIMIT the practice stops ("stale",
 # NOT_IN_EFFECT "failed_repeatedly"), the same three a scheduled task pauses after.
@@ -96,6 +102,14 @@ class Candidate:
     polarity: str          # do | avoid
     source: str            # user_correction | detour | machine_quirk
     evidence: dict
+
+
+async def _corrected_in(db, conversation_id: str | None) -> str:
+    """L11 (b): the folder the user chose for this conversation, where this correction happened; "" when there is
+    none (Arslan's default ~/Arslan in a plain chat, or home itself, never scope a practice)."""
+    from server.services import folder_rules
+    folder = await folder_rules.chosen_folder(db, conversation_id) if conversation_id else None
+    return str(folder) if folder is not None and folder != folder_rules._home() else ""
 
 
 def render(lesson) -> str:
@@ -387,6 +401,16 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     if takes_effect and row.status == "proposed":
                         row.status = "active"
                     row.updated_at = now
+                    if cand.source == "user_correction":
+                        # L11 (b): scoped only while every correction came from this one chosen folder; one from
+                        # anywhere else makes it a practice for everywhere again, for good (never narrowed silently).
+                        where = await _corrected_in(db, conversation_id)
+                        same = bool(where) and evidence.get(CORRECTED_IN) == where
+                        evidence[CORRECTED_IN] = where if same else ""
+                        if same:
+                            evidence[FOLDER_SCOPE] = where
+                        else:
+                            evidence.pop(FOLDER_SCOPE, None)
                     row.evidence = evidence
                     await db.commit()
                     continue
@@ -400,6 +424,8 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     rival_id = old.id if old.status == "active" else None
             evidence = dict(cand.evidence) | ({NOT_IN_EFFECT: why} if status == "proposed" else {}) \
                 | ({CONFLICTS_WITH: rival_id} if rival_id is not None else {})
+            if cand.source == "user_correction":
+                evidence[CORRECTED_IN] = await _corrected_in(db, conversation_id)
             row = Lesson(situation=cand.situation, advice=cand.advice, polarity=cand.polarity, source=cand.source,
                          evidence=evidence, status=status, created_at=now, updated_at=now)
             db.add(row)
@@ -438,6 +464,7 @@ async def recall(query: str) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.scalars(select(Lesson).where(Lesson.status == "active")
                                  .order_by(Lesson.updated_at.desc()).limit(SCAN_LIMIT))).all()
+        rows = await _in_scope(db, rows)
         scored = [(memory_relevance.score(terms, f"{row.situation} {row.advice}"), row) for row in rows]
         ranked = sorted((p for p in scored if p[0] > 0), key=lambda p: (-p[0], -int(bool(p[1].pinned))))
         picked, used = [], 0
@@ -454,6 +481,28 @@ async def recall(query: str) -> list[dict]:
                 recalled=Lesson.recalled + 1, last_used_at=datetime.utcnow()))
             await db.commit()
     return picked
+
+
+def _scope(row) -> str:
+    evidence = row.evidence if isinstance(row.evidence, dict) else {}
+    scope = evidence.get(FOLDER_SCOPE)
+    return scope if isinstance(scope, str) else ""
+
+
+async def _in_scope(db, rows: list) -> list:
+    """L11 (b): a practice scoped to a folder applies only in a conversation working there; one whose folder can't
+    be told this turn is left out. Practices for everywhere always pass."""
+    if not any(_scope(row) for row in rows):
+        return rows
+    from server.services import folder_rules, personal_context
+    ctx = personal_context.current()
+    try:
+        folder = await folder_rules.conversation_folder(db, ctx.conversation_id) if ctx and ctx.conversation_id else None
+    except Exception:  # noqa: BLE001 — a scoped practice is left out rather than applied in the wrong folder
+        logger.warning("conversation folder not found for scoped practices", exc_info=True)
+        folder = None
+    here = str(folder) if folder is not None else None
+    return [row for row in rows if not _scope(row) or _scope(row) == here]
 
 
 def status_lines(recalled: list[dict]) -> list[str]:
