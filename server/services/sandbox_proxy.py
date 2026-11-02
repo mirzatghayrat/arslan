@@ -224,6 +224,64 @@ def trusted_address(host: str, trusted: list[dict], resolve=None) -> str | None:
     return sorted(answers & pinned or answers)[0]
 
 
+class DeviceRefused(ValueError):
+    """Why a device can't be trusted: `code` is one of not_private | own_address | unresolvable | mixed."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def resolve_device(host: str, resolve=None) -> dict:
+    """The entry Settings stores for a device the user adds: {"address"} for a literal, {"host", "address"} for a
+    name, pinned to the address it has now. Refused (DeviceRefused) unless every answer is one private address that
+    isn't this Mac's own (loopback, link-local and public never qualify)."""
+    resolve = resolve or socket.getaddrinfo
+    name = host.strip().strip("[]").lower()
+    try:
+        literal = str(_ip(name))
+    except ValueError:
+        literal = None
+    if literal is not None:
+        answers = {literal}
+    else:
+        try:
+            answers = {str(_ip(info[4][0])) for info in resolve(name, None)}
+        except (OSError, ValueError, UnicodeError):
+            raise DeviceRefused("unresolvable") from None
+        if not answers:
+            raise DeviceRefused("unresolvable")
+    if len(answers) > 1:
+        raise DeviceRefused("mixed")
+    address = answers.pop()
+    if not _private(address):
+        raise DeviceRefused("not_private")
+    if address in own_addresses():
+        raise DeviceRefused("own_address")
+    return {"address": address} if literal is not None else {"host": name, "address": address}
+
+
+# A sandboxed command refused a LAN destination recently: (when, host, address), for the run's re-run card.
+_REFUSED_LAN: list[tuple[float, str, str]] = []
+
+
+def _note_lan_refusal(host: str) -> None:
+    """Record `host` if it is a LAN destination (so the card can offer to trust it); a public refusal isn't."""
+    import time
+    try:
+        entry = resolve_device(host)
+    except DeviceRefused:
+        return
+    _REFUSED_LAN.append((time.monotonic(), entry.get("host", entry["address"]), entry["address"]))
+    del _REFUSED_LAN[:-32]
+
+
+def lan_refusals_since(when: float) -> list[dict]:
+    """The LAN destinations the proxy refused since `when` (time.monotonic()), newest last. Any command online then
+    could have asked for them: the card names the device and lets the user decide."""
+    return [{"host": h, "address": a} for t, h, a in _REFUSED_LAN if t >= when]
+
+
 def _dial(address: str, port: int):
     """A trusted device's connection (a seam: tests stand the device in on loopback)."""
     return asyncio.open_connection(address, port)
@@ -301,7 +359,11 @@ class LocalProxy:
                 upstream.close()
                 raise _Refused("the upstream proxy refused")
         else:
-            ip, _, pinned = await within(asyncio.to_thread(_resolve_pinned, url), 5)
+            try:
+                ip, _, pinned = await within(asyncio.to_thread(_resolve_pinned, url), 5)
+            except _BlockedHost:
+                await within(asyncio.to_thread(_note_lan_refusal, name), 5)   # for the run's re-run card
+                raise
             remote, upstream = await within(asyncio.open_connection(ip, pinned), 8, dispose=close_connection)
         logger.info("sandbox proxy: %s:%s", name, port)
         if first:

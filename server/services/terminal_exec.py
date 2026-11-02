@@ -15,6 +15,7 @@ import collections
 import contextvars
 import os
 import signal
+import time
 from pathlib import Path
 
 from server.mcp.spawn_env import child_environment, merged_path
@@ -209,6 +210,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
                 "error": "commands run without network now, and this run cannot isolate the network — "
                          "save the deliverable with write_file instead"}
+    run_started = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
         *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -259,11 +261,20 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
+    refused_lan = sandbox_proxy.lan_refusals_since(run_started) if sandbox and proxy_port is not None else []
     if command_sandbox.stopped_by_sandbox(result) and _reads_a_saved_output(result):
         # S2a-1 piece 5: a saved tool output this conversation was not given. read_file reads it;
         # running the command outside the sandbox would open far more than one copy, so no card.
         result["note"] = ("Saved tool outputs are read with read_file (path, offset, limit), not from a "
                           "command. A command may read only the copies saved in this conversation.")
+    elif refused_lan and not result["ok"]:
+        # SBX-6a: the proxy refused a device on the user's local network during this run; the card can offer to
+        # trust it (Settings › Trusted local devices) and run again.
+        result["sandbox_denied"] = True
+        result["lan_refused"] = refused_lan[-1]
+        result["note"] = command_sandbox.note(cwd, closed) + (
+            f" It tried to reach {refused_lan[-1]['host']} on the user's local network, which the sandbox refuses "
+            "unless the user trusts that device in Settings (Trusted local devices).")
     elif command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
         result["note"] = command_sandbox.note(cwd, closed, trust=command_sandbox.trust_check_failed(result))

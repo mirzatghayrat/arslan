@@ -191,6 +191,23 @@ async def delete_ssh_identity(db: AsyncSession = Depends(get_session)) -> dict:
     return {"public_key": "", "enabled": await settings_service.ssh_enabled(db)}
 
 
+@router.post("/settings/trusted-devices/resolve", response_model=dict)
+async def resolve_trusted_device(body: dict) -> dict:
+    """SBX-6a: the entry Settings stores when the user adds a trusted local device: the name looked up once and
+    pinned to its one private address (or the address itself). 400 with a code when it can't be trusted:
+    not_private | own_address | unresolvable | mixed. Nothing is stored here; Settings saves the list."""
+    from server.services import sandbox_proxy
+    host = body.get("host") if isinstance(body, dict) else None
+    if not isinstance(host, str) or not host.strip() or len(host) > 253:
+        raise HTTPException(status_code=400, detail={"code": "unresolvable"})
+    try:
+        return await within(asyncio.to_thread(sandbox_proxy.resolve_device, host), 5)
+    except sandbox_proxy.DeviceRefused as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code}) from None
+    except TimeoutError:
+        raise HTTPException(status_code=400, detail={"code": "unresolvable"}) from None
+
+
 @router.get("/settings/terminal-rules", response_model=dict)
 async def terminal_rules(db: AsyncSession = Depends(get_session)) -> dict:
     """The kinds of command the user said not to ask about again (0.1.48)."""

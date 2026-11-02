@@ -549,3 +549,59 @@ async def test_an_unreadable_certificates_setting_is_off(monkeypatch):
         raise RuntimeError("no database")
     monkeypatch.setattr(db_session, "AsyncSessionLocal", broken)
     assert await terminal_exec._trust_service_allowed() is False
+
+
+# ── adding a trusted device, and the run that hit an untrusted one ──────────
+
+@pytest.mark.parametrize("host,answers,expected", [
+    ("192.168.1.30", None, {"address": "192.168.1.30"}),
+    ("printer.local", ["192.168.1.30"], {"host": "printer.local", "address": "192.168.1.30"}),
+    ("::ffff:10.0.0.9", None, {"address": "10.0.0.9"}),
+])
+def test_a_device_is_resolved_once_and_pinned(monkeypatch, host, answers, expected):
+    monkeypatch.setattr(sandbox_proxy, "own_addresses", lambda: frozenset({"192.168.1.10"}))
+    resolve = (lambda name, port: [(None, None, None, "", (a, 0)) for a in answers]) if answers else None
+    assert sandbox_proxy.resolve_device(host, resolve) == expected
+
+
+@pytest.mark.parametrize("host,answers,code", [
+    ("8.8.8.8", None, "not_private"), ("127.0.0.1", None, "not_private"), ("169.254.1.1", None, "not_private"),
+    ("192.168.1.10", None, "own_address"), ("nas.local", [], "unresolvable"),
+    ("nas.local", ["192.168.1.20", "192.168.1.21"], "mixed"), ("nas.local", ["93.184.216.34"], "not_private"),
+])
+def test_a_device_that_cant_be_trusted_says_why(monkeypatch, host, answers, code):
+    monkeypatch.setattr(sandbox_proxy, "own_addresses", lambda: frozenset({"192.168.1.10"}))
+    resolve = (lambda name, port: [(None, None, None, "", (a, 0)) for a in answers]) if answers is not None else None
+    with pytest.raises(sandbox_proxy.DeviceRefused) as caught:
+        sandbox_proxy.resolve_device(host, resolve)
+    assert caught.value.code == code
+
+
+async def test_a_refused_lan_destination_is_recorded_for_the_card(proxy, monkeypatch):
+    monkeypatch.setattr(sandbox_proxy, "own_addresses", lambda: frozenset())
+    sandbox_proxy._REFUSED_LAN.clear()
+    import time
+    before = time.monotonic()
+    def resolve(url, **kw):
+        raise _BlockedHost("not public")
+    monkeypatch.setattr(sandbox_proxy, "_resolve_pinned", resolve)
+    await _ask(proxy.port, b"CONNECT 192.168.77.9:445 HTTP/1.1\r\nHost: x\r\n\r\n")
+    await _ask(proxy.port, b"CONNECT 8.8.8.8:53 HTTP/1.1\r\nHost: x\r\n\r\n")       # public: not a LAN refusal
+    assert sandbox_proxy.lan_refusals_since(before) == [{"host": "192.168.77.9", "address": "192.168.77.9"}]
+    assert sandbox_proxy.lan_refusals_since(time.monotonic() + 1) == []
+
+
+async def test_a_run_that_hit_an_untrusted_device_says_so(monkeypatch, tmp_path):
+    async def port():
+        return 41000
+    monkeypatch.setattr(sandbox_proxy, "port", port)
+    monkeypatch.setattr(terminal_exec, "_trust_service_allowed", lambda: _false())
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda cwd, **kw: ["/bin/sh", "-c", "exit 7", "--"])
+    monkeypatch.setattr(sandbox_proxy, "lan_refusals_since", lambda when: [{"host": "nas.local", "address": "192.168.1.20"}])
+    result = await terminal_exec.run("rsync -av ./photos nas.local:/backup/", cwd=tmp_path, sandbox=True)
+    assert result["sandbox_denied"] and result["lan_refused"] == {"host": "nas.local", "address": "192.168.1.20"}
+    assert "nas.local" in result["note"] and "Trusted local devices" in result["note"]
+
+
+async def _false():
+    return False
