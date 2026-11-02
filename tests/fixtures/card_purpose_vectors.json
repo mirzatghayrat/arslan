@@ -1,0 +1,377 @@
+{
+ "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows).",
+ "vectors": [
+  {
+   "line": "echo \"== 试探 192.168.1.4 ==\"; ssh -o BatchMode=yes -o ConnectTimeout=4 -o StrictHostKeyChecking=accept-new 192.168.1.4 true",
+   "purpose": {
+    "key": "sshTimeout",
+    "params": {
+     "host": "192.168.1.4",
+     "seconds": 4
+    }
+   },
+   "touches": [
+    "192.168.1.4"
+   ],
+   "more": 0
+  },
+  {
+   "line": "ssh me@nas.local uptime",
+   "purpose": {
+    "key": "ssh",
+    "params": {
+     "host": "nas.local"
+    }
+   },
+   "touches": [
+    "nas.local"
+   ],
+   "more": 0
+  },
+  {
+   "line": "ssh -p 2222 -i ~/.ssh/k me@box",
+   "purpose": {
+    "key": "ssh",
+    "params": {
+     "host": "box"
+    }
+   },
+   "touches": [
+    "box"
+   ],
+   "more": 0
+  },
+  {
+   "line": "ssh -oConnectTimeout=9 box",
+   "purpose": {
+    "key": "sshTimeout",
+    "params": {
+     "host": "box",
+     "seconds": 9
+    }
+   },
+   "touches": [
+    "box"
+   ],
+   "more": 0
+  },
+  {
+   "line": "scp notes.txt me@box:/tmp/",
+   "purpose": {
+    "key": "copyRemote",
+    "params": {
+     "host": "box"
+    }
+   },
+   "touches": [
+    "box"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -sS https://api.example.com/v1/x",
+   "purpose": {
+    "key": "fetch",
+    "params": {
+     "host": "api.example.com"
+    }
+   },
+   "touches": [
+    "https://api.example.com/v1/x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -F f=@x https://up.example.com",
+   "rule": "upload",
+   "purpose": {
+    "key": "upload",
+    "params": {
+     "host": "up.example.com"
+    }
+   },
+   "touches": [
+    "https://up.example.com"
+   ],
+   "more": 0
+  },
+  {
+   "line": "rm ~/Downloads/a.dmg ~/Downloads/b.dmg",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 2
+    }
+   },
+   "touches": [
+    "~/Downloads/a.dmg",
+    "~/Downloads/b.dmg"
+   ],
+   "more": 0
+  },
+  {
+   "line": "rm -rf build",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "build"
+   ],
+   "more": 0
+  },
+  {
+   "line": "mv a b dest/",
+   "purpose": {
+    "key": "move",
+    "params": {
+     "count": 2
+    }
+   },
+   "touches": [
+    "a",
+    "b",
+    "dest/"
+   ],
+   "more": 0
+  },
+  {
+   "line": "git push origin main",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "origin"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "git push",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "origin"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "git clone https://github.com/acme/notes.git",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://github.com/acme/notes.git"
+    }
+   },
+   "touches": [
+    "https://github.com/acme/notes.git"
+   ],
+   "more": 0
+  },
+  {
+   "line": "git -C repo status",
+   "purpose": {
+    "key": "git",
+    "params": {
+     "sub": "status"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "git -c user.name=x push",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "origin"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "open -a Safari https://example.com",
+   "purpose": {
+    "key": "open",
+    "params": {
+     "target": "https://example.com"
+    }
+   },
+   "touches": [
+    "https://example.com"
+   ],
+   "more": 0
+  },
+  {
+   "line": "osascript -e 'tell app \"Mail\" to quit'",
+   "purpose": {
+    "key": "appleScript",
+    "params": {}
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "shortcuts run 'Morning Brief'",
+   "purpose": {
+    "key": "shortcut",
+    "params": {
+     "name": "Morning Brief"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "killall -9 Finder",
+   "purpose": {
+    "key": "kill",
+    "params": {
+     "target": "Finder"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "mail -s hi lina@example.com < body.txt",
+   "purpose": {
+    "key": "mailTo",
+    "params": {
+     "to": "lina@example.com"
+    }
+   },
+   "touches": [
+    "lina@example.com"
+   ],
+   "more": 0
+  },
+  {
+   "line": "brew install jq ripgrep",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "jq, ripgrep"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "python3 scripts/report.py --week",
+   "purpose": {
+    "key": "script",
+    "params": {
+     "program": "python3",
+     "file": "report.py"
+    }
+   },
+   "touches": [
+    "scripts/report.py"
+   ],
+   "more": 0
+  },
+  {
+   "line": "python3 -c 'print(1)'",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "ffmpeg -i in.mov out.mp4",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ffmpeg"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "FOO=1 sudo -E env BAR=2 rm -f /tmp/x 2>/dev/null",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "/tmp/x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "rm /tmp/x > out.log",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "/tmp/x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cd ~/work && rm old.zip && curl -O https://example.com/new.zip",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "old.zip",
+    "https://example.com/new.zip"
+   ],
+   "more": 1
+  },
+  {
+   "line": "echo hi; sleep 1",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "echo"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "ssh box \"uptime",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0
+  },
+  {
+   "line": "/usr/bin/curl https://example.com",
+   "purpose": {
+    "key": "fetch",
+    "params": {
+     "host": "example.com"
+    }
+   },
+   "touches": [
+    "https://example.com"
+   ],
+   "more": 0
+  }
+ ]
+}

@@ -1229,12 +1229,14 @@ async def _scheduled_command_refused(args: dict, conversation_id: str | None) ->
             "note": SCHEDULED_COMMAND_NOTE}
 
 
-def _outside_request(command: str):
+def _outside_request(command: str, title: str = ""):
     """S4a: what running `command` outside the sandbox asks: every command of the conversation may (`outside`
-    / `*`), the card's "In this conversation" (command_confirm)."""
+    / `*`), the card's "In this conversation" (command_confirm). `title`, where it is shown (SMART-8): its plain
+    purpose; a standing-grant lookup reads only the target."""
     from server.services import permissions
-    return permissions.Request(kind="outside", target="*", detail=command,
-                               title=f"Run `{command[:80]}` outside the sandbox?")
+    old = f"Run `{command[:80]}` outside the sandbox?"
+    return permissions.Request(kind="outside", target="*", detail=command, title=title or old,
+                               model_title=old if title else "")
 
 
 async def _outside_grant(conversation_id: str | None, command: str):
@@ -1269,9 +1271,13 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
         # asks first, this time only; with nobody to ask, or on a no, it does not run.
         if not task_service.bare_shortcut(command):
             return {}
-        request = permissions.Request(
-            kind="network", target="network:*", title=f"Let the Shortcut `{command[:80]}` use the network?",
-            detail=command, why=str(args.get("why") or "").strip()[:300], conversation_ok=False, once_only=True)
+        from server.services import card_purpose
+        why = str(args.get("why") or "").strip()[:300]
+        request = permissions.Request(           # SMART-8: the title is the plain purpose (the iPhone's heading)
+            kind="network", target="network:*", title=card_purpose.phrase(
+                command, why, lang=await card_purpose.language(), network=True),
+            model_title=f"Let the Shortcut `{command[:80]}` use the network?",
+            detail=command, why=why, conversation_ok=False, once_only=True)
         if permissions.current_asker() is None:
             return {"refused": await _unattended("", request, conversation_id)}
         decision = await permissions.decide(request, permissions.Context(
@@ -1285,9 +1291,12 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     if wrapped and permissions.current_asker() is None:
         return {"offline": True, "note": "ran without network: this turn read outside content, and there was "
                                          "nobody to allow the network for it"}
-    decision = await permissions.decide(permissions.Request(
-        kind="network", target="network:*", title=f"Let `{command[:80]}` use the network?", detail=command,
-        why=str(args.get("why") or "").strip()[:300], conversation_ok=inside, once_only=not inside),
+    from server.services import card_purpose
+    why = str(args.get("why") or "").strip()[:300]
+    decision = await permissions.decide(permissions.Request(   # SMART-8: the title is the plain purpose
+        kind="network", target="network:*", title=card_purpose.phrase(
+            command, why, lang=await card_purpose.language(), network=True), detail=command,
+        model_title=f"Let `{command[:80]}` use the network?", why=why, conversation_ok=inside, once_only=not inside),
         permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
     if decision.allowed:
         return {}
@@ -1557,11 +1566,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             # Asked up front: always a card, even for a command that would just run,
             # and one card covers the command's own reason too.
             if confirm_command is None:
-                from server.services import permissions
+                from server.services import card_purpose, permissions
                 result = {"ok": False, "error": await _unattended(
                               "running a command outside the sandbox needs the user's click, which is not "
                               "available here",
-                              _outside_request(command),
+                              _outside_request(command, card_purpose.phrase(
+                                  command, str(args.get("why") or "").strip()[:300],
+                                  lang=await card_purpose.language(), outside=True)),
                               conversation_id),
                           "note": "Run it without outside_sandbox, or tell the user what you needed."}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1599,7 +1610,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             if confirm_command is None:
                 # Layer ②, `unreadable`, "ask for every command", or layer ③ with no sandbox to run it in.
                 # Listed as the card would have read (approvals._command_request), U14 c.
-                from server.services import approvals as _approvals
+                from server.services import approvals as _approvals, card_purpose
                 ask_all = await _asks_for_everything()
                 result = {"ok": False, "error": await _unattended(
                     "run_command requires user confirmation, which is not available in this context"
@@ -1607,7 +1618,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                     "this command would run outside the sandbox here (it is switched off or cannot start), "
                     "which needs the user's OK, and nobody can be asked here",
                     _approvals._command_request(command, sorted(terminal_policy.ask_rules(command)), None,
-                                                ask_all=ask_all),
+                                                ask_all=ask_all, lang=await card_purpose.language(),
+                                                why=str(args.get("why") or "").strip()[:300]),
                     conversation_id)}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
@@ -1647,13 +1659,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # cannot SSH" structural rather than a rule someone has to remember.
     if tool_key == "ssh_run":
         if confirm_command is None:
-            from server.services import command_confirm, permissions
+            from server.services import card_purpose, command_confirm, permissions
             host, remote = str(args.get("host") or "*")[:200], str(args.get("command") or "")
             result = {"ok": False, "error": await _unattended(
                 "running a command on another machine requires your confirmation, which is not available "
                 "in this context",
                 permissions.Request(kind="remote", target=command_confirm.remote_target(host),
-                                    title=f"Run `{remote[:80]}` on {host}?", detail=remote), conversation_id)}
+                                    title=card_purpose.phrase(remote, lang=await card_purpose.language(), host=host),
+                                    model_title=f"Run `{remote[:80]}` on {host}?", detail=remote), conversation_id)}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)

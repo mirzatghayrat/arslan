@@ -434,7 +434,7 @@ async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
 
 
 def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
-                     network: bool = False, unsandboxed: bool = False):
+                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = ""):
     """A command card as a permission request, by the command's layer (S2a-2):
 
     - layer ② or `unreadable` (it matched rules): this time only; nothing is remembered and no stored
@@ -449,27 +449,42 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     `network`: the card also asks for the network (after outside content), and its title says so. A
     click on it stands for the network this time only; a grant that answers it later does not.
     `unsandboxed`: under "ask for every command", the command would run with no sandbox around it
-    (`runs_unsandboxed`), so its card is marked like layer ③'s and the island leaves it."""
-    from server.services import permissions, task_service
+    (`runs_unsandboxed`), so its card is marked like layer ③'s and the island leaves it.
+
+    `lang` (SMART-8, the card mock the user OK'd with its iPhone board): the title is the step's plain purpose in that
+    language (`card_purpose.phrase`: Arslan's `why`, else read from the command), which the phone shows as the
+    approval's heading; then where it runs when that is outside the sandbox. The model keeps the old sentence, with the
+    command in it (`model_title`), for its refusal and expiry texts. Without `lang` (a caller with no language yet),
+    the title is the old English sentence."""
+    from server.services import card_purpose, permissions, task_service
     net = " It will use the network, this time." if network else ""
+
+    def plain(old: str, **where) -> str:
+        return card_purpose.phrase(shell, why, rules[0] if rules else None, lang=lang, **where) if lang else old
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.
         where = ""
-        if task_service.unwrapped_once(shell):
+        bare = task_service.unwrapped_once(shell)
+        if bare:
             where = (" It runs as you, outside the sandbox; Arslan cannot see what the Shortcut does."
                      if "shortcuts" in rules else " It runs outside the sandbox, this once.")
+        old = f"Run `{shell[:80]}`?{where}{net}"
         return permissions.Request(kind="command", target="rules:" + "|".join(rules),
-                                   title=f"Run `{shell[:80]}`?{where}{net}", detail=shell,
+                                   title=plain(old, shortcut_as_you=bool(bare) and "shortcuts" in rules, outside=bool(bare)),
+                                   model_title=old if lang else "", detail=shell,
                                    conversation_ok=False, once_only=True, frame=frame)
     if ask_all:
-        return permissions.Request(kind="command", target="text:" + shell, title=f"Run `{shell[:80]}`?{net}",
+        old = f"Run `{shell[:80]}`?{net}"
+        return permissions.Request(kind="command", target="text:" + shell, title=plain(old, outside=unsandboxed),
+                                   model_title=old if lang else "",
                                    detail=shell,
                                    frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
     # Marked on the card (a key the web and the phone ignore), so the island never approves a command
     # that would run with no sandbox around it: `rm notes.txt` there is a real delete.
     return permissions.Request(kind="command", target="unsandboxed:*",
-                               title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
+                               title=plain(f"Run `{shell[:80]}` outside the sandbox?{net}", outside=True),
+                               model_title=f"Run `{shell[:80]}` outside the sandbox?{net}" if lang else "", detail=shell,
                                frame={**frame, "unsandboxed": True} if frame else None)
 
 
