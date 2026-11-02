@@ -352,7 +352,7 @@ async def test_the_remote_card_is_this_time_only_and_writes_a_row_each_time(exec
                                         fingerprints=["SHA256:x"], host="10.0.0.2") is True
     assert [f["perm_kind"] for f in asker.frames] == ["remote", "remote"]
     assert all(f["options"] == ["once"] and f["remote_host"] == "studio (me@10.0.0.2)"
-               and f["title"] == "Run uptime (on studio (me@10.0.0.2))" for f in asker.frames)   # SMART-8: the purpose
+               and f["title"] == "On studio (me@10.0.0.2) · Run uptime" for f in asker.frames)   # SMART-8: facts first
     assert await _grants() == []
     # ⓪Plan Q7: one machine, one target — its address, whatever the card calls it.
     assert [(r.kind, r.target, r.decided_by, r.scope) for r in await _rows()] == [
