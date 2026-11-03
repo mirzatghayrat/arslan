@@ -2,14 +2,118 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-03 (UTC). **⓪Plan moves to a fresh session today** (the user: "Yes, hand it over"; part of the model-by-job pacing trial). The new ⓪Plan starts from this section, the cards and the memory index; nothing in a scratchpad counts as handoff.
+**Updated:** 2026-11-03 (UTC), evening, by the new ⓪Plan session. The handoff section below is kept for its methods; this section supersedes its tables.
 
-### ⓪Plan handoff (2026-11-03)
+### Evening update (2026-11-03)
+
+**Merged today after the handoff:**
+- #697 (the handoff STATUS);
+- #688 (SMART-8: the Mac card);
+- #680 (SMART-3/4);
+- #674 (SMART-1, merged by the user);
+- #698 (the 「查到」 follow-up);
+- #700 (ROUTE1 change 6: priced providers' seed comes from prices.py);
+- #699 (ROUTE1: task routing removed; every role follows the conversation's model, else the primary);
+- #701 (SMART-5 gate fixes: closing lines only after work; version via `my_status`; the retry line);
+- #702 (SMART-5 bench: OpenClaw 2026.10.10's reply and trace).
+
+SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun (3 repeats) is next.
+
+**Open, and who has it:**
+
+| PR | State | Next |
+|---|---|---|
+| #693 cloud uploads ask (③Hands) | effort=max review: 2 blocking (quoted option values; options after the first word, gh/azcopy); fix pushed at cd962905 | ③Hands sends the head; max delta review with the same reviewer |
+| #686 delete to Trash (③Hands) | rebased at 03f60401 | max delta review when ③Hands sends it |
+| #661 CAP9 (⑤CAP, the user merges) | one focus finding | paused until the 11-07 reset |
+| #666, #668 (SBX-4a, SBX-6a) | drafts, conflicting | SBX chain, ③Hands |
+| #531, #535, #538 (SBX-4a part 1, SBX-5a, SBX-7) | drafts | SBX chain, ③Hands |
+| #375, #376, #378, #396 (S2a-3) | open since v0.1.63 | SBX chain decides; no work before the reset |
+| #298 (SECURITY.md: only `run_python` fails closed) | green, docs | kept open: the audit sees the final wording once the SBX chain settles |
+
+**SMART-5, the "feels smart" gate: fails, on length only.**
+- **Round:** main 14b1bd81 against OpenClaw 2026.10.10, both on deepseek-v4-flash. 13 tasks, one run each. $0.19, no 402s.
+- **Gate (passed of judged, Arslan vs OpenClaw):**
+  - focus 14/17 vs 10/17;
+  - **length 5/11 vs 7/11 (behind);**
+  - verify 3/4 vs 3/4;
+  - guide 1/3 vs 1/3 (with #702's task 8 fix);
+  - self-state 1/2 vs 0/2.
+- **Cause:** STY2's closing note ("What I did / How I checked / Not verified / Watch") landed on plain chat answers, on 7 of 13 replies against 4 of 13 before. A one-line "which model" answer came out at 54 words against a budget of 40.
+- **Before/after:** the build before SMART-2 (d480febb) passes the length gate. Tasks 2 and 3 got worse after.
+- **The unpatched grader said "pass".** OpenClaw 2026.10.10 moved its reply and its transcripts (now sqlite), and the bench read them wrong. The round was re-extracted; #702 fixes the bench.
+- **The fix is #701:**
+  - the note only after a turn that did work;
+  - version and state questions go to `my_status`;
+  - the retry line ends the guidance.
+- **Next:** #701 and #702 have landed; ⓪Plan reruns the gate with 3 repeats per task.
+- **Results:** in the bench root outside the repo (`arslan-bench-smart5/results/`).
+
+**Decided by ⓪Plan today:**
+- **ROUTE1 change 6, option (b):**
+  - Anthropic's preset default moves to `claude-sonnet-5-5`, for new configs only;
+  - Gemini's unpriced `gemini-3.5-flash` is the one named exception;
+  - unpriced providers keep their hand-kept seed (K4a).
+- **#699 is reviewed at effort=max:** migration 0086 clears user choices, and §5 counts "migrations that drop data" as security surface.
+- **#701's research cut:**
+  - a turn of web searches and reads only gets no closing note;
+  - the research rule already makes the reply cite what it read and say what it could not verify;
+  - **condition:** the STY2 27-task "done without evidence" gate is rerun before the tag and must not regress.
+
+**New card: [HPW](HPW-hands-password-refusal.md)** (the user, 2026-11-03, via ④参谋; ③Hands after its SBX items; effort=max). Hands refused a paste into WeChat as a "password field" because WeChat doesn't report focus. Now only a known secure field, or system-wide secure input when focus is unknown, refuses; the refusal says which.
+
+**Found today, to card (none started before the reset unless the user says so):**
+- **Security, ③Hands after #693/#686:** a class of shell spellings gets past every command-word rule, layer ① included:
+  - zsh precommand modifiers and equals expansion;
+  - ANSI-C-quoted command words;
+  - launchers with option arguments;
+  - quoted subcommands.
+
+  Only the sandbox stops them today. Effort=max review. The exploit strings go in tests only.
+- **SBX:** `rclone.conf`, `~/.s3cfg` and `~/.boto` are not in `command_sandbox._SECRETS`, so a missed cloud upload could use the user's own credentials from inside the sandbox.
+- **⑤CAP after the reset:** neither card reader lists `azcopy` as a network program.
+- **#693 follow-ups:** the other clouds' CLIs listed under its "Not covered".
+- **#700 follow-up:** a dated price row with the same version as its alias ties with it; keep the shorter id.
+- **Flake:** `test_window_permissions::test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait` fails about 1 in 3 when run alone (⑥Helper). Also seen once under load: `test_mcp_exposure` (②Main).
+
+**Before the v0.1.64 tag:**
+- **The user present:**
+  - the real-Mac signed-feed updater test (#684's body);
+  - OCR, PDF and attachments;
+  - Q1c end to end with build 31;
+  - **new:** ROUTE1's model switch on a real Mac (switch the main model; a new chat, a summary and an image turn all follow it);
+  - SBX-8, the bench on the user's Mac;
+  - **new:** HPW: paste a WeChat message, and confirm a real password field is still refused.
+- **Gates:**
+  - **SBX-6** is a hard condition: SBX-6 on main, or the one-line no-name-lookup fallback in any-declared mode;
+  - **SMART-5** passes with 3 repeats;
+  - **the STY2 27-task gate** does not regress after #701;
+  - **M64** does not regress.
+- **Live:** the IPB privacy line (#667, merged).
+
+**Waiting on the user:**
+- **Reminders cleanup** from T1: `.venv/bin/python -m scripts.kernel_bench.cleanup_t1 --delete --yes`.
+- **⑥Helper's earlier probe-rule slip:** whether to rotate the key.
+- **An old metering proxy** has been on :8900 since Oct 24.
+- **Merges that are yours:**
+  - #661 after the reset;
+  - #666 once Codex's 4p gates land;
+  - Codex PRs and Bridge-frame PRs.
+  - A PR that went CLEAN before it was armed, as #674 did today.
+
+**Pacing (the user, via ④参谋):**
+- The weekly quota is about 90% used, resetting 11-07 00:00 CST.
+- Critical path only: SBX 6a/4a/5a/7, SMART, ROUTE1, MODEL1, FMT1, IPB and iOS 1.0.
+- 2–3 lanes at once.
+- **The model-by-job trial:** Opus for every code review, security, SBX and critical-path code; Sonnet for docs, relays and ⑦Codex, plus FMT1 PR 1 as the trial; Haiku for read-only search only.
+- ⑤CAP is paused after #688.
+
+**Handoff note (2026-11-03, morning):** ⓪Plan moved to a fresh session today (the user: "Yes, hand it over"; part of the model-by-job pacing trial). It starts from this page, the cards and the memory index; nothing in a scratchpad counts as handoff.
+
+### ⓪Plan handoff (2026-11-03, morning; its tables are superseded by the evening update above)
 
 **Merged since the late-evening update:**
 - #525 (retire the pocket);
-- #667 (the privacy page) and #654 (the SBX gates notes);
-- #681 (L11 (b)) and #685 (the phone_drops vectors);
 - #683, #684 and #687 (DEP1: open Dependabot alerts went from 116 to 8, with no critical or high);
 - #677 (SMART-2), and #691 and #696 (the model-switch fix, parts A and B);
 - #658 (STY2: the bench gate passed, 18→20/27 passed, 0 waiting, 5→4 done-without-evidence);
