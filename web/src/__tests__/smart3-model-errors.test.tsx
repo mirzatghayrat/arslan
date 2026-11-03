@@ -16,7 +16,7 @@ vi.mock('../api/client', async (orig) => ({ ...(await orig<object>()), fetchProv
 
 import OrchestratorChat from '../components/OrchestratorChat';
 import { useArslanStore } from '../stores/arslanStore';
-import { rememberSend } from '../lib/lastSend';
+import { lastSend, rememberSend } from '../lib/lastSend';
 import { isModelSaving } from '../components/models/useConversationModel';
 import { SAVE_TIMEOUT_MS } from '../components/models/ConversationModelChip';
 import type { ProviderConfig } from '../api/client.types';
@@ -52,7 +52,8 @@ describe('the error banner', () => {
     const onSendMessage = vi.fn();
     const attached = { context: '', names: ['photo.png'], images: [{ mime_type: 'image/png', data: 'AAAA' }] };
     rememberSend('c1', 'What is in this photo?', attached as never);
-    render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage} conversationId="c1" providerConfigs={configs} />);
+    const photo: Message[] = [{ ...history[0], text: 'What is in this photo?' }];
+    render(<OrchestratorChat {...props} chatHistory={photo} onSendMessage={onSendMessage} conversationId="c1" providerConfigs={configs} />);
     failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
     expect(screen.getByTestId('chat-error-call').textContent).toContain('deepseek · deepseek-v4-flash');
     const button = screen.getByTestId('chat-error-switch');
@@ -74,6 +75,43 @@ describe('the error banner', () => {
     expect(conv.set).toHaveBeenCalledWith('c-reloaded', 3, 'claude-sonnet-5-5');
     expect(onSendMessage).not.toHaveBeenCalled();
     expect((container.querySelector('#chat-message-input') as HTMLTextAreaElement).value).toBe('Plan my week');
+  });
+
+  it('a clarify answer is recorded like a typed send, so the retry sends that answer', async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    conv.set.mockResolvedValue({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } });
+    const onSendMessage = vi.fn();
+    const withCard: Message[] = [
+      { id: '7', sender: 'arslan', senderName: 'Arslan', senderAvatar: '🦁', text: '', timestamp: '10:00',
+        clarifyOptions: { question: 'Which week?', options: [{ label: 'Next week' }, { label: 'This week' }], answered: false } } as never,
+      { id: 'u2', sender: 'user', senderName: 'You', senderAvatar: '🙂', text: 'Next week', timestamp: '10:01' }];
+    render(<OrchestratorChat {...props} chatHistory={withCard} onSendMessage={onSendMessage} conversationId="c-clarify" providerConfigs={configs} />);
+    fireEvent.click(screen.getByRole('button', { name: /Next week/ }));
+    onSendMessage.mockClear();
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+    expect(onSendMessage).toHaveBeenCalledWith('Next week', undefined);
+  });
+
+  it('never resends an older message: a newer one (a voice send, say) goes back to the composer instead', async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    conv.set.mockResolvedValue({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } });
+    const onSendMessage = vi.fn();
+    rememberSend('c-voice', 'Older typed message', { context: '', names: ['a.png'], images: [{ mime_type: 'image/png', data: 'AA' }] } as never);
+    const newer: Message[] = [{ id: 'u9', sender: 'user', senderName: 'You', senderAvatar: '🙂', text: 'Newer spoken message', timestamp: '10:02' }];
+    const { container } = render(<OrchestratorChat {...props} chatHistory={newer} onSendMessage={onSendMessage} conversationId="c-voice"
+      providerConfigs={configs} />);
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect((container.querySelector('#chat-message-input') as HTMLTextAreaElement).value).toBe('Newer spoken message');
+  });
+
+  it('remembers one send only, for the conversation it was in', () => {
+    rememberSend('c-a', 'first', undefined);
+    rememberSend('c-b', 'second', undefined);
+    expect(lastSend('c-a')).toBeUndefined();
+    expect(lastSend('c-b')?.text).toBe('second');
   });
 
   it('a double click switches and sends once', async () => {

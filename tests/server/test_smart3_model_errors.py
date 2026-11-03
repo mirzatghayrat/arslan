@@ -109,6 +109,18 @@ async def test_the_name_survives_the_real_wrapper():
     assert frame["call"] == {"role": "chat", "provider": "deepseek", "model": "deepseek-v4-flash"}
 
 
+async def test_a_later_unrelated_error_is_not_blamed_on_the_model():
+    """Only the explicit `from` chain carries the name: an error raised while handling a model failure is not it."""
+    with pytest.raises(RuntimeError) as failed:
+        await _failing().chat("s", "hi")
+    try:
+        raise ValueError("a bug in our own code")
+    except ValueError as unrelated:
+        unrelated.__context__ = failed.value          # what Python sets when raising inside an except block
+        frame = await llm_errors.error_frame(unrelated)
+    assert "call" not in frame
+
+
 async def test_an_image_refusal_through_the_real_wrapper_names_the_model():
     from server.orchestrator.model_call import TurnRecovery, call_with_recovery
     a = _failing()

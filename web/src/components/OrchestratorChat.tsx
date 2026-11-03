@@ -124,6 +124,14 @@ export default function OrchestratorChat({
   header,
   footer,
 }: OrchestratorChatProps) {
+  // SMART-3 (PR 696's review): every send goes through here and is remembered (typed, voice, a clarify answer), so a
+  // retry on another model resends the newest message, never an older one.
+  const sendMessage: OrchestratorChatProps['onSendMessage'] = onSendMessage
+    ? (text, attached, opts) => {
+        rememberSend(conversationId ?? 'main', text, attached);
+        if (opts) onSendMessage(text, attached, opts); else onSendMessage(text, attached);
+      }
+    : undefined;
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
   // What the recogniser should EXPECT to hear. Its own setting first, because
@@ -141,7 +149,7 @@ export default function OrchestratorChat({
     enabled: voiceMode === 'conversation' && conversationOn,
     locale: voiceLocale,
     silenceMs: clampEndpointSilenceMs(settings?.voice_endpoint_silence_ms),
-    onFinal: (text) => { setVoiceError(null); onSendMessage?.(text, undefined); },
+    onFinal: (text) => { setVoiceError(null); sendMessage?.(text, undefined); },
     onError: (msg) => { setVoiceError(msg); setConversationOn(false); },
     // The helper is gone (it exited, or the shell lost it). The toggle is ours,
     // so put it back — a lit button over a dead session takes two presses to
@@ -263,12 +271,13 @@ export default function OrchestratorChat({
     clearLlmError();
     // The last send as it was, attachments included (an image the first model refused must reach this one). With
     // none remembered (after a reload) the text goes back in the composer rather than going out without them.
+    // Only when it is the newest user message: an unrecorded newer send must not lose out to an older one.
+    const last = [...chatHistory].reverse().find((m) => m.sender === 'user');
     const sent = lastSend(id);
-    if (sent && onSendMessage) {
-      onSendMessage(sent.text, sent.attached);
+    if (sent && sendMessage && (!last || sent.text === last.text)) {
+      sendMessage(sent.text, sent.attached);
       return;
     }
-    const last = [...chatHistory].reverse().find((m) => m.sender === 'user');
     if (last) setInputValue(last.text);
   };
   // Draft survives unmount. The composer used to hold its text in plain
@@ -399,8 +408,7 @@ export default function OrchestratorChat({
             ...(images.length ? { images: images as NonNullable<typeof images[number]>[] } : {}),
           }
         : undefined;
-      rememberSend(conversationId ?? 'main', text, attached);   // SMART-3: a retry on another model sends this again
-      onSendMessage(text, attached);
+      sendMessage!(text, attached);
       clearAttachments();
       return;
     }
@@ -605,7 +613,7 @@ export default function OrchestratorChat({
                       // fromClarify: answering Arslan's own question is not
                       // "moving on", so it must not implicitly decline the
                       // spawn invite sitting beside it.
-                      onSendMessage?.(label, undefined, { fromClarify: true });
+                      sendMessage?.(label, undefined, { fromClarify: true });
                     }}
                   />
                 </div>

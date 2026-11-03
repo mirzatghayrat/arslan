@@ -97,15 +97,16 @@ async def explain_current(raw_error: str, *, had_images=False) -> str | None:
 
 
 def _call_of(exc: BaseException) -> dict | None:
-    """The failed call's {role, provider, model} (LLMAdapter._attribute), wherever it sits on the chain: the provider's
-    httpx error carries it, and call_with_recovery re-raises that as ModelCallError(...) from it (#696 review)."""
+    """The failed call's {role, provider, model} (LLMAdapter._attribute), along the explicit `raise ... from` chain: the
+    provider's httpx error carries it, and call_with_recovery re-raises that as ModelCallError(...) from it (#696
+    review). Only __cause__: an unrelated error raised while handling a model failure (__context__) is not that model's."""
     seen: set[int] = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
         call = getattr(exc, "arslan_call", None)
         if call:
             return call
-        exc = exc.__cause__ or exc.__context__
+        exc = exc.__cause__
     return None
 
 
