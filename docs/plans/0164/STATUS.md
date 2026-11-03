@@ -2,12 +2,35 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-02 (UTC), morning (the twice-a-day update). **Overnight: 18 PRs merged** (list below), main green at 784bc3b5. **SBX chain:** #645 (gates) merged; 3a (#520) reviewed OK, waiting only for your Ready click; 4a (#666) waits on Codex's device gates; 6a, 5a and the MCP proxy are built and reviewed on backup branches and open as PRs once #520 lands. Codex finished 4p, 5p and 6p overnight (Astra: MERGE), waiting for your pushes.
+**Updated:** 2026-11-02 (UTC), late evening. **Since the evening update: 12 more merged**, among them all three Codex SBX p-parts (#669, #671, #654), SMART-2 (#677), L11 (b) (#681), CAP4a-3d (#604), DEP1 (#683, #684, #687) and the privacy page (#667). Main is green at 8c3a899d (run 41421660022). Open Dependabot alerts went from 116 to 8 (0 critical, 0 high, 7 medium, 1 low). **Pacing (user, via ④参谋):** until the 11-07 quota reset, only the critical path runs (SBX 6a/4a/5a/7, SMART-1..4, DEP1, IPB and iOS 1.0), with 2–3 sessions and effort=max only for security reviews. CAP9 (#661) waits for the reset. **iOS completeness is a v0.1.64 must** (the user: 「我期待 0.1.64 发布跟 iOS 对应功能是完整的，因为我想把 iOS 尽快可以提审上架」); ①iOS's list is below.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #667 | Privacy page: what the Mac sends the iPhone (IPB), in both languages | `8c3a899d` |
+| #654 | SBX gates: delta-review pin gaps and the release boundary (Codex) | `70fbeab7` |
+| #685 | Bridge vectors: `phone_drops` marks the block a phone drops by design | `fb6b7bc3` |
+| #687 | DEP1 Python: Pillow 13, pypdf 6.21.4, PyJWT, certifi, urllib3, filelock | `375c597a` |
+| #684 | DEP1 Rust: tauri-plugin-updater 2.14.1 (zip 9, tauri 2.12.5, rustls), the updater goes direct when proxy.rs does | `672af7c6` |
+| #683 | DEP1 npm: vite 6.4.5, source-map-js 1.2.2, undici 7.30.1 | `33d96e81` |
+| #604 | CAP4a-3d: a Registry server whose entry changed is parked until you keep it | `d0fae816` |
+| #681 | L11 (b): Arslan never writes a rules file on its own; the card goes | `846a5305` |
+| #677 | SMART-2: `my_status`, Arslan's own live state | `afb84061` |
+| #671 | SBX-5p: CAP6b and cache denial contracts (Codex) | `d480febb` |
+| #682 | Delete cards move to the Trash; DEP1 card; STATUS | `6d350f5a` |
+| #669 | SBX-6p: release-critical proxy and network denial gates (Codex) | `2347c542` |
+| #676 | SMART-7a: the chat input wraps and grows, then scrolls | `bc9cf50b` |
+| #679 | SMART-7b: a prose fence wraps; a code fence keeps its horizontal scroll | `625543b2` |
+| #652 | IPB-2: the Mac's own state on status.snapshot (mac) | `260b90a7` |
+| #678 | SMART-5: the "feels smart" bench, Arslan against OpenClaw on one model | `9df71108` |
+| #675 | SMART and SBX cards: the user's 2026-11-02 decisions | `dbdeff84` |
+| #670 | SBX-4p: Python, artifact and MCP denial contracts (Codex) | `b383c5cf` |
+| #673 | SMART card, a v0.1.64 must | `e1bfd3a7` |
+| #672 | Progress: the run drawer is gone, with its fleet radar and sparkline | `20ccb304` |
+| #636 | INB7-c4c: the 「应用」 chip; Hands and judgments fold into 「诊断」 | `4cad2fbb` |
+| #520 | SBX-3a: the commands' build half on the default-deny base | `a565bc62` |
+| #665 | LOAD: the M-2 MCP fuzz says which path a failure took (MCPF1) | `626c3feb` |
 | #660 | LOAD: the MCP slow-close test no longer races its two timeouts | `784bc3b5` |
 | #662 | BRG1 follow-up: the pairing state under a lock, and the order tests | `f800df61` |
 | #633 | INB7-c5: what waits on you in the inspector while no run is picked | `9d0005b9` |
@@ -214,49 +237,67 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 **Who merges (docs/sessions.md, #644):** the author auto-merges after another session's review OK at the current head and all five checks green (effort=max on the security surface). **Still yours:** Codex's PRs, Bridge-frame PRs, and anything below marked "you".
 
-**Your morning list, in this order:**
-1. **#520 (SBX-3a, the critical path):** click **Ready for review** (the classifier blocked ③Hands from doing it), let ③Hands apply its prepared PR body, then merge. Reviewed OK at effort=max (flip + osascript fix + docs), head 2badedd4, CI green. Two follow-ups go to Codex after merge (hard-link probe fix, legacy-commands removal; ③Hands explained why neither blocks). This unblocks 6a, 5a and the MCP proxy.
-2. **Codex pushes (plan A), in this order.** Each count is relative to main 433/63; ⓪Plan recounts ci.yml on each branch after its push. Post each Astra comment file (both sections) on its PR. You merge each.
-   1. `codex/sbx-gates-notes` 99301c19 → updates #654 (461/75).
-   2. 6p `codex/sbx6p-network-proxy-deny-tests` a2949791 (498/127), release-critical. Astra: all findings closed.
-   3. 4p `codex/sbx4p-python-mcp-deny-tests` 94a29485 (505/135). Astra: MERGE.
-   4. 5p `codex/sbx5p-cap6b-caches-deny-tests` fbc18ebb (506/132). Astra: MERGE.
-   Then paste ⑦Codex's queued items: 4p kernel gates → 4p mcp-proxy move → 4p device gates → 5p follow-up gates. Astra ran at **high**, matching your #619/#645 choice; say if you want highest.
-3. **#666 (SBX-4a) — you merge**, after Codex's 4p device gates land and CI is green. Claude effort=max reviewed everything except the tty/device reach (a classifier stopped that check twice); Astra (high) covered it and the runtime fixes PASS. Post `666-astra-comment.md`. You can close #531 (superseded).
-4. **Frame PRs — you:** #650 (IPB-1b details, OK at 7c8bb24e) and #652 (IPB-2 mac, OK at f4f6d6da).
-5. **#667 — you, with or before the 0.1.64 release:** the privacy page's IPB paragraph (draft).
-6. **CAP drafts — you:** #661 (CAP9 server half, OK at 022c26b4) and #604 (CAP4a-3d, OK at 66bf3767; its web half waits for the mock below).
-7. **#636 (INB7-c4b-hands, OK at 8ad9e2ba)** — the author merges once you decide the full lists (below).
-8. **#658 (STY2)** — waits for the bench (DeepSeek top-up, below).
+**Your list (late evening):**
+1. **#650 (IPB-1b), you merge:** on the iOS critical path. Main is merged in at b8af9a45 (724 / 261), and ①iOS's OK carries over by identity. Merge once CI is green.
+2. **Build 31:** ①iOS waits for your 「传」 to upload it to TestFlight; it can go before 0.1.64.
+3. **#525 (retire the pocket): in 0.1.64** (the user, 2026-11-02, "Yes, in 0.1.64"). ②Main merges main into it, takes it out of draft and gets a review; ①iOS re-checks the vectors. It's a Bridge PR, so you merge it.
+4. **#666 (SBX-4a), you merge,** after Codex's 4p device gates land and CI is green.
+5. **Before the tag (you present):** the real-Mac signed-feed update test from #684's body (a throwaway key, a separately named test app); the OCR / PDF / attachment smoke for DEP1; Q1c end to end with build 31.
 
-**On backup branches, PRs once #520 lands (all reviewed at effort=max):** 6a `claude/0164-sbx6a-proxy` ba7e0ee3; 5a `claude/0164-sbx5a-cap6b` 3e97f568; the SBX-6 MCP proxy `claude/0164-sbx6-mcp-proxy` ba44e1ae. Review trails are saved for each PR.
+**Self-merging under #644:** #674 (SMART-1, OK at 63b0207c; ③Hands arms it). Authors arm right after the OK, while CI is still pending: GitHub won't arm a PR that is already CLEAN, and on 11-02 three OK'd PRs sat unarmed until you clicked them.
+
+**Reviewed, waiting:**
+- #686 (delete to Trash): two cd forms and the protected-target card wording are left.
+- #688 and #689 (SMART-8 cards and phone heading): every finding is fixed and pushed; the max re-reviews wait for your call, now or after the reset.
+- #661 (CAP9): one focus finding; paused until the reset.
+
+**Backup branches:** 6a is open as #668 (draft). 5a (`claude/0164-sbx5a-cap6b`) and the SBX-6 MCP proxy (`claude/0164-sbx6-mcp-proxy`) open once #666 lands. The review trails are saved for each.
 
 ## In progress
 
 | Lane | Work |
 |---|---|
-| ②Main | Queue cleared overnight (INB7 7 of 8, BRG1 + BRG1b + CI TSan, flake fixes). #652's `due()` follow-up after #652 lands; MCPF1 (#665) waits for the next CI timeline |
-| ③Hands | 3a done (waits for your Ready click); 6a, 5a and the MCP proxy built and reviewed on backup branches; #666 waits on Codex's device gates |
-| ⑤CAP | #604 and #661 reviewed; web halves wait for mocks |
-| ⑥Helper | IMG1 + follow-up merged; L11-3b non-UI merged; #658 STY2 waits for the bench |
-| Codex (via ⑦Codex) | 4p, 5p, 6p done locally (Astra MERGE); morning queue of four follow-ups ready |
-| ①iOS | Checking #667's wording against the phone; build 31 wording change |
-| ⓪Plan | This page; recounts ci.yml after each Codex push; posts saved review trails when the backup PRs open |
+| ②Main | SMART-2 (#677) arming; #650's red backend; DEP1 next (three PRs, one per ecosystem) |
+| ③Hands | SMART-1 (#674) fixes from the effort=max review; SBX settings UI and the LAN-refusal backend after #668; 5b (other apps' data) after 5a; the delete-to-Trash allow path |
+| ⑤CAP | SMART-8: the shared card component (mock v6, no header), then the iPhone heading once you OK it; #604's web half pushed |
+| ⑥Helper | SMART-3/4 (#680); L11 PR-A to PR-C |
+| Codex (via ⑦Codex) | 4p, 5p, 6p and the gates notes pushed; follow-up gates queued |
+| ①iOS | Build 31 wording |
+| ⓪Plan | This page; recounts ci.yml after each Codex merge; the STY2 and SMART-5 benches; reviews |
 
 ## Waiting on the user
 
-**New decisions (morning):**
-- **trustd in proxy mode (SBX-6a):** (a) grant `com.apple.trustd.agent` in PROXY so URLSession/Swift TLS works in commands, but trustd fetches OCSP/CRL URLs taken from certificates, a daemon egress §2 forbids; (b) don't, and Swift/URLSession TLS fails in commands while curl, Python and git work (they carry their own CA bundles). Recommended: **b** for 1.0, stated on the card.
-- **The LAN through the proxy:** the proxy reaches public addresses only, so a NAS or printer on 192.168.x needs the re-run card. Accept as a cost (recorded for SBX-8), or allow private ranges?
-- **#636's full lists:** (b) keep the Hands trace in Settings › Hands, (a) drop the judgments list. Both recommended.
-- **Mocks:** #604's keep button (CAP5a board v7, https://claude.ai/artifact/9Z9uB3VciwepN6VEStDVQF); L11-3b (https://claude.ai/artifact/CJasVxTSu62DqpPvKprgJS), plus: a Pin/Retire/restore silently ends a pending rule offer; compare the text instead?; CAP9 (v6, now says "Asked OSV.dev about the N public packages in the lock").
-- **STY2 bench:** top up the DeepSeek account (it ran out after 21/27 "before" runs, $1.67 metered). Per-run cap: the K5-era meter used $2.50/run; tonight's $0.45 failed T2 on spend alone. Which?
-- **A second probe-rule slip (⑥Helper, self-reported):** a bare `python -c` import without a scratch HOME read `~/.arslan/secret_key` to compare it; nothing was printed or written. Rotate the key? Your call.
-- **Privacy page §04** ("connects only to") omits the daily MCP Registry recheck (CAP4a-3d) and, once #661 lands, OSV.dev. Add both lines?
-- **Housekeeping:** T1 left three Reminders lists named 「对比测试-arslan-T1-r{1,2,3}-sty2-before-ds-deepseek-v4-pro」 (`python -m scripts.kernel_bench.cleanup_t1 --delete --yes`); an old metering proxy (pid 35347, :8900, since Oct 24, $12.60 spent) is still running.
+**iPhone 1.0 pre-submission list (①iOS, checked against main 8c3a899d):**
+- **From the Mac, needed:** Quick Chat (#479, #486), pairing speed (#462), one file card per file (#463), Overview week and results (#647), the Mac's own state (#652), the privacy page (#667) and `phone_drops` (#685) are all merged. Only **#650 (one conversation's details)** is open; the phone side is already in.
+- **The user decides:** #525 (retire the pocket; recommended for 0.1.64) and #689 (plain-purpose headings; the phone needs no change, and the review screenshots read better with it).
+- **`done_unseen`:** Mac-only in 0.1.64. Phones get the old states (`phone_state`, `server/api/phone.py:130`) until INB4's phone half, so phone 1.0 doesn't need it.
+- **Not in 1.0, by earlier decisions:** 「转成对话」 (conversation.update), the IPB context row, and narrowing push.
+- **The phone's own steps (①iOS):**
+  - build 31 (your 「传」);
+  - real-Mac end to end with build 31, and a check against a 0.1.63 Mac;
+  - the demo's Remote story moves to an ordinary conversation;
+  - remove ArslanComingSoon;
+  - screenshots, review notes and the pairing video (after 0.1.64 ships);
+  - you submit in App Store Connect.
 
-- **The drawer:** drop the radar and the sparkline (recommended).
-- **The 「要你做」 label:** the chip and the tile now share it, with a title. It's kept unless you say otherwise.
+**New bug (user, via ④参谋), ②Main:** switching a chat's model doesn't take effect. The user's DB shows no `conversation_models` row for the thread, and the retry ran on DeepSeek again. ②Main reproduces it with a fake 402 provider and fixes it. Added to SMART-3: the error names the provider and model, failed runs record them, and a "switch this chat and retry" button.
+
+**Decided today (2026-11-02, relayed by ④参谋 unless noted):**
+- **trustd in proxy mode:** a Settings toggle, off by default, grants it in PROXY only (SBX card).
+- **The LAN through the proxy:** trusted devices, pinned by address (SBX card).
+- **#636's lists:** (b) the Hands trace stays in Settings › Hands, (a) the judgments list goes. Merged.
+- **The drawer:** the radar and the sparkline are gone (#672, merged). The 「要你做」 label is kept.
+- **Mocks:** #604's keep button, L11-3b and CAP9 v6 are OK'd. The privacy page's §04 has both lines (#667).
+- **SMART is a must for v0.1.64.** SMART-6 (changing the chat model) is dropped. The gate is Arslan at least matching OpenClaw on the same model (SMART card).
+- **Other apps' private data:** blocked by default, with an allow-once card (SBX-5b).
+- **SMART-8 as recommended** (the user, directly): one card shape, with the plain purpose first. The card the user saw was on the iPhone, so the server's `title` gets the plain purpose too. That piece waits for the phone mock.
+- **Delete cards:** 「允许」 moves the targets to the Trash. When the user's own message names paths to delete permanently, those are really deleted, and the card says so. A delete that can't be parsed says it's permanent. Arslan never empties the Trash (SMART card, "Delete cards").
+- **DEP1:** no open critical or high runtime dependency alert at the tag (8 critical and 52 high open today; card [DEP1](DEP1-dependency-alerts.md)).
+
+**Still open:**
+- **The phone heading (SMART-8):** whether the iPhone's approval heading becomes the plain purpose. It's in the mock for your OK.
+- **A probe-rule slip (⑥Helper, self-reported):** a bare `python -c` read `~/.arslan/secret_key` to compare it, and nothing was printed or written. Rotate the key? Your call.
+- **Housekeeping:** three Reminders lists from T1 (`python -m scripts.kernel_bench.cleanup_t1 --delete --yes`, which you run yourself); an old metering proxy on :8900 since Oct 24.
 
 - **③Hands' session effort:** switch it to high, per the pacing rule (②Main is switched).
 

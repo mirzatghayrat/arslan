@@ -334,11 +334,6 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         planProposal: item.planProposal };
     }
 
-    if (item.kind === "rule_offer" && item.ruleOffer) {
-      return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
-        ruleOffer: item.ruleOffer };
-    }
-
     if (item.kind === "lesson" && item.lesson) {
       return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
         learned: item.lesson };
@@ -451,6 +446,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       clarifyOptions: item.clarifyOptions,
       // S3-M1: run_cancelled can also finalize an arslan-role live bubble.
       cancelled: item.cancelled ?? undefined,
+      // K8a: what this reply showed and then replaced (stream_restart).
+      drafts: item.drafts,
       // S3-M3: answer-turn usage from the stream_end frame → bubble usage chip.
       usage: item.usage,
       // 0.1.42: this is a background job's result, checked against its criteria.

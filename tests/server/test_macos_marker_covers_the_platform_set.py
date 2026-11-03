@@ -35,15 +35,23 @@ TESTS = pathlib.Path(__file__).parents[1]
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
+    # SBX-5p: 73 CAP6b/cache cases, including the built outside floor.
+    "server/sbx/test_sbx5_paths.py": 10,
+    # SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
+    "server/sbx/test_sbx6_settings.py": 3,
+    # SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
+    "server/sbx/test_sbx6_network.py": 8,
+    # SBX-4p: 88 Python/artifact/MCP gates (72, then +16 over #654's wider service list), pending product adapters.
+    "server/sbx/test_sbx4_presets.py": 7,
     # Stock Pool semaphore refusal and a same-policy run-prefixed control.
     "server/sbx/test_sbx_multiprocessing.py": 1,
     # Measured DNS, FSEvents and trust service grants, each in all four modes.
     "server/sbx/test_sbx_service_allowlist.py": 4,
-    # SBX-3p: 63 commands denial cases, strict xfails until its product adapter exists.
+    # SBX-3p: 58 commands denial cases (63; +12 in #654; then SBX-6 retired the any-declared mode), real since SBX-3a.
     "server/sbx/test_sbx3_commands.py": 14,
     # SBX-2 port follow-ups: one compile check for each of proxy and port-22.
     "server/sbx/test_sbx2_tcp_ports.py": 1,
-    # SBX-2: 59 kernel assertions and 222 measurement rows (281 collected).
+    # SBX-2: 75 kernel assertions and 222 measurement rows (297 collected).
     "server/sbx/test_sbx2_kernel.py": 10,
     "server/sbx/corpus/test_sbx2_corpus.py": 5,
     # 2026-10-03 (0.1.51 P3): run_command's workspace sandbox — what the kernel
@@ -108,25 +116,25 @@ EXPECTED_FILES: dict[str, int] = {
     # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
     # readable. Seatbelt is macOS-only.
     "server/sbx/test_sbx1b_sbpl_strings.py": 4,
-    # 0.1.64 L11-3a/3d: a rules file's path through macOS's own /var link is refused by the folder-by-folder
-    # O_NOFOLLOW open (it fails closed), and the same file by its real /private/var path is written.
-    "server/test_l11_2_rule_card.py": 1,
     # 0.1.64 SBX-3a: what should run still runs under the commands profile with /dev narrowed: the
     # work folder, /dev/null and /dev/zero, and a pty. Seatbelt is macOS-only.
     # 0.1.64 SBX-3a flip: a work folder inside a closed folder and a saved copy still work on the base.
     "server/sbx/test_sbx3a_commands_profile.py": 2,
     # 0.1.64 SBX-3a §1a: a sandboxed command writes its own run's TMPDIR. Seatbelt is macOS-only.
     "server/sbx/test_sbx3_run_temp.py": 1,
+    # 0.1.64 IPB-1b: the phone's folder shows a home reached through APFS's /System/Volumes/Data firmlink,
+    # or written in another Unicode form, as ~. Both need APFS, so macOS only.
+    "server/test_phone_history_details.py": 2,
 }
 #: 🔴 MIRRORED in .github/workflows/ci.yml ("Assert they RAN, and did not skip").
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 436  # +1 0.1.64 SBX-3a flip: a reopened work folder and a saved copy; +1 0.1.64 SBX-3a §1a: a command uses its own TMPDIR; +1 0.1.64 SBX-3a: the work folder, the devices and a pty still work; -12 stale service cases; +4 raw UDP denials; +1 multiprocessing diagnosis; +12 measured service allowlist cases; +1 0.1.64 L11-3a/3d: a rules file's path through /var refused, its real path written; +63 SBX-3p commands denial cases; +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 724  # +2 0.1.64 IPB-1b: a home through the Data firmlink or in another Unicode form is ~; +56 0.1.64 SBX gates notes (#654) after SBX-6p: +16 kernel gates, +8 commands cases (four more services in two modes), +16 SBX-4p and +16 SBX-6p network cases over its wider service list; -1 0.1.64 L11 (b) (#681): the rules writer went, with L11-3d's /var-link write test; +72 SBX-4p; +78 SBX-5p (includes one pre-existing-link measurement); +16 SBX-6p settings; +1 0.1.64 SBX-3a flip: a reopened work folder and a saved copy; +1 0.1.64 SBX-3a §1a: a command uses its own TMPDIR; +1 0.1.64 SBX-3a: the work folder, the devices and a pty still work; -13 SBX-6 commands transition; +78 SBX-6p; -12 stale service cases; +4 raw UDP denials; +1 multiprocessing diagnosis; +12 measured service allowlist cases; +1 0.1.64 L11-3a/3d: a rules file's path through /var refused, its real path written; +63 SBX-3p commands denial cases; +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function; SBX-1b's protected-folder test has
 # six names under one (+5).
-PARAMETERIZED_EXTRA_CASES = 338  # Allowlist: +12 (16 cases over 4 functions); SBX-3p: +49 (63 cases over 14 functions); SBX-2: 283 over 16.
+PARAMETERIZED_EXTRA_CASES = 597  # SBX-4p: +81 (88 over 7, after #654); SBX-5p: +68 (78 over 10); SBX-6p settings: +13 (16 over 3); SBX-6p: +86 (94 over 8, after #654); Allowlist: +12 (16 cases over 4 functions); SBX-3p after SBX-6 and #654: +44 (58 cases over 14 functions); SBX-2: 299 over 16 (after #654).
 
 #: Text that means "this test only means something on macOS". Kept broad on
 #: purpose — a new gating phrase should trip the drift check and be added here

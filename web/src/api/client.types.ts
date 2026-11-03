@@ -503,7 +503,7 @@ export type ServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "ping"; ts: number };
 
 export interface UserFact {
@@ -624,9 +624,15 @@ export interface AuthoredSkillCard {
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
+/** K8a: text a reply showed and then replaced, with the server's label for it. */
+export interface EarlierDraft {
+  label: string;
+  text: string;
+}
+
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability" | "rule_offer";
+  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
   /** kind === "capability" (0.1.57): how an install the user approved ended. */
   capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
@@ -650,12 +656,13 @@ export interface ArslanThreadItem {
   replyMessageId?: number | null;
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
-  /** kind === "rule_offer" (L11-2): "make this a rule for this folder?" for a lesson corrected twice. */
-  ruleOffer?: { lessonId: number; file: string };
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
   toolSteps?: ToolStep[]; // replies: folded tool activity
+  /** K8a (2026-11-03): text this reply showed and then replaced (stream_restart), in order. Live only: the
+   *  stored message is the final answer. */
+  drafts?: EarlierDraft[];
   /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
    *  🔒 Populated ONLY from the backend frame, NEVER from LLM message text. */
   artifactHtml?: HtmlArtifact;
@@ -715,6 +722,10 @@ export type ArslanServerMessage =
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
+  // K8a (2026-11-03): a guard sent back a step's text that already went out; what follows replaces it. The reply
+  // starts over from `keep` (what earlier steps showed, which stays). `label` is the server's, in the language of
+  // the text it replaces; the window keeps that text as a collapsed earlier draft.
+  | { type: "stream_restart"; label: string; keep?: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
   | { type: "run_cancelled"; run_id: number; message_id?: number }
@@ -752,7 +763,6 @@ export type ArslanServerMessage =
       proposal_id?: number | null; reason?: string | null }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string; not_in_effect?: string | null } }
-  | { type: "rule_offer"; lesson_id: number; text: string; file: string }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
       source?: string | null }
@@ -776,7 +786,7 @@ export type ArslanServerMessage =
       artifact?: { kind: string; content?: string; spec?: Record<string, unknown>;
                    filename?: string; bytes_b64?: string; slides?: number };
     }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
@@ -1124,3 +1134,6 @@ export interface CardV2Fields {
   expires_at?: number;
   dedupe?: string;
 }
+
+/** SMART-3 (v0.1.64): which model call failed: the chat's own model ("chat") or a helper ("vision" and the like). */
+export interface ModelCall { role: string; provider: string; model: string }

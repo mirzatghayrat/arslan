@@ -73,6 +73,8 @@ def positives() -> list[dict]:
                    "exchange_public_key": r.b64(r.public_exchange(raw(MAC, "exchangeKey")))}
     approval = {"approval_id": "appr-1", "action": "Delete 3 files", "target": "~/Arslan/old", "risk": "delete",
                 "task_id": "task-1", "task_title": "Tidy downloads", "expires_at": "2026-10-03T00:05:00Z"}
+    # Sealing fixtures: the `pocket` in the bodies below is sample text, kept so the vectors stay byte-identical.
+    # The conversation itself is retired (protocol §5.12), and the Mac never sends a frame naming it.
     return [
         crypto_vector("phone-message", PHONE, MAC, envelope(PHONE, MAC, "chat.send", {
             "text": "Vector request", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
@@ -250,6 +252,35 @@ def messages() -> dict:
                                            "outcomes": {"today": {"tasks": [DONE_TASK], "spent_usd": 0.61, "other_spent_usd": 0.19},
                                                         "week": {"tasks": [DONE_TASK, UNFINISHED_TASK], "spent_usd": 3.05,
                                                                  "other_spent_usd": 2.63, "spent_partial": True}}}),
+        # §5.11: the Mac's own state, with the week and the results: a full block; a desktop Mac (no battery,
+        # fewer than 12 five-minute averages, a fair wired link); one just started (`last_hour: []`, an unknown
+        # pressure word, no network yet); and a block missing `taken_at`, which a phone drops on its own.
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "working", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
+                                           "outcomes": {"today": {"tasks": [DONE_TASK], "spent_usd": 0.42, "other_spent_usd": 0.0},
+                                                        "week": {"tasks": [DONE_TASK], "spent_usd": 0.42, "other_spent_usd": 0.0}},
+                                           "mac": {"taken_at": TS, "battery": {"level": 76, "charging": False, "minutes_left": 214},
+                                                   "cpu": {"now": 37, "last_hour": [12, 18, 22, 30, 41, 35, 28, 25, 31, 44, 39, 37]},
+                                                   "memory": {"used_gb": 18.4, "total_gb": 32.0, "pressure": "normal"},
+                                                   "disk": {"free_gb": 412.3, "total_gb": 994.7},
+                                                   "network": {"kind": "wifi", "quality": "good"},
+                                                   "sleep": {"kept_awake": True}, "os_version": "macOS 26.1"}}),
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False,
+                                           "mac": {"taken_at": TS, "cpu": {"now": 3, "last_hour": [4, 6, 5]},
+                                                   "memory": {"used_gb": 41.2, "total_gb": 48.0, "pressure": "warn"},
+                                                   "disk": {"free_gb": 96.4, "total_gb": 994.7},
+                                                   "network": {"kind": "ethernet", "quality": "fair"},
+                                                   "sleep": {"kept_awake": False}, "os_version": "macOS 26.1.2"}}),
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False,
+                                           "mac": {"taken_at": TS, "battery": {"level": 100, "charging": True},
+                                                   "cpu": {"now": 64, "last_hour": []},
+                                                   "memory": {"used_gb": 7.9, "total_gb": 8.0, "pressure": "elevated"},
+                                                   "network": {"kind": "other", "quality": "poor"}}}),
+        envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
+                                           "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
+                                           "mac": {"memory": {"used_gb": 7.9, "total_gb": 8.0, "pressure": "normal"}}}),
         # §5.9: a set at the cap (TASK_CAP), newest first.
         envelope(m, s, "status.snapshot", {"presence": "online", "mascot": "idle", "device_name": "Vector Mac", "last_seen": TS,
                                            "jobs": [], "waiting_approvals": 0, "high_risk_mac_only": False, "week": WEEK,
@@ -264,7 +295,18 @@ def messages() -> dict:
         envelope(s, m, "chat.history", {"conversation_id": "c1", "limit": 50}),
         envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
             {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}]}),
-        envelope(s, m, "chat.send", {"text": "Find flights", "attachments": [], "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
+        # §5.10: a conversation's details, full (no context in v1), and with no connectors (`[]`, required).
+        envelope(m, s, "chat.history.result", {"conversation_id": "c1", "messages": [
+            {"id": "m1", "role": "user", "text": "Hi", "ts": TS, "attachments": []}],
+            "details": {"folder": "~/Arslan/Projects/Trip", "model": "claude-sonnet-5-5", "mode": "standard",
+                        "connectors": [{"name": "Hands", "kind": "hands", "on": True},
+                                       {"name": "Calendar", "kind": "mcp", "on": True},
+                                       {"name": "PDF tools", "kind": "skill", "on": False}],
+                        "changes": {"files": 3, "added": 168, "removed": 2, "last_run_id": 87}, "spent_usd": 0.84}}),
+        envelope(m, s, "chat.history.result", {"conversation_id": "c2", "messages": [],
+                                               "details": {"model": "claude-sonnet-5-5", "connectors": []}}),
+        envelope(s, m, "chat.send", {"conversation_id": "c1", "text": "Find flights", "attachments": [],
+                                     "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"}),
         # §5.8 (2026-10-29): a quick question, a new ordinary conversation, the quick list's next page, a quick
         # question turned into a chat, and the two new error codes.
         envelope(m, s, "hello", {"app_version": "mac", "protocol_version": 1,
@@ -283,21 +325,27 @@ def messages() -> dict:
                                  "related_id": ID.lower()}),
         envelope(m, s, "error", {"code": "bad_request", "message": "The Mac could not read that request.",
                                  "related_id": ID.lower()}),
-        envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "progress", "message_id": "reply-1",
+        # Two codes every phone handles that had no vector (2026-10-30): not_found, which also answers every frame
+        # naming the retired pocket (Q1 card, #4), and mac_busy.
+        envelope(m, s, "error", {"code": "not_found", "message": "That conversation is no longer on the Mac.",
+                                 "related_id": ID.lower()}),
+        envelope(m, s, "error", {"code": "mac_busy", "message": "The Mac could not do that right now.",
+                                 "related_id": ID.lower()}),
+        envelope(m, s, "chat.event", {"conversation_id": "c1", "kind": "progress", "message_id": "reply-1",
                                       "text": "Searching flights", "final": False}),
-        envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "message", "message_id": "reply-1",
+        envelope(m, s, "chat.event", {"conversation_id": "c1", "kind": "message", "message_id": "reply-1",
                                       "text": "Three options…", "final": True}),
         envelope(m, s, "chat.event", {"conversation_id": "task-ab12", "kind": "message", "message_id": "412",
                                       "text": "The report is ready.", "final": True, "job_id": "job-1", "run_id": 87}),
-        envelope(m, s, "chat.event", {"conversation_id": "pocket", "kind": "error", "message_id": "reply-1",
+        envelope(m, s, "chat.event", {"conversation_id": "c1", "kind": "error", "message_id": "reply-1",
                                       "text": "The model is unreachable", "final": True}),
-        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "pocket", "state": "running", "title": "Tidy",
+        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "c1", "state": "running", "title": "Tidy",
                                      "current_step": "Sorting", "completed": 1, "total": 3, "plan": [], "files": [],
                                      "run_id": 87, "origin": "phone",
                                      "criteria": [{"text": "One row per invoice", "status": "passed"},
                                                   {"text": "Totals by month", "status": "pending"},
                                                   {"text": "Saved as a CSV", "status": "failed"}]}),
-        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "pocket", "state": "partial", "title": "Tidy",
+        envelope(m, s, "job.event", {"id": "job-1", "conversation_id": "c1", "state": "partial", "title": "Tidy",
                                      "current_step": "", "completed": 2, "total": 3, "plan": [], "summary": "2 of 3", "files": []}),
         envelope(m, s, "approval.request", {"approval_id": "appr-1", "action": "Delete 3 files", "target": "~/Arslan/old",
                                             "risk": "delete", "task_id": "task-1", "task_title": "Tidy",
@@ -335,8 +383,15 @@ def messages() -> dict:
     ]
     for e in examples:
         r.check_body(e)
-    return {"contract": CONTRACT, "examples": [{"envelope": e, "kind": r.kind_of(e["type"]),
-                                                "notify": r.should_notify(e)} for e in examples]}
+    # Test-only, never on the wire (#652, ①iOS): the body keys a part-B phone drops by design, here the `mac`
+    # block without `taken_at`. The phone's round-trip test strips the listed keys, checks they decoded to nil,
+    # and still fails on any drop that isn't listed.
+    def phone_drops(e):
+        body = e["body"]
+        return ["mac"] if e["type"] == "status.snapshot" and "taken_at" not in body.get("mac", {"taken_at": None}) else []
+    return {"contract": CONTRACT, "examples": [{"envelope": e, "kind": r.kind_of(e["type"]), "notify": r.should_notify(e),
+                                                **({"phone_drops": drops} if (drops := phone_drops(e)) else {})}
+                                               for e in examples]}
 
 
 def build() -> dict[str, dict]:
