@@ -1068,6 +1068,9 @@
       "onHost": "通过 SSH 在 {{host}} 上：{{what}}",
       "uploadFile": "把 {{file}} 发到 {{host}}",
       "mailFile": "用邮件把 {{file}} 发给 {{to}}",
+      "unreadableSend": "读不全 {{program}} 会发出什么，可能会发出本机数据",
+      "uploadFileMore": "把 {{file}} 和另外 {{count}} 个文件发到 {{host}}",
+      "mailFileMore": "用邮件把 {{file}} 和另外 {{count}} 个文件发给 {{to}}",
       "more": "（还有 {{count}} 步）",
       "more_one": "（还有 {{count}} 步）"
     },
@@ -1100,7 +1103,8 @@
         "unreadable-fetched-code": "会下载、解码或生成代码再运行",
         "unreadable-script-reach": "里面的脚本会联网、启动程序或操控 App",
         "unreadable-quoting": "引号没有闭合，读不出会运行什么",
-        "unreadable-complex": "太复杂，运行前读不清"
+        "unreadable-complex": "太复杂，运行前读不清",
+        "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据"
       }
     }
   },

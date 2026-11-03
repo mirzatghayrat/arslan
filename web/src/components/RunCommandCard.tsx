@@ -81,7 +81,7 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
   const reading = purposeText(t, summary.purpose) + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
   const purpose = said || reading;
   const touched = [...new Set([...(remoteHost ? [remoteHost] : []), ...summary.touches])];
-  const risk = commandRisk({ rules: matched, unreadable, network, sandbox, remoteHost, unsandboxed });
+  const risk = commandRisk({ rules: matched, unreadable, network, sandbox, remoteHost, unsandboxed, unsure: summary.unsure });
   const riskText = risk.keys.map(k => t(`runcmd.risk.${k.key}`, k.params)).join(t("kit.riskJoin"));
   const context = [
     ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),

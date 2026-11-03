@@ -1068,6 +1068,9 @@
       "onHost": "{{what}} on {{host}}, over SSH",
       "uploadFile": "Send {{file}} to {{host}}",
       "mailFile": "Email {{file}} to {{to}}",
+      "unreadableSend": "Cannot fully read what {{program}} sends; it may send local data",
+      "uploadFileMore": "Send {{file}} and {{count}} more to {{host}}",
+      "mailFileMore": "Email {{file}} and {{count}} more to {{to}}",
       "more": " (and {{count}} more steps)",
       "more_one": " (and 1 more step)"
     },
@@ -1100,7 +1103,8 @@
         "unreadable-fetched-code": "Downloads, decodes or builds code and runs it",
         "unreadable-script-reach": "Its script reaches out, starts programs or drives apps",
         "unreadable-quoting": "Its quoting doesn't close, so what runs can't be read",
-        "unreadable-complex": "Too complex to read before it runs"
+        "unreadable-complex": "Too complex to read before it runs",
+        "unreadable-send": "Arslan can't fully read what this sends; it may send local data"
       }
     }
   },

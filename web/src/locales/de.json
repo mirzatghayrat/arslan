@@ -1068,6 +1068,9 @@
       "onHost": "Auf {{host}} per SSH: {{what}}",
       "uploadFile": "{{file}} an {{host}} senden",
       "mailFile": "{{file}} per E-Mail an {{to}} senden",
+      "unreadableSend": "Nicht ganz lesbar, was {{program}} sendet; es kann lokale Daten senden",
+      "uploadFileMore": "{{file}} und {{count}} weitere an {{host}} senden",
+      "mailFileMore": "{{file}} und {{count}} weitere per E-Mail an {{to}} senden",
       "more": " (und {{count}} weitere Schritte)",
       "more_one": " (und 1 weiterer Schritt)"
     },
@@ -1100,7 +1103,8 @@
         "unreadable-fetched-code": "Lädt Code herunter, dekodiert oder erzeugt ihn und führt ihn aus",
         "unreadable-script-reach": "Sein Skript greift nach außen, startet Programme oder steuert Apps",
         "unreadable-quoting": "Seine Anführungszeichen schließen nicht, daher ist nicht lesbar, was läuft",
-        "unreadable-complex": "Zu komplex, um ihn vor dem Ausführen zu lesen"
+        "unreadable-complex": "Zu komplex, um ihn vor dem Ausführen zu lesen",
+        "unreadable-send": "Arslan kann nicht ganz lesen, was das sendet; es kann lokale Daten senden"
       }
     }
   },

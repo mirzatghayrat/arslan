@@ -1068,6 +1068,9 @@
       "onHost": "SSH で {{host}} 上：{{what}}",
       "uploadFile": "{{file}} を {{host}} に送信",
       "mailFile": "{{file}} をメールで {{to}} に送信",
+      "unreadableSend": "{{program}} が何を送るか読み切れません。ローカルのデータを送る可能性があります",
+      "uploadFileMore": "{{file}} ほか {{count}} 件を {{host}} に送信",
+      "mailFileMore": "{{file}} ほか {{count}} 件をメールで {{to}} に送信",
       "more": "（ほか {{count}} ステップ）",
       "more_one": "（ほか {{count}} ステップ）"
     },
@@ -1100,7 +1103,8 @@
         "unreadable-fetched-code": "コードをダウンロード・デコード・生成して実行します",
         "unreadable-script-reach": "スクリプトが外部に接続したり、プログラムを起動したり、アプリを操作したりします",
         "unreadable-quoting": "引用符が閉じていないため、何が実行されるか読めません",
-        "unreadable-complex": "複雑すぎて実行前に読み切れません"
+        "unreadable-complex": "複雑すぎて実行前に読み切れません",
+        "unreadable-send": "Arslan にはこのコマンドが何を送るか読み切れません。ローカルのデータを送る可能性があります"
       }
     }
   },
