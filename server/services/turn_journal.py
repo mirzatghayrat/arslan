@@ -27,7 +27,7 @@ from typing import Callable
 # The answer path's complete emit vocabulary (server/orchestrator/arslan.py
 # _handle_answer_body + server/orchestrator/tool_loop.py run_native).
 _TURN_FRAME_TYPES = frozenset(
-    {"stream_start", "stream_chunk", "tool_call", "tool_result", "note", "stream_end"}
+    {"stream_start", "stream_chunk", "stream_restart", "tool_call", "tool_result", "note", "stream_end"}
 )
 
 _active: dict[str, "TurnJournal"] = {}

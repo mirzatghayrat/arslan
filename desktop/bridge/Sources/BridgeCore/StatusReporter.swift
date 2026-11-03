@@ -55,7 +55,10 @@ public final class StatusReporter {
 
     func snapshot(now: Date) async throws -> [String: Any] {
         var body = try await backend.json("/api/v1/phone/status")
-        body["jobs"] = (body["jobs"] as? [[String: Any]] ?? []).map { FrameMapper.jobEvent($0, conversationID: "") }
+        body["jobs"] = (body["jobs"] as? [[String: Any]] ?? [])
+            // Retired (Q1 #4): never on a phone; a job that names no conversation can't be told apart, so it is left out.
+            .filter { ($0["conversation_id"] as? String).map { $0 != ConversationLinks.pocket } ?? false }
+            .map { FrameMapper.jobEvent($0, conversationID: "") }
         body["device_name"] = deviceName
         body["last_seen"] = ISO8601DateFormatter().string(from: now)
         // §5.11: the Mac's readings, with the one part only the backend knows (`sleep`). Not in `signature`.

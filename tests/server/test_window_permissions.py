@@ -97,7 +97,7 @@ def test_a_rule_card_offers_scopes_and_this_conversation_holds_on_a_new_socket(a
         ws.send_json({"type": "user_message", "content": "clean the build"})
         card = _collect_until(ws, "propose_run_command")[-1]
         assert card["options"] == ["once", "conversation"]          # layer ③ is never "always"
-        assert "outside the sandbox" in card["title"]
+        assert card["title"].startswith("No sandbox · ")              # SMART-8 (#689 review 5): no sandbox around it
         ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "conversation"})
         _collect_until(ws, "stream_end")
     # The scripted model calls its tool once; the next turn gets a fresh script.

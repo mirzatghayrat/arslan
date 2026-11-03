@@ -42,7 +42,8 @@ from packaging.version import Version
 
 # The release that carries #3944 and #3946. Raise this when a later CVE lands;
 # never lower it.
-PATCHED = Version("6.16.1")  # Also covers the September outline/XForm resource-exhaustion fixes.
+PATCHED = Version("6.21.4")  # Also covers the September outline/XForm resource-exhaustion fixes.
+# 6.21.4: the 13 high Dependabot alerts open on 6.18.1 (v0.1.64 DEP1).
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 

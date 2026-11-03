@@ -103,8 +103,8 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
         ConversationContext.id.in_([c.conversation_id for c in out])))).all())
     # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
     out = [c for c in out if (phone_ids.kind_of(c.conversation_id, kinds.get(c.conversation_id)) == "quick") is quick]
-    # What each one is and how it stands — the sidebar's glyphs, the phone's task list — and the
-    # phone's own conversation named Remote rather than after its first message.
+    # What each one is and how it stands — the sidebar's glyphs, the phone's task list. The retired pocket
+    # (Q1 card, #4) is an ordinary conversation here, named after its first message; the Bridge keeps it from phones.
     from server.services import phone_reads
     extra = await phone_reads.describe(db, [c.conversation_id for c in out])
     projects = dict((await db.execute(
@@ -120,9 +120,6 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
             item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
         item.pinned = item.conversation_id in pinned
-        # DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-        if item.conversation_id == phone_reads.REMOTE_ID:
-            item.title = phone_reads.REMOTE_TITLE
     return out
 
 
@@ -218,10 +215,13 @@ class ConversationModelIn(BaseModel):
 
 @router.get("/conversations/{conversation_id}/model")
 async def get_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
-    """The model chosen for this conversation, or null = the default (the primary config's model)."""
+    """The model chosen for this conversation (null = the default), and `effective`: what its next text turn
+    really runs on (llm_factory.effective_choice), which the chip shows."""
     from server.db.models import ConversationModel
+    from server.services import llm_factory
     row = await db.get(ConversationModel, conversation_id)
-    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None}
+    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None,
+            "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.put("/conversations/{conversation_id}/model")
@@ -234,23 +234,28 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
     if await db.get(ProviderConfig, body.config_id) is None:
         raise HTTPException(404, detail={"code": "provider_config_not_found"})
     model = body.model.strip()
+    if not model:          # "  " passes min_length before the strip (#691 review)
+        raise HTTPException(422, detail={"code": "invalid_model"})
     row = await db.get(ConversationModel, conversation_id)
     if row is None:
         db.add(ConversationModel(conversation_id=conversation_id, config_id=body.config_id, model=model, updated_at=_dt.utcnow()))
     else:
         row.config_id, row.model, row.updated_at = body.config_id, model, _dt.utcnow()
     await db.commit()
-    return {"choice": {"config_id": body.config_id, "model": model}}
+    from server.services import llm_factory
+    return {"choice": {"config_id": body.config_id, "model": model},
+            "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.delete("/conversations/{conversation_id}/model")
 async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     from server.db.models import ConversationModel
+    from server.services import llm_factory
     row = await db.get(ConversationModel, conversation_id)
     if row is not None:
         await db.delete(row)
         await db.commit()
-    return {"choice": None}
+    return {"choice": None, "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.post("/conversations/{conversation_id}/seen")
