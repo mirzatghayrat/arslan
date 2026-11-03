@@ -93,14 +93,24 @@ async def test_run_492_saying_how_a_conclusion_was_found_is_not_sent_back(turn):
                                   # #694 delta review: advice and how-to are no claim, and neither is "not found"
                                   "你可以在网上查到最新价格", "怎么在网上查到", "建议上网查到官方说明再决定",
                                   "在网上、书上都能查到", "不需要搜索，我在记忆里查到", "网上没有查到", "网上未能查到",
-                                  "网页打不开，查到的是本地缓存", "按标题搜索查到的那条笔记"])
+                                  "网页打不开，查到的是本地缓存", "按标题搜索查到的那条笔记",
+                                  "你也可在网上查到", "网上都能查到", "去网上查到原文再说", "可在网络上查到",
+                                  "网页上也可查到",
+                                  # #698 review: the local network is no web search
+                                  "我在网络设置里查到代理是 127.0.0.1", "网络日志里查到三次断线", "神经网络查到",
+                                  "我在本地网络中查到了三台设备", "局域网络中查到 3 台 Mac", "家庭网络中查到打印机"])
 def test_no_web_search_claimed(text):
     assert not tool_loop._claims_search(text)
 
 
 @pytest.mark.parametrize("text", ["我搜索了三个网站", "刚才搜索了一下", "I searched the web", "我已搜过",
                                   "我在网上查到了最新价格", "网上查到", "联网查到的汇率是 7.1", "我刚在网页上查到了三篇",
-                                  "先说明一下，我在网上查到了价格", "你可以问我。我在网上查到了价格"])
+                                  "先说明一下，我在网上查到了价格", "你可以问我。我在网上查到了价格",
+                                  # #694 follow-up: 「可」/「能」/「去」 inside another word is no advice; 「网络上」 is a web word
+                                  "可能我在网上查到的是旧数据", "过去一周我在网上查到三条", "这个功能我在网上查到了说明",
+                                  "能力范围内，我在网上查到了价格", "我在网上查到可能的原因", "我在网络上查到了",
+                                  "联网功能查到了三条",
+                                  "可能在网上查到的是旧数据", "过去在网上查到的数据"])
 def test_a_web_search_claimed(text):
     assert tool_loop._claims_search(text)
 
