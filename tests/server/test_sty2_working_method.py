@@ -44,7 +44,8 @@ def test_three_points_extend_k5s_lines_and_one_is_new():
     check = _bullet_with(text, "Check after you change: read back what you wrote, or run it, before you say it is done")
     assert RUN in check and EVIDENCE in check
     assert _bullet_with(text, DEEPER).startswith(DEEPER)
-    assert len(_bullets(text)) == 14            # K5 and STY's 13 lines, plus "Go deeper, not bigger"
+    assert _bullet_with(text, "Questions about yourself")     # SMART-2's self-state line (#677), merged in from main
+    assert len(_bullets(text)) == 15            # K5 and STY's 13 lines, "Go deeper, not bigger", and SMART-2's line
 
 
 def test_extras_are_suggested_at_the_end_not_built():
