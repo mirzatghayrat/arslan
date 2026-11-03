@@ -20,7 +20,8 @@ import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
 import ConversationModelChip from './models/ConversationModelChip';
-import { isModelSaving, useModelSaving } from './models/useConversationModel';
+import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } from './models/useConversationModel';
+import { conversationModelApi } from '../api/conversationModel';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -227,6 +228,30 @@ export default function OrchestratorChat({
   const llmError = useArslanStore((s) => s.error);
   const llmErrorTranslations = useArslanStore((s) => s.errorTranslations);
   const clearLlmError = useArslanStore((s) => s.clearError);
+  const llmErrorCall = useArslanStore((s) => s.errorCall);
+  // SMART-3: when the chat's own model failed, another configured model to offer (a different provider first, since
+  // a balance or key problem is the provider's).
+  const switchTo = llmErrorCall?.role === 'chat'
+    ? (providerConfigs ?? []).find((c) => c.provider !== llmErrorCall.provider)
+      ?? (providerConfigs ?? []).find((c) => c.model !== llmErrorCall.model)
+    : undefined;
+  const switchAndRetry = async () => {
+    if (!switchTo) return;
+    const id = conversationId ?? 'main';
+    const done = beginModelSave(id);
+    try {
+      const r = await conversationModelApi.set(id, switchTo.id, switchTo.model);
+      window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail: {
+        conversationId: id, choice: { configId: r.choice.config_id, model: r.choice.model } } }));
+    } catch {
+      return;          // the error stays, and nothing is sent on a model the server didn't store
+    } finally {
+      done();
+    }
+    clearLlmError();
+    const last = [...chatHistory].reverse().find((m) => m.sender === 'user');
+    if (last && onSendMessage) onSendMessage(last.text, undefined);
+  };
   // Draft survives unmount. The composer used to hold its text in plain
   // component state, so switching to Settings (say, to fix an API key) and
   // back destroyed whatever was typed — reported from the first packaged
@@ -940,6 +965,24 @@ export default function OrchestratorChat({
                 className="shrink-0 self-start rounded p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}>
               <span className={`break-words ${taskKey ? '' : 'font-mono text-[12px]'}`}>
                 {taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
+              {/* SMART-3: which call failed, and the way out. */}
+              {!taskKey && llmErrorCall && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+                  <span data-testid="chat-error-call" className="text-muted-foreground">
+                    {t(`ui.errorRole_${['chat', 'vision'].includes(llmErrorCall.role) ? llmErrorCall.role : 'helper'}`)}: {llmErrorCall.provider} · {llmErrorCall.model}
+                  </span>
+                  {llmErrorCall.role === 'chat' && switchTo && (
+                    <button type="button" data-testid="chat-error-switch" onClick={() => void switchAndRetry()}
+                      className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
+                      {t('ui.errorSwitchRetry', { model: `${switchTo.label} · ${switchTo.model}` })}</button>
+                  )}
+                  {llmErrorCall.role !== 'chat' && onOpenSettings && (
+                    <button type="button" data-testid="chat-error-settings" onClick={onOpenSettings}
+                      className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
+                      {t('ui.errorOpenSettings')}</button>
+                  )}
+                </div>
+              )}
             </Notice>
           </div>
           );
