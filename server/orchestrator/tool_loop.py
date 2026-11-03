@@ -1016,12 +1016,17 @@ _CLOSING_NOTE = ("This turn used tools in several steps. End your final reply wi
                  "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch.")
 
 
+#: Looking, not working, though task_service.effect_of (which also decides retries) calls them external writes: they
+#: search, find or probe and change nothing. For the closing lines only (#701 review).
+_LOOKS_ONLY = frozenset({"conversation_search", "find_capability", "scan_local_network", "ssh_probe"})
+
+
 async def _did_work(tool_trace: list, work: dict) -> bool:
     """SMART-5: whether a call of this turn succeeded and was not a read (task_service.effect_of: a write, a command
     that isn't a read, a job started, an MCP tool not known to only read). Each call is judged once."""
     from server.services import task_service
     for step in tool_trace[work["seen"]:]:
-        if not work["done"] and (step.get("result") or {}).get("ok") is True:
+        if not work["done"] and (step.get("result") or {}).get("ok") is True and step.get("tool") not in _LOOKS_ONLY:
             try:
                 effect = await task_service.effect_of(str(step.get("tool")), step.get("args") or {})
             except Exception:  # noqa: BLE001 — the footer is never a reason to fail a turn; unknown is not a read

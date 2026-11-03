@@ -71,7 +71,33 @@ def test_the_version_line_sends_version_questions_to_my_status():
     assert "use this line" not in line
 
 
-def test_the_retry_line_ends_the_guidance_even_after_a_workaround():
+def test_the_retry_line_ends_the_guidance_and_not_a_workaround_that_worked():
     rule = next(b for b in arslan._CAPABILITY_SELF.split("\n- ") if "When the environment blocks you" in b)
-    assert "end with one line in the reply's language: 'Tell me when it's done and I'll retry.'" in rule
-    assert "even when you found a way around it" in rule
+    assert "end the guidance with one line in the reply's language: 'Tell me when it's done and I'll retry.'" in rule
+    assert "Any closing lines come after it." in rule
+    assert "When a way around the block already worked, there is nothing to retry: leave the line out." in rule
+    assert "even when you found a way around it" not in rule
+
+
+def _trace(*tools):
+    return [{"tool": tool, "args": {}, "result": {"ok": True}} for tool in tools]
+
+
+@pytest.mark.asyncio
+async def test_searching_finding_and_probing_are_not_work():
+    """#701 review: effect_of calls these external writes (it also decides retries); for the closing lines they look."""
+    from server.orchestrator import tool_loop
+    trace = _trace("conversation_search", "find_capability", "scan_local_network", "ssh_probe")
+    assert await tool_loop._did_work(trace, {"done": False, "seen": 0}) is False
+    assert await tool_loop._did_work(_trace("ssh_run"), {"done": False, "seen": 0}) is True
+
+
+@pytest.mark.asyncio
+async def test_a_call_whose_effect_cant_be_judged_counts_as_work(monkeypatch):
+    from server.orchestrator import tool_loop
+    from server.services import task_service
+
+    async def broken(tool, args):
+        raise RuntimeError("no tools table")
+    monkeypatch.setattr(task_service, "effect_of", broken)
+    assert await tool_loop._did_work(_trace("mcp_4__fetch"), {"done": False, "seen": 0}) is True
