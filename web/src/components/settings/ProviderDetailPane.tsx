@@ -14,7 +14,7 @@
 
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Star, Trash2, Loader2, FlaskConical, MoreHorizontal, ChevronRight, LockKeyhole } from 'lucide-react';
+import { Star, Trash2, Loader2, FlaskConical, MoreHorizontal, ChevronRight, LockKeyhole, AlertTriangle } from 'lucide-react';
 import type { ModelInfo, ProviderOption, ProviderConfig } from '../../api/client.types';
 import Select from '../Select';
 import type { SelectOption } from '../Select';
@@ -36,6 +36,8 @@ export interface DraftConfig {
   api_key: string;
   testState: 'idle' | 'testing' | 'ok' | 'failed';
   testError?: string;
+  /** MODEL1: the provider's answer to the typed key. Absent until a key is typed; "built-in" carries the reason. */
+  preview?: { state: 'loading' | 'live' | 'built-in'; models: ModelInfo[]; error: string | null };
 }
 
 export interface ProviderDetailPaneProps {
@@ -55,6 +57,8 @@ export interface ProviderDetailPaneProps {
   onDraftApiKeyChange: (v: string) => void;
   onDraftConfirm: () => void;
   onDraftCancel: () => void;
+  /** MODEL1: ask the provider for its model list again with the same key. */
+  onDraftRetryPreview: () => void;
   draftCustomExtras: React.ReactNode;
 
   // ── config mode (selected saved config; null while drafting or empty) ──
@@ -108,6 +112,10 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
 
   // ── Draft (add-new) form ──────────────────────────────────────────────────
   if (draft) {
+    const providerLabel = props.llmProviders.find((p) => p.key === draft.provider)?.label ?? draft.provider;
+    const preview = draft.preview;
+    const modelSource = preview?.state === 'live' ? 'live' : preview?.state === 'loading' ? 'loading' : 'built-in';
+    const draftModels = preview?.state === 'live' ? preview.models : staticModelInfos(draft.provider);
     return (
       <div
         data-testid="provider-detail-pane"
@@ -128,19 +136,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             someone before they pick a provider whose tools will never fire. */}
         <ToolTransportWarning provider={draft.provider} />
 
-        {/* Model combobox (static seed options until the config is saved) */}
-        <div className="min-w-0">
-          <span className={LABEL_CLS}>{t('settings.modelLabel')}</span>
-          <ModelCombobox
-            data-testid="provider-draft-model"
-            value={draft.model}
-            onChange={props.onDraftModelChange}
-            options={staticModelInfos(draft.provider)}
-            ariaLabel="Model"
-          />
-        </div>
-
-        {/* Base URL (non-native providers only) — part of the draft payload */}
+        {/* Base URL (non-native providers only) — part of the draft payload, and where the key below is sent */}
         {!isNative(draft.provider) && (
           <div className="sm:col-span-2 min-w-0">
             <input
@@ -155,11 +151,12 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           </div>
         )}
 
-        {/* API key */}
+        {/* MODEL1 (v0.1.64): the key comes before the model, so the model list can be the provider's own. */}
         <div className="sm:col-span-2 min-w-0">
           <label htmlFor="provider-draft-key" className={LABEL_CLS}>{t('settings.labelConfigApiKey')}</label>
           <input
             id="provider-draft-key"
+            data-testid="provider-draft-key"
             type="password"
             autoComplete="new-password"
             spellCheck={false}
@@ -167,6 +164,47 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             onChange={(e) => props.onDraftApiKeyChange(e.target.value)}
             placeholder={t('settings.labelConfigApiKey')}
             className={INPUT_CLS}
+          />
+          <p data-testid="provider-draft-key-hint" className="mt-1 text-xs text-muted-foreground">
+            {t('settings.addModelKeyHint', { provider: providerLabel })}
+          </p>
+        </div>
+
+        {/* A failed fetch: the built-in list, marked, with the reason and a way to ask again. */}
+        {preview?.state === 'built-in' && (
+          <div data-testid="provider-draft-fallback" role="status"
+            className="sm:col-span-2 min-w-0 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <p>{t('settings.addModelFallback', { provider: providerLabel })}</p>
+              {preview.error && <p className="text-muted-foreground break-words">{preview.error}</p>}
+            </div>
+            <button type="button" data-testid="provider-draft-retry" onClick={props.onDraftRetryPreview}
+              className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:border-border-strong">
+              {t('settings.addModelRetry')}
+            </button>
+          </div>
+        )}
+
+        {/* Model: the provider's live list once it answered, else the built-in list (marked). */}
+        <div className="sm:col-span-2 min-w-0">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className={LABEL_CLS}>{t('settings.modelLabel')}</span>
+            <span data-testid="provider-draft-model-source" data-source={modelSource}
+              className={`text-xs ${modelSource === 'live' ? 'text-success' : 'text-muted-foreground'}`}>
+              {modelSource === 'live'
+                ? t('settings.addModelLive', { provider: providerLabel, count: draftModels.length })
+                : modelSource === 'loading'
+                  ? t('settings.addModelLoading', { provider: providerLabel })
+                  : t('settings.addModelBuiltIn')}
+            </span>
+          </div>
+          <ModelCombobox
+            data-testid="provider-draft-model"
+            value={draft.model}
+            onChange={props.onDraftModelChange}
+            options={draftModels}
+            ariaLabel="Model"
           />
         </div>
 

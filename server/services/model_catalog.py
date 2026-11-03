@@ -258,6 +258,38 @@ def _static_fallback(provider: str, error: str) -> dict:
     }
 
 
+async def _preview_error(exc: BaseException, api_key: str) -> str:
+    """A failed preview's reason, in the provider test's words, with the typed key taken out of it."""
+    raw = str(exc) or type(exc).__name__   # str(TimeoutError()) is ""
+    if api_key:
+        raw = raw.replace(api_key, "[redacted]")
+    from server.orchestrator import llm_errors          # heavy package init: imported where it is used
+    from server.services import runtime_messages
+    return llm_errors.explain(raw, locale=await runtime_messages.selected_locale()) or raw
+
+
+async def preview_models(provider: str, base_url: str, api_key: str, *,
+                         transport: httpx.AsyncBaseTransport | None = None) -> dict:
+    """MODEL1 (v0.1.64): the live model list for a config that is not saved yet, fetched once with the key just
+    typed in Add model.
+
+    The key is used for this one request and kept nowhere: nothing is written (no provider config, no
+    model_catalog_cache row, no setting), and it reaches only the endpoint the saved config would use
+    (``fetch_models`` puts it in a header, never the URL). A failure, or an empty list, answers with the built-in
+    list (source="static") and the reason, with the key taken out of it.
+    """
+    _, _, real_base = expand_preset(provider, "", base_url or "")
+    try:
+        models = await within(fetch_models(provider, real_base, api_key, transport=transport),
+                              timeout=TOTAL_BUDGET_S)
+    except Exception as exc:  # noqa: BLE001 — degrade to the built-in list, never 500 the form
+        return _static_fallback(provider, await _preview_error(exc, api_key))
+    if not models:
+        return _static_fallback(provider, "the provider listed no models")
+    return {"models": models, "fetched_at": datetime.utcnow().isoformat(),
+            "stale": False, "error": None, "source": "api"}
+
+
 def _from_cache(row: ModelCatalogCache, *, stale: bool, error: str | None) -> dict:
     return {"models": json.loads(row.models),
             "fetched_at": row.fetched_at.isoformat(),

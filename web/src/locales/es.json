@@ -691,7 +691,13 @@
     "openActivityBtn": "Abrir Progreso",
     "whatsNewEmpty": "No hay notas para esta versión.",
     "modelRolesResetNotice": "Los roles de modelo ahora siguen el modelo de cada conversación. Se borraron tus elecciones de roles anteriores.",
-    "modelRolesResetOk": "Entendido"
+    "modelRolesResetOk": "Entendido",
+    "addModelKeyHint": "Solo se usa para preguntar a {{provider}} qué modelos tiene. No se guarda nada hasta que pulses Agregar.",
+    "addModelLive": "En directo de {{provider}} · {{count}} modelos",
+    "addModelLoading": "Preguntando a {{provider}} por sus modelos…",
+    "addModelBuiltIn": "Lista integrada",
+    "addModelFallback": "No se pudo contactar con {{provider}}; se muestra la lista integrada de Arslan.",
+    "addModelRetry": "Reintentar"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

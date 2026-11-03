@@ -7,6 +7,7 @@ import {
   setPrimaryProviderConfig,
   deleteProviderConfig,
   fetchProviderModels,
+  previewProviderModels,
   testLlm,
   testProviderConfig,
 } from '../api/client';
@@ -21,6 +22,9 @@ import { formatRelativeTime } from './settings/relativeTime';
 import { providerStatus, type LiveTest } from '../lib/providerStatus';
 import { maskSecretForDisplay } from '../lib/maskSecretForDisplay';
 import { confirmSheet } from "./kit";
+
+/** MODEL1: how long typing must pause before the typed key is used to fetch the live model list. */
+export const PREVIEW_DEBOUNCE_MS = 500;
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -467,6 +471,37 @@ export default function ProviderConfigList({
     });
   };
 
+  // MODEL1 (v0.1.64): once a key is typed, ask the provider for its live model list, once per provider, base URL
+  // and key (debounced while typing). Nothing is stored. An answer for an older key, or one that lands after
+  // Cancel, is dropped: each run of this effect takes a new number and only the latest may write.
+  const [previewRetry, setPreviewRetry] = useState(0);
+  const previewSeq = useRef(0);
+  const draftProvider = draft?.provider;
+  const draftBaseUrl = draft?.base_url ?? '';
+  const draftKey = draft?.api_key ?? '';
+  useEffect(() => {
+    const seq = ++previewSeq.current;
+    if (!draftProvider || !draftKey.trim()) {
+      setDraft((prev) => (prev?.preview ? { ...prev, preview: undefined } : prev));
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDraft((prev) => (prev ? { ...prev, preview: { state: 'loading', models: [], error: null } } : prev));
+      previewProviderModels({ provider: draftProvider, base_url: draftBaseUrl, api_key: draftKey })
+        .then((r) => {
+          if (seq !== previewSeq.current) return;
+          setDraft((prev) => (prev ? { ...prev, preview: {
+            state: r.source === 'api' ? 'live' : 'built-in', models: r.models, error: r.error } } : prev));
+        })
+        .catch((e: unknown) => {
+          if (seq !== previewSeq.current) return;
+          setDraft((prev) => (prev ? { ...prev, preview: {
+            state: 'built-in', models: [], error: e instanceof Error ? e.message : String(e) } } : prev));
+        });
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [draftProvider, draftBaseUrl, draftKey, previewRetry]);
+
   const handleDraftProviderChange = (providerKey: string) => {
     setDraft((prev) =>
       prev
@@ -706,6 +741,7 @@ export default function ProviderConfigList({
               onDraftApiKeyChange={() => {}}
               onDraftConfirm={handleDraftConfirm}
               onDraftCancel={handleDraftCancel}
+              onDraftRetryPreview={() => {}}
               draftCustomExtras={null}
               config={config}
               index={idx}
@@ -776,6 +812,7 @@ export default function ProviderConfigList({
               }
               onDraftConfirm={handleDraftConfirm}
               onDraftCancel={handleDraftCancel}
+              onDraftRetryPreview={() => setPreviewRetry((n) => n + 1)}
               draftCustomExtras={
                 draft.provider === 'custom'
                   ? renderCustomExtras({

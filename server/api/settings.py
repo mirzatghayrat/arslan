@@ -13,7 +13,7 @@ import logging
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, McpTokenOut, ModelListOut, SearchProbeIn, SearchProbeOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, TestLLMIn, TestLLMOut
+from server.schemas import AccessTokenOut, McpTokenOut, ModelListOut, ModelPreviewIn, SearchProbeIn, SearchProbeOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, TestLLMIn, TestLLMOut
 # model_catalog + provider_health are Settings-only: this module is their ONLY
 # allowed import site outside their own tests (Provider-round iron rule —
 # never from the chat path).
@@ -341,6 +341,18 @@ async def delete_provider_config(config_id: int, session: AsyncSession = Depends
     if not deleted:
         raise HTTPException(status_code=400, detail="cannot delete the only provider config")
     return {"ok": True}
+
+
+@router.post("/settings/provider-models/preview", response_model=ModelListOut)
+async def preview_provider_models(body: ModelPreviewIn) -> ModelListOut:
+    """MODEL1 (v0.1.64): the provider's live model list for Add model, fetched once with the key just typed.
+
+    Nothing is stored, and the key reaches only that provider's models endpoint. A failure answers with the
+    built-in list (source="static") and the reason, never a 5xx. A masked echo is refused (422) rather than sent.
+    """
+    if body.api_key and _looks_masked(body.api_key):
+        raise HTTPException(status_code=422, detail="enter the real API key, not a masked one")
+    return ModelListOut(**await model_catalog.preview_models(body.provider, body.base_url, body.api_key))
 
 
 @router.get("/settings/provider-configs/{config_id}/models", response_model=ModelListOut)
