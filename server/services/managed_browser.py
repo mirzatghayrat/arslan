@@ -98,7 +98,7 @@ async def _command(args: list[str], *, cwd: Path, env: dict, timeout: float) -> 
 async def setup() -> dict:
     """User-click-only public download, exact lockfile + pinned Chromium revision."""
     async with _setup_lock:
-        state = status()
+        state = await asyncio.to_thread(status)       # node and npm on the user's PATH, in a thread (#674 review)
         if state["ready"]:
             return state
         if state["reason"] != "setup_required":
@@ -111,14 +111,15 @@ async def setup() -> dict:
             # TMPDIR too: Playwright's download stages in os.tmpdir(), which falls
             # back to /tmp when unset — refused wherever /tmp is not writable
             # (seen in the 0.1.49 bench sandbox: EPERM mkdtemp /tmp/playwright-download-*).
-            env = {"PATH": spawn_env.merged_path(), "HOME": temp, "TMPDIR": temp,
+            path, npm, node = await asyncio.to_thread(
+                lambda: (spawn_env.merged_path(), spawn_env.resolve_command("npm"), spawn_env.resolve_command("node")))
+            env = {"PATH": path, "HOME": temp, "TMPDIR": temp,
                    "PLAYWRIGHT_BROWSERS_PATH": str(root / "browsers"),
                    "npm_config_userconfig": str(Path(temp) / ".npmrc"),
                    "npm_config_cache": str(root / "npm-cache")}
-            await _command([spawn_env.resolve_command("npm"), "ci", "--ignore-scripts",
+            await _command([npm, "ci", "--ignore-scripts",
                             "--no-audit", "--no-fund", "--registry=https://registry.npmjs.org"],
                            cwd=root, env=env, timeout=180)
-            node = spawn_env.resolve_command("node")
             await _command([node, str(root / "node_modules/playwright/cli.js"),
                             "install", "chromium", "--only-shell"], cwd=root, env=env, timeout=240)
             # Headless Shell has no desktop profile-singleton IPC and needs no
@@ -127,7 +128,7 @@ async def setup() -> dict:
         if not Path(browser).is_file() or not Path(browser).is_relative_to(root):
             raise RuntimeError("Browser installation did not produce the pinned executable")
         (root / ".ready.json").write_text(json.dumps({"browser": browser, "lock_sha256": _digest()}))
-        return status()
+        return await asyncio.to_thread(status)
 
 
 async def preview(url: str) -> dict:
@@ -143,7 +144,7 @@ async def preview(url: str) -> dict:
 
 async def _preview(url: str) -> dict:
     validate_url(url)
-    state = status()
+    state = await asyncio.to_thread(status)
     if not state["ready"]:
         raise ValueError(state["reason"])
     root = runtime_root()
@@ -169,7 +170,8 @@ async def _preview(url: str) -> dict:
                 # macOS rejects Chromium's nested sandbox initialization under sandbox-exec.
                 # Keep Chromium's renderer sandbox ON, do not fall back to --no-sandbox.
                 # This proxy policy is not a kernel jail for the trusted browser parent.
-                args = [spawn_env.resolve_command("node"),
+                node = await asyncio.to_thread(spawn_env.resolve_command, "node")
+                args = [node,
                         str(root / "node_modules/@playwright/mcp/cli.js"),
                         "--isolated", "--sandbox", "--headless", "--block-service-workers",
                         "--executable-path", browser, "--config", str(cfg),

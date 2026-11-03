@@ -1292,7 +1292,8 @@ async def _every_tool() -> list[dict]:
     from server.registry import hands_tools
     from server.services import agent_browser
     in_job = background_jobs.inside_job()
-    if agent_browser.available():
+    # In a thread: it looks node and npm up on the user's PATH, which may wait for the login shell (#674 review).
+    if await asyncio.to_thread(agent_browser.available):
         tools += [
             {"key": "browser_open", "description": "Open a public https page in Arslan's own browser (it runs in "
              "the background and keeps cookies between visits; set up automatically on first use) and read "
