@@ -43,6 +43,10 @@ class LLMAdapter:
         response = await adapter.chat("You are helpful.", "Hello!")
     """
 
+    #: What this adapter is for (SMART-3, v0.1.64): "chat" unless a helper slot built it ("vision", "router",
+    #: "compaction", "synthesis"). A failed call says it, so an error can name the call that failed.
+    role: str | None = None
+
     def __init__(
         self,
         provider_name: str,
@@ -77,6 +81,19 @@ class LLMAdapter:
         # Fallback for __new__-constructed doubles (tests) that bypass __init__.
         return getattr(self, "_report_provider", None) or self.provider_name
 
+    def _calling(self) -> None:
+        """Note the model this run tries, so a run whose only call fails still records it (SMART-3)."""
+        usage_sink.note_attempt(model=self.model, provider=self.report_provider)
+
+    def _attribute(self, exc: BaseException) -> None:
+        """Stamp a failed call's provider, model and role on its error, innermost first (SMART-3): the error a user
+        sees can then say which call failed, on which provider and model."""
+        if getattr(exc, "arslan_call", None) is None:
+            try:
+                exc.arslan_call = {"role": self.role or "chat", "provider": self.report_provider, "model": self.model}
+            except AttributeError:   # an exception type that takes no attributes keeps its own text
+                pass
+
     def anthropic_first_party(self) -> tuple[str, str] | None:
         """(base_url, api_key) when this is Claude on Anthropic's own host or a listed verbatim proxy to it: the
         one place server-side tools (context editing, 0.1.63 D5's web search) are sent. The same check as K1b's,
@@ -108,7 +125,12 @@ class LLMAdapter:
         names = tool_names.Names(tools)
         messages = tool_names.messages(self._provider.build_messages(system, user, history))
         extra = {"max_tokens": max_tokens} if max_tokens else {}
-        resp = await self._provider.chat(messages, tools=names.tools(tools), temperature=temperature, **extra)
+        self._calling()
+        try:
+            resp = await self._provider.chat(messages, tools=names.tools(tools), temperature=temperature, **extra)
+        except Exception as exc:
+            self._attribute(exc)
+            raise
         return names.reply(await self._account(resp, system, user))
 
     def native_trajectory(self) -> bool:
@@ -142,8 +164,13 @@ class LLMAdapter:
             extra["stream"] = True   # idle watchdog instead of a total timeout (0.1.49 S7)
             if on_text is not None:
                 extra["on_text"] = on_text
-        resp = await self._provider.chat(wire, tools=names.tools(tools), temperature=temperature,
-                                         tool_choice=tool_choice, **extra)
+        self._calling()
+        try:
+            resp = await self._provider.chat(wire, tools=names.tools(tools), temperature=temperature,
+                                             tool_choice=tool_choice, **extra)
+        except Exception as exc:
+            self._attribute(exc)
+            raise
         last = messages[-1].get("content") if messages else ""
         return names.reply(await self._account(resp, system, last if isinstance(last, (str, list)) else ""))
 
@@ -208,12 +235,16 @@ class LLMAdapter:
         """Build messages and stream content deltas from the provider (tool names as in `chat`)."""
         messages = tool_names.messages(self._provider.build_messages(system, user, history))
         chunks: list[str] = []
+        self._calling()
         try:
             async for piece in self._provider.chat_stream(
                 messages, tools=tool_names.Names(tools).tools(tools), temperature=temperature
             ):
                 chunks.append(piece)
                 yield piece
+        except Exception as exc:
+            self._attribute(exc)
+            raise
         finally:
             # S3-M3: providers stash the stream's real usage frame on themselves
             # (see BaseLLMProvider._last_stream_usage); the adapter stays the ONE

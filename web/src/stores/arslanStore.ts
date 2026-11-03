@@ -3,7 +3,7 @@ import { request } from "../api/client";
 import { announceProactiveChange } from "../api/proactive";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, EarlierDraft, JobCard, JobOutcome, ModelCall, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 let _cardSeq = 0;
@@ -34,9 +34,13 @@ interface ArslanState {
   items: ArslanThreadItem[];
   streaming: boolean;
   streamingText: string;
+  /** K8a (2026-11-03): what this reply showed and then replaced (stream_restart frames), in order. */
+  streamingDrafts: EarlierDraft[];
   streamSource: "arslan" | null;
   error: string | null;
   errorTranslations: RuntimeErrorTranslations | null;
+  /** SMART-3: which call the error came from, when the server said (the banner names it and offers the way out). */
+  errorCall: ModelCall | null;
   lastMessageId: number;
   pending: boolean;
   // Live tool-loop steps for the in-flight turn, paired from
@@ -311,9 +315,11 @@ function initialData() {
     items: [] as ArslanThreadItem[],
     streaming: false,
     streamingText: "",
+    streamingDrafts: [] as EarlierDraft[],
     streamSource: null as "arslan" | null,
     error: null as string | null,
     errorTranslations: null as RuntimeErrorTranslations | null,
+    errorCall: null as ModelCall | null,
     lastMessageId: 0,
     pending: false,
     activitySteps: [] as ToolStep[],
@@ -420,7 +426,7 @@ function makeActions(set: SetState, get: GetState) {
       if (_shows(s, callId)) set({ ..._withoutCard(s, callId), ..._ranOut(s, callId) });
     },
     dismissCardExpired: () => set({ cardExpired: false, cardExpiredKind: null }),
-    clearError: () => set({ error: null, errorTranslations: null }),
+    clearError: () => set({ error: null, errorTranslations: null, errorCall: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
@@ -525,7 +531,7 @@ function makeActions(set: SetState, get: GetState) {
           if (state.streaming) _voiceStop();
           set({
             items, lastMessageId: lastId, activitySteps: [], activeRunId: null,
-            streaming: false, streamingText: "", thinking: false, workStartedAt: null, queued: false,
+            streaming: false, streamingText: "", streamingDrafts: [], thinking: false, workStartedAt: null, queued: false,
             inserted: false, streamSource: null,
           });
           _beginReplay(get, set);
@@ -574,7 +580,7 @@ function makeActions(set: SetState, get: GetState) {
           set({
             pending: false,
             streaming: true,
-            streamingText: "",
+            streamingText: "", streamingDrafts: [],
             // 0.1.58 §1: a turn the window did not start (a fire, a reconnect) still gets its length.
             workStartedAt: state.workStartedAt ?? Date.now(),
             // C1c-2: every live stream is Arslan's own; no expert streams to the chat any more.
@@ -590,6 +596,17 @@ function makeActions(set: SetState, get: GetState) {
           _voiceFeed(frame.content);
           set({ thinking: false, streamingText: state.streamingText + frame.content });
           break;
+        case "stream_restart": {
+          // K8a: a guard sent back a step's text that went out. The reply starts over from `keep` (earlier steps'
+          // text, which stays); the rest is kept as a collapsed earlier draft. The stored message is the same.
+          if (!state.streaming) break;
+          const keep = frame.keep ?? "";
+          const shown = state.streamingText;
+          const draft = (shown.startsWith(keep) ? shown.slice(keep.length) : shown).trim();
+          set({ streamingText: keep,
+                streamingDrafts: draft ? [...state.streamingDrafts, { label: frame.label, text: draft }] : state.streamingDrafts });
+          break;
+        }
         case "stream_end": {
           if (state.inserted) set({ inserted: false });     // K9b: the turn it was added to has ended
           if (!state.streaming) break;
@@ -604,7 +621,7 @@ function makeActions(set: SetState, get: GetState) {
             set({
               thinking: false,
               streaming: false,
-              streamingText: "",
+              streamingText: "", streamingDrafts: [],
               streamSource: null,
               activitySteps: [],
               activeRunId: null,
@@ -616,6 +633,7 @@ function makeActions(set: SetState, get: GetState) {
             kind: "message",
             role: "arslan",
             content: state.streamingText,
+            ...(state.streamingDrafts.length > 0 ? { drafts: state.streamingDrafts } : {}),
             runId: frame.temporary ? null : frame.run_id ?? state.activeRunId ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(state.workStartedAt ? { elapsedMs: Date.now() - state.workStartedAt } : {}),
@@ -649,7 +667,7 @@ function makeActions(set: SetState, get: GetState) {
             workStartedAt: null,
             items: shown ? state.items : [...state.items, item],
             streaming: false,
-            streamingText: "",
+            streamingText: "", streamingDrafts: [],
             streamSource: null,
             lastMessageId:
               frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
@@ -671,6 +689,7 @@ function makeActions(set: SetState, get: GetState) {
                 kind: "message",
                 role: "arslan",
                 content: state.streamingText,
+                ...(state.streamingDrafts.length > 0 ? { drafts: state.streamingDrafts } : {}),
                 toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
                 cancelled: true,
               }
@@ -679,7 +698,7 @@ function makeActions(set: SetState, get: GetState) {
             thinking: false,
             pending: false,
             streaming: false,
-            streamingText: "",
+            streamingText: "", streamingDrafts: [],
             streamSource: null,
             activitySteps: [],
             activeRunId: null,
@@ -878,9 +897,10 @@ function makeActions(set: SetState, get: GetState) {
           set({
             error: frame.message,
             errorTranslations: runtimeErrorTranslations(frame.message_i18n),
+            errorCall: frame.call ?? null,
             pending: false,
             streaming: false,
-            streamingText: "",
+            streamingText: "", streamingDrafts: [],
             streamSource: null,
             activitySteps: [],
             activeRunId: null,

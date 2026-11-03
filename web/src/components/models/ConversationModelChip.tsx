@@ -7,9 +7,25 @@ import type { ContextParts, ProviderConfig, ProviderOption } from "../../api/cli
 import { useDismissable } from "../../hooks/useDismissable";
 import { providerStatus, type ProviderStatus } from "../../lib/providerStatus";
 import ModelPicker, { type ModelChoice } from "./ModelPicker";
-import { useConversationModel } from "./useConversationModel";
+import { beginModelSave, useConversationModel } from "./useConversationModel";
 
 export { _resetChipCatalogs } from "./useConversationModel";
+
+/** PR 691's review: how long a save may take before the chip stops waiting (send is held meanwhile). */
+export const SAVE_TIMEOUT_MS = 15_000;
+
+/** The request, or a "timeout" error after SAVE_TIMEOUT_MS. When the timeout wins, `whenSettled` still runs once the
+ *  request does settle, since a save that lands late changes what the server has (PR 691's review). */
+export function withTimeout<T>(p: Promise<T>, whenSettled: (landed: boolean) => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      p.then(() => whenSettled(true), () => whenSettled(false));
+      reject(new Error("timeout"));
+    }, SAVE_TIMEOUT_MS);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
 
 const DOT: Record<ProviderStatus, string> = {
   ok: "bg-success", failed: "bg-danger", untested: "bg-subtle-foreground/50", testing: "bg-subtle-foreground/50 animate-pulse",
@@ -74,7 +90,9 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
   const [ringOpen, setRingOpen] = useState(false);
   const ringFloat = useDismissable<HTMLButtonElement, HTMLDivElement>(ringOpen, () => setRingOpen(false));
   const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(open, () => setOpen(false));
-  const { choice, setChoice, primary, current, lastInput, parts, pct: ringPct } = useConversationModel(conversationId, configs);
+  const { choice, setChoice, refresh, current, lastInput, parts, pct: ringPct } = useConversationModel(conversationId, configs);
+  // v0.1.64: a switch the server didn't store is never shown as made; the chip says why instead.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const label = (c: ProviderConfig) => llmProviders.find((p) => p.key === c.provider)?.label ?? c.label ?? c.provider;
 
   if (!current) {
@@ -88,26 +106,70 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
   const fmt = (n: number) => n.toLocaleString(i18n.resolvedLanguage || undefined);
   const health = providerStatus(cfg);
 
+  /** A save that timed out has settled after all: ask the server what it has, and if it landed, the timeout's
+   *  "couldn't switch" no longer holds (PR 691's review). */
+  const lateSettled = (landed: boolean) => {
+    if (landed) setSaveError(null);
+    refresh();
+  };
+  const failed = (e: unknown) => {
+    setSaveError(t("models.saveFailed", { reason: e instanceof Error ? e.message : String(e) }));
+    // A save with no answer may still have landed: show what the server has, not a guess.
+    if (e instanceof Error && e.message === "timeout") refresh();
+  };
+  /** A pick is stored for this conversation, the primary's own model included: the default is whatever the
+   *  server's routing resolves to, which may be another config (v0.1.64), so "same as primary" is no reason to
+   *  clear. Only "use the default" clears. */
+  async function save(next: ModelChoice) {
+    const r = await withTimeout(conversationModelApi.set(conversationId, next.configId, next.model), lateSettled);
+    setChoice({ configId: r.choice.config_id, model: r.choice.model }, r.effective);
+  }
   async function pick(next: ModelChoice) {
     setOpen(false);
-    if (primary && next.configId === primary.id && next.model === primary.model) {
-      await conversationModelApi.clear(conversationId).catch(() => {});
-      setChoice(null);
-    } else {
-      await conversationModelApi.set(conversationId, next.configId, next.model);
-      setChoice(next);
+    setSaveError(null);
+    const done = beginModelSave(conversationId);
+    try {
+      await save(next);
+    } catch (e) {
+      failed(e);
+    } finally {
+      done();
     }
   }
+  async function useDefault() {
+    setOpen(false);
+    setSaveError(null);
+    const done = beginModelSave(conversationId);
+    try {
+      const r = await withTimeout(conversationModelApi.clear(conversationId), lateSettled);
+      setChoice(null, r.effective);
+    } catch (e) {
+      failed(e);
+    } finally {
+      done();
+    }
+  }
+  /** "Set as default" on a model means "this one here, and as the default": the config becomes primary and this
+   *  conversation keeps the pick. Clearing it instead (as before PR 691's review) put it back on whatever routing
+   *  picks, which under a strategy can be another config. */
   async function makeDefault() {
     if (!current) return;
-    const target = configs.find((c) => c.id === current.configId);
-    if (target && target.model !== current.model) await updateProviderConfig(current.configId, { model: current.model });
-    await onSetDefault(current.configId);
-    await conversationModelApi.clear(conversationId).catch(() => {});
-    setChoice(null);
+    const pickNow = current;
+    setSaveError(null);
+    const done = beginModelSave(conversationId);
+    try {
+      const target = configs.find((c) => c.id === pickNow.configId);
+      if (target && target.model !== pickNow.model) await updateProviderConfig(pickNow.configId, { model: pickNow.model });
+      await onSetDefault(pickNow.configId);
+      await save(pickNow);
+    } catch (e) {
+      failed(e);
+    } finally {
+      done();
+    }
     setOpen(false);
   }
-  const isDefault = !choice || (primary && choice.configId === primary.id && choice.model === primary.model);
+  const isDefault = !choice;
 
   return (
     <span className="relative flex items-center gap-1.5">
@@ -118,6 +180,8 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[health.status]}`} data-testid="model-chip-dot" data-status={health.status} />
         <span className="truncate">{shortProvider(label(cfg))} · {current.model}</span><ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
       </button>
+      {saveError && <span role="alert" data-testid="model-chip-error" className="max-w-[260px] truncate text-[10px] text-danger" title={saveError}>
+        {saveError}</span>}
       {pct != null && rows.length === 0 && <span className="flex items-center gap-1 text-[10px] text-subtle-foreground" title={t("models.context", { pct })} data-testid="context-ring">
         <Ring pct={pct} />{pct}%</span>}
       {pct != null && rows.length > 0 && <span className="relative flex items-center">
@@ -143,7 +207,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
         <ModelPicker configs={configs} current={current} need="tools" onPick={(c) => void pick(c)} label={label} />
         <div className="mt-1 flex items-center gap-2 border-t border-border px-2 pt-2 text-[11.5px] text-muted-foreground">
           <span className="flex-1">{t("models.thisConvOnly")}</span>
-          {!isDefault && <button type="button" onClick={() => void pick({ configId: primary!.id, model: primary!.model })}
+          {!isDefault && <button type="button" onClick={() => void useDefault()}
             className="hover:text-foreground" data-testid="model-use-default">{t("models.useDefault")}</button>}
           <button type="button" onClick={() => void makeDefault()} data-testid="model-set-default"
             className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">{t("models.setDefault")}</button>

@@ -34,6 +34,8 @@ datas += [(os.path.join(ROOT, "server", "resources", "artifact_inspector.py"), "
 datas += [(os.path.join(ROOT, "server", "resources", "browser_reader.cjs"), "server/resources")]
 datas += [(os.path.join(ROOT, "server", "resources", "browser_reader_policy.cjs"), "server/resources")]
 datas += [(os.path.join(ROOT, "web", "src", "lib", "input_formats.json"), "server/resources")]
+# v0.1.64 SMART-8: a command card's plain purpose in six languages, the card's title (server/services/card_purpose.py).
+datas += [(os.path.join(ROOT, "web", "src", "locales", "card-purposes.json"), "server/resources")]
 # 0.1.53: Arslan Hands' never-list and app tiers — the helper compiles in the same file.
 datas += [(os.path.join(ROOT, "desktop", "hands", "policy.json"), "server/resources/hands")]
 # 0.1.55 (D2): the release notes, so Arslan can answer "what changed" from the app itself.

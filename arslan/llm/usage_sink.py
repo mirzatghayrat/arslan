@@ -39,6 +39,17 @@ def context_parts() -> dict[str, int] | None:
     return holder["value"] if holder else None
 
 
+# SMART-3 (v0.1.64): the model this collection last tried, so a run whose calls all failed (no usage reported) still
+# records which provider and model it was on.
+_attempt: ContextVar[dict | None] = ContextVar("usage_attempt", default=None)
+
+
+def note_attempt(*, model: str | None, provider: str | None) -> None:
+    holder = _attempt.get()
+    if holder is not None:
+        holder["value"] = (model, provider)
+
+
 _NO_PRICE_INFO = object()
 
 
@@ -150,8 +161,10 @@ def detail() -> dict:
     same-bucket real report could erase. All-None when no context/reports."""
     buckets = _detail.get()
     if not buckets:
+        holder = _attempt.get()
+        model, provider = (holder or {}).get("value") or (None, None)
         return {"tokens_in": None, "tokens_out": None, "cache_read": None, "input_total": None,
-                "model": None, "provider": None, "buckets": []}
+                "model": model, "provider": provider, "buckets": []}
     rows = [
         {"model": m, "provider": p,
          "tokens_in": b["tokens_in"], "tokens_out": b["tokens_out"],
@@ -185,6 +198,7 @@ def collecting():
     dtoken = _detail.set(detail_buckets)
     ltoken = _last_in.set({"value": None})
     ptoken = _parts.set({"value": None})
+    atoken = _attempt.set({"value": None})
     try:
         yield bucket
     finally:
@@ -192,3 +206,4 @@ def collecting():
         _detail.reset(dtoken)
         _last_in.reset(ltoken)
         _parts.reset(ptoken)
+        _attempt.reset(atoken)

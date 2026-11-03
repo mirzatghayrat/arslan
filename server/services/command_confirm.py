@@ -79,12 +79,16 @@ class Confirmations:
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
+        from server.services import card_purpose
         risk = effective_risk(remote_host, command, argv)
         shell = terminal_policy.as_shell(command, argv)
         verdict = terminal_policy.assess(shell)
-        net = " It will use the network, this time." if network else ""
+        # SMART-8: every card's title is its plain purpose in the user's language (the iPhone's heading).
+        lang = await card_purpose.language()
+        rules = sorted(terminal_policy.ask_rules(shell))
+        net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
-        deletes = delete_to_trash.card_note(delete)
+        deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
         if deletes:
             net = f" {deletes}{net}"
         if sandbox in ("outside", "retry"):
@@ -94,7 +98,9 @@ class Confirmations:
             # it at all. Always a card: the tool loop reads the stored grant itself, and writes its row when
             # the command runs (`permissions._ALWAYS_ASKS`).
             request = permissions.Request(
-                kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
+                kind="outside", target="*", title=card_purpose.phrase(shell, why, rules, lang=lang, outside=True,
+                                                                      network=network),
+                model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
                 why=why, frame={**protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv,
                     reason=_with_delete(verdict.reason if verdict.level == "ask" else "", deletes),
@@ -104,7 +110,9 @@ class Confirmations:
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
             # time only (`permissions._ONCE_ONLY`): nothing is remembered.
             request = permissions.Request(
-                kind="remote", target=remote_target(host or remote_host), title=f"Run `{shell[:80]}` on {remote_host}?",
+                kind="remote", target=remote_target(host or remote_host),
+                title=card_purpose.phrase(shell, why, rules, lang=lang, host=remote_host),
+                model_title=f"Run `{shell[:80]}` on {remote_host}?",
                 detail=shell,
                 frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
@@ -116,16 +124,15 @@ class Confirmations:
                 return (await permissions.decide(request, self._context())).allowed
         async with db_session.AsyncSessionLocal() as db:
             ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
-        rules = sorted(terminal_policy.ask_rules(shell))
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=_with_delete(verdict.reason or f"risk: {risk}", deletes),
             rule=verdict.rule or None, network=network)
         frame.update(_delete_keys(delete, shell))
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                             unsandboxed=unsandboxed)
-        if deletes:
-            request = dataclasses.replace(request, title=f"{request.title} {deletes}")
+                                             unsandboxed=unsandboxed, lang=lang, why=why)
+        if deletes:     # the model's English text; the card itself words `delete_mode` (⑤CAP's shared card)
+            request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
         with self._surface():
             decision = await permissions.decide(request, self._context())
         return decision.allowed
@@ -139,7 +146,7 @@ def _with_delete(reason: str, deletes: str) -> str:
 def _delete_keys(mode: str, shell: str) -> dict:
     """SMART-8: the delete card's mode and targets for the Mac card (⑤CAP's shared component), on the Mac's WS
     frame only. The Bridge's FrameMapper reads named keys (title, perm_kind, expires_at…), so neither reaches the
-    phone, whose heading is the English `title` (⓪Plan, 2026-11-02). `delete_targets` are as written; [] when
+    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written; [] when
     the delete can't be read, and the card then reads rm's plain arguments itself."""
     if not mode:
         return {}

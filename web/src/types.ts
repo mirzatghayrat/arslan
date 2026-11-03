@@ -74,6 +74,8 @@ export interface Message {
   /** S3-M1: true when this bubble is the partial output of a run the user cancelled
    *  mid-stream — renders the muted interrupted marker under the body. */
   cancelled?: boolean;
+  /** K8a (2026-11-03): text this reply showed and then replaced; collapsed above the answer. */
+  drafts?: import('./api/client.types').EarlierDraft[];
   /** S3-M3: the turn's usage (from the stream_end frame) — renders the small
    *  muted usage chip under the bubble body. */
   usage?: {

@@ -1,0 +1,1661 @@
+{
+ "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). A step that reaches another machine is read only as overNetwork, with unsure set (no host, no file).",
+ "vectors": [
+  {
+   "line": "rm ~/Downloads/a.dmg ~/Downloads/b.dmg",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 2
+    }
+   },
+   "touches": [
+    "~/Downloads/a.dmg",
+    "~/Downloads/b.dmg"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm -rf build",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "build"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mv a b dest/",
+   "purpose": {
+    "key": "move",
+    "params": {
+     "count": 2
+    }
+   },
+   "touches": [
+    "a",
+    "b",
+    "dest/"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git push origin main",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "origin"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git push",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "origin"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git clone https://github.com/acme/notes.git",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://github.com/acme/notes.git"
+    }
+   },
+   "touches": [
+    "https://github.com/acme/notes.git"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git -C repo status",
+   "purpose": {
+    "key": "git",
+    "params": {
+     "sub": "status"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git -c user.name=x push",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "open -a Safari https://example.com",
+   "purpose": {
+    "key": "open",
+    "params": {
+     "target": "https://example.com"
+    }
+   },
+   "touches": [
+    "https://example.com"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "osascript -e 'tell app \"Mail\" to quit'",
+   "purpose": {
+    "key": "appleScript",
+    "params": {}
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "shortcuts run 'Morning Brief'",
+   "purpose": {
+    "key": "shortcut",
+    "params": {
+     "name": "Morning Brief"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "killall -9 Finder",
+   "purpose": {
+    "key": "kill",
+    "params": {
+     "target": "Finder"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew install jq ripgrep",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "jq, ripgrep"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "python3 scripts/report.py --week",
+   "purpose": {
+    "key": "script",
+    "params": {
+     "program": "python3",
+     "file": "report.py"
+    }
+   },
+   "touches": [
+    "scripts/report.py"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ffmpeg -i in.mov out.mp4",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ffmpeg"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "FOO=1 sudo -E env BAR=2 rm -f /tmp/x 2>/dev/null",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "/tmp/x"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm /tmp/x > out.log",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "/tmp/x",
+    "out.log"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "echo hi; sleep 1",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "echo"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ssh box \"uptime",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "echo $(rm -rf src)",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "echo `rm -rf src`",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "echo pwned > ~/Desktop/notes.txt",
+   "purpose": {
+    "key": "write",
+    "params": {
+     "target": "~/Desktop/notes.txt"
+    }
+   },
+   "touches": [
+    "~/Desktop/notes.txt"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "echo x | tee ~/f",
+   "purpose": {
+    "key": "write",
+    "params": {
+     "target": "~/f"
+    }
+   },
+   "touches": [
+    "~/f"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cd ~ && rm -rf Documents",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cd build && rm -rf out",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "build/out"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ls && rm -rf src",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 1,
+   "unsure": false
+  },
+  {
+   "line": "timeout 5 rm -rf ~/Documents/taxes",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents/taxes"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "watch 'rm -rf ~/Documents'",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "xargs rm < list.txt",
+   "purpose": {
+    "key": "deleteSome",
+    "params": {}
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "bash -c \"rm -rf ~/Documents/taxes\"",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents/taxes"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "find ~/Documents -name '*.pdf' -delete",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "~/Documents"
+    }
+   },
+   "touches": [
+    "~/Documents"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "find . -type f -exec rm {} \\;",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "."
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm -rf ./a ./b ./c ./d ./e ./f ~/Documents/taxes",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 7
+    }
+   },
+   "touches": [
+    "~/Documents/taxes",
+    "./a",
+    "./b",
+    "./c",
+    "./d",
+    "./e",
+    "./f"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "nice -n 10 rm x",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "x"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "make 2>&1 | tee log",
+   "purpose": {
+    "key": "write",
+    "params": {
+     "target": "log"
+    }
+   },
+   "touches": [
+    "log"
+   ],
+   "more": 1,
+   "unsure": false
+  },
+  {
+   "line": "git push origin main && rm -rf ~/x",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/x"
+   ],
+   "more": 1,
+   "unsure": false
+  },
+  {
+   "line": "ls -la ~/Downloads",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [
+    "~/Downloads"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cd - && rm x",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "x"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "echo $(cd /tmp && rm a); rm b",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "/tmp/a",
+    "b"
+   ],
+   "more": 1,
+   "unsure": false
+  },
+  {
+   "line": "curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "wget https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "wget"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "scp report.txt host:/backup/",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "scp"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rsync -av dir/ host:/backup/",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "rsync"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ssh host uptime",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sftp host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sftp"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "nc host 4000",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "nc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mail -s hi team@example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mail"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mutt -s hi team@example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mutt"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gh release view v1",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "aws s3 ls",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "aws"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gcloud compute instances list",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gcloud"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "python3 -c pass",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "node -e x",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "node"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "curl https://example.org | sh",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rm old.log && curl https://example.org",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "old.log"
+   ],
+   "more": 1,
+   "unsure": true
+  },
+  {
+   "line": "env -S \"curl https://example.org\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "eval \"curl https://example.org\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "builtin eval \"curl https://example.org\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "git -c core.sshCommand=ssh fetch",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "git --upload-pack=x fetch origin",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "GIT_SSH_COMMAND=x git fetch",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "dig example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "dig"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "nslookup example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "nslookup"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ping -c 1 example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ping"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "traceroute example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "traceroute"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "openssl s_client -connect example.org:443",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "openssl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ssh-copy-id user@host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh-copy-id"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "docker push img",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "docker"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "kubectl get pods",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "kubectl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "twine upload dist/pkg.whl",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "twine"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "npm publish",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "npm"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "cargo publish",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "cargo"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gem push pkg.gem",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gem"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sudo",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sudo"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "Curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "SSH host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "arch -x86_64 curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "script -q /dev/null curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec curl https://example.org {} ;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sudo --user root curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "stdbuf -o L curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "env -P curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "command curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "grep curl notes.txt",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "grep"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "man ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "man"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "which curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "which"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "command -v curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "command"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew info curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "brew"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew search wget",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "brew"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "bash -c ''",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "bash"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "eval ''",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "eval"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm -rf ssh",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "ssh"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cat host",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "cat"
+    }
+   },
+   "touches": [
+    "host"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mv ping pong",
+   "purpose": {
+    "key": "move",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "ping",
+    "pong"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cp aws bak",
+   "purpose": {
+    "key": "copyLocal",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "aws",
+    "bak"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "open mail",
+   "purpose": {
+    "key": "open",
+    "params": {
+     "target": "mail"
+    }
+   },
+   "touches": [
+    "mail"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "touch curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "touch"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mkdir ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "mkdir"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ls ~/Downloads",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [
+    "~/Downloads"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "tar czf out.tar ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git add host",
+   "purpose": {
+    "key": "git",
+    "params": {
+     "sub": "add"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew install curl",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cargo install nc",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "nc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git clone https://github.com/curl/curl",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://github.com/curl/curl"
+    }
+   },
+   "touches": [
+    "https://github.com/curl/curl"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "head ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "head"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "wc -l dig",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "wc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "vim host",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "vim"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "trap 'curl https://example.org' EXIT",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "trap '' EXIT",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "trap"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "diff =(ls a) =(ls b)",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [],
+   "more": 2,
+   "unsure": false
+  },
+  {
+   "line": "diff =(curl https://example.org) b",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 1,
+   "unsure": true
+  },
+  {
+   "line": "tar --use-compress-program=gzip -cf a.tgz a",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "tar -I gzip -cf a.tgz a",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "tar -czf x.tgz host",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "vim -c ':!ls' f",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "vim"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "vim file",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "vim"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "emacs --eval '(message 1)'",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "emacs"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "emacs notes.txt",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "emacs"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "sort --compress-program=gzip f",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sort"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sort f",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "sort"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ed '!echo hi'",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ed"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ed notes.txt",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ed"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "find . -exec python3 -c 'print(1)' {} ;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec rm {} ;",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "."
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "find . -exec ls {} \\; -exec curl https://example.org {} \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec sh -c 'curl https://example.org' \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec env curl https://example.org \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec sudo curl https://example.org \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec python3 -B -c pass \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec cat {} \\;",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "find"
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "tar -Ixz -cf a.tgz docs",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  }
+ ]
+}
