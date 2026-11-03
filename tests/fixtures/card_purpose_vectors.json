@@ -1156,6 +1156,262 @@
    "touches": [],
    "more": 0,
    "unsure": false
+  },
+  {
+   "line": "rm -rf ssh",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "ssh"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cat host",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "cat"
+    }
+   },
+   "touches": [
+    "host"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mv ping pong",
+   "purpose": {
+    "key": "move",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "ping",
+    "pong"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cp aws bak",
+   "purpose": {
+    "key": "copyLocal",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "aws",
+    "bak"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "open mail",
+   "purpose": {
+    "key": "open",
+    "params": {
+     "target": "mail"
+    }
+   },
+   "touches": [
+    "mail"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "touch curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "touch"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mkdir ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "mkdir"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ls ~/Downloads",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [
+    "~/Downloads"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "tar czf out.tar ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git add host",
+   "purpose": {
+    "key": "git",
+    "params": {
+     "sub": "add"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew install curl",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "cargo install nc",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "nc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git clone https://github.com/curl/curl",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://github.com/curl/curl"
+    }
+   },
+   "touches": [
+    "https://github.com/curl/curl"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "head ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "head"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "wc -l dig",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "wc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "vim host",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "vim"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "trap 'curl https://example.org' EXIT",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "trap '' EXIT",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "trap"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "diff =(ls a) =(ls b)",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [],
+   "more": 2,
+   "unsure": false
+  },
+  {
+   "line": "diff =(curl https://example.org) b",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 1,
+   "unsure": true
   }
  ]
 }

@@ -115,7 +115,8 @@ def _parse(text: str) -> list[dict] | None:
         ch = text[i]
         nxt = text[i + 1] if i + 1 < len(text) else ""
         if quote != "'":
-            opens = nxt == "(" and text[i + 2:i + 3] != "(" and (ch == "$" or (not quote and ch in "<>"))
+            opens = nxt == "(" and text[i + 2:i + 3] != "(" and (
+                ch == "$" or (not quote and (ch in "<>" or (ch == "=" and not in_token))))
             if opens or ch == "`":
                 end = text.find("`", i + 1) if ch == "`" else _closing(text, i + 1)
                 if end < 0:
@@ -268,6 +269,8 @@ def _inline_line(w: dict) -> str | None:
         return " ".join(args) if args else None
     if w["program"] == "eval":
         return " ".join(w["args"]) if w["args"] else None
+    if w["program"] == "trap" and w["args"] and w["args"][0] != "-":
+        return w["args"][0]
     if w["program"] == "env":
         at = next((k for k, a in enumerate(w["args"]) if a in ("-S", "--split-string")), -1)
         if at >= 0:
@@ -335,13 +338,20 @@ def _names_only(w: dict) -> bool:
     return False
 
 
+#: Common commands whose operands are files or data, never programs — their reading is kept, not scanned (Astra r2).
+_BENIGN_LOCAL = {"ls", "touch", "chmod", "chown", "chgrp", "mkdir", "ln", "tar", "stat", "file", "head", "tail", "wc",
+                 "sort", "uniq", "cut", "du", "basename", "dirname", "realpath", "readlink", "cmp", "diff", "nl", "tac",
+                 "rev", "vim", "vi", "nano", "emacs", "code", "subl", "pico", "ed", "vimdiff", "mate"}
+
+
 def _buried_network(w: dict) -> str | None:
     """The network program a step runs, wherever it sits (a wrapper option not modeled, `find -exec`, a compound);
-    each token is matched by its basename, lower-cased, so `Curl` is caught too (Astra r2, F1/F2/F3)."""
-    if _names_only(w):
-        return None
+    each token is matched by its basename, lower-cased, so `Curl` is caught too (Astra r2, F1/F2). A path or URL
+    operand is not a program."""
     toks = [w["program"], *w["args"]]
     for i, tok in enumerate(toks):
+        if i > 0 and ("/" in tok or _URL_LIKE.match(tok)):
+            continue
         name = _base(tok).lower()
         if name in _NETWORK:
             return name
@@ -357,9 +367,10 @@ def _step(w: dict) -> dict:
     plain = _plain(args)
     if not program:
         return _over_network(w.get("raw") or "command")                   # a wrapper took everything (Astra r2, 1)
-    buried = _buried_network(w)
-    if buried:
-        return _over_network(buried)                                       # a network program anywhere in the step
+    if program in _NETWORK:
+        return _over_network(program)                                      # the program itself reaches the network
+    if program in _INLINE_CODE and any(re.match(_INLINE_CODE[program], a) for a in args):
+        return _over_network(program)
     if program == "cat":
         return _reading("run", {"program": program}, [], plain)
     if program in _DELETERS:
@@ -370,6 +381,8 @@ def _step(w: dict) -> dict:
         end = next((k for k, a in enumerate(args) if re.match(r"^[-(!)]", a)), -1)
         roots = args if end < 0 else args[:end]
         exe = next((k for k, a in enumerate(args) if re.match(r"^-(?:exec|execdir|ok|okdir)$", a)), -1)
+        if exe >= 0 and _base(args[exe + 1] if exe + 1 < len(args) else "").lower() in _NETWORK:
+            return _over_network(_base(args[exe + 1]).lower())             # find runs a network program (Astra r2, F2)
         if "-delete" in args or (exe >= 0 and _base(args[exe + 1] if exe + 1 < len(args) else "") in _DELETERS):
             return _reading("findDelete", {"where": ", ".join(roots) or "."}, [], roots)
         return _reading("run", {"program": program}, [], roots)
@@ -416,7 +429,12 @@ def _step(w: dict) -> dict:
     if (program in _SCRIPT_RUNNERS and sub and not any(a in ("-c", "-e", "-m") for a in args)
             and not re.match(r"^(?:[<>$]\(|`)", sub)):
         return _reading("script", {"program": program, "file": _base(sub)}, [], [sub])
-    # #688 review 6i: an unknown program's operands that look like paths are what it touches.
+    # Astra r2: scan only an unknown program — a launcher, a compound, a function body, a keyword — for a network
+    # program it runs. A names-only step and the file-reading commands in _BENIGN_LOCAL keep their reading.
+    if not _names_only(w) and program not in _BENIGN_LOCAL:
+        buried = _buried_network(w)
+        if buried:
+            return _over_network(buried)
     return _reading("run", {"program": program}, [], [a for a in plain if _PATH_LIKE.match(a)])
 
 

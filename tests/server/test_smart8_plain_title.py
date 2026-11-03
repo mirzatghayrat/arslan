@@ -404,3 +404,28 @@ def test_a_step_that_only_names_things_stays_plain(line):
 def test_an_empty_inline_line_keeps_the_wrapper_node():
     assert card_purpose.summarize("bash -c ''")["purpose"] == {"key": "run", "params": {"program": "bash"}}
     assert card_purpose.summarize("eval ''")["purpose"] == {"key": "run", "params": {"program": "eval"}}
+
+
+# ── Astra round 2 delta: a recognized local command keeps its reading; trap / zsh =() ──
+
+@pytest.mark.parametrize("line, key", [
+    ("rm -rf ssh", "delete"), ("cat host", "run"), ("mv ping pong", "move"), ("cp aws bak", "copyLocal"),
+    ("open mail", "open"), ("git add host", "git"), ("touch curl", "run"), ("mkdir ssh", "run"), ("ls ~/curl", "run"),
+    ("tar czf out.tar ssh", "run"), ("brew install curl", "install"), ("cargo install nc", "install"),
+    ("head ssh", "run"), ("vim host", "run"), ("git clone https://github.com/curl/curl", "gitClone")])
+def test_a_recognized_local_command_keeps_its_reading(line, key):
+    s = card_purpose.summarize(line)
+    assert s["purpose"]["key"] == key and s["unsure"] is False
+
+
+@pytest.mark.parametrize("line", ["arch -x86_64 curl https://e.example", "find . -exec curl https://e.example {} ;",
+                                  "{ curl https://e.example; }", "sudo --user root curl https://e.example"])
+def test_a_buried_network_program_is_still_caught(line):
+    assert card_purpose.summarize(line)["purpose"]["key"] == "overNetwork"
+
+
+def test_trap_reads_its_handler_and_zsh_process_substitution():
+    assert card_purpose.summarize("trap 'curl https://e.example' EXIT")["purpose"]["key"] == "overNetwork"
+    assert card_purpose.summarize("trap '' EXIT")["purpose"] == {"key": "run", "params": {"program": "trap"}}
+    assert card_purpose.summarize("diff =(curl https://e.example) b")["purpose"]["key"] == "overNetwork"
+    assert card_purpose.summarize("diff =(ls a) =(ls b)")["unsure"] is False
