@@ -9,7 +9,6 @@ resolved to absolute paths, and a missing command failing with an actionable
 message instead of a bare Errno 2.
 """
 import os
-import subprocess
 
 import pytest
 
@@ -26,26 +25,39 @@ def _fresh_cache():
     cached.cache_clear()
 
 
+class _FakeShell:
+    """Stands in for the interactive login shell: echoes the marker line the script asks for."""
+    calls: list = []
+
+    def __init__(self, argv, **kwargs):
+        _FakeShell.calls.append(argv)
+        self.argv, self.pid = argv, 0
+        script = argv[-1]
+        start = script.split('"', 2)[1].split("%s")[0].replace("\\n", "")
+        end = script.split('"', 2)[1].split("%s")[1].replace("\\n", "")
+        self.out = f"banner from rc\n{start}/opt/homebrew/bin:/usr/bin{end}\n"
+
+    def communicate(self, timeout=None):
+        return self.out, ""
+
+
 def test_login_shell_path_is_fetched_once_then_cached(monkeypatch):
-    calls = []
-
-    def fake_run(argv, **kwargs):
-        calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, stdout="/opt/homebrew/bin:/usr/bin", stderr="")
-
-    monkeypatch.setattr(spawn_env.subprocess, "run", fake_run)
+    _FakeShell.calls = []
+    monkeypatch.setattr(spawn_env.subprocess, "Popen", _FakeShell)
     monkeypatch.setenv("SHELL", "/bin/zsh")
     assert spawn_env.login_shell_path() == "/opt/homebrew/bin:/usr/bin"
     assert spawn_env.login_shell_path() == "/opt/homebrew/bin:/usr/bin"
+    calls = _FakeShell.calls
     assert len(calls) == 1                       # cached — one shell spawn per process
-    assert calls[0][0] == "/bin/zsh" and "-l" in calls[0]   # the LOGIN shell, not a bare subshell
+    # SMART-1: an INTERACTIVE login shell, so zsh reads ~/.zshrc too (the real-shell tests are test_smart1_*).
+    assert calls[0][0] == "/bin/zsh" and "-l" in calls[0] and "-i" in calls[0]
 
 
 def test_login_shell_failure_yields_empty_not_raise(monkeypatch):
     def boom(argv, **kwargs):
-        raise subprocess.TimeoutExpired(argv, 5)
+        raise OSError("no such shell")
 
-    monkeypatch.setattr(spawn_env.subprocess, "run", boom)
+    monkeypatch.setattr(spawn_env.subprocess, "Popen", boom)
     assert spawn_env.login_shell_path() == ""
 
 

@@ -744,7 +744,7 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } & CardV2Fields)
+  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; rule?: string; rules?: string[]; unreadable?: string; network?: boolean; unsandboxed?: boolean } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
