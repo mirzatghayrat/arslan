@@ -128,8 +128,11 @@ _CLAIMS_CHART_RE = re.compile(
     r"上图|已生成图|已为您生成|已绘制|图表已|chart (is )?(generated|ready|done)|here('s| is) (the|your) chart",
     re.IGNORECASE)
 _CLAIMS_SEARCH_RE = re.compile(
-    # K8a: 没查到 / 未查到 says nothing was found, not that a search ran.
-    r"我搜索|搜索了|(?<![没未])查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
+    # K8a: 「没查到」 / 「未查到」 says nothing was found, not that a search ran. K8a follow-up (2026-11-03): 「查到」
+    # alone claims no web search either (memory, a command or a file finds things too; "say how it was found",
+    # 「说明是怎么查到的」, sent run 492 back three times), and "no search was needed" (「不需要搜索了」) is no claim.
+    r"我搜索|(?<![没未不])(?<!不用|无需|不必|需要|没有)搜索了|获取到(了|的)?数据|我已搜|i (just )?searched|let me search"  # lang-check: allow
+    r"|i looked it up",
     re.IGNORECASE)
 
 
@@ -2638,11 +2641,24 @@ def _shown(turn_text: "_TurnText | None") -> str | None:
     return turn_text.text if turn_text is not None and turn_text.parts else None
 
 
+#: The reply languages (arslan.reply_language) that have a runtime_messages table.
+_LABEL_LOCALES = {"English": "en", "Chinese": "zh", "Japanese": "ja", "Spanish": "es", "German": "de", "French": "fr"}
+
+
+def _label_locale(text: str) -> str | None:
+    """The locale of the language `text` is written in, or None when it can't be told or has no table."""
+    from server.orchestrator.arslan import reply_language
+    return _LABEL_LOCALES.get(reply_language(text))
+
+
 async def _correct(turn_text: "_TurnText | None", shown: bool) -> None:
-    """K8a: once a step's text went out, a guard that sends it back says so to the user first."""
-    if shown and turn_text is not None:
+    """K8a: once a step's text went out, a guard that sends it back replaces it. Until 2026-11-03 a correction line
+    and the new text followed it, so one message could hold the same answer four times (user report via ①iOS). The
+    label is in the language of the text it replaces (the interface language only when that can't be told)."""
+    if shown and turn_text is not None and turn_text.parts:
         from server.services import runtime_messages
-        turn_text.append(runtime_messages.render("stream_correction", await runtime_messages.selected_locale()))
+        locale = _label_locale(turn_text.text) or await runtime_messages.selected_locale()
+        turn_text.restart(runtime_messages.render("stream_correction", locale))
 
 
 async def _not_verified(turn_text: "_TurnText", links: list[str]) -> None:
@@ -2660,12 +2676,19 @@ class TextShown(Exception):
 
 
 class _TurnText:
-    """K8a: everything this turn showed through on_chunk, corrections included: the stored answer is this
-    (every joiner, the window, the phone's Bridge and the run record, concatenates the chunks)."""
+    """K8a: what this turn showed through on_chunk since its last restart: the stored answer is this. Every joiner
+    (the window, the phone's Bridge, the run record, a window that reattaches) concatenates the chunks and starts
+    over at a `stream_restart` frame, which carries the label the window shows on what it replaced."""
 
-    def __init__(self, on_chunk: Callable[[str], None]):
-        self.on_chunk, self.parts = on_chunk, []
+    def __init__(self, on_chunk: Callable[[str], None], on_restart: Callable[[str], None] | None = None):
+        self.on_chunk, self.on_restart, self.parts = on_chunk, on_restart, []
         self.listed: set[str] = set()       # links already said to be unverified
+
+    def restart(self, label: str) -> None:
+        """What went out is replaced by what follows (the window keeps it as a collapsed earlier draft)."""
+        if self.on_restart is not None:
+            self.on_restart(label)
+        self.parts, self.listed = [], set()
 
     def show(self, text: str) -> None:
         if text:
@@ -3055,7 +3078,8 @@ async def _run_native(
     turn_started = agent_status.now()
     ws_root, own_folder = await _status_workspace(wired_keys)
     # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
-    turn_text = _TurnText(on_chunk) if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None
+    turn_text = (_TurnText(on_chunk, lambda label: emit({"type": "stream_restart", "label": label}))
+                 if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None)
     if _facts is not None:
         _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
     unseen_start = len(convo)

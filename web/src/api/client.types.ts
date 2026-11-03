@@ -624,6 +624,12 @@ export interface AuthoredSkillCard {
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
+/** K8a: text a reply showed and then replaced, with the server's label for it. */
+export interface EarlierDraft {
+  label: string;
+  text: string;
+}
+
 export interface ArslanThreadItem {
   id: number;
   kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
@@ -654,6 +660,9 @@ export interface ArslanThreadItem {
   lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
   toolSteps?: ToolStep[]; // replies: folded tool activity
+  /** K8a (2026-11-03): text this reply showed and then replaced (stream_restart), in order. Live only: the
+   *  stored message is the final answer. */
+  drafts?: EarlierDraft[];
   /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
    *  🔒 Populated ONLY from the backend frame, NEVER from LLM message text. */
   artifactHtml?: HtmlArtifact;
@@ -713,6 +722,9 @@ export type ArslanServerMessage =
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
+  // K8a (2026-11-03): a guard sent back text that already went out; what follows replaces it. `label` is the
+  // server's, in the language of the text it replaces; the window keeps that text as a collapsed earlier draft.
+  | { type: "stream_restart"; label: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
   | { type: "run_cancelled"; run_id: number; message_id?: number }

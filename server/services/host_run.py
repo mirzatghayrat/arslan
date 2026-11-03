@@ -54,6 +54,8 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
             return  # The lifecycle emits the preamble before context retrieval begins.
         if event.get("type") == "stream_chunk":
             chunks.append(event.get("content") or "")
+        if event.get("type") == "stream_restart":
+            chunks.clear()          # K8a: what went out was replaced by what follows
         if event.get("type") == "stream_end":
             summary_id = event.get("message_id")
         if event.get("type") == "error":

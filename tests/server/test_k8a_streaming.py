@@ -6,8 +6,10 @@ reaches the loop through C1's hook exactly as in production.
   before; a tool call inside the window makes it narration (a note). Past the window it goes out as it
   arrives, minus the tail that could still open a tool call written as text (never shown) or a host
   bookkeeping block (dropped).
-- Past the window, a guard appends a correction and the next step's text follows it.
-- The stored answer is exactly the joined chunks (the window, the phone and the run record join them).
+- Past the window, a guard replaces what went out: a `stream_restart` frame, then the next step's text
+  (test_k8a_one_answer; until 2026-11-03 a correction line was appended and the new text followed it).
+- The stored answer is exactly the joined chunks after the last restart (the window, the phone and the run
+  record join them).
 - Once text went out, a failed request is never resent: the turn ends with "interrupted", recorded as a
   failure. Before that, retries are as before. A cut answer is continued, never resent.
 - An answer that keeps claiming what no tool did is sent back at most twice (⓪Plan Q4).
@@ -146,13 +148,13 @@ async def test_a_short_promise_is_sent_back_with_nothing_shown(turn):
     assert "".join(chunks).strip() == PROSE.strip() == result["final"].strip() and len(bodies) == 2
 
 
-async def test_past_the_window_a_claim_is_corrected_after_it(turn):
+async def test_past_the_window_a_claim_is_replaced_by_what_follows(turn):
     claim = "I searched the web and found it. " + PROSE
-    result, chunks, _, bodies = await turn([_reply(claim), _reply(PROSE)], tools=("web_search",))
+    result, chunks, events, bodies = await turn([_reply(claim), _reply(PROSE)], tools=("web_search",))
     joined = "".join(chunks)
-    assert joined == result["final"]
-    assert joined.startswith(claim.rstrip()[:100]) and f"\n\n{CORRECTION}\n\n" in joined
-    assert joined.rstrip().endswith(PROSE.rstrip()[-60:])
+    assert joined.startswith(claim.rstrip()[:100])                      # it went out
+    assert [e for e in events if e["type"] == "stream_restart"] == [{"type": "stream_restart", "label": CORRECTION}]
+    assert result["final"].strip() == PROSE.strip() and joined.endswith(result["final"])
     assert "lacks a successful web_search receipt" in json.dumps(bodies[1]["messages"])
 
 
@@ -163,10 +165,10 @@ async def test_past_the_window_a_claim_is_corrected_after_it(turn):
     '{"query": "' + "a long query " * 20 + '", "tool": "web_search"}'])      # longer than the tail kept back
 async def test_a_tool_call_written_as_text_never_goes_out_one_char_at_a_time(turn, marker):
     text = PROSE + marker + " and some words after it."
-    result, chunks, _, _ = await turn([_reply(text, size=1), _reply(PROSE)], tools=("web_search",))
+    result, chunks, events, _ = await turn([_reply(text, size=1), _reply(PROSE)], tools=("web_search",))
     joined = "".join(chunks)
-    assert not tool_loop._embeds_protocol(joined) and joined == result["final"]
-    assert joined.startswith(PROSE[:100]) and CORRECTION in joined
+    assert not tool_loop._embeds_protocol(joined) and joined.startswith(PROSE[:100])
+    assert any(e["type"] == "stream_restart" for e in events) and result["final"].strip() == PROSE.strip()
 
 
 async def test_host_bookkeeping_is_dropped_from_what_goes_out(turn):
@@ -323,7 +325,7 @@ async def test_answers_only_when_complete_is_the_old_path(turn, monkeypatch):
 
 def test_nothing_found_is_not_a_search_claim():
     assert not tool_loop._claims_search("没查到相关结果") and not tool_loop._claims_search("未查到")
-    assert tool_loop._claims_search("查到了三条")
+    assert not tool_loop._claims_search("查到了三条")        # 2026-11-03: 「查到」 claims no web search (test_k8a_one_answer)
 
 
 async def test_text_that_went_out_before_a_choice_card_is_kept(maker, monkeypatch):  # noqa: F811

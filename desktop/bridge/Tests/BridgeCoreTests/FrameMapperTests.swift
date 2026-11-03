@@ -21,6 +21,19 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertTrue(Wire.shouldNotify(type: out[0].type, body: out[0].body))
     }
 
+    func testAReplacedAnswerReachesThePhoneAsTheFinalAnswerAlone() {
+        // K8a (2026-11-03): one message showed the same answer four times; a replaced answer is dropped.
+        let m = FrameMapper(conversationID: "c1")
+        m.partials = true
+        _ = m.phoneMessages(for: ["type": "stream_start"], now: t0)
+        _ = m.phoneMessages(for: ["type": "stream_chunk", "content": "First draft"], now: t0)
+        XCTAssertTrue(m.phoneMessages(for: ["type": "stream_restart", "label": "Earlier draft, replaced"], now: t0).isEmpty)
+        let partial = m.phoneMessages(for: ["type": "stream_chunk", "content": "The answer"], now: t0.addingTimeInterval(5))
+        XCTAssertEqual(partial.first?.body["text"] as? String, "The answer", "a partial carries only what follows")
+        let out = m.phoneMessages(for: ["type": "stream_end", "message_id": 7], now: t0.addingTimeInterval(6))
+        XCTAssertEqual(out.first?.body["text"] as? String, "The answer")
+    }
+
     func testCardsShowOneOfThePhonesSixRisks() {
         func risk(_ frame: [String: Any]) -> String? {
             FrameMapper(conversationID: "c").phoneMessages(for: frame.merging(["call_id": "k"]) { a, _ in a }).first?.body["risk"] as? String

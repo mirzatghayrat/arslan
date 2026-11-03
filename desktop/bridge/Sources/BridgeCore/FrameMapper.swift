@@ -78,6 +78,11 @@ public final class FrameMapper {
                 return []
             }
             return partial(now: now)
+        case "stream_restart":
+            // K8a (2026-11-03): a check sent back the answer the Mac had shown; what follows replaces it. The phone
+            // gets only that answer: the next partial and the final message carry the reply from here.
+            reply = ""
+            return []
         case "stream_end":
             endTurn()
             // The stored message's id, so the phone can merge this answer with `chat.history`.
