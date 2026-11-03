@@ -14,12 +14,14 @@ from arslan.llm.prices import PRICES
 # v0.1.64 ROUTE1 change 6: for the providers prices.py prices, the seed is the newest priced model of each
 # family, read from PRICES (families in PRICES order), so there is no second hand-kept list where prices.py has
 # data. Providers prices.py leaves unpriced by design (K4a: no official-page price, no row) keep a hand-kept seed.
-# An id these patterns don't read (e.g. DeepSeek's legacy "deepseek-flash" prefix) is not a seed model.
+# A Claude minor is one or two digits and an eight-digit date is a snapshot, not a version (as
+# providers/anthropic_provider.py reads Claude ids). The only row these patterns skip is DeepSeek's legacy
+# "deepseek-flash" billing prefix; tests/llm/test_catalog_seed_from_prices.py fails on any other unread row.
 _PRICED_ID = {
-    "anthropic": re.compile(r"claude-(?P<family>[a-z]+)-(?P<version>\d+(?:-\d+)?)"),
-    "openai": re.compile(r"gpt-(?P<version>\d+\.\d+)-(?P<family>[a-z]+)"),
+    "anthropic": re.compile(r"claude-(?P<family>[a-z]+)-(?P<version>\d+(?:-\d{1,2})?)(?:-\d{8})?"),
+    "openai": re.compile(r"gpt-(?P<version>\d+(?:\.\d+)?)-(?P<family>[a-z]+)"),
     "deepseek": re.compile(r"deepseek-v(?P<version>\d+)-(?P<family>[a-z]+)"),
-    "gemini": re.compile(r"gemini-(?P<version>\d+\.\d+)-(?P<family>[a-z]+)"),
+    "gemini": re.compile(r"gemini-(?P<version>\d+(?:\.\d+)?)-(?P<family>[a-z]+)"),
 }
 #: The unpriced ids a priced provider still seeds, ahead of its priced ones. ⓪Plan, 2026-11-03 (option b): only
 #: Gemini's preset default, which presets.NATIVE keeps; prices.py: "gemini-3.5-flash has no price on the page
@@ -80,7 +82,8 @@ def normalize_language(value: str | None) -> str | None:
 # Keys MUST align with presets.PRESETS + presets.NATIVE. Scores are curated defaults,
 # refined on release. `cost` = cheapness (higher = cheaper).
 # `languages` keys MUST cover all 6 UI locale ISO codes: en, zh, de, es, fr, ja.
-# Model ids verified against official provider docs on 2026-07-11 (spec
+# Priced providers' model ids follow prices.py (official pricing pages, read 2026-10-20); the hand-kept seeds of
+# the other providers were verified against official provider docs on 2026-07-11 (spec
 # 2026-07-11-provider-catalog-local-models-design.md Part A2). Ids with an
 # announced shutdown date or from a retired generation are deny-listed in
 # tests/llm/test_catalog_freshness.py — extend that list when refreshing here.
