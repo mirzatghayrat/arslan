@@ -36,7 +36,6 @@ describe("summarize, local operations", () => {
     ["git clone https://github.com/acme/notes.git", { key: "gitClone", params: { repo: "https://github.com/acme/notes.git" } },
       ["https://github.com/acme/notes.git"]],
     ["git -C repo status", { key: "git", params: { sub: "status" } }, []],
-    ["git -c user.name=x push", { key: "gitPush", params: { remote: "origin" } }, []],
     ["open -a Safari https://example.com", { key: "open", params: { target: "https://example.com" } }, ["https://example.com"]],
     ["osascript -e 'tell app \"Mail\" to quit'", { key: "appleScript", params: {} }, []],
     ["shortcuts run 'Morning Brief'", { key: "shortcut", params: { name: "Morning Brief" } }, []],
@@ -117,6 +116,35 @@ describe("summarize, a step that uses the network (SMART-8, Astra's rounds, simp
   it("git stays a local reading (push/clone/pull), never the network line", () => {
     expect(summarize("git push origin main").unsure).toBe(false);
     expect(summarize("git clone https://e.example/r.git").purpose.key).toBe("gitClone");
+  });
+});
+
+describe("summarize, Astra round 2's gaps are caught", () => {
+  it.each([
+    ['env -S "curl https://example.org"', "curl"],              // 1: env -S runs the string
+    ['eval "curl https://example.org"', "curl"],                // 2: eval runs its argument
+    ['builtin eval "curl https://example.org"', "curl"],
+    ["git -c core.sshCommand=ssh fetch", "git"],                // 3: git -c can run any program
+    ["git --upload-pack=x fetch origin", "git"],
+    ["GIT_SSH_COMMAND=x git fetch", "git"],
+    ["git -c user.name=x push", "git"],                         // any -c is cautious
+    ["dig example.org", "dig"], ["nslookup example.org", "nslookup"], ["ping -c 1 example.org", "ping"],
+    ["openssl s_client -connect example.org:443", "openssl"], ["docker push img", "docker"],
+    ["kubectl get pods", "kubectl"], ["twine upload dist/x", "twine"],
+    ["npm publish", "npm"], ["cargo publish", "cargo"], ["gem push pkg.gem", "gem"],
+  ])("%s reads only as using the network", (line, program) => {
+    expect(summarize(line)).toMatchObject({ purpose: { key: "overNetwork", params: { program } }, unsure: true });
+  });
+
+  it("a wrapper that took its program is never a plain reading", () => {
+    expect(summarize("sudo").unsure).toBe(true);
+    expect(summarize("timeout 5").unsure).toBe(true);
+  });
+
+  it("the plain git and eval readings are unchanged", () => {
+    expect(summarize("git fetch origin").purpose.key).toBe("gitFetch");
+    expect(summarize('eval "rm -rf build"').purpose).toEqual({ key: "delete", params: { count: 1 } });
+    expect(summarize("gem install rails").purpose.key).toBe("install");
   });
 });
 

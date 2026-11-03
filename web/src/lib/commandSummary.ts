@@ -27,7 +27,7 @@ const QUIET = new Set(["echo", "printf", "true", "false", ":", "cd", "pushd", "p
   "unset", "test", "[", "read", "wait", "clear"]);
 /** Programs that run the rest of their words as another program, each with its options that take a value. */
 const WRAPPERS: Record<string, string> = { sudo: "CDghpRrTUu", env: "CSu", command: "", exec: "a", nohup: "",
-  time: "", nice: "n", timeout: "ks", xargs: "adEILnPs", caffeinate: "tw", stdbuf: "" };
+  time: "", nice: "n", timeout: "ks", xargs: "adEILnPs", caffeinate: "tw", stdbuf: "", builtin: "" };
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const FD_DUP = /^\d*[<>]&(?:\d+|-)$/;
 const OUT = /^(?:\d*|&)>>?\|?$/;
@@ -136,7 +136,7 @@ const programOf = (word: string) => (/^(?:\$\(|`)/.test(word) ? word : base(word
 const plain = (args: string[]) => args.filter(a => !a.startsWith("-"));
 const unique = <T,>(list: T[]) => [...new Set(list)];
 
-interface Words { program: string; args: string[]; writes: string[]; inputs: string[]; listed: boolean }
+interface Words { program: string; args: string[]; writes: string[]; inputs: string[]; assigns: string[]; raw: string; listed: boolean }
 
 /** A step's program and arguments with the noise taken off: redirects (an output one's file is kept as a write),
  *  assignments and wrappers (sudo, env, timeout, xargs…) with their options. `listed`: xargs gives it its operands. */
@@ -155,10 +155,14 @@ function words(tokens: string[]): Words {
     else rest.push(tk);
   }
   let i = 0, listed = false;
+  const assigns: string[] = [];
+  const raw = programOf(rest.find(tk => !ASSIGNMENT.test(tk)) ?? "");
   for (;;) {
-    while (i < rest.length && ASSIGNMENT.test(rest[i])) i++;
+    while (i < rest.length && ASSIGNMENT.test(rest[i])) assigns.push(rest[i++].split("=")[0]);
     const name = base(rest[i] ?? "");
     if (!Object.prototype.hasOwnProperty.call(WRAPPERS, name)) break;      // never `toString` and its kin
+    // `env -S "…"` runs the string as a command line; keep env so inlineLine reads it (Astra r2, 1).
+    if (name === "env" && (rest[i + 1] === "-S" || rest[i + 1] === "--split-string")) break;
     i++;
     listed = listed || name === "xargs";
     while (i < rest.length && rest[i].startsWith("-") && rest[i] !== "-") {
@@ -168,7 +172,7 @@ function words(tokens: string[]): Words {
     }
     if (name === "timeout" && i < rest.length) i++;                         // its duration
   }
-  return { program: programOf(rest[i] ?? ""), args: rest.slice(i + 1), writes, inputs, listed };
+  return { program: programOf(rest[i] ?? ""), args: rest.slice(i + 1), writes, inputs, assigns, raw, listed };
 }
 
 /** The command line a shell's `-c` (or `watch`) runs, or null. */
@@ -181,6 +185,11 @@ function inlineLine(w: Words): string | null {
     const args = [...w.args];
     while (args.length && args[0].startsWith("-")) { const flag = args.shift() ?? ""; if (/^-[ndq]$/.test(flag)) args.shift(); }
     return args.length ? args.join(" ") : null;
+  }
+  if (w.program === "eval") return w.args.length ? w.args.join(" ") : null;
+  if (w.program === "env") {
+    const at = w.args.findIndex(a => a === "-S" || a === "--split-string");
+    if (at >= 0) return at + 1 < w.args.length ? w.args[at + 1] : null;
   }
   return null;
 }
@@ -211,7 +220,8 @@ const overNetwork = (program: string): Reading =>
 /** Programs that reach another machine; a step of one is never read past "uses the network". */
 const NETWORK = new Set(["curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp",
   "tftp", "lftp", "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail",
-  "msmtp", "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd"]);
+  "msmtp", "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
+  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"]);
 /** Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7). */
 const INLINE_CODE: Record<string, RegExp> = { python: /^-[A-Za-z]*c/, python2: /^-[A-Za-z]*c/, python3: /^-[A-Za-z]*c/,
   node: /^(?:-[A-Za-z]*[ep]|--eval|--print)/, perl: /^-[A-Za-z]*[eE]/, ruby: /^-[A-Za-z]*e/, php: /^-[A-Za-z]*r/,
@@ -221,6 +231,7 @@ const INLINE_CODE: Record<string, RegExp> = { python: /^-[A-Za-z]*c/, python2: /
  *  (paths on the machine it runs on). `rules` are the server's terminal rules for the line (upload, git-push…). */
 function readStep(w: Words): Reading {
   const { program, args } = w;
+  if (!program) return overNetwork(w.raw || "command");                    // a wrapper took everything (Astra r2, 1)
   if (NETWORK.has(program)) return overNetwork(program);
   if (Object.prototype.hasOwnProperty.call(INLINE_CODE, program) && args.some(a => INLINE_CODE[program].test(a)))
     return overNetwork(program);                                           // its inline code may reach the network
@@ -254,6 +265,8 @@ function readStep(w: Words): Reading {
       return targets.length ? { purpose: { key: "write", params: { target: targets[0] } }, hosts: [], local: targets } : run(program);
     }
     case "git": {
+      if (args.some(a => /^-c$/.test(a) || /^--(?:config|upload-pack|receive-pack)(?:=|$)/.test(a))
+          || w.assigns.some(v => /^GIT_(?:SSH|SSH_COMMAND|PROXY_COMMAND)$/.test(v))) return overNetwork("git");
       const own = args.filter((a, i) => !/^-[Cc]$/.test(a) && !/^-[Cc]$/.test(args[i - 1] ?? ""));   // -C dir, -c key=value
       const [sub, ...rest] = plain(own);
       if (sub === "push") return { purpose: { key: "gitPush", params: { remote: rest[0] ?? "origin" } }, hosts: [], local: [] };
@@ -281,6 +294,9 @@ function readStep(w: Words): Reading {
       return { purpose: { key: "kill", params: { target: plain(args).join(" ") } }, hosts: [], local: [] };
     default: {
       const [sub, ...pkgs] = plain(args);
+      if ((["npm", "pnpm", "yarn", "cargo"].includes(program) && sub === "publish") || (program === "gem" && sub === "push")) {
+        return overNetwork(program);                                       // uploads to a registry
+      }
       if (INSTALLERS.has(program) && (sub === "install" || sub === "add")) {
         const names = pkgs.filter(p => !p.includes("/") || p.startsWith("@"));
         return { purpose: { key: "install", params: { packages: names.slice(0, 3).join(", ") || program } }, hosts: [], local: [] };
@@ -361,8 +377,10 @@ function read(text: string, rules: string[]): { purpose: Purpose; hosts: string[
       continue;
     }
     if (program === "popd") { dirs.set(node.ctx, null); continue; }
-    if (node.merged || ((QUIET.has(program) || !program) && !writes.length)) continue;
-    let r: Reading = QUIET.has(program) || !program ? { purpose: { key: "write", params: { target: writes[0] } }, hosts: [], local: [] }
+    // A wrapper that took its program (`sudo`, `timeout 5` alone) is read by readStep, not skipped (Astra r2, 1).
+    const wrapped = !program && Object.prototype.hasOwnProperty.call(WRAPPERS, node.w.raw);
+    if (node.merged || ((QUIET.has(program) || (!program && !wrapped)) && !writes.length)) continue;
+    let r: Reading = (QUIET.has(program) || (!program && !wrapped)) ? { purpose: { key: "write", params: { target: writes[0] } }, hosts: [], local: [] }
       : readStep(node.w);
     const local = unique([...r.local, ...writes].map(p => rebase(dir, p)));
     if (r.purpose.key === "write") r = { ...r, purpose: { key: "write", params: { target: rebase(dir, String(r.purpose.params.target)) } } };
