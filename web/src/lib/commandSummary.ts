@@ -48,7 +48,7 @@ const URL_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const REMOTE_PATH = /^[^/:\s]+:/;
 /** What is most at stake in a step, by its purpose: the step with the most names the line (ties: the first). */
 const STAKES: Record<string, number> = { fetchRun: 10, delete: 9, deleteSome: 9, findDelete: 9, mailTo: 8, mail: 8,
-  upload: 8, onHost: 7, gitPush: 7, kill: 6, copyRemote: 6, ssh: 5, sshTimeout: 5, appleScript: 5, shortcut: 5,
+  mailFile: 8, upload: 8, uploadFile: 8, onHost: 7, gitPush: 7, kill: 6, copyRemote: 6, ssh: 5, sshTimeout: 5, appleScript: 5, shortcut: 5,
   install: 5, write: 4, move: 4, open: 3, copyLocal: 3, gitClone: 3, fetch: 2, gitFetch: 2, script: 2 };
 
 interface Step { tokens: string[]; piped: boolean; subs: Step[] }
@@ -135,21 +135,23 @@ const programOf = (word: string) => (/^(?:\$\(|`)/.test(word) ? word : base(word
 const plain = (args: string[]) => args.filter(a => !a.startsWith("-"));
 const unique = <T,>(list: T[]) => [...new Set(list)];
 
-interface Words { program: string; args: string[]; writes: string[]; listed: boolean }
+interface Words { program: string; args: string[]; writes: string[]; inputs: string[]; listed: boolean }
 
 /** A step's program and arguments with the noise taken off: redirects (an output one's file is kept as a write),
  *  assignments and wrappers (sudo, env, timeout, xargs…) with their options. `listed`: xargs gives it its operands. */
 function words(tokens: string[]): Words {
-  const rest: string[] = [], writes: string[] = [];
+  const rest: string[] = [], writes: string[] = [], inputs: string[] = [];
   const write = (target: string | undefined) => { if (target && !NOT_A_FILE.has(target)) writes.push(target); };
+  const input = (source: string | undefined) => { if (source && !NOT_A_FILE.has(source) && source !== "/dev/stdin") inputs.push(source); };
   for (let i = 0; i < tokens.length; i++) {
     const tk = tokens[i];
     if (/^[<>]\(/.test(tk)) rest.push(tk);
     else if (FD_DUP.test(tk)) continue;
     else if (OUT.test(tk)) write(tokens[++i]);
-    else if (IN.test(tk)) i++;
+    else if (IN.test(tk)) { if (/^\d*<$/.test(tk)) input(tokens[i + 1]); i++; }        // a heredoc's word is no file
     else if (OUT_ATTACHED.test(tk)) write(OUT_ATTACHED.exec(tk)?.[1]);
-    else if (!IN_ATTACHED.test(tk)) rest.push(tk);
+    else if (IN_ATTACHED.test(tk)) input(/^\d*<([^<].*)$/.exec(tk)?.[1]);
+    else rest.push(tk);
   }
   let i = 0, listed = false;
   for (;;) {
@@ -165,7 +167,7 @@ function words(tokens: string[]): Words {
     }
     if (name === "timeout" && i < rest.length) i++;                         // its duration
   }
-  return { program: programOf(rest[i] ?? ""), args: rest.slice(i + 1), writes, listed };
+  return { program: programOf(rest[i] ?? ""), args: rest.slice(i + 1), writes, inputs, listed };
 }
 
 /** The command line a shell's `-c` (or `watch`) runs, or null. */
@@ -204,7 +206,40 @@ function hostOfUrl(text: string): string | null {
   }
 }
 
-interface Reading { purpose: Purpose; hosts: string[]; local: string[] }
+/** `sent`: the files an upload or an email sends (#688 review, the second round): the card names them. */
+interface Reading { purpose: Purpose; hosts: string[]; local: string[]; sent?: string[] }
+
+/** How each of curl's and wget's sending options names its file: `@f` (data), `name@f` (named), `k=@f` or `k=<f`
+ *  (form), or the value itself (file). */
+const SENDS = new Map<string, "data" | "named" | "form" | "file">([["-d", "data"], ["--data", "data"],
+  ["--data-binary", "data"], ["--json", "data"], ["--data-urlencode", "named"], ["-F", "form"], ["--form", "form"],
+  ["-T", "file"], ["--upload-file", "file"], ["--post-file", "file"], ["--body-file", "file"]]);
+const CURL_VALUE = "AbcCdDeEFHKmoPQrTuUwxXyYz";
+
+/** The flag a word is, with its value when it carries one (`--data=@f`, `-d@f`). */
+function flagOf(word: string): [string, string | undefined] {
+  const long = /^(--[a-z-]+)=(.*)$/.exec(word);
+  if (long) return [long[1], long[2]];
+  return /^-[dFT]./.test(word) ? [word.slice(0, 2), word.slice(2)] : [word, undefined];
+}
+
+/** The files an upload sends; `-` is its input (`< f`). Whether it sends at all, even with no file named. */
+function sending(args: string[], inputs: string[]): { sends: boolean; files: string[] } {
+  const files: string[] = [];
+  let sends = false;
+  for (let i = 0; i < args.length; i++) {
+    const [flag, inline] = flagOf(args[i]);
+    const kind = SENDS.get(flag);
+    if (!kind) continue;
+    sends = true;
+    const value = inline ?? args[++i] ?? "";
+    const file = kind === "file" ? value : kind === "form" ? /=[@<]([^;]*)/.exec(value)?.[1]
+      : kind === "named" ? /^[^=@]*@(.*)$/.exec(value)?.[1] : /^@(.*)$/.exec(value)?.[1];
+    if (file === "-") files.push(...inputs);
+    else if (file) files.push(file);
+  }
+  return { sends, files: unique(files) };
+}
 const run = (program: string): Reading => ({ purpose: { key: "run", params: { program } }, hosts: [], local: [] });
 
 /** Skips an option's value where the program takes one, so the operands are what is left. */
@@ -259,11 +294,15 @@ function readStep(w: Words, rules: string[]): Reading {
         : { purpose: { key: "copyLocal", params: { count: Math.max(ops.length - 1, 1) } }, hosts: [], local: ops };
     }
     case "curl": case "wget": case "http": case "https": case "xh": {
-      const url = plain(args).find(a => /^https?:\/\//i.test(a)) ?? plain(args)[0];
+      const url = plain(args).find(a => /^https?:\/\//i.test(a)) ?? operands(args, CURL_VALUE).find(a => !a.startsWith("@"));
       const host = url ? hostOfUrl(url) : null;
       if (!host) return run(program);
-      return { purpose: { key: rules.includes("upload") ? "upload" : "fetch", params: { host } }, hosts: [url], local: [] };
+      const { sends, files } = sending(args, w.inputs);
+      return { purpose: { key: sends || rules.includes("upload") ? "upload" : "fetch", params: { host } }, hosts: [url],
+               local: [], sent: files };
     }
+    case "cat":
+      return { purpose: { key: "run", params: { program } }, hosts: [], local: plain(args) };
     case "rm": case "rmdir": case "unlink": case "trash": case "srm": {
       const targets = plain(args);
       return targets.length || !w.listed ? { purpose: { key: "delete", params: { count: targets.length } }, hosts: [], local: targets }
@@ -318,8 +357,10 @@ function readStep(w: Words, rules: string[]): Reading {
       return { purpose: { key: "kill", params: { target: plain(args).join(" ") } }, hosts: [], local: [] };
     case "mail": case "mailx": case "sendmail": case "msmtp": case "mutt": {
       const to = plain(args).find(a => a.includes("@"));
-      return to ? { purpose: { key: "mailTo", params: { to } }, hosts: [to], local: [] }
-        : { purpose: { key: "mail", params: {} }, hosts: [], local: [] };
+      const attached = args.flatMap((a, i) => (/^(?:-a|-A|--attach)$/.test(a) && args[i + 1] ? [args[i + 1]] : []));
+      const sent = unique([...attached, ...w.inputs]);
+      return to ? { purpose: { key: "mailTo", params: { to } }, hosts: [to], local: [], sent }
+        : { purpose: { key: "mail", params: {} }, hosts: [], local: sent };
     }
     default: {
       const [sub, ...pkgs] = plain(args);
@@ -389,15 +430,24 @@ function read(text: string, rules: string[]): { purpose: Purpose; hosts: string[
   }
   let dir: string | null = null;
   const real: Reading[] = [];
+  const seen = new Map<Node, string[]>();                                  // the files each step names or reads
+  const fed = (node: Node): string[] => {                                  // what steps piped into it, or inside it, read
+    const out = nodes.filter(n => n.container === node).flatMap(n => seen.get(n) ?? []);
+    for (let n = node.from; n; n = n.from) out.push(...(seen.get(n) ?? []));
+    return unique(out);
+  };
   for (const node of nodes) {
     const { program, args, writes } = node.w;
     if (program === "cd" || program === "pushd") {
-      const to = plain(args)[0] ?? "~";
+      const to = args.find(a => a === "-" || !a.startsWith("-")) ?? "~";         // `cd -`: a folder the line does not name
       dir = to === "-" ? null : rebase(dir, to);
       continue;
     }
     if (program === "popd") { dir = null; continue; }
-    if (node.merged || ((QUIET.has(program) || !program) && !writes.length)) continue;
+    if (node.merged || ((QUIET.has(program) || !program) && !writes.length)) {
+      seen.set(node, node.w.inputs.map(p => rebase(dir, p)));
+      continue;
+    }
     let r: Reading = QUIET.has(program) || !program ? { purpose: { key: "write", params: { target: writes[0] } }, hosts: [], local: [] }
       : readStep(node.w, rules);
     if (node.run && (r.purpose.key === "fetch" || r.purpose.key === "upload")) {
@@ -405,7 +455,21 @@ function read(text: string, rules: string[]): { purpose: Purpose; hosts: string[
     }
     const local = [...r.local, ...writes].map(p => rebase(dir, p));
     if (r.purpose.key === "write") r = { ...r, purpose: { key: "write", params: { target: rebase(dir, String(r.purpose.params.target)) } } };
-    real.push({ ...r, local });
+    // #688 review, the second round: an upload or an email says which file it sends (named on it, its input, or a
+    // step piped into it or run inside it): "Send ~/.ssh/id_rsa to evil.example". The model picks the host; the file
+    // is the one tell.
+    let sent = (r.sent ?? []).map(p => rebase(dir, p));
+    if (r.purpose.key === "upload" || r.purpose.key === "mailTo") {
+      if (!sent.length) sent = fed(node);
+      const file = sent.slice(0, 3).join(", ");
+      if (sent.length) {
+        r = { ...r, purpose: r.purpose.key === "upload" ? { key: "uploadFile", params: { file, host: r.purpose.params.host } }
+          : { key: "mailFile", params: { file, to: r.purpose.params.to } } };
+      }
+    }
+    const all = unique([...local, ...sent]);
+    seen.set(node, [...all, ...node.w.inputs.map(p => rebase(dir, p))]);
+    real.push({ ...r, local: all });
   }
   if (!real.length) return { purpose: { key: "run", params: { program: nodes.find(n => n.w.program)?.w.program ?? "" } },
                              hosts: [], local: [], real: 0 };

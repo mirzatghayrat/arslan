@@ -1066,6 +1066,8 @@
       "findDelete": "删除在 {{where}} 里找到的文件",
       "deleteSome": "删除文件或文件夹",
       "onHost": "通过 SSH 在 {{host}} 上：{{what}}",
+      "uploadFile": "把 {{file}} 发到 {{host}}",
+      "mailFile": "用邮件把 {{file}} 发给 {{to}}",
       "more": "（还有 {{count}} 步）",
       "more_one": "（还有 {{count}} 步）"
     },

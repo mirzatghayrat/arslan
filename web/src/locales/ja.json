@@ -1066,6 +1066,8 @@
       "findDelete": "{{where}} で見つかったものを削除",
       "deleteSome": "ファイルまたはフォルダを削除",
       "onHost": "SSH で {{host}} 上：{{what}}",
+      "uploadFile": "{{file}} を {{host}} に送信",
+      "mailFile": "{{file}} をメールで {{to}} に送信",
       "more": "（ほか {{count}} ステップ）",
       "more_one": "（ほか {{count}} ステップ）"
     },

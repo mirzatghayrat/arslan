@@ -1066,6 +1066,8 @@
       "findDelete": "Löschen, was es in {{where}} findet",
       "deleteSome": "Dateien oder Ordner löschen",
       "onHost": "Auf {{host}} per SSH: {{what}}",
+      "uploadFile": "{{file}} an {{host}} senden",
+      "mailFile": "{{file}} per E-Mail an {{to}} senden",
       "more": " (und {{count}} weitere Schritte)",
       "more_one": " (und 1 weiterer Schritt)"
     },
