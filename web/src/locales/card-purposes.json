@@ -31,6 +31,8 @@
    "findDelete": "Delete what it finds in {{where}}",
    "deleteSome": "Delete files or folders",
    "onHost": "{{what}} on {{host}}, over SSH",
+   "uploadFile": "Send {{file}} to {{host}}",
+   "mailFile": "Email {{file}} to {{to}}",
    "more": " (and {{count}} more steps)",
    "more_one": " (and 1 more step)"
   },
@@ -74,6 +76,8 @@
    "findDelete": "删除在 {{where}} 里找到的文件",
    "deleteSome": "删除文件或文件夹",
    "onHost": "通过 SSH 在 {{host}} 上：{{what}}",
+   "uploadFile": "把 {{file}} 发到 {{host}}",
+   "mailFile": "用邮件把 {{file}} 发给 {{to}}",
    "more": "（还有 {{count}} 步）",
    "more_one": "（还有 {{count}} 步）"
   },
@@ -117,6 +121,8 @@
    "findDelete": "{{where}} で見つかったものを削除",
    "deleteSome": "ファイルまたはフォルダを削除",
    "onHost": "SSH で {{host}} 上：{{what}}",
+   "uploadFile": "{{file}} を {{host}} に送信",
+   "mailFile": "{{file}} をメールで {{to}} に送信",
    "more": "（ほか {{count}} ステップ）",
    "more_one": "（ほか {{count}} ステップ）"
   },
@@ -160,6 +166,8 @@
    "findDelete": "Borrar lo que encuentre en {{where}}",
    "deleteSome": "Borrar archivos o carpetas",
    "onHost": "{{what}} en {{host}}, por SSH",
+   "uploadFile": "Enviar {{file}} a {{host}}",
+   "mailFile": "Enviar {{file}} por correo a {{to}}",
    "more": " (y {{count}} pasos más)",
    "more_one": " (y 1 paso más)"
   },
@@ -203,6 +211,8 @@
    "findDelete": "Löschen, was es in {{where}} findet",
    "deleteSome": "Dateien oder Ordner löschen",
    "onHost": "Auf {{host}} per SSH: {{what}}",
+   "uploadFile": "{{file}} an {{host}} senden",
+   "mailFile": "{{file}} per E-Mail an {{to}} senden",
    "more": " (und {{count}} weitere Schritte)",
    "more_one": " (und 1 weiterer Schritt)"
   },
@@ -246,6 +256,8 @@
    "findDelete": "Supprimer ce qu’il trouve dans {{where}}",
    "deleteSome": "Supprimer des fichiers ou dossiers",
    "onHost": "{{what}} sur {{host}}, en SSH",
+   "uploadFile": "Envoyer {{file}} à {{host}}",
+   "mailFile": "Envoyer {{file}} par e-mail à {{to}}",
    "more": " (et {{count}} étapes de plus)",
    "more_one": " (et 1 étape de plus)"
   },

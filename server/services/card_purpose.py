@@ -34,6 +34,9 @@ TEXT = {lang: value for lang, value in json.loads(_TEXT_PATH.read_text(encoding=
 TITLE_MAX = 300
 #: The phone shows a title as the approval's heading, cut at 200 (FrameMapper.swift); the whole title fits in it.
 PHONE_MAX = 200
+#: The facts' separator and the marks that look like it (U+00B7, U+2022, U+2027, U+2219, U+22C5, U+30FB, U+FF65),
+#: which the model's words may not use.
+_SEPARATORS = re.compile("[" + "".join(map(chr, (0xB7, 0x2022, 0x2027, 0x2219, 0x22C5, 0x30FB, 0xFF65))) + "]")
 
 QUIET = {"echo", "printf", "true", "false", ":", "cd", "pushd", "popd", "sleep", "set", "export", "unset", "test", "[",
          "read", "wait", "clear"}
@@ -61,7 +64,8 @@ _URL_LIKE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 _REMOTE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):")
 _REMOTE_PATH = re.compile(r"^[^/:\s]+:")
 #: What is most at stake in a step, by its purpose: the step with the most names the line (ties: the first).
-STAKES = {"fetchRun": 10, "delete": 9, "deleteSome": 9, "findDelete": 9, "mailTo": 8, "mail": 8, "upload": 8,
+STAKES = {"fetchRun": 10, "delete": 9, "deleteSome": 9, "findDelete": 9, "mailTo": 8, "mail": 8, "mailFile": 8,
+          "upload": 8, "uploadFile": 8,
           "onHost": 7, "gitPush": 7, "kill": 6, "copyRemote": 6, "ssh": 5, "sshTimeout": 5, "appleScript": 5,
           "shortcut": 5, "install": 5, "write": 4, "move": 4, "open": 3, "copyLocal": 3, "gitClone": 3, "fetch": 2,
           "gitFetch": 2, "script": 2}
@@ -195,11 +199,15 @@ def _unique(items) -> list:
 def _words(tokens: list[str]) -> dict:
     """A step's program and arguments with the noise taken off: redirects (an output one's file is kept as a write),
     assignments and wrappers with their options. `listed`: xargs gives it its operands."""
-    rest, writes, i = [], [], 0
+    rest, writes, inputs, i = [], [], [], 0
 
     def write(target):
         if target and target not in _NOT_A_FILE:
             writes.append(target)
+
+    def read_from(source):
+        if source and source not in _NOT_A_FILE and source != "/dev/stdin":
+            inputs.append(source)
     while i < len(tokens):
         tk = tokens[i]
         if re.match(r"^[<>]\(", tk):
@@ -210,10 +218,15 @@ def _words(tokens: list[str]) -> dict:
             i += 1
             write(tokens[i] if i < len(tokens) else None)
         elif _IN.match(tk):
+            if re.match(r"^[0-9]*<$", tk):                                # a heredoc's word is no file
+                read_from(tokens[i + 1] if i + 1 < len(tokens) else None)
             i += 1
         elif m := _OUT_ATTACHED.match(tk):
             write(m.group(1))
-        elif not _IN_ATTACHED.match(tk):
+        elif _IN_ATTACHED.match(tk):
+            m = re.match(r"^[0-9]*<([^<].*)$", tk)
+            read_from(m.group(1) if m else None)
+        else:
             rest.append(tk)
         i += 1
     i, listed = 0, False
@@ -235,7 +248,7 @@ def _words(tokens: list[str]) -> dict:
         if name == "timeout" and i < len(rest):
             i += 1                                                         # its duration
     return {"program": _program_of(rest[i]) if i < len(rest) else "", "args": rest[i + 1:], "writes": writes,
-            "listed": listed}
+            "inputs": inputs, "listed": listed}
 
 
 def _inline_line(w: dict) -> str | None:
@@ -277,11 +290,49 @@ def _host_of_url(text: str) -> str | None:
     return host or None
 
 
-def _reading(key: str, params: dict, hosts=(), local=(), inner: dict | None = None) -> dict:
+def _reading(key: str, params: dict, hosts=(), local=(), inner: dict | None = None, sent=()) -> dict:
+    """`sent`: the files an upload or an email sends (#688 review, the second round): the title names them."""
     purpose = {"key": key, "params": params}
     if inner is not None:
         purpose["inner"] = inner
-    return {"purpose": purpose, "hosts": list(hosts), "local": list(local)}
+    return {"purpose": purpose, "hosts": list(hosts), "local": list(local), "sent": list(sent)}
+
+
+#: How each of curl's and wget's sending options names its file: `@f` (data), `name@f` (named), `k=@f` or `k=<f`
+#: (form), or the value itself (file).
+_SENDS = {"-d": "data", "--data": "data", "--data-binary": "data", "--json": "data", "--data-urlencode": "named",
+          "-F": "form", "--form": "form", "-T": "file", "--upload-file": "file", "--post-file": "file",
+          "--body-file": "file"}
+_CURL_VALUE = "AbcCdDeEFHKmoPQrTuUwxXyYz"
+
+
+def _flag_of(word: str) -> tuple[str, str | None]:
+    """The flag a word is, with its value when it carries one (`--data=@f`, `-d@f`)."""
+    if m := re.match(r"^(--[a-z-]+)=(.*)$", word):
+        return m.group(1), m.group(2)
+    return (word[:2], word[2:]) if re.match(r"^-[dFT].", word) else (word, None)
+
+
+def _sending(args: list[str], inputs: list[str]) -> tuple[bool, list[str]]:
+    """Whether an upload sends at all, even with no file named, and the files it sends; `-` is its input (`< f`)."""
+    files, sends, i = [], False, 0
+    while i < len(args):
+        flag, inline = _flag_of(args[i])
+        kind = _SENDS.get(flag)
+        if kind:
+            sends = True
+            if inline is None:
+                i += 1
+                inline = args[i] if i < len(args) else ""
+            m = (None if kind == "file" else re.search(r"=[@<]([^;]*)", inline) if kind == "form"
+                 else re.match(r"^[^=@]*@(.*)$", inline) if kind == "named" else re.match(r"^@(.*)$", inline))
+            file = inline if kind == "file" else (m.group(1) if m else None)
+            if file == "-":
+                files.extend(inputs)
+            elif file:
+                files.append(file)
+        i += 1
+    return sends, _unique(files)
 
 
 def _run(program: str) -> dict:
@@ -349,11 +400,15 @@ def _step(w: dict, rules: list[str]) -> dict:
             return _reading("copyRemote", {"host": hosts[0]}, hosts, [a for a in ops if not _REMOTE.match(a)])
         return _reading("copyLocal", {"count": max(len(ops) - 1, 1)}, [], ops)
     if program in _FETCHERS:
-        url = next((a for a in plain if re.match(r"^https?://", a, re.I)), plain[0] if plain else None)
+        url = next((a for a in plain if re.match(r"^https?://", a, re.I)),
+                   next((a for a in _operands(args, _CURL_VALUE) if not a.startswith("@")), None))
         host = _host_of_url(url) if url else None
         if not host:
             return _run(program)
-        return _reading("upload" if "upload" in rules else "fetch", {"host": host}, [url])
+        sends, files = _sending(args, w["inputs"])
+        return _reading("upload" if sends or "upload" in rules else "fetch", {"host": host}, [url], sent=files)
+    if program == "cat":
+        return _reading("run", {"program": program}, [], plain)
     if program in _DELETERS:
         if plain or not w["listed"]:
             return _reading("delete", {"count": len(plain)}, [], plain)
@@ -398,7 +453,9 @@ def _step(w: dict, rules: list[str]) -> dict:
         return _reading("kill", {"target": " ".join(plain)})
     if program in ("mail", "mailx", "sendmail", "msmtp", "mutt"):
         to = next((a for a in plain if "@" in a), None)
-        return _reading("mailTo", {"to": to}, [to]) if to else _reading("mail", {})
+        attached = [args[k + 1] for k, a in enumerate(args) if re.match(r"^(?:-a|-A|--attach)$", a) and k + 1 < len(args)]
+        sent = _unique([*attached, *w["inputs"]])
+        return _reading("mailTo", {"to": to}, [to], sent=sent) if to else _reading("mail", {}, [], sent)
     sub = plain[0] if plain else None
     if program in _INSTALLERS and sub in ("install", "add"):
         names = [n for n in plain[1:] if "/" not in n or n.startswith("@")]
@@ -464,12 +521,21 @@ def _read(text: str, rules: list[str]) -> dict | None:
         if host is not None and (host["w"]["program"] in _RUNS_CODE or re.match(r"^[$`]", host["w"]["program"])
                                  or host["w"]["program"] == ""):
             node["run"], host["merged"] = True, True
-    folder, real = None, []
+    folder, real, seen = None, [], {}                                     # seen: the files each step names or reads
+
+    def fed(node: dict) -> list[str]:
+        """What steps piped into it, or run inside it, read."""
+        out = [p for n in nodes if n["container"] is node for p in seen.get(id(n), [])]
+        n = node["from"]
+        while n is not None:
+            out.extend(seen.get(id(n), []))
+            n = n["from"]
+        return _unique(out)
     for node in nodes:
         w = node["w"]
         program, args, writes = w["program"], w["args"], w["writes"]
         if program in ("cd", "pushd"):
-            to = (_plain(args) or ["~"])[0]
+            to = next((a for a in args if a == "-" or not a.startswith("-")), "~")   # `cd -`: a folder not named
             folder = None if to == "-" else _rebase(folder, to)
             continue
         if program == "popd":
@@ -477,6 +543,7 @@ def _read(text: str, rules: list[str]) -> dict | None:
             continue
         quiet = program in QUIET or not program
         if node["merged"] or (quiet and not writes):
+            seen[id(node)] = [_rebase(folder, p) for p in w["inputs"]]
             continue
         r = _reading("write", {"target": writes[0]}) if quiet else _step(w, rules)
         if node["run"] and r["purpose"]["key"] in ("fetch", "upload"):
@@ -484,6 +551,19 @@ def _read(text: str, rules: list[str]) -> dict | None:
         r["local"] = [_rebase(folder, p) for p in [*r["local"], *writes]]
         if r["purpose"]["key"] == "write":
             r["purpose"] = {"key": "write", "params": {"target": _rebase(folder, str(r["purpose"]["params"]["target"]))}}
+        # #688 review, the second round: an upload or an email says which file it sends (named on it, its input, or a
+        # step piped into it or run inside it). The model picks the host; the file is the one tell.
+        sent = [_rebase(folder, p) for p in r.get("sent", [])]
+        key = r["purpose"]["key"]
+        if key in ("upload", "mailTo"):
+            sent = sent or fed(node)
+            if sent:
+                file, params = ", ".join(sent[:3]), r["purpose"]["params"]
+                r["purpose"] = ({"key": "uploadFile", "params": {"file": file, "host": params["host"]}} if key == "upload"
+                                else {"key": "mailFile", "params": {"file": file, "to": params["to"]}})
+        r["local"] = _unique([*r["local"], *sent])
+        seen[id(node)] = [*r["local"], *(_rebase(folder, p) for p in w["inputs"])]
+        r.pop("sent", None)
         real.append(r)
     if not real:
         first = next((n["w"]["program"] for n in nodes if n["w"]["program"]), "")
@@ -546,10 +626,10 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
            outside: bool = False, unsandboxed: bool = False, host: str | None = None, shortcut_as_you: bool = False,
            network: bool = False) -> str:
     """The card's title in `lang`: first the code's facts, where it runs when that is not this Mac's sandbox and
-    whether it uses the network, in a fixed form; then its purpose, Arslan's reason when it gave one, else the
-    reading of `shell`. Only the purpose is cut, so the whole title fits the phone's heading (PHONE_MAX) and a long
-    reason can never push a fact off it (#689 review 1). Cleaned as a name is, so neither the model's words nor the
-    command's carry a bidi or zero-width character into the heading."""
+    whether it uses the network, in a fixed form; then the code's reading of `shell`; then Arslan's reason when it
+    gave one. The reason is cut first, then the reading, so the whole title fits the phone's heading (PHONE_MAX) and
+    no fact is pushed off it (#689 review 1 and its second round). Cleaned as a name is, so neither the model's words
+    nor the command's carry a bidi or zero-width character into the heading."""
     facts = []
     if shortcut_as_you:
         facts.append(_say(lang, "fact", "shortcutAsYou", {}))
@@ -563,16 +643,23 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
         facts.append(_say(lang, "fact", "network", {}))
     join = _say(lang, "fact", "join", {})
     lead = untrusted.clean_name(join.join(facts), PHONE_MAX) if facts else ""
-    # The model's words never take the facts' form: their separator is the facts' own.
-    said = untrusted.clean_name(why, TITLE_MAX).replace("\u00b7", ",") if why else ""
-    if not said:
-        s = summarize(shell, rules)
-        said = _purpose(lang, s["purpose"]) + (_say(lang, "purpose", "more", {"count": s["more"]}) if s["more"] else "")
+    s = summarize(shell, rules)
+    reading = untrusted.clean_name(
+        _purpose(lang, s["purpose"]) + (_say(lang, "purpose", "more", {"count": s["more"]}) if s["more"] else ""), TITLE_MAX)
+    # The model's words never take the facts' form: a separator, or one that looks like it, is a comma in them.
+    said = _SEPARATORS.sub(",", untrusted.clean_name(why, TITLE_MAX)) if why else ""
     room = PHONE_MAX - (len(lead) + len(join) if lead else 0)
-    text = untrusted.clean_name(said, TITLE_MAX)
-    if len(text) > room:
-        text = text[:max(room - 1, 0)].rstrip() + "\u2026"
+    # #689 review, the second round: Arslan's words are never the only description, so the code's reading comes
+    # before them; the reason is cut first, then the reading, never the facts.
+    if said and room - len(reading) - len(join) >= 2:
+        text = reading + join + _cut(said, room - len(reading) - len(join))
+    else:
+        text = _cut(reading, room)
     return f"{lead}{join}{text}" if lead else text
+
+
+def _cut(text: str, room: int) -> str:
+    return text if len(text) <= room else text[:max(room - 1, 0)].rstrip() + "\u2026"
 
 
 async def title(shell: str, why: str = "", rules: str | list[str] | None = None, **where) -> str:
