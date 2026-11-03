@@ -38,7 +38,7 @@ def turn(execution_db, monkeypatch):
         return "en"
     monkeypatch.setattr(runtime_messages, "selected_locale", en)       # the interface is in English
 
-    async def run(replies, *, tools=()):
+    async def run(replies, *, tools=(), executors=None):
         bodies = []
 
         def handler(request):
@@ -52,6 +52,9 @@ def turn(execution_db, monkeypatch):
         adapter = LLMAdapter("openai", "deepseek-v4-flash", api_key="k", base_url=BASE)
         adapter._provider = provider(handler)
         monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+        from server.registry import executors as registry
+        for key, executor in (executors or {}).items():
+            monkeypatch.setitem(registry.EXECUTORS, key, executor)
 
         async def resolve():
             return [{"key": key, "description": key} for key in tools]
@@ -64,11 +67,11 @@ def turn(execution_db, monkeypatch):
 
 
 def shown(log: list[dict]) -> str:
-    """What a joiner keeps: the chunks after the last restart."""
+    """What a joiner keeps: the restart's `keep`, then the chunks after it."""
     text = ""
     for event in log:
         if event["type"] == "stream_restart":
-            text = ""
+            text = event["keep"]
         elif event["type"] == "stream_chunk":
             text += event["content"]
     return text
@@ -85,12 +88,14 @@ async def test_run_492_saying_how_a_conclusion_was_found_is_not_sent_back(turn):
 
 
 @pytest.mark.parametrize("text", ["说明是怎么查到的", "查到了三条", "我在记忆里查到你偏好直接动手",
-                                  "这个问题不需要搜索了", "不用搜索了", "我没有搜索了"])
+                                  "这个问题不需要搜索了", "不用搜索了", "我没有搜索了", "无需再搜索了",
+                                  "不用再搜索了", "不用去搜索了", "网上没查到相关结果"])
 def test_no_web_search_claimed(text):
     assert not tool_loop._claims_search(text)
 
 
-@pytest.mark.parametrize("text", ["我搜索了三个网站", "刚才搜索了一下", "I searched the web", "我已搜过"])
+@pytest.mark.parametrize("text", ["我搜索了三个网站", "刚才搜索了一下", "I searched the web", "我已搜过",
+                                  "我在网上查到了最新价格", "网上查到", "联网查到的汇率是 7.1", "通过搜索查到了三篇"])
 def test_a_web_search_claimed(text):
     assert tool_loop._claims_search(text)
 
@@ -101,7 +106,7 @@ async def test_a_correction_replaces_what_went_out(turn):
     [restart] = restarts(log)
     before = "".join(e["content"] for e in log[:log.index(restart)] if e["type"] == "stream_chunk")
     assert before.startswith(claim[:100])                               # it went out, then was replaced
-    assert restart["label"] == runtime_messages.render("stream_correction", "en")
+    assert restart["label"] == runtime_messages.render("stream_correction", "en") and restart["keep"] == ""
     assert result["final"] == shown(log) and result["final"].strip() == PROSE.strip()
     assert "searched the web" not in result["final"] and restart["label"] not in result["final"]
     assert "lacks a successful web_search receipt" in json.dumps(bodies[1]["messages"])
@@ -131,8 +136,9 @@ def test_the_label_language():
 
 async def test_the_run_record_keeps_only_the_answer_after_a_restart(execution_db):
     async def body(emit):
+        emit({"type": "stream_chunk", "content": "step one. "})
         emit({"type": "stream_chunk", "content": "draft"})
-        emit({"type": "stream_restart", "label": "x"})
+        emit({"type": "stream_restart", "label": "x", "keep": "step one. "})
         emit({"type": "stream_chunk", "content": "answer"})
         return None                                     # no final text: the run record joins what went out
     await host_run.execute("restart-run", "question", lambda ev: None, body)
@@ -141,7 +147,7 @@ async def test_the_run_record_keeps_only_the_answer_after_a_restart(execution_db
     from server.db.models import Run
     async with execution_db() as db:
         run = (await db.execute(select(Run))).scalar_one()
-    assert run.final_output == "answer"
+    assert run.final_output == "step one. answer"
 
 
 def test_the_partial_checkpoint_keeps_only_what_follows_a_restart():
@@ -161,3 +167,67 @@ def test_a_window_that_reattaches_replays_the_restart():
         assert turn_journal.snapshot("restart-journal") == frames
     finally:
         turn_journal._active.clear()
+
+
+class _Search:
+    async def execute(self, args):
+        return {"ok": True, "results": [{"title": "t", "snippet": "s", "url": "https://example.com"}]}
+
+
+LATER = ("The figures for each valley follow, with the farms, the towns and the mills listed in the order the "
+         "river reaches them on its way north to the sea. ") * 2
+
+
+async def test_a_restart_keeps_what_earlier_steps_showed(turn):
+    """#694 review, finding 1: step 1's text went out before a tool call and stays; only step 2's goes."""
+    result, log, _ = await turn([_reply(PROSE, tool=("web_search", {"query": "q"})),
+                                 _reply("The chart is ready. " + LATER), _reply(LATER)],
+                                tools=("web_search",), executors={"web_search": _Search()})
+    [restart] = restarts(log)
+    assert restart["keep"].strip() == PROSE.strip()
+    assert result["final"] == shown(log)
+    assert result["final"].startswith(PROSE.strip()[:100]) and result["final"].rstrip().endswith(LATER.strip()[-60:])
+    assert "chart is ready" not in result["final"]
+
+
+@pytest.mark.parametrize("last", ["", "I searched the web: the answer is 42."])
+async def test_with_no_real_replacement_what_was_shown_stays_with_one_note(turn, last):
+    """#694 review, finding 2: the salvage gives nothing usable (empty, or a claim again): the user keeps what they
+    saw, with one note in its language, never the generic miss line."""
+    claim = _reply("I searched the web and found it. " + PROSE)
+    result, log, _ = await turn([claim, claim, claim, last], tools=("web_search",))
+    note = runtime_messages.render("stream_unverified_note", "en")
+    miss = runtime_messages.render("chat_miss", "en")
+    assert result["final"] == shown(log)
+    assert result["final"].count(note) == 1 and result["final"].rstrip().endswith(note)
+    assert PROSE.strip()[:100] in result["final"] and miss not in result["final"]
+    assert len(restarts(log)) == tool_loop._UNVERIFIED_BOUNCES       # the last bounce replaced nothing
+
+
+async def test_the_note_is_in_the_language_of_what_stays(turn):
+    claim = _reply("我搜索了网页，结论如下。" + ZH)
+    result, _, _ = await turn([claim, claim, claim, ""], tools=("web_search",))
+    assert result["final"].rstrip().endswith(runtime_messages.render("stream_unverified_note", "zh"))
+
+
+async def test_a_bounce_whose_next_step_is_held_back_replaces_at_the_end(turn):
+    """The restart waits for the text that replaces it: a short rewrite (held, then shown whole) still replaces."""
+    claim = "I searched the web and found it. " + PROSE
+    result, log, _ = await turn([_reply(claim), _reply("Forty-two.")], tools=("web_search",))
+    assert len(restarts(log)) == 1 and result["final"] == shown(log) == "Forty-two."
+
+
+def test_a_job_never_passes_a_restart_to_the_chat():
+    """#694 review, finding 5: a job's frames never reach the conversation's own reply."""
+    from server.services import background_jobs
+    sent = []
+    job = background_jobs.Job.__new__(background_jobs.Job)
+    sink = background_jobs._job_sink(job, sent.append)
+    sink({"type": "stream_restart", "label": "x", "keep": ""})
+    assert sent == []
+
+
+def test_a_kept_prefix_survives_in_the_run_record():
+    events = [{"type": "stream_chunk", "content": "step one. "}, {"type": "stream_chunk", "content": "bad"},
+              {"type": "stream_restart", "label": "x", "keep": "step one. "}, {"type": "stream_chunk", "content": "good"}]
+    assert run_recorder.shown_text(events) == "step one. good"

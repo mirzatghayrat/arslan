@@ -21,6 +21,7 @@ MESSAGES = {
         "model_retried": "(Arslan tried {attempts} times over {seconds}s before stopping.)",
         "stream_interrupted": "(The answer was interrupted. Ask me to continue.)",  # K8a
         "stream_correction": "Earlier draft, replaced: part of it was not right.",  # K8a
+        "stream_unverified_note": "Note: part of the answer above couldn’t be checked, so it may not be right.",  # K8a (#694 review)
         "links_not_verified": "These links were not verified: {links}",  # K8a
         "image_refused": "The model you configured could not read the image. It may not support image input. Choose a model with image support, or describe the picture in words.",
         "proposal_handled": "This proposal has already been handled, or there is no pending proposal. Tell me what you would like to do next.",
@@ -56,6 +57,7 @@ MESSAGES = {
         "model_retried": "(Arslan 已尝试 {attempts} 次、历时 {seconds} 秒后停止。)",
         "stream_interrupted": "(回答中断了。请让我继续。)",  # K8a
         "stream_correction": "较早的草稿，已替换：其中有一部分不对。",  # K8a
+        "stream_unverified_note": "注：上面的回答有一部分没能核实，可能不对。",  # K8a (#694 review)
         "links_not_verified": "这些链接未经验证：{links}",  # K8a
         "image_refused": "当前模型无法读取这张图片，可能不支持图片输入。请选择支持图片的模型，或用文字描述图片。",
         "proposal_handled": "这个提案已经处理过了，或目前没有待处理的提案。直接告诉我接下来要做什么就好。",
@@ -91,6 +93,7 @@ MESSAGES = {
         "model_retried": "(Arslan は {seconds} 秒間に {attempts} 回試してから停止しました。)",
         "stream_interrupted": "(回答が中断されました。続けるよう声をかけてください。)",  # K8a
         "stream_correction": "以前の下書き（差し替え済み）：一部が正しくありませんでした。",  # K8a
+        "stream_unverified_note": "注：上の回答の一部は確認できなかったため、正しくない可能性があります。",  # K8a (#694 review)
         "links_not_verified": "次のリンクは検証されていません：{links}",  # K8a
         "image_refused": "設定したモデルは画像を読み取れませんでした。画像入力に対応していない可能性があります。画像対応モデルを選ぶか、画像の内容を文章で説明してください。",
         "proposal_handled": "この提案はすでに処理済みか、現在保留中の提案はありません。次に行いたいことを教えてください。",
@@ -126,6 +129,7 @@ MESSAGES = {
         "model_retried": "(Arslan lo intentó {attempts} veces durante {seconds} s antes de detenerse.)",
         "stream_interrupted": "(La respuesta se interrumpió. Pídeme que continúe.)",  # K8a
         "stream_correction": "Borrador anterior, reemplazado: una parte no era correcta.",  # K8a
+        "stream_unverified_note": "Nota: una parte de la respuesta anterior no se pudo comprobar, así que puede no ser correcta.",  # K8a (#694 review)
         "links_not_verified": "Estos enlaces no se verificaron: {links}",  # K8a
         "image_refused": "El modelo configurado no pudo leer la imagen. Es posible que no admita imágenes. Elige un modelo compatible o describe la imagen con palabras.",
         "proposal_handled": "Esta propuesta ya se ha gestionado o no hay ninguna pendiente. Dime qué quieres hacer a continuación.",
@@ -161,6 +165,7 @@ MESSAGES = {
         "model_retried": "(Arslan hat es {attempts}-mal über {seconds} s versucht und dann aufgehört.)",
         "stream_interrupted": "(Die Antwort wurde unterbrochen. Bitte mich, weiterzumachen.)",  # K8a
         "stream_correction": "Früherer Entwurf, ersetzt: Ein Teil davon war nicht richtig.",  # K8a
+        "stream_unverified_note": "Hinweis: Ein Teil der Antwort oben ließ sich nicht prüfen und ist vielleicht nicht richtig.",  # K8a (#694 review)
         "links_not_verified": "Diese Links wurden nicht geprüft: {links}",  # K8a
         "image_refused": "Das konfigurierte Modell konnte das Bild nicht lesen. Möglicherweise unterstützt es keine Bildeingaben. Wähle ein Modell mit Bildunterstützung oder beschreibe das Bild mit Worten.",
         "proposal_handled": "Dieser Vorschlag wurde bereits bearbeitet, oder es gibt keinen ausstehenden Vorschlag. Sag mir, was du als Nächstes tun möchtest.",
@@ -196,6 +201,7 @@ MESSAGES = {
         "model_retried": "(Arslan a essayé {attempts} fois pendant {seconds} s avant de s'arrêter.)",
         "stream_interrupted": "(La réponse a été interrompue. Demandez-moi de continuer.)",  # K8a
         "stream_correction": "Brouillon précédent, remplacé : une partie n’était pas juste.",  # K8a
+        "stream_unverified_note": "Remarque : une partie de la réponse ci-dessus n’a pas pu être vérifiée ; elle n’est peut-être pas juste.",  # K8a (#694 review)
         "links_not_verified": "Ces liens n’ont pas été vérifiés : {links}",  # K8a
         "image_refused": "Le modèle configuré n’a pas pu lire l’image. Il ne prend peut-être pas en charge les images. Choisis un modèle compatible ou décris l’image avec des mots.",
         "proposal_handled": "Cette proposition a déjà été traitée, ou aucune proposition n’est en attente. Dis-moi ce que tu souhaites faire ensuite.",

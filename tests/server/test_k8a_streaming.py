@@ -153,7 +153,8 @@ async def test_past_the_window_a_claim_is_replaced_by_what_follows(turn):
     result, chunks, events, bodies = await turn([_reply(claim), _reply(PROSE)], tools=("web_search",))
     joined = "".join(chunks)
     assert joined.startswith(claim.rstrip()[:100])                      # it went out
-    assert [e for e in events if e["type"] == "stream_restart"] == [{"type": "stream_restart", "label": CORRECTION}]
+    assert [e for e in events if e["type"] == "stream_restart"] == [{"type": "stream_restart", "label": CORRECTION,
+                                                                          "keep": ""}]
     assert result["final"].strip() == PROSE.strip() and joined.endswith(result["final"])
     assert "lacks a successful web_search receipt" in json.dumps(bodies[1]["messages"])
 
@@ -259,6 +260,20 @@ async def test_a_bad_link_after_text_went_out_is_listed_not_rewritten(turn, monk
     async with execution_db() as db:
         task = (await db.execute(select(CompanionTask))).scalar_one()
     assert task.pause_reason == "task_validation_failed"
+
+
+async def test_a_replaced_answer_is_what_acceptance_checks(turn, monkeypatch):
+    """#694: the answer validated is the one the user will have read: the replaced step gone, even while its
+    replacement (short, so held back) is still to be shown."""
+    checked = []
+
+    async def validate(runtime, answer, *a, **k):
+        checked.append(answer)
+        return {"checks": [], "artifacts": []}
+    monkeypatch.setattr(task_validation, "validate_output", validate)
+    claim = "I searched the web and found it. " + PROSE
+    result, _, _, _ = await turn([_reply(claim), _reply("Forty-two.")], tools=("web_search",), in_task=True)
+    assert result["final"] == "Forty-two." and checked and all(answer == "Forty-two." for answer in checked)
 
 
 async def test_a_new_bad_link_in_the_last_answer_is_listed_too(turn, monkeypatch):

@@ -722,9 +722,10 @@ export type ArslanServerMessage =
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
-  // K8a (2026-11-03): a guard sent back text that already went out; what follows replaces it. `label` is the
-  // server's, in the language of the text it replaces; the window keeps that text as a collapsed earlier draft.
-  | { type: "stream_restart"; label: string }
+  // K8a (2026-11-03): a guard sent back a step's text that already went out; what follows replaces it. The reply
+  // starts over from `keep` (what earlier steps showed, which stays). `label` is the server's, in the language of
+  // the text it replaces; the window keeps that text as a collapsed earlier draft.
+  | { type: "stream_restart"; label: string; keep?: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
   | { type: "run_cancelled"; run_id: number; message_id?: number }

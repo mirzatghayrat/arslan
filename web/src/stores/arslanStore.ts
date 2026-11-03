@@ -593,13 +593,17 @@ function makeActions(set: SetState, get: GetState) {
           _voiceFeed(frame.content);
           set({ thinking: false, streamingText: state.streamingText + frame.content });
           break;
-        case "stream_restart":
-          // K8a: a guard sent back what went out; it is kept as a collapsed earlier draft, and what follows
-          // is the answer (the stored message is that answer alone).
-          if (!state.streaming || !state.streamingText) break;
-          set({ streamingText: "",
-                streamingDrafts: [...state.streamingDrafts, { label: frame.label, text: state.streamingText }] });
+        case "stream_restart": {
+          // K8a: a guard sent back a step's text that went out. The reply starts over from `keep` (earlier steps'
+          // text, which stays); the rest is kept as a collapsed earlier draft. The stored message is the same.
+          if (!state.streaming) break;
+          const keep = frame.keep ?? "";
+          const shown = state.streamingText;
+          const draft = (shown.startsWith(keep) ? shown.slice(keep.length) : shown).trim();
+          set({ streamingText: keep,
+                streamingDrafts: draft ? [...state.streamingDrafts, { label: frame.label, text: draft }] : state.streamingDrafts });
           break;
+        }
         case "stream_end": {
           if (state.inserted) set({ inserted: false });     // K9b: the turn it was added to has ended
           if (!state.streaming) break;

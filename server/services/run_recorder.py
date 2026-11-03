@@ -60,12 +60,12 @@ def is_continuation(run_id: int) -> bool:
 
 
 def shown_text(events) -> str:
-    """The answer the frames showed: the stream_chunk contents after the last stream_restart (K8a: a guard that
-    sends back text which already went out replaces it)."""
+    """The answer the frames showed: the stream_chunk contents, where a stream_restart starts over from its `keep`
+    (K8a: a guard that sends back a step's text which already went out replaces that step's text)."""
     parts: list[str] = []
     for ev in events:
         if ev.get("type") == "stream_restart":
-            parts = []
+            parts = [str(ev.get("keep") or "")]
         elif ev.get("type") == "stream_chunk":
             parts.append(str(ev.get("content") or ""))
     return "".join(parts)

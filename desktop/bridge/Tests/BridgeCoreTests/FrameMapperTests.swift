@@ -34,6 +34,29 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(out.first?.body["text"] as? String, "The answer")
     }
 
+    func testARestartKeepsEarlierStepsAndDropsAHeldPartial() {
+        // #694 review: earlier steps' text (`keep`) stays; a partial held for its second is not sent after a restart
+        // (it would go out empty, or as the replaced text): the phone hears nothing until the replacing text arrives.
+        let m = FrameMapper(conversationID: "c1")
+        m.partials = true
+        _ = m.phoneMessages(for: ["type": "stream_start"], now: t0)
+        XCTAssertFalse(m.phoneMessages(for: ["type": "stream_chunk", "content": "Bad step"], now: t0).isEmpty)
+        XCTAssertTrue(m.phoneMessages(for: ["type": "stream_chunk", "content": " goes on"], now: t0).isEmpty, "held")
+        _ = m.phoneMessages(for: ["type": "stream_restart", "label": "x", "keep": ""], now: t0)
+        XCTAssertTrue(m.flush(now: t0.addingTimeInterval(5)).isEmpty, "the held partial is dropped, not sent")
+        _ = m.phoneMessages(for: ["type": "stream_chunk", "content": "Good step"], now: t0.addingTimeInterval(6))
+        XCTAssertEqual(m.phoneMessages(for: ["type": "stream_end", "message_id": 7], now: t0.addingTimeInterval(7))
+                        .first?.body["text"] as? String, "Good step")
+
+        let k = FrameMapper(conversationID: "c2")
+        _ = k.phoneMessages(for: ["type": "stream_start"], now: t0)
+        _ = k.phoneMessages(for: ["type": "stream_chunk", "content": "Step one. Bad step"], now: t0)
+        _ = k.phoneMessages(for: ["type": "stream_restart", "label": "x", "keep": "Step one. "], now: t0)
+        _ = k.phoneMessages(for: ["type": "stream_chunk", "content": "Good step"], now: t0)
+        XCTAssertEqual(k.phoneMessages(for: ["type": "stream_end", "message_id": 8], now: t0).first?.body["text"] as? String,
+                       "Step one. Good step", "earlier steps' text stays")
+    }
+
     func testCardsShowOneOfThePhonesSixRisks() {
         func risk(_ frame: [String: Any]) -> String? {
             FrameMapper(conversationID: "c").phoneMessages(for: frame.merging(["call_id": "k"]) { a, _ in a }).first?.body["risk"] as? String

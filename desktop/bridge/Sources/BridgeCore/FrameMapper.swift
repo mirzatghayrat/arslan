@@ -79,9 +79,12 @@ public final class FrameMapper {
             }
             return partial(now: now)
         case "stream_restart":
-            // K8a (2026-11-03): a check sent back the answer the Mac had shown; what follows replaces it. The phone
-            // gets only that answer: the next partial and the final message carry the reply from here.
-            reply = ""
+            // K8a (2026-11-03): a check sent back a step's text the Mac had shown; the reply starts over from `keep`
+            // (earlier steps' text, which stays) and what follows replaces the rest. The next partial and the final
+            // message carry the reply from here. A partial held back for its second is dropped, not sent (#694 review):
+            // the phone hears nothing until the replacing text arrives.
+            reply = frame["keep"] as? String ?? ""
+            heldPartial = false
             return []
         case "stream_end":
             endTurn()

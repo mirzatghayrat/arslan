@@ -55,6 +55,15 @@ describe('a replaced answer', () => {
     expect(reply.drafts?.map((d) => d.text)).toEqual(['one', 'two', 'three']);
   });
 
+  it('keeps what earlier steps showed, and drafts only the replaced step (#694 review)', () => {
+    turn({ type: 'stream_chunk', content: 'Step one.' }, { type: 'stream_chunk', content: '\n\nThe chart is ready.' },
+         { type: 'stream_restart', label: LABEL, keep: 'Step one.' }, { type: 'stream_chunk', content: '\n\nThe table.' },
+         { type: 'stream_end', message_id: 9 });
+    const [reply] = store().items;
+    expect(reply.content).toBe('Step one.\n\nThe table.');
+    expect(reply.drafts).toEqual([{ label: LABEL, text: 'The chart is ready.' }]);
+  });
+
   it('a restart with nothing shown adds no draft', () => {
     turn({ type: 'stream_restart', label: LABEL }, { type: 'stream_chunk', content: 'answer' },
          { type: 'stream_end', message_id: 9 });
