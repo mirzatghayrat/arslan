@@ -95,7 +95,7 @@ NATIVE: dict[str, dict[str, str]] = {
         "label": "Anthropic Claude",
         "provider": "anthropic",
         "base_url": "",
-        "default_model": "claude-sonnet-5",
+        "default_model": "claude-sonnet-5-5",   # ⓪Plan 2026-11-03: new configs only; existing ones keep theirs
     },
     "gemini": {
         "label": "Google Gemini",
