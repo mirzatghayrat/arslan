@@ -142,16 +142,26 @@ _CLAIMS_SEARCH_RE = re.compile(
 #: 「说明是怎么查到的」, sent run 492 back three times). It does after a web word in the same clause (「我在网上查到了」),
 #: unless the clause is advice or how-to (「你可以在网上查到」, 「怎么在网上查到」, 「建议上网查到…」) or says nothing was
 #: found (「网上没有查到」). #694 review.
+#: 「网络上」 only, never bare 「网络」 or 「网络中」: 「网络设置里查到…」 and 「本地网络中查到…」 are local (#698 review).
 _WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络上|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
-_ADVICE_WORDS = ("可以", "能", "可", "怎么", "如何", "去", "建议")  # lang-check: allow
+_ADVICE_WORDS = ("可以", "怎么", "如何", "建议")  # lang-check: allow
+#: 「可」 / 「能」 / 「去」 are advice only right before the web word (「可在网上」, 「去网上」) or right before 「查到」
+#: (「都能查到」), and not as the end of 「可能」, 「功能」 or 「过去」 (#694 follow-up).
+_ADVICE_BEFORE_WEB = re.compile(r"(?:(?<![可功])能|可|(?<!过)去)[在到]?$")  # lang-check: allow
+_ADVICE_BEFORE_FOUND = re.compile(r"(?:(?<![可功])能|可)$")  # lang-check: allow
 _NOT_FOUND = ("没", "未", "没有", "未能")  # lang-check: allow
 
 
 def _claims_web_found(text: str) -> bool:
     for match in _WEB_FOUND_RE.finditer(text):
-        clause = text[max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1:match.end()]
+        clause_start = max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1
+        clause = text[clause_start:match.end()]
         before = text[:match.end() - 2]
-        if not any(word in clause for word in _ADVICE_WORDS) and not before.endswith(_NOT_FOUND):
+        # The single-character checks look only at the few characters before (lookbehind still sees past `pos`).
+        advice = (any(word in clause for word in _ADVICE_WORDS)
+                  or _ADVICE_BEFORE_WEB.search(text, max(clause_start, match.start() - 3), match.start())
+                  or _ADVICE_BEFORE_FOUND.search(text, max(match.start(), len(before) - 2), len(before)))
+        if not advice and not before.endswith(_NOT_FOUND):
             return True
     return False
 
