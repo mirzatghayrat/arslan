@@ -2,7 +2,58 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-02 (UTC), late evening. **Since the evening update: 12 more merged**, among them all three Codex SBX p-parts (#669, #671, #654), SMART-2 (#677), L11 (b) (#681), CAP4a-3d (#604), DEP1 (#683, #684, #687) and the privacy page (#667). Main is green at 8c3a899d (run 41421660022). Open Dependabot alerts went from 116 to 8 (0 critical, 0 high, 7 medium, 1 low). **Pacing (user, via ④参谋):** until the 11-07 quota reset, only the critical path runs (SBX 6a/4a/5a/7, SMART-1..4, DEP1, IPB and iOS 1.0), with 2–3 sessions and effort=max only for security reviews. CAP9 (#661) waits for the reset. **iOS completeness is a v0.1.64 must** (the user: 「我期待 0.1.64 发布跟 iOS 对应功能是完整的，因为我想把 iOS 尽快可以提审上架」); ①iOS's list is below.
+**Updated:** 2026-11-03 (UTC). **⓪Plan moves to a fresh session today** (the user: "Yes, hand it over"; part of the model-by-job pacing trial). The new ⓪Plan starts from this section, the cards and the memory index; nothing in a scratchpad counts as handoff.
+
+### ⓪Plan handoff (2026-11-03)
+
+**Merged since the late-evening update:**
+- #525 (retire the pocket);
+- #667 (the privacy page) and #654 (the SBX gates notes);
+- #681 (L11 (b)) and #685 (the phone_drops vectors);
+- #683, #684 and #687 (DEP1: open Dependabot alerts went from 116 to 8, with no critical or high);
+- #677 (SMART-2), and #691 and #696 (the model-switch fix, parts A and B);
+- #658 (STY2: the bench gate passed, 18→20/27 passed, 0 waiting, 5→4 done-without-evidence);
+- #694 (the repeated-correction bug), #689 (SMART-8, the plain phone heading);
+- the #690, #692 and #695 cards (ROUTE1, MODEL1, FMT1).
+
+**Open, and who has it:**
+
+| PR | State | Next |
+|---|---|---|
+| #688 SMART-8 Mac card (⑤CAP) | OK at 47eb21ba; now conflicts in command_confirm.py since #689 landed | ⑤CAP merges main (keep lang, rules, unreadable and net), then gets an identity re-OK and re-arms |
+| #680 SMART-3/4 (⑥Helper) | waited for #658, which has landed | merge main, identity re-OK against 6aa3e94e's OK, arm |
+| #674 SMART-1 (③Hands) | OK at 63b0207c; the head is now c2de6cce and it conflicts | merge main, identity re-OK, arm |
+| #686 delete to Trash, first half (③Hands) | the head is now d6ca11f8 (two cd forms and the protected-target card wording); conflicts | merge main, max delta review |
+| #693 cloud-upload terminal_policy rule (③Hands) | new | effort=max review |
+| #661 CAP9 (⑤CAP, the user merges) | one focus finding (an install card steals focus from an open Dialog) | paused until the 11-07 reset |
+| #666, #668 (SBX-4a, SBX-6a) | drafts, conflicting | SBX chain, ③Hands |
+
+**Queues:**
+- **②Main:** ROUTE1 (card in README §ROUTE1; it carries #696's two missing tests) → MODEL1 (a mock first, effort=max) → FMT1 (copy only, no share, in v0.1.64; PR 1 is the Sonnet trial card).
+- **⑥Helper:** #680. Then a small 「查到」 follow-up: the advice words 「可」「能」「去」 match inside 「可能」「过去」「功能」, and a bare 「网络」 isn't a web word. Then L11 PR-B and PR-C.
+- **③Hands:** #674, #686, #693, the cloud-upload rule, then the SBX chain.
+- **①iOS:** build 31; the demo off the pocket; the reply-formatting work (the user OK'd the mock); its own pre-submission steps.
+- **⑤CAP:** paused after #688 until the reset.
+
+**Benches:**
+- **SMART-5** (Arslan against OpenClaw on deepseek-v4-flash) runs once SMART-1 to 4 are all on main (#674, #680).
+- **How to run it:** a metering proxy on :8910 with a fresh BENCH_ROOT, BENCH_CAP_USD around 8 and BENCH_RUN_CAP_USD 2.5. If the log shows a 402, stop and ask the user to top up DeepSeek.
+- **Afterwards:** each round leaves Reminders lists for the user to clean with `cleanup_t1 --delete --yes`.
+
+**Ways of working that held up:**
+- **Recount a Codex or count-touching PR after main moves:** merge main, then count by collection with a small pytest plugin that calls `_pytest.skipping.evaluate_xfail_marks`, and set ci.yml EXPECTED/EXPECTED_XFAIL and the mirror's EXPECTED_TOTAL/PARAMETERIZED_EXTRA_CASES from it.
+- **Re-OK after a merge of main:** compare the PR's own +/- lines against its base before and after, excluding only the resolved files.
+- **Reviewer subagents:** Opus, at effort=max on the security surface and high otherwise. Resume the same reviewer for deltas.
+- **When a Claude safety check stops adversarial probing:** don't route around it. The user decides; Codex Astra covers it via ⑦Codex.
+- **Arm while CI is pending:** a CLEAN PR can't be armed.
+
+**Before the v0.1.64 tag (the user present):**
+- the real-Mac signed-feed updater test (#684's body);
+- OCR, PDF and attachments;
+- Q1c end to end with build 31;
+- the IPB privacy line is live (#667, merged).
+
+**Previous update:** 2026-11-02 (UTC), late evening. **Since the evening update: 12 more merged**, among them all three Codex SBX p-parts (#669, #671, #654), SMART-2 (#677), L11 (b) (#681), CAP4a-3d (#604), DEP1 (#683, #684, #687) and the privacy page (#667). Main is green at 8c3a899d (run 41421660022). Open Dependabot alerts went from 116 to 8 (0 critical, 0 high, 7 medium, 1 low). **Pacing (user, via ④参谋):** until the 11-07 quota reset, only the critical path runs (SBX 6a/4a/5a/7, SMART-1..4, DEP1, IPB and iOS 1.0), with 2–3 sessions and effort=max only for security reviews. CAP9 (#661) waits for the reset. **iOS completeness is a v0.1.64 must** (the user: 「我期待 0.1.64 发布跟 iOS 对应功能是完整的，因为我想把 iOS 尽快可以提审上架」); ①iOS's list is below.
 
 ## Merged for v0.1.64 (newest first)
 
