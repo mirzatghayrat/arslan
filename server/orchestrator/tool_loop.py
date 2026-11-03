@@ -1661,7 +1661,10 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             mcp_fail_counts=mcp_fail_counts)
             from server.services import permissions
             permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
-            approved = await confirm_command(command, argv, **net_kw, **delete_kw(run_outside))
+            # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
+            said = str(args.get("why") or "").strip()[:300]
+            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
+                                             **delete_kw(run_outside))
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -2153,8 +2156,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                               "API). After you read outside content in this turn, "
                                                               "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "With outside_sandbox or network: one short sentence "
-                                                          "the user reads on the card."}},
+                                           "description": "What this step does, in one short sentence: "
+                                                          "every command card shows it first."}},
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,

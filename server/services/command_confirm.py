@@ -23,6 +23,14 @@ def remote_target(host: str) -> str:
     return f"remote:{host}"
 
 
+#: SMART-8 (#688 review 5): why terminal_policy could not read a command, by the reason it gives, so the card can say
+#: it plainly; a reason not listed here reads as the generic "can't fully read". A test pins all four.
+UNREADABLE = {"it runs code it downloads, decodes or builds": "fetched-code",
+              "its script reaches out, starts programs or drives apps": "script-reach",
+              "its quoting does not close, so what runs cannot be read": "quoting",
+              "too complex to read before running": "complex"}
+
+
 class Confirmations:
     def __init__(self, conversation_id: str | None, *, job_id: str | None = None, surface: str = "chat",
                  asker=None):
@@ -83,9 +91,12 @@ class Confirmations:
         risk = effective_risk(remote_host, command, argv)
         shell = terminal_policy.as_shell(command, argv)
         verdict = terminal_policy.assess(shell)
-        # SMART-8: every card's title is its plain purpose in the user's language (the iPhone's heading).
+        # SMART-8 (#688 review 1, 3, 5): every rule it matched goes on every command card, with why it could not be
+        # read when that is one of them; the card's risk row names each and takes the worst.
+        # SMART-8 (#689): every card's title is its plain purpose in the user's language (the iPhone's heading).
         lang = await card_purpose.language()
         rules = sorted(terminal_policy.ask_rules(shell))
+        unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
         deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
@@ -104,7 +115,8 @@ class Confirmations:
                 why=why, frame={**protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv,
                     reason=_with_delete(verdict.reason if verdict.level == "ask" else "", deletes),
-                    sandbox=sandbox, why=why, network=network), **_delete_keys(delete, shell)})
+                    sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
+                    **_delete_keys(delete, shell)})
         elif remote_host:
             # A remote command takes none of the shortcuts: the local risk grade describes a binary on THIS
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
@@ -116,7 +128,8 @@ class Confirmations:
                 detail=shell,
                 frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                    remote_host=remote_host, fingerprints=list(fingerprints or [])))
+                    remote_host=remote_host, fingerprints=list(fingerprints or []), why=why, rules=rules,
+                    unreadable=unreadable))
         else:
             request = None
         if request is not None:
@@ -126,7 +139,8 @@ class Confirmations:
             ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=_with_delete(verdict.reason or f"risk: {risk}", deletes),
-            rule=verdict.rule or None, network=network)
+            rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
+            rules=rules, unreadable=unreadable)
         frame.update(_delete_keys(delete, shell))
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
