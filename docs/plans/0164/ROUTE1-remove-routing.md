@@ -47,6 +47,11 @@
    - **No slot is pinned to a config by default.**
 5. **Existing pins** (the user's are all config 1, DeepSeek). **Decision (⓪Plan):** the migration **clears** them, and the next Settings visit shows a one-time note: "Model roles now follow each conversation's model; your earlier role choices were cleared." The clear is from the database, never from the user's files. Why clear rather than keep them as choices: the pins were made under the old routing, and every one points at the provider whose outage this bug turned into a dead chat.
 
+6. **One source for the seed model list** (user, 2026-11-03, item 2 of "keep the model lists fresh"):
+   - `arslan/llm/catalog.py`'s static `models` seed has drifted: Anthropic still lists `claude-opus-4-8`, `claude-sonnet-5` and `claude-haiku-4-5`, while `arslan/llm/prices.py` is current, read from official pages on 2026-10-20.
+   - Since this PR already edits catalog.py to drop the capability scores, the seed's model ids now come from `prices.py`; no second hand-kept list.
+   - Guard test: every seed model is priced, and no family lacks its newest priced model.
+
 ## Method
 
 - **Inventory from four angles,** and list every deleted symbol in the PR body:
