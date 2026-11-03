@@ -66,6 +66,19 @@ export interface CapabilitySource {
   test: { ok: boolean; stage?: string; detail?: string; tools?: string[]; at?: string } | null;
   files: Record<string, string> | null; state: "installed" | "failed" | "removed" | "proposed"; error: string | null;
   mcp_server_id: number | null; skill_key: string | null; installed_at: string | null;
+  /** CAP4a-3d: set while its Registry entry keeps it stopped (withdrawn, or naming something else), until kept. */
+  registry_parked?: RegistryParked | null;
+}
+/** What was installed from a Registry entry, or what the entry names now: a package, or a remote's URL. The server
+ *  cleans the values (no bidi or zero-width characters); `hidden` counts what it removed that showed nothing. */
+export type RegistryNames = { registry_type?: string | null; identifier?: string | null; version?: string | null;
+  url?: string | null };
+export interface RegistryParked {
+  why: "withdrawn" | "changed"; seen: string; checked_at: string | null;
+  installed: RegistryNames | null; now: RegistryNames | null;
+  hidden: { installed: number; now: number };
+  /** A changed entry that reads the same as what was installed once both are cleaned. */
+  looks_same: boolean;
 }
 export interface InstallResult { state: "on" | "failed" | "blocked"; source_id?: string; stage?: string; code?: string;
   detail?: string; tools?: string[]; skill?: string }
@@ -82,6 +95,9 @@ export const capabilitiesApi = {
   checkUpdate: (sourceId: string) => request<UpdateInfo>(`/capability-sources/${encodeURIComponent(sourceId)}/update`),
   update: (sourceId: string) => request<InstallResult>(`/capability-sources/${encodeURIComponent(sourceId)}/update`, { method: "POST" }),
   source: (sourceId: string) => request<CapabilitySource>(`/capability-sources/${encodeURIComponent(sourceId)}`),
+  /** CAP4a-3d: keep a server its Registry entry stopped; `seen` names the answer the user read (409 when it moved). */
+  acceptSource: (sourceId: string, seen: string) =>
+    request<CapabilitySource>(`/capability-sources/${encodeURIComponent(sourceId)}/source/accept`, json("POST", { seen })),
   list: () => request<CapabilityRow[]>("/capabilities"),
   switch: (key: string, on: boolean) => request<CapabilityRow>(`/capabilities/${rowPath(key)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }),

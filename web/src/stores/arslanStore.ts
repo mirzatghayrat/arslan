@@ -3,7 +3,7 @@ import { request } from "../api/client";
 import { announceProactiveChange } from "../api/proactive";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ModelCall, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 let _cardSeq = 0;
@@ -37,6 +37,8 @@ interface ArslanState {
   streamSource: "arslan" | null;
   error: string | null;
   errorTranslations: RuntimeErrorTranslations | null;
+  /** SMART-3: which call the error came from, when the server said (the banner names it and offers the way out). */
+  errorCall: ModelCall | null;
   lastMessageId: number;
   pending: boolean;
   // Live tool-loop steps for the in-flight turn, paired from
@@ -314,6 +316,7 @@ function initialData() {
     streamSource: null as "arslan" | null,
     error: null as string | null,
     errorTranslations: null as RuntimeErrorTranslations | null,
+    errorCall: null as ModelCall | null,
     lastMessageId: 0,
     pending: false,
     activitySteps: [] as ToolStep[],
@@ -420,7 +423,7 @@ function makeActions(set: SetState, get: GetState) {
       if (_shows(s, callId)) set({ ..._withoutCard(s, callId), ..._ranOut(s, callId) });
     },
     dismissCardExpired: () => set({ cardExpired: false, cardExpiredKind: null }),
-    clearError: () => set({ error: null, errorTranslations: null }),
+    clearError: () => set({ error: null, errorTranslations: null, errorCall: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
@@ -751,11 +754,6 @@ function makeActions(set: SetState, get: GetState) {
                 cleared: frame.cleared } }],
           });
           break;
-        case "rule_offer":
-          // L11-2: the same correction twice — offer it as a rule for this folder (a card; the user decides).
-          set({ items: [...state.items, { id: nextClientId(), kind: "rule_offer", role: "arslan", content: frame.text,
-            ruleOffer: { lessonId: frame.lesson_id, file: frame.file } }] });
-          break;
         case "lesson_learned":
           set({
             items: [
@@ -883,6 +881,7 @@ function makeActions(set: SetState, get: GetState) {
           set({
             error: frame.message,
             errorTranslations: runtimeErrorTranslations(frame.message_i18n),
+            errorCall: frame.call ?? null,
             pending: false,
             streaming: false,
             streamingText: "",

@@ -143,6 +143,20 @@ reply claims completion (a fixed English and Chinese phrase list) and its last `
 has no later `read_file`, `list_dir`, `search_files`, `run_command` or `run_python` in its frames file.
 It prints the counts and the task ids; a run with no frames file is `no_record`, not clean.
 
+## SMART bench (v0.1.64, SMART-5)
+
+Arslan against OpenClaw on the same model and the same 13 paraphrased tasks (`smart_prompts.json`): the user's
+point is that the gap is Arslan's harness, not the model. Every task is one turn, so OpenClaw runs it as written.
+`smart_bench.py --entrant arslan|openclaw` runs each task once in a new conversation (Arslan on a new instance, as
+the STY read test does; OpenClaw in a fresh HOME, as the 10-01 bake-off does), keeps each reply with the run's tool
+calls (Arslan's frames file; OpenClaw's session transcripts, best effort), and grades both with one scripted rubric
+(answer-first length, no unrequested closing offer, an admission after a correction, a question when a referent
+is ambiguous, guidance with a place, a command and a retry, verify before claiming, no unread link listed as a
+source, no read of another app's private files, live self-state). `fixture_smart.py` gives each HOME a tool that
+only `~/.zshrc` puts on PATH (`runner.fresh_instance(prepare_home=…)` for Arslan). `--gate ARSLAN OTHER` is the
+card's gate: Arslan at least matches OpenClaw on focus, length, verify, guide and self-state. `--compare` compares
+two rounds of one entrant. Card: `docs/plans/0164/SMART-feels-smart.md`.
+
 ## T1 / T2 / T4 / T6 (0.1.49)
 
 | Task | Fixture | Checker | Human step | Arslan |

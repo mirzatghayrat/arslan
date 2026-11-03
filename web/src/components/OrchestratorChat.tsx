@@ -14,13 +14,16 @@ import RememberedLine from './RememberedLine';
 import CapabilityResultLine from './capabilities/CapabilityResultLine';
 import PlanProposalCard from './projects/PlanProposalCard';
 import LearnedLine from "./LearnedLine";
-import RuleOfferCard from "./RuleOfferCard";
 
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
 import ConversationModelChip from './models/ConversationModelChip';
+import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } from './models/useConversationModel';
+import { conversationModelApi } from '../api/conversationModel';
+import { withTimeout } from './models/ConversationModelChip';
+import { lastSend, rememberSend } from '../lib/lastSend';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -46,6 +49,7 @@ import ConversationToggle from './ConversationToggle';
 import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded } from './ComposerAttach';
+import { ComposerInput } from './ComposerInput';
 import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 
@@ -120,6 +124,14 @@ export default function OrchestratorChat({
   header,
   footer,
 }: OrchestratorChatProps) {
+  // SMART-3 (PR 696's review): every send goes through here and is remembered (typed, voice, a clarify answer), so a
+  // retry on another model resends the newest message, never an older one.
+  const sendMessage: OrchestratorChatProps['onSendMessage'] = onSendMessage
+    ? (text, attached, opts) => {
+        rememberSend(conversationId ?? 'main', text, attached);
+        if (opts) onSendMessage(text, attached, opts); else onSendMessage(text, attached);
+      }
+    : undefined;
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
   // What the recogniser should EXPECT to hear. Its own setting first, because
@@ -137,7 +149,7 @@ export default function OrchestratorChat({
     enabled: voiceMode === 'conversation' && conversationOn,
     locale: voiceLocale,
     silenceMs: clampEndpointSilenceMs(settings?.voice_endpoint_silence_ms),
-    onFinal: (text) => { setVoiceError(null); onSendMessage?.(text, undefined); },
+    onFinal: (text) => { setVoiceError(null); sendMessage?.(text, undefined); },
     onError: (msg) => { setVoiceError(msg); setConversationOn(false); },
     // The helper is gone (it exited, or the shell lost it). The toggle is ours,
     // so put it back — a lit button over a dead session takes two presses to
@@ -226,6 +238,48 @@ export default function OrchestratorChat({
   const llmError = useArslanStore((s) => s.error);
   const llmErrorTranslations = useArslanStore((s) => s.errorTranslations);
   const clearLlmError = useArslanStore((s) => s.clearError);
+  const llmErrorCall = useArslanStore((s) => s.errorCall);
+  // SMART-3: when the chat's own model failed, another configured model to offer (a different provider first, since
+  // a balance or key problem is the provider's).
+  const switchTo = llmErrorCall?.role === 'chat'
+    ? (providerConfigs ?? []).find((c) => c.provider !== llmErrorCall.provider)
+      ?? (providerConfigs ?? []).find((c) => c.model !== llmErrorCall.model)
+    : undefined;
+  const switching = useRef(false);
+  const announceModel = (id: string, choice: { config_id: number; model: string } | null) =>
+    window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail: {
+      conversationId: id, choice: choice ? { configId: choice.config_id, model: choice.model } : null } }));
+  const switchAndRetry = async () => {
+    if (!switchTo || switching.current) return;    // a second click while the first is saving does nothing (PR 696's review)
+    switching.current = true;
+    const id = conversationId ?? 'main';
+    const epoch = useArslanStore.getState().epoch;
+    const done = beginModelSave(id);
+    try {
+      // A save that never answers gives up like the chip's; if it lands later, the chips ask the server again.
+      const r = await withTimeout(conversationModelApi.set(id, switchTo.id, switchTo.model), () => {
+        void conversationModelApi.get(id).then((g) => announceModel(id, g.choice)).catch(() => {});
+      });
+      announceModel(id, r.choice);
+    } catch {
+      return;          // the error stays, and nothing is sent on a model the server didn't store
+    } finally {
+      done();
+      switching.current = false;
+    }
+    if (useArslanStore.getState().epoch !== epoch) return;   // the user moved to another conversation meanwhile
+    clearLlmError();
+    // The last send as it was, attachments included (an image the first model refused must reach this one). With
+    // none remembered (after a reload) the text goes back in the composer rather than going out without them.
+    // Only when it is the newest user message: an unrecorded newer send must not lose out to an older one.
+    const last = [...chatHistory].reverse().find((m) => m.sender === 'user');
+    const sent = lastSend(id);
+    if (sent && sendMessage && (!last || sent.text === last.text)) {
+      sendMessage(sent.text, sent.attached);
+      return;
+    }
+    if (last) setInputValue(last.text);
+  };
   // Draft survives unmount. The composer used to hold its text in plain
   // component state, so switching to Settings (say, to fix an API key) and
   // back destroyed whatever was typed — reported from the first packaged
@@ -234,6 +288,7 @@ export default function OrchestratorChat({
   // (drafts are session-scoped, and persisting every keystroke to disk buys
   // nothing) and NOT a re-render source (read once on mount).
   const draftKey = conversationId ?? 'main';
+  const savingModel = useModelSaving(conversationId ?? 'main');
   const temporary = activeThread?.temporary === true;
   const [inputValue, _setInputValue] = useState(() => temporary ? '' : composerDrafts.get(draftKey) ?? '');
   const setInputValue = useCallback((v: string) => {
@@ -319,7 +374,8 @@ export default function OrchestratorChat({
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || attach.busy) return;
+    // PR 691's review (4): a model switch still being saved would race this turn; the send waits for it.
+    if (!inputValue.trim() || attach.busy || isModelSaving(conversationId ?? 'main')) return;
     if (firstTasks) hideFirstTasks();
     if (attachmentImageBudgetExceeded(attachments)) {
       attach.setError(t("inputs.imageBudget"));
@@ -346,12 +402,13 @@ export default function OrchestratorChat({
       // `images` is OMITTED when empty, not passed as []: a text-only send must
       // stay byte-identical to what it was before vision existed — the same
       // principle build_user_blocks applies on the server.
-      onSendMessage(text, context || display.length || images.length
+      const attached = context || display.length || images.length
         ? {
             context, names, display,
             ...(images.length ? { images: images as NonNullable<typeof images[number]>[] } : {}),
           }
-        : undefined);
+        : undefined;
+      sendMessage!(text, attached);
       clearAttachments();
       return;
     }
@@ -442,20 +499,14 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
-              <textarea
+              {/* SMART: both composers wrap and grow with what is typed, then scroll (ComposerInput). */}
+              <ComposerInput
                 id="landing-message-input"
-                rows={3}
+                minRows={3}
                 value={inputValue}
                 onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (inputValue.trim()) {
-                      handleSendMessage(e);
-                    }
-                  }
-                }}
+                onSend={(e) => { if (inputValue.trim()) handleSendMessage(e); }}
                 placeholder={t('orchestrator.placeholder_empty')}
                 className="w-full bg-transparent text-sm text-foreground placeholder-subtle-foreground focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
@@ -484,7 +535,7 @@ export default function OrchestratorChat({
                 <button
                   type="button"
                   aria-label={t('chat.send')}
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() || savingModel}
                   onClick={(e) => {
                     if (inputValue.trim()) {
                       handleSendMessage(e);
@@ -540,8 +591,6 @@ export default function OrchestratorChat({
             if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
             if (msg.capabilityResult) return <CapabilityResultLine key={msg.id} result={msg.capabilityResult} />;
             if (msg.planProposal) return <PlanProposalCard key={msg.id} projectId={msg.planProposal.projectId} proposal={msg.planProposal} />;
-            if (msg.ruleOffer) return <RuleOfferCard key={msg.id} lessonId={msg.ruleOffer.lessonId} file={msg.ruleOffer.file}
-              text={msg.text} conversationId={conversationId ?? ""} />;
             if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status}
               notInEffect={msg.learned.notInEffect} />;
             if (msg.remembered) return <RememberedLine key={msg.id} facts={msg.remembered} />;
@@ -564,7 +613,7 @@ export default function OrchestratorChat({
                       // fromClarify: answering Arslan's own question is not
                       // "moving on", so it must not implicitly decline the
                       // spawn invite sitting beside it.
-                      onSendMessage?.(label, undefined, { fromClarify: true });
+                      sendMessage?.(label, undefined, { fromClarify: true });
                     }}
                   />
                 </div>
@@ -945,6 +994,24 @@ export default function OrchestratorChat({
                 className="shrink-0 self-start rounded p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}>
               <span className={`break-words ${taskKey ? '' : 'font-mono text-[12px]'}`}>
                 {taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
+              {/* SMART-3: which call failed, and the way out. */}
+              {!taskKey && llmErrorCall && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+                  <span data-testid="chat-error-call" className="text-muted-foreground">
+                    {t(`ui.errorRole_${['chat', 'vision'].includes(llmErrorCall.role) ? llmErrorCall.role : 'helper'}`)}: {llmErrorCall.provider} · {llmErrorCall.model}
+                  </span>
+                  {llmErrorCall.role === 'chat' && switchTo && (
+                    <button type="button" data-testid="chat-error-switch" onClick={() => void switchAndRetry()} disabled={savingModel}
+                      className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
+                      {t('ui.errorSwitchRetry', { model: `${switchTo.label} · ${switchTo.model}` })}</button>
+                  )}
+                  {llmErrorCall.role !== 'chat' && onOpenSettings && (
+                    <button type="button" data-testid="chat-error-settings" onClick={onOpenSettings}
+                      className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
+                      {t('ui.errorOpenSettings')}</button>
+                  )}
+                </div>
+              )}
             </Notice>
           </div>
           );
@@ -995,9 +1062,8 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
-              <input
+              <ComposerInput
                 id="chat-message-input"
-                type="text"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -1005,8 +1071,9 @@ export default function OrchestratorChat({
                 value={inputValue}
                 onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
+                onSend={handleSendMessage}
                 placeholder={t('orchestrator.placeholder_chat')}
-                className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
+                className="block w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none resize-none font-sans leading-relaxed px-1 py-1.5"
               />
               <div className="composer-row">
                 <div data-testid="composer-input-tools" className="flex items-center gap-2">
@@ -1038,7 +1105,7 @@ export default function OrchestratorChat({
                   <button
                     id="chat-send-submit"
                     type="submit"
-                    disabled={!inputValue.trim()}
+                    disabled={!inputValue.trim() || savingModel}
                     className="p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
                   >
                     <ArrowRight className="w-4 h-4" />
